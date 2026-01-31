@@ -25,6 +25,10 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "SENTRY_DSN": "",
+      "AMPLITUDE_API_KEY": ""
     }
   }
 }

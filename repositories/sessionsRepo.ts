@@ -156,7 +156,9 @@ export function watchSessions(
     },
     (err) => {
       if (err?.code === 'permission-denied') return;
-      console.warn('watchSessions error:', err);
+      if (__DEV__) {
+        console.warn('watchSessions error:', err);
+      }
     }
   );
 }
@@ -179,7 +181,9 @@ export function watchPlannedSessions(
     },
     (err) => {
       if (err?.code === 'permission-denied') return;
-      console.warn('watchPlannedSessions error:', err);
+      if (__DEV__) {
+        console.warn('watchPlannedSessions error:', err);
+      }
     }
   );
 }
@@ -191,12 +195,21 @@ export function watchPlannedSessions(
   ) {
     const col = collection(db, 'sessions');
     const q = query(col, where('userId', '==', userId), orderBy('date', 'desc'));
-    return onSnapshot(q, (snap) => {
-      const items = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as CompletedSession),
-      }));
-      cb(items);
-    });
+    return onSnapshot(
+      q,
+      (snap) => {
+        const items = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as CompletedSession),
+        }));
+        cb(items);
+      },
+      (err) => {
+        if (err?.code === 'permission-denied') return;
+        if (__DEV__) {
+          console.warn('watchSessionsByUserIdRoot error:', err);
+        }
+      }
+    );
   }
   

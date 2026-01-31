@@ -17,80 +17,26 @@ import { fr } from "date-fns/locale";
 import { useTrainingStore } from "../state/trainingStore";
 import { auth } from "../services/firebase";
 import { DEV_FLAGS } from "../config/devFlags";
+import { theme } from "../constants/theme";
+import { useSettingsStore } from "../state/settingsStore";
+import { useAppModeStore } from "../state/appModeStore";
+import HomeReadinessCard from "../components/home/HomeReadinessCard";
+import HomeCycleHero from "../components/home/HomeCycleHero";
+import HomeNextSessionCard from "../components/home/HomeNextSessionCard";
+import HomeWeekSummaryCard from "../components/home/HomeWeekSummaryCard";
+import HomeDashboardCard from "../components/home/HomeDashboardCard";
+import { MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId, MICROCYCLES } from "../domain/microcycles";
+import { TRAINING_DEFAULTS } from "../config/trainingDefaults";
+import { updateTrainingLoad } from "../engine/loadModel";
 
-const palette = {
-  bg: "#050509",
-  bgSoft: "#050815",
-  card: "#080C14",
-  cardSoft: "#0c0e13",
-  border: "#111827",
-  borderSoft: "#1f2430",
-  text: "#f9fafb",
-  sub: "#9ca3af",
-  accent: "#f97316",
-  accentSoft: "rgba(249,115,22,0.16)",
-  success: "#22c55e",
-  warn: "#facc15",
-  danger: "#fb7185",
-  info: "#60a5fa",
-};
-
-type DebugEvent = {
-  kind: "feedback_applied" | "external_applied";
-  whenISO: string;
-  sessionId?: string;
-  rpe?: number;
-  fatigue?: number;
-  pain?: number;
-  recoveryPerceived?: number;
-  totalToday?: number;
-  deltaLoad?: number;
-  atl: number;
-  ctl: number;
-  tsb: number;
-  phase?: string;
-  phaseCount?: number;
-  source?: "match" | "club" | "other" | string;
-  note?: string;
-};
-
-const EMPTY_LOG: ReadonlyArray<DebugEvent> = Object.freeze([]);
-const NOOP = () => {};
+const palette = theme.colors;
 
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() &&
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate();
 
-function Badge({
-  label,
-  tone = "default",
-}: {
-  label: string;
-  tone?: "default" | "ok" | "warn";
-}) {
-  const bg =
-    tone === "ok"
-      ? "rgba(34,197,94,0.14)"
-      : tone === "warn"
-      ? "rgba(250,204,21,0.14)"
-      : "rgba(148,163,184,0.18)";
-  const color =
-    tone === "ok" ? "#bbf7d0" : tone === "warn" ? "#fef3c7" : "#e5e7eb";
-  const borderColor =
-    tone === "ok" ? "#22c55e" : tone === "warn" ? "#facc15" : "#4b5563";
-
-  return (
-    <View
-      style={[
-        styles.badge,
-        { backgroundColor: bg, borderColor },
-      ]}
-    >
-      <Text style={[styles.badgeText, { color }]}>{label}</Text>
-    </View>
-  );
-}
+const toDateKey = (value?: string) => (value ?? "").slice(0, 10);
 
 export default function HomeScreen() {
   type RootNav = {
@@ -99,11 +45,16 @@ export default function HomeScreen() {
   };
   const nav = useNavigation<RootNav>();
   const resetTrainingStore = useTrainingStore((s) => s.resetForUser);
+  const clearModeForUid = useAppModeStore((s) => s.clearForUid);
 
   const handleLogout = async () => {
     try {
+      const uid = auth.currentUser?.uid ?? null;
       await signOut(auth);
       resetTrainingStore(null);
+      if (uid) {
+        await clearModeForUid(uid);
+      }
     } catch {
       Alert.alert("Déconnexion", "Échec de la déconnexion. Réessaie.");
     }
@@ -147,12 +98,17 @@ export default function HomeScreen() {
   const atl = useTrainingStore((s) => s.atl);
   const ctl = useTrainingStore((s) => s.ctl);
   const tsb = useTrainingStore((s) => s.tsb);
+  const tsbHistory = useTrainingStore((s) => s.tsbHistory ?? []);
   const devNowISO = useTrainingStore((s) => s.devNowISO);
   const externalLoads = useTrainingStore((s) => s.externalLoads);
   const clubTrainingDays = useTrainingStore((s) => s.clubTrainingDays ?? []);
   const matchDays = useTrainingStore((s) => s.matchDays ?? []);
   const runTestHarness = useTrainingStore((s) => s.runTestHarness);
   const plannedFksDays = useTrainingStore((s) => s.plannedFksDays ?? []);
+  const microcycleGoal = useTrainingStore((s) => s.microcycleGoal);
+  const microcycleSessionIndex = useTrainingStore((s) => s.microcycleSessionIndex);
+  const weekStart = useSettingsStore((s) => s.weekStart);
+  const weeklyGoal = useSettingsStore((s) => s.weeklyGoal ?? 2);
 
   const dailyApplied = useTrainingStore((s) => s.dailyApplied);
   const lastAppliedDate = useTrainingStore((s) => s.lastAppliedDate);
@@ -163,6 +119,34 @@ export default function HomeScreen() {
 
   const sessions = useTrainingStore((s) => s.sessions);
   const lastAiSessionV2 = useTrainingStore((s) => s.lastAiSessionV2);
+
+  const loadSeries = useMemo(() => {
+    const today = devNowISO ? new Date(devNowISO) : new Date();
+    const daysBack = 7;
+    const warmup = 21;
+    const totalDays = daysBack + warmup;
+    const orderedDays = Array.from({ length: totalDays }).map((_, idx) =>
+      subDays(today, totalDays - 1 - idx)
+    );
+    let atlSeed = TRAINING_DEFAULTS.ATL0;
+    let ctlSeed = TRAINING_DEFAULTS.CTL0;
+    const atlArr: number[] = [];
+    const ctlArr: number[] = [];
+
+    orderedDays.forEach((d, idx) => {
+      const key = d.toISOString().slice(0, 10);
+      const load = Number(dailyApplied?.[key] ?? 0) || 0;
+      const next = updateTrainingLoad(atlSeed, ctlSeed, load, { dtDays: 1 });
+      atlSeed = next.atl;
+      ctlSeed = next.ctl;
+      if (idx >= warmup) {
+        atlArr.push(Number(next.atl.toFixed(1)));
+        ctlArr.push(Number(next.ctl.toFixed(1)));
+      }
+    });
+
+    return { atlArr, ctlArr };
+  }, [dailyApplied, devNowISO]);
 
   const pendingSession = useMemo(
     () =>
@@ -176,25 +160,6 @@ export default function HomeScreen() {
     [sessions]
   );
 
-
-  const debugLogRaw = useTrainingStore((s) => s.debugLog ?? EMPTY_LOG);
-  const clearDebugLog = useTrainingStore((s) => s.clearDebugLog ?? NOOP);
-  const debugLog = debugLogRaw as ReadonlyArray<DebugEvent>;
-  const journal = useMemo(() => {
-    return (debugLog ?? []).slice(0, 5).map((ev: DebugEvent) => {
-      const date = ev.whenISO ? ev.whenISO.slice(0, 10) : "";
-      const label =
-        ev.kind === "external_applied"
-          ? `Charge externe ${ev.source ?? ""} · Δcharge ${Math.round(
-              ev.deltaLoad ?? 0
-            )} · ATL ${ev.atl.toFixed(1)} · CTL ${ev.ctl.toFixed(1)} · TSB ${ev.tsb.toFixed(1)}`
-          : `Feedback RPE ${ev.rpe ?? "-"} · Δcharge ${Math.round(
-              ev.deltaLoad ?? 0
-            )} · ATL ${ev.atl.toFixed(1)} · CTL ${ev.ctl.toFixed(1)} · TSB ${ev.tsb.toFixed(1)}`;
-      return { date, label };
-    });
-  }, [debugLog]);
-
   const todayKey = useMemo(() => {
     const iso = devNowISO ?? new Date().toISOString();
     return iso.slice(0, 10);
@@ -206,9 +171,30 @@ export default function HomeScreen() {
     if (tsb < 0) return "OK mais reste prudent.";
     return "Tu es prêt à envoyer de la qualité.";
   }, [tsb]);
+
+  const readinessLabel = useMemo(() => {
+    if (tsb <= -15) return "Surcharge";
+    if (tsb <= -8) return "Fatigue";
+    if (tsb < 0) return "Stable";
+    return "Prêt";
+  }, [tsb]);
+
+  const chargeLabel = useMemo(() => {
+    if (tsb <= -15) return "Charge très élevée";
+    if (tsb <= -8) return "Charge élevée";
+    if (tsb < 0) return "Charge modérée";
+    return "Charge bien maîtrisée";
+  }, [tsb]);
+
+  const readinessPercent = useMemo(() => {
+    const value = ((tsb + 20) / 30) * 100;
+    return Math.max(0, Math.min(100, Math.round(value)));
+  }, [tsb]);
+
+  const weekStartIndex = weekStart === "sun" ? 0 : 1;
   const weekDays = useMemo(() => {
-    const todayReal = new Date();
-    const start = startOfWeek(todayReal, { weekStartsOn: 1 });
+    const todayReal = devNowISO ? new Date(devNowISO) : new Date();
+    const start = startOfWeek(todayReal, { weekStartsOn: weekStartIndex });
     const days: {
       key: string;
       label: string;
@@ -226,12 +212,12 @@ export default function HomeScreen() {
       const label = format(d, "EEEEE", { locale: fr }).toUpperCase();
 
       const hasFks = sessions.some((s: any) => {
-        const dateStr = (s?.dateISO ?? s?.date ?? "").slice(0, 10);
+        const dateStr = toDateKey(s?.dateISO ?? s?.date);
         return dateStr === key && s.completed;
       });
 
       const hasExt = (externalLoads ?? []).some((e: any) => {
-        const dateStr = (e?.dateISO ?? e?.date ?? "").slice(0, 10);
+        const dateStr = toDateKey(e?.dateISO ?? e?.date);
         return dateStr === key;
       });
 
@@ -262,9 +248,49 @@ export default function HomeScreen() {
     }
 
     return days;
-  }, [sessions, externalLoads, clubTrainingDays, matchDays, plannedFksDays]);
+  }, [
+    sessions,
+    externalLoads,
+    clubTrainingDays,
+    matchDays,
+    plannedFksDays,
+    weekStartIndex,
+    devNowISO,
+  ]);
 
   const onPressNew = () => {
+    const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
+    const microIdx = Math.max(0, Math.trunc(microcycleSessionIndex ?? 0));
+    const cycleCompleted = Boolean(cycleId) && microIdx >= MICROCYCLE_TOTAL_SESSIONS_DEFAULT;
+    if (!cycleId) {
+      Alert.alert(
+        "Choisir un cycle",
+        "Choisis ton cycle (playlist) pour que FKS puisse te proposer des séances cohérentes.",
+        [
+          {
+            text: "Choisir mon cycle",
+            onPress: () => nav.navigate("CycleModal", { mode: "select", origin: "home" }),
+          },
+          { text: "Annuler", style: "cancel" },
+        ]
+      );
+      return;
+    }
+    if (cycleCompleted) {
+      Alert.alert(
+        "Cycle terminé",
+        "Bien joué. Choisis un nouveau cycle pour continuer.",
+        [
+          {
+            text: "Choisir un nouveau cycle",
+            onPress: () => nav.navigate("CycleModal", { mode: "select", origin: "home" }),
+          },
+          { text: "Annuler", style: "cancel" },
+        ]
+      );
+      return;
+    }
+
     if (pendingSession && !DEV_FLAGS.ENABLED) {
       const date = (pendingSession as any).dateISO?.slice(0, 10) ?? "";
       Alert.alert(
@@ -310,8 +336,8 @@ export default function HomeScreen() {
         // mode dev : on autorise plusieurs séances par jour
       } else {
         Alert.alert(
-          "Déjà validé aujourd’hui",
-          "Tu as déjà appliqué la charge pour aujourd’hui. Reviens demain ou ajoute une charge externe."
+          "Déjà validé aujourd'hui",
+          "Tu as déjà appliqué la charge pour aujourd'hui. Reviens demain ou ajoute une charge externe."
         );
         return;
       }
@@ -343,7 +369,7 @@ export default function HomeScreen() {
     if (!latest) {
       Alert.alert(
         "Aucune séance IA",
-        "Génère une séance d’abord pour la prévisualiser."
+        "Génère une séance d'abord pour la prévisualiser."
       );
       return;
     }
@@ -353,7 +379,7 @@ export default function HomeScreen() {
     if (!v2) {
       Alert.alert(
         "Séance sans blueprint",
-        "Cette séance n’a pas de données IA associées."
+        "Cette séance n'a pas de données IA associées."
       );
       return;
     }
@@ -362,6 +388,29 @@ export default function HomeScreen() {
       v2,
       plannedDateISO,
       sessionId: latest?.id,
+    } as never);
+  };
+
+  const startPendingSession = () => {
+    if (!pendingSession) return;
+    const v2 =
+      (pendingSession as any).aiV2 ??
+      (pendingSession as any).ai ??
+      lastAiSessionV2?.v2;
+    const plannedDateISO =
+      (pendingSession as any).dateISO?.slice(0, 10) ?? "";
+    if (v2) {
+      nav.navigate("SessionLive" as never, {
+        v2,
+        plannedDateISO,
+        sessionId: (pendingSession as any).id,
+      } as never);
+      return;
+    }
+    nav.navigate("SessionPreview" as never, {
+      v2: lastAiSessionV2?.v2,
+      plannedDateISO,
+      sessionId: (pendingSession as any).id,
     } as never);
   };
 
@@ -389,86 +438,93 @@ export default function HomeScreen() {
     return `Séance planifiée · ${intens} · ${focus}`;
   }, [pendingSession]);
 
+  const nextSessionShort = useMemo(() => {
+    if (!pendingSession) return "Aucune";
+    const raw = (pendingSession as any).dateISO ?? (pendingSession as any).date ?? "";
+    const dateKey = raw.slice(0, 10);
+    if (!dateKey) return "À planifier";
+    const target = new Date(`${dateKey}T00:00:00.000Z`);
+    const today = devNowISO ? new Date(devNowISO) : new Date();
+    const todayKeyLocal = today.toISOString().slice(0, 10);
+    let when = format(target, "EEE dd MMM", { locale: fr });
+    if (dateKey === todayKeyLocal) when = "Aujourd'hui";
+    if (dateKey === addDays(today, 1).toISOString().slice(0, 10)) when = "Demain";
+
+    const v2 = (pendingSession as any).aiV2 ?? (pendingSession as any).ai;
+    const focus = v2?.focus_primary || v2?.focus || "";
+    const label = focus ? `${when} · ${focus}` : when;
+    return label;
+  }, [pendingSession, devNowISO]);
+
+  const weekKeySet = useMemo(
+    () => new Set(weekDays.map((d) => d.key)),
+    [weekDays]
+  );
+
+  const plannedThisWeek = useMemo(
+    () => weekDays.filter((d) => d.hasPlanned).length,
+    [weekDays]
+  );
+
   const weekSummary = useMemo(() => {
-    const now = new Date();
-    const weekAgo = subDays(now, 7).getTime();
     const fksCount = sessions.filter((s: any) => {
-      const d = new Date(s?.dateISO ?? s?.date ?? 0).getTime();
-      return s.completed && d >= weekAgo;
+      const key = toDateKey(s?.dateISO ?? s?.date);
+      return s.completed && weekKeySet.has(key);
     }).length;
     const extCount = (externalLoads ?? []).filter((e: any) => {
-      const d = new Date(e?.dateISO ?? e?.date ?? 0).getTime();
-      return d >= weekAgo;
+      const key = toDateKey(e?.dateISO ?? e?.date);
+      return weekKeySet.has(key);
     }).length;
+    const remaining = Math.max(0, weeklyGoal - fksCount);
     const message =
-      fksCount >= 2
+      fksCount >= weeklyGoal
         ? "Bonne zone cette semaine."
-        : "Ajoute une séance légère pour optimiser.";
+        : remaining <= 1
+        ? "Ajoute une séance légère pour optimiser."
+        : `Ajoute ${remaining} séances légères pour optimiser.`;
     return { fksCount, extCount, message };
-  }, [sessions, externalLoads]);
-
-  const lastEvents = useMemo(() => {
-    const events: { date: string; label: string }[] = [];
-    sessions
-      .filter((s: any) => s.completed)
-      .forEach((s: any) => {
-        const date = (s.dateISO ?? s.date ?? "").slice(0, 10);
-        events.push({
-          date,
-          label: `Séance FKS · RPE ${
-            s.feedback?.rpe ?? s.rpe ?? "-"
-          } · ${Math.round(s.durationMin ?? s.volumeScore ?? 45)} min`,
-        });
-      });
-    (externalLoads ?? []).forEach((e: any) => {
-      const date = (e.dateISO ?? e.date ?? "").slice(0, 10);
-      events.push({
-        date,
-        label: `${e.source ?? "club"} · RPE ${e.rpe} · ${
-          e.durationMin ?? "?"
-        } min`,
-      });
-    });
-    return events
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 3);
-  }, [sessions, externalLoads]);
+  }, [sessions, externalLoads, weekKeySet, weeklyGoal]);
 
   const tsbColor =
     tsb >= 0 ? palette.success : tsb <= -15 ? palette.danger : palette.accent;
 
   const athleteName = auth.currentUser?.displayName ?? "athlète";
 
+  const activityStreak = useMemo(() => {
+    const activity = new Set<string>();
+    sessions
+      .filter((s: any) => s.completed)
+      .forEach((s: any) => activity.add(toDateKey(s?.dateISO ?? s?.date)));
+    (externalLoads ?? []).forEach((e: any) =>
+      activity.add(toDateKey(e?.dateISO ?? e?.date))
+    );
+
+    const base = devNowISO ? new Date(devNowISO) : new Date();
+    let count = 0;
+    for (let i = 0; i < 10; i += 1) {
+      const key = subDays(base, i).toISOString().slice(0, 10);
+      if (!activity.has(key)) break;
+      count += 1;
+    }
+    return count;
+  }, [sessions, externalLoads, devNowISO]);
+
+  // Cycle info
+  const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
+  const cycleData = cycleId ? MICROCYCLES[cycleId] : null;
+  const microIdx = Math.max(0, Math.trunc(microcycleSessionIndex ?? 0));
+  const cycleProgressRatio = cycleId ? microIdx / MICROCYCLE_TOTAL_SESSIONS_DEFAULT : 0;
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: palette.bg }}>
+    <SafeAreaView style={styles.safeArea}>
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={styles.screenContainer}
         showsVerticalScrollIndicator={false}
       >
-        {/* Bouton déconnexion (en plus du header) */}
-        <View style={{ alignItems: "flex-end" }}>
-          <TouchableOpacity
-            onPress={handleLogout}
-            style={{
-              backgroundColor: palette.card,
-              borderColor: palette.border,
-              borderWidth: 1,
-              borderRadius: 10,
-              paddingVertical: 8,
-              paddingHorizontal: 12,
-            }}
-          >
-            <Text style={{ color: palette.sub, fontWeight: "700", fontSize: 12 }}>Déconnexion</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* HEADER TEXTE */}
-        <View>
-          <Text style={styles.helloTitle}>Salut, {athleteName}</Text>
-          <Text style={styles.helloSub}>
-            FKS ajuste ta charge au jour le jour.
-          </Text>
+        {/* HEADER SIMPLE */}
+        <View style={styles.header}>
+          <Text style={styles.headerGreeting}>Salut, {athleteName}</Text>
         </View>
 
         {DEV_FLAGS.ENABLED && (
@@ -479,319 +535,98 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
-        {/* HERO FORM & CHARGE — NE PAS TOUCHER */}
-        <View style={styles.heroCard}>
-          <View style={styles.heroGlow} />
-          <View style={styles.heroTopRow}>
-            <View>
-              <Text style={styles.heroTitle}>Forme & charge</Text>
-              <Text style={styles.heroSubtitle}>{todayKey}</Text>
-            </View>
-            <View style={styles.heroBadge}>
-              <Text style={styles.heroBadgeLabel}>TSB</Text>
-              <Text style={[styles.heroBadgeValue, { color: tsbColor }]}>
-                {tsb.toFixed(1)}
-              </Text>
-            </View>
-          </View>
+        {/* READINESS CARD - GROS GRAPHIQUE */}
+        <HomeReadinessCard
+          todayLabel={todayKey}
+          tsb={tsb}
+          tsbColor={tsbColor}
+          readinessPercent={readinessPercent}
+          readinessLabel={readinessLabel}
+          fatigueText={fatigueText}
+          phase={phase}
+          phaseCount={phaseCount}
+          atl={atl}
+          ctl={ctl}
+          tsbHistory={tsbHistory}
+        />
 
-          <View style={styles.heroBottomRow}>
-            <View style={styles.heroStat}>
-              <Text style={styles.heroStatLabel}>Phase</Text>
-              <Text style={styles.heroStatValue}>{phase ?? "—"}</Text>
-              <Text style={styles.heroStatSub}>
-                Séance #{phaseCount ?? 0} dans cette phase
-              </Text>
-            </View>
-            <View style={styles.heroDivider} />
-            <View style={styles.heroStat}>
-              <Text style={styles.heroStatLabel}>Charge interne</Text>
-              <Text style={styles.heroStatValue}>
-                ATL {atl.toFixed(1)} · CTL {ctl.toFixed(1)}
-              </Text>
-              <Text style={styles.heroStatSub}>{fatigueText}</Text>
-            </View>
-          </View>
-        </View>
+        {/* CYCLE HERO */}
+        {cycleData ? (
+          <HomeCycleHero
+            label={cycleData.label}
+            sub={`${microIdx}/${MICROCYCLE_TOTAL_SESSIONS_DEFAULT} séances complétées`}
+            iconName={cycleData.icon}
+            progressRatio={cycleProgressRatio}
+            primaryLabel="Voir le cycle"
+            onPrimary={() => nav.navigate("CycleModal", { mode: "view", cycleId })}
+            showManage
+            onManage={() => nav.navigate("CycleModal", { mode: "select", origin: "home" })}
+          />
+        ) : (
+          <HomeCycleHero
+            label="Aucun cycle sélectionné"
+            sub="Choisis un cycle pour structurer ta prépa"
+            iconName={null}
+            progressRatio={0}
+            primaryLabel="Choisir un cycle"
+            onPrimary={() => nav.navigate("CycleModal", { mode: "select", origin: "home" })}
+          />
+        )}
 
-        {/* SECTION — CETTE SEMAINE */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Cette semaine</Text>
-            <View style={styles.sectionChip}>
-              <Text style={styles.sectionChipText}>
-                {weekSummary.fksCount} FKS · {weekSummary.extCount} club/match
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.weekCard}>
-            <View style={styles.weekTopRow}>
-              <Text style={styles.weekLabel}>Volume & séances</Text>
-              <Text style={styles.weekHint}>{weekSummary.message}</Text>
-            </View>
-
-            <View style={styles.weekDaysRow}>
-              {weekDays.map((d) => (
-                <View key={d.key} style={styles.weekDayCell}>
-                  <Text
-                    style={[
-                      styles.weekDayLabel,
-                      d.isToday && styles.weekDayLabelToday,
-                    ]}
-                  >
-                    {d.label}
-                  </Text>
-                </View>
-              ))}
-            </View>
-
-            <View style={styles.weekDotsRow}>
-              {weekDays.map((d) => {
-                const hasSomething =
-                  d.hasFks || d.hasExt || d.hasClub || d.hasMatch;
-                let dot = palette.sub;
-                if (d.hasMatch) dot = palette.danger;
-                else if (d.hasClub) dot = palette.accent;
-                else if (d.hasFks) dot = palette.success;
-                else if (d.hasExt) dot = palette.info;
-
-                return (
-                  <View key={d.key + "_dots"} style={styles.weekDayCell}>
-                    <View
-                      style={[
-                        styles.weekDotWrapper,
-                        d.isToday && styles.weekDotWrapperToday,
-                      ]}
-                    >
-                      {hasSomething && (
-                        <View
-                          style={[styles.weekDot, { backgroundColor: dot }]}
-                        />
-                      )}
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-
-            <View style={styles.weekLegendRow}>
-              <View style={styles.weekLegendItem}>
-                <View
-                  style={[styles.weekLegendDot, { backgroundColor: palette.success }]}
-                />
-                <Text style={styles.weekLegendText}>Séance FKS</Text>
-              </View>
-              <View style={styles.weekLegendItem}>
-                <View
-                  style={[styles.weekLegendDot, { backgroundColor: palette.info }]}
-                />
-                <Text style={styles.weekLegendText}>Charge externe</Text>
-              </View>
-              <View style={styles.weekLegendItem}>
-                <View
-                  style={[
-                    styles.weekLegendDot,
-                    { backgroundColor: palette.accent },
-                  ]}
-                />
-                <Text style={styles.weekLegendText}>Entraînement club</Text>
-              </View>
-              <View style={styles.weekLegendItem}>
-                <View
-                  style={[
-                    styles.weekLegendDot,
-                    { backgroundColor: palette.danger },
-                  ]}
-                />
-                <Text style={styles.weekLegendText}>Match</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* SECTION — PROCHAINE SÉANCE */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Prochaine séance FKS</Text>
-            <Badge
-              label={pendingSession ? "Planifiée" : "À générer"}
-              tone={pendingSession ? "ok" : "default"}
-            />
-          </View>
-
-          <View style={styles.nextCard}>
-            <View style={styles.nextTopRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.nextMainText}>{upcomingSessionLabel}</Text>
-                {pendingSession && (
-                  <Text style={styles.nextSubText}>
-                    Séance en attente. Feedback requis pour débloquer la suivante.
-                  </Text>
-                )}
-              </View>
-            </View>
-
-            <View style={styles.nextDivider} />
-
-            <View style={styles.nextActionsRow}>
-              <TouchableOpacity
-                onPress={
-                  pendingSession
-                    ? () =>
-                        nav.navigate(
-                          "SessionPreview" as never,
-                          {
-                            v2:
-                              (pendingSession as any).aiV2 ??
-                              (pendingSession as any).ai ??
-                              lastAiSessionV2?.v2,
-                            plannedDateISO:
-                              (pendingSession as any).dateISO?.slice(0, 10) ??
-                              "",
-                            sessionId: (pendingSession as any).id,
-                          } as never
-                        )
-                    : onPressNew
-                }
-                style={styles.nextPrimary}
-                activeOpacity={0.9}
-              >
-                <Text style={styles.nextPrimaryText}>
-                  {pendingSession ? "Lancer la séance" : "Générer une séance"}
-                </Text>
-                <Text style={styles.nextPrimaryArrow}>→</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={onPressPreview}
-                style={styles.nextSecondary}
-                activeOpacity={0.9}
-              >
-                <Text style={styles.nextSecondaryText}>Voir la séance IA</Text>
-              </TouchableOpacity>
-            </View>
-
-            {pendingSession && (
-              <TouchableOpacity
-                onPress={() =>
+        {/* NEXT SESSION CARD */}
+        <HomeNextSessionCard
+          hasPending={!!pendingSession}
+          upcomingLabel={upcomingSessionLabel}
+          onPrimary={pendingSession ? startPendingSession : onPressNew}
+          primaryLabel={pendingSession ? "Lancer la séance" : "Générer une séance"}
+          onSecondary={onPressPreview}
+          secondaryLabel="Voir la séance IA"
+          onFeedback={
+            pendingSession
+              ? () =>
                   nav.navigate(
                     "Feedback" as never,
                     { sessionId: (pendingSession as any).id } as never
                   )
-                }
-                style={styles.nextFeedbackChip}
-                activeOpacity={0.9}
-              >
-                <Text style={styles.nextFeedbackText}>Donner mon feedback</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
+              : undefined
+          }
+        />
 
-        {/* SECTION — DERNIERS ÉVÈNEMENTS */}
+        {/* DASHBOARD CARD */}
+        <HomeDashboardCard
+          chargeLabel={chargeLabel}
+          tsbText={fatigueText}
+          tsbValue={tsb}
+          tsbColor={tsbColor}
+          atlSeries={loadSeries.atlArr}
+          ctlSeries={loadSeries.ctlArr}
+          weeklyCount={weekSummary.fksCount}
+          nextLabel={nextSessionShort}
+        />
+
+        {/* WEEK SUMMARY CARD */}
         <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Derniers événements</Text>
-            <TouchableOpacity
-              onPress={() => nav.navigate("SessionHistory" as never)}
-            >
-              <Text style={styles.sectionLink}>Historique complet</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.eventsCard}>
-            {lastEvents.length === 0 ? (
-              <Text style={styles.eventsEmpty}>
-                Rien de récent. Génère une séance ou ajoute un match / entraînement
-                club.
-              </Text>
-            ) : (
-              <View style={{ flexDirection: "row" }}>
-                <View style={styles.eventsTimeline} />
-                <View style={{ flex: 1, gap: 8 }}>
-                  {lastEvents.map((ev, idx) => (
-                    <View key={`${ev.date}-${idx}`} style={styles.eventRow}>
-                      <View style={styles.eventDot} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.eventDate}>{ev.date}</Text>
-                        <Text style={styles.eventLabel}>{ev.label}</Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            )}
-          </View>
+          <Text style={styles.sectionTitle}>Cette semaine</Text>
+          <HomeWeekSummaryCard
+            title=""
+            summaryLabel={`${weekSummary.fksCount} FKS · ${weekSummary.extCount} club/match`}
+            message={weekSummary.message}
+            weekDays={weekDays}
+            plannedThisWeek={plannedThisWeek}
+            weeklyGoal={weeklyGoal}
+            activityStreak={activityStreak}
+            onManageRoutine={() => nav.navigate("Routine" as never)}
+          />
         </View>
 
-        {/* SECTION — JOURNAL CHARGE */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Journal charge</Text>
-            <TouchableOpacity onPress={clearDebugLog}>
-              <Text style={styles.sectionLink}>Vider</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.eventsCard}>
-            {journal.length === 0 ? (
-              <Text style={styles.eventsEmpty}>
-                Aucun événement de charge pour l’instant.
-              </Text>
-            ) : (
-              <View style={{ flexDirection: "row" }}>
-                <View style={styles.eventsTimeline} />
-                <View style={{ flex: 1, gap: 8 }}>
-                  {journal.map((ev, idx) => (
-                    <View key={`${ev.date}-${idx}`} style={styles.eventRow}>
-                      <View style={styles.eventDot} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.eventDate}>{ev.date}</Text>
-                        <Text style={styles.eventLabel}>{ev.label}</Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            )}
-          </View>
-        </View>
-
-        {/* SECTION — ACTIONS RAPIDES */}
-        <View style={[styles.section, { marginBottom: 8 }]}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Actions rapides</Text>
-          </View>
-
-          <View style={styles.actionsCard}>
-            <View style={styles.actionsRow}>
-              <TouchableOpacity
-                onPress={() => nav.navigate("ExternalLoad" as never)}
-                style={styles.quickAction}
-                activeOpacity={0.9}
-              >
-                <Text style={styles.quickActionLabel}>+ Charge externe</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => nav.navigate("ProfileSetup" as never)}
-                style={styles.quickAction}
-                activeOpacity={0.9}
-              >
-                <Text style={styles.quickActionLabel}>Profil joueur</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.actionsRow}>
-              <TouchableOpacity
-                onPress={() => nav.navigate("AiContextDebug" as never)}
-                style={styles.quickAction}
-                activeOpacity={0.9}
-              >
-                <Text style={styles.quickActionLabel}>ATL / CTL / TSB manuels</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+        {/* LIEN PROGRESSION */}
+        <TouchableOpacity
+          onPress={() => nav.navigate("Progression")}
+          style={styles.linkRow}
+        >
+          <Text style={styles.linkText}>Voir ma progression complète</Text>
+          <Text style={styles.linkArrow}>→</Text>
+        </TouchableOpacity>
 
         <View style={{ height: 12 }} />
       </ScrollView>
@@ -801,27 +636,30 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   screenContainer: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
     gap: 16,
     backgroundColor: palette.bg,
   },
-
-  helloTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: palette.text,
+  safeArea: {
+    flex: 1,
+    backgroundColor: palette.bg,
   },
-  helloSub: {
-    marginTop: 4,
-    fontSize: 13,
-    color: palette.sub,
+  header: {
+    marginBottom: 4,
+  },
+  headerGreeting: {
+    fontSize: 28,
+    fontWeight: "900",
+    color: palette.text,
   },
   devChip: {
     alignSelf: "flex-start",
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: palette.bgSoft,
+    backgroundColor: palette.cardSoft,
     borderWidth: 1,
     borderColor: palette.borderSoft,
   },
@@ -829,367 +667,30 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: palette.sub,
   },
-
-  // HERO (inchangé)
-  heroCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: palette.border,
-    padding: 16,
-    backgroundColor: palette.card,
-    overflow: "hidden",
-  },
-  heroGlow: {
-    position: "absolute",
-    top: -60,
-    right: -80,
-    width: 220,
-    height: 220,
-    borderRadius: 999,
-    backgroundColor: palette.accentSoft,
-    opacity: 0.9,
-  },
-  heroTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12,
-  },
-  heroTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: palette.text,
-  },
-  heroSubtitle: {
-    fontSize: 12,
-    color: palette.sub,
-    marginTop: 4,
-  },
-  heroBadge: {
-    alignItems: "flex-end",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: palette.bgSoft,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-  },
-  heroBadgeLabel: {
-    fontSize: 10,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    color: palette.sub,
-  },
-  heroBadgeValue: {
-    fontSize: 16,
-    fontWeight: "700",
-    marginTop: 2,
-  },
-  heroBottomRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 4,
-  },
-  heroStat: {
-    flex: 1,
-  },
-  heroStatLabel: {
-    fontSize: 11,
-    color: palette.sub,
-  },
-  heroStatValue: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: palette.text,
-    marginTop: 2,
-  },
-  heroStatSub: {
-    fontSize: 11,
-    color: palette.sub,
-    marginTop: 2,
-  },
-  heroDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: palette.border,
-    marginHorizontal: 16,
-  },
-
-  // Sections génériques
   section: {
-    gap: 8,
-  },
-  sectionHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    gap: 10,
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: "700",
+    fontWeight: "800",
     color: palette.text,
+    paddingHorizontal: 4,
   },
-  sectionChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: palette.bgSoft,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-  },
-  sectionChipText: {
-    fontSize: 11,
-    color: palette.sub,
-  },
-  sectionLink: {
-    fontSize: 11,
-    color: palette.sub,
-  },
-
-  // Badge composant
-  badge: {
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  badgeText: {
-    fontWeight: "600",
-    fontSize: 11,
-  },
-
-  // Semaine
-  weekCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    padding: 12,
-    backgroundColor: palette.bgSoft,
-  },
-  weekTopRow: {
+  linkRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  weekLabel: {
-    fontSize: 12,
-    color: palette.sub,
-  },
-  weekHint: {
-    fontSize: 11,
-    color: palette.sub,
-  },
-  weekDaysRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 4,
-  },
-  weekDotsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  weekDayCell: {
-    flex: 1,
-    alignItems: "center",
-  },
-  weekDayLabel: {
-    fontSize: 10,
-    fontWeight: "500",
-    color: palette.sub,
-  },
-  weekDayLabelToday: {
-    color: palette.text,
-    fontWeight: "700",
-  },
-  weekDotWrapper: {
-    marginTop: 4,
-    width: 22,
-    height: 22,
-    borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-  },
-  weekDotWrapperToday: {
-    borderWidth: 1,
-    borderColor: palette.accent,
-  },
-  weekDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 999,
-  },
-  weekLegendRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    paddingVertical: 14,
     gap: 8,
-    marginTop: 10,
   },
-  weekLegendItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  weekLegendDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 999,
-  },
-  weekLegendText: {
-    fontSize: 10,
-    color: palette.sub,
-  },
-
-  // Prochaine séance
-  nextCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: palette.border,
-    padding: 12,
-    backgroundColor: palette.cardSoft,
-  },
-  nextTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  nextMainText: {
+  linkText: {
     fontSize: 14,
     fontWeight: "600",
-    color: palette.text,
-  },
-  nextSubText: {
-    marginTop: 4,
-    fontSize: 12,
-    color: palette.sub,
-  },
-  nextDivider: {
-    height: 1,
-    backgroundColor: palette.borderSoft,
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  nextActionsRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  nextPrimary: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: palette.accent,
-    backgroundColor: palette.accentSoft,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-  },
-  nextPrimaryText: {
-    fontSize: 13,
-    fontWeight: "600",
     color: palette.accent,
   },
-  nextPrimaryArrow: {
-    fontSize: 13,
+  linkArrow: {
+    fontSize: 16,
     color: palette.accent,
-  },
-  nextSecondary: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    backgroundColor: palette.bgSoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  nextSecondaryText: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: palette.text,
-  },
-  nextFeedbackChip: {
-    alignSelf: "flex-start",
-    marginTop: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-  },
-  nextFeedbackText: {
-    fontSize: 11,
-    color: palette.sub,
-  },
-
-  // Évènements
-  eventsCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    padding: 12,
-    backgroundColor: palette.bgSoft,
-  },
-  eventsEmpty: {
-    fontSize: 12,
-    color: palette.sub,
-  },
-  eventsTimeline: {
-    width: 2,
-    borderRadius: 999,
-    backgroundColor: palette.border,
-    marginRight: 10,
-    marginLeft: 2,
-  },
-  eventRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-    paddingVertical: 4,
-  },
-  eventDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 999,
-    backgroundColor: palette.accent,
-    marginTop: 4,
-  },
-  eventDate: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: palette.text,
-  },
-  eventLabel: {
-    fontSize: 12,
-    color: palette.sub,
-  },
-
-  // Actions rapides
-  actionsCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    padding: 12,
-    backgroundColor: palette.cardSoft,
-  },
-  actionsRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  quickAction: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    backgroundColor: palette.bgSoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  quickActionLabel: {
-    fontSize: 12,
-    color: palette.text,
-    fontWeight: "500",
+    fontWeight: "700",
   },
 });

@@ -4,16 +4,11 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-nati
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTrainingStore } from "../state/trainingStore";
 import { useNavigation } from "@react-navigation/native";
+import { theme } from "../constants/theme";
+import { Card } from "../components/ui/Card";
+import { SectionHeader } from "../components/ui/SectionHeader";
 
-const palette = {
-  bg: "#050509",
-  card: "#0c0e13",
-  border: "#1f2430",
-  text: "#f9fafb",
-  sub: "#9ca3af",
-  accent: "#f97316",
-  accentSoft: "#fed7aa",
-};
+const palette = theme.colors;
 
 export default function SessionHistoryScreen() {
   const sessions = useTrainingStore((s) => s.sessions);
@@ -34,7 +29,7 @@ export default function SessionHistoryScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: palette.bg }}>
       <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Historique</Text>
+        <SectionHeader title="Historique" />
         <Text style={styles.subtitle}>Tes dernières séances complétées.</Text>
 
         {sorted.length === 0 ? (
@@ -60,7 +55,6 @@ export default function SessionHistoryScreen() {
               return (
                 <TouchableOpacity
                   key={s.id}
-                  style={styles.row}
                   onPress={() => {
                     if (!canPreview) return;
                     const v2 = (s as any).aiV2 ?? (s as any).ai;
@@ -72,17 +66,19 @@ export default function SessionHistoryScreen() {
                   }}
                   activeOpacity={canPreview ? 0.85 : 1}
                 >
-                  <View>
-                    <Text style={styles.rowTitle}>{date}</Text>
-                    <Text style={styles.rowSub}>
-                      {focus} · RPE {rpe} · {dur}
-                    </Text>
-                    {canPreview ? (
-                      <Text style={styles.rowHint}>Voir le détail →</Text>
-                    ) : (
-                      <Text style={styles.rowHintMuted}>Aucun détail IA</Text>
-                    )}
-                  </View>
+                  <Card variant="surface" style={styles.row}>
+                    <View>
+                      <Text style={styles.rowTitle}>{date}</Text>
+                      <Text style={styles.rowSub}>
+                        {focus} · RPE {rpe} · {dur}
+                      </Text>
+                      {canPreview ? (
+                        <Text style={styles.rowHint}>Voir le détail →</Text>
+                      ) : (
+                        <Text style={styles.rowHintMuted}>Aucun détail IA</Text>
+                      )}
+                    </View>
+                  </Card>
                 </TouchableOpacity>
               );
             })}
@@ -95,15 +91,10 @@ export default function SessionHistoryScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 16, gap: 12 },
-  title: { fontSize: 22, fontWeight: "800", color: palette.text },
   subtitle: { color: palette.sub, fontSize: 14 },
   sub: { color: palette.sub, marginTop: 8 },
   row: {
-    backgroundColor: palette.card,
-    borderRadius: 12,
     padding: 12,
-    borderWidth: 1,
-    borderColor: palette.border,
   },
   rowTitle: { color: palette.text, fontWeight: "700", fontSize: 14 },
   rowSub: { color: palette.sub, marginTop: 2, fontSize: 13 },

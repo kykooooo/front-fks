@@ -10,47 +10,116 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRoute, RouteProp, useNavigation } from "@react-navigation/native";
 import type { AppStackParamList } from "../navigation/RootNavigator";
+import { theme } from "../constants/theme";
+import { useTrainingStore } from "../state/trainingStore";
+import { v2ToLocalSession } from "./newSession/transform";
 
-const palette = {
-  bg: "#050509",
-  bgSoft: "#050815",
-  card: "#080C14",
-  cardSoft: "#0c0e13",
-  border: "#111827",
-  borderSoft: "#1f2430",
-  text: "#f9fafb",
-  sub: "#9ca3af",
-  accent: "#f97316",
-  accentSoft: "rgba(249,115,22,0.18)",
-};
+const palette = theme.colors;
 
 type Prebuilt = {
   category: string;
   title: string;
-  intensity: string; // "easy" | "moderate" | "hard"
+  intensity: "easy" | "moderate" | "hard";
   duration: string;
   objective: string;
   detail: string[];
+  focus?: "run" | "strength" | "speed" | "circuit" | "plyo" | "mobility";
+  location?: "gym" | "pitch" | "home";
+  equipment?: string[];
+  tags?: string[];
+  level?: string;
   expectations?: string[]; // Consignes IA sur l'exécution de la séance/exos
+  rpe_target?: number;
 };
 
 const INTENSITY_LABEL: Record<string, string> = {
-  easy: "Easy",
-  moderate: "Moderate",
-  hard: "Hard",
+  easy: "Facile",
+  moderate: "Modéré",
+  hard: "Dur",
 };
 
 const INTENSITY_COLOR: Record<string, string> = {
-  easy: "#4ade80",
-  moderate: "#facc15",
-  hard: "#fb7185",
+  easy: palette.success,
+  moderate: palette.accent,
+  hard: palette.danger,
+};
+
+const LOCATION_LABEL: Record<string, string> = {
+  gym: "Salle",
+  pitch: "Terrain",
+  home: "Maison",
+};
+
+const FOCUS_LABEL: Record<string, string> = {
+  strength: "Force",
+  speed: "Vitesse",
+  run: "Endurance",
+  plyo: "Explosivité",
+  circuit: "Circuit",
+  mobility: "Mobilité",
+};
+
+const parseDurationMin = (raw?: string) => {
+  if (!raw) return undefined;
+  const matches = raw.match(/\d+/g);
+  if (!matches || matches.length === 0) return undefined;
+  const values = matches.map((m) => Number(m)).filter((n) => Number.isFinite(n));
+  if (!values.length) return undefined;
+  if (values.length === 1) return values[0];
+  const avg = values.reduce((a, b) => a + b, 0) / values.length;
+  return Math.round(avg);
+};
+
+const buildV2FromPrebuilt = (session: Prebuilt, expectations: string[]) => {
+  const detail = Array.isArray(session.detail) ? session.detail : [];
+  const blocks = detail.map((line, index) => {
+    const parts = line.split(":");
+    const left = parts[0]?.trim() ?? "";
+    const right = parts.slice(1).join(":").trim();
+    const blockTitle = left.length ? left : `Bloc ${index + 1}`;
+    const description = right.length ? right : line;
+    return {
+      name: blockTitle,
+      type: session.category?.toLowerCase(),
+      intensity: session.intensity,
+      items: [
+        {
+          name: blockTitle,
+          description,
+        },
+      ],
+    };
+  });
+
+  return {
+    version: "prebuilt_v1",
+    title: session.title,
+    subtitle: session.objective,
+    intensity: session.intensity,
+    focus_primary: session.focus ?? session.category?.toLowerCase() ?? "run",
+    duration_min: parseDurationMin(session.duration),
+    rpe_target:
+      typeof session.rpe_target === "number"
+        ? session.rpe_target
+        : session.intensity === "hard"
+        ? 8
+        : session.intensity === "easy"
+        ? 4
+        : 6,
+    location: session.location,
+    blocks,
+    coaching_tips: expectations,
+  };
 };
 
 export default function PrebuiltSessionDetailScreen() {
   const route =
     useRoute<RouteProp<AppStackParamList, "PrebuiltSessionDetail">>();
   const navigation = useNavigation<any>();
-  const session = route.params.session as Prebuilt;
+  const phase = useTrainingStore((s) => s.phase);
+  const devNowISO = useTrainingStore((s) => s.devNowISO);
+  const pushSession = useTrainingStore((s) => s.pushSession);
+  const session = route.params.session as unknown as Prebuilt;
   const expectations = Array.isArray(session.expectations)
     ? session.expectations.filter((line) => !!line && line.trim().length > 0)
     : [];
@@ -59,12 +128,25 @@ export default function PrebuiltSessionDetailScreen() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showCoachTip, setShowCoachTip] = useState(true);
   const detailLines = useMemo(
-    () =>
-      (session.detail ?? []).filter(
-        (line) => !/échauffement|warm[- ]?up|warmup|prep/i.test(line)
-      ),
+    () => (session.detail ?? []).filter((line) => !!line && line.trim().length > 0),
     [session.detail]
   );
+  const infoItems = useMemo(() => {
+    const items: Array<{ label: string; value: string }> = [];
+    const focusLabel = session.focus ? FOCUS_LABEL[session.focus] ?? session.focus : "";
+    if (focusLabel) items.push({ label: "Focus", value: focusLabel });
+    if (session.location) {
+      items.push({
+        label: "Lieu",
+        value: LOCATION_LABEL[session.location] ?? session.location,
+      });
+    }
+    if (session.level) items.push({ label: "Niveau", value: session.level });
+    if (session.equipment && session.equipment.length > 0) {
+      items.push({ label: "Matériel", value: session.equipment.join(", ") });
+    }
+    return items;
+  }, [session]);
 
   const intensityColor =
     INTENSITY_COLOR[session.intensity] ?? palette.accent;
@@ -72,9 +154,23 @@ export default function PrebuiltSessionDetailScreen() {
     INTENSITY_LABEL[session.intensity] ?? session.intensity;
 
   const handleUseSession = () => {
-    // TODO: brancher ici la logique pour créer/planifier une séance à partir de ce template
-    // Pour l'instant on se contente de revenir en arrière
-    navigation.goBack();
+    const v2 = buildV2FromPrebuilt(session, expectations);
+    const nowISO = devNowISO ?? new Date().toISOString();
+    const plannedDateISO = nowISO.slice(0, 10);
+    const local = v2ToLocalSession(v2 as any, phase as any, plannedDateISO);
+    const withMeta = {
+      ...local,
+      prebuiltMeta: {
+        version: "prebuilt_v1",
+        category: session.category,
+        title: session.title,
+      },
+    } as any;
+    pushSession(withMeta);
+    navigation.navigate(
+      "SessionLive" as never,
+      { v2, plannedDateISO, sessionId: withMeta.id } as never
+    );
   };
 
   useEffect(() => {
@@ -142,21 +238,29 @@ export default function PrebuiltSessionDetailScreen() {
               <Text style={styles.title}>{session.title}</Text>
               <Text style={styles.objective}>{session.objective}</Text>
             </View>
+
+            {Array.isArray(session.tags) && session.tags.length > 0 ? (
+              <View style={styles.metaRow}>
+                {session.tags.map((tag) => (
+                  <View key={tag} style={styles.metaTag}>
+                    <Text style={styles.metaTagText}>{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
           </View>
 
           {/* INFO RAPIDE */}
-          <View style={styles.infoRow}>
-            <View style={styles.infoCard}>
-              <Text style={styles.infoLabel}>Objectif</Text>
-              <Text style={styles.infoText}>Séance pré-construite FKS optimisée pour le foot.</Text>
+          {infoItems.length > 0 ? (
+            <View style={styles.infoGrid}>
+              {infoItems.map((item) => (
+                <View key={item.label} style={styles.infoCard}>
+                  <Text style={styles.infoLabel}>{item.label}</Text>
+                  <Text style={styles.infoText}>{item.value}</Text>
+                </View>
+              ))}
             </View>
-            <View style={styles.infoCard}>
-              <Text style={styles.infoLabel}>Utilisation</Text>
-              <Text style={styles.infoText}>
-                À intégrer telle quelle ou à adapter en fonction de la charge club.
-              </Text>
-            </View>
-          </View>
+          ) : null}
 
           {/* PLAN DETAILLE */}
           <View style={styles.planCard}>
@@ -350,14 +454,34 @@ const styles = StyleSheet.create({
     color: palette.sub,
     fontSize: 13,
   },
+  metaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 10,
+  },
+  metaTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.bgSoft,
+  },
+  metaTagText: {
+    fontSize: 11,
+    color: palette.sub,
+  },
 
   // INFO CARDS
-  infoRow: {
+  infoGrid: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 10,
   },
   infoCard: {
-    flex: 1,
+    minWidth: 150,
+    flexGrow: 1,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: palette.borderSoft,
@@ -504,7 +628,7 @@ const styles = StyleSheet.create({
     borderColor: palette.borderSoft,
   },
   timerButtonTextPrimary: {
-    color: "#0b0f19",
+    color: palette.bg,
     fontWeight: "700",
   },
   timerButtonTextSecondary: {
@@ -564,7 +688,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.accent,
   },
   mainButtonText: {
-    color: "#0b0f19",
+    color: palette.bg,
     fontWeight: "700",
     fontSize: 15,
   },

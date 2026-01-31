@@ -1,15 +1,11 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { theme } from "../constants/theme";
+import { Card } from "../components/ui/Card";
+import { Button } from "../components/ui/Button";
 
-const palette = {
-  bg: "#050509",
-  card: "#0c0e13",
-  text: "#f9fafb",
-  sub: "#9ca3af",
-  accent: "#f97316",
-  border: "#1f2430",
-};
+const palette = theme.colors;
 
 type Slide = { title: string; body: string };
 
@@ -41,10 +37,10 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
   return (
     <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
       <View style={styles.container}>
-        <View style={styles.card}>
+        <Card variant="surface" style={styles.card}>
           <Text style={styles.title}>{slide.title}</Text>
           <Text style={styles.body}>{slide.body}</Text>
-        </View>
+        </Card>
 
         <View style={styles.dots}>
           {slides.map((_, i) => (
@@ -58,9 +54,12 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
           ))}
         </View>
 
-        <TouchableOpacity style={styles.button} onPress={next} activeOpacity={0.9}>
-          <Text style={styles.buttonText}>{isLast ? "Commencer" : "Suivant"}</Text>
-        </TouchableOpacity>
+        <Button
+          label={isLast ? "Commencer" : "Suivant"}
+          onPress={next}
+          size="lg"
+          fullWidth
+        />
         <TouchableOpacity onPress={onDone} style={styles.skip} activeOpacity={0.8}>
           <Text style={styles.skipText}>Passer</Text>
         </TouchableOpacity>
@@ -78,10 +77,7 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   card: {
-    backgroundColor: palette.card,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: palette.border,
     padding: 20,
     gap: 12,
   },
@@ -99,13 +95,6 @@ const styles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 999, borderWidth: 1, borderColor: palette.border },
   dotActive: { backgroundColor: palette.accent },
   dotInactive: { backgroundColor: "transparent" },
-  button: {
-    backgroundColor: palette.accent,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  buttonText: { color: "#0b0f19", fontWeight: "800", fontSize: 16 },
   skip: { alignItems: "center" },
   skipText: { color: palette.sub, fontSize: 14 },
 });

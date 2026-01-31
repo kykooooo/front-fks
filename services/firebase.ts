@@ -11,9 +11,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   initializeFirestore,
   connectFirestoreEmulator,
-  // Tip: si tu veux la persistance offline plus tard
-  // memoryLocalCache,
-  // persistentLocalCache,
 } from "firebase/firestore";
 
 const apps = getApps();
@@ -31,15 +28,17 @@ export const db =
   (globalThis as any).__FKS_DB__ ||
   ((globalThis as any).__FKS_DB__ = initializeFirestore(app, {
     experimentalForceLongPolling: true,
-    // localCache: memoryLocalCache(), // ← active si tu veux un cache simple en mémoire
-    // localCache: persistentLocalCache(), // ← pour une vraie persistance offline (à tester selon SDK)
   }));
 
 // Emulateurs en dev (optionnel)
 if (__DEV__ && process.env.EXPO_PUBLIC_USE_EMULATORS === "1") {
   try {
     connectFirestoreEmulator(db, "127.0.0.1", 8080);
-  } catch {}
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[Firebase] Emulator connection failed (expected if emulator is not running):', err);
+    }
+  }
 }
 
 export { app };

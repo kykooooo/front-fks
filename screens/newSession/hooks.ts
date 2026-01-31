@@ -15,7 +15,8 @@ type AiContextState = {
 
 export function useAiContextLoader(
   storeHydrated: boolean,
-  setters: AiContextState
+  setters: AiContextState,
+  enabled: boolean = true
 ) {
   const {
     aiContext,
@@ -27,7 +28,7 @@ export function useAiContextLoader(
   } = setters;
 
   useEffect(() => {
-    if (!storeHydrated || aiContext) return;
+    if (!enabled || !storeHydrated || aiContext) return;
     let cancelled = false;
     (async () => {
       try {
@@ -51,7 +52,15 @@ export function useAiContextLoader(
     return () => {
       cancelled = true;
     };
-  }, [storeHydrated, aiContext, setAiContext, setContextLoading, setAvailableEquipment, setSelectedEquipment]);
+  }, [
+    enabled,
+    storeHydrated,
+    aiContext,
+    setAiContext,
+    setContextLoading,
+    setAvailableEquipment,
+    setSelectedEquipment,
+  ]);
 
   return { aiContext, contextLoading };
 }
@@ -63,6 +72,9 @@ export function useEnvironmentEquipment(
   setSelectedEquipment: React.Dispatch<React.SetStateAction<string[]>>
 ) {
   useEffect(() => {
+    const homeExtras = environment.includes("home")
+      ? ["home_small", "backpack", "water_bottles", "chair"]
+      : [];
     const allowed = catalog
       .filter((item) => {
         if (availableEquipment.length > 0 && !availableEquipment.includes(item.id)) return false;
@@ -70,7 +82,8 @@ export function useEnvironmentEquipment(
         if (item.source === "both") return true;
         return environment.includes(item.source as any);
       })
-      .map((item) => item.id);
+      .map((item) => item.id)
+      .concat(homeExtras);
 
     setSelectedEquipment((prev) => {
       const filtered = prev.filter((id) => allowed.includes(id));

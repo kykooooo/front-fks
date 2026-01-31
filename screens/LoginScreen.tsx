@@ -1,6 +1,7 @@
 // src/screens/LoginScreen.tsx
 import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, Alert } from "react-native";
+import { View, Text, TextInput, Pressable, Alert, StyleSheet } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { AuthStackParamList } from "../navigation/RootNavigator";
 import {
@@ -9,8 +10,15 @@ import {
 } from "firebase/auth";
 import { auth } from "../services/firebase";
 import { DEV_FLAGS } from "../config/devFlags";
+import { theme } from "../constants/theme";
+import { Button } from "../components/ui/Button";
+import { Card } from "../components/ui/Card";
+import { showError } from "../utils/errorHandler";
+import { trackEvent } from "../services/analytics";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
+
+const palette = theme.colors;
 
 export default function LoginScreen({ navigation }: Props) {
   const [email, setEmail] = useState("");
@@ -22,18 +30,13 @@ export default function LoginScreen({ navigation }: Props) {
       Alert.alert("Champs manquants", "Entre ton email et ton mot de passe.");
       return;
     }
-    if (DEV_FLAGS.ENABLED) {
-      console.log("[AUTH] Attempt login", email.trim());
-    }
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email.trim(), pwd);
-      // Debug: vérifie le currentUser après login
-      if (DEV_FLAGS.ENABLED) console.log("[AUTH] Login OK", auth.currentUser?.uid);
-      // onAuthStateChanged dans App.tsx basculera vers RootNavigator
+      trackEvent("login_success");
     } catch (e: any) {
-      if (DEV_FLAGS.ENABLED) console.log("[AUTH] Login error", e?.code, e?.message);
-      Alert.alert("Connexion échouée", e?.message ?? "Vérifie tes identifiants.");
+      trackEvent("login_failed", { code: e?.code ?? "unknown" });
+      showError(e, "Connexion");
     } finally {
       setLoading(false);
     }
@@ -46,72 +49,110 @@ export default function LoginScreen({ navigation }: Props) {
     }
     try {
       await sendPasswordResetEmail(auth, email.trim());
-      Alert.alert("Email envoyé", "Vérifie ta boîte mail.");
+      Alert.alert("Email envoyé", "Vérifie ta boîte mail pour réinitialiser ton mot de passe.");
     } catch (e: any) {
-      if (DEV_FLAGS.ENABLED) console.log("[AUTH] Reset error", e?.code, e?.message);
-      Alert.alert("Erreur", e?.message ?? "Impossible d'envoyer le mail.");
+      showError(e, "Réinitialisation mot de passe");
     }
   };
 
   return (
-    <View style={{ flex: 1, padding: 20, gap: 12, justifyContent: "center" }}>
-      <Text style={{ fontSize: 28, fontWeight: "700", marginBottom: 8 }}>
-        Bienvenue 👋
-      </Text>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Bienvenue 👋</Text>
+          <Text style={styles.subtitle}>Reprends ta prépa là où tu l’as laissée.</Text>
+        </View>
 
-      <TextInput
-        placeholder="Email"
-        autoCapitalize="none"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-        style={{
-          borderWidth: 1,
-          borderColor: "#ccc",
-          borderRadius: 12,
-          padding: 12,
-        }}
-      />
-      <TextInput
-        placeholder="Mot de passe"
-        secureTextEntry
-        value={pwd}
-        onChangeText={setPwd}
-        style={{
-          borderWidth: 1,
-          borderColor: "#ccc",
-          borderRadius: 12,
-          padding: 12,
-        }}
-      />
+        <Card variant="surface" style={styles.card}>
+          <Text style={styles.label}>Email</Text>
+          <TextInput
+            placeholder="email@exemple.com"
+            placeholderTextColor={palette.sub}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            value={email}
+            onChangeText={setEmail}
+            style={styles.input}
+            accessibilityLabel="Champ email"
+            accessibilityHint="Entre ton adresse email pour te connecter"
+          />
+          <Text style={styles.label}>Mot de passe</Text>
+          <TextInput
+            placeholder="••••••••"
+            placeholderTextColor={palette.sub}
+            secureTextEntry
+            value={pwd}
+            onChangeText={setPwd}
+            style={styles.input}
+            accessibilityLabel="Champ mot de passe"
+            accessibilityHint="Entre ton mot de passe"
+          />
 
-      <Pressable
-        onPress={onLogin}
-        disabled={loading}
-        style={{
-          backgroundColor: "#111",
-          padding: 14,
-          borderRadius: 12,
-          opacity: loading ? 0.6 : 1,
-          alignItems: "center",
-        }}
-      >
-        <Text style={{ color: "white", fontWeight: "700" }}>
-          {loading ? "Connexion..." : "Se connecter"}
-        </Text>
-      </Pressable>
+          <Button
+            label={loading ? "Connexion..." : "Se connecter"}
+            onPress={onLogin}
+            disabled={loading}
+            fullWidth
+            size="lg"
+          />
 
-      <Pressable onPress={() => navigation.navigate("Register")}>
-        <Text style={{ textAlign: "center", marginTop: 8 }}>
-          Pas de compte ? <Text style={{ fontWeight: "700" }}>Inscription</Text>
-        </Text>
-      </Pressable>
+          <Pressable
+            onPress={onForgot}
+            style={styles.forgot}
+            accessibilityLabel="Mot de passe oublié"
+            accessibilityHint="Appuie pour recevoir un email de réinitialisation"
+            accessibilityRole="button"
+          >
+            <Text style={styles.forgotText}>Mot de passe oublié</Text>
+          </Pressable>
+        </Card>
 
-      <Pressable onPress={onForgot}>
-        <Text style={{ textAlign: "center", marginTop: 8, color: "#555" }}>
-          Mot de passe oublié
-        </Text>
-      </Pressable>
-    </View>
+        <Pressable
+          onPress={() => navigation.navigate("Register")}
+          style={styles.footerLink}
+          accessibilityLabel="Aller à l'inscription"
+          accessibilityHint="Appuie pour créer un nouveau compte"
+          accessibilityRole="button"
+        >
+          <Text style={styles.footerText}>
+            Pas de compte ? <Text style={styles.footerHighlight}>Inscription</Text>
+          </Text>
+        </Pressable>
+      </View>
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: palette.bg },
+  container: {
+    flex: 1,
+    padding: 20,
+    justifyContent: "center",
+    gap: 16,
+  },
+  header: { gap: 6 },
+  title: { fontSize: 28, fontWeight: "800", color: palette.text },
+  subtitle: { fontSize: 14, color: palette.sub },
+  card: { padding: 16, gap: 12 },
+  label: {
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    color: palette.sub,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: palette.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: palette.text,
+    backgroundColor: palette.cardSoft,
+  },
+  forgot: { alignItems: "center", marginTop: 6 },
+  forgotText: { color: palette.sub, fontSize: 13 },
+  footerLink: { alignItems: "center" },
+  footerText: { color: palette.sub, fontSize: 14 },
+  footerHighlight: { color: palette.accent, fontWeight: "700" },
+});

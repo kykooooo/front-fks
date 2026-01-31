@@ -11,10 +11,16 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   ScrollView,
+  StyleSheet,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useTrainingStore } from "../state/trainingStore";
+import { EXTERNAL_WEIGHTS } from "../config/trainingDefaults";
+import { theme } from "../constants/theme";
+import { SectionHeader } from "../components/ui/SectionHeader";
+import { Card } from "../components/ui/Card";
+import { Button } from "../components/ui/Button";
 
 type Modality = "Match" | "TeamTraining" | "Physio" | "Other";
 type ExternalSource = "match" | "club" | "other";
@@ -23,11 +29,13 @@ const genId = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 const modalityWeight: Record<Modality, number> = {
-  Match: 0.9,
-  TeamTraining: 0.8,
-  Physio: 0.4,
-  Other: 0.7,
+  Match: EXTERNAL_WEIGHTS.match,
+  TeamTraining: EXTERNAL_WEIGHTS.club,
+  Physio: EXTERNAL_WEIGHTS.other,
+  Other: EXTERNAL_WEIGHTS.other,
 };
+
+const palette = theme.colors;
 
 
 // mapping conforme au type du store: "match" | "club" | "other"
@@ -91,30 +99,25 @@ export default function ExternalLoadScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
+      style={styles.root}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0} // ajuste selon la hauteur de ton header
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
         <ScrollView
-          contentContainerStyle={{ padding: 16, gap: 16 }}
+          contentContainerStyle={styles.container}
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={{ fontSize: 20, fontWeight: "600" }}>Ajouter une charge externe</Text>
+          <SectionHeader title="Ajouter une charge externe" />
 
           {/* Date */}
-          <View style={{ gap: 8 }}>
-            <Text style={{ fontWeight: "500" }}>Date</Text>
+          <View style={styles.section}>
+            <Text style={styles.label}>Date</Text>
             <Pressable
               onPress={onOpenDate}
-              style={{
-                borderWidth: 1,
-                borderColor: "#ddd",
-                borderRadius: 12,
-                padding: 12,
-              }}
+              style={styles.inputButton}
             >
-              <Text>
+              <Text style={styles.inputText}>
                 {date.toDateString()} {date.toTimeString().slice(0, 5)}
               </Text>
             </Pressable>
@@ -131,137 +134,144 @@ export default function ExternalLoadScreen() {
             )}
 
             {Platform.OS === "web" && showPicker && (
-              <Text style={{ opacity: 0.6 }}>
+              <Text style={styles.helperMuted}>
                 Le sélecteur natif n’est pas dispo sur Web. Ferme ce message et saisis la date via un champ texte si besoin.
               </Text>
             )}
           </View>
 
           {/* Modality */}
-          <View style={{ gap: 8 }}>
-            <Text style={{ fontWeight: "500" }}>Type</Text>
-            <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+          <View style={styles.section}>
+            <Text style={styles.label}>Type</Text>
+            <View style={styles.rowWrap}>
               {(["Match", "TeamTraining", "Physio", "Other"] as Modality[]).map((m) => {
                 const active = modality === m;
                 return (
                   <Pressable
                     key={m}
                     onPress={() => setModality(m)}
-                    style={{
-                      paddingVertical: 8,
-                      paddingHorizontal: 12,
-                      borderRadius: 999,
-                      borderWidth: 1,
-                      borderColor: active ? "#111" : "#ccc",
-                      backgroundColor: active ? "#f0f0f0" : "white",
-                    }}
+                    style={[styles.chip, active && styles.chipActive]}
                   >
-                    <Text>{m}</Text>
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                      {m}
+                    </Text>
                   </Pressable>
                 );
               })}
             </View>
-            <Text style={{ opacity: 0.6, fontSize: 12 }}>
+            <Text style={styles.helperMuted}>
               Poids (prévu) : {modalityWeight[modality]}×
             </Text>
           </View>
 
           {/* Durée */}
-          <View style={{ gap: 8 }}>
-            <Text style={{ fontWeight: "500" }}>Durée (min)</Text>
+          <View style={styles.section}>
+            <Text style={styles.label}>Durée (min)</Text>
             <TextInput
               value={durationMin}
               onChangeText={setDurationMin}
               keyboardType="numeric"
               placeholder="ex: 90"
+              placeholderTextColor={palette.sub}
               blurOnSubmit
               returnKeyType="done"
               onSubmitEditing={Keyboard.dismiss}
-              style={{
-                borderWidth: 1,
-                borderColor: "#ddd",
-                borderRadius: 12,
-                padding: 12,
-              }}
+              style={styles.input}
             />
           </View>
 
           {/* RPE */}
-          <View style={{ gap: 8 }}>
-            <Text style={{ fontWeight: "500" }}>RPE (1–10)</Text>
+          <View style={styles.section}>
+            <Text style={styles.label}>RPE (1–10)</Text>
             <TextInput
               value={rpe}
               onChangeText={setRpe}
               keyboardType="numeric"
               placeholder="ex: 8"
+              placeholderTextColor={palette.sub}
               blurOnSubmit
               returnKeyType="done"
               onSubmitEditing={Keyboard.dismiss}
-              style={{
-                borderWidth: 1,
-                borderColor: "#ddd",
-                borderRadius: 12,
-                padding: 12,
-              }}
+              style={styles.input}
             />
           </View>
 
           {/* Note */}
-          <View style={{ gap: 8 }}>
-            <Text style={{ fontWeight: "500" }}>Note (optionnelle)</Text>
+          <View style={styles.section}>
+            <Text style={styles.label}>Note (optionnelle)</Text>
             <TextInput
               value={note}
               onChangeText={setNote}
               placeholder="ex: match intense, prolongations"
+              placeholderTextColor={palette.sub}
               blurOnSubmit
               returnKeyType="done"
               onSubmitEditing={Keyboard.dismiss}
               multiline
-              style={{
-                borderWidth: 1,
-                borderColor: "#ddd",
-                borderRadius: 12,
-                padding: 12,
-                minHeight: 48,
-              }}
+              style={[styles.input, styles.inputMultiline]}
             />
           </View>
 
           {/* Aperçu */}
-          <View
-            style={{
-              padding: 12,
-              borderWidth: 1,
-              borderColor: "#eee",
-              borderRadius: 12,
-              backgroundColor: "#fafafa",
-              gap: 4,
-            }}
-          >
-            <Text style={{ fontWeight: "600" }}>Aperçu charge (sRPE pondérée)</Text>
-            <Text>
+          <Card variant="soft" style={styles.previewCard}>
+            <Text style={styles.previewTitle}>Aperçu charge (sRPE pondérée)</Text>
+            <Text style={styles.previewText}>
               Durée×RPE×Poids = {parsedDuration}×{parsedRpe}×{modalityWeight[modality]}
             </Text>
-            <Text style={{ fontSize: 16 }}>
-              ≈ <Text style={{ fontWeight: "700" }}>{previewSRPE.toFixed(0)}</Text> UA
+            <Text style={styles.previewValue}>
+              ≈ <Text style={styles.previewValueStrong}>{previewSRPE.toFixed(0)}</Text> UA
             </Text>
-          </View>
+          </Card>
 
           {/* Submit */}
-          <Pressable
-            onPress={onSubmit}
-            style={{
-              marginTop: 8,
-              padding: 14,
-              borderRadius: 12,
-              backgroundColor: "#111",
-              alignItems: "center",
-            }}
-          >
-            <Text style={{ color: "white", fontWeight: "700" }}>Enregistrer</Text>
-          </Pressable>
+          <Button label="Enregistrer" onPress={onSubmit} fullWidth size="lg" />
         </ScrollView>
       </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: palette.bg },
+  container: { padding: 16, gap: 16 },
+  section: { gap: 8 },
+  label: { color: palette.sub, fontWeight: "600" },
+  helperMuted: { color: palette.sub, fontSize: 12 },
+  rowWrap: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  chip: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.card,
+  },
+  chipActive: {
+    borderColor: palette.accent,
+    backgroundColor: palette.accentSoft,
+  },
+  chipText: { color: palette.sub, fontWeight: "600" },
+  chipTextActive: { color: palette.accent, fontWeight: "700" },
+  input: {
+    borderWidth: 1,
+    borderColor: palette.border,
+    borderRadius: 12,
+    padding: 12,
+    color: palette.text,
+    backgroundColor: palette.cardSoft,
+  },
+  inputMultiline: { minHeight: 48 },
+  inputButton: {
+    borderWidth: 1,
+    borderColor: palette.border,
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: palette.cardSoft,
+  },
+  inputText: { color: palette.text },
+  previewCard: { padding: 12, gap: 4 },
+  previewTitle: { color: palette.text, fontWeight: "700" },
+  previewText: { color: palette.sub },
+  previewValue: { color: palette.text, fontSize: 16 },
+  previewValueStrong: { fontWeight: "800", color: palette.text },
+});

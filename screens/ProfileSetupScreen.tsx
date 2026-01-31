@@ -14,19 +14,16 @@ import { useNavigation } from "@react-navigation/native";
 import { getAuth } from "firebase/auth";
 import { db } from "../services/firebase";
 import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
+import { theme } from "../constants/theme";
+import { Card } from "../components/ui/Card";
+import { Button } from "../components/ui/Button";
+import { LoadingOverlay } from "../components/ui/LoadingOverlay";
+import { findClubByInviteCode, normalizeInviteCode, setClubMembership } from "../repositories/clubsRepo";
+import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
 import { useTrainingStore } from "../state/trainingStore";
 
 // ---------- Palette FKS (alignée Home / NewSession) ----------
-const palette = {
-  bg: "#050509",
-  card: "#0c0e13",
-  cardSoft: "#10131b",
-  border: "#1f2430",
-  text: "#f9fafb",
-  sub: "#9ca3af",
-  accent: "#f97316",
-  accentSoft: "#fed7aa",
-};
+const palette = theme.colors;
 
 // ---------- Constantes métier ----------
 const positions = ["Gardien", "Défenseur", "Milieu", "Attaquant"] as const;
@@ -39,13 +36,6 @@ const objectives = [
   "Gagner en vitesse / explosivité",
   "Mieux encaisser les charges (enchaîner entraînements + matchs)",
   "Reprendre après une blessure",
-] as const;
-
-const cycleOptions = [
-  { id: "fondation", label: "Fondation (base physique / S&C + run facile)" },
-  { id: "explosivite", label: "Explosivité (force/power + sprints courts)" },
-  { id: "endurance", label: "Endurance (tempo / VMA courte + core)" },
-  { id: "reactivite", label: "Réactivité (COD / plyo légère + vitesse)" },
 ] as const;
 
 const fksSessionsOptions = ["1", "2", "3", "4"] as const;
@@ -105,15 +95,16 @@ const toggleInList = (
 
 export default function ProfileSetupScreen() {
   const navigation = useNavigation<any>();
-  const setMicrocycleGoalStore = useTrainingStore((s) => s.setMicrocycleGoal);
-  const resetMicrocycleIndex = useTrainingStore((s) => s.setMicrocycleSessionIndex);
+  const activeCycleGoal = useTrainingStore((s) => s.microcycleGoal);
+  const microcycleSessionIndex = useTrainingStore((s) => s.microcycleSessionIndex);
   const [firstName, setFirstName] = useState("");
+  const [clubId, setClubId] = useState("");
+  const [clubInviteCode, setClubInviteCode] = useState("");
   const [position, setPosition] = useState<string>("");
   const [level, setLevel] = useState<string>("");
 
   const [dominantFoot, setDominantFoot] = useState<string>("");
   const [mainObjective, setMainObjective] = useState<string>("");
-  const [microcycleGoal, setMicrocycleGoal] = useState<string>("");
   const [targetFksSessionsPerWeek, setTargetFksSessionsPerWeek] =
     useState<string>("");
 
@@ -141,6 +132,10 @@ export default function ProfileSetupScreen() {
 
   const [loading, setLoading] = useState(false);
 
+  const cycleId = isMicrocycleId(activeCycleGoal) ? activeCycleGoal : null;
+  const cycleLabel = cycleId ? MICROCYCLES[cycleId].label : null;
+  const cycleProgress = Math.min(MICROCYCLE_TOTAL_SESSIONS_DEFAULT, Math.max(0, Math.trunc(microcycleSessionIndex ?? 0)));
+
   const daysOfWeek = [
     { id: "mon", label: "Lundi" },
     { id: "tue", label: "Mardi" },
@@ -162,22 +157,12 @@ export default function ProfileSetupScreen() {
         const d = snap.data();
         if (!d) return;
         if (typeof d.firstName === "string") setFirstName(d.firstName);
+        if (typeof d.clubId === "string") setClubId(d.clubId);
         if (typeof d.position === "string") setPosition(d.position);
         if (typeof d.level === "string") setLevel(d.level);
         if (typeof d.dominantFoot === "string") setDominantFoot(d.dominantFoot);
         if (typeof d.mainObjective === "string")
           setMainObjective(d.mainObjective);
-        if (typeof d.microcycleGoal === "string") setMicrocycleGoal(d.microcycleGoal);
-        else if (typeof d.programGoal === "string") setMicrocycleGoal(d.programGoal);
-        else if (typeof d.goal === "string") setMicrocycleGoal(d.goal);
-        const goal =
-          (typeof d.microcycleGoal === "string" && d.microcycleGoal) ||
-          (typeof d.programGoal === "string" && d.programGoal) ||
-          (typeof d.goal === "string" && d.goal) ||
-          "";
-        if (goal) {
-          setMicrocycleGoalStore(goal);
-        }
         if (d.targetFksSessionsPerWeek != null)
           setTargetFksSessionsPerWeek(String(d.targetFksSessionsPerWeek));
 
@@ -247,11 +232,6 @@ export default function ProfileSetupScreen() {
       return Alert.alert(
         "Champs manquants",
         "Indique combien de séances FKS tu veux par semaine."
-      );
-    if (!microcycleGoal)
-      return Alert.alert(
-        "Champs manquants",
-        "Choisis le cycle sur lequel tu veux avancer (playlist)."
       );
 
     const trainings = Number(clubTrainingsPerWeek);
@@ -330,6 +310,7 @@ export default function ProfileSetupScreen() {
     }
 
     const targetFksSessions = Number(targetFksSessionsPerWeek);
+    const normalizedInvite = normalizeInviteCode(clubInviteCode);
 
     try {
       setLoading(true);
@@ -343,19 +324,28 @@ export default function ProfileSetupScreen() {
         return;
       }
 
+      let resolvedClubId: string | null = clubId?.trim() ? clubId.trim() : null;
+      if (normalizedInvite) {
+        const club = await findClubByInviteCode(normalizedInvite);
+        if (!club) {
+          Alert.alert("Code club invalide", "Aucun club ne correspond à ce code. Vérifie et réessaie.");
+          return;
+        }
+        resolvedClubId = club.id;
+        await setClubMembership({ clubId: club.id, uid: user.uid, role: "player" });
+      }
+
       const userRef = doc(db, "users", user.uid);
       await setDoc(
         userRef,
         {
           uid: user.uid,
           firstName: firstName.trim(),
+          clubId: resolvedClubId,
           position,
           level,
           dominantFoot,
           mainObjective,
-          microcycleGoal,
-          goal: microcycleGoal,
-          programGoal: microcycleGoal,
           targetFksSessionsPerWeek: targetFksSessions,
 
           clubTrainingsPerWeek: trainings,
@@ -387,18 +377,18 @@ export default function ProfileSetupScreen() {
       );
 
       Alert.alert("Profil enregistré ✅", "Redirection vers l’accueil…");
-      setMicrocycleGoalStore(microcycleGoal);
-      resetMicrocycleIndex(0);
       // RootNavigator se charge de rediriger grâce à profileCompleted === true, on force aussi la nav
       navigation.reset({
         index: 0,
         routes: [{ name: "Tabs" }],
       });
     } catch (error) {
-      console.error("Erreur sauvegarde profil:", error);
+      if (__DEV__) {
+        console.error("Erreur sauvegarde profil:", error);
+      }
       Alert.alert(
         "Erreur",
-        "Impossible d’enregistrer le profil (vérifie tes permissions Firestore)."
+        "Impossible d'enregistrer le profil (vérifie tes permissions Firestore)."
       );
     } finally {
       setLoading(false);
@@ -419,17 +409,32 @@ export default function ProfileSetupScreen() {
         </Text>
 
         {/* IDENTITÉ */}
-        <View style={styles.card}>
+        <Card variant="surface" style={styles.card}>
           <Text style={styles.sectionTitle}>Identité & poste</Text>
 
           <Text style={styles.label}>Prénom</Text>
           <TextInput
             style={styles.input}
             placeholder="Ex: Kylian"
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={palette.sub}
             value={firstName}
             onChangeText={setFirstName}
             autoCapitalize="words"
+          />
+
+          <Text style={styles.label}>Club</Text>
+          <Text style={[styles.input, { paddingVertical: 12, color: palette.sub }]}>
+            {clubId?.trim() ? clubId.trim() : "Aucun club lié"}
+          </Text>
+
+          <Text style={styles.label}>Code club (invitation)</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Ex: FKSFC-2026"
+            placeholderTextColor={palette.sub}
+            value={clubInviteCode}
+            onChangeText={setClubInviteCode}
+            autoCapitalize="characters"
           />
 
           <Text style={styles.label}>Poste</Text>
@@ -494,32 +499,33 @@ export default function ProfileSetupScreen() {
               </TouchableOpacity>
             );
           })}
-        </View>
+        </Card>
 
         {/* OBJECTIF & FKS SESSIONS */}
-        <View style={styles.card}>
+        <Card variant="surface" style={styles.card}>
           <Text style={styles.sectionTitle}>Objectif & séances FKS</Text>
 
           <Text style={styles.label}>Cycle / playlist (micro-cycle)</Text>
-          {cycleOptions.map((cy) => {
-            const selected = microcycleGoal === cy.id;
-            return (
-              <TouchableOpacity
-                key={cy.id}
-                style={[styles.choice, selected && styles.choiceSelected]}
-                onPress={() => setMicrocycleGoal(cy.id)}
-              >
-                <Text
-                  style={[
-                    styles.choiceText,
-                    selected && styles.choiceTextSelected,
-                  ]}
-                >
-                  {cy.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+          <View style={styles.cycleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cycleValue}>
+                {cycleLabel ? `${cycleLabel} · ${cycleProgress}/${MICROCYCLE_TOTAL_SESSIONS_DEFAULT}` : "Aucun cycle actif"}
+              </Text>
+              <Text style={styles.cycleHint}>
+                Tu peux choisir/abandonner ton cycle depuis l’accueil ou le profil (changement rare et sérieux).
+              </Text>
+            </View>
+            <Button
+              label={cycleLabel ? "Gérer" : "Choisir"}
+              variant="secondary"
+              onPress={() =>
+                navigation.navigate("CycleModal", {
+                  mode: cycleLabel ? "manage" : "select",
+                  origin: "profile",
+                })
+              }
+            />
+          </View>
 
           <Text style={styles.label}>Objectif principal avec FKS</Text>
           {objectives.map((obj) => {
@@ -567,10 +573,10 @@ export default function ProfileSetupScreen() {
               );
             })}
           </View>
-        </View>
+        </Card>
 
         {/* CHARGE CLUB */}
-        <View style={styles.card}>
+        <Card variant="surface" style={styles.card}>
           <Text style={styles.sectionTitle}>Charge club</Text>
 
           <Text style={styles.label}>
@@ -648,7 +654,7 @@ export default function ProfileSetupScreen() {
             style={styles.input}
             keyboardType="number-pad"
             placeholder="ex: 3"
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={palette.sub}
             value={clubTrainingsPerWeek}
             onChangeText={setClubTrainingsPerWeek}
           />
@@ -657,7 +663,7 @@ export default function ProfileSetupScreen() {
             style={styles.input}
             keyboardType="decimal-pad"
             placeholder="ex: 6"
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={palette.sub}
             value={clubTypicalRPE}
             onChangeText={setClubTypicalRPE}
           />
@@ -666,7 +672,7 @@ export default function ProfileSetupScreen() {
             style={styles.input}
             keyboardType="number-pad"
             placeholder="ex: 75"
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={palette.sub}
             value={clubTypicalDurationMin}
             onChangeText={setClubTypicalDurationMin}
           />
@@ -676,7 +682,7 @@ export default function ProfileSetupScreen() {
             style={styles.input}
             keyboardType="number-pad"
             placeholder="ex: 1"
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={palette.sub}
             value={matchesPerWeek}
             onChangeText={setMatchesPerWeek}
           />
@@ -704,7 +710,7 @@ export default function ProfileSetupScreen() {
             style={styles.input}
             keyboardType="decimal-pad"
             placeholder="ex: 8"
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={palette.sub}
             value={matchTypicalRPE}
             onChangeText={setMatchTypicalRPE}
           />
@@ -713,14 +719,14 @@ export default function ProfileSetupScreen() {
             style={styles.input}
             keyboardType="number-pad"
             placeholder="ex: 90"
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={palette.sub}
             value={matchTypicalDurationMin}
             onChangeText={setMatchTypicalDurationMin}
           />
-        </View>
+        </Card>
 
         {/* SALLE DE MUSCU */}
-        <View style={styles.card}>
+        <Card variant="surface" style={styles.card}>
           <Text style={styles.sectionTitle}>Salle de musculation</Text>
 
           <Text style={styles.label}>Accès à une salle de musculation ?</Text>
@@ -805,10 +811,10 @@ export default function ProfileSetupScreen() {
               })}
             </>
           )}
-        </View>
+        </Card>
 
         {/* MATÉRIEL HORS SALLE */}
-        <View style={styles.card}>
+        <Card variant="surface" style={styles.card}>
           <Text style={styles.sectionTitle}>
             Matériel chez toi / sur le terrain
           </Text>
@@ -880,19 +886,24 @@ export default function ProfileSetupScreen() {
               })}
             </>
           )}
-        </View>
+        </Card>
 
         {/* CTA */}
-        <TouchableOpacity
-          style={[styles.button, loading && { opacity: 0.6 }]}
+        <Button
+          label={loading ? "Enregistrement..." : "Sauvegarder mon profil"}
           onPress={handleSave}
           disabled={loading}
-        >
-          <Text style={styles.buttonText}>
-            {loading ? "Enregistrement..." : "Sauvegarder mon profil"}
-          </Text>
-        </TouchableOpacity>
+          fullWidth
+          size="lg"
+          style={styles.button}
+        />
       </ScrollView>
+
+      <LoadingOverlay
+        visible={loading}
+        message="Enregistrement de ton profil..."
+        submessage="Création de ton compte joueur et configuration initiale."
+      />
     </SafeAreaView>
   );
 }
@@ -919,10 +930,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   card: {
-    backgroundColor: palette.card,
     borderRadius: 18,
-    borderWidth: 1,
-    borderColor: palette.border,
     padding: 16,
     marginBottom: 12,
   },
@@ -940,6 +948,22 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  cycleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  cycleValue: {
+    color: palette.text,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  cycleHint: {
+    color: palette.sub,
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 4,
   },
   input: {
     borderWidth: 1,
@@ -962,7 +986,7 @@ const styles = StyleSheet.create({
   },
   choiceSelected: {
     borderColor: palette.accent,
-    backgroundColor: "#1f1308",
+    backgroundColor: palette.accentSoft,
   },
   choiceText: {
     color: palette.text,
@@ -989,12 +1013,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#4b5563",
-    backgroundColor: "#020617",
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.card,
   },
   chipSelected: {
     borderColor: palette.accent,
-    backgroundColor: "#1f1308",
+    backgroundColor: palette.accentSoft,
   },
   chipText: {
     color: palette.sub,
@@ -1002,25 +1026,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   chipTextSelected: {
-    color: palette.accentSoft,
+    color: palette.accent,
     fontWeight: "700",
     fontSize: 12,
   },
   button: {
     marginTop: 8,
-    backgroundColor: palette.accent,
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: "center",
-    shadowColor: palette.accent,
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  buttonText: {
-    color: "#050509",
-    fontSize: 14,
-    fontWeight: "800",
-    textTransform: "uppercase",
   },
 });

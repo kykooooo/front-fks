@@ -1,5 +1,5 @@
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 
 import type { TrainingState } from "../types";
 import type { StoreApi } from "zustand";
@@ -8,13 +8,14 @@ import { auth, db } from "../../../services/firebase";
 import { addDaysISO, todayISO } from "../../../utils/virtualClock";
 
 import {
-  addPlannedSession,
   saveSession,
   watchSessions as watchSessionsRepo,
   watchPlannedSessions,
 } from "../../../repositories/sessionsRepo";
+import { savePlannedSessionToFirestore } from "../../../services/plannedSessionsRepo";
 
 import { isClubDay, normalizeSessionsFromFirestore } from "../helpers";
+import { toDayKey } from "../../../engine/dailyAggregation";
 
 type SetFn = StoreApi<TrainingState>["setState"];
 type GetFn = StoreApi<TrainingState>["getState"];
@@ -35,7 +36,7 @@ export const createFirestoreSlice = (set: SetFn, get: GetFn): FirestoreSlice => 
     if (!uid) return;
 
     const rest = { ...payload } as any;
-    delete rest.id;
+    const sessionId = rest.id ?? null;
     const aiPayload = (rest as any).ai ?? (rest as any).aiV2;
 
     const tsb = get().tsb ?? 0;
@@ -69,6 +70,7 @@ export const createFirestoreSlice = (set: SetFn, get: GetFn): FirestoreSlice => 
     plannedLoadSafe = Math.max(1, Math.round(plannedLoadSafe * guardFactor));
 
     const firestorePlanned: any = {
+      ...(sessionId ? { id: sessionId } : {}),
       date: rest.dateISO,
       phase: rest.phase,
       focus: rest.focus,
@@ -80,7 +82,8 @@ export const createFirestoreSlice = (set: SetFn, get: GetFn): FirestoreSlice => 
     if (aiPayload != null) firestorePlanned.ai = aiPayload;
     if (guardrailsApplied.length > 0) firestorePlanned.guardrailsApplied = guardrailsApplied;
 
-    await addPlannedSession(uid, { ...firestorePlanned });
+    if (!sessionId) return;
+    await savePlannedSessionToFirestore({ ...firestorePlanned, userId: uid });
   },
 
   persistCompletedSession: async (s) => {
@@ -107,6 +110,28 @@ export const createFirestoreSlice = (set: SetFn, get: GetFn): FirestoreSlice => 
     }
 
     await saveSession(uid, s.id, completedPayload as any);
+
+    const microcycleGoal = typeof get().microcycleGoal === "string" ? get().microcycleGoal?.trim() : null;
+    const microcycleSessionIndex =
+      typeof get().microcycleSessionIndex === "number" && Number.isFinite(get().microcycleSessionIndex)
+        ? Math.max(0, Math.trunc(get().microcycleSessionIndex))
+        : 0;
+    const lastSessionDate =
+      typeof s.dateISO === "string"
+        ? s.dateISO
+        : typeof (s as any).date === "string"
+          ? (s as any).date
+          : null;
+
+    const userPatch: Record<string, any> = {
+      updatedAt: serverTimestamp(),
+      lastSessionDate: lastSessionDate ?? null,
+      lastSessionAt: serverTimestamp(),
+    };
+    if (microcycleGoal) userPatch.microcycleGoal = microcycleGoal;
+    userPatch.microcycleSessionIndex = microcycleSessionIndex;
+
+    await setDoc(doc(db, "users", uid), userPatch, { merge: true });
   },
 
   startFirestoreWatch: () => {
@@ -130,26 +155,48 @@ export const createFirestoreSlice = (set: SetFn, get: GetFn): FirestoreSlice => 
       if (!user) return;
 
       const userRef = doc(db, "users", user.uid);
-      const unsubProfile = onSnapshot(userRef, (snap) => {
-        const data = snap.data();
-        const days = Array.isArray(data?.clubTrainingDays) ? data!.clubTrainingDays : [];
+      const unsubProfile = onSnapshot(
+        userRef,
+        (snap) => {
+          const data = snap.data();
+          const days = Array.isArray(data?.clubTrainingDays) ? data!.clubTrainingDays : [];
 
-        const matchDay = typeof data?.matchDay === "string" ? data!.matchDay : null;
-        const matchDays = Array.isArray(data?.matchDays) ? data!.matchDays : matchDay ? [matchDay] : [];
+          const matchDay = typeof data?.matchDay === "string" ? data!.matchDay : null;
+          const matchDays = Array.isArray(data?.matchDays) ? data!.matchDays : matchDay ? [matchDay] : [];
 
-        const autoExternalConfig = {
-          club:
-            typeof data?.clubTypicalRPE === "number" && typeof data?.clubTypicalDurationMin === "number"
-              ? { rpe: data!.clubTypicalRPE, durationMin: data!.clubTypicalDurationMin }
-              : undefined,
-          match:
-            typeof data?.matchTypicalRPE === "number" && typeof data?.matchTypicalDurationMin === "number"
-              ? { rpe: data!.matchTypicalRPE, durationMin: data!.matchTypicalDurationMin }
-              : undefined,
-        };
+          const goalRaw =
+            typeof (data as any)?.microcycleGoal === "string"
+              ? String((data as any).microcycleGoal)
+              : typeof (data as any)?.programGoal === "string"
+                ? String((data as any).programGoal)
+                : typeof (data as any)?.goal === "string"
+                  ? String((data as any).goal)
+                  : null;
+          const goal = goalRaw?.trim() ? goalRaw.trim() : null;
+          if (get().setMicrocycleGoal) {
+            get().setMicrocycleGoal(goal);
+          }
 
-        set({ clubTrainingDays: days, matchDays, matchDay, autoExternalConfig });
-      });
+          const autoExternalConfig = {
+            club:
+              typeof data?.clubTypicalRPE === "number" && typeof data?.clubTypicalDurationMin === "number"
+                ? { rpe: data!.clubTypicalRPE, durationMin: data!.clubTypicalDurationMin }
+                : undefined,
+            match:
+              typeof data?.matchTypicalRPE === "number" && typeof data?.matchTypicalDurationMin === "number"
+                ? { rpe: data!.matchTypicalRPE, durationMin: data!.matchTypicalDurationMin }
+                : undefined,
+          };
+
+          set({ clubTrainingDays: days, matchDays, matchDay, autoExternalConfig });
+        },
+        (err: any) => {
+          // Peut arriver pendant une déconnexion: le listener reçoit un dernier event sans droits.
+          if (err?.code === "permission-denied" && !auth.currentUser) return;
+          if (err?.code === "permission-denied") return;
+          console.warn("users/{uid} profile onSnapshot error:", err);
+        }
+      );
 
       const unsub = watchSessionsRepo(user.uid, (list: any[]) => {
         const normalized = normalizeSessionsFromFirestore(list);
@@ -164,9 +211,19 @@ export const createFirestoreSlice = (set: SetFn, get: GetFn): FirestoreSlice => 
       const unsubPlanned = watchPlannedSessions(user.uid, (list: any[]) => {
         const local = get().sessions ?? [];
         const completedLocalIds = new Set(local.filter((s: any) => s.completed).map((s: any) => s.id));
+        const completedDayKeys = new Set(
+          local
+            .filter((s: any) => s.completed)
+            .map((s: any) => toDayKey((s.dateISO ?? s.date ?? "").toString()))
+            .filter(Boolean)
+        );
 
         const planned = (list ?? [])
           .filter((p) => !completedLocalIds.has(p.id)) // si déjà complété localement, ne réinjecte pas en "open"
+          .filter((p) => {
+            const dayKey = toDayKey((p.date ?? p.dateISO ?? "").toString());
+            return !completedDayKeys.has(dayKey);
+          })
           .map((p) => ({
             id: p.id,
             dateISO: p.date,

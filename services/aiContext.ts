@@ -61,6 +61,9 @@ export interface FKS_AiContext {
     explosivite_playlist_len?: number | null;
   };
   goal?: string | null;
+  available_time_min?: number | null;
+  nowISO?: string;
+  devNowISO?: string | null;
   phase: FKS_PhaseId;
   microcycle?: { session_index: number };
   constraints?: {
@@ -202,16 +205,37 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
   const mainObjective = (data.mainObjective as string | undefined) ?? null;
   const trainingState: any = useTrainingStore.getState();
 
-  const microcycleGoal =
+  const storeGoal =
+    typeof trainingState.microcycleGoal === "string"
+      ? trainingState.microcycleGoal.trim()
+      : "";
+  const dataGoal = (
     (data.microcycleGoal as string | undefined) ??
     (data.programGoal as string | undefined) ??
     (data.goal as string | undefined) ??
-    trainingState.microcycleGoal ??
-    "fondation";
+    ""
+  ).trim();
+  const resolvedGoal = storeGoal || dataGoal;
+  const microcycleGoal = resolvedGoal || "fondation";
   const microcycleSessionIndex =
     typeof trainingState.microcycleSessionIndex === "number" && Number.isFinite(trainingState.microcycleSessionIndex)
       ? trainingState.microcycleSessionIndex
       : 0;
+  const availableTimeRaw =
+    (data as any).available_time_min ??
+    (data as any).availableTimeMin ??
+    (trainingState as any).available_time_min ??
+    (trainingState as any).availableTimeMin ??
+    null;
+  const availableTimeMin = (() => {
+    const parsed =
+      typeof availableTimeRaw === "number"
+        ? availableTimeRaw
+        : typeof availableTimeRaw === "string"
+          ? Number(availableTimeRaw)
+          : NaN;
+    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : null;
+  })();
   const explosivitePlaylistLenRaw =
     (data as any).explosivite_playlist_len ?? (data as any).explosivitePlaylistLen;
   const explosivitePlaylistLen = (() => {
@@ -225,7 +249,7 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
     if (normalized === 8 || normalized === 12) return normalized;
     return null;
   })();
-  if (trainingState.setMicrocycleGoal && microcycleGoal) {
+  if (trainingState.setMicrocycleGoal && resolvedGoal) {
     trainingState.setMicrocycleGoal(microcycleGoal);
   }
   const clubTrainingDays = Array.isArray(data.clubTrainingDays) ? data.clubTrainingDays : [];
@@ -244,7 +268,8 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
 
   const equipment_available = buildEquipmentFromProfile(data);
 
-  const todayKey = (trainingState.devNowISO ?? new Date().toISOString()).slice(0, 10);
+  const nowISO = trainingState.devNowISO ?? new Date().toISOString();
+  const todayKey = nowISO.slice(0, 10);
   const pains: string[] =
     (trainingState.dayStates?.[todayKey]?.feedback?.pains as string[]) ??
     (trainingState.dayStates?.[todayKey]?.feedback?.painZones as string[]) ??
@@ -369,6 +394,9 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
       explosivite_playlist_len: explosivitePlaylistLen,
     },
     goal: microcycleGoal,
+    available_time_min: availableTimeMin,
+    nowISO,
+    devNowISO: trainingState.devNowISO ?? null,
     constraints: {
       equipment: equipment_available,
       pains,

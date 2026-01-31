@@ -8,39 +8,34 @@ import {
   ScrollView,
   StatusBar,
   Alert,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, CommonActions } from '@react-navigation/native';
 import { useTrainingStore } from '../state/trainingStore';
+import { useSettingsStore } from '../state/settingsStore';
 import InjuryForm from '../components/InjuryForm';
-import type { InjuryRecord } from '../domain/types';
+import type { InjuryRecord, Modality, SessionFeedback } from '../domain/types';
 import { FEEDBACK_LIMITS } from '../constants/feedback';
-import type { SessionFeedback } from '../domain/types';
-import { toRPE1to10, toRating1to5, toRating0to5 } from '../domain/types';
+import { theme } from '../constants/theme';
+import { Button } from '../components/ui/Button';
+import { LoadingOverlay } from '../components/ui/LoadingOverlay';
+import { toDayKey } from '../engine/dailyAggregation';
+import { todayISO } from '../utils/virtualClock';
+import { DEFAULT_MODALITY_WEIGHTS, toRPE1to10, toRating1to5, toRating0to5 } from '../domain/types';
+import { updateTrainingLoad } from '../engine/loadModel';
+import { DEV_FLAGS } from '../config/devFlags';
 import type { RouteProp } from '@react-navigation/native';
 import type { AppStackParamList } from '../navigation/RootNavigator';
+import { showErrorWithRetry, classifyError, ErrorType } from '../utils/errorHandler';
+import { enqueueAction } from '../utils/offlineQueue';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { trackEvent } from '../services/analytics';
 
 const clamp = (v: number, min: number, max: number) =>
   Math.max(min, Math.min(max, v));
 
-const localDayKey = (d: Date) => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-};
-
-const COLORS = {
-  background: '#050509',
-  surface: '#080C14',
-  surfaceSoft: '#050815',
-  border: '#111827',
-  text: '#F9FAFB',
-  textMuted: '#6B7280',
-  accent: '#F97316',
-  accentSoft: 'rgba(249,115,22,0.18)',
-  danger: '#FB7185',
-};
+const COLORS = theme.colors;
 
 const FATIGUE_SCALE = [
   { value: 1, label: 'Très frais' },
@@ -112,6 +107,8 @@ function SegmentedRow({
 
 export default function FeedbackScreen() {
   const navigation = useNavigation<any>();
+  const { isOnline, queueCount } = useNetworkStatus();
+
   React.useLayoutEffect(() => {
     navigation.setOptions?.({
       headerStyle: { backgroundColor: COLORS.background },
@@ -121,6 +118,7 @@ export default function FeedbackScreen() {
   }, [navigation]);
 
   const route = useRoute<RouteProp<AppStackParamList, 'Feedback'>>();
+  const themeMode = useSettingsStore((s) => s.themeMode);
   const atl = useTrainingStore((s) => s.atl);
   const ctl = useTrainingStore((s) => s.ctl);
   const tsb = useTrainingStore((s) => s.tsb);
@@ -137,20 +135,25 @@ export default function FeedbackScreen() {
   const lastAiContext = useTrainingStore((s) => s.lastAiContext);
 
   const todayKey = useMemo(() => {
-    if (devNowISO) return devNowISO.slice(0, 10);
-    return localDayKey(new Date());
+    return toDayKey(devNowISO ?? todayISO());
   }, [devNowISO]);
 
-const getSessionDateKey = (s: any) => {
-  const iso = typeof s?.dateISO === 'string' ? s.dateISO : typeof s?.date === 'string' ? s.date : '';
-  const key = iso.length >= 10 ? iso.slice(0, 10) : '';
-  const d = iso ? new Date(iso) : null;
-  const ts = d && Number.isFinite(d.getTime()) ? d.getTime() : 0;
-  return { key, ts };
-};
+  const getSessionDateKey = (s: any) => {
+    const iso =
+      typeof s?.dateISO === 'string'
+        ? s.dateISO
+        : typeof s?.date === 'string'
+          ? s.date
+          : '';
+    const key = iso ? toDayKey(iso) : '';
+    const d = iso ? new Date(iso) : null;
+    const ts = d && Number.isFinite(d.getTime()) ? d.getTime() : 0;
+    return { key, ts };
+  };
 
   const day = dayStates[todayKey];
   const sessionIdFromRoute = route.params?.sessionId;
+  const prefill = route.params?.prefill;
 
   const targetSessionId = useMemo(() => {
     if (sessionIdFromRoute) return sessionIdFromRoute;
@@ -183,7 +186,28 @@ const getSessionDateKey = (s: any) => {
   }, [targetSessionId, getSessionById, sessions]);
 
   // UI state
-  const [rpe, setRpe] = useState<number>(5);
+  const prefillRpe =
+    typeof prefill?.rpe === 'number' && Number.isFinite(prefill.rpe)
+      ? clamp(Math.round(prefill.rpe), 1, 10)
+      : undefined;
+  const durationPrefill = useMemo(() => {
+    if (typeof prefill?.durationMin === 'number' && Number.isFinite(prefill.durationMin)) {
+      return Math.max(1, Math.round(prefill.durationMin));
+    }
+    if (typeof targetSession?.durationMin === 'number' && Number.isFinite(targetSession.durationMin)) {
+      return Math.max(1, Math.round(targetSession.durationMin));
+    }
+    const aiDuration = (targetSession as any)?.aiV2?.duration_min;
+    if (typeof aiDuration === 'number' && Number.isFinite(aiDuration)) {
+      return Math.max(1, Math.round(aiDuration));
+    }
+    return undefined;
+  }, [prefill?.durationMin, targetSession]);
+
+  const [rpe, setRpe] = useState<number>(prefillRpe ?? 5);
+  const [durationMin, setDurationMin] = useState<string>(
+    durationPrefill ? String(durationPrefill) : ''
+  );
   const [fatigue, setFatigue] = useState<number>(day?.feedback?.fatigue ?? 3);
   const [pain, setPain] = useState<number>(day?.feedback?.pain ?? 0);
   const [recovery, setRecovery] = useState<number>(
@@ -199,6 +223,18 @@ const getSessionDateKey = (s: any) => {
   );
   const [cyclePromptVisible, setCyclePromptVisible] = useState(false);
   const autoContinueRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const durationValue = Number(durationMin);
+  const durationValid =
+    Number.isFinite(durationValue) && durationValue >= 5 && durationValue <= 300;
+  const durationClamped = durationValid ? Math.round(durationValue) : undefined;
+  const modality = (targetSession?.modality ??
+    targetSession?.exercises?.[0]?.modality) as Modality | undefined;
+  const modalityWeight = modality ? DEFAULT_MODALITY_WEIGHTS[modality] ?? 1 : 1;
+  const estimatedLoad =
+    durationClamped != null ? Math.round(rpe * durationClamped * modalityWeight) : null;
+  const projected = estimatedLoad != null ? updateTrainingLoad(atl, ctl, estimatedLoad) : null;
+  const projectedTsb = projected ? +projected.tsb.toFixed(1) : null;
+  const projectedDelta = projectedTsb != null ? +(projectedTsb - tsb).toFixed(1) : null;
 
   const clearAutoContinue = () => {
     if (autoContinueRef.current) {
@@ -207,11 +243,21 @@ const getSessionDateKey = (s: any) => {
     }
   };
 
+  useEffect(() => {
+    if (!durationMin && durationPrefill) {
+      setDurationMin(String(durationPrefill));
+    }
+  }, [durationPrefill, durationMin]);
+
   const continueAfterFeedback = () => {
     clearAutoContinue();
     setCyclePromptVisible(false);
-    if (navigation.canGoBack()) navigation.goBack();
-    else navigation.navigate('Home' as never);
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: 'Tabs', params: { screen: 'Home' } }],
+      })
+    );
   };
 
   useEffect(() => {
@@ -257,6 +303,33 @@ const getSessionDateKey = (s: any) => {
     return 'Très dur';
   }, [rpe]);
 
+  const suggestion = useMemo(() => {
+    const intensityRaw =
+      (targetSession as any)?.aiV2?.intensity ??
+      (targetSession as any)?.intensity ??
+      '';
+    const intensity = String(intensityRaw).toLowerCase();
+    const suggestedRpe =
+      prefillRpe ??
+      (typeof (targetSession as any)?.aiV2?.rpe_target === 'number'
+        ? Math.max(1, Math.min(10, Math.round((targetSession as any).aiV2.rpe_target)))
+        : intensity.includes('hard')
+        ? 8
+        : intensity.includes('easy')
+        ? 4
+        : 6);
+    const suggestedFatigue = intensity.includes('hard') ? 4 : intensity.includes('easy') ? 2 : 3;
+    const suggestedRecovery = intensity.includes('hard') ? 3 : intensity.includes('easy') ? 4 : 3;
+    const suggestedPain = 0;
+    return {
+      rpe: suggestedRpe,
+      fatigue: suggestedFatigue,
+      recovery: suggestedRecovery,
+      pain: suggestedPain,
+      intensityLabel: intensity,
+    };
+  }, [prefillRpe, targetSession]);
+
   const sessionDateKey = useMemo(() => {
     if (!targetSession) return null;
     const { key } = getSessionDateKey(targetSession);
@@ -264,6 +337,8 @@ const getSessionDateKey = (s: any) => {
   }, [targetSession]);
 
   const sessionIsToday = sessionDateKey ? sessionDateKey === todayKey : false;
+  const allowAnyDate = DEV_FLAGS.ENABLED;
+  const canSaveToday = allowAnyDate || sessionIsToday;
 
   const onSave = async () => {
     if (isSaving) return;
@@ -278,7 +353,7 @@ const getSessionDateKey = (s: any) => {
       Alert.alert('Déjà complétée', 'Le feedback de cette séance est déjà enregistré.');
       return;
     }
-    if (!sessionIsToday) {
+    if (!canSaveToday) {
       Alert.alert(
         'Date non compatible',
         "Tu essaies de valider une séance qui n'est pas datée d'aujourd'hui. Reviens le jour même ou ajuste la date de la séance."
@@ -292,19 +367,8 @@ const getSessionDateKey = (s: any) => {
       const ctlBefore = ctl;
       const tsbBefore = tsb;
       const dayKeyForSession = sessionDateKey ?? todayKey;
-      const activeGoal = (() => {
-        if (typeof microcycleGoal === 'string' && microcycleGoal.trim()) return microcycleGoal;
-        const ctxGoal =
-          lastAiContext?.profile?.microcycle_goal ??
-          lastAiContext?.profile?.goal ??
-          lastAiContext?.goal;
-        return typeof ctxGoal === 'string' ? ctxGoal : null;
-      })();
-      const rawPlaylistLen =
-        lastAiContext?.profile?.explosivite_playlist_len ??
-        lastAiContext?.explosivite_playlist_len ??
-        lastAiContext?.profile?.explosivitePlaylistLen ??
-        lastAiContext?.explosivitePlaylistLen;
+      const activeGoal = typeof microcycleGoal === "string" && microcycleGoal.trim() ? microcycleGoal.trim() : null;
+      const rawPlaylistLen = lastAiContext?.profile?.explosivite_playlist_len;
       const playlistLen = (() => {
         const parsed =
           typeof rawPlaylistLen === 'number'
@@ -320,9 +384,7 @@ const getSessionDateKey = (s: any) => {
           ? Math.max(0, Math.trunc(microcycleSessionIndex))
           : 0;
       const shouldPromptCycleEnd =
-        activeGoal === 'explosivite' &&
-        playlistLen > 0 &&
-        microIdx % playlistLen === playlistLen - 1;
+        Boolean(activeGoal) && playlistLen > 0 && microIdx % playlistLen === playlistLen - 1;
 
       const dailyPayload: any = {
         fatigue: clamp(
@@ -354,6 +416,9 @@ const getSessionDateKey = (s: any) => {
         pain: toRating0to5(pain0to5),
         createdAt: new Date().toISOString(),
       };
+      if (durationClamped != null) {
+        fb.durationMin = durationClamped;
+      }
       const res = await Promise.resolve(addFeedback(targetSessionId, fb));
       if (!res) {
         Alert.alert(
@@ -369,6 +434,13 @@ const getSessionDateKey = (s: any) => {
       const ctlDelta = +(after.ctl - ctlBefore).toFixed(1);
       const tsbDelta = +(after.tsb - tsbBefore).toFixed(1);
       const fmt = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(1)}`;
+      trackEvent('feedback_submitted', {
+        cycleId: activeGoal ?? 'none',
+        rpe: fb.rpe,
+        fatigue: fb.fatigue,
+        pain: fb.pain,
+        durationMin: durationClamped ?? null,
+      });
       Alert.alert(
         'Feedback enregistré',
         `ATL ${after.atl.toFixed(1)} (${fmt(atlDelta)}) · CTL ${after.ctl.toFixed(1)} (${fmt(ctlDelta)}) · TSB ${after.tsb.toFixed(1)} (${fmt(tsbDelta)})`,
@@ -391,22 +463,66 @@ const getSessionDateKey = (s: any) => {
         { cancelable: false }
       );
     } catch (e) {
-      console.warn('Feedback save failed', e);
-      Alert.alert(
-        'Erreur',
-        "Impossible d'enregistrer ton feedback. Réessaie dans un instant."
-      );
+      const appError = classifyError(e);
+
+      // Si c'est une erreur réseau, on enregistre dans la queue hors-ligne
+      if (appError.type === ErrorType.NETWORK) {
+        // Construire le feedback à nouveau pour l'enregistrer dans la queue
+        const pain0to5 = clamp(
+          pain,
+          FEEDBACK_LIMITS.painMin ?? 0,
+          FEEDBACK_LIMITS.painMax ?? 5
+        );
+        const fb: SessionFeedback = {
+          rpe: toRPE1to10(rpe),
+          fatigue: toRating1to5(fatigue),
+          sleep: toRating1to5(recovery),
+          pain: toRating0to5(pain0to5),
+          createdAt: new Date().toISOString(),
+        };
+        if (durationClamped != null) {
+          fb.durationMin = durationClamped;
+        }
+
+        // Ajouter à la queue
+        await enqueueAction('feedback', {
+          sessionId: targetSessionId,
+          feedback: fb,
+        });
+
+        Alert.alert(
+          'Enregistré hors-ligne',
+          'Pas de connexion internet. Ton feedback a été sauvegardé localement et sera synchronisé automatiquement dès que tu seras reconnecté.',
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+      } else {
+        // Autre type d'erreur, utiliser le système normal
+        showErrorWithRetry(e, 'Enregistrement du feedback', onSave);
+      }
     } finally {
       setIsSaving(false);
     }
   };
+
+  const saveDisabled =
+    isSaving || !targetSession || targetSession?.completed || !canSaveToday;
+  const saveLabel = isSaving
+    ? 'Enregistrement…'
+    : targetSession?.completed
+      ? 'Déjà complétée'
+      : !canSaveToday
+        ? "Séance pas datée d'aujourd'hui"
+        : 'Valider mon état';
 
   return (
     <SafeAreaView
       style={styles.safeArea}
       edges={['right', 'left', 'bottom']}
     >
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar
+        barStyle={themeMode === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={COLORS.background}
+      />
       <View style={styles.root}>
         <ScrollView
           style={styles.scroll}
@@ -433,6 +549,58 @@ const getSessionDateKey = (s: any) => {
                 </Text>
               </View>
             </View>
+          </View>
+
+          {/* Suggestions rapides */}
+          <View style={styles.suggestCard}>
+            <View style={styles.suggestHeader}>
+              <Text style={styles.suggestTitle}>Suggestions rapides</Text>
+              <Text style={styles.suggestSubtitle}>
+                Basées sur l'intensité {suggestion.intensityLabel || 'du jour'}
+              </Text>
+            </View>
+            <View style={styles.suggestRow}>
+              <TouchableOpacity
+                style={styles.suggestChip}
+                onPress={() => setRpe(suggestion.rpe)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.suggestChipText}>RPE {suggestion.rpe}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.suggestChip}
+                onPress={() => setFatigue(suggestion.fatigue)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.suggestChipText}>Fatigue {suggestion.fatigue}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.suggestChip}
+                onPress={() => setRecovery(suggestion.recovery)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.suggestChipText}>Récup {suggestion.recovery}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.suggestChip}
+                onPress={() => setPain(suggestion.pain)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.suggestChipText}>Douleur {suggestion.pain}</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.suggestApply}
+              onPress={() => {
+                setRpe(suggestion.rpe);
+                setFatigue(suggestion.fatigue);
+                setRecovery(suggestion.recovery);
+                setPain(suggestion.pain);
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.suggestApplyText}>Appliquer toutes les suggestions</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Bloc RPE */}
@@ -464,6 +632,40 @@ const getSessionDateKey = (s: any) => {
                   );
                 })}
               </View>
+            </View>
+          </View>
+
+          {/* Durée + charge */}
+          <View style={styles.metricsRow}>
+            <View style={styles.metricCard}>
+              <Text style={styles.metricTitle}>Durée réelle</Text>
+              <TextInput
+                value={durationMin}
+                onChangeText={setDurationMin}
+                placeholder="ex: 60"
+                placeholderTextColor={COLORS.textMuted}
+                keyboardType="number-pad"
+                style={[
+                  styles.durationInput,
+                  !durationValid && durationMin ? styles.durationInputError : null
+                ]}
+                accessibilityLabel="Durée de la séance"
+                accessibilityHint="Entre la durée réelle en minutes, entre 5 et 300"
+              />
+              <Text style={styles.metricHint}>minutes</Text>
+              {!durationValid && durationMin ? (
+                <Text style={styles.metricError}>⚠️ Entre 5 et 300 min</Text>
+              ) : null}
+            </View>
+            <View style={styles.metricCard}>
+              <Text style={styles.metricTitle}>Charge estimée</Text>
+              <Text style={styles.metricValue}>
+                {estimatedLoad != null ? `${estimatedLoad} UA` : '—'}
+              </Text>
+              <Text style={styles.metricHint}>
+                TSB {tsb.toFixed(1)} → {projectedTsb ?? '—'}
+                {projectedDelta != null ? ` (${projectedDelta >= 0 ? '+' : ''}${projectedDelta})` : ''}
+              </Text>
             </View>
           </View>
 
@@ -568,51 +770,51 @@ const getSessionDateKey = (s: any) => {
         {cyclePromptVisible && (
           <View style={styles.cyclePrompt}>
             <Text style={styles.cyclePromptText}>
-              Fin du cycle explosivité : veux-tu continuer ce cycle, ou changer de programme ?
+              Cycle terminé : choisis un nouveau cycle pour continuer, ou ferme ce message pour revenir à l’app.
             </Text>
             <View style={styles.cycleActions}>
-              <TouchableOpacity
-                onPress={continueAfterFeedback}
-                style={[styles.cycleButton, styles.cycleButtonPrimary]}
-              >
-                <Text style={styles.cycleButtonPrimaryText}>Continuer explosivité</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+              <Button
+                label="Choisir un nouveau cycle"
                 onPress={() => {
                   clearAutoContinue();
                   setCyclePromptVisible(false);
-                  navigation.navigate('PrebuiltSessions' as never);
+                  navigation.navigate("CycleModal" as never, { mode: "select", origin: "feedback" } as never);
                 }}
-                style={[styles.cycleButton, styles.cycleButtonGhost]}
-              >
-                <Text style={styles.cycleButtonGhostText}>Changer de playlist</Text>
-              </TouchableOpacity>
+                variant="primary"
+                size="md"
+                fullWidth
+              />
+              <Button
+                label="Plus tard"
+                onPress={continueAfterFeedback}
+                variant="ghost"
+                size="md"
+                fullWidth
+              />
             </View>
           </View>
         )}
 
         {/* Bottom bar */}
         <View style={styles.bottomBar}>
-          <TouchableOpacity
-            style={[
-              styles.saveBtn,
-              (isSaving || !targetSession || targetSession?.completed || !sessionIsToday) && { opacity: 0.6 },
-            ]}
+          <Button
+            label={saveLabel}
             onPress={onSave}
-            disabled={isSaving || !targetSession || targetSession?.completed || !sessionIsToday}
-          >
-            <Text style={styles.saveText}>
-              {isSaving
-                ? 'Enregistrement…'
-                : targetSession?.completed
-                  ? 'Déjà complétée'
-                  : !sessionIsToday
-                    ? "Séance pas datée d'aujourd'hui"
-                    : 'Valider mon état'}
-            </Text>
-          </TouchableOpacity>
+            variant="primary"
+            size="lg"
+            fullWidth
+            disabled={saveDisabled}
+            style={styles.saveBtn}
+            textStyle={styles.saveText}
+          />
         </View>
       </View>
+
+      <LoadingOverlay
+        visible={isSaving}
+        message="Enregistrement de ton feedback..."
+        submessage="Mise à jour de ta charge d'entraînement (ATL/CTL/TSB) en cours."
+      />
     </SafeAreaView>
   );
 }
@@ -716,6 +918,60 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
   },
 
+  // Suggestions
+  suggestCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 14,
+    backgroundColor: COLORS.surface,
+    gap: 10,
+  },
+  suggestHeader: {
+    gap: 4,
+  },
+  suggestTitle: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  suggestSubtitle: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+  },
+  suggestRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  suggestChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surfaceSoft,
+  },
+  suggestChipText: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  suggestApply: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+    backgroundColor: COLORS.accentSoft,
+    alignSelf: 'flex-start',
+  },
+  suggestApplyText: {
+    color: COLORS.accent,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
   // Metrics layout
   metricsRow: {
     flexDirection: 'row',
@@ -747,6 +1003,38 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: COLORS.accent,
   },
+  durationInput: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    color: COLORS.text,
+    backgroundColor: COLORS.surface,
+    fontSize: 14,
+  },
+  durationInputError: {
+    borderColor: COLORS.danger,
+    borderWidth: 2,
+    backgroundColor: 'rgba(239, 68, 68, 0.05)',
+  },
+  metricValue: {
+    marginTop: 8,
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  metricHint: {
+    marginTop: 4,
+    fontSize: 11,
+    color: COLORS.textMuted,
+  },
+  metricError: {
+    marginTop: 4,
+    fontSize: 11,
+    color: COLORS.danger,
+  },
 
   // RPE
   rpeScaleRow: {
@@ -774,7 +1062,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   rpeDotTextSelected: {
-    color: '#0B0F19',
+    color: COLORS.background,
     fontWeight: '700',
   },
 
@@ -861,23 +1149,6 @@ const styles = StyleSheet.create({
   },
   cyclePromptText: { color: COLORS.text, fontSize: 13, lineHeight: 18 },
   cycleActions: { marginTop: 10, gap: 8 },
-  cycleButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  cycleButtonPrimary: {
-    backgroundColor: COLORS.accent,
-    borderColor: COLORS.accentSoft,
-  },
-  cycleButtonPrimaryText: { color: COLORS.background, fontWeight: '700', fontSize: 13 },
-  cycleButtonGhost: {
-    backgroundColor: 'transparent',
-    borderColor: COLORS.border,
-  },
-  cycleButtonGhostText: { color: COLORS.text, fontWeight: '600', fontSize: 13 },
 
   // Bottom bar
   bottomBar: {
@@ -896,7 +1167,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.accent,
   },
   saveText: {
-    color: '#0B0F19',
+    color: COLORS.background,
     fontWeight: '700',
     fontSize: 15,
   },

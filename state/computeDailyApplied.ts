@@ -1,5 +1,6 @@
 // src/engine/computeDailyApplied.ts
 import type { Session } from "../domain/types";
+import { EXTERNAL_WEIGHTS } from "../config/trainingDefaults";
 import { addDaysISO } from "../utils/virtualClock";
 import {
   toDayKey,
@@ -65,7 +66,12 @@ export function externalLoadForDay(
   return (externals ?? [])
     .filter((x) => toDayKey(x.dateISO) === dayKey)
     .reduce((sum, x) => {
-      const w = x.source === "match" ? 1.0 : x.source === "club" ? 0.9 : 0.75;
+      const w =
+        x.source === "match"
+          ? EXTERNAL_WEIGHTS.match
+          : x.source === "club"
+            ? EXTERNAL_WEIGHTS.club
+            : EXTERNAL_WEIGHTS.other;
       return sum + w * x.rpe * x.durationMin;
     }, 0);
 }

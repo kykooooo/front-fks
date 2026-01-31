@@ -83,9 +83,16 @@ export type ResetVariant = {
   display?: FKS_NextSessionV2["display"];
 };
 
+export type SessionDebugInfo = {
+  reasons?: string[];
+  reset_variant_id?: string;
+  context_used?: Record<string, unknown>;
+  generation_params?: Record<string, unknown>;
+};
+
 export type ResetChoiceState = {
   v2: FKS_NextSessionV2;
-  debug: any;
+  debug: SessionDebugInfo | null;
   location: string;
   variants: ResetVariant[];
 } | null;

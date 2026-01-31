@@ -1,6 +1,5 @@
 import { addDays } from "date-fns";
 import type { Exercise, Session } from "../../domain/types";
-import { savePlannedSessionToFirestore } from "../../services/plannedSessionsRepo";
 import { deepClean, normalizeFocus, toPlannedIntensity } from "./helpers";
 import type { FKS_NextSessionV2, PlannedPhase } from "./types";
 import { v2ToLocalSession } from "./transform";
@@ -157,7 +156,6 @@ export async function processV2(params: {
   };
 
   const payload = deepClean(rawPayload) as any;
-  await savePlannedSessionToFirestore(payload);
   await persistPlanned(payload);
   pushSession(sessionWithAi);
   setLastAiSessionV2({

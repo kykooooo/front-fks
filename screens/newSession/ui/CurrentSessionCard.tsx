@@ -110,7 +110,7 @@ const styles = {
   exerciseItem: {
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#111827",
+    borderBottomColor: palette.borderSoft,
   },
   exerciseName: {
     fontSize: 14,
@@ -146,26 +146,26 @@ const styles = {
     borderColor: palette.accent,
   },
   ctaPrimaryText: {
-    color: "#050509",
+    color: palette.bg,
     fontWeight: "800" as const,
     textTransform: "uppercase" as const,
     fontSize: 13,
   },
   ctaSecondaryGreen: {
-    backgroundColor: "#06281a",
-    borderColor: "#14532d",
+    backgroundColor: palette.cardSoft,
+    borderColor: palette.borderSoft,
   },
   ctaSecondaryGreenText: {
-    color: "#bbf7d0",
+    color: palette.text,
     fontWeight: "700" as const,
     fontSize: 12,
   },
   ctaSecondaryOrange: {
-    backgroundColor: "#2b1707",
-    borderColor: "#ea580c",
+    backgroundColor: palette.accentSoft,
+    borderColor: palette.accent,
   },
   ctaSecondaryOrangeText: {
-    color: palette.accentSoft,
+    color: palette.accent,
     fontWeight: "700" as const,
     fontSize: 12,
   },

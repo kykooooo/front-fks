@@ -1,5 +1,5 @@
 // src/screens/NewSessionScreen.tsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -24,6 +24,8 @@ import { isSameDay, RESET_VARIANT_FALLBACKS } from "./newSession/helpers";
 import { prepareBackendContext, fetchV2 } from "./newSession/api";
 import { processV2 } from "./newSession/orchestrator";
 import { buildFallbackSession } from "./newSession/fallback";
+import { classifyError, ErrorType } from "../utils/errorHandler";
+import { LoadingOverlay } from "../components/ui/LoadingOverlay";
 import { ResetVariantModal } from "./newSession/ResetVariantModal";
 import { EnvironmentSelector } from "./newSession/ui/EnvironmentSelector";
 import { EquipmentSelector } from "./newSession/ui/EquipmentSelector";
@@ -31,6 +33,9 @@ import { GenerationActions } from "./newSession/ui/GenerationActions";
 import { CurrentSessionCard } from "./newSession/ui/CurrentSessionCard";
 import { useAiContextLoader, useEnvironmentEquipment } from "./newSession/hooks";
 import { palette } from "./newSession/theme";
+import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
+import { Button } from "../components/ui/Button";
+import { trackEvent } from "../services/analytics";
 
 /** Catalogue matériel (ids alignés avec le profil) */
 const EQUIPMENT_CATALOG = [
@@ -90,6 +95,7 @@ type RootStackParamList = {
     plannedDateISO: string;
     sessionId?: string;
   };
+  CycleModal: { mode?: "select" | "manage"; origin?: "home" | "profile" | "newSession" | "feedback" } | undefined;
 };
 
 /** =====================================================================
@@ -109,12 +115,21 @@ export default function NewSessionScreen() {
   );
   const tsb = useTrainingStore((s) => s.tsb);
   const clubTrainingDays = useTrainingStore((s) => s.clubTrainingDays ?? []);
+  const microcycleGoal = useTrainingStore((s) => s.microcycleGoal);
+  const microcycleSessionIndex = useTrainingStore((s) => s.microcycleSessionIndex);
 
   const dailyApplied = useTrainingStore((s) => s.dailyApplied);
   const lastAppliedDate = useTrainingStore((s) => s.lastAppliedDate);
   const advanceDays = useTrainingStore((s) => s.advanceDays);
   const restUntil = useTrainingStore((s) => s.restUntil);
   const storeHydrated = useTrainingStore((s) => (s as any).storeHydrated ?? true);
+
+  const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
+  const cycleDef = cycleId ? MICROCYCLES[cycleId] : null;
+  const cycleCompleted =
+    Boolean(cycleId) &&
+    Math.max(0, Math.trunc(microcycleSessionIndex ?? 0)) >= MICROCYCLE_TOTAL_SESSIONS_DEFAULT;
+  const allowedLocations = cycleDef?.allowedLocations ?? ["gym", "pitch", "home"];
 
   // IA / backend debug
   const [debugAgent, setDebugAgent] = useState<any>(null);
@@ -129,6 +144,16 @@ export default function NewSessionScreen() {
   const [setupDone, setSetupDone] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [resetChoice, setResetChoice] = useState<ResetChoiceState>(null);
+
+  useEffect(() => {
+    setEnvironment((prev) => {
+      const next = prev.filter((loc) => allowedLocations.includes(loc));
+      if (next.length === 0 && allowedLocations.length === 1) {
+        return [allowedLocations[0]] as EnvironmentSelection;
+      }
+      return next as EnvironmentSelection;
+    });
+  }, [cycleId]);
 
   const current: Session | undefined = useMemo(
     () =>
@@ -215,6 +240,11 @@ export default function NewSessionScreen() {
         );
       },
     });
+    trackEvent("session_generate_success", {
+      cycleId: cycleId ?? "none",
+      location: resetChoice.location,
+      resetVariantId: chosen.id,
+    });
   };
 
   /** ------------------------------------------------------------------
@@ -227,7 +257,7 @@ export default function NewSessionScreen() {
     setContextLoading,
     setAvailableEquipment,
     setSelectedEquipment,
-  });
+  }, Boolean(cycleId) && !cycleCompleted);
 
   useEnvironmentEquipment(
     environment,
@@ -241,6 +271,35 @@ export default function NewSessionScreen() {
    * ------------------------------------------------------------------ */
   const handleGenerate = async () => {
     try {
+      if (!cycleId) {
+        Alert.alert(
+          "Choisir un cycle",
+          "Choisis ton cycle (playlist) avant de générer des séances.",
+          [
+            {
+              text: "Choisir mon cycle",
+              onPress: () => nav.navigate("CycleModal", { mode: "select", origin: "newSession" }),
+            },
+            { text: "Annuler", style: "cancel" },
+          ]
+        );
+        return;
+      }
+      if (cycleCompleted) {
+        Alert.alert(
+          "Cycle terminé",
+          "Bien joué. Choisis un nouveau cycle pour continuer.",
+          [
+            {
+              text: "Choisir un nouveau cycle",
+              onPress: () => nav.navigate("CycleModal", { mode: "select", origin: "newSession" }),
+            },
+            { text: "Annuler", style: "cancel" },
+          ]
+        );
+        return;
+      }
+
       if (isBeforeNextAllowed) {
         const d = nextAllowedISO ? new Date(nextAllowedISO) : null;
         Alert.alert(
@@ -273,6 +332,11 @@ export default function NewSessionScreen() {
         return;
       }
 
+      trackEvent("session_generate_start", {
+        cycleId,
+        locations: environment,
+      });
+
       setGenerating(true);
 
       // On reconstruit le contexte à chaque génération pour refléter microcycle/index/goal à jour.
@@ -297,6 +361,11 @@ export default function NewSessionScreen() {
             rv.subtitle ??
             "RPE 3–4 · 12–16 min · zéro fatigue",
         }));
+        trackEvent("session_generate_reset", {
+          cycleId,
+          location,
+          variantCount: variants.length,
+        });
         setResetChoice({ v2, debug, variants, location });
         setGenerating(false);
         return;
@@ -327,6 +396,10 @@ export default function NewSessionScreen() {
           );
         },
       });
+      trackEvent("session_generate_success", {
+        cycleId,
+        location,
+      });
     } catch (err: any) {
       if (err?.code === "AUTH_REQUIRED") {
         Alert.alert(
@@ -335,25 +408,54 @@ export default function NewSessionScreen() {
         );
         return;
       }
-      console.warn("Generate & persist planned session failed", err);
-      const isBackendFailure =
-        typeof err?.message === "string" &&
-        (err.message.includes("Backend") || err.message.includes("Network") || err.message.includes("fetch"));
-      if (isBackendFailure) {
+
+      // Classifier l'erreur pour obtenir un message clair
+      const appError = classifyError(err);
+      trackEvent("session_generate_error", {
+        cycleId: cycleId ?? "none",
+        code: err?.code ?? "unknown",
+        type: appError.type,
+      });
+
+      // Log en mode dev pour debug
+      if (__DEV__) {
+        console.error("Generate & persist planned session failed", {
+          type: appError.type,
+          message: appError.message,
+          technical: appError.technicalDetails,
+        });
+      }
+
+      // Si c'est une erreur réseau/serveur/timeout, on utilise le fallback
+      const shouldUseFallback =
+        appError.type === ErrorType.NETWORK ||
+        appError.type === ErrorType.SERVER ||
+        appError.type === ErrorType.TIMEOUT;
+
+      if (shouldUseFallback) {
         const todayISO = now.toISOString().slice(0, 10);
         const { session, aiV2 } = buildFallbackSession(todayISO, phase as any);
         pushSession({ ...session, aiV2 } as any);
         Alert.alert(
-          "Fallback appliqué",
-          "Impossible de générer via l'IA. Séance cardio+mobilité de secours prête."
+          "Séance de secours",
+          `${appError.userMessage}\n\nUne séance cardio+mobilité de secours a été préparée pour toi.`,
+          [
+            {
+              text: "Voir la séance",
+              onPress: () => nav.navigate("SessionPreview", {
+                v2: aiV2 as any,
+                plannedDateISO: todayISO,
+                sessionId: session.id,
+              }),
+            }
+          ]
         );
-        nav.navigate("SessionPreview", {
-          v2: aiV2 as any,
-          plannedDateISO: todayISO,
-          sessionId: session.id,
-        });
       } else {
-        Alert.alert("Erreur", "Impossible de générer la séance pour le moment.");
+        // Autre type d'erreur (validation, etc.)
+        Alert.alert(
+          appError.type === ErrorType.VALIDATION ? "Données invalides" : "Erreur",
+          appError.userMessage
+        );
       }
     } finally {
       setGenerating(false);
@@ -399,19 +501,71 @@ export default function NewSessionScreen() {
         keyboardShouldPersistTaps="handled"
       >
       {/* HEADER SIMPLE */}
-      <View style={{ marginBottom: 8 }}>
-        <Text style={styles.headerTitle}>Nouvelle séance FKS</Text>
-        <Text style={styles.headerSubtitle}>
-          Choisis ton contexte et ton matériel, FKS s’occupe du reste.
-        </Text>
-      </View>
+	      <View style={{ marginBottom: 8 }}>
+	        <Text style={styles.headerTitle}>Nouvelle séance FKS</Text>
+	        <Text style={styles.headerSubtitle}>
+	          Choisis ton contexte et ton matériel, FKS s’occupe du reste.
+	        </Text>
+	      </View>
 
-      {/* SI PAS DE SÉANCE EN COURS */}
-      {!current ? (
-        <>
-          <View style={styles.card}>
-            <EnvironmentSelector environment={environment} setEnvironment={setEnvironment} />
+        {!cycleId ? (
+          <View style={[styles.card, styles.cycleGateCard]}>
+            <Text style={styles.cardTitle}>Choisis ton cycle</Text>
+            <Text style={styles.cardSubtitle}>
+              Pour générer des séances cohérentes, sélectionne un cycle (playlist). Tu pourras le gérer ensuite depuis ton profil.
+            </Text>
+            <Button
+              label="Choisir mon cycle"
+              onPress={() => nav.navigate("CycleModal", { mode: "select", origin: "newSession" })}
+              fullWidth
+            />
           </View>
+        ) : cycleCompleted ? (
+          <View style={[styles.card, styles.cycleGateCard]}>
+            <Text style={styles.cardTitle}>Cycle terminé</Text>
+            <Text style={styles.cardSubtitle}>
+              {cycleDef?.label ?? "Ton cycle"} est complété ({MICROCYCLE_TOTAL_SESSIONS_DEFAULT}/{MICROCYCLE_TOTAL_SESSIONS_DEFAULT}). Choisis un nouveau cycle pour continuer.
+            </Text>
+            <Button
+              label="Choisir un nouveau cycle"
+              onPress={() => nav.navigate("CycleModal", { mode: "select", origin: "newSession" })}
+              fullWidth
+            />
+            <Button
+              label="Voir mon cycle"
+              variant="ghost"
+              onPress={() => nav.navigate("CycleModal", { mode: "manage", origin: "newSession" } as any)}
+              fullWidth
+            />
+          </View>
+        ) : (
+          <View style={[styles.card, styles.cycleMiniCard]}>
+            <View style={styles.cycleMiniRow}>
+              <Text style={styles.cycleMiniText}>
+                Cycle : <Text style={{ fontWeight: "800" }}>{cycleDef?.label ?? "—"}</Text>
+              </Text>
+              <Button
+                label="Gérer"
+                variant="ghost"
+                size="sm"
+                onPress={() => nav.navigate("CycleModal", { mode: "manage", origin: "newSession" } as any)}
+              />
+            </View>
+          </View>
+        )}
+
+	      {/* SI PAS DE SÉANCE EN COURS */}
+	      {!current ? (
+	        cycleId && !cycleCompleted ? (
+            <>
+	          <View style={styles.card}>
+	            <EnvironmentSelector
+                environment={environment}
+                setEnvironment={setEnvironment}
+                allowed={allowedLocations}
+                descriptionOverrides={cycleDef?.locationDescriptions}
+              />
+	          </View>
 
           <View style={styles.card}>
             <EquipmentSelector
@@ -430,24 +584,25 @@ export default function NewSessionScreen() {
           </View>
 
           {/* Étape 2 : CTA Génération (affiché après validation) */}
-          {setupDone ? (
-            <GenerationActions
-              disabled={isBeforeNextAllowed || contextLoading || generating || !storeHydrated || !!current}
-              generating={generating}
-              label={generateLabel}
-              onGenerate={handleGenerate}
-              onAdvanceDay={() => advanceDays(1)}
-              onRestTwoDays={() => restUntil(2)}
-              storeHydrated={storeHydrated}
-              nextAllowedISO={nextAllowedISO}
-              alreadyAppliedToday={alreadyAppliedToday}
-            />
-          ) : null}
-        </>
-      ) : (
-        // SI UNE SÉANCE EST DÉJÀ EN COURS
-        <CurrentSessionCard
-          current={current}
+	          {setupDone ? (
+	            <GenerationActions
+	              disabled={isBeforeNextAllowed || contextLoading || generating || !storeHydrated || !!current}
+	              generating={generating}
+	              label={generateLabel}
+	              onGenerate={handleGenerate}
+	              onAdvanceDay={() => advanceDays(1)}
+	              onRestTwoDays={() => restUntil(2)}
+	              storeHydrated={storeHydrated}
+	              nextAllowedISO={nextAllowedISO}
+	              alreadyAppliedToday={alreadyAppliedToday}
+	            />
+		          ) : null}
+		        </>
+	          ) : null
+		      ) : (
+	        // SI UNE SÉANCE EST DÉJÀ EN COURS
+	        <CurrentSessionCard
+	          current={current}
           nextAllowedISO={nextAllowedISO}
           alreadyAppliedToday={alreadyAppliedToday}
           onFeedback={goFeedback}
@@ -476,6 +631,12 @@ export default function NewSessionScreen() {
         </View>
       )}
       </ScrollView>
+
+      <LoadingOverlay
+        visible={generating}
+        message="Génération de ta séance..."
+        submessage="L'IA analyse ton profil, ta charge d'entraînement et tes contraintes pour créer une séance personnalisée. Ça peut prendre 10-30 secondes."
+      />
     </SafeAreaView>
   );
 }
@@ -517,6 +678,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 4,
     color: palette.sub,
+  },
+  cycleGateCard: {
+    gap: 12,
+  },
+  cycleMiniCard: {
+    paddingVertical: 12,
+  },
+  cycleMiniRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  cycleMiniText: {
+    flex: 1,
+    fontSize: 13,
+    color: palette.text,
   },
   debugText: {
     marginTop: 8,

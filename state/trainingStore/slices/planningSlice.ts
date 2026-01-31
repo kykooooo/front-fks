@@ -3,7 +3,7 @@ import type { TrainingState } from "../types";
 
 type PlanningSlice = Pick<
   TrainingState,
-  "togglePlannedFksDay" | "clearPlannedFksDays"
+  "togglePlannedFksDay" | "clearPlannedFksDays" | "setPlannedFksDays"
 >;
 
 /**
@@ -20,4 +20,6 @@ export const createPlanningSlice = (set: any): PlanningSlice => ({
       return { plannedFksDays: next };
     }),
   clearPlannedFksDays: () => set({ plannedFksDays: [] }),
+  setPlannedFksDays: (days: string[]) =>
+    set({ plannedFksDays: [...days] }),
 });

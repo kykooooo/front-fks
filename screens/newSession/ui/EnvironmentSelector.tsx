@@ -6,10 +6,14 @@ import type { EnvironmentSelection } from "../types";
 type Props = {
   environment: EnvironmentSelection;
   setEnvironment: React.Dispatch<React.SetStateAction<EnvironmentSelection>>;
+  allowed?: Array<"gym" | "pitch" | "home">;
+  descriptionOverrides?: Partial<Record<"gym" | "pitch" | "home", string>>;
 };
 
-export function EnvironmentSelector({ environment, setEnvironment }: Props) {
+export function EnvironmentSelector({ environment, setEnvironment, allowed, descriptionOverrides }: Props) {
+  const allowedSet = new Set(allowed ?? ["gym", "pitch", "home"]);
   const toggle = (key: "gym" | "pitch" | "home") => {
+    if (!allowedSet.has(key)) return;
     setEnvironment((prev) => {
       const has = prev.includes(key);
       const next = has
@@ -26,24 +30,30 @@ export function EnvironmentSelector({ environment, setEnvironment }: Props) {
         Dis à FKS si tu vas à la salle, sur un terrain ou tu restes chez toi.
       </Text>
       <View style={styles.environmentRow}>
-        <EnvButton
-          label="Salle"
-          description="Machines, charges lourdes"
-          selected={environment.includes("gym")}
-          onPress={() => toggle("gym")}
-        />
-        <EnvButton
-          label="Terrain"
-          description="Gazon, stabilisé, synthé"
-          selected={environment.includes("pitch")}
-          onPress={() => toggle("pitch")}
-        />
-        <EnvButton
-          label="Chez toi"
-          description="Salon, jardin, cage d’escalier"
-          selected={environment.includes("home")}
-          onPress={() => toggle("home")}
-        />
+        {allowedSet.has("gym") ? (
+          <EnvButton
+            label="Salle"
+            description={descriptionOverrides?.gym ?? "Machines, charges lourdes"}
+            selected={environment.includes("gym")}
+            onPress={() => toggle("gym")}
+          />
+        ) : null}
+        {allowedSet.has("pitch") ? (
+          <EnvButton
+            label="Terrain"
+            description={descriptionOverrides?.pitch ?? "Gazon, stabilisé, synthé"}
+            selected={environment.includes("pitch")}
+            onPress={() => toggle("pitch")}
+          />
+        ) : null}
+        {allowedSet.has("home") ? (
+          <EnvButton
+            label="Chez toi"
+            description={descriptionOverrides?.home ?? "Salon, jardin, cage d’escalier"}
+            selected={environment.includes("home")}
+            onPress={() => toggle("home")}
+          />
+        ) : null}
       </View>
     </View>
   );
@@ -102,12 +112,12 @@ const styles = {
     paddingHorizontal: 10,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#1f2933",
+    borderColor: palette.borderSoft,
     backgroundColor: palette.cardSoft,
   },
   envCardSelected: {
     borderColor: palette.accent,
-    backgroundColor: "#1f1308",
+    backgroundColor: palette.accentSoft,
   },
   envLabel: {
     fontSize: 13,
@@ -115,7 +125,7 @@ const styles = {
     color: palette.text,
   },
   envLabelSelected: {
-    color: palette.accentSoft,
+    color: palette.accent,
   },
   envDescription: {
     fontSize: 11,
@@ -123,6 +133,6 @@ const styles = {
     marginTop: 4,
   },
   envDescriptionSelected: {
-    color: palette.accentSoft,
+    color: palette.accent,
   },
 };

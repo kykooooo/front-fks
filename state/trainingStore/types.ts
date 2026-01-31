@@ -10,6 +10,8 @@ import type {
   InjuryRecord,
 } from "../../domain/types";
 import { AiNextSession } from "../../repositories/sessionsRepo";
+import type { FKS_NextSessionV2 } from "../../screens/newSession/types";
+import type { FKS_AiContext } from "../../services/aiContext";
 
 // Charges externes (club / match)
 export type ExternalLoad = {
@@ -74,12 +76,14 @@ export type TrainingState = {
   devNowISO: string | null;
 
   // debug IA
-  lastAiContext?: any;
+  lastAiContext?: FKS_AiContext | null;
 
   // suivi
   sessions: Session[];
   weekly: WeeklyIndicators;
   externalLoads: ExternalLoad[];
+  favoriteExerciseIds: string[];
+  recentExerciseIds: string[];
   clubTrainingDays?: string[];
   matchDays?: string[];
   matchDay?: string | null;
@@ -89,8 +93,11 @@ export type TrainingState = {
   };
   microcycleGoal: string | null;
   microcycleSessionIndex: number;
+  microcycleAppliedSessionIds: string[];
   setClubTrainingDays: (days: string[]) => void;
   setMatchDays: (days: string[]) => void;
+  toggleFavoriteExercise: (exerciseId: string) => void;
+  addRecentExercise: (exerciseId: string) => void;
   setMicrocycleGoal: (goal: string | null) => void;
   setMicrocycleSessionIndex: (idx: number) => void;
   bumpMicrocycleSessionIndex: () => void;
@@ -114,10 +121,10 @@ export type TrainingState = {
   debugLog: DebugEvent[];
   clearDebugLog: () => void;
 
-  // actions “métier”
+  // actions "métier"
   setPhase: (p: Phase) => void;
   pushSession: (s: Session) => void;
-  setLastAiContext: (ctx: any) => void;
+  setLastAiContext: (ctx: FKS_AiContext | null) => void;
   setManualLoad: (atl: number, ctl: number, tsb: number) => void;
 
   // feedback (chemin officiel de complétion)
@@ -136,6 +143,7 @@ export type TrainingState = {
   plannedFksDays: string[];
   togglePlannedFksDay: (dayKey: string) => void;
   clearPlannedFksDays: () => void;
+  setPlannedFksDays: (days: string[]) => void;
 
   // helpers
   getSessionById: (id: string) => Session | undefined;
@@ -169,12 +177,12 @@ export type TrainingState = {
   _rehydrating?: boolean;
 
   // dernière séance IA (blueprint) pour affichage après relance
-  lastAiSessionV2?: any;
+  lastAiSessionV2?: { v2: FKS_NextSessionV2; date: string; sessionId: string } | null;
 
   // interne (rehydrate)
   _rehydrateFromStorage?: () => void;
   _rebuildLoadFromHistory?: (opts?: { decayToNow?: boolean }) => void;
 
   // setter
-  setLastAiSessionV2?: (v2: any) => void;
+  setLastAiSessionV2?: (v2: { v2: FKS_NextSessionV2; date: string; sessionId: string } | null) => void;
 };

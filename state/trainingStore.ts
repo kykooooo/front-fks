@@ -40,12 +40,15 @@ const baseTrainingState = () => ({
   weekly: { hasRunStructured: false, hasCircuit: false },
 
   externalLoads: [],
+  favoriteExerciseIds: [],
+  recentExerciseIds: [],
   clubTrainingDays: [],
   matchDays: [],
   matchDay: null,
   autoExternalConfig: {},
   microcycleGoal: null as string | null,
   microcycleSessionIndex: 0,
+  microcycleAppliedSessionIds: [],
 
   plannedFksDays: [],
   lastAppliedDate: null as string | null,
@@ -77,6 +80,8 @@ const persistableKeys = [
   "dayStates",
   "weekly",
   "externalLoads",
+  "favoriteExerciseIds",
+  "recentExerciseIds",
   "clubTrainingDays",
   "matchDay",
   "matchDays",
@@ -88,16 +93,19 @@ const persistableKeys = [
   "lastAppliedDate",
   "plannedFksDays",
   "debugLog",
+  "microcycleGoal",
+  "microcycleSessionIndex",
+  "microcycleAppliedSessionIds",
 ] as const;
 
 const persistKeyForUid = (uid: string) => `training-store-snapshot-${uid}`;
 
 const extractPersistable = (s: TrainingState): Partial<TrainingState> => {
-  const out: Partial<TrainingState> = {};
+  const out: any = {};
   persistableKeys.forEach((k) => {
     out[k] = s[k];
   });
-  return out;
+  return out as Partial<TrainingState>;
 };
 
 const loadSnapshotForUid = async (uid: string): Promise<Partial<TrainingState> | null> => {
@@ -114,8 +122,11 @@ const saveSnapshotForUid = async (uid: string, state: TrainingState) => {
   try {
     const data = extractPersistable(state);
     await AsyncStorage.setItem(persistKeyForUid(uid), JSON.stringify(data));
-  } catch {
-    // best effort
+  } catch (err) {
+    // Best effort - silently fail in production
+    if (__DEV__) {
+      console.warn('[TrainingStore] Failed to save snapshot:', err);
+    }
   }
 };
 
@@ -139,11 +150,35 @@ export const useTrainingStore = create<TrainingState>()(
         setLastAiContext: (ctx) => set({ lastAiContext: ctx }),
         setClubTrainingDays: (days) => set({ clubTrainingDays: days }),
         setMatchDays: (days) => set({ matchDays: days }),
+        toggleFavoriteExercise: (exerciseId) =>
+          set((state: TrainingState) => {
+            const next = new Set(state.favoriteExerciseIds ?? []);
+            if (next.has(exerciseId)) {
+              next.delete(exerciseId);
+            } else {
+              next.add(exerciseId);
+            }
+            return { favoriteExerciseIds: Array.from(next) };
+          }),
+        addRecentExercise: (exerciseId) =>
+          set((state: TrainingState) => {
+            const current = state.recentExerciseIds ?? [];
+            const next = [exerciseId, ...current.filter((id) => id !== exerciseId)];
+            return { recentExerciseIds: next.slice(0, 30) };
+          }),
         setMicrocycleGoal: (goal) =>
-          set((state) => ({
-            microcycleGoal: goal,
-            microcycleSessionIndex: goal && goal !== state.microcycleGoal ? 0 : state.microcycleSessionIndex,
-          })),
+          set((state) => {
+            const normalize = (v: any) => String(v ?? "").trim().toLowerCase();
+            const mapped = normalize(goal) === "reactivite" ? "explosif" : goal;
+            const nextNorm = normalize(mapped);
+            const prevNorm = normalize(state.microcycleGoal);
+            const changed = nextNorm !== prevNorm;
+            return {
+              microcycleGoal: mapped,
+              microcycleSessionIndex: changed ? 0 : state.microcycleSessionIndex,
+              microcycleAppliedSessionIds: changed ? [] : state.microcycleAppliedSessionIds,
+            };
+          }),
         setMicrocycleSessionIndex: (idx) => set({ microcycleSessionIndex: Math.max(0, Math.trunc(idx)) }),
         bumpMicrocycleSessionIndex: () =>
           set((state) => ({ microcycleSessionIndex: Math.max(0, Math.trunc(state.microcycleSessionIndex ?? 0)) + 1 })),
@@ -238,7 +273,7 @@ export const useTrainingStore = create<TrainingState>()(
           dailyApplied: s.dailyApplied,
           devNowISO: s.devNowISO,
           phase: s.phase,
-          phaseCount: s.phaseCount,
+          phaseCount: s.phaseCount, 
           dayStates: s.dayStates,
           weekly: s.weekly,
           externalLoads: s.externalLoads,
@@ -255,6 +290,7 @@ export const useTrainingStore = create<TrainingState>()(
           debugLog: s.debugLog ?? [],
           microcycleGoal: s.microcycleGoal ?? null,
           microcycleSessionIndex: s.microcycleSessionIndex ?? 0,
+          microcycleAppliedSessionIds: s.microcycleAppliedSessionIds ?? [],
         }),
 
         onRehydrateStorage: () => () => {

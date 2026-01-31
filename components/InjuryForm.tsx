@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, TextInput, Switch, StyleSheet, ScrollView } from 'react-native';
 import type { InjuryRecord, InjuryArea, InjuryRestrictions, InjurySeverity, InjuryType } from '../domain/types';
 import { INJURY_AREAS, INJURY_SEVERITY_LABELS, INJURY_TYPES, DEFAULT_RESTRICTIONS, RESTRICTIONS_PRESETS_BY_AREA } from '../constants/injury';
+import { theme } from '../constants/theme';
 
 type Props = {
   value: InjuryRecord | null;
@@ -10,6 +11,7 @@ type Props = {
 };
 
 const todayISO = () => new Date().toISOString();
+const palette = theme.colors;
 
 export default function InjuryForm({ value, onChange }: Props) {
   const active = !!value;
@@ -31,7 +33,6 @@ export default function InjuryForm({ value, onChange }: Props) {
       return;
     }
   
-    // mise à jour
     const { note, ...restPatch } = patch; // ⚠️ on retire note si undefined
     const merged = { ...value, ...restPatch, lastConfirm: todayISO() };
     const next = note !== undefined ? { ...merged, note } : merged;
@@ -54,7 +55,7 @@ export default function InjuryForm({ value, onChange }: Props) {
   };
 
   return (
-    <View style={styles.card}>
+    <View style={styles.root}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Blessure ?</Text>
         <Switch value={active} onValueChange={toggleActive} />
@@ -128,7 +129,7 @@ export default function InjuryForm({ value, onChange }: Props) {
               const val = !!restrictions[k];
               return (
                 <View key={key} style={styles.restrictRow}>
-                  <Text style={{ flex: 1 }}>{label}</Text>
+                  <Text style={styles.restrictLabel}>{label}</Text>
                   <Switch
                     value={val}
                     onValueChange={(nv) => setBase({ restrictions: { ...restrictions, [k]: nv } })}
@@ -145,6 +146,7 @@ export default function InjuryForm({ value, onChange }: Props) {
               value={value?.note ?? ''}
               onChangeText={(txt) => setBase({ note: txt })}
               placeholder="Ex: douleur au genou après match…"
+              placeholderTextColor={palette.sub}
               style={styles.input}
               multiline
             />
@@ -156,20 +158,43 @@ export default function InjuryForm({ value, onChange }: Props) {
 }
 
 const styles = StyleSheet.create({
-  card: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: '#ddd', padding: 12, backgroundColor: '#fff' },
+  root: { gap: 12 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  title: { fontSize: 16, fontWeight: '600' },
-  muted: { color: '#777' },
-  label: { fontWeight: '600', marginBottom: 6 },
+  title: { fontSize: 16, fontWeight: '600', color: palette.text },
+  muted: { color: palette.sub },
+  label: { fontWeight: '600', marginBottom: 6, color: palette.sub },
   rowWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  btn: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 12, borderWidth: 1, borderColor: '#ccc' },
-  btnPrimary: { backgroundColor: '#111', borderColor: '#111' },
-  btnText: { color: '#111' },
-  btnTextPrimary: { color: '#fff' },
-  chip: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1, borderColor: '#ccc' },
-  chipSelected: { backgroundColor: '#111', borderColor: '#111' },
-  chipText: { color: '#111' },
-  chipTextSelected: { color: '#fff' },
-  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 12, padding: 10, minHeight: 44 },
+  btn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.card,
+  },
+  btnPrimary: { backgroundColor: palette.accentSoft, borderColor: palette.accent },
+  btnText: { color: palette.sub, fontWeight: '600' },
+  btnTextPrimary: { color: palette.accent, fontWeight: '700' },
+  chip: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.card,
+  },
+  chipSelected: { backgroundColor: palette.accentSoft, borderColor: palette.accent },
+  chipText: { color: palette.sub, fontWeight: '600' },
+  chipTextSelected: { color: palette.accent, fontWeight: '700' },
+  input: {
+    borderWidth: 1,
+    borderColor: palette.border,
+    borderRadius: 12,
+    padding: 10,
+    minHeight: 44,
+    backgroundColor: palette.cardSoft,
+    color: palette.text,
+  },
   restrictRow: { flexDirection: 'row', alignItems: 'center' },
+  restrictLabel: { flex: 1, color: palette.text },
 });

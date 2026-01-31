@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { NavigatorScreenParams } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import HomeScreen from "../screens/HomeScreen";
 import NewSessionScreen from "../screens/NewSessionScreen";
@@ -21,36 +22,79 @@ import AiContextDebugScreen from "../screens/AiContextDebugScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import TestsScreen from "../screens/TestsScreen";
 import OnboardingScreen from "../screens/OnboardingScreen";
+import SessionLiveScreen from "../screens/SessionLiveScreen";
+import SessionSummaryScreen from "../screens/SessionSummaryScreen";
+import SettingsScreen from "../screens/SettingsScreen";
+import RoutineScreen from "../screens/RoutineScreen";
+import ModeSelectScreen from "../screens/ModeSelectScreen";
+import CoachDashboardScreen from "../screens/CoachDashboardScreen";
+import CoachPlayerDetailScreen from "../screens/CoachPlayerDetailScreen";
+import ChatScreen from "../screens/ChatScreen";
+import CycleModalScreen from "../screens/CycleModalScreen";
+import ProgressScreen from "../screens/ProgressScreen";
+import { theme } from "../constants/theme";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useTrainingStore } from "../state/trainingStore";
+import { SwipeTabsWrapper } from "../components/SwipeTabsWrapper";
+import { useAppModeStore } from "../state/appModeStore";
+import { setAnalyticsUserId } from "../services/analytics";
+import { setSentryUser } from "../services/monitoring";
 
 // Firebase
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { auth, db } from "../services/firebase";
 import { doc, onSnapshot } from "firebase/firestore";
 
+// Types
+import type { FKS_NextSessionV2 } from "../screens/newSession/types";
+
 // --- Types
+type TabParamList = {
+  Home: undefined;
+  NewSession: undefined;
+  VideoLibrary: { highlightId?: string; startInFavorites?: boolean } | undefined;
+  Chat: undefined;
+  Profile: undefined;
+  Coach: undefined;
+};
+
 export type AppStackParamList = {
-  Tabs: undefined;
-  Feedback: { sessionId?: string } | undefined;
+  Tabs: NavigatorScreenParams<TabParamList> | undefined;
+  Feedback: { sessionId?: string; prefill?: { rpe?: number; durationMin?: number } } | undefined;
   ExternalLoad: undefined;
-  SessionPreview: { v2: any; plannedDateISO: string; sessionId?: string };
+  SessionPreview: { v2: FKS_NextSessionV2; plannedDateISO: string; sessionId?: string };
+  SessionLive: { v2: FKS_NextSessionV2; plannedDateISO: string; sessionId?: string };
+  SessionSummary: {
+    sessionId?: string;
+    summary: {
+      title: string;
+      subtitle?: string | null;
+      plannedDateISO?: string;
+      completedItems: number;
+      totalItems: number;
+      durationMin?: number;
+      rpe?: number;
+      intensity?: string;
+      focus?: string;
+      location?: string;
+      srpe?: number;
+    };
+  };
+  Settings: undefined;
+  Routine: undefined;
   GenerateSession: undefined;
   SessionHistory: undefined;
   PrebuiltSessions: undefined;
-  PrebuiltSessionDetail: { session: any };
+  PrebuiltSessionDetail: { session: FKS_NextSessionV2 };
   ProfileSetup: undefined;
   AiContextDebug: undefined;
   Tests: undefined;
   Onboarding: undefined;
-};
-
-type TabParamList = {
-  Home: undefined;
-  NewSession: undefined;
-  VideoLibrary: undefined;
-  Profile: undefined;
+  ModeSelect: undefined;
+  Progression: undefined;
+  CycleModal: { mode?: "select" | "manage"; origin?: "home" | "profile" | "newSession" | "feedback" } | undefined;
+  CoachPlayerDetail: { userId: string; userName?: string } | undefined;
 };
 
 export type AuthStackParamList = {
@@ -62,28 +106,97 @@ const AppStack = createNativeStackNavigator<AppStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 const ONBOARDING_KEY = "fks_onboarding_done";
+const PLAYER_TAB_ORDER: Array<keyof TabParamList> = ["Home", "NewSession", "Chat", "VideoLibrary", "Profile"];
+const COACH_TAB_ORDER: Array<keyof TabParamList> = ["Coach", "Chat", "Profile"];
 
 function MainTabs() {
+  const mode = useAppModeStore((s) => s.mode);
+  const tabOrder = mode === "coach" ? COACH_TAB_ORDER : PLAYER_TAB_ORDER;
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarStyle: { backgroundColor: "#0c0e13", borderTopColor: "#1f2430" },
-        tabBarActiveTintColor: "#f97316",
-        tabBarInactiveTintColor: "#9ca3af",
+        tabBarStyle: {
+          backgroundColor: theme.colors.background,
+          borderTopColor: theme.colors.border,
+        },
+        tabBarActiveTintColor: theme.colors.accent,
+        tabBarInactiveTintColor: theme.colors.sub,
         tabBarIcon: ({ color, size }) => {
           if (route.name === "Home") return <Ionicons name="home" size={size} color={color} />;
           if (route.name === "NewSession") return <Ionicons name="flash" size={size} color={color} />;
           if (route.name === "VideoLibrary") return <Ionicons name="play-circle" size={size} color={color} />;
+          if (route.name === "Chat") return <Ionicons name="chatbubble-ellipses" size={size} color={color} />;
           if (route.name === "Profile") return <Ionicons name="person" size={size} color={color} />;
+          if (route.name === "Coach") return <Ionicons name="people" size={size} color={color} />;
           return null;
         },
       })}
     >
-      <Tab.Screen name="Home" component={HomeScreen} options={{ title: "Accueil" }} />
-      <Tab.Screen name="NewSession" component={SessionHubScreen} options={{ title: "Séance" }} />
-      <Tab.Screen name="VideoLibrary" component={VideoLibraryScreen} options={{ title: "Vidéos" }} />
-      <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: "Profil" }} />
+      {mode === "coach" ? (
+        <>
+          <Tab.Screen name="Coach" options={{ title: "Coach" }}>
+            {() => (
+              <SwipeTabsWrapper currentTab="Coach" tabOrder={tabOrder}>
+                <CoachDashboardScreen />
+              </SwipeTabsWrapper>
+            )}
+          </Tab.Screen>
+          <Tab.Screen name="Chat" options={{ title: "Assistant" }}>
+            {() => (
+              <SwipeTabsWrapper currentTab="Chat" tabOrder={tabOrder}>
+                <ChatScreen />
+              </SwipeTabsWrapper>
+            )}
+          </Tab.Screen>
+          <Tab.Screen name="Profile" options={{ title: "Profil" }}>
+            {() => (
+              <SwipeTabsWrapper currentTab="Profile" tabOrder={tabOrder}>
+                <ProfileScreen />
+              </SwipeTabsWrapper>
+            )}
+          </Tab.Screen>
+        </>
+      ) : (
+        <>
+          <Tab.Screen name="Home" options={{ title: "Accueil" }}>
+            {() => (
+              <SwipeTabsWrapper currentTab="Home" tabOrder={tabOrder}>
+                <HomeScreen />
+              </SwipeTabsWrapper>
+            )}
+          </Tab.Screen>
+          <Tab.Screen name="NewSession" options={{ title: "Séance" }}>
+            {() => (
+              <SwipeTabsWrapper currentTab="NewSession" tabOrder={tabOrder}>
+                <SessionHubScreen />
+              </SwipeTabsWrapper>
+            )}
+          </Tab.Screen>
+          <Tab.Screen name="Chat" options={{ title: "Assistant" }}>
+            {() => (
+              <SwipeTabsWrapper currentTab="Chat" tabOrder={tabOrder}>
+                <ChatScreen />
+              </SwipeTabsWrapper>
+            )}
+          </Tab.Screen>
+          <Tab.Screen name="VideoLibrary" options={{ title: "Vidéos" }}>
+            {() => (
+              <SwipeTabsWrapper currentTab="VideoLibrary" tabOrder={tabOrder}>
+                <VideoLibraryScreen />
+              </SwipeTabsWrapper>
+            )}
+          </Tab.Screen>
+          <Tab.Screen name="Profile" options={{ title: "Profil" }}>
+            {() => (
+              <SwipeTabsWrapper currentTab="Profile" tabOrder={tabOrder}>
+                <ProfileScreen />
+              </SwipeTabsWrapper>
+            )}
+          </Tab.Screen>
+        </>
+      )}
     </Tab.Navigator>
   );
 }
@@ -94,15 +207,31 @@ function AppNavigator() {
       initialRouteName="Tabs"
       screenOptions={{
         headerShown: false,
-        headerStyle: { backgroundColor: "#050509" },
-        headerTintColor: "#f9fafb",
-        headerTitleStyle: { color: "#f9fafb" },
+        headerStyle: { backgroundColor: theme.colors.background },
+        headerTintColor: theme.colors.text,
+        headerTitleStyle: { color: theme.colors.text },
+        animation: "slide_from_right",
+        gestureEnabled: true,
+        gestureDirection: "horizontal",
+        fullScreenGestureEnabled: true,
+        headerBackTitle: "Retour",
       }}
     >
       <AppStack.Screen name="Tabs" component={MainTabs} />
+      <AppStack.Screen name="ModeSelect" component={ModeSelectScreen} options={{ headerShown: false }} />
+      <AppStack.Screen
+        name="CoachPlayerDetail"
+        component={CoachPlayerDetailScreen}
+        options={{ headerShown: true, title: "Joueur" }}
+      />
       <AppStack.Screen name="Feedback" component={FeedbackScreen} options={{ headerShown: true, title: "Feedback" }} />
       <AppStack.Screen name="ExternalLoad" component={ExternalLoadScreen} options={{ headerShown: true, title: "External Load" }} />
       <AppStack.Screen name="SessionPreview" component={SessionPreviewScreen} options={{ headerShown: true, title: "Séance IA" }} />
+      <AppStack.Screen name="SessionLive" component={SessionLiveScreen} options={{ headerShown: true, title: "Séance en cours" }} />
+      <AppStack.Screen name="SessionSummary" component={SessionSummaryScreen} options={{ headerShown: true, title: "Résumé" }} />
+      <AppStack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: true, title: "Paramètres" }} />
+      <AppStack.Screen name="Routine" component={RoutineScreen} options={{ headerShown: true, title: "Routine" }} />
+      <AppStack.Screen name="Progression" component={ProgressScreen} options={{ headerShown: true, title: "Progression" }} />
       <AppStack.Screen name="GenerateSession" component={NewSessionScreen} options={{ headerShown: true, title: "Créer une séance" }} />
       <AppStack.Screen name="SessionHistory" component={SessionHistoryScreen} options={{ headerShown: true, title: "Historique" }} />
       <AppStack.Screen name="PrebuiltSessions" component={PrebuiltSessionsScreen} options={{ headerShown: true, title: "Séances pré-construites" }} />
@@ -110,13 +239,32 @@ function AppNavigator() {
       <AppStack.Screen name="AiContextDebug" component={AiContextDebugScreen} options={{ headerShown: true, title: "Contexte IA" }} />
       <AppStack.Screen name="ProfileSetup" component={ProfileSetupScreen} options={{ headerShown: true, title: "Profil" }} />
       <AppStack.Screen name="Tests" component={TestsScreen} options={{ headerShown: true, title: "Tests terrain" }} />
+      <AppStack.Screen
+        name="CycleModal"
+        component={CycleModalScreen}
+        options={{
+          headerShown: true,
+          title: "Cycle",
+          presentation: "modal",
+          animation: "slide_from_bottom",
+        }}
+      />
     </AppStack.Navigator>
   );
 }
 
 function AuthNavigator() {
   return (
-    <AuthStack.Navigator initialRouteName="Login">
+    <AuthStack.Navigator
+      initialRouteName="Login"
+      screenOptions={{
+        headerBackTitle: "Retour",
+        animation: "slide_from_right",
+        gestureEnabled: true,
+        gestureDirection: "horizontal",
+        fullScreenGestureEnabled: true,
+      }}
+    >
       <AuthStack.Screen name="Login" component={LoginScreen} options={{ title: "Login" }} />
       <AuthStack.Screen name="Register" component={RegisterScreen} options={{ title: "Register" }} />
     </AuthStack.Navigator>
@@ -125,8 +273,8 @@ function AuthNavigator() {
 
 function Splash() {
   return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-      <ActivityIndicator />
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.bg }}>
+      <ActivityIndicator color={theme.colors.accent} />
     </View>
   );
 }
@@ -139,6 +287,9 @@ export default function RootNavigator() {
   const startFirestoreWatch = useTrainingStore((s) => s.startFirestoreWatch);
   const storeHydrated = useTrainingStore((s) => (s as any).storeHydrated ?? true);
   const resetTrainingStore = useTrainingStore((s) => s.resetForUser);
+  const mode = useAppModeStore((s) => s.mode);
+  const modeLoading = useAppModeStore((s) => s.loading);
+  const loadModeForUid = useAppModeStore((s) => s.loadForUid);
 
   // 1) Auth state
   useEffect(() => {
@@ -148,6 +299,8 @@ export default function RootNavigator() {
         setProfileCompleted(null);
         setInitializing(false);
       }
+      setAnalyticsUserId(u?.uid ?? null);
+      setSentryUser(u?.uid ?? null);
       // si u existe, on attend le listener Firestore ci-dessous pour finir l'init
     });
     return unsubAuth;
@@ -157,6 +310,11 @@ export default function RootNavigator() {
   useEffect(() => {
     resetTrainingStore(user?.uid ?? null);
   }, [resetTrainingStore, user?.uid]);
+
+  // Mode (coach/joueur) par utilisateur
+  useEffect(() => {
+    loadModeForUid(user?.uid ?? null);
+  }, [loadModeForUid, user?.uid]);
 
   // 1bis) Onboarding local
   useEffect(() => {
@@ -182,7 +340,9 @@ export default function RootNavigator() {
         setInitializing(false);
       },
       (err) => {
-        console.warn("Erreur lors du check profil:", err);
+        if (__DEV__) {
+          console.warn("Erreur lors du check profil:", err);
+        }
         setProfileCompleted(false);
         setInitializing(false);
       }
@@ -197,11 +357,14 @@ export default function RootNavigator() {
     startFirestoreWatch();
   }, [storeHydrated, user, startFirestoreWatch]);
 
-  // 4) Loading initial
-  if (initializing || onboardingDone === null) return <Splash />;
+  // 4) Chargement onboarding local (indépendant de l'auth)
+  if (onboardingDone === null) return <Splash />;
 
-  // 5) Pas connecté → Auth stack
+  // 5) Pas connecté → Auth stack (ne bloque pas sur le modeLoading)
   if (!user) return <AuthNavigator />;
+
+  // 6) Connecté → on attend profil + mode
+  if (initializing || modeLoading) return <Splash />;
 
   // 6) Connecté mais profil non complété → écran profil
   if (profileCompleted === false) {
@@ -212,6 +375,16 @@ export default function RootNavigator() {
             name="ProfileSetup"
             component={ProfileSetupScreen}
             options={{ headerShown: false }}
+          />
+          <AppStack.Screen
+            name="CycleModal"
+            component={CycleModalScreen}
+            options={{
+              headerShown: true,
+              title: "Cycle",
+              presentation: "modal",
+              animation: "slide_from_bottom",
+            }}
           />
         </AppStack.Navigator>
       </SafeAreaProvider>
@@ -237,6 +410,17 @@ export default function RootNavigator() {
               />
             )}
           </AppStack.Screen>
+        </AppStack.Navigator>
+      </SafeAreaProvider>
+    );
+  }
+
+  // Mode non choisi (coach/joueur)
+  if (!mode) {
+    return (
+      <SafeAreaProvider>
+        <AppStack.Navigator screenOptions={{ headerShown: false }}>
+          <AppStack.Screen name="ModeSelect" component={ModeSelectScreen} />
         </AppStack.Navigator>
       </SafeAreaProvider>
     );

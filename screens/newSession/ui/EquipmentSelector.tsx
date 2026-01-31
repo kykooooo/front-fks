@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
+import { View, Text, TouchableOpacity, ActivityIndicator, Alert, Switch } from "react-native";
 import { palette } from "../theme";
 import type { EnvironmentSelection } from "../types";
 
@@ -26,11 +26,19 @@ export function EquipmentSelector({
   onValidateContext,
   setupDone,
 }: Props) {
+  const isHome = environment.includes("home");
   const filtered = catalog.filter((item) => {
     if (availableEquipment.length > 0 && !availableEquipment.includes(item.id)) return false;
     if (item.source === "both") return true;
     return environment.includes(item.source as any);
   });
+
+  const homeToggles = [
+    { id: "home_small", label: "Maison (petit matériel)" },
+    { id: "backpack", label: "Sac à dos (chargé)" },
+    { id: "water_bottles", label: "2 bouteilles d’eau" },
+    { id: "chair", label: "Chaise/Banc" },
+  ];
 
   const toggle = (id: string) => {
     onSelect(
@@ -61,6 +69,36 @@ export function EquipmentSelector({
 
       {!contextLoading && environment.length > 0 && (
         <>
+          {isHome ? (
+            <View style={styles.homeBlock}>
+              <Text style={styles.homeTitle}>Matériel (maison)</Text>
+              <Text style={styles.homeMessage}>
+                Pour des séances maison plus efficaces et variées, coche ce que tu as : sac à dos
+                (chargé), 2 bouteilles d’eau, chaise/banc. Ça débloque des exercices “chargés”
+                (squat/row/RDL/press) et évite les séances trop répétitives.
+              </Text>
+              <View style={styles.homeToggleList}>
+                {homeToggles.map((item) => {
+                  const enabled = selectedEquipment.includes(item.id);
+                  return (
+                    <View key={item.id} style={styles.homeToggleRow}>
+                      <Text style={styles.homeToggleLabel}>{item.label}</Text>
+                      <Switch
+                        value={enabled}
+                        onValueChange={() => toggle(item.id)}
+                        trackColor={{ false: palette.borderSoft, true: palette.accentSoft }}
+                        thumbColor={enabled ? palette.accent : palette.textMuted}
+                      />
+                    </View>
+                  );
+                })}
+              </View>
+              <Text style={styles.homeHint}>
+                Ça rend les séances plus variées et plus intenses.
+              </Text>
+            </View>
+          ) : null}
+
           <View style={styles.chipsWrap}>
             {filtered.map((item) => {
               const selected = selectedEquipment.includes(item.id);
@@ -133,12 +171,12 @@ const styles = {
     paddingHorizontal: 12,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#4b5563",
-    backgroundColor: "#020617",
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.card,
   },
   chipSelected: {
     borderColor: palette.accent,
-    backgroundColor: "#1f1308",
+    backgroundColor: palette.accentSoft,
   },
   chipText: {
     color: palette.sub,
@@ -146,9 +184,45 @@ const styles = {
     fontSize: 12,
   },
   chipTextSelected: {
-    color: palette.accentSoft,
+    color: palette.accent,
     fontWeight: "700" as const,
     fontSize: 12,
+  },
+  homeBlock: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.cardSoft,
+    gap: 8,
+  },
+  homeTitle: {
+    fontSize: 14,
+    fontWeight: "700" as const,
+    color: palette.text,
+  },
+  homeMessage: {
+    fontSize: 12,
+    color: palette.sub,
+    lineHeight: 16,
+  },
+  homeToggleList: {
+    gap: 6,
+  },
+  homeToggleRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
+  },
+  homeToggleLabel: {
+    fontSize: 13,
+    fontWeight: "600" as const,
+    color: palette.text,
+  },
+  homeHint: {
+    fontSize: 11,
+    color: palette.sub,
   },
   cta: {
     paddingVertical: 14,
@@ -163,7 +237,7 @@ const styles = {
     borderColor: palette.accent,
   },
   ctaPrimaryText: {
-    color: "#050509",
+    color: palette.bg,
     fontWeight: "800" as const,
     textTransform: "uppercase" as const,
     fontSize: 13,

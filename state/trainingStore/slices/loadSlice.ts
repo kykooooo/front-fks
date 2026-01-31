@@ -3,6 +3,8 @@ import { diffDays, toDayKey } from "../../../engine/dailyAggregation";
 import { updateTrainingLoad, decayLoadOverDays } from "../../../engine/loadModel";
 import { DEV_FLAGS } from "../../../config/devFlags";
 import { TRAINING_DEFAULTS, LOAD_CAPS } from "../../../config/trainingDefaults";
+import { MICROCYCLE_TOTAL_SESSIONS_DEFAULT } from "../../../domain/microcycles";
+import type { Rating0to5 } from "../../../domain/types";
 
 import { computeDailyTotals, computeInterveningOffDays, pruneDailyAppliedWindow, type ExternalLoadLike } from "../../computeDailyApplied";
 
@@ -130,12 +132,24 @@ export const createLoadSlice = (set: any, get: any): LoadSlice => ({
         }
       }
 
-      const daySessions = sessions.filter((s) => toDayKey((s as any).dateISO ?? (s as any).date ?? "") === dayKey);
+      const daySessions = sessions.filter(
+        (s) => toDayKey((s as any).dateISO ?? (s as any).date ?? "") === dayKey
+      );
       const rpes = daySessions
         .map((s) => (typeof s.feedback?.rpe === "number" ? s.feedback.rpe : Number((s as any).rpe)))
         .filter((x) => Number.isFinite(x) && x > 0) as number[];
       const avgRpe = rpes.length ? rpes.reduce((a, b) => a + b, 0) / rpes.length : 6;
-      const painToday = Number(st.dayStates?.[dayKey]?.feedback?.pain ?? 0) || 0;
+      const painFromState = st.dayStates?.[dayKey]?.feedback?.pain;
+      const painToday =
+        typeof painFromState === "number"
+          ? painFromState
+          : (() => {
+              const pains = daySessions
+                .map((s) => s.feedback?.pain)
+                .filter((x): x is Rating0to5 => typeof x === "number" && Number.isFinite(x));
+              if (!pains.length) return 0;
+              return pains.reduce((sum: number, val) => sum + val, 0) / pains.length;
+            })();
 
       const totals = computeDailyTotals({
         sessions: st.sessions,
@@ -204,11 +218,32 @@ export const createLoadSlice = (set: any, get: any): LoadSlice => ({
     const session = state.sessions[idx];
     if (!session || session.completed) return null;
 
-    const usedISO = state.devNowISO ?? todayISO();
+    const sessionDateISO =
+      typeof session?.dateISO === "string"
+        ? session.dateISO
+        : typeof (session as any)?.date === "string"
+          ? (session as any).date
+          : null;
+    const normalizedISO =
+      sessionDateISO && sessionDateISO.length === 10
+        ? `${sessionDateISO}T00:00:00.000Z`
+        : sessionDateISO;
+    const usedISO = normalizedISO ?? state.devNowISO ?? todayISO();
     const dayKey = toDayKey(usedISO);
     const alreadyToday = state.dailyApplied[dayKey] ?? 0;
 
-    const updatedSession = { ...session, dateISO: usedISO, completed: true, feedback, rpe: feedback.rpe };
+    const durationMin =
+      typeof feedback.durationMin === "number" && Number.isFinite(feedback.durationMin)
+        ? Math.max(1, Math.round(feedback.durationMin))
+        : session.durationMin;
+    const updatedSession = {
+      ...session,
+      dateISO: usedISO,
+      completed: true,
+      feedback,
+      rpe: feedback.rpe,
+      ...(durationMin ? { durationMin } : {}),
+    };
     const nextSessions = [...state.sessions];
     nextSessions[idx] = updatedSession;
 
@@ -275,8 +310,23 @@ export const createLoadSlice = (set: any, get: any): LoadSlice => ({
       hasCircuit: state.weekly.hasCircuit || hasCircuit,
     };
 
-    // micro-cycle
-    const nextMicroIdx = Math.max(0, Math.trunc(state.microcycleSessionIndex ?? 0)) + 1;
+    // micro-cycle (guard against double feedback on same session)
+    const appliedSet = new Set(state.microcycleAppliedSessionIds ?? []);
+    const alreadyAppliedMicro = appliedSet.has(sessionId);
+    const goalKey = (state.microcycleGoal ?? "").toLowerCase().trim();
+    const hasActiveMicrocycle = Boolean(goalKey);
+    const hasAiPayload = Boolean((updatedSession as any).aiV2 ?? (updatedSession as any).ai);
+    // For explosivite, only advance on AI-generated sessions to avoid skipping.
+    const shouldAdvanceMicro = hasActiveMicrocycle && (goalKey !== "explosivite" || hasAiPayload);
+    const baseMicroIdx = Math.max(0, Math.trunc(state.microcycleSessionIndex ?? 0));
+    const microcycleTotal = MICROCYCLE_TOTAL_SESSIONS_DEFAULT;
+    const microcycleCompleted = hasActiveMicrocycle && baseMicroIdx >= microcycleTotal;
+    const nextMicroIdx =
+      shouldAdvanceMicro && !alreadyAppliedMicro && !microcycleCompleted ? baseMicroIdx + 1 : baseMicroIdx;
+    const nextMicroApplied =
+      shouldAdvanceMicro && !alreadyAppliedMicro && !microcycleCompleted
+        ? [sessionId, ...Array.from(appliedSet)].slice(0, 80)
+        : Array.from(appliedSet);
 
     // virtual clock
     const baseISO = state.devNowISO ?? todayISO();
@@ -315,6 +365,7 @@ export const createLoadSlice = (set: any, get: any): LoadSlice => ({
       phaseCount: nextPhaseCount,
       weekly: nextWeekly,
       microcycleSessionIndex: nextMicroIdx,
+      microcycleAppliedSessionIds: nextMicroApplied,
       ...(DEV_FLAGS.ENABLED && DEV_FLAGS.VIRTUAL_CLOCK ? { devNowISO: nextDevNowISO } : {}),
       debugLog: [evt, ...(state.debugLog ?? [])].slice(0, 200),
     });

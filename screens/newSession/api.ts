@@ -1,24 +1,46 @@
 import { getAuth } from "firebase/auth";
 import { BACKEND_URL } from "../../config/backend";
-import { EXERCISE_BANK } from "../../engine/exerciseBank";
+import { BACKEND_EXERCISE_IDS } from "../../engine/backendExerciseIds";
+import { EXERCISE_BY_ID } from "../../engine/exerciseBank";
 import type { FKS_NextSessionV2 } from "./types";
+import { safeFetch, BackendError } from "../../utils/errorHandler";
 
 export const buildAllowedExercisesPayload = () =>
-  EXERCISE_BANK.map((ex) => ({
-    id: ex.id,
-    name: ex.name,
-    modality: ex.modality,
-    description: null,
-    equipment: [],
-    intensity: ex.intensity,
-    tags: ex.tags,
-  }));
+  BACKEND_EXERCISE_IDS.map((id) => EXERCISE_BY_ID[id])
+    .filter(Boolean)
+    .map((ex) => ({
+      id: ex.id,
+      name: ex.name,
+      modality: ex.modality,
+      description: ex.description,
+      equipment: [],
+      intensity: ex.intensity,
+      tags: ex.tags,
+    }));
 
 export function prepareBackendContext(
   ctx: any,
   selectedEquipment: string[],
   environment: string[]
 ) {
+  const resolvedGoal = ctx.profile?.goal ?? ctx.goal ?? "fondation";
+  const availableTimeMin =
+    typeof ctx?.constraints?.available_time_min === "number"
+      ? ctx.constraints.available_time_min
+      : typeof ctx?.available_time_min === "number"
+      ? ctx.available_time_min
+      : typeof ctx?.profile?.available_time_min === "number"
+      ? ctx.profile.available_time_min
+      : undefined;
+  const derivedVenue = environment.includes("gym")
+    ? "gym"
+    : environment.includes("pitch") || environment.includes("field")
+    ? "field"
+    : "home";
+  const venue =
+    environment.length > 0
+      ? derivedVenue
+      : ctx.constraints?.venue ?? ctx.profile?.venue ?? derivedVenue;
   const location = environment.includes("gym")
     ? "gym"
     : environment.includes("pitch")
@@ -31,12 +53,18 @@ export function prepareBackendContext(
     location,
     equipment_available: selectedEquipment,
     equipment_used: selectedEquipment,
-    goal: ctx.goal ?? ctx.profile?.goal ?? "fondation",
-    profile: { ...(ctx.profile ?? {}), goal: ctx.profile?.goal ?? "fondation" },
+    goal: resolvedGoal,
+    profile: {
+      ...(ctx.profile ?? {}),
+      goal: resolvedGoal,
+      venue: (ctx.profile ?? {})?.venue ?? venue,
+    },
     constraints: {
       ...(ctx as any)?.constraints,
+      venue,
       equipment: selectedEquipment,
       pains: (ctx as any)?.constraints?.pains ?? [],
+      ...(typeof availableTimeMin === "number" ? { available_time_min: availableTimeMin } : {}),
     },
     // aide au debug backend : pools non vides + logs [FKS][token_pools]
     allowed_exercises: buildAllowedExercisesPayload(),
@@ -54,28 +82,25 @@ export async function fetchV2(
   const userId = auth.currentUser?.uid ?? "test-user-dev";
   const url = `${BACKEND_URL}/api/fks/generate`;
 
-  let r: any;
-  try {
-    r = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, context }),
-    });
-  } catch (e) {
-    console.warn("Network error when calling backend", e);
-    throw e;
-  }
-
-  if (!r.ok) {
-    throw new Error(`Backend error ${r.status}`);
-  }
+  // Utilisation de safeFetch qui gère automatiquement les erreurs réseau et timeout
+  const r = await safeFetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, context }),
+  }, 45000); // Timeout de 45 secondes pour la génération IA
 
   const data: any = await r.json();
 
-  if (data && typeof data.v2 === "object" && data.v2 !== null) {
-    const v2 = data.v2 as FKS_NextSessionV2;
-    return { v2, debug: data };
+  // Validation de la réponse
+  if (!data || typeof data.v2 !== "object" || data.v2 === null) {
+    throw new BackendError(
+      500,
+      'Invalid Response',
+      'Le serveur a retourné une réponse invalide',
+      'La génération de séance a échoué. Le serveur n\'a pas renvoyé de séance valide. Réessaie ou contacte le support si le problème persiste.'
+    );
   }
 
-  throw new Error("Backend did not return v2");
+  const v2 = data.v2 as FKS_NextSessionV2;
+  return { v2, debug: data };
 }

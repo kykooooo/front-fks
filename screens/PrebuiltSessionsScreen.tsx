@@ -1,5 +1,5 @@
 // screens/PrebuiltSessionsScreen.tsx
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -10,178 +10,778 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTrainingStore } from "../state/trainingStore";
 import { useNavigation } from "@react-navigation/native";
+import { theme } from "../constants/theme";
 
-const palette = {
-  bg: "#050509",
-  bgSoft: "#050815",
-  card: "#080C14",
-  cardSoft: "#0c0e13",
-  border: "#111827",
-  borderSoft: "#1f2430",
-  text: "#f9fafb",
-  sub: "#9ca3af",
-  accent: "#f97316",
-  accentSoft: "rgba(249,115,22,0.16)",
-};
+const palette = theme.colors;
 
 type Prebuilt = {
   category: string;
   title: string;
-  intensity: string; // "hard · 45–55'"
+  intensity: "easy" | "moderate" | "hard";
   duration: string;
   objective: string;
   detail: string[];
+  focus?: "run" | "strength" | "speed" | "circuit" | "plyo" | "mobility";
+  location?: "gym" | "pitch" | "home";
+  equipment?: string[];
+  tags?: string[];
+  level?: string;
+  expectations?: string[];
+  rpe_target?: number;
 };
 
 const PREBUILT_SESSIONS: Prebuilt[] = [
   {
-    category: "RUN",
-    title: "RUN #1 — VMA footballeur",
+    category: "EXPLOSIVITÉ",
+    title: "EXPLO #1 — Power bas du corps (gym)",
     intensity: "hard",
-    duration: "45–55'",
-    objective: "Pic de VMA, allure match, volume court mais qualitatif",
+    duration: "50-60 min",
+    objective: "Puissance + transfert sprint/duels",
+    focus: "strength",
+    location: "gym",
+    equipment: ["Trap bar", "Box", "Haltères"],
+    tags: ["Power", "Lower", "Gym"],
+    level: "Amateur / semi-pro",
     detail: [
-      "Échauffement 12–15' : footing léger, gammes, 3–4 lignes droites",
-      "Bloc : 2 x 6 x 30\" @ ~100–105% VMA, 30\" rec, 3' entre séries",
-      "Option finisher : 4 x 60 m progressifs (RPE 6–7)",
-      "Retour au calme : footing léger + étirements dynamiques",
+      "Échauffement: 8-10 min vélo + mobilité hanches/chevilles",
+      "Bloc 1 — Pré-activation: Pogos 2 x 20 + CMJ 3 x 5 (60\" rec)",
+      "Bloc 2 — Power: Trap bar deadlift 5 x 3 @ 70-80% (2'30 rec)",
+      "Bloc 3 — Contrast: Box jump 4 x 4 + Split squat 3 x 6 / jambe",
+      "Bloc 4 — Core: Pallof press 3 x 10 / côté + Farmer carry 3 x 20 m",
+      "Retour au calme: 6 min respiration + étirements dynamiques",
+    ],
+    expectations: [
+      "Qualité d'appui > charge. Si la vitesse chute, stop.",
+      "Repos complet sur les efforts puissants.",
+      "Amplitude propre sur les sauts, atterrissages silencieux.",
     ],
   },
   {
-    category: "RUN",
-    title: "RUN #2 — Tempo aérobie / seuil",
+    category: "EXPLOSIVITÉ",
+    title: "EXPLO #2 — Plyo + bounds (terrain)",
     intensity: "moderate",
-    duration: "45–60'",
-    objective: "Tenir un gros rythme match sans épuisement",
+    duration: "35-45 min",
+    objective: "Réactivité, élasticité et qualité d'appui",
+    focus: "plyo",
+    location: "pitch",
+    equipment: ["Cônes"],
+    tags: ["Plyo", "Elasticité", "Terrain"],
+    level: "Amateur / semi-pro",
     detail: [
-      "Échauffement 10' : footing progressif + 2 lignes droites",
-      "Bloc : 3 x 8' allure confort-dur (mi-temps) · 3' rec",
-      "Retour au calme : footing léger + mobilité hanches/chevilles",
+      "Échauffement: 10-12 min gammes + 3 lignes droites progressives",
+      "Bloc 1 — Pré-activation: Pogos 2 x 20 + Skips 2 x 20 m",
+      "Bloc 2 — Bounds: 4 x 20 m bonds (60-90\" rec)",
+      "Bloc 3 — Sauts: 3 x 5 CMJ + 3 x 5 broad jump",
+      "Retour au calme: 6 min footing léger + mobilité chevilles",
+    ],
+    expectations: [
+      "Contacts courts, gainage actif.",
+      "Stop si douleur ou lourdeur excessive.",
+      "Priorité à la vitesse d'exécution, pas au volume.",
     ],
   },
   {
-    category: "STRENGTH",
-    title: "STRENGTH #1 — Force bas du corps (gym)",
-    intensity: "hard",
-    duration: "60'",
-    objective: "Force max utile sprint/duels",
-    detail: [
-      "Warm-up 10' : vélo/rameur + activation hanches/post chaîne",
-      "Bloc 1 : Back ou front squat 4 x 4–5 @ 80–85% (2–3' rec)",
-      "Bloc 2 : Bulgarian split squat 3 x 6–8 / jambe + Nordic assisté 3 x 4–6",
-      "Bloc 3 : Copenhagen plank 3 x 20–30\" / côté + Planche 3 x 30–40\"",
-      "Cool-down : étirements légers quadris/ischios/adducteurs",
-    ],
-  },
-  {
-    category: "STRENGTH",
-    title: "STRENGTH #2 — Full body “match ready”",
+    category: "EXPLOSIVITÉ",
+    title: "EXPLO #3 — Accel + medball (terrain)",
     intensity: "moderate",
-    duration: "45–50'",
-    objective: "Full body dense, in-season",
+    duration: "40-50 min",
+    objective: "Départs puissants + transfert haut du corps",
+    focus: "speed",
+    location: "pitch",
+    equipment: ["Cônes", "Medball"],
+    tags: ["Accel", "Medball", "Terrain"],
+    level: "Amateur / semi-pro",
     detail: [
-      "Warm-up 8' : circuit léger (squat, pompe, good-morning, planche)",
-      "Bloc circuit 3–4 tours : Goblet squat, Row, Hip thrust, Push-up (8–12 reps), 90–120\" rec",
-      "Finisher core 6–8' : 3 x (dead bug, side plank, hollow)",
+      "Échauffement: 10-12 min gammes + 3 lignes droites",
+      "Bloc 1 — Accel: 4 x 10 m + 3 x 15 m (90\" rec)",
+      "Bloc 2 — Medball: chest pass 4 x 5 + rotational throw 3 x 5 / côté",
+      "Bloc 3 — Relâché: 4 x 20 m progressifs",
+      "Retour au calme: 6 min footing léger",
+    ],
+    expectations: [
+      "Départs propres, angle de projection stable.",
+      "Repos complet sur les accélérations.",
+      "Lancer explosif sans cambrer.",
     ],
   },
   {
-    category: "SPEED",
-    title: "SPEED #1 — Vitesse max",
-    intensity: "hard",
-    duration: "30–40'",
-    objective: "Top speed, volume bas, qualité",
-    detail: [
-      "Warm-up terrain 12–15' : footing léger, gammes, 3–4 lignes droites",
-      "Bloc : 6 x 30–40 m à 95–100%, départ lancé, 2–3' rec",
-      "Option COD léger : 4 x 20 m + COD 45° (RPE 7)",
-    ],
-  },
-  {
-    category: "SPEED",
-    title: "SPEED #2 — RSA (Repeated Sprints)",
-    intensity: "hard",
-    duration: "30–40'",
-    objective: "RSA sans finir cramé",
-    detail: [
-      "Warm-up 10–12'",
-      "Bloc : 2 x 6 x (20 m + 20 m retour), 20\" rec entre sprints, 3' entre séries, RPE 7–8",
-    ],
-  },
-  {
-    category: "CIRCUIT",
-    title: "CIRCUIT #1 — Conditioning terrain",
-    intensity: "hard",
-    duration: "30–35'",
-    objective: "Cardio typé match sans matos",
-    detail: [
-      "Warm-up 8'",
-      "Circuit 3–4 tours : 30\" shuttle run, 30\" squats/fentes, 30\" planche dynamique, 30\" récup, 30\" skipping, 30\" pompes, 60–90\" rec",
-      "Cible RPE 7",
-    ],
-  },
-  {
-    category: "CIRCUIT",
-    title: "CIRCUIT #2 — Gym floor",
+    category: "EXPLOSIVITÉ",
+    title: "EXPLO #4 — Upper power + contacts (gym)",
     intensity: "moderate",
-    duration: "45'",
-    objective: "Force/cardio mix salle",
+    duration: "40-50 min",
+    objective: "Puissance haut du corps + appuis réactifs",
+    focus: "plyo",
+    location: "gym",
+    equipment: ["Banc", "Medball", "Box"],
+    tags: ["Upper", "Power", "Gym"],
+    level: "Amateur / semi-pro",
     detail: [
-      "Circuit 3 rounds : Kettlebell swing 12, Goblet squat 10, Row 10, Farmer walk 30–40 m, Core 30\", 2' rec",
+      "Échauffement: 8 min mobilité épaules + activation",
+      "Bloc 1 — Upper power: bench press dynamique 5 x 3 @ 60-70% (2' rec)",
+      "Bloc 2 — Medball: slam 4 x 6 + chest pass 3 x 5",
+      "Bloc 3 — Appuis: pogo hops 3 x 20 + line hops 3 x 15",
+      "Retour au calme: 5 min mobilité haut du corps",
+    ],
+    expectations: [
+      "Vitesse d'exécution maximale.",
+      "Repos complet, pas de fatigue résiduelle.",
     ],
   },
   {
-    category: "PLYO",
-    title: "PLYO #1 — Sauts verticaux",
+    category: "VITESSE",
+    title: "SPEED #1 — Accélération 0-20 m",
     intensity: "hard",
-    duration: "30'",
-    objective: "Explosivité + contrôle atterrissage",
+    duration: "30-40 min",
+    objective: "Premiers appuis explosifs et angle de projection",
+    focus: "speed",
+    location: "pitch",
+    equipment: ["Cônes", "Chrono"],
+    tags: ["Accel", "Technique", "Terrain"],
+    level: "Amateur / semi-pro",
     detail: [
-      "Prep 8' : gammes + pogos 2 x 15",
-      "Bloc : Box jumps 4 x 5, CMJ 3 x 6, Drop jump 3 x 5 (20–30 cm), 60–90\" rec",
+      "Échauffement: 12 min footing + gammes + 3 lignes droites",
+      "Bloc 1 — Technique: wall drill 2 x 20\" + falling start 4 x 10 m",
+      "Bloc 2 — Accélération: 3 x 3 x 10-20 m, 20\" rec, 2' entre séries",
+      "Bloc 3 — Finition: 4 x 10 m départ statique (RPE 7)",
+      "Retour au calme: 6 min footing léger",
+    ],
+    expectations: [
+      "Repos long pour garder la vitesse.",
+      "Position neutre, poussée horizontale.",
+      "Arrête si la technique se dégrade.",
     ],
   },
   {
-    category: "PLYO",
-    title: "PLYO #2 — COD & réactivité",
+    category: "VITESSE",
+    title: "SPEED #2 — MaxV flying 10 m",
+    intensity: "hard",
+    duration: "35-45 min",
+    objective: "Vitesse max sans fatigue résiduelle",
+    focus: "speed",
+    location: "pitch",
+    equipment: ["Cônes"],
+    tags: ["MaxV", "Terrain"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Échauffement: 12-15 min footing + gammes + 4 lignes droites",
+      "Bloc 1 — Build-up: 4 x 30 m progressifs (60\" rec)",
+      "Bloc 2 — Flying: 6 x 10 m lancés (20 m d'élan, 2-3' rec)",
+      "Bloc 3 — Relâché: 4 x 60 m à 90% (RPE 6)",
+      "Retour au calme: 6-8 min footing léger",
+    ],
+    expectations: [
+      "Repos complet. Qualité avant quantité.",
+      "Regard haut, relâchement épaules.",
+      "Arrêter si la foulée raccourcit.",
+    ],
+  },
+  {
+    category: "FORCE",
+    title: "FORCE #1 — Lower strength (gym)",
+    intensity: "hard",
+    duration: "55-65 min",
+    objective: "Force maximale utile aux duels",
+    focus: "strength",
+    location: "gym",
+    equipment: ["Barre", "Rack", "Banc"],
+    tags: ["Lower", "Max Force", "Gym"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Échauffement: 10 min vélo + activation hanches/post chaine",
+      "Bloc 1 — Squat: 5 x 4 @ 80-85% (2-3' rec)",
+      "Bloc 2 — Hinge: RDL 4 x 6 (2' rec)",
+      "Bloc 3 — Unilat: Bulgarian split squat 3 x 6 / jambe",
+      "Bloc 4 — Core: Copenhagen 3 x 20\" / côté + planche 3 x 30\"",
+      "Retour au calme: 6 min étirements dynamiques",
+    ],
+    expectations: [
+      "Priorité au contrôle et à la profondeur.",
+      "RPE 7-8 sur les séries lourdes.",
+      "Pas d'échec musculaire.",
+    ],
+  },
+  {
+    category: "FORCE",
+    title: "FORCE #2 — Upper duel + core",
     intensity: "moderate",
-    duration: "30–40'",
-    objective: "COD court + appuis rapides",
+    duration: "45-55 min",
+    objective: "Haut du corps solide + gainage anti-contact",
+    focus: "strength",
+    location: "gym",
+    equipment: ["Banc", "Haltères", "Tirage"],
+    tags: ["Upper", "Core", "Gym"],
+    level: "Amateur / semi-pro",
     detail: [
-      "Warm-up 8–10'",
-      "Bloc COD : 4 x T-test court, 4 x slalom cônes 10–15 m (RPE 6–7), 3 x 15–20\" appuis rapides échelle/lignes",
+      "Échauffement: 8 min mobilité épaules + band pull-apart",
+      "Bloc 1 — Push/Pull: Bench press 4 x 6 + Row 4 x 8",
+      "Bloc 2 — Unilat: One-arm row 3 x 10 / côté + Landmine press 3 x 8",
+      "Bloc 3 — Core: Pallof press 3 x 10 / côté + side plank 3 x 25\"",
+      "Retour au calme: 5 min mobilité scapulaire",
+    ],
+    expectations: [
+      "Amplitude contrôlée, pas de douleurs épaules.",
+      "Rythme régulier, tempo propre.",
+      "RPE 6-7 global.",
     ],
   },
   {
-    category: "MOBILITY",
-    title: "MOBILITY #1 — Day after match",
+    category: "FORCE",
+    title: "FORCE #3 — Full body maintenance (in-season)",
+    intensity: "moderate",
+    duration: "40-50 min",
+    objective: "Entretenir sans générer trop de fatigue",
+    focus: "strength",
+    location: "gym",
+    equipment: ["Haltères", "Banc"],
+    tags: ["Maintenance", "Full Body"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Échauffement: 8 min circuit léger (squat, push-up, hip hinge)",
+      "Bloc 1 — Full body: Goblet squat 3 x 8 + Row 3 x 10 + Hip thrust 3 x 8",
+      "Bloc 2 — Unilat: Split squat 3 x 6 / jambe",
+      "Bloc 3 — Core: Dead bug 3 x 10 / côté + hollow 3 x 20\"",
+      "Retour au calme: 5 min mobilité",
+    ],
+    expectations: [
+      "RPE 6-7, garder des reps en réserve.",
+      "Objectif = fraîcheur, pas de fatigue résiduelle.",
+    ],
+  },
+  {
+    category: "PRÉPA",
+    title: "PREPA #1 — Base athlétique (terrain)",
+    intensity: "moderate",
+    duration: "45-55 min",
+    objective: "Base endurance + force légère",
+    focus: "circuit",
+    location: "pitch",
+    equipment: ["Cônes", "Tapis"],
+    tags: ["Base", "Circuit", "Terrain"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Échauffement: 10 min footing + mobilité hanches/chevilles",
+      "Circuit 1: 3 tours — squat 12, pompe 10, gainage 30\", 60\" rec",
+      "Bloc 2 — Course: 3 x 6 min allure confort-dur, 2 min rec",
+      "Bloc 3 — Core: dead bug 3 x 10 / côté + side plank 2 x 25\"",
+      "Retour au calme: 6 min footing léger",
+    ],
+    expectations: [
+      "RPE 6-7, garder de la marge.",
+      "Technique propre sur tous les mouvements.",
+    ],
+  },
+  {
+    category: "PRÉPA",
+    title: "PREPA #2 — Force + accel (gym)",
+    intensity: "hard",
+    duration: "55-65 min",
+    objective: "Force utile + départs courts",
+    focus: "strength",
+    location: "gym",
+    equipment: ["Barre", "Box", "Chrono"],
+    tags: ["Force", "Accel", "Gym"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Échauffement: 8-10 min vélo + activation post chaîne",
+      "Bloc 1 — Squat: 4 x 4 @ 80-85% (2'30 rec)",
+      "Bloc 2 — Trap bar jump: 4 x 4 @ 20-30% (2' rec)",
+      "Bloc 3 — Accel: 6 x 10 m départ statique (90\" rec)",
+      "Bloc 4 — Core: pallof press 3 x 10 / côté",
+      "Retour au calme: 6 min mobilité",
+    ],
+    expectations: [
+      "Qualité d'appui, pas d'échec.",
+      "Explosif sur les départs, repos complet.",
+    ],
+  },
+  {
+    category: "PRÉPA",
+    title: "PREPA #3 — Prévention + mobilité (home)",
     intensity: "easy",
-    duration: "25–30'",
-    objective: "Déverrouillage global, RPE 2–3",
+    duration: "30-40 min",
+    objective: "Préparer les tissus sans fatigue",
+    focus: "mobility",
+    location: "home",
+    equipment: ["Élastiques", "Tapis"],
+    tags: ["Prévention", "Mobilité", "Home"],
+    level: "Tout niveau",
     detail: [
-      "Bloc 1 (10') : cat-camel, hip airplanes, squat prière",
-      "Bloc 2 (10') : Couch stretch, hamstring actif, adducteur latéral",
-      "Bloc 3 (5–10') : dorsiflexion murale, toes yoga",
+      "Respiration: 2 min 90/90 breathing",
+      "Bloc 1 — Chevilles: tib raise 3 x 12 + calf raise 3 x 12",
+      "Bloc 2 — Ischios: ham walkout 3 x 6 + nordic assisté 3 x 4",
+      "Bloc 3 — Hanches: 90/90 switches 3 x 6 / côté",
+      "Fin: 3 min étirements doux",
+    ],
+    expectations: [
+      "RPE 4-5, pas de douleur.",
+      "Tempo lent, amplitude contrôlée.",
+    ],
+  },
+  {
+    category: "ENDURANCE",
+    title: "ENDURANCE #1 — Tempo aérobie",
+    intensity: "moderate",
+    duration: "45-55 min",
+    objective: "Tenir l'intensité match sans exploser",
+    focus: "run",
+    location: "pitch",
+    equipment: ["Chrono"],
+    tags: ["Tempo", "Terrain"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Échauffement: 10 min footing progressif + 2 lignes droites",
+      "Bloc: 3 x 8 min allure confort-dur, 3 min rec",
+      "Option: 4 x 20\" accélérations légères",
+      "Retour au calme: 8 min footing léger",
+    ],
+    expectations: [
+      "Respiration contrôlée, pas d'asphyxie.",
+      "Allure stable sur chaque répétition.",
+    ],
+  },
+  {
+    category: "ENDURANCE",
+    title: "ENDURANCE #2 — Intervalles 30/30",
+    intensity: "hard",
+    duration: "35-45 min",
+    objective: "Capacité à répéter des efforts intenses",
+    focus: "run",
+    location: "pitch",
+    equipment: ["Chrono"],
+    tags: ["Intervalles", "Terrain"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Échauffement: 10-12 min footing + gammes",
+      "Bloc: 2 x 8 x 30\" rapide / 30\" trot, 3 min rec entre séries",
+      "Option: 4 x 60 m progressifs",
+      "Retour au calme: 6-8 min footing léger",
+    ],
+    expectations: [
+      "Qualité de foulée, pas de sprint max.",
+      "RPE 7-8, gestion du rythme.",
+    ],
+  },
+  {
+    category: "PRÉVENTION",
+    title: "PREV #1 — Ischios + adducteurs",
+    intensity: "moderate",
+    duration: "35-45 min",
+    objective: "Prévention blessures clés du foot",
+    focus: "strength",
+    location: "home",
+    equipment: ["Élastiques", "Tapis"],
+    tags: ["Prévention", "Ischios", "Adducteurs"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Échauffement: 6-8 min mobilité hanches + activation fessiers",
+      "Bloc 1 — Ischios: Nordic assisté 4 x 4 + ham walkout 3 x 6",
+      "Bloc 2 — Adducteurs: Copenhagen 3 x 20\" / côté + squeeze 3 x 20\"",
+      "Bloc 3 — Hinge léger: RDL 3 x 8 (tempo contrôlé)",
+      "Retour au calme: 5 min mobilité adducteurs",
+    ],
+    expectations: [
+      "Qualité d'exécution avant volume.",
+      "Pas de douleur vive. Arrêter si gêne.",
+    ],
+  },
+  {
+    category: "PRÉVENTION",
+    title: "PREV #2 — Chevilles + plan frontal",
+    intensity: "easy",
+    duration: "30-40 min",
+    objective: "Stabilité appuis, genou et hanche",
+    focus: "mobility",
+    location: "home",
+    equipment: ["Élastiques", "Tapis"],
+    tags: ["Chevilles", "Genou", "Appuis"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Échauffement: 6 min mobilité cheville + genou",
+      "Bloc 1 — Chevilles: calf raise 3 x 12 + tib raise 3 x 15",
+      "Bloc 2 — Plan frontal: side lunge 3 x 8 / côté + lateral band walk 3 x 12",
+      "Bloc 3 — Équilibre: single-leg reach 3 x 6 / côté",
+      "Retour au calme: 5 min mobilité",
+    ],
+    expectations: [
+      "Amplitude contrôlée, tempo lent.",
+      "Alignement genou-pied sur chaque rep.",
+    ],
+  },
+  {
+    category: "MOBILITÉ",
+    title: "MOBILITÉ #1 — Hanches & chevilles de sprinteur",
+    intensity: "easy",
+    duration: "25-30 min",
+    objective: "Appuis plus libres, genou stable, amplitude utile au sprint",
+    focus: "mobility",
+    location: "home",
+    equipment: ["Tapis", "Mini-bands"],
+    tags: ["Hanches", "Chevilles", "Appuis"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Respiration + reset: 2 min 90/90 breathing + cat-camel 8 reps",
+      "Bloc 1 — Hanches: 90/90 switches 3 x 6 / cote + hip airplanes 2 x 5 / cote",
+      "Bloc 2 — Adducteurs: rockback 3 x 8 + copenhagen short lever 3 x 15\"",
+      "Bloc 3 — Chevilles: dorsiflexion murale 3 x 10 + tib raise 3 x 12",
+      "Fin: 2 min squat hold + respiration lente",
+    ],
+    expectations: [
+      "Tempo lent, controle avant amplitude.",
+      "Aucune douleur vive. Stop si gene.",
+      "Respiration nasale, relachement epaules.",
+    ],
+  },
+  {
+    category: "MOBILITÉ",
+    title: "MOBILITÉ #2 — T-spine + epaules solides",
+    intensity: "easy",
+    duration: "20-25 min",
+    objective: "Posture, epaules stables et rotation thoracique",
+    focus: "mobility",
+    location: "home",
+    equipment: ["Elastiques", "Mur"],
+    tags: ["Epaules", "Posture", "T-spine"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Echauffement: 3 min rotations thoraciques + open book",
+      "Bloc 1 — T-spine: open book 3 x 6 / cote + extensions sur serviette 3 x 8",
+      "Bloc 2 — Scapula: wall slides 3 x 8 + scap push-up 3 x 10",
+      "Bloc 3 — Rotateurs: band external rotation 3 x 12 + YTW 2 x 8",
+      "Fin: doorway stretch 2 x 30\" + respiration 2 min",
+    ],
+    expectations: [
+      "Amplitude propre, pas de pincement.",
+      "Mains legeres, nuque longue.",
+      "Rythme calme, pas de force.",
+    ],
+  },
+  {
+    category: "MOBILITÉ",
+    title: "MOBILITÉ #3 — Flow pre-seance 18 min",
+    intensity: "easy",
+    duration: "15-20 min",
+    objective: "Activer et lubrifier avant entrainement",
+    focus: "mobility",
+    location: "pitch",
+    equipment: ["Tapis"],
+    tags: ["Warm-up", "Flow", "Terrain"],
+    level: "Tout niveau",
+    detail: [
+      "Flow 1: world greatest stretch 2 x 5 / cote",
+      "Flow 2: leg swings 2 x 12 / jambe + ankle rocks 2 x 10",
+      "Flow 3: squat to stand 2 x 8 + lunge rotation 2 x 6 / cote",
+      "Flow 4: pogo hops 2 x 15 + A-march 2 x 15 m",
+      "Fin: 2 lignes droites progressives",
+    ],
+    expectations: [
+      "Objectif = readiness, pas fatigue.",
+      "Respiration fluide, mouvement propre.",
+    ],
+  },
+  {
+    category: "MOBILITÉ",
+    title: "MOBILITÉ #4 — Recovery active 25 min",
+    intensity: "easy",
+    duration: "20-25 min",
+    objective: "Récupération douce sans perte de mobilité",
+    focus: "mobility",
+    location: "home",
+    equipment: ["Tapis"],
+    tags: ["Recovery", "Mobilité", "Home"],
+    level: "Tout niveau",
+    detail: [
+      "Respiration: 2 min 4-7-8",
+      "Bloc 1 — Hanches: hip flexor stretch 2 x 30\" / côté",
+      "Bloc 2 — T-spine: open book 2 x 6 / côté",
+      "Bloc 3 — Ischios: hamstring floss 2 x 8 / côté",
+      "Fin: relaxation 3 min",
+    ],
+    expectations: [
+      "Rythme calme, zéro douleur.",
+      "Sortir plus mobile qu'au départ.",
+    ],
+  },
+  {
+    category: "MOBILITÉ 7 JOURS",
+    title: "MOB 7J — Jour 1: Reset hanches + chevilles",
+    intensity: "easy",
+    duration: "18-22 min",
+    objective: "Redonner de la marge aux appuis des le jour 1",
+    focus: "mobility",
+    location: "home",
+    equipment: ["Tapis"],
+    tags: ["Pack 7J", "Jour 1", "Hanches", "Chevilles"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Respiration: 90/90 breathing 2 min",
+      "Hanches: 90/90 switches 3 x 6 / cote",
+      "Adducteurs: rockback 3 x 8",
+      "Chevilles: dorsiflexion murale 3 x 10 + tib raise 2 x 12",
+      "Fin: squat hold 2 x 30\"",
+    ],
+    expectations: [
+      "Tempo lent, pas d'a-coups.",
+      "Amplitude controlee, aucune douleur vive.",
+    ],
+  },
+  {
+    category: "MOBILITÉ 7 JOURS",
+    title: "MOB 7J — Jour 2: T-spine + epaules",
+    intensity: "easy",
+    duration: "18-22 min",
+    objective: "Posture haute pour duels et tirs",
+    focus: "mobility",
+    location: "home",
+    equipment: ["Elastiques", "Mur"],
+    tags: ["Pack 7J", "Jour 2", "Epaules", "T-spine"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Open book 3 x 6 / cote",
+      "Wall slides 3 x 8",
+      "Scap push-up 3 x 10",
+      "Band external rotation 3 x 12",
+      "Doorway stretch 2 x 30\"",
+    ],
+    expectations: [
+      "Pas de pincement, amplitude propre.",
+      "Nuque longue, epaules basses.",
+    ],
+  },
+  {
+    category: "MOBILITÉ 7 JOURS",
+    title: "MOB 7J — Jour 3: Ischios + chaine post",
+    intensity: "easy",
+    duration: "20-24 min",
+    objective: "Libere la chaine post sans perdre de force",
+    focus: "mobility",
+    location: "home",
+    equipment: ["Tapis"],
+    tags: ["Pack 7J", "Jour 3", "Ischios"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Cat-camel 2 x 8",
+      "Hip hinge drill 3 x 6",
+      "Hamstring floss 3 x 8 / cote",
+      "Couch stretch 2 x 30\" / cote",
+      "Fin: posterior stretch 2 min",
+    ],
+    expectations: [
+      "Pas de douleur, sensation d'allongement.",
+      "Respiration lente, relachement.",
+    ],
+  },
+  {
+    category: "MOBILITÉ 7 JOURS",
+    title: "MOB 7J — Jour 4: Adducteurs + plan frontal",
+    intensity: "easy",
+    duration: "18-22 min",
+    objective: "Securiser les changements d'appui",
+    focus: "mobility",
+    location: "home",
+    equipment: ["Tapis", "Mini-bands"],
+    tags: ["Pack 7J", "Jour 4", "Adducteurs"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Copenhagen short lever 3 x 15\" / cote",
+      "Side lunge 3 x 6 / cote",
+      "Lateral band walk 2 x 12",
+      "Single-leg reach 3 x 6 / cote",
+      "Fin: adductor stretch 2 x 30\"",
+    ],
+    expectations: [
+      "Alignement genou-pied.",
+      "Controle lent, pas de rebond.",
+    ],
+  },
+  {
+    category: "MOBILITÉ 7 JOURS",
+    title: "MOB 7J — Jour 5: Flow terrain express",
+    intensity: "easy",
+    duration: "15-20 min",
+    objective: "Activation rapide avant seance ou match",
+    focus: "mobility",
+    location: "pitch",
+    equipment: ["Tapis"],
+    tags: ["Pack 7J", "Jour 5", "Flow", "Terrain"],
+    level: "Tout niveau",
+    detail: [
+      "Leg swings 2 x 12 / jambe",
+      "Squat to stand 2 x 8",
+      "Lunge rotation 2 x 6 / cote",
+      "Pogo hops 2 x 15",
+      "2 lignes droites progressives",
+    ],
+    expectations: [
+      "Objectif readiness, pas fatigue.",
+      "Mouvement fluide, controle.",
+    ],
+  },
+  {
+    category: "MOBILITÉ 7 JOURS",
+    title: "MOB 7J — Jour 6: Recuperation profonde",
+    intensity: "easy",
+    duration: "22-28 min",
+    objective: "Relacher sans casser la nervosité",
+    focus: "mobility",
+    location: "home",
+    equipment: ["Tapis"],
+    tags: ["Pack 7J", "Jour 6", "Recup"],
+    level: "Tout niveau",
+    detail: [
+      "Respiration 4-7-8: 3 cycles",
+      "Hip flexor stretch 2 x 40\" / cote",
+      "Hamstring stretch 2 x 40\" / cote",
+      "T-spine rotation 2 x 6 / cote",
+      "Fin: relaxation 3 min",
+    ],
+    expectations: [
+      "Aucune douleur, uniquement relachement.",
+      "Sortir frais, pas endormi.",
+    ],
+  },
+  {
+    category: "MOBILITÉ 7 JOURS",
+    title: "MOB 7J — Jour 7: Full reset + respiration",
+    intensity: "easy",
+    duration: "20-25 min",
+    objective: "Faire le point avant un nouveau cycle",
+    focus: "mobility",
+    location: "home",
+    equipment: ["Tapis"],
+    tags: ["Pack 7J", "Jour 7", "Reset"],
+    level: "Tout niveau",
+    detail: [
+      "Cat-camel 2 x 8 + open book 2 x 6 / cote",
+      "90/90 switches 2 x 6 / cote",
+      "Ankle rocks 2 x 10 / cote",
+      "Couch stretch 2 x 30\" / cote",
+      "Respiration lente 3 min",
+    ],
+    expectations: [
+      "Rythme calme, focus sur la respiration.",
+      "Terminer plus mobile qu'au debut.",
+    ],
+  },
+  {
+    category: "MATCH DAY",
+    title: "MATCH DAY-1 — Activation express",
+    intensity: "easy",
+    duration: "20-25 min",
+    objective: "Réveiller le système sans fatigue",
+    focus: "speed",
+    location: "pitch",
+    equipment: ["Cônes"],
+    tags: ["Activation", "Match-1"],
+    level: "Tout niveau",
+    detail: [
+      "Échauffement: 6-8 min footing + gammes",
+      "Bloc: 4 x 20 m progressifs + 4 x 10 m accélérations",
+      "Bloc technique: 5 min appuis rapides",
+      "Retour au calme: 4 min trot léger",
+    ],
+    expectations: [
+      "RPE 4-5 max.",
+      "Sortir frais, pas fatigué.",
+    ],
+  },
+  {
+    category: "MATCH DAY",
+    title: "MATCH DAY+1 — Regen + circulation",
+    intensity: "easy",
+    duration: "25-35 min",
+    objective: "Récupérer des impacts du match",
+    focus: "mobility",
+    location: "home",
+    equipment: ["Tapis"],
+    tags: ["Regen", "Match+1"],
+    level: "Tout niveau",
+    detail: [
+      "Bloc 1: 10 min mobilité douce (hanches, dos, chevilles)",
+      "Bloc 2: 10-12 min cardio très léger (trot ou vélo)",
+      "Bloc 3: 5 min respiration + étirements légers",
+    ],
+    expectations: [
+      "RPE 2-3.",
+      "Aucune douleur ou contrainte.",
+    ],
+  },
+  {
+    category: "HOME",
+    title: "HOME #1 — Circuit sans matos",
+    intensity: "moderate",
+    duration: "30-35 min",
+    objective: "Full body efficace, zéro matériel",
+    focus: "circuit",
+    location: "home",
+    equipment: ["Poids du corps"],
+    tags: ["Maison", "Circuit"],
+    level: "Tout niveau",
+    detail: [
+      "Échauffement: 6-8 min mobilité + activation",
+      "Circuit 1: 4 tours — 30\" squat, 30\" pompe, 30\" fente, 30\" gainage, 60\" rec",
+      "Circuit 2: 3 tours — 20\" mountain climber, 20\" hollow hold, 20\" repos, 90\" rec",
+      "Retour au calme: 5 min étirements",
+    ],
+    expectations: [
+      "RPE 6-7, garder de la marge.",
+      "Tempo contrôlé, qualité d'exécution.",
     ],
   },
 ];
 
 const INTENSITY_LABEL: Record<string, string> = {
-  easy: "Easy",
-  moderate: "Moderate",
-  hard: "Hard",
+  easy: "Facile",
+  moderate: "Modéré",
+  hard: "Dur",
 };
 
 const INTENSITY_COLOR: Record<string, string> = {
-  easy: "#4ade80",
-  moderate: "#facc15",
-  hard: "#fb7185",
+  easy: palette.success,
+  moderate: palette.accent,
+  hard: palette.danger,
+};
+
+const LOCATION_LABEL: Record<string, string> = {
+  gym: "Salle",
+  pitch: "Terrain",
+  home: "Maison",
+};
+
+const CATEGORY_ORDER = [
+  "EXPLOSIVITÉ",
+  "VITESSE",
+  "FORCE",
+  "PRÉPA",
+  "ENDURANCE",
+  "PRÉVENTION",
+  "MOBILITÉ",
+  "MOBILITÉ 7 JOURS",
+  "MATCH DAY",
+  "HOME",
+];
+
+const intensityRank: Record<Prebuilt["intensity"], number> = {
+  hard: 0,
+  moderate: 1,
+  easy: 2,
+};
+
+const parseDurationMin = (raw?: string) => {
+  if (!raw) return undefined;
+  const matches = raw.match(/\d+/g);
+  if (!matches || matches.length === 0) return undefined;
+  const values = matches.map((m) => Number(m)).filter((n) => Number.isFinite(n));
+  if (!values.length) return undefined;
+  if (values.length === 1) return values[0];
+  const avg = values.reduce((a, b) => a + b, 0) / values.length;
+  return Math.round(avg);
 };
 
 export default function PrebuiltSessionsScreen() {
   const sessions = useTrainingStore((s) => s.sessions);
   const pending = sessions.filter((s) => !s.completed);
   const nav = useNavigation<any>();
+  const [selectedCategory, setSelectedCategory] = useState<string>("Tous");
 
   const grouped = useMemo(() => {
     const map: Record<string, Prebuilt[]> = {};
@@ -189,7 +789,34 @@ export default function PrebuiltSessionsScreen() {
       if (!map[s.category]) map[s.category] = [];
       map[s.category].push(s);
     }
-    return Object.entries(map);
+    return Object.entries(map)
+      .map(([category, list]) => {
+        const sorted = [...list].sort((a, b) => {
+          const rankDiff = intensityRank[a.intensity] - intensityRank[b.intensity];
+          if (rankDiff !== 0) return rankDiff;
+          const durA = parseDurationMin(a.duration) ?? 0;
+          const durB = parseDurationMin(b.duration) ?? 0;
+          if (durA !== durB) return durA - durB;
+          return a.title.localeCompare(b.title);
+        });
+        return [category, sorted] as const;
+      })
+      .sort((a, b) => {
+        const idxA = CATEGORY_ORDER.indexOf(a[0]);
+        const idxB = CATEGORY_ORDER.indexOf(b[0]);
+        if (idxA === -1 && idxB === -1) return a[0].localeCompare(b[0]);
+        if (idxA === -1) return 1;
+        if (idxB === -1) return -1;
+        return idxA - idxB;
+      });
+  }, []);
+
+  const categories = useMemo(() => {
+    const fromSessions = grouped.map(([category, list]) => ({
+      category,
+      count: list.length,
+    }));
+    return [{ category: "Tous", count: PREBUILT_SESSIONS.length }, ...fromSessions];
   }, []);
 
   const pendingCount = pending.length;
@@ -285,7 +912,53 @@ export default function PrebuiltSessionsScreen() {
             <Text style={styles.sectionSubTitle}>Séances prêtes à l’emploi</Text>
           </View>
 
-          {grouped.map(([category, list]) => (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterRow}
+          >
+            {categories.map((item) => {
+              const active = selectedCategory === item.category;
+              return (
+                <TouchableOpacity
+                  key={item.category}
+                  style={[styles.filterChip, active && styles.filterChipActive]}
+                  onPress={() => setSelectedCategory(item.category)}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      active && styles.filterChipTextActive,
+                    ]}
+                  >
+                    {item.category}
+                  </Text>
+                  <View
+                    style={[
+                      styles.filterBadge,
+                      active && styles.filterBadgeActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.filterBadgeText,
+                        active && styles.filterBadgeTextActive,
+                      ]}
+                    >
+                      {item.count}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          {grouped
+            .filter(([category]) =>
+              selectedCategory === "Tous" ? true : selectedCategory === category
+            )
+            .map(([category, list]) => (
             <View key={category} style={styles.categoryBlock}>
               <View style={styles.categoryHeader}>
                 <Text style={styles.categoryLabel}>{category}</Text>
@@ -331,6 +1004,13 @@ export default function PrebuiltSessionsScreen() {
                           <View style={styles.tag}>
                             <Text style={styles.tagText}>{s.duration}</Text>
                           </View>
+                          {s.location ? (
+                            <View style={styles.tag}>
+                              <Text style={styles.tagText}>
+                                {LOCATION_LABEL[s.location] ?? s.location}
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
 
                         <Text style={styles.cardObjective} numberOfLines={2}>
@@ -461,6 +1141,53 @@ const styles = StyleSheet.create({
   sectionSubTitle: {
     fontSize: 12,
     color: palette.sub,
+  },
+  filterRow: {
+    gap: 8,
+    paddingVertical: 8,
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.cardSoft,
+  },
+  filterChipActive: {
+    borderColor: palette.accent,
+    backgroundColor: palette.accentSoft,
+  },
+  filterChipText: {
+    fontSize: 12,
+    color: palette.sub,
+    fontWeight: "600",
+  },
+  filterChipTextActive: {
+    color: palette.accent,
+  },
+  filterBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: palette.bgSoft,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+  },
+  filterBadgeActive: {
+    borderColor: palette.accent,
+    backgroundColor: palette.card,
+  },
+  filterBadgeText: {
+    fontSize: 10,
+    color: palette.sub,
+    fontWeight: "700",
+  },
+  filterBadgeTextActive: {
+    color: palette.accent,
   },
   sectionChip: {
     paddingHorizontal: 10,

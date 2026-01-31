@@ -52,6 +52,7 @@ export interface SessionFeedback {
   fatigue: Rating1to5; // 1–5
   sleep: Rating1to5;   // 1–5 (legacy UI) → mappée en recoveryPerceived (info-only)
   pain: Rating0to5;    // 0–5 (0 = aucune gêne)
+  durationMin?: number;
   comment?: string;
   createdAt: string;   // ISO
   recoveryPerceived?: number;   // ← AJOUT
