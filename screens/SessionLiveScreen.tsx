@@ -6,7 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Dimensions,
+  useWindowDimensions,
   Animated,
   Vibration,
   Platform,
@@ -25,6 +25,7 @@ import { useSettingsStore } from "../state/settingsStore";
 type BlockItem = {
   name?: string | null;
   description?: string | null;
+  football_context?: string | null;
   exercise_id?: string | null;
   sets?: number | null;
   reps?: number | null;
@@ -47,12 +48,17 @@ type Block = {
   duration_min?: number;
   items?: BlockItem[];
   notes?: string | null;
+  timer_presets?: {
+    label?: string;
+    work_s?: number | null;
+    rest_s?: number | null;
+    rounds?: number | null;
+  }[] | null;
 };
 
 type LiveRoute = RouteProp<AppStackParamList, "SessionLive">;
 
 const palette = theme.colors;
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const ITEM_SPACING = 12;
 
 const formatTime = (total: number) => {
@@ -75,6 +81,34 @@ const prettifyName = (name: string) => {
     .filter(Boolean)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
+};
+
+const cleanDisplayNote = (value?: string | null) => {
+  if (typeof value !== "string" || value.trim().length === 0) return null;
+  const cleaned = value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.toLowerCase().startsWith("token:"))
+    .join("\n")
+    .trim();
+  return cleaned.length > 0 ? cleaned : null;
+};
+
+const formatPresetLabel = (preset: {
+  label?: string | null;
+  work_s?: number | null;
+  rest_s?: number | null;
+  rounds?: number | null;
+}) => {
+  const parts: string[] = [];
+  if (preset.label) parts.push(String(preset.label));
+  if (Number.isFinite(Number(preset.work_s)) && Number.isFinite(Number(preset.rest_s))) {
+    parts.push(`${Number(preset.work_s)}s/${Number(preset.rest_s)}s`);
+  }
+  if (Number.isFinite(Number(preset.rounds)) && Number(preset.rounds) > 0) {
+    parts.push(`x${Number(preset.rounds)}`);
+  }
+  return parts.join(" · ");
 };
 
 const intensityTone = (intensity?: string) => {
@@ -116,6 +150,7 @@ function SessionLiveScreen() {
   const soundsEnabled = useSettingsStore((s) => s.soundsEnabled);
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
 
+  const { width } = useWindowDimensions();
   const blocks: Block[] = Array.isArray(v2.blocks) ? v2.blocks : [];
   const title = v2.title || "Séance FKS";
   const subtitle = v2.subtitle;
@@ -131,7 +166,7 @@ function SessionLiveScreen() {
   const [restSec, setRestSec] = useState(0);
   const restRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [restSource, setRestSource] = useState<"auto" | "manual" | null>(null);
-  const blockWidth = useMemo(() => Math.max(280, SCREEN_WIDTH - 32), []);
+  const blockWidth = useMemo(() => Math.max(280, width - 32), [width]);
   const itemSize = blockWidth + ITEM_SPACING;
   const scrollX = useRef(new Animated.Value(0)).current;
   const enter = useRef(new Animated.Value(0)).current;
@@ -149,6 +184,29 @@ function SessionLiveScreen() {
     () => getCoachTip(blocks[activeBlock], activeBlock),
     [blocks, activeBlock]
   );
+  const timerPresets = useMemo(() => {
+    const globalRaw = Array.isArray(v2.display?.timer_presets) ? v2.display?.timer_presets : [];
+    const blockRaw = Array.isArray(blocks[activeBlock]?.timer_presets)
+      ? blocks[activeBlock]?.timer_presets ?? []
+      : [];
+    const source = blockRaw.length > 0 ? blockRaw : globalRaw;
+    const unique = new Set<string>();
+    return source
+      .map((preset) => ({
+        label: preset.label ?? null,
+        work_s: typeof preset.work_s === "number" ? preset.work_s : null,
+        rest_s: typeof preset.rest_s === "number" ? preset.rest_s : null,
+        rounds: typeof preset.rounds === "number" ? preset.rounds : null,
+      }))
+      .filter((preset) => preset.label || (preset.work_s != null && preset.rest_s != null))
+      .filter((preset) => {
+        const key = `${preset.label ?? ""}|${preset.work_s ?? ""}|${preset.rest_s ?? ""}|${preset.rounds ?? ""}`;
+        if (unique.has(key)) return false;
+        unique.add(key);
+        return true;
+      })
+      .slice(0, 4);
+  }, [v2.display?.timer_presets, blocks, activeBlock]);
   const enterTranslate = enter.interpolate({
     inputRange: [0, 1],
     outputRange: [18, 0],
@@ -410,6 +468,25 @@ function SessionLiveScreen() {
     return parts.join(" · ");
   };
 
+  const getDisplayName = (item: BlockItem) => {
+    const displayNameRaw = (item?.name || "").trim();
+    const fallbackId =
+      typeof (item as any)?.exercise_id === "string" && (item as any).exercise_id.trim()
+        ? (item as any).exercise_id.trim()
+        : typeof (item as any)?.id === "string" && (item as any).id.trim()
+          ? (item as any).id.trim()
+          : undefined;
+    const displayName =
+      displayNameRaw.length > 0
+        ? prettifyName(displayNameRaw)
+        : fallbackId
+          ? prettifyName(fallbackId)
+          : item?.modality
+            ? prettifyName(String(item.modality))
+            : "Exercice";
+    return displayName;
+  };
+
   const getExerciseId = (item: BlockItem) => {
     if (typeof (item as any)?.exercise_id === "string" && (item as any).exercise_id.trim()) {
       return (item as any).exercise_id.trim();
@@ -460,21 +537,15 @@ function SessionLiveScreen() {
           ? v2.estimated_load.srpe
           : undefined,
     };
-    nav.navigate(
-      "SessionSummary" as never,
-      {
-        sessionId,
-        summary,
-      } as never
-    );
+    nav.navigate("SessionSummary", {
+      sessionId,
+      summary,
+    });
   };
 
   const goToExercise = (exerciseId: string | null) => {
     if (!exerciseId) return;
-    nav.navigate(
-      "Tabs" as never,
-      { screen: "VideoLibrary", params: { highlightId: exerciseId } } as never
-    );
+    nav.navigate("ExerciseDetail", { highlightId: exerciseId });
   };
 
   return (
@@ -490,8 +561,8 @@ function SessionLiveScreen() {
             <Card variant="surface" style={styles.heroCard}>
               <View style={styles.heroTop}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.title}>{title}</Text>
-                  {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+                  <Text style={styles.title} numberOfLines={2}>{title}</Text>
+                  {subtitle ? <Text style={styles.subtitle} numberOfLines={3}>{subtitle}</Text> : null}
                 </View>
                 <Badge label={plannedDateISO} />
               </View>
@@ -571,6 +642,24 @@ function SessionLiveScreen() {
                   <Text style={styles.restChipGhostText}>Stop</Text>
                 </TouchableOpacity>
               </View>
+              {timerPresets.length > 0 ? (
+                <View style={styles.presetRow}>
+                  {timerPresets.map((preset, idx) => (
+                    <TouchableOpacity
+                      key={`preset_${idx}`}
+                      style={styles.restChip}
+                      onPress={() => {
+                        const rest = Number(preset.rest_s);
+                        if (Number.isFinite(rest) && rest > 0) {
+                          startRest(rest, "manual");
+                        }
+                      }}
+                    >
+                      <Text style={styles.restChipText}>{formatPresetLabel(preset)}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : null}
             </Card>
 
             <SectionHeader
@@ -614,7 +703,7 @@ function SessionLiveScreen() {
                     <Card variant="surface" style={styles.blockCard}>
                       <View style={styles.blockHeader}>
                         <View>
-                          <Text style={styles.blockTitle}>{blockTitle}</Text>
+                          <Text style={styles.blockTitle} numberOfLines={2}>{blockTitle}</Text>
                           <Text style={styles.blockMeta}>
                             {block.intensity ?? "—"} · {block.duration_min ?? "?"} min
                           </Text>
@@ -635,7 +724,7 @@ function SessionLiveScreen() {
                               item
                             );
                             const checkedItem = itemProgress.complete;
-                            const itemName = prettifyName(item.name || item.exercise_id || "");
+                            const itemName = getDisplayName(item);
                             const meta = formatItemMeta(item);
                             const exerciseId = getExerciseId(item);
                             const pulse = getPulse(key);
@@ -702,13 +791,16 @@ function SessionLiveScreen() {
                                     </View>
                                   )}
                                   <View style={{ flex: 1 }}>
-                                    <Text style={styles.itemName}>{itemName}</Text>
+                                    <Text style={styles.itemName} numberOfLines={2}>{itemName}</Text>
                                     {item.description ? (
                                       <Text style={styles.itemNote}>{item.description}</Text>
                                     ) : null}
                                     {meta ? <Text style={styles.itemMeta}>{meta}</Text> : null}
-                                    {item.notes ? (
-                                      <Text style={styles.itemNote}>{item.notes}</Text>
+                                    {item.football_context ? (
+                                      <Text style={styles.itemContext}>{item.football_context}</Text>
+                                    ) : null}
+                                    {cleanDisplayNote(item.notes) ? (
+                                      <Text style={styles.itemNote}>{cleanDisplayNote(item.notes)}</Text>
                                     ) : null}
                                   </View>
                                 </View>
@@ -743,6 +835,12 @@ function SessionLiveScreen() {
                 offset: itemSize * index,
                 index,
               })}
+              onScrollToIndexFailed={({ index }) => {
+                const fallbackOffset = Math.max(0, index * itemSize);
+                requestAnimationFrame(() => {
+                  listRef.current?.scrollToOffset?.({ offset: fallbackOffset, animated: true });
+                });
+              }}
               onScroll={Animated.event(
                 [{ nativeEvent: { contentOffset: { x: scrollX } } }],
                 { useNativeDriver: true }
@@ -865,6 +963,7 @@ const styles = StyleSheet.create({
   timerActions: { flexDirection: "row", gap: 10 },
   timerButton: { flex: 1 },
   restRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  presetRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   restChip: {
     paddingVertical: 6,
     paddingHorizontal: 12,
@@ -958,6 +1057,7 @@ const styles = StyleSheet.create({
   checkboxIcon: { color: palette.bg, fontSize: 12, fontWeight: "800" },
   itemName: { color: palette.text, fontSize: 14, fontWeight: "600" },
   itemMeta: { color: palette.sub, fontSize: 12, marginTop: 2 },
+  itemContext: { color: palette.text, fontSize: 11, marginTop: 2 },
   itemNote: { color: palette.sub, fontSize: 12, marginTop: 2 },
   itemLink: {
     alignSelf: "flex-start",

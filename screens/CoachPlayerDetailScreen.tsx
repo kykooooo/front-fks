@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import { collection, doc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
+import { Ionicons } from "@expo/vector-icons";
 import type { AppStackParamList } from "../navigation/RootNavigator";
 import { db } from "../services/firebase";
 import { theme } from "../constants/theme";
@@ -10,6 +11,8 @@ import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
+import { CoachRecommendationModal } from "../components/coach/CoachRecommendationModal";
+import { toDateKey } from "../utils/dateHelpers";
 
 const palette = theme.colors;
 
@@ -25,9 +28,10 @@ type MinimalSession = {
 };
 
 const formatShortDate = (value?: string | null) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
+  const key = toDateKey(value);
+  if (!key) return "—";
+  const date = new Date(`${key}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return key;
   return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
 };
 
@@ -48,6 +52,7 @@ export default function CoachPlayerDetailScreen() {
   const [sessions, setSessions] = useState<MinimalSession[]>([]);
   const [planned, setPlanned] = useState<MinimalSession[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [showRecommendationModal, setShowRecommendationModal] = useState(false);
 
   useEffect(() => {
     if (!userId) return;
@@ -149,6 +154,13 @@ export default function CoachPlayerDetailScreen() {
             ))}
           </View>
           {error ? <Text style={styles.error}>{error}</Text> : null}
+          <TouchableOpacity
+            onPress={() => setShowRecommendationModal(true)}
+            style={styles.recommendButton}
+          >
+            <Ionicons name="chatbubble-outline" size={16} color="#fff" />
+            <Text style={styles.recommendButtonText}>Envoyer une recommandation</Text>
+          </TouchableOpacity>
         </Card>
 
         <Card variant="soft" style={styles.cycleCard}>
@@ -184,7 +196,7 @@ export default function CoachPlayerDetailScreen() {
               <View key={s.id} style={styles.itemRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.itemTitle}>{formatSessionTitle(s)}</Text>
-                  <Text style={styles.itemSub}>{s.date ?? "—"}</Text>
+                  <Text style={styles.itemSub}>{formatShortDate(s.date)}</Text>
                 </View>
                 {typeof s.plannedLoad === "number" ? <Badge label={`Load ${Math.round(s.plannedLoad)}`} /> : null}
               </View>
@@ -200,7 +212,7 @@ export default function CoachPlayerDetailScreen() {
               <View key={s.id} style={styles.itemRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.itemTitle}>{formatSessionTitle(s)}</Text>
-                  <Text style={styles.itemSub}>{s.date ?? "—"}</Text>
+                  <Text style={styles.itemSub}>{formatShortDate(s.date)}</Text>
                 </View>
                 {typeof s.rpe === "number" ? <Badge label={`RPE ${Math.round(s.rpe)}`} tone="ok" /> : null}
               </View>
@@ -208,6 +220,14 @@ export default function CoachPlayerDetailScreen() {
           </Card>
         </View>
       </ScrollView>
+
+      {/* Modal de recommandation */}
+      <CoachRecommendationModal
+        visible={showRecommendationModal}
+        playerId={userId ?? ""}
+        playerName={userName || profile?.firstName || "Joueur"}
+        onClose={() => setShowRecommendationModal(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -251,4 +271,19 @@ const styles = StyleSheet.create({
   },
   itemTitle: { color: palette.text, fontWeight: "800", fontSize: 13 },
   itemSub: { color: palette.sub, fontSize: 12, marginTop: 2 },
+  recommendButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: palette.accent,
+    marginTop: 4,
+  },
+  recommendButtonText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#fff",
+  },
 });

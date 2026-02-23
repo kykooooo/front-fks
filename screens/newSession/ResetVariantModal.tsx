@@ -1,35 +1,67 @@
 import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
 import { palette } from "./theme";
 import type { ResetVariant } from "./types";
+import type { ResetExplain } from "./resetExplain";
 
 type Props = {
   variants: ResetVariant[];
   onSelect: (id: string) => void;
   onCancel: () => void;
+  explain?: ResetExplain | null;
 };
 
-export function ResetVariantModal({ variants, onSelect, onCancel }: Props) {
+export function ResetVariantModal({ variants, onSelect, onCancel, explain }: Props) {
   return (
     <View style={styles.resetOverlay}>
       <View style={styles.resetModal}>
-        <Text style={styles.resetTitle}>Séance Prime (reset)</Text>
-        <Text style={styles.resetSubtitle}>
-          Choisis la variante légère du jour (RPE 3–4 · 12–16 min · zéro fatigue)
-        </Text>
-        {variants.map((v) => (
-          <TouchableOpacity
-            key={v.id}
-            style={styles.resetCard}
-            onPress={() => onSelect(v.id)}
-          >
-            <Text style={styles.resetCardTitle}>{v.title}</Text>
-            <Text style={styles.resetCardSubtitle}>{v.subtitle}</Text>
+        <ScrollView
+          contentContainerStyle={styles.resetContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.resetTitle}>Séance Prime (reset)</Text>
+          <Text style={styles.resetSubtitle}>
+            Choisis la variante légère du jour (RPE 3–4 · 12–16 min · zéro fatigue)
+          </Text>
+
+          {explain ? (
+            <View style={styles.explainBlock}>
+              <Text style={styles.explainTitle}>{explain.title}</Text>
+              <Text style={styles.explainSubtitle}>{explain.subtitle}</Text>
+              <View style={styles.explainGroup}>
+                {explain.reasons.map((reason, index) => (
+                  <View key={`${reason}-${index}`} style={styles.bulletRow}>
+                    <Text style={styles.bullet}>•</Text>
+                    <Text style={styles.bulletText}>{reason}</Text>
+                  </View>
+                ))}
+              </View>
+              <Text style={styles.explainLabel}>Exemples concrets</Text>
+              <View style={styles.explainGroup}>
+                {explain.examples.map((example, index) => (
+                  <View key={`${example}-${index}`} style={styles.bulletRow}>
+                    <Text style={styles.bullet}>•</Text>
+                    <Text style={styles.bulletText}>{example}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {variants.map((v) => (
+            <TouchableOpacity
+              key={v.id}
+              style={styles.resetCard}
+              onPress={() => onSelect(v.id)}
+            >
+              <Text style={styles.resetCardTitle}>{v.title}</Text>
+              <Text style={styles.resetCardSubtitle}>{v.subtitle}</Text>
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity style={styles.resetCancel} onPress={onCancel}>
+            <Text style={styles.resetCancelText}>Annuler</Text>
           </TouchableOpacity>
-        ))}
-        <TouchableOpacity style={styles.resetCancel} onPress={onCancel}>
-          <Text style={styles.resetCancelText}>Annuler</Text>
-        </TouchableOpacity>
+        </ScrollView>
       </View>
     </View>
   );
@@ -55,6 +87,10 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     backgroundColor: palette.card,
     padding: 16,
+    gap: 10,
+    maxHeight: "88%",
+  },
+  resetContent: {
     gap: 10,
   },
   resetTitle: {
@@ -84,6 +120,46 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: palette.sub,
     marginTop: 2,
+  },
+  explainBlock: {
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.cardSoft,
+    gap: 8,
+  },
+  explainTitle: {
+    color: palette.text,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  explainSubtitle: {
+    color: palette.sub,
+    fontSize: 12,
+  },
+  explainLabel: {
+    color: palette.text,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  explainGroup: {
+    gap: 6,
+  },
+  bulletRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+  },
+  bullet: {
+    color: palette.accent,
+    fontSize: 12,
+    marginTop: 1,
+  },
+  bulletText: {
+    flex: 1,
+    fontSize: 12,
+    color: palette.text,
   },
   resetCancel: {
     marginTop: 8,

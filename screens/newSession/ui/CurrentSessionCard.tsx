@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, TouchableOpacity, FlatList } from "react-native";
 import { palette } from "../theme";
 import type { Exercise, Session } from "../../../domain/types";
+import { toDateKey } from "../../../utils/dateHelpers";
 
 type Props = {
   current: Session;
@@ -69,7 +70,7 @@ export function CurrentSessionCard({
 
       {nextAllowedISO ? (
         <Text style={styles.helper}>
-          Prochaine séance autorisée à partir du {new Date(nextAllowedISO).toISOString().slice(0, 10)}
+          Prochaine séance autorisée à partir du {toDateKey(nextAllowedISO)}
         </Text>
       ) : null}
 

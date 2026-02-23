@@ -1,18 +1,24 @@
 // screens/PrebuiltSessionDetailScreen.tsx
-import React, { useMemo, useEffect, useRef, useState } from "react";
+// Design moderne avec animations stagger, icônes gradient et cards pro
+import React, { useMemo, useEffect, useRef, useState, useCallback } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Animated,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRoute, RouteProp, useNavigation } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { useHaptics } from "../hooks/useHaptics";
 import type { AppStackParamList } from "../navigation/RootNavigator";
 import { theme } from "../constants/theme";
+import { Card } from "../components/ui/Card";
 import { useTrainingStore } from "../state/trainingStore";
-import { v2ToLocalSession } from "./newSession/transform";
 
 const palette = theme.colors;
 
@@ -28,26 +34,99 @@ type Prebuilt = {
   equipment?: string[];
   tags?: string[];
   level?: string;
-  expectations?: string[]; // Consignes IA sur l'exécution de la séance/exos
+  expectations?: string[];
   rpe_target?: number;
 };
+
+// Configuration visuelle des catégories
+type CategoryConfig = {
+  icon: keyof typeof Ionicons.glyphMap;
+  gradient: [string, string];
+  tint: string;
+};
+
+const CATEGORY_CONFIG: Record<string, CategoryConfig> = {
+  ACTIVATION: {
+    icon: "flash",
+    gradient: ["#f59e0b", "#fbbf24"],
+    tint: "#f59e0b",
+  },
+  RÉCUPÉRATION: {
+    icon: "leaf",
+    gradient: ["#10b981", "#34d399"],
+    tint: "#10b981",
+  },
+  "MOBILITÉ EXPRESS": {
+    icon: "body",
+    gradient: ["#8b5cf6", "#a78bfa"],
+    tint: "#8b5cf6",
+  },
+  PRÉVENTION: {
+    icon: "shield-checkmark",
+    gradient: ["#ef4444", "#f87171"],
+    tint: "#ef4444",
+  },
+  "MATCH DAY": {
+    icon: "football",
+    gradient: ["#3b82f6", "#60a5fa"],
+    tint: "#3b82f6",
+  },
+  "PACK 7 JOURS": {
+    icon: "calendar",
+    gradient: ["#14b8a6", "#2dd4bf"],
+    tint: "#14b8a6",
+  },
+  DÉFIS: {
+    icon: "trophy",
+    gradient: ["#ff7a1a", "#ff9a4a"],
+    tint: "#ff7a1a",
+  },
+};
+
+const getCategoryConfig = (category: string): CategoryConfig =>
+  CATEGORY_CONFIG[category] ?? {
+    icon: "sparkles",
+    gradient: ["#6b7280", "#9ca3af"],
+    tint: "#6b7280",
+  };
 
 const INTENSITY_LABEL: Record<string, string> = {
   easy: "Facile",
   moderate: "Modéré",
-  hard: "Dur",
+  hard: "Intense",
+};
+
+const INTENSITY_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  easy: "sunny-outline",
+  moderate: "flame-outline",
+  hard: "flash",
 };
 
 const INTENSITY_COLOR: Record<string, string> = {
-  easy: palette.success,
-  moderate: palette.accent,
-  hard: palette.danger,
+  easy: "#10b981",
+  moderate: "#f59e0b",
+  hard: "#ef4444",
+};
+
+const LOCATION_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  gym: "barbell-outline",
+  pitch: "football-outline",
+  home: "home-outline",
 };
 
 const LOCATION_LABEL: Record<string, string> = {
   gym: "Salle",
   pitch: "Terrain",
   home: "Maison",
+};
+
+const FOCUS_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  strength: "barbell",
+  speed: "flash",
+  run: "footsteps",
+  plyo: "rocket",
+  circuit: "sync",
+  mobility: "body",
 };
 
 const FOCUS_LABEL: Record<string, string> = {
@@ -59,120 +138,100 @@ const FOCUS_LABEL: Record<string, string> = {
   mobility: "Mobilité",
 };
 
-const parseDurationMin = (raw?: string) => {
+
+// Parse duration string like "8-10 min" to average minutes
+const parseDurationMin = (raw?: string): number | undefined => {
   if (!raw) return undefined;
   const matches = raw.match(/\d+/g);
   if (!matches || matches.length === 0) return undefined;
   const values = matches.map((m) => Number(m)).filter((n) => Number.isFinite(n));
   if (!values.length) return undefined;
   if (values.length === 1) return values[0];
-  const avg = values.reduce((a, b) => a + b, 0) / values.length;
-  return Math.round(avg);
-};
-
-const buildV2FromPrebuilt = (session: Prebuilt, expectations: string[]) => {
-  const detail = Array.isArray(session.detail) ? session.detail : [];
-  const blocks = detail.map((line, index) => {
-    const parts = line.split(":");
-    const left = parts[0]?.trim() ?? "";
-    const right = parts.slice(1).join(":").trim();
-    const blockTitle = left.length ? left : `Bloc ${index + 1}`;
-    const description = right.length ? right : line;
-    return {
-      name: blockTitle,
-      type: session.category?.toLowerCase(),
-      intensity: session.intensity,
-      items: [
-        {
-          name: blockTitle,
-          description,
-        },
-      ],
-    };
-  });
-
-  return {
-    version: "prebuilt_v1",
-    title: session.title,
-    subtitle: session.objective,
-    intensity: session.intensity,
-    focus_primary: session.focus ?? session.category?.toLowerCase() ?? "run",
-    duration_min: parseDurationMin(session.duration),
-    rpe_target:
-      typeof session.rpe_target === "number"
-        ? session.rpe_target
-        : session.intensity === "hard"
-        ? 8
-        : session.intensity === "easy"
-        ? 4
-        : 6,
-    location: session.location,
-    blocks,
-    coaching_tips: expectations,
-  };
+  return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
 };
 
 export default function PrebuiltSessionDetailScreen() {
-  const route =
-    useRoute<RouteProp<AppStackParamList, "PrebuiltSessionDetail">>();
+  const route = useRoute<RouteProp<AppStackParamList, "PrebuiltSessionDetail">>();
   const navigation = useNavigation<any>();
-  const phase = useTrainingStore((s) => s.phase);
-  const devNowISO = useTrainingStore((s) => s.devNowISO);
-  const pushSession = useTrainingStore((s) => s.pushSession);
+  const haptics = useHaptics();
   const session = route.params.session as unknown as Prebuilt;
+  const addCompletedRoutine = useTrainingStore((s) => s.addCompletedRoutine);
+
   const expectations = Array.isArray(session.expectations)
     ? session.expectations.filter((line) => !!line && line.trim().length > 0)
     : [];
+
   const [timeSec, setTimeSec] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [showCoachTip, setShowCoachTip] = useState(true);
+  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
+
+  // Animations
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+  const cardAnims = useRef([0, 1, 2, 3, 4, 5].map(() => new Animated.Value(0))).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      Animated.stagger(
+        70,
+        cardAnims.map((anim) =>
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 250,
+            useNativeDriver: true,
+          })
+        )
+      ).start();
+    });
+  }, [fadeAnim, slideAnim, cardAnims]);
+
   const detailLines = useMemo(
     () => (session.detail ?? []).filter((line) => !!line && line.trim().length > 0),
     [session.detail]
   );
-  const infoItems = useMemo(() => {
-    const items: Array<{ label: string; value: string }> = [];
-    const focusLabel = session.focus ? FOCUS_LABEL[session.focus] ?? session.focus : "";
-    if (focusLabel) items.push({ label: "Focus", value: focusLabel });
-    if (session.location) {
-      items.push({
-        label: "Lieu",
-        value: LOCATION_LABEL[session.location] ?? session.location,
-      });
-    }
-    if (session.level) items.push({ label: "Niveau", value: session.level });
-    if (session.equipment && session.equipment.length > 0) {
-      items.push({ label: "Matériel", value: session.equipment.join(", ") });
-    }
-    return items;
-  }, [session]);
 
-  const intensityColor =
-    INTENSITY_COLOR[session.intensity] ?? palette.accent;
-  const intensityLabel =
-    INTENSITY_LABEL[session.intensity] ?? session.intensity;
+  const categoryConfig = getCategoryConfig(session.category);
+  const intensityColor = INTENSITY_COLOR[session.intensity] ?? palette.accent;
+  const intensityIcon = INTENSITY_ICON[session.intensity] ?? "flash-outline";
+  const intensityLabel = INTENSITY_LABEL[session.intensity] ?? session.intensity;
 
-  const handleUseSession = () => {
-    const v2 = buildV2FromPrebuilt(session, expectations);
-    const nowISO = devNowISO ?? new Date().toISOString();
-    const plannedDateISO = nowISO.slice(0, 10);
-    const local = v2ToLocalSession(v2 as any, phase as any, plannedDateISO);
-    const withMeta = {
-      ...local,
-      prebuiltMeta: {
-        version: "prebuilt_v1",
-        category: session.category,
-        title: session.title,
-      },
-    } as any;
-    pushSession(withMeta);
-    navigation.navigate(
-      "SessionLive" as never,
-      { v2, plannedDateISO, sessionId: withMeta.id } as never
-    );
-  };
+  const handleFinish = useCallback(() => {
+    // Enregistrer la routine complétée (pour badges, sans impact sur charge)
+    addCompletedRoutine({
+      category: session.category,
+      title: session.title,
+      durationMin: parseDurationMin(session.duration),
+    });
+    haptics.success();
+    navigation.goBack();
+  }, [navigation, addCompletedRoutine, session]);
 
+  const toggleStepComplete = useCallback((index: number) => {
+    haptics.impactLight();
+    setCompletedSteps((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  }, []);
+
+  // Timer logic
   useEffect(() => {
     if (isRunning) {
       timerRef.current = setInterval(() => {
@@ -183,27 +242,30 @@ export default function PrebuiltSessionDetailScreen() {
       timerRef.current = null;
     }
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
+      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [isRunning]);
 
   const formatTime = (total: number) => {
-    const minutes = Math.floor(total / 60)
-      .toString()
-      .padStart(2, "0");
-    const seconds = Math.floor(total % 60)
-      .toString()
-      .padStart(2, "0");
+    const minutes = Math.floor(total / 60).toString().padStart(2, "0");
+    const seconds = Math.floor(total % 60).toString().padStart(2, "0");
     return `${minutes}:${seconds}`;
   };
 
-  const toggleTimer = () => setIsRunning((r) => !r);
+  const toggleTimer = () => {
+    haptics.impactMedium();
+    setIsRunning((r) => !r);
+  };
+
   const resetTimer = () => {
+    haptics.impactLight();
     setIsRunning(false);
     setTimeSec(0);
   };
+
+  const progressRatio = detailLines.length > 0
+    ? completedSteps.size / detailLines.length
+    : 0;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
@@ -213,135 +275,331 @@ export default function PrebuiltSessionDetailScreen() {
           contentContainerStyle={styles.container}
           showsVerticalScrollIndicator={false}
         >
-          {/* HERO */}
-          <View style={styles.heroCard}>
-            <View style={styles.heroGlow} />
-
-            <View style={styles.heroHeaderRow}>
-              <View style={styles.categoryPill}>
-                <Text style={styles.categoryText}>{session.category}</Text>
-              </View>
-              <View style={styles.tagsRow}>
-                <View style={[styles.tag, { borderColor: intensityColor }]}>
-                  <View
-                    style={[styles.tagDot, { backgroundColor: intensityColor }]}
-                  />
-                  <Text style={styles.tagText}>{intensityLabel}</Text>
-                </View>
-                <View style={styles.tag}>
-                  <Text style={styles.tagText}>{session.duration}</Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.heroTitleBlock}>
-              <Text style={styles.title}>{session.title}</Text>
-              <Text style={styles.objective}>{session.objective}</Text>
-            </View>
-
-            {Array.isArray(session.tags) && session.tags.length > 0 ? (
-              <View style={styles.metaRow}>
-                {session.tags.map((tag) => (
-                  <View key={tag} style={styles.metaTag}>
-                    <Text style={styles.metaTagText}>{tag}</Text>
+          {/* HERO avec gradient */}
+          <Animated.View
+            style={[
+              styles.heroCard,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
+          >
+            <LinearGradient
+              colors={categoryConfig.gradient}
+              style={styles.heroGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0.5 }}
+            >
+              <View style={styles.heroContent}>
+                {/* Header row */}
+                <View style={styles.heroHeaderRow}>
+                  <View style={styles.categoryPill}>
+                    <Ionicons name={categoryConfig.icon} size={12} color="#fff" />
+                    <Text style={styles.categoryText}>{session.category}</Text>
                   </View>
-                ))}
-              </View>
-            ) : null}
-          </View>
-
-          {/* INFO RAPIDE */}
-          {infoItems.length > 0 ? (
-            <View style={styles.infoGrid}>
-              {infoItems.map((item) => (
-                <View key={item.label} style={styles.infoCard}>
-                  <Text style={styles.infoLabel}>{item.label}</Text>
-                  <Text style={styles.infoText}>{item.value}</Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
-
-          {/* PLAN DETAILLE */}
-          <View style={styles.planCard}>
-            <Text style={styles.planTitle}>Plan détaillé</Text>
-            <Text style={styles.planSub}>
-              Suis les blocs dans l’ordre. Garde la qualité avant le volume.
-            </Text>
-
-            <View style={styles.stepsContainer}>
-              {detailLines.map((line, index) => (
-                <View key={line} style={styles.stepRow}>
-                  <View style={styles.stepIndexCircle}>
-                    <Text style={styles.stepIndexText}>{index + 1}</Text>
+                  <View style={styles.heroBadgesRow}>
+                    <View style={styles.heroBadge}>
+                      <Ionicons name={intensityIcon} size={10} color="#fff" />
+                      <Text style={styles.heroBadgeText}>{intensityLabel}</Text>
+                    </View>
+                    <View style={styles.heroBadge}>
+                      <Ionicons name="time-outline" size={10} color="#fff" />
+                      <Text style={styles.heroBadgeText}>{session.duration}</Text>
+                    </View>
                   </View>
-                  <Text style={styles.stepText}>{line}</Text>
                 </View>
-              ))}
-            </View>
-          </View>
 
-          {/* ATTENTES IA */}
-          {expectations.length > 0 && (
-            <View style={styles.expectCard}>
-              <Text style={styles.expectTitle}>Ce que l’IA attend</Text>
-              <View style={styles.expectList}>
-                {expectations.map((line, idx) => (
-                  <View key={`${line}-${idx}`} style={styles.expectRow}>
-                    <View style={styles.expectDot} />
-                    <Text style={styles.expectText}>{line}</Text>
-                  </View>
-                ))}
+                {/* Title */}
+                <View style={styles.heroTitleBlock}>
+                  <Text style={styles.heroTitle}>{session.title}</Text>
+                  <Text style={styles.heroObjective}>{session.objective}</Text>
+                </View>
+
+                {/* Quick stats */}
+                <View style={styles.heroStatsRow}>
+                  {session.location && (
+                    <View style={styles.heroStat}>
+                      <Ionicons
+                        name={LOCATION_ICON[session.location] ?? "location-outline"}
+                        size={14}
+                        color="rgba(255,255,255,0.8)"
+                      />
+                      <Text style={styles.heroStatText}>
+                        {LOCATION_LABEL[session.location]}
+                      </Text>
+                    </View>
+                  )}
+                  {session.focus && (
+                    <View style={styles.heroStat}>
+                      <Ionicons
+                        name={FOCUS_ICON[session.focus] ?? "fitness-outline"}
+                        size={14}
+                        color="rgba(255,255,255,0.8)"
+                      />
+                      <Text style={styles.heroStatText}>
+                        {FOCUS_LABEL[session.focus]}
+                      </Text>
+                    </View>
+                  )}
+                  {session.level && (
+                    <View style={styles.heroStat}>
+                      <Ionicons name="person-outline" size={14} color="rgba(255,255,255,0.8)" />
+                      <Text style={styles.heroStatText}>{session.level}</Text>
+                    </View>
+                  )}
+                </View>
               </View>
-            </View>
+            </LinearGradient>
+          </Animated.View>
+
+          {/* Matériel requis */}
+          {session.equipment && session.equipment.length > 0 && (
+            <Animated.View
+              style={{
+                opacity: cardAnims[0],
+                transform: [
+                  {
+                    translateY: cardAnims[0].interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [16, 0],
+                    }),
+                  },
+                ],
+              }}
+            >
+              <Card variant="soft" style={styles.equipmentCard}>
+                <View style={styles.equipmentHeader}>
+                  <View style={styles.equipmentIconCircle}>
+                    <Ionicons name="bag-outline" size={16} color="#8b5cf6" />
+                  </View>
+                  <View>
+                    <Text style={styles.cardTitle}>Matériel requis</Text>
+                    <Text style={styles.cardSubtitle}>Prépare avant de commencer</Text>
+                  </View>
+                </View>
+                <View style={styles.equipmentList}>
+                  {session.equipment.map((item) => (
+                    <View key={item} style={styles.equipmentItem}>
+                      <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+                      <Text style={styles.equipmentText}>{item}</Text>
+                    </View>
+                  ))}
+                </View>
+              </Card>
+            </Animated.View>
           )}
 
-          {/* CHRONO */}
-          <View style={styles.timerCard}>
-            <Text style={styles.timerTitle}>Chronomètre</Text>
-            <Text style={styles.timerValue}>{formatTime(timeSec)}</Text>
-            <View style={styles.timerActions}>
-              <TouchableOpacity
-                style={[
-                  styles.timerButton,
-                  isRunning ? styles.timerButtonSecondary : styles.timerButtonPrimary,
-                ]}
-                activeOpacity={0.9}
-                onPress={toggleTimer}
-              >
-                <Text
-                  style={[
-                    isRunning ? styles.timerButtonTextSecondary : styles.timerButtonTextPrimary,
-                  ]}
-                >
-                  {isRunning ? "Pause" : "Démarrer"}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.timerButton, styles.timerButtonGhost]}
-                activeOpacity={0.9}
-                onPress={resetTimer}
-              >
-                <Text style={styles.timerButtonTextGhost}>Réinitialiser</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          {/* Plan détaillé */}
+          <Animated.View
+            style={{
+              opacity: cardAnims[1],
+              transform: [
+                {
+                  translateY: cardAnims[1].interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [16, 0],
+                  }),
+                },
+              ],
+            }}
+          >
+            <Card variant="surface" style={styles.planCard}>
+              <View style={styles.planHeader}>
+                <View style={styles.planHeaderLeft}>
+                  <LinearGradient
+                    colors={categoryConfig.gradient}
+                    style={styles.planIconCircle}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  >
+                    <Ionicons name="list" size={18} color="#fff" />
+                  </LinearGradient>
+                  <View>
+                    <Text style={styles.cardTitle}>Plan détaillé</Text>
+                    <Text style={styles.cardSubtitle}>
+                      {completedSteps.size}/{detailLines.length} étapes complétées
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.planBadge}>
+                  <Text style={styles.planBadgeText}>
+                    {Math.round(progressRatio * 100)}%
+                  </Text>
+                </View>
+              </View>
 
-          {/* COACH MARK */}
-          {showCoachTip && (
-            <View style={styles.coachCard}>
-              <Text style={styles.coachTitle}>Astuce rapide</Text>
-              <Text style={styles.coachText}>
-                Lis les attentes de l’IA, prépare ton matériel, puis lance le chrono et suis les blocs dans l’ordre.
-              </Text>
-              <TouchableOpacity
-                style={styles.coachClose}
-                onPress={() => setShowCoachTip(false)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.coachCloseText}>J’ai compris</Text>
-              </TouchableOpacity>
-            </View>
+              {/* Barre de progression */}
+              <View style={styles.progressTrack}>
+                <LinearGradient
+                  colors={categoryConfig.gradient}
+                  style={[styles.progressFill, { width: `${progressRatio * 100}%` }]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                />
+              </View>
+
+              <View style={styles.stepsContainer}>
+                {detailLines.map((line, index) => {
+                  const isCompleted = completedSteps.has(index);
+                  return (
+                    <TouchableOpacity
+                      key={`step-${index}`}
+                      style={styles.stepRow}
+                      onPress={() => toggleStepComplete(index)}
+                      activeOpacity={0.8}
+                    >
+                      <View
+                        style={[
+                          styles.stepCheckbox,
+                          isCompleted && {
+                            backgroundColor: categoryConfig.tint,
+                            borderColor: categoryConfig.tint,
+                          },
+                        ]}
+                      >
+                        {isCompleted ? (
+                          <Ionicons name="checkmark" size={14} color="#fff" />
+                        ) : (
+                          <Text style={styles.stepIndexText}>{index + 1}</Text>
+                        )}
+                      </View>
+                      <Text
+                        style={[
+                          styles.stepText,
+                          isCompleted && styles.stepTextCompleted,
+                        ]}
+                      >
+                        {line}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </Card>
+          </Animated.View>
+
+          {/* Attentes / Consignes */}
+          {expectations.length > 0 && (
+            <Animated.View
+              style={{
+                opacity: cardAnims[2],
+                transform: [
+                  {
+                    translateY: cardAnims[2].interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [16, 0],
+                    }),
+                  },
+                ],
+              }}
+            >
+              <Card variant="soft" style={styles.expectCard}>
+                <View style={styles.expectHeader}>
+                  <View style={styles.expectIconCircle}>
+                    <Ionicons name="bulb" size={16} color="#f59e0b" />
+                  </View>
+                  <View>
+                    <Text style={styles.cardTitle}>Points clés</Text>
+                    <Text style={styles.cardSubtitle}>Pour bien exécuter</Text>
+                  </View>
+                </View>
+                <View style={styles.expectList}>
+                  {expectations.map((line, idx) => (
+                    <View key={`expect-${idx}`} style={styles.expectRow}>
+                      <Ionicons name="arrow-forward-circle" size={16} color={categoryConfig.tint} />
+                      <Text style={styles.expectText}>{line}</Text>
+                    </View>
+                  ))}
+                </View>
+              </Card>
+            </Animated.View>
+          )}
+
+          {/* Chronomètre */}
+          <Animated.View
+            style={{
+              opacity: cardAnims[3],
+              transform: [
+                {
+                  translateY: cardAnims[3].interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [16, 0],
+                  }),
+                },
+              ],
+            }}
+          >
+            <Card variant="surface" style={styles.timerCard}>
+              <View style={styles.timerHeader}>
+                <View style={styles.timerIconCircle}>
+                  <Ionicons name="stopwatch" size={18} color="#06b6d4" />
+                </View>
+                <Text style={styles.cardTitle}>Chronomètre</Text>
+              </View>
+
+              <Text style={styles.timerValue}>{formatTime(timeSec)}</Text>
+
+              <View style={styles.timerActions}>
+                <TouchableOpacity
+                  style={styles.timerStartButton}
+                  activeOpacity={0.9}
+                  onPress={toggleTimer}
+                >
+                  <LinearGradient
+                    colors={isRunning ? ["#ef4444", "#f87171"] : ["#10b981", "#34d399"]}
+                    style={styles.timerStartGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                  >
+                    <Ionicons
+                      name={isRunning ? "pause" : "play"}
+                      size={18}
+                      color="#fff"
+                    />
+                    <Text style={styles.timerStartText}>
+                      {isRunning ? "Pause" : "Démarrer"}
+                    </Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.timerResetButton}
+                  activeOpacity={0.85}
+                  onPress={resetTimer}
+                >
+                  <Ionicons name="refresh" size={16} color={palette.sub} />
+                  <Text style={styles.timerResetText}>Reset</Text>
+                </TouchableOpacity>
+              </View>
+            </Card>
+          </Animated.View>
+
+          {/* Tags */}
+          {Array.isArray(session.tags) && session.tags.length > 0 && (
+            <Animated.View
+              style={{
+                opacity: cardAnims[4],
+                transform: [
+                  {
+                    translateY: cardAnims[4].interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [16, 0],
+                    }),
+                  },
+                ],
+              }}
+            >
+              <View style={styles.tagsSection}>
+                <Text style={styles.tagsSectionTitle}>Tags</Text>
+                <View style={styles.tagsRow}>
+                  {session.tags.map((tag) => (
+                    <View key={tag} style={styles.tagPill}>
+                      <Text style={styles.tagPillText}>{tag}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </Animated.View>
           )}
 
           <View style={{ height: 24 }} />
@@ -352,9 +610,17 @@ export default function PrebuiltSessionDetailScreen() {
           <TouchableOpacity
             style={styles.mainButton}
             activeOpacity={0.9}
-            onPress={handleUseSession}
+            onPress={handleFinish}
           >
-            <Text style={styles.mainButtonText}>Utiliser cette séance</Text>
+            <LinearGradient
+              colors={categoryConfig.gradient}
+              style={styles.mainButtonGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+            >
+              <Ionicons name="checkmark-circle" size={20} color="#fff" />
+              <Text style={styles.mainButtonText}>Finir la routine</Text>
+            </LinearGradient>
           </TouchableOpacity>
         </View>
       </View>
@@ -380,316 +646,388 @@ const styles = StyleSheet.create({
 
   // HERO
   heroCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: palette.border,
-    padding: 16,
-    backgroundColor: palette.card,
+    borderRadius: 20,
     overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  heroGlow: {
-    position: "absolute",
-    top: -70,
-    right: -80,
-    width: 230,
-    height: 230,
-    borderRadius: 999,
-    backgroundColor: palette.accentSoft,
-    opacity: 0.9,
+  heroGradient: {
+    padding: 18,
+  },
+  heroContent: {
+    gap: 14,
   },
   heroHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 14,
   },
   categoryPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 999,
-    backgroundColor: palette.bgSoft,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
+    backgroundColor: "rgba(255,255,255,0.2)",
   },
   categoryText: {
     fontSize: 11,
+    fontWeight: "700",
+    color: "#fff",
     textTransform: "uppercase",
-    letterSpacing: 1,
-    color: palette.sub,
+    letterSpacing: 0.5,
   },
-  tagsRow: {
+  heroBadgesRow: {
     flexDirection: "row",
     gap: 6,
   },
-  tag: {
+  heroBadge: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    backgroundColor: palette.bgSoft,
+    backgroundColor: "rgba(255,255,255,0.2)",
   },
-  tagDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 999,
-    marginRight: 4,
-  },
-  tagText: {
-    fontSize: 11,
-    color: palette.sub,
+  heroBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#fff",
   },
   heroTitleBlock: {
-    marginTop: 4,
     gap: 6,
   },
-  title: {
-    color: palette.text,
-    fontSize: 20,
+  heroTitle: {
+    color: "#fff",
+    fontSize: 22,
     fontWeight: "800",
   },
-  objective: {
-    color: palette.sub,
-    fontSize: 13,
+  heroObjective: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 14,
+    lineHeight: 20,
   },
-  metaRow: {
+  heroStatsRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
+    gap: 16,
+    marginTop: 4,
+  },
+  heroStat: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
-    marginTop: 10,
   },
-  metaTag: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    backgroundColor: palette.bgSoft,
-  },
-  metaTagText: {
-    fontSize: 11,
-    color: palette.sub,
-  },
-
-  // INFO CARDS
-  infoGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  infoCard: {
-    minWidth: 150,
-    flexGrow: 1,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    padding: 10,
-    backgroundColor: palette.bgSoft,
-  },
-  infoLabel: {
-    fontSize: 11,
-    color: palette.sub,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    marginBottom: 4,
-  },
-  infoText: {
+  heroStatText: {
     fontSize: 12,
-    color: palette.text,
+    color: "rgba(255,255,255,0.9)",
+    fontWeight: "500",
   },
 
-  // PLAN DETAILLE
-  planCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: palette.border,
-    padding: 14,
-    backgroundColor: palette.cardSoft,
-  },
-  planTitle: {
-    fontSize: 16,
+  // Cards common
+  cardTitle: {
+    fontSize: 15,
     fontWeight: "700",
     color: palette.text,
   },
-  planSub: {
+  cardSubtitle: {
     fontSize: 12,
     color: palette.sub,
-    marginTop: 4,
+    marginTop: 2,
+  },
+
+  // Equipment
+  equipmentCard: {
+    padding: 14,
+    gap: 12,
+  },
+  equipmentHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  equipmentIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "rgba(139,92,246,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  equipmentList: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  equipmentItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: palette.bgSoft,
+    borderWidth: 1,
+    borderColor: palette.border,
+  },
+  equipmentText: {
+    fontSize: 12,
+    color: palette.text,
+    fontWeight: "500",
+  },
+
+  // Plan
+  planCard: {
+    padding: 14,
+    gap: 12,
+  },
+  planHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  planHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  planIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  planBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: palette.accentSoft,
+    borderWidth: 1,
+    borderColor: palette.accent,
+  },
+  planBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: palette.accent,
+  },
+  progressTrack: {
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: palette.borderSoft,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 999,
   },
   stepsContainer: {
-    marginTop: 12,
     gap: 8,
   },
   stepRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 10,
-  },
-  stepIndexCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
+    gap: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
     backgroundColor: palette.bgSoft,
+    borderWidth: 1,
+    borderColor: palette.border,
+  },
+  stepCheckbox: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: palette.border,
+    backgroundColor: palette.card,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 2,
   },
   stepIndexText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "700",
-    color: palette.accent,
+    color: palette.sub,
   },
   stepText: {
     flex: 1,
     fontSize: 13,
-    color: palette.sub,
-  },
-  // EXPECTATIONS
-  expectCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: palette.border,
-    padding: 14,
-    backgroundColor: palette.cardSoft,
-    gap: 10,
-  },
-  expectTitle: {
-    fontSize: 14,
-    fontWeight: "700",
     color: palette.text,
+    lineHeight: 20,
+  },
+  stepTextCompleted: {
+    color: palette.sub,
+    textDecorationLine: "line-through",
+  },
+
+  // Expectations
+  expectCard: {
+    padding: 14,
+    gap: 12,
+  },
+  expectHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  expectIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "rgba(245,158,11,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   expectList: {
-    gap: 8,
+    gap: 10,
   },
   expectRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  expectDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 999,
-    backgroundColor: palette.accent,
+    alignItems: "flex-start",
+    gap: 10,
   },
   expectText: {
     flex: 1,
     color: palette.sub,
     fontSize: 13,
+    lineHeight: 18,
   },
-  // TIMER
+
+  // Timer
   timerCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: palette.border,
     padding: 16,
-    backgroundColor: palette.card,
+    alignItems: "center",
+    gap: 12,
+  },
+  timerHeader: {
+    flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
-  timerTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: palette.text,
+  timerIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "rgba(6,182,212,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   timerValue: {
-    fontSize: 38,
+    fontSize: 48,
     fontWeight: "800",
-    letterSpacing: 1,
+    letterSpacing: 2,
     color: palette.text,
+    fontVariant: ["tabular-nums"],
   },
   timerActions: {
     flexDirection: "row",
     gap: 10,
     width: "100%",
   },
-  timerButton: {
-    flex: 1,
+  timerStartButton: {
+    flex: 2,
     borderRadius: 12,
-    paddingVertical: 12,
+    overflow: "hidden",
+    shadowColor: "#10b981",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  timerStartGradient: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+  },
+  timerStartText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  timerResetButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 14,
+    borderRadius: 12,
     borderWidth: 1,
-  },
-  timerButtonPrimary: {
-    backgroundColor: palette.accent,
-    borderColor: palette.accent,
-  },
-  timerButtonSecondary: {
-    backgroundColor: palette.bg,
     borderColor: palette.border,
+    backgroundColor: palette.cardSoft,
   },
-  timerButtonGhost: {
-    backgroundColor: palette.bgSoft,
-    borderColor: palette.borderSoft,
-  },
-  timerButtonTextPrimary: {
-    color: palette.bg,
-    fontWeight: "700",
-  },
-  timerButtonTextSecondary: {
-    color: palette.text,
-    fontWeight: "700",
-  },
-  timerButtonTextGhost: {
+  timerResetText: {
     color: palette.sub,
+    fontSize: 14,
     fontWeight: "600",
   },
-  // COACH TIP
-  coachCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    padding: 14,
-    backgroundColor: palette.bgSoft,
+
+  // Tags
+  tagsSection: {
     gap: 8,
   },
-  coachTitle: {
-    color: palette.text,
-    fontWeight: "700",
-    fontSize: 13,
-  },
-  coachText: {
+  tagsSectionTitle: {
+    fontSize: 12,
+    fontWeight: "600",
     color: palette.sub,
-    fontSize: 12,
-    lineHeight: 18,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
-  coachClose: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  tagsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  tagPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 999,
-    backgroundColor: palette.accentSoft,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.bgSoft,
   },
-  coachCloseText: {
-    color: palette.accent,
-    fontWeight: "700",
-    fontSize: 12,
+  tagPillText: {
+    fontSize: 11,
+    color: palette.sub,
+    fontWeight: "500",
   },
 
-  // BOTTOM CTA
+  // Bottom CTA
   bottomBar: {
     paddingHorizontal: 16,
     paddingBottom: 16,
-    paddingTop: 8,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: palette.borderSoft,
     backgroundColor: palette.bg,
   },
   mainButton: {
-    borderRadius: 999,
-    paddingVertical: 14,
+    borderRadius: 14,
+    overflow: "hidden",
+    shadowColor: "#ff7a1a",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  mainButtonGradient: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: palette.accent,
+    gap: 10,
+    paddingVertical: 16,
   },
   mainButtonText: {
-    color: palette.bg,
+    color: "#fff",
     fontWeight: "700",
-    fontSize: 15,
+    fontSize: 16,
   },
 });

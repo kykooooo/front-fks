@@ -442,7 +442,7 @@ export default function RoutineScreen() {
           <SectionHeader
             title="Mini-challenges"
             right={
-              <TouchableOpacity onPress={() => nav.navigate("Profile" as never)}>
+              <TouchableOpacity onPress={() => nav.navigate("Profile")}>
                 <Text style={styles.sectionLink}>Voir les badges</Text>
               </TouchableOpacity>
             }
@@ -529,7 +529,7 @@ export default function RoutineScreen() {
               {REMINDER_HINTS[reminderStrategy] ?? ""}
             </Text>
             <TouchableOpacity
-              onPress={() => nav.navigate("Settings" as never)}
+              onPress={() => nav.navigate("Settings")}
               style={styles.reminderCta}
               activeOpacity={0.9}
             >

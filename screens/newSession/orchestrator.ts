@@ -3,6 +3,7 @@ import type { Exercise, Session } from "../../domain/types";
 import { deepClean, normalizeFocus, toPlannedIntensity } from "./helpers";
 import type { FKS_NextSessionV2, PlannedPhase } from "./types";
 import { v2ToLocalSession } from "./transform";
+import { toDateKey } from "../../utils/dateHelpers";
 
 export async function processV2(params: {
   v2: FKS_NextSessionV2;
@@ -49,8 +50,8 @@ export async function processV2(params: {
     plannedDate.setDate(plannedDate.getDate() + 1);
     deferredToTomorrow = true;
   }
-  const plannedDateISO = plannedDate.toISOString().slice(0, 10);
-  const plannedTomorrowISO = addDays(plannedDate, 1).toISOString().slice(0, 10);
+  const plannedDateISO = toDateKey(plannedDate);
+  const plannedTomorrowISO = toDateKey(addDays(plannedDate, 1));
 
   const sessionFromV2 = v2ToLocalSession(v2, phase as any, plannedDateISO);
   const sessionWithAi = { ...sessionFromV2, aiV2: v2 } as any;

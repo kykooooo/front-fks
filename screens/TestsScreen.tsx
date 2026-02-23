@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -6,13 +6,18 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
+  Animated,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { format } from "date-fns";
 import { useRoute } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { useHaptics } from "../hooks/useHaptics";
 import { theme } from "../constants/theme";
+import { showToast } from "../utils/toast";
 import { STORAGE_KEYS } from "../constants/storage";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
@@ -20,6 +25,26 @@ import { useTrainingStore } from "../state/trainingStore";
 
 const palette = theme.colors;
 const STORAGE_KEY = STORAGE_KEYS.TESTS_V1;
+
+// Configuration couleurs et icônes par groupe de tests
+type GroupConfig = {
+  icon: keyof typeof Ionicons.glyphMap;
+  colors: [string, string];
+  tint: string;
+};
+
+const GROUP_CONFIG: Record<string, GroupConfig> = {
+  sauts: { icon: "rocket-outline", colors: ["#8b5cf6", "#a78bfa"], tint: "#8b5cf6" },
+  vitesse: { icon: "flash-outline", colors: ["#ff7a1a", "#ff9a4a"], tint: "#ff7a1a" },
+  endurance: { icon: "heart-outline", colors: ["#06b6d4", "#22d3ee"], tint: "#06b6d4" },
+  force: { icon: "barbell-outline", colors: ["#ef4444", "#f87171"], tint: "#ef4444" },
+  agilite: { icon: "git-branch-outline", colors: ["#16a34a", "#4ade80"], tint: "#16a34a" },
+  power: { icon: "trending-up-outline", colors: ["#f59e0b", "#fbbf24"], tint: "#f59e0b" },
+};
+
+const getGroupConfig = (group: string): GroupConfig =>
+  GROUP_CONFIG[group] ?? { icon: "ellipse-outline", colors: ["#6b7280", "#9ca3af"], tint: "#6b7280" };
+
 
 type PlaylistId =
   | "fondation"
@@ -264,7 +289,7 @@ const PLAYLIST_PLAN: Record<PlaylistId, string[]> = {
     "Sauts : CMJ + broad jump",
     "Sprint : 10-20 m",
     "Pause 6-8 min",
-    "Power : trap bar 3RM / medball",
+    "Power : trap bar 3RM / jump shrug",
   ],
   rsa: [
     "Echauffement progressif 8-10 min",
@@ -329,6 +354,7 @@ type StepId = FieldKey | "notes";
 
 export default function TestsScreen() {
   const route = useRoute<any>();
+  const haptics = useHaptics();
   const microcycleGoal = useTrainingStore((s) => s.microcycleGoal);
   const [entries, setEntries] = useState<TestEntry[]>([]);
   const [form, setForm] = useState<Partial<TestEntry>>({});
@@ -336,10 +362,41 @@ export default function TestsScreen() {
   const initialPlaylistFromRoute = route?.params?.initialPlaylist;
   const [selectedPlaylistOverride, setSelectedPlaylistOverride] =
     useState<PlaylistId | null>(null);
+
+  // Animations
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+  const cardAnims = useRef([0, 1, 2, 3, 4, 5].map(() => new Animated.Value(0))).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      Animated.stagger(
+        70,
+        cardAnims.map((anim) =>
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 250,
+            useNativeDriver: true,
+          })
+        )
+      ).start();
+    });
+  }, [fadeAnim, slideAnim, cardAnims]);
   const selectedPlaylist: PlaylistId = useMemo(() => {
     if (isPlaylistId(selectedPlaylistOverride)) return selectedPlaylistOverride;
-    if (isPlaylistId(microcycleGoal)) return microcycleGoal;
     if (isPlaylistId(initialPlaylistFromRoute)) return initialPlaylistFromRoute;
+    if (isPlaylistId(microcycleGoal)) return microcycleGoal;
     return "fondation";
   }, [selectedPlaylistOverride, microcycleGoal, initialPlaylistFromRoute]);
   const [stepIndex, setStepIndex] = useState(0);
@@ -358,10 +415,23 @@ export default function TestsScreen() {
         if (raw) {
           const parsed = JSON.parse(raw) as TestEntry[];
           const normalized = Array.isArray(parsed)
-            ? parsed.map((entry) => {
-                if ((entry as any)?.playlist === "reactivite") return { ...entry, playlist: "explosif" };
-                return entry;
-              })
+            ? (parsed
+                .map((entry) => {
+                  const rawTs = Number((entry as any)?.ts);
+                  if (!Number.isFinite(rawTs) || rawTs <= 0) return null;
+                  const playlist =
+                    (entry as any)?.playlist === "reactivite"
+                      ? "explosif"
+                      : (entry as any)?.playlist;
+                  return {
+                    ...entry,
+                    ts: rawTs,
+                    playlist: isPlaylistId(playlist) ? playlist : undefined,
+                  } as TestEntry;
+                })
+                .filter((entry): entry is TestEntry => entry !== null)
+                .sort((a, b) => b.ts - a.ts)
+                .slice(0, 30))
             : [];
           setEntries(normalized as TestEntry[]);
         }
@@ -381,7 +451,7 @@ export default function TestsScreen() {
         return Number.isFinite(Number(val));
       }) || (form.notes ?? "").trim().length > 0;
     if (!hasAnyValue) {
-      Alert.alert("Batterie vide", "Renseigne au moins un test ou une note.");
+      showToast({ type: "warn", title: "Batterie vide", message: "Renseigne au moins un test ou une note." });
       return;
     }
     const cleanEntry: TestEntry = { ts: Date.now() };
@@ -395,13 +465,13 @@ export default function TestsScreen() {
         }
       }
     });
-    cleanEntry.notes = form.notes || undefined;
+    cleanEntry.notes = form.notes?.trim() || undefined;
 
     try {
       const next = [cleanEntry, ...entries].slice(0, 30);
       setEntries(next);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      Alert.alert("Enregistré", "Tes valeurs de test sont sauvegardées.");
+      showToast({ type: "success", title: "Enregistré", message: "Tes valeurs de test sont sauvegardées." });
       setForm({});
       setStepIndex(0);
       setMode("battery");
@@ -409,8 +479,16 @@ export default function TestsScreen() {
       if (__DEV__) {
         console.warn("save tests", e);
       }
-      Alert.alert("Erreur", "Impossible de sauvegarder les tests.");
+      showToast({ type: "error", title: "Erreur", message: "Impossible de sauvegarder les tests." });
     }
+  };
+
+  const formatEntryTimestamp = (ts?: number, pattern: string = "dd/MM") => {
+    const num = Number(ts);
+    if (!Number.isFinite(num) || num <= 0) return "--";
+    const date = new Date(num);
+    if (Number.isNaN(date.getTime())) return "--";
+    return format(date, pattern);
   };
 
   const entriesForPlaylist = useMemo(() => {
@@ -479,11 +557,11 @@ export default function TestsScreen() {
     if (!isNotesStep) {
       const value = (form as any)[currentStep];
       if (value === undefined || value === null || value === "") {
-        Alert.alert("Valeur manquante", "Entre une valeur ou passe ce test.");
+        showToast({ type: "warn", title: "Valeur manquante", message: "Entre une valeur ou passe ce test." });
         return;
       }
       if (!Number.isFinite(Number(value))) {
-        Alert.alert("Valeur invalide", "Utilise un nombre valide.");
+        showToast({ type: "warn", title: "Valeur invalide", message: "Utilise un nombre valide." });
         return;
       }
     }
@@ -596,51 +674,70 @@ export default function TestsScreen() {
     return (
       <Card variant="surface" style={styles.overviewCard}>
         <View style={styles.overviewHeaderRow}>
-          <View>
-            <Text style={styles.sectionTitle}>Ta dernière performance</Text>
-            <Text style={styles.sectionSub}>
-              {lastTwo.length > 1
-                ? "Comparée au test précédent."
-                : "Premier test enregistré."}
-            </Text>
+          <View style={styles.overviewTitleRow}>
+            <Ionicons name="trophy-outline" size={16} color="#f59e0b" />
+            <View>
+              <Text style={styles.sectionTitle}>Dernière performance</Text>
+              <Text style={styles.sectionSub}>
+                {lastTwo.length > 1
+                  ? "Comparée au test précédent"
+                  : "Premier test enregistré"}
+              </Text>
+            </View>
           </View>
           <View style={styles.overviewPill}>
             <Text style={styles.overviewPillLabel}>Test</Text>
             <Text style={styles.overviewPillDate}>
-              {format(new Date(last.ts), "dd/MM")}
+              {formatEntryTimestamp(last.ts, "dd/MM")}
             </Text>
           </View>
         </View>
 
-        <View style={{ gap: 14, marginTop: 10 }}>
-          {groupedFields.map((group) => (
-            <View key={group.title} style={styles.overviewGroup}>
-              <Text style={styles.groupTitle}>{group.title}</Text>
-              <View style={{ gap: 8 }}>
-                {group.fields.map((f) => {
-                  const val = last[f.key];
-                  if (val === undefined) return null;
-                  const unit = getUnitForField(f.key);
-                  return (
-                    <View key={f.key} style={styles.overviewMetricRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.overviewMetricLabel}>{f.label}</Text>
-                        <Text style={styles.overviewMetricValue}>
-                          {val}
-                          {unit ? ` ${unit}` : ""}
-                        </Text>
+        <View style={{ gap: 16, marginTop: 12 }}>
+          {groupedFields.map((group) => {
+            const cfg = getGroupConfig(group.fields[0]?.group ?? "");
+            return (
+              <View key={group.title} style={styles.overviewGroup}>
+                <View style={styles.groupHeader}>
+                  <LinearGradient
+                    colors={cfg.colors}
+                    style={styles.groupIcon}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  >
+                    <Ionicons name={cfg.icon} size={14} color="#fff" />
+                  </LinearGradient>
+                  <Text style={styles.groupTitle}>{group.title}</Text>
+                </View>
+                <View style={{ gap: 8 }}>
+                  {group.fields.map((f) => {
+                    const val = last[f.key];
+                    if (val === undefined) return null;
+                    const unit = getUnitForField(f.key);
+                    return (
+                      <View key={f.key} style={styles.overviewMetricRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.overviewMetricLabel}>{f.label}</Text>
+                          <Text style={styles.overviewMetricValue}>
+                            {val}
+                            {unit ? ` ${unit}` : ""}
+                          </Text>
+                        </View>
+                        {renderDelta(f.key)}
                       </View>
-                      {renderDelta(f.key)}
-                    </View>
-                  );
-                })}
+                    );
+                  })}
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
 
           {last.notes ? (
             <View style={styles.overviewNotesBlock}>
-              <Text style={styles.groupTitle}>Notes du jour</Text>
+              <View style={styles.groupHeader}>
+                <Ionicons name="document-text-outline" size={14} color={palette.sub} />
+                <Text style={styles.groupTitle}>Notes du jour</Text>
+              </View>
               <Text style={styles.overviewNotesText}>{last.notes}</Text>
             </View>
           ) : null}
@@ -651,300 +748,505 @@ export default function TestsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         {/* HEADER */}
-        <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.title}>Batterie de tests FKS</Text>
-            <Text style={styles.subtitle}>
-              Référence terrain pour suivre ta progression sur la saison.
-            </Text>
+        <Animated.View
+          style={[
+            styles.headerRow,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          <View style={styles.headerLeft}>
+            <LinearGradient
+              colors={["#ff7a1a", "#ff9a4a"]}
+              style={styles.headerIcon}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Ionicons name="speedometer-outline" size={24} color="#fff" />
+            </LinearGradient>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.title}>Tests terrain</Text>
+              <Text style={styles.subtitle}>
+                Mesure tes qualités physiques
+              </Text>
+            </View>
           </View>
           {last && (
             <View style={styles.lastBadge}>
-              <Text style={styles.lastBadgeLabel}>Dernier test</Text>
+              <Text style={styles.lastBadgeLabel}>Dernier</Text>
               <Text style={styles.lastBadgeDate}>
-                {format(new Date(last.ts), "dd/MM/yyyy")}
+                {formatEntryTimestamp(last.ts, "dd/MM")}
               </Text>
             </View>
           )}
-        </View>
+        </Animated.View>
 
         {/* PLAYLIST */}
-        <Card variant="soft" style={styles.playlistCard}>
-          <View style={styles.playlistHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>
-                Playlist : {PLAYLISTS[selectedPlaylist].label}
-              </Text>
-              <Text style={styles.sectionSub}>
-                {PLAYLISTS[selectedPlaylist].subtitle}
-              </Text>
-            </View>
-            <View style={styles.playlistBadge}>
-              <Text style={styles.playlistBadgeText}>Tests adaptes</Text>
-            </View>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.playlistRow}
-          >
-            {(Object.keys(PLAYLISTS) as PlaylistId[]).map((id) => {
-              const active = id === selectedPlaylist;
-              return (
-                <TouchableOpacity
-                  key={id}
-                  style={[styles.playlistChip, active && styles.playlistChipActive]}
-                  onPress={() => selectPlaylist(id)}
-                  activeOpacity={0.85}
-                >
-                  <Text
-                    style={[
-                      styles.playlistChipText,
-                      active && styles.playlistChipTextActive,
-                    ]}
-                  >
-                    {PLAYLISTS[id].label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </Card>
-
-        {mode === "entry" ? (
-          <Card variant="surface" style={styles.entryCard}>
-            <View style={styles.entryHeader}>
-              <Text style={styles.sectionTitle}>Batterie en cours</Text>
-              <Text style={styles.entryStep}>
-                Etape {Math.min(stepIndex + 1, steps.length)}/{steps.length}
-              </Text>
-            </View>
-            <View style={styles.entryProgressTrack}>
-              <View style={[styles.entryProgressFill, { width: `${progressRatio * 100}%` }]} />
-            </View>
-
-            <View style={styles.entryBody}>
-              <Text style={styles.entryLabel}>{stepLabel}</Text>
-              <Text style={styles.entryProtocol}>{stepProtocol}</Text>
-
-              {isNotesStep ? (
-                <TextInput
-                  style={[styles.input, styles.inputMultiline]}
-                  placeholder="Ressenti, surface, fatigue, contexte..."
-                  placeholderTextColor={palette.sub}
-                  multiline
-                  value={form.notes ?? ""}
-                  onChangeText={(txt) => setForm((prev) => ({ ...prev, notes: txt }))}
-                />
-              ) : (
-                <View style={styles.entryInputRow}>
-                  <TextInput
-                    style={[styles.input, styles.entryInput]}
-                    keyboardType="numeric"
-                    placeholder={currentField?.placeholder || "0"}
-                    placeholderTextColor={palette.sub}
-                    value={
-                      currentFieldKey ? form[currentFieldKey]?.toString() ?? "" : ""
-                    }
-                    onChangeText={(txt) =>
-                      currentFieldKey
-                        ? setForm((prev) => ({ ...prev, [currentFieldKey]: txt }))
-                        : undefined
-                    }
-                  />
-                  <View style={styles.entryUnitPill}>
-                    <Text style={styles.entryUnitText}>{stepUnit || "reps"}</Text>
-                  </View>
-                </View>
-              )}
-            </View>
-
-            <View style={styles.entryActions}>
-              <Button
-                label={stepIndex === 0 ? "Retour" : "Precedent"}
-                onPress={goPrev}
-                size="sm"
-                variant="ghost"
-              />
-              {!isNotesStep ? (
-                <Button
-                  label="Passer"
-                  onPress={() => goToStep(stepIndex + 1)}
-                  size="sm"
-                  variant="secondary"
-                />
-              ) : null}
-              <Button
-                label={stepIndex >= steps.length - 1 ? "Terminer la batterie" : "Valider et suivant"}
-                onPress={goNext}
-                size="sm"
-                variant="primary"
-              />
-            </View>
-          </Card>
-        ) : (
-          <>
-            <Card variant="surface" style={styles.batteryCard}>
-              <View style={styles.batteryHeader}>
+        <Animated.View
+          style={{
+            opacity: cardAnims[0],
+            transform: [
+              {
+                translateY: cardAnims[0].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [16, 0],
+                }),
+              },
+            ],
+          }}
+        >
+          <Card variant="soft" style={styles.playlistCard}>
+            <View style={styles.playlistHeader}>
+              <View style={styles.playlistTitleRow}>
+                <Ionicons name="layers-outline" size={16} color={palette.accent} />
                 <View>
-                  <Text style={styles.sectionTitle}>Batterie active</Text>
-                  <Text style={styles.sectionSub}>
-                    {completedCount}/{totalTests} tests renseignes
-                  </Text>
-                </View>
-                <View style={styles.batteryBadge}>
-                  <Text style={styles.batteryBadgeText}>
+                  <Text style={styles.sectionTitle}>
                     {PLAYLISTS[selectedPlaylist].label}
                   </Text>
+                  <Text style={styles.sectionSub}>
+                    {PLAYLISTS[selectedPlaylist].subtitle}
+                  </Text>
                 </View>
               </View>
-              <View style={styles.batteryProgressTrack}>
-                <View style={[styles.batteryProgressFill, { width: `${progressRatio * 100}%` }]} />
+              <View style={styles.playlistBadge}>
+                <Text style={styles.playlistBadgeText}>{activeKeys.length} tests</Text>
               </View>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.playlistRow}
+            >
+              {(Object.keys(PLAYLISTS) as PlaylistId[]).map((id) => {
+                const active = id === selectedPlaylist;
+                return (
+                  <TouchableOpacity
+                    key={id}
+                    style={[styles.playlistChip, active && styles.playlistChipActive]}
+                    onPress={() => {
+                      selectPlaylist(id);
+                      haptics.impactLight();
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Text
+                      style={[
+                        styles.playlistChipText,
+                        active && styles.playlistChipTextActive,
+                      ]}
+                    >
+                      {PLAYLISTS[id].label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </Card>
+        </Animated.View>
 
-              <View style={styles.batteryList}>
-                {activeKeys.map((key, idx) => {
-                  const field = FIELD_BY_KEY[key];
-                  const val = (form as any)[key];
-                  const done =
-                    val !== undefined &&
-                    val !== null &&
-                    val !== "" &&
-                    Number.isFinite(Number(val));
-                  return (
-                    <View key={key} style={styles.batteryRow}>
-                      <View style={[styles.batteryIndex, done && styles.batteryIndexDone]}>
-                        <Text style={[styles.batteryIndexText, done && styles.batteryIndexTextDone]}>
-                          {idx + 1}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.batteryLabel}>{field.label}</Text>
-                        <Text style={styles.batteryMeta}>{field.protocol}</Text>
-                      </View>
-                      <Text style={done ? styles.batteryValue : styles.batteryPending}>
-                        {done ? `${val}${field.unit ? ` ${field.unit}` : ""}` : "A faire"}
-                      </Text>
-                    </View>
-                  );
-                })}
+        {mode === "entry" ? (
+          <Animated.View
+            style={{
+              opacity: cardAnims[1],
+              transform: [
+                {
+                  translateY: cardAnims[1].interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [16, 0],
+                  }),
+                },
+              ],
+            }}
+          >
+            <Card variant="surface" style={styles.entryCard}>
+              <View style={styles.entryHeader}>
+                <View style={styles.entryTitleRow}>
+                  <Ionicons name="play-circle-outline" size={18} color={palette.accent} />
+                  <Text style={styles.sectionTitle}>Batterie en cours</Text>
+                </View>
+                <View style={styles.entryStepBadge}>
+                  <Text style={styles.entryStep}>
+                    {Math.min(stepIndex + 1, steps.length)}/{steps.length}
+                  </Text>
+                </View>
               </View>
-
-              <View style={styles.batteryActions}>
-                <Button
-                  label={hasAnyInput ? "Reprendre la batterie" : "Lancer la batterie"}
-                  onPress={startBattery}
-                  size="md"
-                  variant="primary"
-                  fullWidth
+              <View style={styles.entryProgressTrack}>
+                <LinearGradient
+                  colors={["#ff7a1a", "#ff9a4a"]}
+                  style={[styles.entryProgressFill, { width: `${progressRatio * 100}%` }]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
                 />
-                {hasAnyInput ? (
+              </View>
+
+              <View style={styles.entryBody}>
+                {currentField && (
+                  <View style={styles.entryFieldHeader}>
+                    <LinearGradient
+                      colors={getGroupConfig(currentField.group).colors}
+                      style={styles.entryFieldIcon}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Ionicons
+                        name={getGroupConfig(currentField.group).icon}
+                        size={16}
+                        color="#fff"
+                      />
+                    </LinearGradient>
+                    <Text style={styles.entryLabel}>{stepLabel}</Text>
+                  </View>
+                )}
+                {isNotesStep && <Text style={styles.entryLabel}>{stepLabel}</Text>}
+                <Text style={styles.entryProtocol}>{stepProtocol}</Text>
+
+                {isNotesStep ? (
+                  <TextInput
+                    style={[styles.input, styles.inputMultiline]}
+                    placeholder="Ressenti, surface, fatigue, contexte..."
+                    placeholderTextColor={palette.sub}
+                    multiline
+                    value={form.notes ?? ""}
+                    onChangeText={(txt) => setForm((prev) => ({ ...prev, notes: txt }))}
+                  />
+                ) : (
+                  <View style={styles.entryInputRow}>
+                    <TextInput
+                      style={[styles.input, styles.entryInput]}
+                      keyboardType="numeric"
+                      placeholder={currentField?.placeholder || "0"}
+                      placeholderTextColor={palette.sub}
+                      value={
+                        currentFieldKey ? form[currentFieldKey]?.toString() ?? "" : ""
+                      }
+                      onChangeText={(txt) =>
+                        currentFieldKey
+                          ? setForm((prev) => ({ ...prev, [currentFieldKey]: txt }))
+                          : undefined
+                      }
+                    />
+                    <View style={styles.entryUnitPill}>
+                      <Text style={styles.entryUnitText}>{stepUnit || "reps"}</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.entryActions}>
+                <Button
+                  label={stepIndex === 0 ? "Retour" : "Précédent"}
+                  onPress={() => {
+                    goPrev();
+                    haptics.impactLight();
+                  }}
+                  size="sm"
+                  variant="ghost"
+                />
+                {!isNotesStep ? (
                   <Button
-                    label="Recommencer"
-                    onPress={resetBattery}
+                    label="Passer"
+                    onPress={() => {
+                      goToStep(stepIndex + 1);
+                      haptics.impactLight();
+                    }}
                     size="sm"
-                    variant="ghost"
-                    fullWidth
+                    variant="secondary"
                   />
                 ) : null}
+                <Button
+                  label={stepIndex >= steps.length - 1 ? "Terminer" : "Suivant"}
+                  onPress={() => {
+                    goNext();
+                    haptics.impactLight();
+                  }}
+                  size="sm"
+                  variant="primary"
+                />
               </View>
             </Card>
-
-            {summaryStats.length > 0 ? (
-              <Card variant="surface" style={styles.summaryCard}>
-                <View style={styles.summaryHeader}>
-                  <View>
-                    <Text style={styles.sectionTitle}>Resume des tests</Text>
-                    <Text style={styles.sectionSub}>
-                      Moyenne et meilleur sur {entriesForPlaylist.length} batterie(s).
+          </Animated.View>
+        ) : (
+          <>
+            <Animated.View
+              style={{
+                opacity: cardAnims[1],
+                transform: [
+                  {
+                    translateY: cardAnims[1].interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [16, 0],
+                    }),
+                  },
+                ],
+              }}
+            >
+              <Card variant="surface" style={styles.batteryCard}>
+                <View style={styles.batteryHeader}>
+                  <View style={styles.batteryTitleRow}>
+                    <Ionicons name="list-outline" size={16} color={palette.accent} />
+                    <View>
+                      <Text style={styles.sectionTitle}>Batterie active</Text>
+                      <Text style={styles.sectionSub}>
+                        {completedCount}/{totalTests} tests renseignés
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.batteryBadge}>
+                    <Text style={styles.batteryBadgeText}>
+                      {PLAYLISTS[selectedPlaylist].label}
                     </Text>
                   </View>
-                  <View style={styles.summaryBadge}>
-                    <Text style={styles.summaryBadgeText}>Stats</Text>
-                  </View>
+                </View>
+                <View style={styles.batteryProgressTrack}>
+                  <LinearGradient
+                    colors={["#ff7a1a", "#ff9a4a"]}
+                    style={[styles.batteryProgressFill, { width: `${progressRatio * 100}%` }]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                  />
                 </View>
 
-                <View style={styles.summaryList}>
-                  {summaryStats.map((item) => (
-                    <View key={item.key} style={styles.summaryRow}>
-                      <Text style={styles.summaryLabel}>{item.label}</Text>
-                      <View style={styles.summaryValues}>
-                        <View style={styles.summaryPill}>
-                          <Text style={styles.summaryPillLabel}>Moy.</Text>
-                          <Text style={styles.summaryPillValue}>
-                            {formatStatValue(item.avg, item.unit)}
-                            {item.unit ? ` ${item.unit}` : ""}
-                          </Text>
+                <View style={styles.batteryList}>
+                  {activeKeys.map((key, idx) => {
+                    const field = FIELD_BY_KEY[key];
+                    const val = (form as any)[key];
+                    const done =
+                      val !== undefined &&
+                      val !== null &&
+                      val !== "" &&
+                      Number.isFinite(Number(val));
+                    const cfg = getGroupConfig(field.group);
+                    return (
+                      <View key={key} style={styles.batteryRow}>
+                        <View
+                          style={[
+                            styles.batteryIndex,
+                            done && { backgroundColor: cfg.tint, borderColor: cfg.tint },
+                          ]}
+                        >
+                          {done ? (
+                            <Ionicons name="checkmark" size={12} color="#fff" />
+                          ) : (
+                            <Text style={styles.batteryIndexText}>{idx + 1}</Text>
+                          )}
                         </View>
-                        <View style={[styles.summaryPill, styles.summaryPillBest]}>
-                          <Text style={styles.summaryPillLabel}>Meilleur</Text>
-                          <Text style={styles.summaryPillValue}>
-                            {formatStatValue(item.best, item.unit)}
-                            {item.unit ? ` ${item.unit}` : ""}
-                          </Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.batteryLabel}>{field.label}</Text>
+                          <Text style={styles.batteryMeta}>{field.protocol}</Text>
+                        </View>
+                        <Text style={done ? [styles.batteryValue, { color: cfg.tint }] : styles.batteryPending}>
+                          {done ? `${val}${field.unit ? ` ${field.unit}` : ""}` : "À faire"}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+
+                <View style={styles.batteryActions}>
+                  <TouchableOpacity
+                    style={styles.batteryStartButton}
+                    onPress={() => {
+                      startBattery();
+                      haptics.impactLight();
+                    }}
+                    activeOpacity={0.9}
+                  >
+                    <LinearGradient
+                      colors={["#ff7a1a", "#ff9a4a"]}
+                      style={styles.batteryStartGradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                    >
+                      <Ionicons name={hasAnyInput ? "play" : "flash"} size={18} color="#fff" />
+                      <Text style={styles.batteryStartText}>
+                        {hasAnyInput ? "Reprendre" : "Lancer la batterie"}
+                      </Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                  {hasAnyInput ? (
+                    <Button
+                      label="Recommencer"
+                      onPress={() => {
+                        resetBattery();
+                        haptics.impactLight();
+                      }}
+                      size="sm"
+                      variant="ghost"
+                      fullWidth
+                    />
+                  ) : null}
+                </View>
+              </Card>
+            </Animated.View>
+
+            {summaryStats.length > 0 ? (
+              <Animated.View
+                style={{
+                  opacity: cardAnims[2],
+                  transform: [
+                    {
+                      translateY: cardAnims[2].interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [16, 0],
+                      }),
+                    },
+                  ],
+                }}
+              >
+                <Card variant="surface" style={styles.summaryCard}>
+                  <View style={styles.summaryHeader}>
+                    <View style={styles.summaryTitleRow}>
+                      <Ionicons name="stats-chart-outline" size={16} color="#06b6d4" />
+                      <View>
+                        <Text style={styles.sectionTitle}>Statistiques</Text>
+                        <Text style={styles.sectionSub}>
+                          Sur {entriesForPlaylist.length} batterie(s)
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.summaryBadge}>
+                      <Text style={styles.summaryBadgeText}>Stats</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.summaryList}>
+                    {summaryStats.map((item) => (
+                      <View key={item.key} style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>{item.label}</Text>
+                        <View style={styles.summaryValues}>
+                          <View style={styles.summaryPill}>
+                            <Text style={styles.summaryPillLabel}>Moy.</Text>
+                            <Text style={styles.summaryPillValue}>
+                              {formatStatValue(item.avg, item.unit)}
+                              {item.unit ? ` ${item.unit}` : ""}
+                            </Text>
+                          </View>
+                          <View style={[styles.summaryPill, styles.summaryPillBest]}>
+                            <Text style={styles.summaryPillLabel}>Meilleur</Text>
+                            <Text style={styles.summaryPillValue}>
+                              {formatStatValue(item.best, item.unit)}
+                              {item.unit ? ` ${item.unit}` : ""}
+                            </Text>
+                          </View>
                         </View>
                       </View>
+                    ))}
+                  </View>
+                </Card>
+              </Animated.View>
+            ) : null}
+
+            <Animated.View
+              style={{
+                opacity: cardAnims[3],
+                transform: [
+                  {
+                    translateY: cardAnims[3].interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [16, 0],
+                    }),
+                  },
+                ],
+              }}
+            >
+              <Card variant="surface" style={styles.planCard}>
+                <View style={styles.planHeader}>
+                  <Ionicons name="clipboard-outline" size={16} color={palette.accent} />
+                  <Text style={styles.sectionTitle}>
+                    Déroulé conseillé
+                  </Text>
+                </View>
+                <View style={{ gap: 10, marginTop: 10 }}>
+                  {PLAYLIST_PLAN[selectedPlaylist].map((step, idx) => (
+                    <View key={step} style={styles.stepRow}>
+                      <View style={styles.stepIndexCircle}>
+                        <Text style={styles.stepIndex}>{idx + 1}</Text>
+                      </View>
+                      <Text style={styles.stepText}>{step}</Text>
                     </View>
                   ))}
                 </View>
               </Card>
+            </Animated.View>
+
+            {entriesForPlaylist.length > 0 ? (
+              <Animated.View
+                style={{
+                  opacity: cardAnims[4],
+                  transform: [
+                    {
+                      translateY: cardAnims[4].interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [16, 0],
+                      }),
+                    },
+                  ],
+                }}
+              >
+                {renderOverviewCard()}
+              </Animated.View>
             ) : null}
-
-            <Card variant="surface" style={styles.planCard}>
-              <Text style={styles.sectionTitle}>
-                Deroule conseille · {PLAYLISTS[selectedPlaylist].label}
-              </Text>
-              <View style={{ gap: 10, marginTop: 6 }}>
-                {PLAYLIST_PLAN[selectedPlaylist].map((step, idx) => (
-                  <View key={step} style={styles.stepRow}>
-                    <Text style={styles.stepIndex}>{idx + 1}</Text>
-                    <Text style={styles.stepText}>{step}</Text>
-                  </View>
-                ))}
-              </View>
-            </Card>
-
-            {entriesForPlaylist.length > 0 ? renderOverviewCard() : null}
           </>
         )}
 
         {/* HISTORIQUE */}
         {mode === "battery" && entriesForPlaylist.length > 0 && (
-          <Card variant="surface" style={styles.historyCard}>
-            <Text style={styles.sectionTitle}>Historique récent</Text>
-            <Text style={styles.sectionSub}>
-              Derniers tests pour la playlist {PLAYLISTS[selectedPlaylist].label}.
-            </Text>
-            <View style={{ gap: 8, marginTop: 8 }}>
-              {entriesForPlaylist.slice(0, 5).map((e) => (
-                <View key={e.ts} style={styles.historyRow}>
-                  <View>
-                    <Text style={styles.historyDate}>
-                      {format(new Date(e.ts), "dd/MM/yyyy")}
-                    </Text>
-                    <Text style={styles.historyTime}>
-                      {format(new Date(e.ts), "HH:mm")}
-                    </Text>
-                  </View>
-                  <Text style={styles.historyValues}>
-                    {PLAYLIST_FIELDS[selectedPlaylist]
-                      .slice(0, 3)
-                      .map((key) => {
-                        const val = (e as any)[key];
-                        if (val === undefined || val === null || val === "") return null;
-                        const unit = getUnitForField(key);
-                        const label = SHORT_LABELS[key] ?? FIELD_BY_KEY[key]?.label ?? key;
-                        return `${label} ${val}${unit ? unit : ""}`;
-                      })
-                      .filter(Boolean)
-                      .join(" · ") || "--"}
+          <Animated.View
+            style={{
+              opacity: cardAnims[5],
+              transform: [
+                {
+                  translateY: cardAnims[5].interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [16, 0],
+                  }),
+                },
+              ],
+            }}
+          >
+            <Card variant="surface" style={styles.historyCard}>
+              <View style={styles.historyHeader}>
+                <Ionicons name="time-outline" size={16} color={palette.accent} />
+                <View>
+                  <Text style={styles.sectionTitle}>Historique récent</Text>
+                  <Text style={styles.sectionSub}>
+                    {PLAYLISTS[selectedPlaylist].label}
                   </Text>
                 </View>
-              ))}
-            </View>
-          </Card>
+              </View>
+              <View style={{ gap: 8, marginTop: 10 }}>
+                {entriesForPlaylist.slice(0, 5).map((e, idx) => (
+                  <View key={`${e.ts}-${idx}`} style={styles.historyRow}>
+                    <View>
+                      <Text style={styles.historyDate}>
+                        {formatEntryTimestamp(e.ts, "dd/MM/yyyy")}
+                      </Text>
+                      <Text style={styles.historyTime}>
+                        {formatEntryTimestamp(e.ts, "HH:mm")}
+                      </Text>
+                    </View>
+                    <Text style={styles.historyValues}>
+                      {PLAYLIST_FIELDS[selectedPlaylist]
+                        .slice(0, 3)
+                        .map((key) => {
+                          const val = (e as any)[key];
+                          if (val === undefined || val === null || val === "") return null;
+                          const unit = getUnitForField(key);
+                          const label = SHORT_LABELS[key] ?? FIELD_BY_KEY[key]?.label ?? key;
+                          return `${label} ${val}${unit ? unit : ""}`;
+                        })
+                        .filter(Boolean)
+                        .join(" · ") || "--"}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </Card>
+          </Animated.View>
         )}
 
         <View style={{ height: 32 }} />
@@ -966,20 +1268,37 @@ const styles = StyleSheet.create({
   // HEADER
   headerRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "space-between",
-    gap: 10,
+    gap: 12,
+  },
+  headerLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  headerIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#ff7a1a",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   title: {
     color: palette.text,
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "800",
   },
   subtitle: {
     color: palette.sub,
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 4,
+    fontSize: 12,
+    marginTop: 2,
   },
   lastBadge: {
     paddingHorizontal: 10,
@@ -1010,6 +1329,11 @@ const styles = StyleSheet.create({
   playlistHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  playlistTitleRow: {
+    flexDirection: "row",
     alignItems: "flex-start",
     gap: 10,
   },
@@ -1096,6 +1420,12 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap: 10,
   },
+  summaryTitleRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
   summaryBadge: {
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -1156,7 +1486,12 @@ const styles = StyleSheet.create({
   batteryHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  batteryTitleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
     gap: 10,
   },
   batteryBadge: {
@@ -1236,6 +1571,28 @@ const styles = StyleSheet.create({
     marginTop: 4,
     gap: 8,
   },
+  batteryStartButton: {
+    borderRadius: 14,
+    overflow: "hidden",
+    shadowColor: "#ff7a1a",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  batteryStartGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  batteryStartText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
 
   // ENTRY
   entryHeader: {
@@ -1243,9 +1600,36 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  entryTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  entryStepBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: palette.accentSoft,
+    borderWidth: 1,
+    borderColor: palette.accent,
+  },
   entryStep: {
-    color: palette.sub,
+    color: palette.accent,
     fontSize: 12,
+    fontWeight: "700",
+  },
+  entryFieldHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 4,
+  },
+  entryFieldIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
   },
   entryProgressTrack: {
     height: 6,
@@ -1299,32 +1683,63 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
 
+  // PLAN
+  planHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
   // PLAN STEPS
   stepRow: {
     flexDirection: "row",
-    gap: 10,
+    gap: 12,
     alignItems: "flex-start",
   },
-  stepIndex: {
-    width: 22,
-    height: 22,
-    borderRadius: 999,
+  stepIndexCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: palette.border,
+    borderColor: palette.accent,
+    backgroundColor: palette.accentSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepIndex: {
     color: palette.accent,
-    textAlign: "center",
     fontWeight: "700",
-    paddingTop: 2,
     fontSize: 12,
   },
   stepText: {
     color: palette.text,
     fontSize: 13,
     flex: 1,
-    lineHeight: 18,
+    lineHeight: 20,
+  },
+
+  // HISTORY
+  historyHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginBottom: 4,
   },
 
   // GROUPS
+  groupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  },
+  groupIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   groupTitle: {
     color: palette.text,
     fontSize: 13,
@@ -1401,6 +1816,12 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "flex-start",
     gap: 10,
+  },
+  overviewTitleRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
   },
   overviewPill: {
     paddingHorizontal: 10,

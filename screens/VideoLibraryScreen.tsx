@@ -1,23 +1,26 @@
 // screens/VideoLibraryScreen.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   TextInput,
   TouchableOpacity,
-  Modal,
   Pressable,
   Linking,
   Alert,
+  Animated,
 } from "react-native";
 import { RouteProp, useRoute } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../constants/theme";
+import { showToast } from "../utils/toast";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { Card } from "../components/ui/Card";
+import { ModalContainer } from "../components/modal/ModalContainer";
 import { Badge } from "../components/ui/Badge";
 import { useTrainingStore } from "../state/trainingStore";
 import {
@@ -30,6 +33,7 @@ import {
 } from "../engine/exerciseBank";
 import { EXERCISE_INSTRUCTIONS } from "../engine/exerciseInstructions";
 import { getExerciseVideoRef } from "../engine/exerciseVideos";
+
 type VideoLibraryRoute = RouteProp<
   { VideoLibrary: { highlightId?: string; startInFavorites?: boolean } | undefined },
   "VideoLibrary"
@@ -55,6 +59,21 @@ const MODALITY_DESCRIPTIONS: Record<BankModality, string> = {
   cod: "Agilité et changements.",
   core: "Gainage et stabilité.",
   mobility: "Amplitude et récupération.",
+};
+
+// ─── Couleurs et icônes par modalité ───
+const MODALITY_CONFIG: Record<
+  BankModality | "favorites",
+  { icon: string; tint: string; tintSoft: string }
+> = {
+  favorites: { icon: "star", tint: "#ff7a1a", tintSoft: "rgba(255,122,26,0.12)" },
+  run: { icon: "footsteps-outline", tint: "#2563eb", tintSoft: "rgba(37,99,235,0.10)" },
+  circuit: { icon: "flash-outline", tint: "#ff7a1a", tintSoft: "rgba(255,122,26,0.10)" },
+  strength: { icon: "barbell-outline", tint: "#ef4444", tintSoft: "rgba(239,68,68,0.10)" },
+  plyo: { icon: "rocket-outline", tint: "#8b5cf6", tintSoft: "rgba(139,92,246,0.10)" },
+  cod: { icon: "git-branch-outline", tint: "#16a34a", tintSoft: "rgba(22,163,74,0.10)" },
+  core: { icon: "shield-outline", tint: "#06b6d4", tintSoft: "rgba(6,182,212,0.10)" },
+  mobility: { icon: "body-outline", tint: "#14b8a6", tintSoft: "rgba(20,184,166,0.10)" },
 };
 
 const INTENSITY_LABELS: Record<BankIntensity, string> = {
@@ -98,7 +117,6 @@ type EquipmentKey =
   | "band"
   | "machine"
   | "kettlebell"
-  | "medball"
   | "box"
   | "bench"
   | "trx"
@@ -112,7 +130,6 @@ const EQUIPMENT_LABELS: Record<EquipmentKey, string> = {
   band: "Élastique",
   machine: "Machine",
   kettlebell: "Kettlebell",
-  medball: "Medball",
   box: "Box",
   bench: "Banc",
   trx: "TRX",
@@ -121,49 +138,19 @@ const EQUIPMENT_LABELS: Record<EquipmentKey, string> = {
 };
 
 const EQUIPMENT_ORDER: EquipmentKey[] = [
-  "bodyweight",
-  "dumbbell",
-  "barbell",
-  "kettlebell",
-  "band",
-  "machine",
-  "medball",
-  "box",
-  "bench",
-  "trx",
-  "bike",
-  "rower",
+  "bodyweight", "dumbbell", "barbell", "kettlebell", "band",
+  "machine", "box", "bench", "trx", "bike", "rower",
 ];
 
 const MODALITY_ORDER: BankModality[] = [
-  "run",
-  "plyo",
-  "strength",
-  "cod",
-  "circuit",
-  "core",
-  "mobility",
+  "run", "plyo", "strength", "cod", "circuit", "core", "mobility",
 ];
 
 const TAG_ORDER: ExerciseTag[] = [
-  "sprint",
-  "plyo",
-  "jump",
-  "tempo",
-  "technique",
-  "heavy_lower",
-  "heavy_upper",
-  "cuts",
-  "impact",
-  "knee_stress",
-  "ankle_stress",
-  "hamstring_load",
-  "quad_load",
-  "calf_load",
-  "hip_load",
-  "shoulder_load",
-  "spine_load",
-  "mobility",
+  "sprint", "plyo", "jump", "tempo", "technique",
+  "heavy_lower", "heavy_upper", "cuts", "impact",
+  "knee_stress", "ankle_stress", "hamstring_load", "quad_load",
+  "calf_load", "hip_load", "shoulder_load", "spine_load", "mobility",
 ];
 
 const intensityTone = (intensity: BankIntensity) => {
@@ -177,22 +164,13 @@ const inferEquipment = (item: ExerciseDef): EquipmentKey[] => {
   const equip = new Set<EquipmentKey>();
   if (id.includes("db_") || id.includes("_db")) equip.add("dumbbell");
   if (
-    id.includes("bb_") ||
-    id.includes("_bb") ||
-    id.includes("bench_press") ||
-    id.includes("back_squat") ||
-    id.includes("front_squat") ||
-    id.includes("deadlift") ||
-    id.includes("rdl_bar")
-  ) {
-    equip.add("barbell");
-  }
+    id.includes("bb_") || id.includes("_bb") || id.includes("bench_press") ||
+    id.includes("back_squat") || id.includes("front_squat") ||
+    id.includes("deadlift") || id.includes("rdl_bar")
+  ) equip.add("barbell");
   if (id.includes("kb_") || id.includes("_kb")) equip.add("kettlebell");
   if (id.includes("band") || id.includes("elastic")) equip.add("band");
-  if (id.includes("machine") || id.includes("cable") || id.includes("pulldown")) {
-    equip.add("machine");
-  }
-  if (id.startsWith("mb_")) equip.add("medball");
+  if (id.includes("machine") || id.includes("cable") || id.includes("pulldown")) equip.add("machine");
   if (id.includes("trx")) equip.add("trx");
   if (id.includes("box") || id.includes("step_up") || id.includes("step_down")) equip.add("box");
   if (id.includes("bench") || id.includes("floor_press")) equip.add("bench");
@@ -202,12 +180,160 @@ const inferEquipment = (item: ExerciseDef): EquipmentKey[] => {
   return Array.from(equip);
 };
 
+const isBallExercise = (item: ExerciseDef) => {
+  const id = item.id.toLowerCase();
+  return (
+    id.includes("football") ||
+    id.includes("medball") ||
+    id.startsWith("mb_") ||
+    id.includes("swiss_ball") ||
+    id.includes("fitball") ||
+    id.includes("medicine_ball")
+  );
+};
+
 const formatDefaults = (item: ExerciseDef) => {
   const parts: string[] = [];
   if (item.defaultSets) parts.push(`${item.defaultSets} séries`);
   if (item.defaultDurationMin) parts.push(`${item.defaultDurationMin} min`);
   return parts.join(" · ");
 };
+
+// ─── Composants internes ───
+
+function CategoryCard({
+  modality,
+  label,
+  description,
+  count,
+  onPress,
+  animDelay,
+}: {
+  modality: BankModality | "favorites";
+  label: string;
+  description: string;
+  count: number;
+  onPress: () => void;
+  animDelay: number;
+}) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: 1,
+      duration: 280,
+      delay: animDelay,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  const config = MODALITY_CONFIG[modality];
+  return (
+    <Animated.View
+      style={{
+        width: "48%",
+        opacity: anim,
+        transform: [{
+          translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }),
+        }],
+      }}
+    >
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={onPress}
+        style={[styles.categoryCard, { borderColor: config.tint + "30" }]}
+      >
+        <View style={[styles.categoryIcon, { backgroundColor: config.tintSoft }]}>
+          <Ionicons name={config.icon as any} size={20} color={config.tint} />
+        </View>
+        <View style={styles.categoryContent}>
+          <Text style={styles.categoryLabel}>{label}</Text>
+          <Text style={styles.categoryDescription} numberOfLines={1}>
+            {description}
+          </Text>
+        </View>
+        <Badge
+          label={`${count}`}
+          tone={modality === "favorites" && count > 0 ? "ok" : "default"}
+        />
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+const ExerciseListCard = React.memo(function ExerciseListCard({
+  item,
+  isFavorite,
+  isHighlighted,
+  onPress,
+  onToggleFavorite,
+  onOpenVideo,
+}: {
+  item: ExerciseDef;
+  isFavorite: boolean;
+  isHighlighted: boolean;
+  onPress: () => void;
+  onToggleFavorite: () => void;
+  onOpenVideo: () => void;
+}) {
+  const config = MODALITY_CONFIG[item.modality];
+  const hasVettedVideo = getExerciseVideoRef(item.id).kind === "vetted";
+
+  return (
+    <Card
+      variant="surface"
+      style={[styles.exerciseCard, isHighlighted && styles.exerciseCardHighlight]}
+    >
+      <View style={[styles.accentBar, { backgroundColor: config.tint }]} />
+      <View style={styles.exerciseInner}>
+        <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={styles.exercisePressArea}>
+          <View style={styles.exerciseTitleRow}>
+            <View style={styles.exerciseNameRow}>
+              <Ionicons name={config.icon as any} size={14} color={config.tint} />
+              <Text style={styles.exerciseName} numberOfLines={1}>
+                {item.name}
+              </Text>
+            </View>
+            <Badge label={INTENSITY_LABELS[item.intensity]} tone={intensityTone(item.intensity)} />
+          </View>
+          <Text style={styles.exerciseMeta} numberOfLines={1}>
+            {MODALITY_LABELS[item.modality]}
+            {formatDefaults(item) ? ` · ${formatDefaults(item)}` : ""}
+          </Text>
+        </TouchableOpacity>
+
+        <View style={styles.exerciseFooter}>
+          {hasVettedVideo ? (
+            <View style={styles.videoPill}>
+              <Ionicons name="videocam" size={11} color={theme.colors.accent} />
+              <Text style={styles.videoPillText}>Vidéo</Text>
+            </View>
+          ) : (
+            <View />
+          )}
+          <View style={styles.footerActions}>
+            <TouchableOpacity
+              onPress={onToggleFavorite}
+              activeOpacity={0.85}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={[styles.iconButton, isFavorite && styles.iconButtonActive]}
+            >
+              <Ionicons
+                name={isFavorite ? "star" : "star-outline"}
+                size={15}
+                color={isFavorite ? theme.colors.accent : theme.colors.sub}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onOpenVideo} activeOpacity={0.85} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.iconButton}>
+              <Ionicons name="logo-youtube" size={15} color={theme.colors.sub} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Card>
+  );
+});
+
+// ─── Écran principal ───
 
 export default function VideoLibraryScreen() {
   const route = useRoute<VideoLibraryRoute>();
@@ -229,8 +355,23 @@ export default function VideoLibraryScreen() {
   const toggleFavoriteExercise = useTrainingStore((s) => s.toggleFavoriteExercise);
   const addRecentExercise = useTrainingStore((s) => s.addRecentExercise);
 
+  // Entrance animations
+  const headerAnim = useRef(new Animated.Value(0)).current;
+  const searchAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.stagger(80, [
+      Animated.timing(headerAnim, { toValue: 1, duration: 280, useNativeDriver: true }),
+      Animated.timing(searchAnim, { toValue: 1, duration: 240, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
   const normalizedQuery = query.trim().toLowerCase();
   const favoriteSet = useMemo(() => new Set(favoriteExerciseIds), [favoriteExerciseIds]);
+  const visibleBank = useMemo(
+    () => EXERCISE_BANK.filter((item) => !isBallExercise(item)),
+    []
+  );
   const recentRank = useMemo(() => {
     const map = new Map<string, number>();
     recentExerciseIds.forEach((id, idx) => map.set(id, idx));
@@ -247,7 +388,7 @@ export default function VideoLibraryScreen() {
     (sortMode === "favorites" ? 0 : 1);
 
   const filtered = useMemo(() => {
-    return EXERCISE_BANK.filter((item) => {
+    return visibleBank.filter((item) => {
       const instruction = EXERCISE_INSTRUCTIONS[item.id];
       const instructionText = instruction
         ? `${instruction.howTo} ${instruction.cues.join(" ")}`.toLowerCase()
@@ -270,36 +411,13 @@ export default function VideoLibraryScreen() {
       const matchesVideo = !videoOnly || hasVideo;
       const matchesFavorites = !isFavoritesView || favoriteSet.has(item.id);
       return (
-        matchesQuery &&
-        matchesModality &&
-        matchesIntensity &&
-        matchesTags &&
-        matchesEquipment &&
-        matchesVideo &&
-        matchesFavorites
+        matchesQuery && matchesModality && matchesIntensity &&
+        matchesTags && matchesEquipment && matchesVideo && matchesFavorites
       );
     });
-  }, [
-    normalizedQuery,
-    selectedModalities,
-    selectedIntensity,
-    selectedTags,
-    selectedEquipment,
-    videoOnly,
-    isFavoritesView,
-    favoriteSet,
-  ]);
+  }, [visibleBank, normalizedQuery, selectedModalities, selectedIntensity, selectedTags, selectedEquipment, videoOnly, isFavoritesView, favoriteSet]);
 
-  const grouped = useMemo(() => {
-    const buckets: Record<BankModality, ExerciseDef[]> = {
-      run: [],
-      circuit: [],
-      strength: [],
-      plyo: [],
-      cod: [],
-      core: [],
-      mobility: [],
-    };
+  const sortedList = useMemo(() => {
     const list = filtered.slice();
     list.sort((a, b) => {
       if (sortMode === "alpha") return a.name.localeCompare(b.name);
@@ -317,60 +435,24 @@ export default function VideoLibraryScreen() {
       if (aFav !== bFav) return bFav - aFav;
       return a.name.localeCompare(b.name);
     });
-    list.forEach((item) => {
-        buckets[item.modality].push(item);
-      });
-    return buckets;
+    return list;
   }, [filtered, favoriteSet, recentRank, sortMode]);
 
-  const favoriteList = useMemo(() => {
-    if (!isFavoritesView) return [];
-    const list = [...filtered];
-    list.sort((a, b) => {
-      if (sortMode === "alpha") return a.name.localeCompare(b.name);
-      if (sortMode === "recent") {
-        const aRank = recentRank.get(a.id);
-        const bRank = recentRank.get(b.id);
-        if (aRank == null && bRank == null) return a.name.localeCompare(b.name);
-        if (aRank == null) return 1;
-        if (bRank == null) return -1;
-        if (aRank !== bRank) return aRank - bRank;
-        return a.name.localeCompare(b.name);
-      }
-      const aFav = favoriteSet.has(a.id) ? 1 : 0;
-      const bFav = favoriteSet.has(b.id) ? 1 : 0;
-      if (aFav !== bFav) return bFav - aFav;
-      return a.name.localeCompare(b.name);
-    });
-    return list;
-  }, [filtered, isFavoritesView, favoriteSet, recentRank, sortMode]);
+  const grouped = useMemo(() => {
+    const buckets: Record<BankModality, ExerciseDef[]> = {
+      run: [], circuit: [], strength: [], plyo: [], cod: [], core: [], mobility: [],
+    };
+    sortedList.forEach((item) => buckets[item.modality].push(item));
+    return buckets;
+  }, [sortedList]);
 
   const activeList = isFavoritesView
-    ? favoriteList
+    ? sortedList
     : activeCategory
       ? grouped[activeCategory as BankModality] ?? []
       : [];
 
-  const sortedFiltered = useMemo(() => {
-    const list = filtered.slice();
-    list.sort((a, b) => {
-      if (sortMode === "alpha") return a.name.localeCompare(b.name);
-      if (sortMode === "recent") {
-        const aRank = recentRank.get(a.id);
-        const bRank = recentRank.get(b.id);
-        if (aRank == null && bRank == null) return a.name.localeCompare(b.name);
-        if (aRank == null) return 1;
-        if (bRank == null) return -1;
-        if (aRank !== bRank) return aRank - bRank;
-        return a.name.localeCompare(b.name);
-      }
-      const aFav = favoriteSet.has(a.id) ? 1 : 0;
-      const bFav = favoriteSet.has(b.id) ? 1 : 0;
-      if (aFav !== bFav) return bFav - aFav;
-      return a.name.localeCompare(b.name);
-    });
-    return list;
-  }, [filtered, favoriteSet, recentRank, sortMode]);
+  const displayList = activeCategory ? activeList : sortedList;
 
   const toggleTag = (value: ExerciseTag) => {
     setSelectedTags((prev) =>
@@ -384,20 +466,20 @@ export default function VideoLibraryScreen() {
     );
   };
 
-  const openExercise = (exercise: ExerciseDef) => {
+  const openExercise = useCallback((exercise: ExerciseDef) => {
     setDetailExerciseId(exercise.id);
     setActiveHighlightId(exercise.id);
     addRecentExercise(exercise.id);
-  };
+  }, [addRecentExercise]);
 
   const closeDetail = () => setDetailExerciseId(null);
 
-  const openVideoRef = (exerciseId: string) => {
+  const openVideoRef = useCallback((exerciseId: string) => {
     const ref = getExerciseVideoRef(exerciseId);
     Linking.openURL(ref.url).catch(() => {
-      Alert.alert("Vidéo indisponible", "Impossible d'ouvrir le lien pour l'instant.");
+      showToast({ type: "error", title: "Vidéo indisponible", message: "Impossible d'ouvrir le lien pour l'instant." });
     });
-  };
+  }, []);
 
   const resetFilters = () => {
     setQuery("");
@@ -432,7 +514,7 @@ export default function VideoLibraryScreen() {
       .map((id) => EXERCISE_BY_ID[id])
       .filter(Boolean) as ExerciseDef[];
     if (explicit.length > 0) return explicit;
-    const candidates = EXERCISE_BANK.filter(
+    const candidates = visibleBank.filter(
       (other) => other.id !== item.id && other.modality === item.modality
     );
     const scored = candidates
@@ -481,307 +563,273 @@ export default function VideoLibraryScreen() {
     focusFavorites();
   }, [startInFavorites, highlightId]);
 
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <Card variant="surface" style={styles.heroCard}>
-          <View style={styles.heroTop}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.title}>Banque d'exercices</Text>
-              <Text style={styles.subtitle}>
-                Filtre par objectif, intensité ou type et garde une démo sous la main.
-              </Text>
-            </View>
-            <Badge label={`${filtered.length} exos`} />
-          </View>
-          <View style={styles.heroStats}>
-            <View style={styles.heroStat}>
-              <Text style={styles.heroStatValue}>{EXERCISE_BANK.length}</Text>
-              <Text style={styles.heroStatLabel}>Total</Text>
-            </View>
-            <View style={styles.heroDivider} />
-            <View style={styles.heroStat}>
-              <Text style={styles.heroStatValue}>{activeFilters}</Text>
-              <Text style={styles.heroStatLabel}>Filtres</Text>
-            </View>
-            <View style={styles.heroDivider} />
-            <View style={styles.heroStat}>
-              <Text style={styles.heroStatValue}>{Object.keys(MODALITY_LABELS).length}</Text>
-              <Text style={styles.heroStatLabel}>Modalités</Text>
-            </View>
-          </View>
-        </Card>
+  // ─── Render helpers ───
 
-        <Card variant="soft" style={styles.searchCard}>
-          <View style={styles.searchRow}>
-            <Ionicons name="search" size={16} color={theme.colors.sub} />
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Rechercher un exercice (nom, tag, consigne)..."
-              placeholderTextColor={theme.colors.muted}
-              style={styles.searchInput}
-              autoCorrect={false}
+  const renderExerciseItem = useCallback(
+    ({ item }: { item: ExerciseDef }) => (
+      <ExerciseListCard
+        item={item}
+        isFavorite={favoriteSet.has(item.id)}
+        isHighlighted={item.id === activeHighlightId}
+        onPress={() => openExercise(item)}
+        onToggleFavorite={() => toggleFavoriteExercise(item.id)}
+        onOpenVideo={() => openVideoRef(item.id)}
+      />
+    ),
+    [favoriteSet, activeHighlightId, openExercise, toggleFavoriteExercise, openVideoRef]
+  );
+
+  const keyExtractor = useCallback((item: ExerciseDef) => item.id, []);
+  const itemSeparator = useCallback(() => <View style={{ height: 10 }} />, []);
+
+  // ─── Header partagé ───
+  const renderHeader = () => (
+    <>
+      <Animated.View
+        style={{
+          opacity: headerAnim,
+          transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }],
+        }}
+      >
+        <View style={styles.screenHeader}>
+          <Text style={styles.screenKicker}>BIBLIOTHÈQUE</Text>
+          <Text style={styles.screenTitle}>Exercices</Text>
+        </View>
+      </Animated.View>
+
+      <Animated.View
+        style={{
+          opacity: searchAnim,
+          transform: [{ translateY: searchAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }],
+        }}
+      >
+        <View style={styles.searchRow}>
+          <Ionicons name="search" size={16} color={theme.colors.sub} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Rechercher un exercice..."
+            placeholderTextColor={theme.colors.muted}
+            style={styles.searchInput}
+            autoCorrect={false}
+          />
+          {query.length > 0 ? (
+            <TouchableOpacity onPress={() => setQuery("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.clearButton}>
+              <Ionicons name="close" size={14} color={theme.colors.sub} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </Animated.View>
+    </>
+  );
+
+  // ─── Render : vue catégories ───
+  if (!showResults) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+          {renderHeader()}
+
+          <SectionHeader title="Catégories" />
+          <View style={styles.categoryGrid}>
+            <CategoryCard
+              modality="favorites"
+              label="Favoris"
+              description="Tes exercices sauvegardés"
+              count={favoriteExerciseIds.length}
+              onPress={focusFavorites}
+              animDelay={0}
             />
-            {query.length > 0 ? (
-              <TouchableOpacity onPress={() => setQuery("")} style={styles.clearButton}>
-                <Text style={styles.clearButtonText}>×</Text>
-              </TouchableOpacity>
-            ) : null}
+            {MODALITY_ORDER.map((modality, idx) => {
+              const count = visibleBank.filter((item) => item.modality === modality).length;
+              return (
+                <CategoryCard
+                  key={modality}
+                  modality={modality}
+                  label={MODALITY_LABELS[modality]}
+                  description={MODALITY_DESCRIPTIONS[modality]}
+                  count={count}
+                  onPress={() => focusCategory(modality)}
+                  animDelay={(idx + 1) * 80}
+                />
+              );
+            })}
           </View>
-          <Text style={styles.searchHint}>
-            Astuce : tape “RDL”, “ischios”, “accélération”, “gainage”, etc.
+        </ScrollView>
+
+        <ExerciseDetailModal
+          visible={Boolean(detailExerciseId)}
+          exerciseId={detailExerciseId}
+          onClose={closeDetail}
+          onToggleFavorite={(id) => toggleFavoriteExercise(id)}
+          isFavorite={(id) => favoriteSet.has(id)}
+          onOpenVideo={(id) => openVideoRef(id)}
+          onOpenVariant={(id) => {
+            const ex = EXERCISE_BY_ID[id];
+            if (!ex) return;
+            setDetailExerciseId(id);
+            setActiveHighlightId(id);
+            addRecentExercise(id);
+          }}
+          getVariants={getVariants}
+          getNoEquipmentVariants={getNoEquipmentVariants}
+          inferEquipment={inferEquipment}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  // ─── Render : vue résultats (FlatList) ───
+  const resultsHeader = (
+    <>
+      {renderHeader()}
+
+      <View style={styles.resultsTopBar}>
+        <View style={styles.resultsHeaderRow}>
+          <TouchableOpacity onPress={resetFilters} activeOpacity={0.85} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={18} color={theme.colors.sub} />
+          </TouchableOpacity>
+          {activeCategory && activeCategory !== "favorites" ? (
+            <View
+              style={[
+                styles.resultsModalityIcon,
+                { backgroundColor: MODALITY_CONFIG[activeCategory as BankModality].tintSoft },
+              ]}
+            >
+              <Ionicons
+                name={MODALITY_CONFIG[activeCategory as BankModality].icon as any}
+                size={16}
+                color={MODALITY_CONFIG[activeCategory as BankModality].tint}
+              />
+            </View>
+          ) : activeCategory === "favorites" ? (
+            <View style={[styles.resultsModalityIcon, { backgroundColor: MODALITY_CONFIG.favorites.tintSoft }]}>
+              <Ionicons name="star" size={16} color={MODALITY_CONFIG.favorites.tint} />
+            </View>
+          ) : null}
+          <View style={{ flex: 1 }}>
+            <SectionHeader
+              title={
+                isFavoritesView
+                  ? "Favoris"
+                  : activeCategory
+                    ? MODALITY_LABELS[activeCategory as BankModality]
+                    : "Résultats"
+              }
+              right={<Badge label={`${displayList.length}`} />}
+            />
+          </View>
+        </View>
+        <TouchableOpacity
+          onPress={() => setFiltersOpen((v) => !v)}
+          activeOpacity={0.85}
+          style={[styles.topActionButton, filtersOpen && styles.topActionButtonActive]}
+        >
+          <Ionicons
+            name="options-outline"
+            size={16}
+            color={filtersOpen ? theme.colors.accent : theme.colors.sub}
+          />
+          <Text style={[styles.topActionText, filtersOpen && styles.topActionTextActive]}>
+            Filtres{activeFilters ? ` (${activeFilters})` : ""}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {filtersOpen ? (
+        <Card variant="soft" style={styles.filtersCard}>
+          <View style={styles.filterGroup}>
+            <Text style={styles.filterLabel}>Intensité</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+              {(Object.keys(INTENSITY_LABELS) as BankIntensity[]).map((intensity) => (
+                <FilterChip
+                  key={intensity}
+                  label={INTENSITY_LABELS[intensity]}
+                  selected={selectedIntensity === intensity}
+                  onPress={() => setSelectedIntensity((prev) => (prev === intensity ? null : intensity))}
+                />
+              ))}
+            </ScrollView>
+          </View>
+          <View style={styles.filterGroup}>
+            <Text style={styles.filterLabel}>Tags</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+              {TAG_ORDER.map((tag) => (
+                <FilterChip
+                  key={tag}
+                  label={TAG_LABELS[tag]}
+                  selected={selectedTags.includes(tag)}
+                  onPress={() => toggleTag(tag)}
+                />
+              ))}
+            </ScrollView>
+          </View>
+          <View style={styles.filterGroup}>
+            <Text style={styles.filterLabel}>Matériel</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+              {EQUIPMENT_ORDER.map((equipment) => (
+                <FilterChip
+                  key={equipment}
+                  label={EQUIPMENT_LABELS[equipment]}
+                  selected={selectedEquipment.includes(equipment)}
+                  onPress={() => toggleEquipment(equipment)}
+                />
+              ))}
+            </ScrollView>
+          </View>
+          <View style={styles.filterGroup}>
+            <Text style={styles.filterLabel}>Vidéo</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+              <FilterChip label="Vidéos validées" selected={videoOnly} onPress={() => setVideoOnly((prev) => !prev)} />
+            </ScrollView>
+          </View>
+          <View style={styles.filterGroup}>
+            <Text style={styles.filterLabel}>Tri</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+              {(["favorites", "alpha", "recent"] as SortMode[]).map((mode) => (
+                <FilterChip
+                  key={mode}
+                  label={SORT_LABELS[mode]}
+                  selected={sortMode === mode}
+                  onPress={() => setSortMode(mode)}
+                />
+              ))}
+            </ScrollView>
+          </View>
+          {activeFilters > 0 ? (
+            <View style={styles.filtersFooter}>
+              <TouchableOpacity onPress={resetFilters} activeOpacity={0.85} style={styles.resetButton}>
+                <Text style={styles.resetButtonText}>Réinitialiser</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {displayList.length === 0 ? (
+        <Card variant="soft" style={styles.emptyCard}>
+          <Text style={styles.emptyTitle}>{isFavoritesView ? "Aucun favori" : "Aucun résultat"}</Text>
+          <Text style={styles.emptyText}>
+            {isFavoritesView
+              ? "Ajoute des favoris pour les retrouver ici rapidement."
+              : "Essaie un terme plus court, ou enlève un filtre."}
           </Text>
         </Card>
+      ) : null}
+    </>
+  );
 
-        {!showResults ? (
-          <View style={styles.categoryBlock}>
-            <SectionHeader title="Catégories" />
-            <Text style={styles.categoryHint}>Choisis une catégorie, ou utilise la recherche.</Text>
-            <View style={styles.categoryGrid}>
-              <TouchableOpacity activeOpacity={0.9} onPress={focusFavorites} style={styles.categoryCard}>
-                <Text style={styles.categoryLabel}>Favoris</Text>
-                <Text style={styles.categoryDescription}>Accès rapide à tes exos.</Text>
-                <Badge
-                  label={`${favoriteExerciseIds.length}`}
-                  tone={favoriteExerciseIds.length ? "ok" : "default"}
-                />
-              </TouchableOpacity>
-              {MODALITY_ORDER.map((modality) => {
-                const count = EXERCISE_BANK.filter((item) => item.modality === modality).length;
-                return (
-                  <TouchableOpacity
-                    key={modality}
-                    activeOpacity={0.9}
-                    onPress={() => focusCategory(modality)}
-                    style={styles.categoryCard}
-                  >
-                    <Text style={styles.categoryLabel}>{MODALITY_LABELS[modality]}</Text>
-                    <Text style={styles.categoryDescription}>{MODALITY_DESCRIPTIONS[modality]}</Text>
-                    <Badge label={`${count}`} />
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        ) : (
-          <View style={styles.resultsTopBar}>
-            <View style={{ flex: 1, gap: 6 }}>
-              <SectionHeader
-                title={
-                  isFavoritesView
-                    ? "Favoris"
-                    : activeCategory
-                      ? MODALITY_LABELS[activeCategory as BankModality]
-                      : "Résultats"
-                }
-                right={<Badge label={`${(activeCategory ? activeList : sortedFiltered).length}`} />}
-              />
-              <Text style={styles.resultsHint}>
-                Appuie sur un exercice pour ouvrir sa fiche (consignes, variantes, vidéo).
-              </Text>
-            </View>
-            <View style={styles.resultsTopActions}>
-              <TouchableOpacity onPress={resetFilters} activeOpacity={0.85} style={styles.topActionButton}>
-                <Ionicons name="grid-outline" size={16} color={theme.colors.sub} />
-                <Text style={styles.topActionText}>Catégories</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setFiltersOpen((v) => !v)}
-                activeOpacity={0.85}
-                style={[styles.topActionButton, filtersOpen && styles.topActionButtonActive]}
-              >
-                <Ionicons
-                  name="options-outline"
-                  size={16}
-                  color={filtersOpen ? theme.colors.accent : theme.colors.sub}
-                />
-                <Text style={[styles.topActionText, filtersOpen && styles.topActionTextActive]}>
-                  Filtres{activeFilters ? ` (${activeFilters})` : ""}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {showResults && filtersOpen ? (
-          <Card variant="soft" style={styles.filtersCard}>
-            <View style={styles.filterGroup}>
-              <Text style={styles.filterLabel}>Intensité</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-                {(Object.keys(INTENSITY_LABELS) as BankIntensity[]).map((intensity) => (
-                  <FilterChip
-                    key={intensity}
-                    label={INTENSITY_LABELS[intensity]}
-                    selected={selectedIntensity === intensity}
-                    onPress={() =>
-                      setSelectedIntensity((prev) => (prev === intensity ? null : intensity))
-                    }
-                  />
-                ))}
-              </ScrollView>
-            </View>
-
-            <View style={styles.filterGroup}>
-              <Text style={styles.filterLabel}>Tags</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-                {TAG_ORDER.map((tag) => (
-                  <FilterChip
-                    key={tag}
-                    label={TAG_LABELS[tag]}
-                    selected={selectedTags.includes(tag)}
-                    onPress={() => toggleTag(tag)}
-                  />
-                ))}
-              </ScrollView>
-            </View>
-
-            <View style={styles.filterGroup}>
-              <Text style={styles.filterLabel}>Matériel</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-                {EQUIPMENT_ORDER.map((equipment) => (
-                  <FilterChip
-                    key={equipment}
-                    label={EQUIPMENT_LABELS[equipment]}
-                    selected={selectedEquipment.includes(equipment)}
-                    onPress={() => toggleEquipment(equipment)}
-                  />
-                ))}
-              </ScrollView>
-            </View>
-
-            <View style={styles.filterGroup}>
-              <Text style={styles.filterLabel}>Vidéo</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-                <FilterChip label="Vidéos validées" selected={videoOnly} onPress={() => setVideoOnly((prev) => !prev)} />
-              </ScrollView>
-            </View>
-
-            <View style={styles.filterGroup}>
-              <Text style={styles.filterLabel}>Tri</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-                {(["favorites", "alpha", "recent"] as SortMode[]).map((mode) => (
-                  <FilterChip
-                    key={mode}
-                    label={SORT_LABELS[mode]}
-                    selected={sortMode === mode}
-                    onPress={() => setSortMode(mode)}
-                  />
-                ))}
-              </ScrollView>
-            </View>
-
-            {activeFilters > 0 ? (
-              <View style={styles.filtersFooter}>
-                <TouchableOpacity onPress={resetFilters} activeOpacity={0.85} style={styles.resetButton}>
-                  <Text style={styles.resetButtonText}>Réinitialiser</Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-          </Card>
-        ) : null}
-
-        {showResults ? (
-          filtered.length === 0 ? (
-            <Card variant="soft" style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>{isFavoritesView ? "Aucun favori" : "Aucun résultat"}</Text>
-              <Text style={styles.emptyText}>
-                {isFavoritesView
-                  ? "Ajoute des favoris pour les retrouver ici rapidement."
-                  : "Essaie un terme plus court, ou enlève un filtre."}
-              </Text>
-            </Card>
-          ) : (
-            <View style={styles.sectionBlock}>
-              <View style={styles.cardsList}>
-                {(activeCategory ? activeList : sortedFiltered).map((item) => {
-                  const isFavorite = favoriteSet.has(item.id);
-                  const hasVettedVideo = getExerciseVideoRef(item.id).kind === "vetted";
-                  const variantsCount = getVariants(item).length;
-                  return (
-                    <Card
-                      key={item.id}
-                      variant="surface"
-                      style={[
-                        styles.exerciseCard,
-                        item.id === activeHighlightId && styles.exerciseCardHighlight,
-                      ]}
-                    >
-                      <TouchableOpacity
-                        activeOpacity={0.9}
-                        onPress={() => openExercise(item)}
-                        style={styles.exercisePressArea}
-                      >
-                        <View style={styles.exerciseTitleRow}>
-                          <Text style={styles.exerciseName}>{item.name}</Text>
-                          <Badge label={INTENSITY_LABELS[item.intensity]} tone={intensityTone(item.intensity)} />
-                        </View>
-                        <Text style={styles.exerciseMeta}>
-                          {MODALITY_LABELS[item.modality]}
-                          {formatDefaults(item) ? ` · ${formatDefaults(item)}` : ""}
-                        </Text>
-                        <Text numberOfLines={2} style={styles.exerciseDescription}>
-                          {item.description}
-                        </Text>
-                      </TouchableOpacity>
-
-                      <View style={styles.exerciseFooter}>
-                        <View style={styles.quickMetaRow}>
-                          {hasVettedVideo ? (
-                            <View style={styles.quickPill}>
-                              <Ionicons name="videocam" size={12} color={theme.colors.accent} />
-                              <Text style={styles.quickPillTextAccent}>Vidéo</Text>
-                            </View>
-                          ) : (
-                            <View style={styles.quickPill}>
-                              <Ionicons name="search" size={12} color={theme.colors.sub} />
-                              <Text style={styles.quickPillText}>Recherche</Text>
-                            </View>
-                          )}
-                          {variantsCount > 0 ? (
-                            <View style={styles.quickPill}>
-                              <Ionicons name="git-branch-outline" size={12} color={theme.colors.sub} />
-                              <Text style={styles.quickPillText}>{variantsCount} variantes</Text>
-                            </View>
-                          ) : null}
-                        </View>
-
-                        <View style={styles.footerActions}>
-                          <TouchableOpacity
-                            onPress={() => toggleFavoriteExercise(item.id)}
-                            activeOpacity={0.85}
-                            style={[styles.iconButton, isFavorite && styles.iconButtonActive]}
-                          >
-                            <Ionicons
-                              name={isFavorite ? "star" : "star-outline"}
-                              size={16}
-                              color={isFavorite ? theme.colors.accent : theme.colors.sub}
-                            />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => openVideoRef(item.id)}
-                            activeOpacity={0.85}
-                            style={styles.iconButton}
-                          >
-                            <Ionicons name="logo-youtube" size={16} color={theme.colors.sub} />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => openExercise(item)}
-                            activeOpacity={0.85}
-                            style={styles.iconButton}
-                          >
-                            <Ionicons name="chevron-forward" size={16} color={theme.colors.sub} />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </Card>
-                  );
-                })}
-              </View>
-            </View>
-          )
-        ) : null}
-      </ScrollView>
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <FlatList
+        data={displayList.length > 0 ? displayList : []}
+        keyExtractor={keyExtractor}
+        renderItem={renderExerciseItem}
+        ItemSeparatorComponent={itemSeparator}
+        ListHeaderComponent={resultsHeader}
+        contentContainerStyle={styles.listContainer}
+        showsVerticalScrollIndicator={false}
+      />
 
       <ExerciseDetailModal
         visible={Boolean(detailExerciseId)}
@@ -805,71 +853,49 @@ export default function VideoLibraryScreen() {
   );
 }
 
+// ─── Styles ───
+
+const palette = theme.colors;
+
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: theme.colors.bg },
+  safeArea: { flex: 1, backgroundColor: palette.bg },
   container: { padding: 14, paddingBottom: 32, gap: 14 },
-  heroCard: { padding: 14, gap: 12 },
-  heroTop: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
-  title: { fontSize: 20, fontWeight: "800", color: theme.colors.text },
-  subtitle: { color: theme.colors.sub, lineHeight: 18, marginTop: 4 },
-  heroStats: { flexDirection: "row", alignItems: "center", marginTop: 2 },
-  heroStat: { flex: 1 },
-  heroStatValue: { fontSize: 16, fontWeight: "800", color: theme.colors.text },
-  heroStatLabel: {
+  listContainer: { padding: 14, paddingBottom: 32, gap: 14 },
+
+  // Header
+  screenHeader: { gap: 2 },
+  screenKicker: {
     fontSize: 11,
-    color: theme.colors.sub,
+    letterSpacing: 1.6,
+    color: palette.sub,
     textTransform: "uppercase",
-    letterSpacing: 0.6,
+    fontWeight: "800",
   },
-  heroDivider: { width: 1, height: 32, backgroundColor: theme.colors.borderSoft },
-  highlightCard: { padding: 12, gap: 8 },
-  highlightRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  highlightLabel: { fontSize: 11, textTransform: "uppercase", color: theme.colors.sub, letterSpacing: 0.6 },
-  highlightName: { fontSize: 15, fontWeight: "700", color: theme.colors.text, marginTop: 4 },
-  highlightDescription: { fontSize: 12, color: theme.colors.muted, marginTop: 6, lineHeight: 16 },
-  searchCard: { padding: 12 },
+  screenTitle: { fontSize: 24, fontWeight: "800", color: palette.text, marginTop: 2 },
+
+  // Search
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
     borderRadius: theme.radius.pill,
     borderWidth: 1,
-    borderColor: theme.colors.borderSoft,
-    backgroundColor: theme.colors.card,
-    paddingHorizontal: 12,
-    gap: 8,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.card,
+    paddingHorizontal: 14,
+    paddingVertical: 2,
+    gap: 10,
   },
-  searchInput: {
-    flex: 1,
-    paddingVertical: 10,
-    color: theme.colors.text,
-    fontSize: 13,
-  },
-  searchHint: { marginTop: 8, fontSize: 12, color: theme.colors.sub, lineHeight: 16 },
+  searchInput: { flex: 1, paddingVertical: 10, color: palette.text, fontSize: 13 },
   clearButton: {
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: theme.colors.borderSoft,
+    backgroundColor: palette.borderSoft,
     alignItems: "center",
     justifyContent: "center",
   },
-  clearButtonText: { fontSize: 16, color: theme.colors.sub },
-  filtersHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  resetButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: theme.radius.pill,
-    borderWidth: 1,
-    borderColor: theme.colors.borderSoft,
-  },
-  resetButtonText: { fontSize: 11, fontWeight: "600", color: theme.colors.sub },
-  categoryHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  categoryBlock: { gap: 10 },
-  categoryHint: { fontSize: 12, color: theme.colors.sub },
+
+  // Categories
   categoryGrid: {
     gap: 10,
     flexDirection: "row",
@@ -877,233 +903,151 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   categoryCard: {
-    padding: 12,
-    width: "48%",
+    padding: 14,
     borderRadius: theme.radius.lg,
     borderWidth: 1,
-    borderColor: theme.colors.borderSoft,
-    backgroundColor: theme.colors.card,
-    gap: 6,
-    minHeight: 120,
+    backgroundColor: palette.card,
+    gap: 10,
+    minHeight: 130,
     justifyContent: "space-between",
   },
-  categoryLabel: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
-  categoryDescription: { fontSize: 12, color: theme.colors.sub },
+  categoryIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  categoryContent: { gap: 2 },
+  categoryLabel: { fontSize: 14, fontWeight: "700", color: palette.text },
+  categoryDescription: { fontSize: 11, color: palette.sub },
+
+  // Results header
+  resultsTopBar: { gap: 10 },
+  resultsHeaderRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  backButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.card,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  resultsModalityIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  topActionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.card,
+  },
+  topActionButtonActive: {
+    borderColor: palette.accent,
+    backgroundColor: palette.accentSoft,
+  },
+  topActionText: { fontSize: 12, fontWeight: "700", color: palette.sub },
+  topActionTextActive: { color: palette.accent },
+
+  // Filters
+  filtersCard: { padding: 12, gap: 12 },
   filterGroup: { gap: 8 },
-  filterLabel: { fontSize: 12, fontWeight: "700", color: theme.colors.text },
+  filterLabel: { fontSize: 12, fontWeight: "700", color: palette.text },
   filterRow: { gap: 8 },
   chip: {
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: theme.radius.pill,
     borderWidth: 1,
-    borderColor: theme.colors.borderSoft,
-    backgroundColor: theme.colors.card,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.card,
   },
-  chipActive: {
-    backgroundColor: theme.colors.accentSoft,
-    borderColor: theme.colors.accent,
-  },
-  chipText: { fontSize: 12, color: theme.colors.sub, fontWeight: "600" },
-  chipTextActive: { color: theme.colors.accent },
-  resultsTopBar: { gap: 10 },
-  resultsTopActions: { flexDirection: "row", gap: 8, alignItems: "center" },
-  topActionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: theme.radius.pill,
-    borderWidth: 1,
-    borderColor: theme.colors.borderSoft,
-    backgroundColor: theme.colors.card,
-  },
-  topActionButtonActive: {
-    borderColor: theme.colors.accent,
-    backgroundColor: theme.colors.accentSoft,
-  },
-  topActionText: { fontSize: 12, fontWeight: "700", color: theme.colors.sub },
-  topActionTextActive: { color: theme.colors.accent },
-  filtersCard: { padding: 12, gap: 12 },
+  chipActive: { backgroundColor: palette.accentSoft, borderColor: palette.accent },
+  chipText: { fontSize: 12, color: palette.sub, fontWeight: "600" },
+  chipTextActive: { color: palette.accent },
   filtersFooter: { flexDirection: "row", justifyContent: "flex-end" },
-  resultsHeader: { gap: 6 },
-  resultsHint: { color: theme.colors.sub, fontSize: 12 },
+  resetButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+  },
+  resetButtonText: { fontSize: 11, fontWeight: "600", color: palette.sub },
+
+  // Empty
   emptyCard: { padding: 16, gap: 6 },
-  emptyTitle: { fontSize: 15, fontWeight: "700", color: theme.colors.text },
-  emptyText: { fontSize: 12, color: theme.colors.sub, lineHeight: 18 },
-  sectionBlock: { gap: 10 },
-  cardsList: { gap: 10 },
-  exerciseCard: { padding: 12, gap: 10 },
-  exerciseCardHighlight: {
-    borderColor: theme.colors.accent,
-    backgroundColor: theme.colors.accentSoft,
+  emptyTitle: { fontSize: 15, fontWeight: "700", color: palette.text },
+  emptyText: { fontSize: 12, color: palette.sub, lineHeight: 18 },
+
+  // Exercise cards
+  exerciseCard: { padding: 0, overflow: "hidden", flexDirection: "row" },
+  exerciseCardHighlight: { borderColor: palette.accent, backgroundColor: palette.accentSoft },
+  accentBar: {
+    width: 4,
+    borderTopLeftRadius: theme.radius.lg,
+    borderBottomLeftRadius: theme.radius.lg,
   },
-  exerciseTop: { gap: 6 },
-  exercisePressArea: { gap: 6 },
-  exerciseTitleRow: { flexDirection: "row", justifyContent: "space-between", gap: 10 },
-  exerciseName: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
-  exerciseMeta: { fontSize: 12, color: theme.colors.sub, marginTop: 2 },
-  exerciseDescription: { fontSize: 12, color: theme.colors.muted, marginTop: 6, lineHeight: 16 },
-  tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  equipmentRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  equipmentChip: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.cardSoft,
-    borderWidth: 1,
-    borderColor: theme.colors.borderSoft,
+  exerciseInner: { flex: 1 },
+  exercisePressArea: { paddingVertical: 12, paddingHorizontal: 12, gap: 4 },
+  exerciseTitleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 },
+  exerciseNameRow: { flexDirection: "row", alignItems: "center", gap: 6, flex: 1 },
+  exerciseName: { fontSize: 14, fontWeight: "700", color: palette.text, flex: 1 },
+  exerciseMeta: { fontSize: 12, color: palette.sub },
+  exerciseFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingBottom: 10,
   },
-  equipmentChipText: { fontSize: 10, fontWeight: "600", color: theme.colors.sub },
-  tagChip: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.cardSoft,
-    borderWidth: 1,
-    borderColor: theme.colors.borderSoft,
-  },
-  tagChipText: { fontSize: 10, fontWeight: "600", color: theme.colors.sub },
-  tagChipMuted: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.borderSoft,
-  },
-  tagChipMutedText: { fontSize: 10, color: theme.colors.sub },
-  variantPreviewRow: { gap: 6 },
-  variantPreviewLabel: { fontSize: 11, fontWeight: "700", color: theme.colors.text },
-  variantPreviewChips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  variantPreviewChip: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: theme.radius.pill,
-    borderWidth: 1,
-    borderColor: theme.colors.borderSoft,
-    backgroundColor: theme.colors.cardSoft,
-  },
-  variantPreviewText: { fontSize: 10, color: theme.colors.sub, fontWeight: "600" },
-  variantPreviewMore: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.borderSoft,
-  },
-  variantPreviewMoreText: { fontSize: 10, color: theme.colors.sub, fontWeight: "600" },
-  variantBlock: { gap: 6 },
-  variantLabel: { fontSize: 11, fontWeight: "700", color: theme.colors.text },
-  variantRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  variantChip: {
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: theme.radius.pill,
-    borderWidth: 1,
-    borderColor: theme.colors.borderSoft,
-    backgroundColor: theme.colors.card,
-  },
-  variantChipText: { fontSize: 11, color: theme.colors.sub, fontWeight: "600" },
-  variantChipAlt: {
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: theme.radius.pill,
-    borderWidth: 1,
-    borderColor: theme.colors.accent,
-    backgroundColor: theme.colors.accentSoft,
-  },
-  variantChipTextAlt: { fontSize: 11, color: theme.colors.accent, fontWeight: "700" },
-  howToBlock: { gap: 6 },
-  howToLabel: { fontSize: 11, fontWeight: "700", color: theme.colors.text },
-  howToText: { fontSize: 12, color: theme.colors.sub, lineHeight: 16 },
-  howToList: { gap: 2 },
-  howToBullet: { fontSize: 12, color: theme.colors.sub, lineHeight: 16 },
-  exerciseFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  footerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
-  quickMetaRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, alignItems: "center" },
-  quickPill: {
+  videoPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingVertical: 4,
+    gap: 4,
+    paddingVertical: 3,
     paddingHorizontal: 8,
     borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.cardSoft,
-    borderWidth: 1,
-    borderColor: theme.colors.borderSoft,
+    backgroundColor: palette.accentSoft,
   },
-  quickPillText: { fontSize: 10, fontWeight: "700", color: theme.colors.sub },
-  quickPillTextAccent: { fontSize: 10, fontWeight: "800", color: theme.colors.accent },
+  videoPillText: { fontSize: 10, fontWeight: "700", color: palette.accent },
+  footerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   iconButton: {
     width: 34,
     height: 34,
     borderRadius: 17,
     borderWidth: 1,
-    borderColor: theme.colors.borderSoft,
-    backgroundColor: theme.colors.cardSoft,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.cardSoft,
     alignItems: "center",
     justifyContent: "center",
   },
-  iconButtonActive: {
-    borderColor: theme.colors.accent,
-    backgroundColor: theme.colors.accentSoft,
-  },
-  detailToggle: {
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: theme.radius.pill,
-    borderWidth: 1,
-    borderColor: theme.colors.borderSoft,
-    backgroundColor: theme.colors.cardSoft,
-  },
-  detailToggleText: { fontSize: 11, color: theme.colors.sub, fontWeight: "700" },
-  exerciseDetail: { fontSize: 12, color: theme.colors.sub },
-  favoriteButton: {
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: theme.radius.pill,
-    borderWidth: 1,
-    borderColor: theme.colors.borderSoft,
-    backgroundColor: theme.colors.cardSoft,
-  },
-  favoriteButtonActive: {
-    borderColor: theme.colors.accent,
-    backgroundColor: theme.colors.accentSoft,
-  },
-  favoriteButtonContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  favoriteButtonText: { fontSize: 11, color: theme.colors.sub, fontWeight: "700" },
-  favoriteButtonTextActive: { color: theme.colors.accent },
-  videoLink: {
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: theme.radius.pill,
-    borderWidth: 1,
-    borderColor: theme.colors.accent,
-    backgroundColor: theme.colors.accentSoft,
-  },
-  videoLinkText: { fontSize: 11, color: theme.colors.accent, fontWeight: "700" },
-  videoBadge: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.accentSoft,
-  },
-  videoBadgeText: { fontSize: 10, fontWeight: "700", color: theme.colors.accent },
+  iconButtonActive: { borderColor: palette.accent, backgroundColor: palette.accentSoft },
 
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "flex-end",
+  // Detail modal
+  modalAccentStrip: {
+    height: 3,
+    borderTopLeftRadius: theme.radius.xl,
+    borderTopRightRadius: theme.radius.xl,
   },
   modalSheet: {
-    backgroundColor: theme.colors.bg,
+    backgroundColor: palette.bg,
     borderTopLeftRadius: theme.radius.xl,
     borderTopRightRadius: theme.radius.xl,
     borderWidth: 1,
-    borderColor: theme.colors.borderSoft,
+    borderColor: palette.borderSoft,
     maxHeight: "88%",
     overflow: "hidden",
   },
@@ -1112,7 +1056,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 5,
     borderRadius: 999,
-    backgroundColor: theme.colors.borderSoft,
+    backgroundColor: palette.borderSoft,
     marginTop: 10,
     marginBottom: 10,
   },
@@ -1123,15 +1067,22 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap: 12,
   },
-  modalTitle: { flex: 1, fontSize: 16, fontWeight: "800", color: theme.colors.text },
-  modalSub: { marginTop: 4, fontSize: 12, color: theme.colors.sub, lineHeight: 16 },
+  modalModalityIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalTitle: { flex: 1, fontSize: 16, fontWeight: "800", color: palette.text },
+  modalSub: { marginTop: 4, fontSize: 12, color: palette.sub, lineHeight: 16 },
   modalCloseButton: {
     width: 34,
     height: 34,
     borderRadius: 17,
     borderWidth: 1,
-    borderColor: theme.colors.borderSoft,
-    backgroundColor: theme.colors.card,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.card,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1139,11 +1090,11 @@ const styles = StyleSheet.create({
   modalRowTitle: {
     fontSize: 12,
     fontWeight: "800",
-    color: theme.colors.text,
+    color: palette.text,
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
-  modalRowText: { fontSize: 13, color: theme.colors.sub, lineHeight: 18 },
+  modalRowText: { fontSize: 13, color: palette.sub, lineHeight: 18 },
   modalActions: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   modalActionButton: {
     flexDirection: "row",
@@ -1153,35 +1104,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: theme.radius.pill,
     borderWidth: 1,
-    borderColor: theme.colors.borderSoft,
-    backgroundColor: theme.colors.card,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.card,
   },
-  modalActionText: { fontSize: 12, fontWeight: "800", color: theme.colors.sub },
-  modalActionTextActive: { color: theme.colors.accent },
+  modalActionText: { fontSize: 12, fontWeight: "800", color: palette.sub },
+  modalActionTextActive: { color: palette.accent },
   modalChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   modalChip: {
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: theme.radius.pill,
     borderWidth: 1,
-    borderColor: theme.colors.borderSoft,
-    backgroundColor: theme.colors.card,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.card,
   },
-  modalChipText: { fontSize: 12, color: theme.colors.sub, fontWeight: "700" },
-  modalChipAlt: {
-    borderColor: theme.colors.accent,
-    backgroundColor: theme.colors.accentSoft,
-  },
-  modalChipTextAlt: { fontSize: 12, color: theme.colors.accent, fontWeight: "800" },
+  modalChipText: { fontSize: 12, color: palette.sub, fontWeight: "700" },
+  modalChipAlt: { borderColor: palette.accent, backgroundColor: palette.accentSoft },
+  modalChipTextAlt: { fontSize: 12, color: palette.accent, fontWeight: "800" },
 });
 
-type FilterChipProps = {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-};
+// ─── Sous-composants ───
 
-function FilterChip({ label, selected, onPress }: FilterChipProps) {
+function FilterChip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -1233,162 +1177,176 @@ function ExerciseDetailModal({
   const noEquip = getNoEquipmentVariants(exercise);
   const equipment = inferEquipment(exercise);
   const favorite = isFavorite(exercise.id);
+  const config = MODALITY_CONFIG[exercise.modality];
 
   const cues = instruction?.cues ?? [];
   const visibleCues = expanded ? cues : cues.slice(0, 2);
   const hasMoreCues = cues.length > 2;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.modalBackdrop} onPress={onClose}>
-        <Pressable style={styles.modalSheet} onPress={() => null}>
-          <View style={styles.modalHandle} />
-          <View style={styles.modalHeader}>
-            <View style={{ flex: 1 }}>
+    <ModalContainer
+      visible={visible}
+      onClose={onClose}
+      animationType="slide"
+      blurIntensity={40}
+      allowBackdropDismiss
+      allowSwipeDismiss
+      showHandle={false}
+      contentStyle={styles.modalSheet}
+    >
+      <View>
+        <View style={[styles.modalAccentStrip, { backgroundColor: config.tint }]} />
+        <View style={styles.modalHandle} />
+        <View style={styles.modalHeader}>
+          <View style={{ flex: 1, gap: 4 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={[styles.modalModalityIcon, { backgroundColor: config.tintSoft }]}>
+                <Ionicons name={config.icon as any} size={14} color={config.tint} />
+              </View>
               <Text style={styles.modalTitle}>{exercise.name}</Text>
-              <Text style={styles.modalSub}>
-                {MODALITY_LABELS[exercise.modality]} · {INTENSITY_LABELS[exercise.intensity]}
-                {formatDefaults(exercise) ? ` · ${formatDefaults(exercise)}` : ""}
-              </Text>
             </View>
-            <TouchableOpacity onPress={onClose} activeOpacity={0.85} style={styles.modalCloseButton}>
-              <Ionicons name="close" size={18} color={theme.colors.sub} />
+            <Text style={styles.modalSub}>
+              {MODALITY_LABELS[exercise.modality]} · {INTENSITY_LABELS[exercise.intensity]}
+              {formatDefaults(exercise) ? ` · ${formatDefaults(exercise)}` : ""}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={onClose} activeOpacity={0.85} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.modalCloseButton}>
+            <Ionicons name="close" size={18} color={palette.sub} />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+          <View style={{ gap: 6 }}>
+            <Text style={styles.modalRowTitle}>Description</Text>
+            <Text style={styles.modalRowText}>{exercise.description}</Text>
+          </View>
+
+          <View style={styles.modalActions}>
+            <TouchableOpacity
+              onPress={() => onToggleFavorite(exercise.id)}
+              activeOpacity={0.85}
+              style={styles.modalActionButton}
+            >
+              <Ionicons
+                name={favorite ? "star" : "star-outline"}
+                size={16}
+                color={favorite ? palette.accent : palette.sub}
+              />
+              <Text style={[styles.modalActionText, favorite && styles.modalActionTextActive]}>
+                {favorite ? "En favori" : "Ajouter favori"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => onOpenVideo(exercise.id)}
+              activeOpacity={0.85}
+              style={styles.modalActionButton}
+            >
+              <Ionicons name="logo-youtube" size={16} color={palette.sub} />
+              <Text style={styles.modalActionText}>
+                {videoRef.kind === "vetted" ? "Voir vidéo" : "Rechercher"}
+              </Text>
             </TouchableOpacity>
           </View>
 
-          <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
-            <View style={{ gap: 6 }}>
-              <Text style={styles.modalRowTitle}>Description</Text>
-              <Text style={styles.modalRowText}>{exercise.description}</Text>
+          {videoRef.kind === "vetted" ? (
+            <Text style={[styles.modalRowText, { color: palette.muted }]}>
+              Source : {videoRef.label}
+            </Text>
+          ) : null}
+
+          {instruction ? (
+            <View style={{ gap: 8 }}>
+              <Text style={styles.modalRowTitle}>Comment faire</Text>
+              <Text style={styles.modalRowText}>{instruction.howTo}</Text>
+              {visibleCues.length > 0 ? (
+                <View style={{ gap: 4 }}>
+                  {visibleCues.map((cue) => (
+                    <Text key={`${exercise.id}_${cue}`} style={styles.modalRowText}>
+                      • {cue}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
+              {hasMoreCues ? (
+                <TouchableOpacity
+                  onPress={() => setExpanded((v) => !v)}
+                  activeOpacity={0.85}
+                  style={[styles.modalActionButton, { alignSelf: "flex-start" }]}
+                >
+                  <Ionicons
+                    name={expanded ? "chevron-up" : "chevron-down"}
+                    size={16}
+                    color={palette.sub}
+                  />
+                  <Text style={styles.modalActionText}>{expanded ? "Voir moins" : "Voir plus"}</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
+          ) : null}
 
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                onPress={() => onToggleFavorite(exercise.id)}
-                activeOpacity={0.85}
-                style={styles.modalActionButton}
-              >
-                <Ionicons
-                  name={favorite ? "star" : "star-outline"}
-                  size={16}
-                  color={favorite ? theme.colors.accent : theme.colors.sub}
-                />
-                <Text style={[styles.modalActionText, favorite && styles.modalActionTextActive]}>
-                  {favorite ? "En favori" : "Ajouter favori"}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => onOpenVideo(exercise.id)}
-                activeOpacity={0.85}
-                style={styles.modalActionButton}
-              >
-                <Ionicons name="logo-youtube" size={16} color={theme.colors.sub} />
-                <Text style={styles.modalActionText}>
-                  {videoRef.kind === "vetted" ? "Voir vidéo" : "Rechercher"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {videoRef.kind === "vetted" ? (
-              <Text style={[styles.modalRowText, { color: theme.colors.muted }]}>
-                Source : {videoRef.label}
-              </Text>
-            ) : null}
-
-            {instruction ? (
-              <View style={{ gap: 8 }}>
-                <Text style={styles.modalRowTitle}>Comment faire</Text>
-                <Text style={styles.modalRowText}>{instruction.howTo}</Text>
-                {visibleCues.length > 0 ? (
-                  <View style={{ gap: 4 }}>
-                    {visibleCues.map((cue) => (
-                      <Text key={`${exercise.id}_${cue}`} style={styles.modalRowText}>
-                        • {cue}
-                      </Text>
-                    ))}
+          {equipment.length > 0 ? (
+            <View style={{ gap: 8 }}>
+              <Text style={styles.modalRowTitle}>Matériel</Text>
+              <View style={styles.modalChips}>
+                {equipment.map((eq) => (
+                  <View key={`${exercise.id}_${eq}`} style={styles.modalChip}>
+                    <Text style={styles.modalChipText}>{EQUIPMENT_LABELS[eq]}</Text>
                   </View>
-                ) : null}
-                {hasMoreCues ? (
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {exercise.tags.length > 0 ? (
+            <View style={{ gap: 8 }}>
+              <Text style={styles.modalRowTitle}>Tags</Text>
+              <View style={styles.modalChips}>
+                {exercise.tags.map((tag) => (
+                  <View key={`${exercise.id}_${tag}`} style={styles.modalChip}>
+                    <Text style={styles.modalChipText}>{TAG_LABELS[tag]}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {variants.length > 0 ? (
+            <View style={{ gap: 8 }}>
+              <Text style={styles.modalRowTitle}>Alternatives</Text>
+              <View style={styles.modalChips}>
+                {variants.map((variant) => (
                   <TouchableOpacity
-                    onPress={() => setExpanded((v) => !v)}
+                    key={`${exercise.id}_${variant.id}`}
+                    onPress={() => onOpenVariant(variant.id)}
                     activeOpacity={0.85}
-                    style={[styles.modalActionButton, { alignSelf: "flex-start" }]}
+                    style={styles.modalChip}
                   >
-                    <Ionicons
-                      name={expanded ? "chevron-up" : "chevron-down"}
-                      size={16}
-                      color={theme.colors.sub}
-                    />
-                    <Text style={styles.modalActionText}>{expanded ? "Voir moins" : "Voir plus"}</Text>
+                    <Text style={styles.modalChipText}>{variant.name}</Text>
                   </TouchableOpacity>
-                ) : null}
+                ))}
               </View>
-            ) : null}
+            </View>
+          ) : null}
 
-            {equipment.length > 0 ? (
-              <View style={{ gap: 8 }}>
-                <Text style={styles.modalRowTitle}>Matériel</Text>
-                <View style={styles.modalChips}>
-                  {equipment.map((eq) => (
-                    <View key={`${exercise.id}_${eq}`} style={styles.modalChip}>
-                      <Text style={styles.modalChipText}>{EQUIPMENT_LABELS[eq]}</Text>
-                    </View>
-                  ))}
-                </View>
+          {noEquip.length > 0 ? (
+            <View style={{ gap: 8 }}>
+              <Text style={styles.modalRowTitle}>Alternatives (sans matériel)</Text>
+              <View style={styles.modalChips}>
+                {noEquip.map((variant) => (
+                  <TouchableOpacity
+                    key={`${exercise.id}_${variant.id}_bw`}
+                    onPress={() => onOpenVariant(variant.id)}
+                    activeOpacity={0.85}
+                    style={[styles.modalChip, styles.modalChipAlt]}
+                  >
+                    <Text style={styles.modalChipTextAlt}>{variant.name}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-            ) : null}
-
-            {exercise.tags.length > 0 ? (
-              <View style={{ gap: 8 }}>
-                <Text style={styles.modalRowTitle}>Tags</Text>
-                <View style={styles.modalChips}>
-                  {exercise.tags.map((tag) => (
-                    <View key={`${exercise.id}_${tag}`} style={styles.modalChip}>
-                      <Text style={styles.modalChipText}>{TAG_LABELS[tag]}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-
-            {variants.length > 0 ? (
-              <View style={{ gap: 8 }}>
-                <Text style={styles.modalRowTitle}>Alternatives</Text>
-                <View style={styles.modalChips}>
-                  {variants.map((variant) => (
-                    <TouchableOpacity
-                      key={`${exercise.id}_${variant.id}`}
-                      onPress={() => onOpenVariant(variant.id)}
-                      activeOpacity={0.85}
-                      style={styles.modalChip}
-                    >
-                      <Text style={styles.modalChipText}>{variant.name}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-
-            {noEquip.length > 0 ? (
-              <View style={{ gap: 8 }}>
-                <Text style={styles.modalRowTitle}>Alternatives (sans matériel)</Text>
-                <View style={styles.modalChips}>
-                  {noEquip.map((variant) => (
-                    <TouchableOpacity
-                      key={`${exercise.id}_${variant.id}_bw`}
-                      onPress={() => onOpenVariant(variant.id)}
-                      activeOpacity={0.85}
-                      style={[styles.modalChip, styles.modalChipAlt]}
-                    >
-                      <Text style={styles.modalChipTextAlt}>{variant.name}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
+            </View>
+          ) : null}
+        </ScrollView>
+      </View>
+    </ModalContainer>
   );
 }

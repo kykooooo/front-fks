@@ -1,6 +1,15 @@
 // src/engine/computeDailyApplied.ts
+// ===========================================================================
+// Daily Load Aggregation & Guards
+// ===========================================================================
+// Calcule la charge journalière totale en combinant :
+// - Séances FKS (avec caps par modalité, RPE, douleur)
+// - Charges externes (club, match, autre)
+// - Guards protecteurs (réduction avant match/club)
+// ===========================================================================
+
 import type { Session } from "../domain/types";
-import { EXTERNAL_WEIGHTS } from "../config/trainingDefaults";
+import { EXTERNAL_WEIGHTS, GUARD_FACTORS } from "../config/trainingDefaults";
 import { addDaysISO } from "../utils/virtualClock";
 import {
   toDayKey,
@@ -38,23 +47,23 @@ export type DailyTotals = {
   externRaw: number;
   externClamped: number;
 
-  totalPreClubGuard: number;
-  clubGuardFactor: number;
+  totalPreGuard: number;
+  guardFactor: number;       // Facteur combiné (club + match)
   totalToday: number;
 
   guardrailsApplied: string[];
 };
 
 // --- Helpers jour club (UTC, stable) ---
-export const dayKeyToDowUTC = (dayKey: string): string => {
-  const d = new Date(`${dayKey}T00:00:00.000Z`);
-  const dow = d.getUTCDay(); // 0=dim
+export const dayKeyToDowLocal = (dayKey: string): string => {
+  const d = new Date(`${dayKey}T00:00:00.000`);
+  const dow = d.getDay(); // 0=dim (local)
   const map = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
   return map[dow] ?? "sun";
 };
 
-export const isClubDayUTC = (dayKey: string, clubDays: string[] = []) => {
-  const dow = dayKeyToDowUTC(dayKey);
+export const isClubDayLocal = (dayKey: string, clubDays: string[] = []) => {
+  const dow = dayKeyToDowLocal(dayKey);
   return clubDays.includes(dow);
 };
 
@@ -77,18 +86,22 @@ export function externalLoadForDay(
 }
 
 // --- Cap comportemental sessions-only (RPE ajusté + douleur) ---
+// Ajusté pour permettre une charge minimale même à faible RPE (séances longues légères)
 export function capByContextSessionsOnly(
   totalSessionsClamped: number,
   adjustedRpe: number,
   pain: number = 0
 ): number {
+  // Caps progressifs : permet une charge minimale viable même à faible intensité
   let cap =
-    adjustedRpe <= 3 ? 90 :
-    adjustedRpe <= 5 ? 120 :
-    adjustedRpe <= 7 ? 150 :
-    adjustedRpe <= 9 ? 180 : 200;
+    adjustedRpe <= 3 ? 110 :   // Séance récup/mobilité (était 90)
+    adjustedRpe <= 5 ? 140 :   // Séance légère (était 120)
+    adjustedRpe <= 7 ? 170 :   // Séance modérée (était 150)
+    adjustedRpe <= 9 ? 200 :   // Séance intense (était 180)
+    220;                       // Séance très intense (était 200)
 
-  cap = Math.max(60, cap - pain * 10);
+  // Réduction pour douleur : -8 par point (était -10)
+  cap = Math.max(70, cap - pain * 8);
   return Math.min(totalSessionsClamped, cap);
 }
 
@@ -105,7 +118,8 @@ export function computeInterveningOffDays(
 }
 
 /**
- * Main: compute daily totals consistently (sessions completed only + externals + caps + club guard).
+ * Main: compute daily totals consistently.
+ * Combines FKS sessions + externals + contextual caps + protection guards.
  */
 export function computeDailyTotals(params: {
   sessions: Session[];
@@ -114,12 +128,16 @@ export function computeDailyTotals(params: {
   loadCaps: LoadCaps;
 
   // for sessions-only cap
-  adjustedRpeForCap: number; // typically norm.adjustedRPE
-  painForCap?: number; // today pain (0..)
-  clubTrainingDays?: string[];
+  adjustedRpeForCap: number;
+  painForCap?: number;
 
-  // tweakable
-  clubGuardFactor?: number; // default 0.75 when club today/tomorrow
+  // Calendar context
+  clubTrainingDays?: string[];
+  matchDays?: string[];          // e.g. ["sat", "sun"]
+
+  // tweakable (uses GUARD_FACTORS defaults if not provided)
+  clubGuardFactor?: number;
+  matchGuardFactor?: number;
 }): DailyTotals {
   const {
     sessions,
@@ -129,7 +147,9 @@ export function computeDailyTotals(params: {
     adjustedRpeForCap,
     painForCap = 0,
     clubTrainingDays = [],
-    clubGuardFactor = 0.75,
+    matchDays = [],
+    clubGuardFactor = GUARD_FACTORS.clubDay,
+    matchGuardFactor = GUARD_FACTORS.matchDay,
   } = params;
 
   const guardrailsApplied: string[] = [];
@@ -154,23 +174,45 @@ export function computeDailyTotals(params: {
   const externRaw = externalLoadForDay(externalLoads ?? [], dayKey);
   const externClamped = clampDailyLoad(externRaw, loadCaps.externDay);
 
-  // Total pre club guard
-  const totalPreClubGuard = sessionsCappedByContext + externClamped;
+  // Total pre guard
+  const totalPreGuard = sessionsCappedByContext + externClamped;
 
-  // Club day / eve guard
+  // --- GUARD SYSTEM ---
+  // Priority: match > club (match is more important to protect)
   const tomorrowKey = addDaysISO(`${dayKey}T00:00:00.000Z`, 1).slice(0, 10);
-  const clubToday = isClubDayUTC(dayKey, clubTrainingDays);
-  const clubTomorrow = isClubDayUTC(tomorrowKey, clubTrainingDays);
+  const todayDow = dayKeyToDowLocal(dayKey);
+  const tomorrowDow = dayKeyToDowLocal(tomorrowKey);
 
-  const appliedClubGuard = clubToday || clubTomorrow;
-  const clubFactor = appliedClubGuard ? clubGuardFactor : 1;
+  // Match detection
+  const matchToday = matchDays.includes(todayDow);
+  const matchTomorrow = matchDays.includes(tomorrowDow);
 
-  if (appliedClubGuard) {
-    guardrailsApplied.push("club_guard:day_or_eve");
+  // Club detection
+  const clubToday = isClubDayLocal(dayKey, clubTrainingDays);
+  const clubTomorrow = isClubDayLocal(tomorrowKey, clubTrainingDays);
+
+  // Calculate guard factor (match takes priority over club)
+  let guardFactor = 1;
+  if (matchToday) {
+    // Jour de match : forte réduction (pas d'entraînement FKS recommandé)
+    guardFactor = matchGuardFactor;
+    guardrailsApplied.push("match_guard:same_day");
+  } else if (matchTomorrow) {
+    // Veille de match : réduction modérée
+    guardFactor = GUARD_FACTORS.matchEve;
+    guardrailsApplied.push("match_guard:eve");
+  } else if (clubToday) {
+    // Jour de club
+    guardFactor = clubGuardFactor;
+    guardrailsApplied.push("club_guard:same_day");
+  } else if (clubTomorrow) {
+    // Veille de club : réduction légère
+    guardFactor = GUARD_FACTORS.clubEve;
+    guardrailsApplied.push("club_guard:eve");
   }
 
   // Final total day cap
-  const totalToday = clampDailyLoad(totalPreClubGuard * clubFactor, loadCaps.totalDay);
+  const totalToday = clampDailyLoad(totalPreGuard * guardFactor, loadCaps.totalDay);
 
   return {
     dayKey,
@@ -179,8 +221,8 @@ export function computeDailyTotals(params: {
     sessionsCappedByContext,
     externRaw,
     externClamped,
-    totalPreClubGuard,
-    clubGuardFactor: clubFactor,
+    totalPreGuard,
+    guardFactor,
     totalToday,
     guardrailsApplied,
   };

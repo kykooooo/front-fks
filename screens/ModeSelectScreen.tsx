@@ -1,26 +1,44 @@
-import React from "react";
-import { View, Text, StyleSheet, Alert } from "react-native";
+import React, { useState, useCallback } from "react";
+import { View, Text, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { auth } from "../services/firebase";
 import { theme } from "../constants/theme";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { useAppModeStore, type AppMode } from "../state/appModeStore";
+import { showToast } from "../utils/toast";
 
 const palette = theme.colors;
 
 export default function ModeSelectScreen() {
   const storeUid = useAppModeStore((s) => s.uid);
-  const uid = storeUid ?? auth.currentUser?.uid ?? null;
   const setModeForUid = useAppModeStore((s) => s.setModeForUid);
+  const [selecting, setSelecting] = useState(false);
 
-  const pick = async (mode: AppMode) => {
-    if (!uid) {
-      Alert.alert("Connexion", "Impossible de récupérer ton compte. Réessaie après reconnexion.");
+  // Toujours récupérer l'uid depuis auth.currentUser en priorité
+  const pick = useCallback(async (mode: AppMode) => {
+    if (selecting) return; // Éviter double-tap
+
+    const currentUid = auth.currentUser?.uid ?? storeUid;
+    if (!currentUid) {
+      showToast({
+        type: "error",
+        title: "Connexion requise",
+        message: "Impossible de récupérer ton compte. Reconnecte-toi.",
+      });
       return;
     }
-    await setModeForUid(uid, mode);
-  };
+
+    try {
+      setSelecting(true);
+      await setModeForUid(currentUid, mode);
+      // Le RootNavigator naviguera automatiquement via le store
+    } catch (error) {
+      if (__DEV__) console.error("[ModeSelect] Error setting mode:", error);
+      showToast({ type: "error", title: "Erreur", message: "Impossible de sélectionner le mode." });
+      setSelecting(false);
+    }
+  }, [selecting, storeUid, setModeForUid]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -35,17 +53,28 @@ export default function ModeSelectScreen() {
         <Card variant="surface" style={styles.card}>
           <Text style={styles.cardTitle}>Joueur</Text>
           <Text style={styles.cardSub}>
-            Planifie et réalise tes séances, suis ta charge et ton historique.
+            Planifie et réalise tes séances, suis ta forme et ton historique.
           </Text>
-          <Button label="Continuer en joueur" fullWidth onPress={() => pick("player")} />
+          <Button
+            label={selecting ? "Chargement..." : "Continuer en joueur"}
+            fullWidth
+            onPress={() => pick("player")}
+            disabled={selecting}
+          />
         </Card>
 
         <Card variant="surface" style={styles.card}>
           <Text style={styles.cardTitle}>Coach</Text>
           <Text style={styles.cardSub}>
-            Consulte l’activité des joueurs de ton club (séances, planning).
+            Consulte l'activité des joueurs de ton club (séances, planning).
           </Text>
-          <Button label="Accéder à l’espace coach" fullWidth variant="secondary" onPress={() => pick("coach")} />
+          <Button
+            label={selecting ? "Chargement..." : "Accéder à l'espace coach"}
+            fullWidth
+            variant="secondary"
+            onPress={() => pick("coach")}
+            disabled={selecting}
+          />
         </Card>
       </View>
     </SafeAreaView>

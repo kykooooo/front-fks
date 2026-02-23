@@ -1,4 +1,5 @@
 // screens/FeedbackScreen.tsx
+// Formulaire post-séance modernisé - slider RPE, design pro
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -9,9 +10,17 @@ import {
   StatusBar,
   Alert,
   TextInput,
+  Platform,
+  KeyboardAvoidingView,
+  TouchableWithoutFeedback,
+  Keyboard,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, CommonActions } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { useTrainingStore } from '../state/trainingStore';
 import { useSettingsStore } from '../state/settingsStore';
 import InjuryForm from '../components/InjuryForm';
@@ -20,22 +29,48 @@ import { FEEDBACK_LIMITS } from '../constants/feedback';
 import { theme } from '../constants/theme';
 import { Button } from '../components/ui/Button';
 import { LoadingOverlay } from '../components/ui/LoadingOverlay';
-import { toDayKey } from '../engine/dailyAggregation';
-import { todayISO } from '../utils/virtualClock';
 import { DEFAULT_MODALITY_WEIGHTS, toRPE1to10, toRating1to5, toRating0to5 } from '../domain/types';
 import { updateTrainingLoad } from '../engine/loadModel';
 import { DEV_FLAGS } from '../config/devFlags';
 import type { RouteProp } from '@react-navigation/native';
 import type { AppStackParamList } from '../navigation/RootNavigator';
 import { showErrorWithRetry, classifyError, ErrorType } from '../utils/errorHandler';
+import { showToast } from '../utils/toast';
 import { enqueueAction } from '../utils/offlineQueue';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { trackEvent } from '../services/analytics';
+import { ModalContainer } from '../components/modal/ModalContainer';
+import { useHaptics } from '../hooks/useHaptics';
+import { toDateKey } from '../utils/dateHelpers';
+import { MICROCYCLES, getPathwayById } from '../domain/microcycles';
+import { auth, db } from '../services/firebase';
 
 const clamp = (v: number, min: number, max: number) =>
   Math.max(min, Math.min(max, v));
 
 const COLORS = theme.colors;
+
+// RPE color gradient (vert -> jaune -> orange -> rouge)
+const getRpeColor = (value: number): string => {
+  if (value <= 3) return '#16a34a'; // vert
+  if (value <= 5) return '#84cc16'; // vert-jaune
+  if (value <= 7) return '#f59e0b'; // jaune-orange
+  if (value <= 8) return '#f97316'; // orange
+  return '#ef4444'; // rouge
+};
+
+const RPE_LABELS: Record<number, string> = {
+  1: 'Repos',
+  2: 'Très léger',
+  3: 'Léger',
+  4: 'Modéré',
+  5: 'Contrôlé',
+  6: 'Soutenu',
+  7: 'Difficile',
+  8: 'Très dur',
+  9: 'Extrême',
+  10: 'Maximum',
+};
 
 const FATIGUE_SCALE = [
   { value: 1, label: 'Très frais' },
@@ -107,15 +142,41 @@ function SegmentedRow({
 
 export default function FeedbackScreen() {
   const navigation = useNavigation<any>();
+  const haptics = useHaptics();
   const { isOnline, queueCount } = useNetworkStatus();
 
-  React.useLayoutEffect(() => {
-    navigation.setOptions?.({
-      headerStyle: { backgroundColor: COLORS.background },
-      headerTintColor: COLORS.text,
-      headerTitleStyle: { color: COLORS.text },
+  // Stagger animations
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+  const cardAnims = useRef([0, 1, 2, 3, 4].map(() => new Animated.Value(0))).current;
+
+  // Animation d'entrée
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      // Stagger les cards après l'entrée principale
+      Animated.stagger(
+        60,
+        cardAnims.map((anim) =>
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 250,
+            useNativeDriver: true,
+          })
+        )
+      ).start();
     });
-  }, [navigation]);
+  }, [fadeAnim, slideAnim, cardAnims]);
 
   const route = useRoute<RouteProp<AppStackParamList, 'Feedback'>>();
   const themeMode = useSettingsStore((s) => s.themeMode);
@@ -133,9 +194,14 @@ export default function FeedbackScreen() {
   const microcycleGoal = useTrainingStore((s) => s.microcycleGoal);
   const microcycleSessionIndex = useTrainingStore((s) => s.microcycleSessionIndex);
   const lastAiContext = useTrainingStore((s) => s.lastAiContext);
+  const activePathwayId = useTrainingStore((s) => s.activePathwayId);
+  const activePathwayIndex = useTrainingStore((s) => s.activePathwayIndex);
+  const setActivePathway = useTrainingStore((s) => s.setActivePathway);
+  const setMicrocycleGoal = useTrainingStore((s) => s.setMicrocycleGoal);
 
   const todayKey = useMemo(() => {
-    return toDayKey(devNowISO ?? todayISO());
+    const base = devNowISO ? new Date(devNowISO) : new Date();
+    return toDateKey(base);
   }, [devNowISO]);
 
   const getSessionDateKey = (s: any) => {
@@ -145,8 +211,8 @@ export default function FeedbackScreen() {
         : typeof s?.date === 'string'
           ? s.date
           : '';
-    const key = iso ? toDayKey(iso) : '';
-    const d = iso ? new Date(iso) : null;
+    const key = iso ? toDateKey(iso) : '';
+    const d = key ? new Date(`${key}T12:00:00`) : null;
     const ts = d && Number.isFinite(d.getTime()) ? d.getTime() : 0;
     return { key, ts };
   };
@@ -162,7 +228,6 @@ export default function FeedbackScreen() {
     const today = todayKey;
     const open = sessions.filter((s) => !s.completed);
     const openCurrent = open
-      .filter((s) => (s.dateISO ?? '').slice(0, 10) <= today)
       .map((s) => ({ s, meta: getSessionDateKey(s) }))
       .filter(({ meta }) => meta.ts > 0 && meta.key <= today)
       .sort((a, b) => b.meta.ts - a.meta.ts)
@@ -292,7 +357,7 @@ export default function FeedbackScreen() {
   const readinessLabel = useMemo(() => {
     if (readiness >= 80) return 'Prêt à performer';
     if (readiness >= 60) return 'OK pour pousser';
-    if (readiness >= 40) return 'Charge contrôlée';
+    if (readiness >= 40) return 'Effort modéré';
     return 'Focus gestion / récup';
   }, [readiness]);
 
@@ -350,7 +415,7 @@ export default function FeedbackScreen() {
       return;
     }
     if (targetSession.completed) {
-      Alert.alert('Déjà complétée', 'Le feedback de cette séance est déjà enregistré.');
+      Alert.alert('Déjà complétée', 'Tu as déjà donné ton retour pour cette séance.');
       return;
     }
     if (!canSaveToday) {
@@ -441,29 +506,89 @@ export default function FeedbackScreen() {
         pain: fb.pain,
         durationMin: durationClamped ?? null,
       });
-      Alert.alert(
-        'Feedback enregistré',
-        `ATL ${after.atl.toFixed(1)} (${fmt(atlDelta)}) · CTL ${after.ctl.toFixed(1)} (${fmt(ctlDelta)}) · TSB ${after.tsb.toFixed(1)} (${fmt(tsbDelta)})`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              if (shouldPromptCycleEnd) {
-                setCyclePromptVisible(true);
-                clearAutoContinue();
-                autoContinueRef.current = setTimeout(() => {
-                  continueAfterFeedback();
-                }, 4500);
-                return;
-              }
+      showToast({
+        type: 'success',
+        title: 'Feedback enregistré',
+        message: `ATL ${after.atl.toFixed(1)} (${fmt(atlDelta)}) · CTL ${after.ctl.toFixed(1)} (${fmt(ctlDelta)}) · TSB ${after.tsb.toFixed(1)} (${fmt(tsbDelta)})`,
+      });
+      haptics.success();
+      if (shouldPromptCycleEnd) {
+        const pathway = activePathwayId ? getPathwayById(activePathwayId) : null;
+        const nextIndex = (activePathwayIndex ?? 0) + 1;
+        const hasNextInPathway = pathway && nextIndex < pathway.sequence.length;
+
+        if (hasNextInPathway) {
+          // Auto-advance: start the next cycle in the pathway
+          const nextCycleId = pathway.sequence[nextIndex];
+          const nextCycle = MICROCYCLES[nextCycleId];
+          try {
+            const uid = auth.currentUser?.uid ?? null;
+            if (uid) {
+              await setDoc(doc(db, "users", uid), {
+                microcycleGoal: nextCycleId,
+                goal: nextCycleId,
+                programGoal: nextCycleId,
+                microcycleStatus: "active",
+                microcycleTotalSessions: 12,
+                microcycleSessionIndex: 0,
+                microcycleStartedAt: serverTimestamp(),
+                activePathwayId: activePathwayId,
+                activePathwayIndex: nextIndex,
+                updatedAt: serverTimestamp(),
+              }, { merge: true });
+            }
+            setMicrocycleGoal(nextCycleId);
+            setActivePathway(activePathwayId, nextIndex);
+            showToast({
+              type: 'success',
+              title: 'Programme suivant',
+              message: `${nextCycle.label} démarre automatiquement (${nextIndex + 1}/${pathway.sequence.length}).`,
+            });
+            haptics.success();
+            continueAfterFeedback();
+          } catch {
+            // Fallback: show manual prompt if auto-advance fails
+            setCyclePromptVisible(true);
+            clearAutoContinue();
+            autoContinueRef.current = setTimeout(() => {
               continueAfterFeedback();
-            },
-          },
-        ],
-        { cancelable: false }
-      );
+            }, 4500);
+          }
+        } else if (pathway) {
+          // Last cycle of the pathway completed
+          setActivePathway(null);
+          const uid = auth.currentUser?.uid ?? null;
+          if (uid) {
+            setDoc(doc(db, "users", uid), {
+              activePathwayId: null,
+              activePathwayIndex: 0,
+              updatedAt: serverTimestamp(),
+            }, { merge: true }).catch(() => {});
+          }
+          showToast({
+            type: 'success',
+            title: 'Parcours terminé !',
+            message: `Tu as terminé le parcours "${pathway.label}". Choisis un nouveau parcours ou programme.`,
+          });
+          setCyclePromptVisible(true);
+          clearAutoContinue();
+          autoContinueRef.current = setTimeout(() => {
+            continueAfterFeedback();
+          }, 4500);
+        } else {
+          // No pathway: existing behavior (prompt to choose a cycle)
+          setCyclePromptVisible(true);
+          clearAutoContinue();
+          autoContinueRef.current = setTimeout(() => {
+            continueAfterFeedback();
+          }, 4500);
+        }
+      } else {
+        continueAfterFeedback();
+      }
     } catch (e) {
       const appError = classifyError(e);
+      haptics.warning();
 
       // Si c'est une erreur réseau, on enregistre dans la queue hors-ligne
       if (appError.type === ErrorType.NETWORK) {
@@ -490,11 +615,8 @@ export default function FeedbackScreen() {
           feedback: fb,
         });
 
-        Alert.alert(
-          'Enregistré hors-ligne',
-          'Pas de connexion internet. Ton feedback a été sauvegardé localement et sera synchronisé automatiquement dès que tu seras reconnecté.',
-          [{ text: 'OK', onPress: () => navigation.goBack() }]
-        );
+        showToast({ type: 'info', title: 'Enregistré hors-ligne', message: 'Ton feedback sera synchronisé dès que tu seras reconnecté.' });
+        navigation.goBack();
       } else {
         // Autre type d'erreur, utiliser le système normal
         showErrorWithRetry(e, 'Enregistrement du feedback', onSave);
@@ -515,26 +637,81 @@ export default function FeedbackScreen() {
         : 'Valider mon état';
 
   return (
-    <SafeAreaView
-      style={styles.safeArea}
-      edges={['right', 'left', 'bottom']}
-    >
-      <StatusBar
-        barStyle={themeMode === 'dark' ? 'light-content' : 'dark-content'}
-        backgroundColor={COLORS.background}
-      />
-      <View style={styles.root}>
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.container}
-          showsVerticalScrollIndicator={false}
+    <View style={styles.modalRoot}>
+      <ModalContainer
+        visible
+        onClose={() => navigation.goBack()}
+        animationType="slide"
+        blurIntensity={40}
+        allowBackdropDismiss
+        allowSwipeDismiss
+      >
+        <SafeAreaView
+          style={styles.safeArea}
+          edges={['top', 'right', 'left', 'bottom']}
         >
+          <StatusBar
+            barStyle={themeMode === 'dark' ? 'light-content' : 'dark-content'}
+            backgroundColor={COLORS.background}
+          />
+          <View style={styles.modalHeaderRow}>
+            <Text style={styles.modalHeaderTitle}>Feedback</Text>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.modalClose}>
+              <Ionicons name="close" size={22} color={COLORS.text} />
+            </TouchableOpacity>
+          </View>
+          <KeyboardAvoidingView
+            style={styles.root}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
+          >
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+            <ScrollView
+              style={styles.scroll}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={[styles.container, { flexGrow: 1 }]}
+              keyboardShouldPersistTaps="handled"
+            >
+          {!isOnline || queueCount > 0 ? (
+            <View style={styles.syncBanner}>
+              <Ionicons
+                name={isOnline ? 'cloud-done-outline' : 'cloud-offline-outline'}
+                size={14}
+                color={isOnline ? COLORS.accent : COLORS.warn}
+              />
+              <Text style={styles.syncBannerText}>
+                {isOnline
+                  ? `${queueCount} action(s) en attente de synchro`
+                  : 'Hors-ligne : ton feedback sera synchronisé automatiquement'}
+              </Text>
+            </View>
+          ) : null}
           {/* HERO — Readiness */}
-          <View style={styles.heroCard}>
+          <Animated.View
+            style={[
+              styles.heroCard,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
+          >
             <View style={styles.heroGlow} />
             <View style={styles.heroHeaderRow}>
-              <Text style={styles.heroTitle}>État du joueur</Text>
-              <Text style={styles.heroDate}>{todayKey}</Text>
+              <View style={styles.heroTitleRow}>
+                <LinearGradient
+                  colors={['#ff7a1a', '#ff9a4a']}
+                  style={styles.heroIcon}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <Ionicons name="heart-outline" size={18} color="#fff" />
+                </LinearGradient>
+                <Text style={styles.heroTitle}>État du joueur</Text>
+              </View>
+              <View style={styles.heroDateBadge}>
+                <Text style={styles.heroDate}>{todayKey}</Text>
+              </View>
             </View>
             <View style={styles.heroBodyRow}>
               <View style={styles.heroScoreCircle}>
@@ -549,12 +726,23 @@ export default function FeedbackScreen() {
                 </Text>
               </View>
             </View>
-          </View>
+          </Animated.View>
 
           {/* Suggestions rapides */}
-          <View style={styles.suggestCard}>
+          <Animated.View
+            style={[
+              styles.suggestCard,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
+          >
             <View style={styles.suggestHeader}>
-              <Text style={styles.suggestTitle}>Suggestions rapides</Text>
+              <View style={styles.suggestTitleRow}>
+                <Ionicons name="sparkles-outline" size={16} color={COLORS.accent} />
+                <Text style={styles.suggestTitle}>Suggestions rapides</Text>
+              </View>
               <Text style={styles.suggestSubtitle}>
                 Basées sur l'intensité {suggestion.intensityLabel || 'du jour'}
               </Text>
@@ -562,28 +750,40 @@ export default function FeedbackScreen() {
             <View style={styles.suggestRow}>
               <TouchableOpacity
                 style={styles.suggestChip}
-                onPress={() => setRpe(suggestion.rpe)}
+                onPress={() => {
+                  setRpe(suggestion.rpe);
+                  haptics.impactLight();
+                }}
                 activeOpacity={0.85}
               >
                 <Text style={styles.suggestChipText}>RPE {suggestion.rpe}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.suggestChip}
-                onPress={() => setFatigue(suggestion.fatigue)}
+                onPress={() => {
+                  setFatigue(suggestion.fatigue);
+                  haptics.impactLight();
+                }}
                 activeOpacity={0.85}
               >
                 <Text style={styles.suggestChipText}>Fatigue {suggestion.fatigue}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.suggestChip}
-                onPress={() => setRecovery(suggestion.recovery)}
+                onPress={() => {
+                  setRecovery(suggestion.recovery);
+                  haptics.impactLight();
+                }}
                 activeOpacity={0.85}
               >
                 <Text style={styles.suggestChipText}>Récup {suggestion.recovery}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.suggestChip}
-                onPress={() => setPain(suggestion.pain)}
+                onPress={() => {
+                  setPain(suggestion.pain);
+                  haptics.impactLight();
+                }}
                 activeOpacity={0.85}
               >
                 <Text style={styles.suggestChipText}>Douleur {suggestion.pain}</Text>
@@ -596,29 +796,89 @@ export default function FeedbackScreen() {
                 setFatigue(suggestion.fatigue);
                 setRecovery(suggestion.recovery);
                 setPain(suggestion.pain);
+                haptics.success();
               }}
               activeOpacity={0.85}
             >
-              <Text style={styles.suggestApplyText}>Appliquer toutes les suggestions</Text>
+              <Ionicons name="checkmark-circle" size={16} color={COLORS.accent} />
+              <Text style={styles.suggestApplyText}>Appliquer tout</Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
 
-          {/* Bloc RPE */}
-          <View style={styles.metricsRow}>
-            <View style={[styles.metricCard, styles.metricCardFull]}>
-              <View style={styles.metricHeaderRow}>
-                <Text style={styles.metricTitle}>RPE séance</Text>
-                <Text style={styles.metricBadge}>{rpeLabel}</Text>
+          {/* Bloc RPE - Design moderne avec slider visuel */}
+          <Animated.View
+            style={[
+              styles.metricsRow,
+              {
+                opacity: cardAnims[0],
+                transform: [
+                  {
+                    translateY: cardAnims[0].interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [16, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <View style={[styles.metricCard, styles.metricCardFull, styles.rpeCard]}>
+              <View style={styles.rpeHeader}>
+                <View style={styles.rpeHeaderLeft}>
+                  <LinearGradient
+                    colors={[getRpeColor(rpe), getRpeColor(Math.min(10, rpe + 1))]}
+                    style={styles.rpeIconCircle}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  >
+                    <Ionicons name="pulse-outline" size={18} color="#fff" />
+                  </LinearGradient>
+                  <View>
+                    <Text style={styles.metricTitle}>RPE séance</Text>
+                    <Text style={styles.rpeSubtitle}>Effort perçu</Text>
+                  </View>
+                </View>
+                <View style={[styles.rpeBadge, { backgroundColor: getRpeColor(rpe) + '20', borderColor: getRpeColor(rpe) }]}>
+                  <Text style={[styles.rpeBadgeText, { color: getRpeColor(rpe) }]}>
+                    {RPE_LABELS[rpe] || 'RPE ' + rpe}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.rpeScaleRow}>
+
+              {/* Valeur principale */}
+              <View style={styles.rpeValueRow}>
+                <Text style={[styles.rpeValue, { color: getRpeColor(rpe) }]}>{rpe}</Text>
+                <Text style={styles.rpeValueSuffix}>/10</Text>
+              </View>
+
+              {/* Barre de progression visuelle */}
+              <View style={styles.rpeBarTrack}>
+                <LinearGradient
+                  colors={['#16a34a', '#84cc16', '#f59e0b', '#f97316', '#ef4444']}
+                  style={[styles.rpeBarFill, { width: `${rpe * 10}%` }]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                />
+              </View>
+
+              {/* Sélecteur de valeurs */}
+              <View style={styles.rpeSelector}>
                 {Array.from({ length: 10 }).map((_, i) => {
                   const v = i + 1;
                   const selected = v === rpe;
+                  const color = getRpeColor(v);
                   return (
                     <TouchableOpacity
                       key={v}
-                      onPress={() => setRpe(v)}
-                      style={[styles.rpeDot, selected && styles.rpeDotSelected]}
+                      onPress={() => {
+                        setRpe(v);
+                        haptics.impactLight();
+                      }}
+                      style={[
+                        styles.rpeDot,
+                        selected && { backgroundColor: color, borderColor: color },
+                      ]}
+                      activeOpacity={0.8}
                     >
                       <Text
                         style={[
@@ -633,12 +893,30 @@ export default function FeedbackScreen() {
                 })}
               </View>
             </View>
-          </View>
+          </Animated.View>
 
           {/* Durée + charge */}
-          <View style={styles.metricsRow}>
+          <Animated.View
+            style={[
+              styles.metricsRow,
+              {
+                opacity: cardAnims[1],
+                transform: [
+                  {
+                    translateY: cardAnims[1].interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [16, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
             <View style={styles.metricCard}>
-              <Text style={styles.metricTitle}>Durée réelle</Text>
+              <View style={styles.metricIconRow}>
+                <Ionicons name="time-outline" size={16} color={COLORS.accent} />
+                <Text style={styles.metricTitle}>Durée réelle</Text>
+              </View>
               <TextInput
                 value={durationMin}
                 onChangeText={setDurationMin}
@@ -654,11 +932,14 @@ export default function FeedbackScreen() {
               />
               <Text style={styles.metricHint}>minutes</Text>
               {!durationValid && durationMin ? (
-                <Text style={styles.metricError}>⚠️ Entre 5 et 300 min</Text>
+                <Text style={styles.metricError}>Entre 5 et 300 min</Text>
               ) : null}
             </View>
             <View style={styles.metricCard}>
-              <Text style={styles.metricTitle}>Charge estimée</Text>
+              <View style={styles.metricIconRow}>
+                <Ionicons name="fitness-outline" size={16} color={COLORS.accent} />
+                <Text style={styles.metricTitle}>Charge estimée</Text>
+              </View>
               <Text style={styles.metricValue}>
                 {estimatedLoad != null ? `${estimatedLoad} UA` : '—'}
               </Text>
@@ -667,40 +948,91 @@ export default function FeedbackScreen() {
                 {projectedDelta != null ? ` (${projectedDelta >= 0 ? '+' : ''}${projectedDelta})` : ''}
               </Text>
             </View>
-          </View>
+          </Animated.View>
 
           {/* Fatigue + Récup */}
-          <View style={styles.metricsRow}>
+          <Animated.View
+            style={[
+              styles.metricsRow,
+              {
+                opacity: cardAnims[2],
+                transform: [
+                  {
+                    translateY: cardAnims[2].interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [16, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
             <View style={styles.metricCard}>
-              <Text style={styles.metricTitle}>Fatigue</Text>
+              <View style={styles.metricIconRow}>
+                <Ionicons name="battery-half-outline" size={16} color="#f59e0b" />
+                <Text style={styles.metricTitle}>Fatigue</Text>
+              </View>
               <SegmentedRow
                 options={FATIGUE_SCALE}
                 value={fatigue}
-                onChange={setFatigue}
+                onChange={(v) => {
+                  setFatigue(v);
+                  haptics.impactLight();
+                }}
               />
             </View>
             <View style={styles.metricCard}>
-              <Text style={styles.metricTitle}>Récupération</Text>
+              <View style={styles.metricIconRow}>
+                <Ionicons name="bed-outline" size={16} color="#06b6d4" />
+                <Text style={styles.metricTitle}>Récupération</Text>
+              </View>
               <SegmentedRow
                 options={RECOVERY_SCALE}
                 value={recovery}
-                onChange={setRecovery}
+                onChange={(v) => {
+                  setRecovery(v);
+                  haptics.impactLight();
+                }}
               />
             </View>
-          </View>
+          </Animated.View>
 
           {/* Douleurs + blessure */}
-          <View style={styles.metricsRow}>
+          <Animated.View
+            style={[
+              styles.metricsRow,
+              {
+                opacity: cardAnims[3],
+                transform: [
+                  {
+                    translateY: cardAnims[3].interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [16, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
             <View style={styles.metricCard}>
-              <Text style={styles.metricTitle}>Douleurs</Text>
+              <View style={styles.metricIconRow}>
+                <Ionicons name="bandage-outline" size={16} color="#ef4444" />
+                <Text style={styles.metricTitle}>Douleurs</Text>
+              </View>
               <SegmentedRow
                 options={PAIN_SCALE}
                 value={pain}
-                onChange={setPain}
+                onChange={(v) => {
+                  setPain(v);
+                  haptics.impactLight();
+                }}
               />
             </View>
             <View style={styles.metricCard}>
-              <Text style={styles.metricTitle}>Blessure</Text>
+              <View style={styles.metricIconRow}>
+                <Ionicons name="medical-outline" size={16} color="#8b5cf6" />
+                <Text style={styles.metricTitle}>Blessure</Text>
+              </View>
               <View style={styles.toggleRow}>
                 <TouchableOpacity
                   style={[
@@ -710,7 +1042,9 @@ export default function FeedbackScreen() {
                   onPress={() => {
                     setHasPainDetails(false);
                     setInjuryLocal(null);
+                    haptics.impactLight();
                   }}
+                  activeOpacity={0.8}
                 >
                   <Text
                     style={[
@@ -726,7 +1060,11 @@ export default function FeedbackScreen() {
                     styles.toggleChip,
                     hasPainDetails && styles.toggleChipSelected,
                   ]}
-                  onPress={() => setHasPainDetails(true)}
+                  onPress={() => {
+                    setHasPainDetails(true);
+                    haptics.impactLight();
+                  }}
+                  activeOpacity={0.8}
                 >
                   <Text
                     style={[
@@ -739,12 +1077,31 @@ export default function FeedbackScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          </View>
+          </Animated.View>
 
           {hasPainDetails && (
-            <View style={styles.injuryCard}>
+            <Animated.View
+              style={[
+                styles.injuryCard,
+                {
+                  opacity: cardAnims[4],
+                  transform: [
+                    {
+                      translateY: cardAnims[4].interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [16, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              <View style={styles.injuryHeader}>
+                <Ionicons name="body-outline" size={16} color="#8b5cf6" />
+                <Text style={styles.injuryTitle}>Détails de la blessure</Text>
+              </View>
               <InjuryForm value={injury} onChange={setInjuryLocal} />
-            </View>
+            </Animated.View>
           )}
 
           {/* Debug (dev only) */}
@@ -765,20 +1122,21 @@ export default function FeedbackScreen() {
               </Text>
             </View>
           )}
-        </ScrollView>
+            </ScrollView>
+            </TouchableWithoutFeedback>
 
-        {cyclePromptVisible && (
-          <View style={styles.cyclePrompt}>
+            {cyclePromptVisible && (
+              <View style={styles.cyclePrompt}>
             <Text style={styles.cyclePromptText}>
-              Cycle terminé : choisis un nouveau cycle pour continuer, ou ferme ce message pour revenir à l’app.
+              Programme terminé ! Choisis ton prochain programme ou ferme ce message.
             </Text>
             <View style={styles.cycleActions}>
               <Button
-                label="Choisir un nouveau cycle"
+                label="Choisir un nouveau programme"
                 onPress={() => {
                   clearAutoContinue();
                   setCyclePromptVisible(false);
-                  navigation.navigate("CycleModal" as never, { mode: "select", origin: "feedback" } as never);
+                  navigation.navigate("CycleModal", { mode: "select", origin: "feedback" });
                 }}
                 variant="primary"
                 size="md"
@@ -793,33 +1151,55 @@ export default function FeedbackScreen() {
               />
             </View>
           </View>
-        )}
+            )}
 
-        {/* Bottom bar */}
-        <View style={styles.bottomBar}>
-          <Button
-            label={saveLabel}
-            onPress={onSave}
-            variant="primary"
-            size="lg"
-            fullWidth
-            disabled={saveDisabled}
-            style={styles.saveBtn}
-            textStyle={styles.saveText}
+            {/* Bottom bar */}
+            <View style={styles.bottomBar}>
+              <Button
+                label={saveLabel}
+                onPress={onSave}
+                variant="primary"
+                size="lg"
+                fullWidth
+                disabled={saveDisabled}
+                style={styles.saveBtn}
+                textStyle={styles.saveText}
+              />
+            </View>
+          </KeyboardAvoidingView>
+
+          <LoadingOverlay
+            visible={isSaving}
+            message="Enregistrement de ton feedback..."
+            submessage="Mise à jour de ta charge d'entraînement (ATL/CTL/TSB) en cours."
           />
-        </View>
-      </View>
-
-      <LoadingOverlay
-        visible={isSaving}
-        message="Enregistrement de ton feedback..."
-        submessage="Mise à jour de ta charge d'entraînement (ATL/CTL/TSB) en cours."
-      />
-    </SafeAreaView>
+        </SafeAreaView>
+      </ModalContainer>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  modalRoot: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+  },
+  modalHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+  modalClose: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -836,6 +1216,22 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 24,
     gap: 16,
+  },
+  syncBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surfaceSoft,
+  },
+  syncBannerText: {
+    flex: 1,
+    fontSize: 12,
+    color: COLORS.textMuted,
   },
 
   // HERO
@@ -863,13 +1259,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 14,
   },
+  heroTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  heroIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   heroTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: COLORS.text,
   },
+  heroDateBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: COLORS.surfaceSoft,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
   heroDate: {
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: '600',
     color: COLORS.textMuted,
   },
   heroBodyRow: {
@@ -930,6 +1347,11 @@ const styles = StyleSheet.create({
   suggestHeader: {
     gap: 4,
   },
+  suggestTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   suggestTitle: {
     color: COLORS.text,
     fontSize: 14,
@@ -958,9 +1380,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   suggestApply: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: COLORS.accent,
     backgroundColor: COLORS.accentSoft,
@@ -968,7 +1393,7 @@ const styles = StyleSheet.create({
   },
   suggestApplyText: {
     color: COLORS.accent,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
   },
 
@@ -1002,6 +1427,80 @@ const styles = StyleSheet.create({
   metricBadge: {
     fontSize: 11,
     color: COLORS.accent,
+  },
+  metricIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+
+  // RPE Card moderne
+  rpeCard: {
+    padding: 16,
+  },
+  rpeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  rpeHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  rpeIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rpeSubtitle: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginTop: 1,
+  },
+  rpeBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  rpeBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  rpeValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginBottom: 12,
+  },
+  rpeValue: {
+    fontSize: 42,
+    fontWeight: '800',
+  },
+  rpeValueSuffix: {
+    fontSize: 16,
+    color: COLORS.textMuted,
+    marginLeft: 4,
+  },
+  rpeBarTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: COLORS.border,
+    overflow: 'hidden',
+    marginBottom: 14,
+  },
+  rpeBarFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  rpeSelector: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 4,
   },
   durationInput: {
     marginTop: 8,
@@ -1044,25 +1543,22 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   rpeDot: {
-    minWidth: 30,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 999,
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: COLORS.border,
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: COLORS.surface,
-  },
-  rpeDotSelected: {
-    backgroundColor: COLORS.accent,
-    borderColor: COLORS.accent,
   },
   rpeDotText: {
     color: COLORS.textMuted,
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: '600',
   },
   rpeDotTextSelected: {
-    color: COLORS.background,
+    color: '#fff',
     fontWeight: '700',
   },
 
@@ -1133,8 +1629,19 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     borderColor: COLORS.border,
-    padding: 12,
+    padding: 14,
     backgroundColor: COLORS.surfaceSoft,
+  },
+  injuryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  injuryTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.text,
   },
 
   // Fin de cycle

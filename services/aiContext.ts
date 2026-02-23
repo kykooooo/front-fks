@@ -204,6 +204,7 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
   const dominantFoot = (data.dominantFoot as string | undefined) ?? null;
   const mainObjective = (data.mainObjective as string | undefined) ?? null;
   const trainingState: any = useTrainingStore.getState();
+  const ignoreFatigueCap = Boolean(trainingState.ignoreFatigueCap);
 
   const storeGoal =
     typeof trainingState.microcycleGoal === "string"
@@ -211,8 +212,6 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
       : "";
   const dataGoal = (
     (data.microcycleGoal as string | undefined) ??
-    (data.programGoal as string | undefined) ??
-    (data.goal as string | undefined) ??
     ""
   ).trim();
   const resolvedGoal = storeGoal || dataGoal;
@@ -249,9 +248,9 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
     if (normalized === 8 || normalized === 12) return normalized;
     return null;
   })();
-  if (trainingState.setMicrocycleGoal && resolvedGoal) {
-    trainingState.setMicrocycleGoal(microcycleGoal);
-  }
+  // Ne PAS appeler setMicrocycleGoal ici : buildAIPromptContext est une
+  // fonction de lecture. L'appel provoquait un reset de microcycleSessionIndex
+  // à chaque génération quand le goal différait (casse, fallback, etc.).
   const clubTrainingDays = Array.isArray(data.clubTrainingDays) ? data.clubTrainingDays : [];
   const matchDay = typeof data.matchDay === "string" ? data.matchDay : null;
   const matchDays = Array.isArray(data.matchDays)
@@ -400,6 +399,7 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
     constraints: {
       equipment: equipment_available,
       pains,
+      ...(ignoreFatigueCap ? { ignore_fatigue_cap: true } : {}),
     },
     phase,
     microcycle: { session_index: microcycleSessionIndex },

@@ -1,8 +1,18 @@
 // utils/globalErrorHandler.ts
 // Gestionnaire global pour les erreurs non capturées (async, promises, etc.)
 
-import { Alert } from 'react-native';
 import { classifyError } from './errorHandler';
+import { showToast } from './toast';
+// Sentry temporarily disabled for Expo SDK 54 compatibility
+
+const toastError = (title: string, message?: string) => {
+  showToast({
+    type: 'error',
+    title,
+    message,
+    durationMs: 2800,
+  });
+};
 
 /**
  * Configure les gestionnaires d'erreurs globales pour l'app
@@ -24,27 +34,10 @@ export function setupGlobalErrorHandlers() {
 
     if (isFatal) {
       // Erreur fatale : l'app va probablement crasher
-      Alert.alert(
-        'Erreur critique',
-        `${appError.userMessage}\n\nL'application va redémarrer.`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              // On laisse l'app crasher proprement
-              // React Native va automatiquement recharger
-            },
-          },
-        ],
-        { cancelable: false }
-      );
+      toastError('Erreur critique', `${appError.userMessage} L'application va redémarrer.`);
     } else {
       // Erreur non fatale : on peut continuer
-      Alert.alert(
-        'Erreur',
-        appError.userMessage,
-        [{ text: 'OK' }]
-      );
+      toastError('Erreur', appError.userMessage);
     }
   });
 
@@ -81,11 +74,7 @@ export function safeAsync<T extends (...args: any[]) => Promise<any>>(
         onError(error);
       } else {
         // Afficher l'erreur par défaut
-        Alert.alert(
-          'Erreur',
-          appError.userMessage,
-          [{ text: 'OK' }]
-        );
+        toastError('Erreur', appError.userMessage);
       }
     });
   };
@@ -115,7 +104,5 @@ export function logError(
   if (__DEV__) {
     console.error('[ErrorLog]', errorLog);
   }
-  // En production, envoyer à un service de monitoring
-  // TODO: Intégrer Sentry ou autre service de monitoring
-  // Sentry.captureException(error, { contexts: { custom: errorLog } });
+  // TODO: Re-enable Sentry when compatible with Expo SDK 54
 }

@@ -4,14 +4,12 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   Switch,
   TouchableOpacity,
   Alert,
   Platform,
   DevSettings,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { signOut } from "firebase/auth";
 import { auth } from "../services/firebase";
@@ -20,9 +18,19 @@ import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { SectionHeader } from "../components/ui/SectionHeader";
+import { ScreenContainer } from "../components/ui/ScreenContainer";
 import { useTrainingStore } from "../state/trainingStore";
 import { useSettingsStore, type SettingsState } from "../state/settingsStore";
 import { useAppModeStore, type AppMode } from "../state/appModeStore";
+import { DEV_FLAGS } from "../config/devFlags";
+import { ClubManagementCard } from "../components/settings/ClubManagementCard";
+import { showToast } from "../utils/toast";
+import {
+  saveNotifPrefs,
+  scheduleAllNotifications,
+  cancelAllScheduled,
+  registerForPushNotifications,
+} from "../services/notifications";
 
 const palette = theme.colors;
 type SegmentedOption = {
@@ -90,6 +98,11 @@ function SettingRow({
 export default function SettingsScreen() {
   const nav = useNavigation<any>();
   const resetTrainingStore = useTrainingStore((s) => s.resetForUser);
+  const resetLoadMetrics = useTrainingStore((s) => s.resetLoadMetrics);
+  const ignoreFatigueCap = useTrainingStore((s) => s.ignoreFatigueCap);
+  const setIgnoreFatigueCap = useTrainingStore((s) => s.setIgnoreFatigueCap);
+  const autoExternalEnabled = useTrainingStore((s) => s.autoExternalEnabled);
+  const setAutoExternalEnabled = useTrainingStore((s) => s.setAutoExternalEnabled);
   const settings = useSettingsStore((s) => s);
   const updateSettings = useSettingsStore((s) => s.updateSettings);
   const resetSettings = useSettingsStore((s) => s.resetSettings);
@@ -125,11 +138,23 @@ export default function SettingsScreen() {
     );
   }, [resetSettings]);
 
-  const handleExport = useCallback(() => {
+  const handleResetLoad = useCallback(() => {
     Alert.alert(
-      "Export",
-      "L'export des données arrive bientôt. Dis-moi si tu veux un format CSV ou PDF."
+      "Réinitialiser la charge",
+      "Remet ATL/CTL/TSB à zéro et efface les charges externes locales.",
+      [
+        { text: "Annuler", style: "cancel" },
+        {
+          text: "Oui, reset",
+          style: "destructive",
+          onPress: () => resetLoadMetrics(),
+        },
+      ]
     );
+  }, [resetLoadMetrics]);
+
+  const handleExport = useCallback(() => {
+    showToast({ type: "info", title: "Export", message: "L'export des données arrive bientôt." });
   }, []);
 
   const handleLogout = useCallback(async () => {
@@ -141,7 +166,7 @@ export default function SettingsScreen() {
         await clearModeForUid(uid);
       }
     } catch {
-      Alert.alert("Déconnexion", "Échec de la déconnexion. Réessaie.");
+      showToast({ type: "error", title: "Déconnexion", message: "Échec de la déconnexion. Réessaie." });
     }
   }, [clearModeForUid, resetTrainingStore]);
 
@@ -154,10 +179,7 @@ export default function SettingsScreen() {
       DevSettings.reload();
       return;
     }
-    Alert.alert(
-      "Redémarrage requis",
-      "Ferme et rouvre l'app pour appliquer le thème."
-    );
+    showToast({ type: "info", title: "Redémarrage requis", message: "Ferme et rouvre l'app pour appliquer le thème." });
   }, []);
 
   const handleThemeChange = useCallback(
@@ -190,9 +212,41 @@ export default function SettingsScreen() {
     [nav, setModeForUid]
   );
 
+  const handleNotificationsToggle = useCallback(
+    async (value: boolean) => {
+      updateSettings({ notificationsEnabled: value });
+      try {
+        await saveNotifPrefs({ enabled: value });
+        if (value) {
+          await registerForPushNotifications();
+          await scheduleAllNotifications();
+        } else {
+          await cancelAllScheduled();
+        }
+      } catch {
+        updateSettings({ notificationsEnabled: !value });
+        showToast({ type: "error", title: "Notifications", message: "Impossible de mettre à jour les notifications." });
+      }
+    },
+    [updateSettings]
+  );
+
+  const handleSessionReminderToggle = useCallback(
+    async (value: boolean) => {
+      updateSettings({ sessionReminders: value });
+      try {
+        await saveNotifPrefs({ sessionReminder: value });
+        await scheduleAllNotifications();
+      } catch {
+        updateSettings({ sessionReminders: !value });
+        showToast({ type: "error", title: "Rappel séance", message: "Impossible de mettre à jour les rappels." });
+      }
+    },
+    [updateSettings]
+  );
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+    <ScreenContainer contentContainerStyle={styles.container}>
         <Card variant="surface" style={styles.heroCard}>
           <View style={styles.heroGlow} />
           <View style={styles.heroRow}>
@@ -274,17 +328,32 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
+          <SectionHeader title="Club" />
+          <ClubManagementCard />
+        </View>
+
+        <View style={styles.section}>
           <SectionHeader title="Préférences" />
           <Card variant="soft" style={styles.sectionCard}>
+            <SettingRow
+              title="Charges externes auto"
+              subtitle="Ajoute club/match automatiquement"
+              right={
+                <Switch
+                  value={autoExternalEnabled}
+                  onValueChange={(value) => setAutoExternalEnabled(value)}
+                  trackColor={{ false: palette.borderSoft, true: palette.accentSoft }}
+                  thumbColor={autoExternalEnabled ? palette.accent : palette.textMuted}
+                />
+              }
+            />
             <SettingRow
               title="Notifications"
               subtitle="Activer les alertes et rappels"
               right={
                 <Switch
                   value={settings.notificationsEnabled}
-                  onValueChange={(value) =>
-                    updateSettings({ notificationsEnabled: value })
-                  }
+                  onValueChange={handleNotificationsToggle}
                   trackColor={{ false: palette.borderSoft, true: palette.accentSoft }}
                   thumbColor={settings.notificationsEnabled ? palette.accent : palette.textMuted}
                 />
@@ -300,9 +369,7 @@ export default function SettingsScreen() {
               right={
                 <Switch
                   value={settings.sessionReminders}
-                  onValueChange={(value) =>
-                    updateSettings({ sessionReminders: value })
-                  }
+                  onValueChange={handleSessionReminderToggle}
                   trackColor={{ false: palette.borderSoft, true: palette.accentSoft }}
                   thumbColor={settings.sessionReminders ? palette.accent : palette.textMuted}
                   disabled={!settings.notificationsEnabled}
@@ -492,10 +559,67 @@ export default function SettingsScreen() {
                   thumbColor={settings.privacyAnalytics ? palette.accent : palette.textMuted}
                 />
               }
+            />
+            <SettingRow
+              title="Mentions légales"
+              subtitle="Éditeur, hébergement, contact"
+              right={
+                <Button
+                  label="Voir"
+                  size="sm"
+                  variant="secondary"
+                  onPress={() => nav.navigate("LegalNotice")}
+                />
+              }
+            />
+            <SettingRow
+              title="Politique de confidentialité"
+              subtitle="Données collectées, usage, droits"
+              right={
+                <Button
+                  label="Voir"
+                  size="sm"
+                  variant="secondary"
+                  onPress={() => nav.navigate("PrivacyPolicy")}
+                />
+              }
               showDivider={false}
             />
           </Card>
         </View>
+
+        {DEV_FLAGS.ENABLED && (
+          <View style={styles.section}>
+            <SectionHeader title="Debug" />
+            <Card variant="soft" style={styles.sectionCard}>
+              <SettingRow
+                title="Ignorer fatigue (debug)"
+                subtitle="Désactive le cap fatigue côté backend"
+                right={
+                  <Switch
+                    value={ignoreFatigueCap}
+                    onValueChange={(value) => setIgnoreFatigueCap(value)}
+                    trackColor={{ false: palette.borderSoft, true: palette.accentSoft }}
+                    thumbColor={ignoreFatigueCap ? palette.accent : palette.textMuted}
+                  />
+                }
+              />
+              <SettingRow
+                title="Reset charge"
+                subtitle="ATL/CTL/TSB + charges externes"
+                right={
+                  <Button
+                    label="Reset"
+                    size="sm"
+                    variant="ghost"
+                    onPress={handleResetLoad}
+                  />
+                }
+                showDivider={false}
+              />
+            </Card>
+          </View>
+        )}
 
         <View style={styles.section}>
           <SectionHeader title="Données & support" />
@@ -531,8 +655,7 @@ export default function SettingsScreen() {
         <View style={styles.footer}>
           <Text style={styles.footerText}>FKS · v1.0.0</Text>
         </View>
-      </ScrollView>
-    </SafeAreaView>
+      </ScreenContainer>
   );
 }
 

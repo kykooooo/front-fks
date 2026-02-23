@@ -7,12 +7,12 @@ import {
   ScrollView,
   Alert,
   StyleSheet,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { signOut } from "firebase/auth";
-import { subDays, startOfWeek, addDays, format } from "date-fns";
-import { fr } from "date-fns/locale";
+import { Ionicons } from "@expo/vector-icons";
 
 import { useTrainingStore } from "../state/trainingStore";
 import { auth } from "../services/firebase";
@@ -20,23 +20,26 @@ import { DEV_FLAGS } from "../config/devFlags";
 import { theme } from "../constants/theme";
 import { useSettingsStore } from "../state/settingsStore";
 import { useAppModeStore } from "../state/appModeStore";
-import HomeReadinessCard from "../components/home/HomeReadinessCard";
-import HomeCycleHero from "../components/home/HomeCycleHero";
+import HomeStatusBar from "../components/home/HomeStatusBar";
+import HomeReadinessHero from "../components/home/HomeReadinessHero";
+import HomePrimaryCTA from "../components/home/HomePrimaryCTA";
 import HomeNextSessionCard from "../components/home/HomeNextSessionCard";
 import HomeWeekSummaryCard from "../components/home/HomeWeekSummaryCard";
-import HomeDashboardCard from "../components/home/HomeDashboardCard";
-import { MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId, MICROCYCLES } from "../domain/microcycles";
-import { TRAINING_DEFAULTS } from "../config/trainingDefaults";
-import { updateTrainingLoad } from "../engine/loadModel";
+import HomeTestsNudge from "../components/home/HomeTestsNudge";
+import HomeCarouselCard from "../components/home/HomeCarouselCard";
+import { useLoadSeries } from "../hooks/home/useLoadSeries";
+import { useMatchSoon } from "../hooks/home/useMatchSoon";
+import { useWeekDays } from "../hooks/home/useWeekDays";
+import { useWeekSummary } from "../hooks/home/useWeekSummary";
+import { useActivityStreak } from "../hooks/home/useActivityStreak";
+import { usePrimaryCta } from "../hooks/home/usePrimaryCta";
+import { useContextualAdvice } from "../hooks/home/useContextualAdvice";
+import HomeAdviceCard from "../components/home/HomeAdviceCard";
+import { HomeCoachRecommendation } from "../components/home/HomeCoachRecommendation";
+import { useCoachRecommendations } from "../hooks/useCoachRecommendations";
+import { isSameDay, toDateKey } from "../utils/dateHelpers";
 
 const palette = theme.colors;
-
-const isSameDay = (a: Date, b: Date) =>
-  a.getFullYear() === b.getFullYear() &&
-  a.getMonth() === b.getMonth() &&
-  a.getDate() === b.getDate();
-
-const toDateKey = (value?: string) => (value ?? "").slice(0, 10);
 
 export default function HomeScreen() {
   type RootNav = {
@@ -46,6 +49,10 @@ export default function HomeScreen() {
   const nav = useNavigation<RootNav>();
   const resetTrainingStore = useTrainingStore((s) => s.resetForUser);
   const clearModeForUid = useAppModeStore((s) => s.clearForUid);
+
+  const heroAnim = React.useRef(new Animated.Value(0)).current;
+  const ctaAnim = React.useRef(new Animated.Value(0)).current;
+  const cardsAnim = React.useRef(new Animated.Value(0)).current;
 
   const handleLogout = async () => {
     try {
@@ -69,14 +76,10 @@ export default function HomeScreen() {
       headerRight: () => (
         <TouchableOpacity
           onPress={handleLogout}
-          style={{ paddingHorizontal: 10, paddingVertical: 6 }}
+          style={styles.logoutButton}
         >
           <Text
-            style={{
-              fontWeight: "500",
-              color: palette.sub,
-              fontSize: 12,
-            }}
+            style={styles.logoutText}
           >
             Déconnexion
           </Text>
@@ -85,8 +88,28 @@ export default function HomeScreen() {
     });
   }, [nav]);
 
+  useEffect(() => {
+    Animated.stagger(80, [
+      Animated.timing(heroAnim, {
+        toValue: 1,
+        duration: 280,
+        useNativeDriver: true,
+      }),
+      Animated.timing(ctaAnim, {
+        toValue: 1,
+        duration: 240,
+        useNativeDriver: true,
+      }),
+      Animated.timing(cardsAnim, {
+        toValue: 1,
+        duration: 240,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [heroAnim, ctaAnim, cardsAnim]);
+
   const startFirestoreWatch = useTrainingStore((s) => s.startFirestoreWatch);
-  const storeHydrated = useTrainingStore((s) => (s as any).storeHydrated ?? true);
+  const storeHydrated = useTrainingStore((s) => s.storeHydrated ?? true);
 
   useEffect(() => {
     if (!storeHydrated) return;
@@ -94,11 +117,7 @@ export default function HomeScreen() {
   }, [startFirestoreWatch, storeHydrated]);
 
   const phase = useTrainingStore((s) => s.phase);
-  const phaseCount = useTrainingStore((s) => s.phaseCount);
-  const atl = useTrainingStore((s) => s.atl);
-  const ctl = useTrainingStore((s) => s.ctl);
   const tsb = useTrainingStore((s) => s.tsb);
-  const tsbHistory = useTrainingStore((s) => s.tsbHistory ?? []);
   const devNowISO = useTrainingStore((s) => s.devNowISO);
   const externalLoads = useTrainingStore((s) => s.externalLoads);
   const clubTrainingDays = useTrainingStore((s) => s.clubTrainingDays ?? []);
@@ -112,307 +131,46 @@ export default function HomeScreen() {
 
   const dailyApplied = useTrainingStore((s) => s.dailyApplied);
   const lastAppliedDate = useTrainingStore((s) => s.lastAppliedDate);
+  const nowISO = devNowISO ?? undefined;
   const hasAppliedToday =
     !!dailyApplied &&
     !!lastAppliedDate &&
-    isSameDay(new Date(lastAppliedDate), new Date());
+    isSameDay(new Date(lastAppliedDate), nowISO ? new Date(nowISO) : new Date());
 
   const sessions = useTrainingStore((s) => s.sessions);
   const lastAiSessionV2 = useTrainingStore((s) => s.lastAiSessionV2);
 
-  const loadSeries = useMemo(() => {
-    const today = devNowISO ? new Date(devNowISO) : new Date();
-    const daysBack = 7;
-    const warmup = 21;
-    const totalDays = daysBack + warmup;
-    const orderedDays = Array.from({ length: totalDays }).map((_, idx) =>
-      subDays(today, totalDays - 1 - idx)
-    );
-    let atlSeed = TRAINING_DEFAULTS.ATL0;
-    let ctlSeed = TRAINING_DEFAULTS.CTL0;
-    const atlArr: number[] = [];
-    const ctlArr: number[] = [];
+  const loadSeries = useLoadSeries(dailyApplied, nowISO);
 
-    orderedDays.forEach((d, idx) => {
-      const key = d.toISOString().slice(0, 10);
-      const load = Number(dailyApplied?.[key] ?? 0) || 0;
-      const next = updateTrainingLoad(atlSeed, ctlSeed, load, { dtDays: 1 });
-      atlSeed = next.atl;
-      ctlSeed = next.ctl;
-      if (idx >= warmup) {
-        atlArr.push(Number(next.atl.toFixed(1)));
-        ctlArr.push(Number(next.ctl.toFixed(1)));
-      }
-    });
+  const tsbTone = tsb <= -15 ? "danger" : tsb < 0 ? "warn" : "good";
 
-    return { atlArr, ctlArr };
-  }, [dailyApplied, devNowISO]);
+  const matchSoon = useMatchSoon(matchDays, nowISO);
 
-  const pendingSession = useMemo(
-    () =>
-      [...sessions]
-        .filter((s: any) => !s.completed)
-        .sort((a: any, b: any) => {
-          const da = new Date(a?.dateISO ?? a?.date ?? 0).getTime();
-          const db = new Date(b?.dateISO ?? b?.date ?? 0).getTime();
-          return db - da;
-        })[0],
-    [sessions]
-  );
-
-  const todayKey = useMemo(() => {
-    const iso = devNowISO ?? new Date().toISOString();
-    return iso.slice(0, 10);
-  }, [devNowISO]);
-
-  const fatigueText = useMemo(() => {
-    if (tsb <= -15) return "Charge très élevée, calme le jeu.";
-    if (tsb <= -8) return "Fatigué, privilégie léger/modéré.";
-    if (tsb < 0) return "OK mais reste prudent.";
-    return "Tu es prêt à envoyer de la qualité.";
-  }, [tsb]);
-
-  const readinessLabel = useMemo(() => {
-    if (tsb <= -15) return "Surcharge";
-    if (tsb <= -8) return "Fatigue";
-    if (tsb < 0) return "Stable";
-    return "Prêt";
-  }, [tsb]);
-
-  const chargeLabel = useMemo(() => {
-    if (tsb <= -15) return "Charge très élevée";
-    if (tsb <= -8) return "Charge élevée";
-    if (tsb < 0) return "Charge modérée";
-    return "Charge bien maîtrisée";
-  }, [tsb]);
-
-  const readinessPercent = useMemo(() => {
-    const value = ((tsb + 20) / 30) * 100;
-    return Math.max(0, Math.min(100, Math.round(value)));
-  }, [tsb]);
-
-  const weekStartIndex = weekStart === "sun" ? 0 : 1;
-  const weekDays = useMemo(() => {
-    const todayReal = devNowISO ? new Date(devNowISO) : new Date();
-    const start = startOfWeek(todayReal, { weekStartsOn: weekStartIndex });
-    const days: {
-      key: string;
-      label: string;
-      isToday: boolean;
-      hasFks: boolean;
-      hasExt: boolean;
-      hasClub: boolean;
-      hasMatch: boolean;
-      hasPlanned: boolean;
-    }[] = [];
-
-    for (let i = 0; i < 7; i++) {
-      const d = addDays(start, i);
-      const key = d.toISOString().slice(0, 10);
-      const label = format(d, "EEEEE", { locale: fr }).toUpperCase();
-
-      const hasFks = sessions.some((s: any) => {
-        const dateStr = toDateKey(s?.dateISO ?? s?.date);
-        return dateStr === key && s.completed;
-      });
-
-      const hasExt = (externalLoads ?? []).some((e: any) => {
-        const dateStr = toDateKey(e?.dateISO ?? e?.date);
-        return dateStr === key;
-      });
-
-      const dow = format(d, "eee", { locale: fr }).toLowerCase().slice(0, 3);
-      const map: Record<string, string> = {
-        lun: "mon",
-        mar: "tue",
-        mer: "wed",
-        jeu: "thu",
-        ven: "fri",
-        sam: "sat",
-        dim: "sun",
-      };
-      const hasClub = clubTrainingDays.includes(map[dow] ?? "");
-      const hasMatch = matchDays.includes(map[dow] ?? "");
-      const hasPlanned = plannedFksDays.includes(key);
-
-      days.push({
-        key,
-        label,
-        isToday: isSameDay(d, todayReal),
-        hasFks,
-        hasExt,
-        hasClub,
-        hasMatch,
-        hasPlanned,
-      });
-    }
-
-    return days;
-  }, [
+  const weekDays = useWeekDays({
+    devNowISO: nowISO,
+    weekStart,
     sessions,
-    externalLoads,
+    externalLoads: externalLoads ?? [],
     clubTrainingDays,
     matchDays,
     plannedFksDays,
-    weekStartIndex,
-    devNowISO,
-  ]);
+  });
 
-  const onPressNew = () => {
-    const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
-    const microIdx = Math.max(0, Math.trunc(microcycleSessionIndex ?? 0));
-    const cycleCompleted = Boolean(cycleId) && microIdx >= MICROCYCLE_TOTAL_SESSIONS_DEFAULT;
-    if (!cycleId) {
-      Alert.alert(
-        "Choisir un cycle",
-        "Choisis ton cycle (playlist) pour que FKS puisse te proposer des séances cohérentes.",
-        [
-          {
-            text: "Choisir mon cycle",
-            onPress: () => nav.navigate("CycleModal", { mode: "select", origin: "home" }),
-          },
-          { text: "Annuler", style: "cancel" },
-        ]
-      );
-      return;
-    }
-    if (cycleCompleted) {
-      Alert.alert(
-        "Cycle terminé",
-        "Bien joué. Choisis un nouveau cycle pour continuer.",
-        [
-          {
-            text: "Choisir un nouveau cycle",
-            onPress: () => nav.navigate("CycleModal", { mode: "select", origin: "home" }),
-          },
-          { text: "Annuler", style: "cancel" },
-        ]
-      );
-      return;
-    }
+  const { primaryCta, upcomingSessionLabel, pendingSession, startPendingSession, onPressNew } = usePrimaryCta({
+    nav,
+    sessions,
+    lastAiSessionV2,
+    microcycleGoal,
+    microcycleSessionIndex,
+    hasAppliedToday,
+    tsb,
+    devNowISO: nowISO,
+  });
 
-    if (pendingSession && !DEV_FLAGS.ENABLED) {
-      const date = (pendingSession as any).dateISO?.slice(0, 10) ?? "";
-      Alert.alert(
-        "Feedback requis",
-        date
-          ? `Donne le feedback de la séance du ${date} avant d'en générer une nouvelle.`
-          : "Donne le feedback de la dernière séance avant d'en générer une nouvelle.",
-        [
-          {
-            text: "Feedback",
-            onPress: () =>
-              nav.navigate(
-                "Feedback" as never,
-                { sessionId: (pendingSession as any).id } as never
-              ),
-          },
-          {
-            text: "Voir la séance",
-            onPress: () => {
-              const v2 =
-                (pendingSession as any).aiV2 ??
-                (pendingSession as any).ai ??
-                lastAiSessionV2?.v2;
-              const plannedDateISO =
-                (pendingSession as any).dateISO?.slice(0, 10) ?? "";
-              if (v2) {
-                nav.navigate("SessionPreview" as never, {
-                  v2,
-                  plannedDateISO,
-                  sessionId: (pendingSession as any).id,
-                } as never);
-              }
-            },
-          },
-          { text: "Annuler", style: "cancel" },
-        ]
-      );
-      return;
-    }
+  const advice = useContextualAdvice();
 
-    if (hasAppliedToday) {
-      if (DEV_FLAGS.ENABLED) {
-        // mode dev : on autorise plusieurs séances par jour
-      } else {
-        Alert.alert(
-          "Déjà validé aujourd'hui",
-          "Tu as déjà appliqué la charge pour aujourd'hui. Reviens demain ou ajoute une charge externe."
-        );
-        return;
-      }
-    }
-    nav.navigate("NewSession");
-  };
-
-  const onPressPreview = () => {
-    if (lastAiSessionV2) {
-      nav.navigate(
-        "SessionPreview" as never,
-        {
-          v2: lastAiSessionV2.v2,
-          plannedDateISO: lastAiSessionV2.date,
-          sessionId: lastAiSessionV2.sessionId,
-        } as never
-      );
-      return;
-    }
-
-    const latest = [...sessions]
-      .filter((s: any) => s?.aiV2 || s?.ai)
-      .sort((a: any, b: any) => {
-        const da = new Date(a.dateISO ?? a.date ?? 0).getTime();
-        const db = new Date(b.dateISO ?? b.date ?? 0).getTime();
-        return db - da;
-      })[0];
-
-    if (!latest) {
-      Alert.alert(
-        "Aucune séance IA",
-        "Génère une séance d'abord pour la prévisualiser."
-      );
-      return;
-    }
-
-    const v2 = (latest as any).aiV2 ?? (latest as any).ai;
-    const plannedDateISO = (latest as any).dateISO?.slice(0, 10) ?? "";
-    if (!v2) {
-      Alert.alert(
-        "Séance sans blueprint",
-        "Cette séance n'a pas de données IA associées."
-      );
-      return;
-    }
-
-    nav.navigate("SessionPreview" as never, {
-      v2,
-      plannedDateISO,
-      sessionId: latest?.id,
-    } as never);
-  };
-
-  const startPendingSession = () => {
-    if (!pendingSession) return;
-    const v2 =
-      (pendingSession as any).aiV2 ??
-      (pendingSession as any).ai ??
-      lastAiSessionV2?.v2;
-    const plannedDateISO =
-      (pendingSession as any).dateISO?.slice(0, 10) ?? "";
-    if (v2) {
-      nav.navigate("SessionLive" as never, {
-        v2,
-        plannedDateISO,
-        sessionId: (pendingSession as any).id,
-      } as never);
-      return;
-    }
-    nav.navigate("SessionPreview" as never, {
-      v2: lastAiSessionV2?.v2,
-      plannedDateISO,
-      sessionId: (pendingSession as any).id,
-    } as never);
-  };
+  // Recommandations du coach
+  const { recommendations: coachRecommendations } = useCoachRecommendations();
 
   const onRunHarness = () => {
     runTestHarness?.(7);
@@ -422,213 +180,243 @@ export default function HomeScreen() {
     );
   };
 
-  const upcomingSessionLabel = useMemo(() => {
-    if (!pendingSession) return "Aucune séance planifiée";
-    const v2 = (pendingSession as any).aiV2 ?? (pendingSession as any).ai;
-    if (v2) {
-      const title = v2.title || "Séance IA";
-      const focus = v2.focus_primary ? ` · ${v2.focus_primary}` : "";
-      const intens = v2.intensity ? ` · ${v2.intensity}` : "";
-      const dur =
-        typeof v2.duration_min === "number" ? ` · ${Math.round(v2.duration_min)} min` : "";
-      return `${title}${focus}${intens}${dur}`;
-    }
-    const focus = (pendingSession as any)?.focus ?? (pendingSession as any)?.modality ?? "-";
-    const intens = (pendingSession as any)?.intensity ?? "-";
-    return `Séance planifiée · ${intens} · ${focus}`;
-  }, [pendingSession]);
+  const weekSummary = useWeekSummary({
+    sessions,
+    externalLoads: externalLoads ?? [],
+    weekDays,
+    weeklyGoal,
+  });
 
-  const nextSessionShort = useMemo(() => {
-    if (!pendingSession) return "Aucune";
-    const raw = (pendingSession as any).dateISO ?? (pendingSession as any).date ?? "";
-    const dateKey = raw.slice(0, 10);
-    if (!dateKey) return "À planifier";
-    const target = new Date(`${dateKey}T00:00:00.000Z`);
-    const today = devNowISO ? new Date(devNowISO) : new Date();
-    const todayKeyLocal = today.toISOString().slice(0, 10);
-    let when = format(target, "EEE dd MMM", { locale: fr });
-    if (dateKey === todayKeyLocal) when = "Aujourd'hui";
-    if (dateKey === addDays(today, 1).toISOString().slice(0, 10)) when = "Demain";
+  const athleteName = auth.currentUser?.displayName ?? "joueur";
 
-    const v2 = (pendingSession as any).aiV2 ?? (pendingSession as any).ai;
-    const focus = v2?.focus_primary || v2?.focus || "";
-    const label = focus ? `${when} · ${focus}` : when;
-    return label;
-  }, [pendingSession, devNowISO]);
-
-  const weekKeySet = useMemo(
-    () => new Set(weekDays.map((d) => d.key)),
-    [weekDays]
-  );
+  const activityStreak = useActivityStreak(sessions, externalLoads ?? [], nowISO);
 
   const plannedThisWeek = useMemo(
     () => weekDays.filter((d) => d.hasPlanned).length,
     [weekDays]
   );
 
-  const weekSummary = useMemo(() => {
-    const fksCount = sessions.filter((s: any) => {
-      const key = toDateKey(s?.dateISO ?? s?.date);
-      return s.completed && weekKeySet.has(key);
-    }).length;
-    const extCount = (externalLoads ?? []).filter((e: any) => {
-      const key = toDateKey(e?.dateISO ?? e?.date);
-      return weekKeySet.has(key);
-    }).length;
-    const remaining = Math.max(0, weeklyGoal - fksCount);
-    const message =
-      fksCount >= weeklyGoal
-        ? "Bonne zone cette semaine."
-        : remaining <= 1
-        ? "Ajoute une séance légère pour optimiser."
-        : `Ajoute ${remaining} séances légères pour optimiser.`;
-    return { fksCount, extCount, message };
-  }, [sessions, externalLoads, weekKeySet, weeklyGoal]);
-
-  const tsbColor =
-    tsb >= 0 ? palette.success : tsb <= -15 ? palette.danger : palette.accent;
-
-  const athleteName = auth.currentUser?.displayName ?? "athlète";
-
-  const activityStreak = useMemo(() => {
-    const activity = new Set<string>();
-    sessions
-      .filter((s: any) => s.completed)
-      .forEach((s: any) => activity.add(toDateKey(s?.dateISO ?? s?.date)));
-    (externalLoads ?? []).forEach((e: any) =>
-      activity.add(toDateKey(e?.dateISO ?? e?.date))
-    );
-
-    const base = devNowISO ? new Date(devNowISO) : new Date();
-    let count = 0;
-    for (let i = 0; i < 10; i += 1) {
-      const key = subDays(base, i).toISOString().slice(0, 10);
-      if (!activity.has(key)) break;
-      count += 1;
+  const todayLabel = useMemo(() => {
+    const base = nowISO ? new Date(nowISO) : new Date();
+    try {
+      return base.toLocaleDateString("fr-FR", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+      });
+    } catch {
+      return toDateKey(base);
     }
-    return count;
-  }, [sessions, externalLoads, devNowISO]);
-
-  // Cycle info
-  const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
-  const cycleData = cycleId ? MICROCYCLES[cycleId] : null;
-  const microIdx = Math.max(0, Math.trunc(microcycleSessionIndex ?? 0));
-  const cycleProgressRatio = cycleId ? microIdx / MICROCYCLE_TOTAL_SESSIONS_DEFAULT : 0;
+  }, [nowISO]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
-        style={{ flex: 1 }}
+        style={styles.scroll}
         contentContainerStyle={styles.screenContainer}
         showsVerticalScrollIndicator={false}
+        stickyHeaderIndices={[0]}
       >
-        {/* HEADER SIMPLE */}
-        <View style={styles.header}>
-          <Text style={styles.headerGreeting}>Salut, {athleteName}</Text>
+        <View style={styles.stickyHeader}>
+          <HomeStatusBar
+            phaseLabel={phase ?? "Playlist"}
+            tsbValue={tsb}
+            tsbTone={tsbTone}
+            matchSoon={matchSoon}
+          />
         </View>
 
-        {DEV_FLAGS.ENABLED && (
-          <TouchableOpacity onPress={onRunHarness} style={styles.devChip}>
-            <Text style={styles.devChipText}>
-              Mode test : injecter charges club/match + externes (7j)
+        <View style={styles.mainContent}>
+          <View style={styles.heroShell}>
+            <View style={styles.heroGlow} />
+            <View style={styles.heroGlowAlt} />
+            <View style={styles.heroRing} />
+            <View style={styles.heroTopRow}>
+              <View style={styles.heroBadge}>
+                <Text style={styles.heroBadgeText}>FKS</Text>
+              </View>
+              <Text style={styles.heroDate}>{todayLabel}</Text>
+            </View>
+            <Text style={styles.helloTitle}>Salut, {athleteName}</Text>
+            <Text style={styles.helloSub}>
+              Ton état du jour et ta prochaine séance.
             </Text>
-          </TouchableOpacity>
-        )}
+            <View style={styles.quickRow}>
+              <View style={styles.quickChip}>
+                <Text style={styles.quickLabel}>Semaine</Text>
+                <Text style={styles.quickValue}>{weekSummary.fksCount}/{weeklyGoal}</Text>
+              </View>
+              <View style={styles.quickChip}>
+                <Text style={styles.quickLabel}>Série</Text>
+                <Text style={styles.quickValue}>{activityStreak}j</Text>
+              </View>
+              <View style={[styles.quickChip, matchSoon ? styles.quickChipWarn : null]}>
+                <Text style={styles.quickLabel}>Match</Text>
+                <Text style={styles.quickValue}>{matchSoon ? "Proche" : "—"}</Text>
+              </View>
+            </View>
+          </View>
 
-        {/* READINESS CARD - GROS GRAPHIQUE */}
-        <HomeReadinessCard
-          todayLabel={todayKey}
-          tsb={tsb}
-          tsbColor={tsbColor}
-          readinessPercent={readinessPercent}
-          readinessLabel={readinessLabel}
-          fatigueText={fatigueText}
-          phase={phase}
-          phaseCount={phaseCount}
-          atl={atl}
-          ctl={ctl}
-          tsbHistory={tsbHistory}
-        />
+          <Animated.View
+            style={{
+              opacity: heroAnim,
+              transform: [
+                {
+                  translateY: heroAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [18, 0],
+                  }),
+                },
+              ],
+            }}
+          >
+            <HomeReadinessHero
+              tsb={tsb}
+              tsbHistory={loadSeries.tsbArr}
+            />
+          </Animated.View>
 
-        {/* CYCLE HERO */}
-        {cycleData ? (
-          <HomeCycleHero
-            label={cycleData.label}
-            sub={`${microIdx}/${MICROCYCLE_TOTAL_SESSIONS_DEFAULT} séances complétées`}
-            iconName={cycleData.icon}
-            progressRatio={cycleProgressRatio}
-            primaryLabel="Voir le cycle"
-            onPrimary={() => nav.navigate("CycleModal", { mode: "view", cycleId })}
-            showManage
-            onManage={() => nav.navigate("CycleModal", { mode: "select", origin: "home" })}
-          />
-        ) : (
-          <HomeCycleHero
-            label="Aucun cycle sélectionné"
-            sub="Choisis un cycle pour structurer ta prépa"
-            iconName={null}
-            progressRatio={0}
-            primaryLabel="Choisir un cycle"
-            onPrimary={() => nav.navigate("CycleModal", { mode: "select", origin: "home" })}
-          />
-        )}
+          <Animated.View
+            style={{
+              opacity: ctaAnim,
+              transform: [
+                {
+                  translateY: ctaAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [18, 0],
+                  }),
+                },
+              ],
+            }}
+          >
+            <HomePrimaryCTA
+              label={primaryCta.label}
+              subLabel={primaryCta.sub}
+              tone={primaryCta.tone}
+              disabled={primaryCta.disabled}
+              onPress={primaryCta.onPress}
+            />
+          </Animated.View>
 
-        {/* NEXT SESSION CARD */}
-        <HomeNextSessionCard
-          hasPending={!!pendingSession}
-          upcomingLabel={upcomingSessionLabel}
-          onPrimary={pendingSession ? startPendingSession : onPressNew}
-          primaryLabel={pendingSession ? "Lancer la séance" : "Générer une séance"}
-          onSecondary={onPressPreview}
-          secondaryLabel="Voir la séance IA"
-          onFeedback={
-            pendingSession
-              ? () =>
-                  nav.navigate(
-                    "Feedback" as never,
-                    { sessionId: (pendingSession as any).id } as never
-                  )
-              : undefined
-          }
-        />
+          {advice && (
+            <Animated.View
+              style={{
+                opacity: ctaAnim,
+                transform: [
+                  {
+                    translateY: ctaAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [18, 0],
+                    }),
+                  },
+                ],
+              }}
+            >
+              <HomeAdviceCard advice={advice} />
+            </Animated.View>
+          )}
 
-        {/* DASHBOARD CARD */}
-        <HomeDashboardCard
-          chargeLabel={chargeLabel}
-          tsbText={fatigueText}
-          tsbValue={tsb}
-          tsbColor={tsbColor}
-          atlSeries={loadSeries.atlArr}
-          ctlSeries={loadSeries.ctlArr}
-          weeklyCount={weekSummary.fksCount}
-          nextLabel={nextSessionShort}
-        />
+          {/* Recommandations du coach */}
+          {coachRecommendations.length > 0 && (
+            <Animated.View
+              style={{
+                opacity: ctaAnim,
+                transform: [
+                  {
+                    translateY: ctaAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [18, 0],
+                    }),
+                  },
+                ],
+                gap: 10,
+              }}
+            >
+              {coachRecommendations.slice(0, 2).map((rec) => (
+                <HomeCoachRecommendation key={rec.id} recommendation={rec} />
+              ))}
+            </Animated.View>
+          )}
 
-        {/* WEEK SUMMARY CARD */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Cette semaine</Text>
-          <HomeWeekSummaryCard
-            title=""
-            summaryLabel={`${weekSummary.fksCount} FKS · ${weekSummary.extCount} club/match`}
-            message={weekSummary.message}
-            weekDays={weekDays}
-            plannedThisWeek={plannedThisWeek}
-            weeklyGoal={weeklyGoal}
-            activityStreak={activityStreak}
-            onManageRoutine={() => nav.navigate("Routine" as never)}
-          />
+          <Animated.View
+            style={{
+              opacity: cardsAnim,
+              transform: [
+                {
+                    translateY: cardsAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [18, 0],
+                    }),
+                  },
+                ],
+            }}
+          >
+            <View style={styles.cardsStack}>
+              <View style={styles.gridRow}>
+                <View style={styles.gridItem}>
+                  <HomeCarouselCard title="Progression" subtitle="Régularité & forme">
+                    <View style={styles.progressRow}>
+                      <Ionicons name="flame" size={18} color={palette.accent} />
+                      <Text style={styles.progressText}>{activityStreak} jours d’affilée</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => nav.navigate("Progression")} style={styles.link}>
+                      <Text style={styles.linkText}>Voir ma progression</Text>
+                      <Text style={styles.linkArrow}>→</Text>
+                    </TouchableOpacity>
+                  </HomeCarouselCard>
+                </View>
+                <View style={styles.gridItem}>
+                  <HomeTestsNudge
+                    title="Évalue ton niveau"
+                    sub="Des tests courts pour mieux cibler tes séances."
+                    onPress={() => nav.navigate("Tests")}
+                  />
+                </View>
+              </View>
+
+              <HomeNextSessionCard
+                hasPending={Boolean(pendingSession)}
+                upcomingLabel={upcomingSessionLabel}
+                primaryLabel={pendingSession ? "Voir la séance" : primaryCta.label}
+                onPrimary={pendingSession ? startPendingSession : onPressNew}
+                  primaryDisabled={!pendingSession && Boolean(primaryCta.disabled)}
+                  secondaryLabel="Historique"
+                  onSecondary={() => nav.navigate("SessionHistory")}
+                  onFeedback={
+                    pendingSession
+                    ? () => nav.navigate("Feedback", { sessionId: (pendingSession as any).id })
+                    : undefined
+                }
+              />
+
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>Ta semaine</Text>
+                <Text style={styles.sectionSub}>{weekSummary.message}</Text>
+              </View>
+
+              <HomeWeekSummaryCard
+                title="Semaine en cours"
+                summaryLabel={`${weekSummary.fksCount}/${weeklyGoal}`}
+                message={weekSummary.message}
+                  weekDays={weekDays}
+                  plannedThisWeek={plannedThisWeek}
+                  weeklyGoal={weeklyGoal}
+                  activityStreak={activityStreak}
+                  onManageRoutine={() => nav.navigate("Routine")}
+                />
+              </View>
+            </Animated.View>
+
+          {DEV_FLAGS.ENABLED && (
+            <TouchableOpacity onPress={onRunHarness} style={styles.devChip}>
+              <Text style={styles.devChipText}>
+                Mode test : injecter charges club/match + externes (7j)
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <View style={styles.bottomSpacer} />
         </View>
-
-        {/* LIEN PROGRESSION */}
-        <TouchableOpacity
-          onPress={() => nav.navigate("Progression")}
-          style={styles.linkRow}
-        >
-          <Text style={styles.linkText}>Voir ma progression complète</Text>
-          <Text style={styles.linkArrow}>→</Text>
-        </TouchableOpacity>
-
-        <View style={{ height: 12 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -636,23 +424,195 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   screenContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 10,
     paddingBottom: 24,
-    gap: 16,
     backgroundColor: palette.bg,
   },
   safeArea: {
     flex: 1,
     backgroundColor: palette.bg,
   },
-  header: {
-    marginBottom: 4,
+  scroll: {
+    flex: 1,
   },
-  headerGreeting: {
-    fontSize: 28,
-    fontWeight: "900",
+  logoutButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  logoutText: {
+    fontWeight: "500",
+    color: palette.sub,
+    fontSize: 12,
+  },
+  stickyHeader: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    backgroundColor: palette.bg,
+  },
+  mainContent: {
+    paddingHorizontal: 16,
+    gap: 16,
+  },
+  heroShell: {
+    position: "relative",
+    overflow: "hidden",
+    borderRadius: 24,
+    padding: 16,
+    backgroundColor: palette.card,
+    borderWidth: 1,
+    borderColor: palette.border,
+    gap: 12,
+  },
+  heroGlow: {
+    position: "absolute",
+    top: -60,
+    right: -40,
+    width: 180,
+    height: 180,
+    borderRadius: 180,
+    backgroundColor: palette.accentSoft,
+    opacity: 0.9,
+  },
+  heroGlowAlt: {
+    position: "absolute",
+    bottom: -90,
+    left: -60,
+    width: 220,
+    height: 220,
+    borderRadius: 220,
+    backgroundColor: palette.cardSoft,
+    opacity: 0.9,
+  },
+  heroRing: {
+    position: "absolute",
+    top: 18,
+    right: 16,
+    width: 60,
+    height: 60,
+    borderRadius: 60,
+    borderWidth: 2,
+    borderColor: palette.borderSoft,
+    opacity: 0.6,
+  },
+  heroTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  heroBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: palette.cardSoft,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+  },
+  heroBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
     color: palette.text,
+  },
+  heroDate: {
+    fontSize: 12,
+    color: palette.sub,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  helloTitle: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: palette.text,
+  },
+  helloSub: {
+    fontSize: 13,
+    color: palette.sub,
+  },
+  quickRow: {
+    flexDirection: "row",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  quickChip: {
+    flexGrow: 1,
+    minWidth: 96,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.bgSoft,
+  },
+  quickChipWarn: {
+    borderColor: palette.warn,
+    backgroundColor: "rgba(245,158,11,0.12)",
+  },
+  quickLabel: {
+    fontSize: 10,
+    color: palette.sub,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  quickValue: {
+    marginTop: 4,
+    fontSize: 14,
+    fontWeight: "800",
+    color: palette.text,
+  },
+  sectionHeaderRow: {
+    marginTop: 4,
+    gap: 4,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    color: palette.text,
+  },
+  sectionSub: {
+    fontSize: 12,
+    color: palette.sub,
+  },
+  cardsStack: {
+    gap: 16,
+  },
+  gridRow: {
+    flexDirection: "row",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  gridItem: {
+    flexGrow: 1,
+    flexBasis: "48%",
+    minWidth: 160,
+  },
+  progressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  progressText: {
+    fontSize: 13,
+    color: palette.text,
+    fontWeight: "700",
+  },
+  link: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    paddingVertical: 6,
+  },
+  linkText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: palette.accent,
+  },
+  linkArrow: {
+    fontSize: 14,
+    color: palette.accent,
   },
   devChip: {
     alignSelf: "flex-start",
@@ -667,30 +627,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: palette.sub,
   },
-  section: {
-    gap: 10,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: palette.text,
-    paddingHorizontal: 4,
-  },
-  linkRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    gap: 8,
-  },
-  linkText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: palette.accent,
-  },
-  linkArrow: {
-    fontSize: 16,
-    color: palette.accent,
-    fontWeight: "700",
+  bottomSpacer: {
+    height: 12,
   },
 });

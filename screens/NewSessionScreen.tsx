@@ -1,5 +1,5 @@
 // src/screens/NewSessionScreen.tsx
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,8 +9,8 @@ import {
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { addDaysISO } from "../utils/virtualClock";
-import { useNavigation, NavigationProp } from "@react-navigation/native";
+import { subDays } from "date-fns";
+import { useNavigation, NavigationProp, useFocusEffect } from "@react-navigation/native";
 import { useTrainingStore } from "../state/trainingStore";
 import type { Session } from "../domain/types";
 import { buildAIPromptContext } from "../services/aiContext";
@@ -25,6 +25,7 @@ import { prepareBackendContext, fetchV2 } from "./newSession/api";
 import { processV2 } from "./newSession/orchestrator";
 import { buildFallbackSession } from "./newSession/fallback";
 import { classifyError, ErrorType } from "../utils/errorHandler";
+import { showToast } from "../utils/toast";
 import { LoadingOverlay } from "../components/ui/LoadingOverlay";
 import { ResetVariantModal } from "./newSession/ResetVariantModal";
 import { EnvironmentSelector } from "./newSession/ui/EnvironmentSelector";
@@ -36,6 +37,9 @@ import { palette } from "./newSession/theme";
 import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
 import { Button } from "../components/ui/Button";
 import { trackEvent } from "../services/analytics";
+import { buildResetExplain } from "./newSession/resetExplain";
+import { useContextualAdvice } from "../hooks/home/useContextualAdvice";
+import { toDateKey } from "../utils/dateHelpers";
 
 /** Catalogue matériel (ids alignés avec le profil) */
 const EQUIPMENT_CATALOG = [
@@ -53,7 +57,6 @@ const EQUIPMENT_CATALOG = [
   { id: "pullup_bar", label: "Barre de tractions", source: "gym" },
   { id: "box_plyo", label: "Box plyo", source: "gym" },
   { id: "bosu", label: "BOSU", source: "gym" },
-  { id: "swiss_ball", label: "Swiss ball (salle)", source: "gym" },
   { id: "foam_roller", label: "Foam roller (salle)", source: "gym" },
   { id: "yoga_mat", label: "Tapis (salle)", source: "gym" },
   // Maison / terrain (reprend ProfileSetup)
@@ -68,11 +71,9 @@ const EQUIPMENT_CATALOG = [
   { id: "long_bands", label: "Élastiques longues", source: "home" },
   { id: "home_dumbbells", label: "Haltères (chez toi)", source: "home" },
   { id: "home_kettlebell", label: "Kettlebell (chez toi)", source: "home" },
-  { id: "medicine_ball", label: "Médecine ball", source: "home" },
   { id: "sandbag", label: "Sandbag", source: "home" },
   { id: "home_foam_roller", label: "Foam roller (chez toi)", source: "home" },
   { id: "home_yoga_mat", label: "Tapis (chez toi)", source: "home" },
-  { id: "home_swiss_ball", label: "Swiss ball (chez toi)", source: "home" },
   // Fallback générique
   { id: "bodyweight", label: "Poids du corps", source: "both" },
 ];
@@ -111,7 +112,7 @@ export default function NewSessionScreen() {
   const nextAllowedISO = useTrainingStore((s) => s.nextAllowedDateISO);
   const persistPlanned = useTrainingStore((s) => s.persistPlannedSession);
   const setLastAiSessionV2 = useTrainingStore(
-    (s) => (s as any).setLastAiSessionV2
+    (s) => s.setLastAiSessionV2 ?? (() => {})
   );
   const tsb = useTrainingStore((s) => s.tsb);
   const clubTrainingDays = useTrainingStore((s) => s.clubTrainingDays ?? []);
@@ -122,7 +123,7 @@ export default function NewSessionScreen() {
   const lastAppliedDate = useTrainingStore((s) => s.lastAppliedDate);
   const advanceDays = useTrainingStore((s) => s.advanceDays);
   const restUntil = useTrainingStore((s) => s.restUntil);
-  const storeHydrated = useTrainingStore((s) => (s as any).storeHydrated ?? true);
+  const storeHydrated = useTrainingStore((s) => s.storeHydrated ?? true);
 
   const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
   const cycleDef = cycleId ? MICROCYCLES[cycleId] : null;
@@ -141,6 +142,8 @@ export default function NewSessionScreen() {
   const [environment, setEnvironment] = useState<EnvironmentSelection>([]);
   const [availableEquipment, setAvailableEquipment] = useState<string[]>([]);
   const [selectedEquipment, setSelectedEquipment] = useState<string[]>([]);
+  const [gymMachinesEnabled, setGymMachinesEnabled] = useState(false);
+  const [pitchSmallGearEnabled, setPitchSmallGearEnabled] = useState(false);
   const [setupDone, setSetupDone] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [resetChoice, setResetChoice] = useState<ResetChoiceState>(null);
@@ -155,17 +158,34 @@ export default function NewSessionScreen() {
     });
   }, [cycleId]);
 
+  useEffect(() => {
+    setSetupDone(false);
+  }, [environment.join("|"), selectedEquipment.join("|")]);
+
   const current: Session | undefined = useMemo(
-    () =>
-      sessions.find((s) => {
-        if (s.completed) return false;
-        const day = (s.dateISO ?? (s as any).date ?? "").slice(0, 10);
-        if (!day) return true;
-        const today = (devNowISO ?? new Date().toISOString()).slice(0, 10);
-        // ignore planned trop anciennes (avant avant-hier)
-        return day >= addDaysISO(today, -2).slice(0, 10);
-      }),
-    [sessions]
+    () => {
+      const nowDate = devNowISO ? new Date(devNowISO) : new Date();
+      const oldestAllowedKey = toDateKey(subDays(nowDate, 2));
+      const withDate = sessions
+        .filter((s) => !s.completed)
+        .filter((s) => {
+          const day = toDateKey((s as any).dateISO ?? (s as any).date);
+          if (!day) return true;
+          return day >= oldestAllowedKey;
+        })
+        .sort((a, b) => {
+          const da = toDateKey((a as any).dateISO ?? (a as any).date) || "9999-12-31";
+          const db = toDateKey((b as any).dateISO ?? (b as any).date) || "9999-12-31";
+          if (da === db) {
+            const ca = new Date((a as any).createdAt ?? 0).getTime();
+            const cb = new Date((b as any).createdAt ?? 0).getTime();
+            return ca - cb;
+          }
+          return da.localeCompare(db);
+        });
+      return withDate[0];
+    },
+    [sessions, devNowISO]
   );
 
   const now = devNowISO ? new Date(devNowISO) : new Date();
@@ -178,6 +198,9 @@ export default function NewSessionScreen() {
     !!lastAppliedDate &&
     dailyApplied &&
     isSameDay(new Date(lastAppliedDate), now);
+
+  // Conseil contextuel pour guider le joueur
+  const advice = useContextualAdvice();
 
   const isResetPlan = (v2: FKS_NextSessionV2) =>
     v2?.archetype_id === "foundation_X_reset" ||
@@ -234,10 +257,7 @@ export default function NewSessionScreen() {
           sessionId,
         }),
       alertPlanified: (dateISO: string) => {
-        Alert.alert(
-          "Planifiée pour demain",
-          `Tu as déjà validé une séance aujourd’hui. Celle-ci est planifiée pour le ${dateISO}.`
-        );
+        showToast({ type: "info", title: "Planifiée pour demain", message: `Séance planifiée pour le ${dateISO}.` });
       },
     });
     trackEvent("session_generate_success", {
@@ -263,8 +283,28 @@ export default function NewSessionScreen() {
     environment,
     availableEquipment,
     EQUIPMENT_CATALOG,
-    setSelectedEquipment
+    setSelectedEquipment,
+    { gymMachinesEnabled, pitchSmallGearEnabled }
   );
+
+  // Fallback : auto-open CycleModal si arrivé sans cycle actif (anti-boucle via ref)
+  const cyclePickerAutoOpened = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!storeHydrated) return;
+      if (cycleId && !cycleCompleted) return;
+      if (cyclePickerAutoOpened.current) return;
+      cyclePickerAutoOpened.current = true;
+      nav.navigate("CycleModal", { mode: "select", origin: "newSession" });
+    }, [storeHydrated, cycleId, cycleCompleted, nav])
+  );
+
+  // Reset le flag quand un cycle devient actif (pour permettre un re-trigger si le cycle change)
+  useEffect(() => {
+    if (cycleId && !cycleCompleted) {
+      cyclePickerAutoOpened.current = false;
+    }
+  }, [cycleId, cycleCompleted]);
 
   /** ------------------------------------------------------------------
    *  GÉNÉRATION DE SÉANCE
@@ -302,33 +342,22 @@ export default function NewSessionScreen() {
 
       if (isBeforeNextAllowed) {
         const d = nextAllowedISO ? new Date(nextAllowedISO) : null;
-        Alert.alert(
-          "Repos planifié",
-          d
-            ? `Tu as prévu du repos jusqu’au ${d.toISOString().slice(0, 10)}.`
-            : "Repos planifié."
-        );
+        showToast({ type: "info", title: "Repos planifié", message: d ? `Repos prévu jusqu'au ${d.toISOString().slice(0, 10)}.` : "Repos planifié." });
         return;
       }
 
       if (environment.length === 0) {
-        Alert.alert(
-          "Lieu d’entraînement",
-          "Choisis au moins un lieu : salle, terrain ou chez toi (tu peux en sélectionner 2)."
-        );
+        showToast({ type: "warn", title: "Lieu manquant", message: "Choisis au moins un lieu : salle, terrain ou chez toi." });
         return;
       }
 
       if (!selectedEquipment.length) {
-        Alert.alert(
-          "Matériel requis",
-          "Sélectionne au moins un matériel disponible avant de générer ta séance."
-        );
+        showToast({ type: "warn", title: "Matériel manquant", message: "Sélectionne au moins un matériel disponible." });
         return;
       }
 
       if (!setupDone) {
-        Alert.alert("Contexte incomplet", "Valide d'abord ton lieu et ton matériel.");
+        showToast({ type: "warn", title: "Contexte incomplet", message: "Valide d'abord ton lieu et ton matériel." });
         return;
       }
 
@@ -390,10 +419,7 @@ export default function NewSessionScreen() {
           sessionId,
           }),
         alertPlanified: (dateISO: string) => {
-          Alert.alert(
-            "Planifiée pour demain",
-            `Tu as déjà validé une séance aujourd’hui. Celle-ci est planifiée pour le ${dateISO}.`
-          );
+          showToast({ type: "info", title: "Planifiée pour demain", message: `Séance planifiée pour le ${dateISO}.` });
         },
       });
       trackEvent("session_generate_success", {
@@ -402,10 +428,7 @@ export default function NewSessionScreen() {
       });
     } catch (err: any) {
       if (err?.code === "AUTH_REQUIRED") {
-        Alert.alert(
-          "Connexion requise",
-          "Connecte-toi pour enregistrer la séance."
-        );
+        showToast({ type: "error", title: "Connexion requise", message: "Connecte-toi pour enregistrer la séance." });
         return;
       }
 
@@ -451,11 +474,7 @@ export default function NewSessionScreen() {
           ]
         );
       } else {
-        // Autre type d'erreur (validation, etc.)
-        Alert.alert(
-          appError.type === ErrorType.VALIDATION ? "Données invalides" : "Erreur",
-          appError.userMessage
-        );
+        showToast({ type: "error", title: appError.type === ErrorType.VALIDATION ? "Données invalides" : "Erreur", message: appError.userMessage });
       }
     } finally {
       setGenerating(false);
@@ -489,6 +508,12 @@ export default function NewSessionScreen() {
         <ResetVariantModal
           variants={resetChoice.variants}
           onSelect={handleSelectResetVariant}
+          explain={buildResetExplain(
+            resetChoice.v2,
+            resetChoice.debug,
+            resetChoice.location,
+            aiContext?.profile ?? null
+          )}
           onCancel={() => {
             setResetChoice(null);
             setGenerating(false);
@@ -563,7 +588,7 @@ export default function NewSessionScreen() {
                 environment={environment}
                 setEnvironment={setEnvironment}
                 allowed={allowedLocations}
-                descriptionOverrides={cycleDef?.locationDescriptions}
+                currentCycleId={cycleId}
               />
 	          </View>
 
@@ -575,9 +600,19 @@ export default function NewSessionScreen() {
               selectedEquipment={selectedEquipment}
               contextLoading={contextLoading}
               onSelect={setSelectedEquipment}
+              gymMachinesEnabled={gymMachinesEnabled}
+              onToggleGymMachines={(next) => {
+                setGymMachinesEnabled(next);
+                setSetupDone(false);
+              }}
+              pitchSmallGearEnabled={pitchSmallGearEnabled}
+              onTogglePitchSmallGear={(next) => {
+                setPitchSmallGearEnabled(next);
+                setSetupDone(false);
+              }}
               onValidateContext={() => {
                 setSetupDone(true);
-                Alert.alert("Contexte validé", "Tu peux lancer la génération de ta séance.");
+                showToast({ type: "success", title: "Contexte validé", message: "Tu peux lancer la génération." });
               }}
               setupDone={setupDone}
             />
@@ -595,6 +630,7 @@ export default function NewSessionScreen() {
 	              storeHydrated={storeHydrated}
 	              nextAllowedISO={nextAllowedISO}
 	              alreadyAppliedToday={alreadyAppliedToday}
+	              advice={advice}
 	            />
 		          ) : null}
 		        </>
@@ -634,8 +670,14 @@ export default function NewSessionScreen() {
 
       <LoadingOverlay
         visible={generating}
-        message="Génération de ta séance..."
-        submessage="L'IA analyse ton profil, ta charge d'entraînement et tes contraintes pour créer une séance personnalisée. Ça peut prendre 10-30 secondes."
+        steps={[
+          "Analyse de ton profil et ta charge...",
+          "Sélection des exercices adaptés...",
+          "Construction des blocs d'entraînement...",
+          "Personnalisation selon tes contraintes...",
+          "Vérification et finalisation...",
+        ]}
+        estimatedDurationMs={25000}
       />
     </SafeAreaView>
   );

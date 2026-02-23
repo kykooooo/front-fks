@@ -5,7 +5,31 @@
       "Bash(git checkout:*)",
       "Bash(grep:*)",
       "Bash(npx tsc:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(find:*)",
+      "Bash(/usr/local/bin/npx tsc:*)",
+      "Bash(/usr/local/bin/node:*)",
+      "Bash(export PATH=\"/usr/local/bin:$PATH\")",
+      "Bash(PATH=\"/usr/local/bin:$PATH\" /usr/local/bin/npx tsc:*)",
+      "Bash(npx expo install:*)",
+      "Bash(PATH=\"/usr/local/bin:$PATH\" /usr/local/bin/npx expo install:*)",
+      "Bash(export PATH=\"/usr/local/bin:/opt/homebrew/bin:$PATH\")",
+      "Bash(npx expo-doctor:*)",
+      "Bash(./node_modules/.bin/tsc:*)",
+      "Bash(export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\")",
+      "Bash(export PATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:$PATH\")",
+      "Bash(/usr/bin/head:*)",
+      "Bash(/usr/bin/find:*)",
+      "Bash(/usr/bin/find /Users/macbookair -maxdepth 4 -name \"node\" -type f)",
+      "Bash(export PATH:*)",
+      "Bash(node ./node_modules/.bin/tsc:*)",
+      "Bash(/Users/macbookair/fks-apps/node_modules/.bin/tsc:*)",
+      "Bash(export PATH=\"/Users/macbookair/.nvm/versions/node/v20.19.5/bin:$PATH\")",
+      "Bash(node_modules/.bin/tsc:*)",
+      "Bash(export PATH=\"/Users/macbookair/.nvm/versions/node/v20.19.5/bin:/usr/bin:$PATH\")",
+      "Bash(/opt/homebrew/bin/npx tsc:*)",
+      "Bash(PATH=\"/Users/macbookair/.nvm/versions/node/v20.19.5/bin:/usr/bin:/bin:$PATH\" npx tsc:*)"
     ]
   }
 }

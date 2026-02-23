@@ -15,6 +15,8 @@ type Props = {
   onSecondary: () => void;
   secondaryLabel: string;
   onFeedback?: () => void;
+  primaryDisabled?: boolean;
+  secondaryDisabled?: boolean;
 };
 
 export default function HomeNextSessionCard({
@@ -25,12 +27,16 @@ export default function HomeNextSessionCard({
   onSecondary,
   secondaryLabel,
   onFeedback,
+  primaryDisabled = false,
+  secondaryDisabled = false,
 }: Props) {
+  const primaryTextColor = primaryDisabled ? palette.sub : palette.accent;
+  const secondaryTextColor = secondaryDisabled ? palette.sub : palette.text;
   return (
     <View style={styles.section}>
       <SectionHeader
-        title="Prochaine séance FKS"
-        right={<Badge label={hasPending ? "Planifiée" : "À générer"} tone={hasPending ? "ok" : "default"} />}
+        title="Prochaine séance"
+        right={<Badge label={hasPending ? "Prête" : "À créer"} tone={hasPending ? "ok" : "default"} />}
       />
 
       <Card variant="soft" style={styles.nextCard}>
@@ -41,7 +47,7 @@ export default function HomeNextSessionCard({
             <Text style={styles.nextMainText}>{upcomingLabel}</Text>
             {hasPending ? (
               <Text style={styles.nextSubText}>
-                Séance en attente. Feedback requis pour débloquer la suivante.
+                Séance en attente. Dis-nous comment ça s'est passé pour débloquer la suivante.
               </Text>
             ) : null}
           </View>
@@ -50,19 +56,29 @@ export default function HomeNextSessionCard({
         <View style={styles.nextDivider} />
 
         <View style={styles.nextActionsRow}>
-          <TouchableOpacity onPress={onPrimary} style={styles.nextPrimary} activeOpacity={0.9}>
-            <Text style={styles.nextPrimaryText}>{primaryLabel}</Text>
-            <Text style={styles.nextPrimaryArrow}>→</Text>
+          <TouchableOpacity
+            onPress={onPrimary}
+            style={[styles.nextPrimary, primaryDisabled && styles.nextPrimaryDisabled]}
+            activeOpacity={0.9}
+            disabled={primaryDisabled}
+          >
+            <Text style={[styles.nextPrimaryText, { color: primaryTextColor }]}>{primaryLabel}</Text>
+            <Text style={[styles.nextPrimaryArrow, { color: primaryTextColor }]}>→</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={onSecondary} style={styles.nextSecondary} activeOpacity={0.9}>
-            <Text style={styles.nextSecondaryText}>{secondaryLabel}</Text>
+          <TouchableOpacity
+            onPress={onSecondary}
+            style={[styles.nextSecondary, secondaryDisabled && styles.nextSecondaryDisabled]}
+            activeOpacity={0.9}
+            disabled={secondaryDisabled}
+          >
+            <Text style={[styles.nextSecondaryText, { color: secondaryTextColor }]}>{secondaryLabel}</Text>
           </TouchableOpacity>
         </View>
 
         {hasPending && onFeedback ? (
           <TouchableOpacity onPress={onFeedback} style={styles.nextFeedbackChip} activeOpacity={0.9}>
-            <Text style={styles.nextFeedbackText}>Donner mon feedback</Text>
+            <Text style={styles.nextFeedbackText}>Comment ça s'est passé ?</Text>
           </TouchableOpacity>
         ) : null}
       </Card>
@@ -130,14 +146,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 4,
   },
+  nextPrimaryDisabled: {
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.cardSoft,
+    opacity: 0.7,
+  },
   nextPrimaryText: {
     fontSize: 14,
     fontWeight: "800",
-    color: palette.accent,
   },
   nextPrimaryArrow: {
     fontSize: 13,
-    color: palette.accent,
   },
   nextSecondary: {
     width: 140,
@@ -149,10 +168,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  nextSecondaryDisabled: {
+    opacity: 0.7,
+  },
   nextSecondaryText: {
     fontSize: 13,
     fontWeight: "700",
-    color: palette.text,
   },
   nextFeedbackChip: {
     alignSelf: "flex-start",

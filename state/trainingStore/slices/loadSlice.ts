@@ -59,6 +59,7 @@ export const createLoadSlice = (set: any, get: any): LoadSlice => ({
   },
 
   _applyAutoExternalLoads: (dayKeys: string[]) => {
+    if (!get().autoExternalEnabled) return;
     const uniq = Array.from(new Set(dayKeys)).sort();
     for (const dayKey of uniq) {
       const stNow: TrainingState = get();
@@ -138,7 +139,7 @@ export const createLoadSlice = (set: any, get: any): LoadSlice => ({
       const rpes = daySessions
         .map((s) => (typeof s.feedback?.rpe === "number" ? s.feedback.rpe : Number((s as any).rpe)))
         .filter((x) => Number.isFinite(x) && x > 0) as number[];
-      const avgRpe = rpes.length ? rpes.reduce((a, b) => a + b, 0) / rpes.length : 6;
+      const avgRpe = rpes.length ? rpes.reduce((a, b) => a + b, 0) / rpes.length : 5;
       const painFromState = st.dayStates?.[dayKey]?.feedback?.pain;
       const painToday =
         typeof painFromState === "number"
@@ -159,7 +160,7 @@ export const createLoadSlice = (set: any, get: any): LoadSlice => ({
         adjustedRpeForCap: avgRpe,
         painForCap: painToday,
         clubTrainingDays: st.clubTrainingDays ?? [],
-        clubGuardFactor: 0.75,
+        matchDays: st.matchDays ?? (st.matchDay ? [st.matchDay] : []),
       });
 
       const totalToday = totals.totalToday;
@@ -277,7 +278,7 @@ export const createLoadSlice = (set: any, get: any): LoadSlice => ({
       adjustedRpeForCap: (feedback as any).rpe ?? 6,
       painForCap: painToday,
       clubTrainingDays: state.clubTrainingDays ?? [],
-      clubGuardFactor: 0.75,
+      matchDays: state.matchDays ?? (state.matchDay ? [state.matchDay] : []),
     });
 
     const totalToday = totals.totalToday;
@@ -408,7 +409,7 @@ export const createLoadSlice = (set: any, get: any): LoadSlice => ({
       adjustedRpeForCap,
       painForCap: painToday,
       clubTrainingDays: st.clubTrainingDays ?? [],
-      clubGuardFactor: 0.75,
+      matchDays: st.matchDays ?? (st.matchDay ? [st.matchDay] : []),
     });
 
     const totalToday = totals.totalToday;

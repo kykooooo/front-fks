@@ -1,6 +1,9 @@
 import React from "react";
 import { View, Text, TouchableOpacity, ActivityIndicator } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { palette } from "../theme";
+import type { Advice } from "../../../domain/adviceRules";
+import { toDateKey } from "../../../utils/dateHelpers";
 
 type Props = {
   disabled: boolean;
@@ -12,6 +15,14 @@ type Props = {
   storeHydrated: boolean;
   nextAllowedISO?: string | null;
   alreadyAppliedToday: boolean;
+  advice?: Advice | null;
+};
+
+const TONE_CONFIG: Record<string, { bg: string; border: string; text: string; icon: string }> = {
+  info: { bg: "rgba(37, 99, 235, 0.08)", border: "#3b82f6", text: "#2563eb", icon: "#3b82f6" },
+  warn: { bg: "rgba(245, 158, 11, 0.10)", border: "#f59e0b", text: "#d97706", icon: "#f59e0b" },
+  danger: { bg: "rgba(239, 68, 68, 0.10)", border: "#ef4444", text: "#dc2626", icon: "#ef4444" },
+  success: { bg: "rgba(22, 163, 74, 0.08)", border: "#22c55e", text: "#16a34a", icon: "#22c55e" },
 };
 
 export function GenerationActions({
@@ -24,13 +35,34 @@ export function GenerationActions({
   storeHydrated,
   nextAllowedISO,
   alreadyAppliedToday,
+  advice,
 }: Props) {
+  const toneConfig = advice ? TONE_CONFIG[advice.tone] ?? TONE_CONFIG.info : null;
+
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>Lancer la génération</Text>
       <Text style={styles.cardSubtitle}>
-        FKS tient compte de ta charge, du lieu et du matériel pour construire une séance cohérente.
+        FKS tient compte de ta forme, du lieu et du matériel pour construire ta séance.
       </Text>
+
+      {/* Conseil contextuel avant génération */}
+      {advice && toneConfig && (
+        <View
+          style={[
+            styles.adviceBanner,
+            { backgroundColor: toneConfig.bg, borderLeftColor: toneConfig.border },
+          ]}
+        >
+          <View style={[styles.adviceIconWrap, { backgroundColor: toneConfig.bg }]}>
+            <Ionicons name={advice.icon as any} size={18} color={toneConfig.icon} />
+          </View>
+          <View style={styles.adviceTextWrap}>
+            <Text style={[styles.adviceTitle, { color: toneConfig.text }]}>{advice.title}</Text>
+            <Text style={styles.adviceMessage}>{advice.message}</Text>
+          </View>
+        </View>
+      )}
 
       <View style={styles.buttonRow}>
         <TouchableOpacity
@@ -59,7 +91,7 @@ export function GenerationActions({
         <Text style={styles.helper}>Chargement de ton historique...</Text>
       ) : nextAllowedISO ? (
         <Text style={styles.helper}>
-          Prochaine séance autorisée à partir du {new Date(nextAllowedISO).toISOString().slice(0, 10)}
+          Prochaine séance autorisée à partir du {toDateKey(nextAllowedISO)}
         </Text>
       ) : null}
 
@@ -137,5 +169,34 @@ const styles = {
     marginTop: 8,
     fontSize: 12,
     color: palette.sub,
+  },
+  adviceBanner: {
+    flexDirection: "row" as const,
+    alignItems: "flex-start" as const,
+    gap: 10,
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 12,
+    borderLeftWidth: 3,
+  },
+  adviceIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  adviceTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  adviceTitle: {
+    fontSize: 13,
+    fontWeight: "700" as const,
+  },
+  adviceMessage: {
+    fontSize: 12,
+    color: palette.sub,
+    lineHeight: 16,
   },
 };

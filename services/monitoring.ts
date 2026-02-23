@@ -1,22 +1,10 @@
-import Constants from "expo-constants";
-import * as Sentry from "sentry-expo";
-
-const dsn = Constants.expoConfig?.extra?.SENTRY_DSN ?? "";
+// Sentry monitoring - temporarily disabled for build
+// TODO: Re-enable when sentry-expo is compatible with Expo SDK 54
 
 export const initSentry = () => {
-  if (!dsn) return;
-  Sentry.init({
-    dsn,
-    enableInExpoDevelopment: false,
-    debug: false,
-  });
+  // No-op: Sentry disabled
 };
 
-export const setSentryUser = (uid: string | null) => {
-  if (!dsn) return;
-  if (uid) {
-    Sentry.Native.setUser({ id: uid });
-  } else {
-    Sentry.Native.setUser(null);
-  }
+export const setSentryUser = (_uid: string | null) => {
+  // No-op: Sentry disabled
 };

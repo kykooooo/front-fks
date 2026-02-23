@@ -1,18 +1,71 @@
 // screens/PrebuiltSessionsScreen.tsx
-import React, { useMemo, useState } from "react";
+// Design moderne avec animations stagger, icônes gradient et contenu engageant
+import React, { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Animated,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTrainingStore } from "../state/trainingStore";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useRoutineBadges } from "../hooks/useRoutineBadges";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { useHaptics } from "../hooks/useHaptics";
 import { theme } from "../constants/theme";
+import { Card } from "../components/ui/Card";
 
 const palette = theme.colors;
+
+// Configuration visuelle des catégories avec icônes et couleurs gradient
+type CategoryConfig = {
+  icon: keyof typeof Ionicons.glyphMap;
+  gradient: [string, string];
+  tagline: string;
+};
+
+const CATEGORY_CONFIG: Record<string, CategoryConfig> = {
+  ACTIVATION: {
+    icon: "flash",
+    gradient: ["#f59e0b", "#fbbf24"],
+    tagline: "Réveille ton corps avant l'effort",
+  },
+  RÉCUPÉRATION: {
+    icon: "leaf",
+    gradient: ["#10b981", "#34d399"],
+    tagline: "Récupère mieux, progresse plus vite",
+  },
+  "MOBILITÉ EXPRESS": {
+    icon: "body",
+    gradient: ["#8b5cf6", "#a78bfa"],
+    tagline: "Gagne en amplitude en quelques minutes",
+  },
+  PRÉVENTION: {
+    icon: "shield-checkmark",
+    gradient: ["#ef4444", "#f87171"],
+    tagline: "Protège-toi des blessures classiques",
+  },
+  "MATCH DAY": {
+    icon: "football",
+    gradient: ["#3b82f6", "#60a5fa"],
+    tagline: "Routines spéciales jour de match",
+  },
+  "PACK 7 JOURS": {
+    icon: "calendar",
+    gradient: ["#14b8a6", "#2dd4bf"],
+    tagline: "Programme mobilité complet sur 7 jours",
+  },
+  DÉFIS: {
+    icon: "trophy",
+    gradient: ["#ff7a1a", "#ff9a4a"],
+    tagline: "Teste tes limites et progresse",
+  },
+};
 
 type Prebuilt = {
   category: string;
@@ -31,700 +84,835 @@ type Prebuilt = {
 };
 
 const PREBUILT_SESSIONS: Prebuilt[] = [
+  // ============================================================
+  // ACTIVATION — Routines pré-entraînement / pré-match
+  // ============================================================
   {
-    category: "EXPLOSIVITÉ",
-    title: "EXPLO #1 — Power bas du corps (gym)",
-    intensity: "hard",
-    duration: "50-60 min",
-    objective: "Puissance + transfert sprint/duels",
-    focus: "strength",
-    location: "gym",
-    equipment: ["Trap bar", "Box", "Haltères"],
-    tags: ["Power", "Lower", "Gym"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Échauffement: 8-10 min vélo + mobilité hanches/chevilles",
-      "Bloc 1 — Pré-activation: Pogos 2 x 20 + CMJ 3 x 5 (60\" rec)",
-      "Bloc 2 — Power: Trap bar deadlift 5 x 3 @ 70-80% (2'30 rec)",
-      "Bloc 3 — Contrast: Box jump 4 x 4 + Split squat 3 x 6 / jambe",
-      "Bloc 4 — Core: Pallof press 3 x 10 / côté + Farmer carry 3 x 20 m",
-      "Retour au calme: 6 min respiration + étirements dynamiques",
-    ],
-    expectations: [
-      "Qualité d'appui > charge. Si la vitesse chute, stop.",
-      "Repos complet sur les efforts puissants.",
-      "Amplitude propre sur les sauts, atterrissages silencieux.",
-    ],
-  },
-  {
-    category: "EXPLOSIVITÉ",
-    title: "EXPLO #2 — Plyo + bounds (terrain)",
-    intensity: "moderate",
-    duration: "35-45 min",
-    objective: "Réactivité, élasticité et qualité d'appui",
-    focus: "plyo",
-    location: "pitch",
-    equipment: ["Cônes"],
-    tags: ["Plyo", "Elasticité", "Terrain"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Échauffement: 10-12 min gammes + 3 lignes droites progressives",
-      "Bloc 1 — Pré-activation: Pogos 2 x 20 + Skips 2 x 20 m",
-      "Bloc 2 — Bounds: 4 x 20 m bonds (60-90\" rec)",
-      "Bloc 3 — Sauts: 3 x 5 CMJ + 3 x 5 broad jump",
-      "Retour au calme: 6 min footing léger + mobilité chevilles",
-    ],
-    expectations: [
-      "Contacts courts, gainage actif.",
-      "Stop si douleur ou lourdeur excessive.",
-      "Priorité à la vitesse d'exécution, pas au volume.",
-    ],
-  },
-  {
-    category: "EXPLOSIVITÉ",
-    title: "EXPLO #3 — Accel + medball (terrain)",
-    intensity: "moderate",
-    duration: "40-50 min",
-    objective: "Départs puissants + transfert haut du corps",
-    focus: "speed",
-    location: "pitch",
-    equipment: ["Cônes", "Medball"],
-    tags: ["Accel", "Medball", "Terrain"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Échauffement: 10-12 min gammes + 3 lignes droites",
-      "Bloc 1 — Accel: 4 x 10 m + 3 x 15 m (90\" rec)",
-      "Bloc 2 — Medball: chest pass 4 x 5 + rotational throw 3 x 5 / côté",
-      "Bloc 3 — Relâché: 4 x 20 m progressifs",
-      "Retour au calme: 6 min footing léger",
-    ],
-    expectations: [
-      "Départs propres, angle de projection stable.",
-      "Repos complet sur les accélérations.",
-      "Lancer explosif sans cambrer.",
-    ],
-  },
-  {
-    category: "EXPLOSIVITÉ",
-    title: "EXPLO #4 — Upper power + contacts (gym)",
-    intensity: "moderate",
-    duration: "40-50 min",
-    objective: "Puissance haut du corps + appuis réactifs",
-    focus: "plyo",
-    location: "gym",
-    equipment: ["Banc", "Medball", "Box"],
-    tags: ["Upper", "Power", "Gym"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Échauffement: 8 min mobilité épaules + activation",
-      "Bloc 1 — Upper power: bench press dynamique 5 x 3 @ 60-70% (2' rec)",
-      "Bloc 2 — Medball: slam 4 x 6 + chest pass 3 x 5",
-      "Bloc 3 — Appuis: pogo hops 3 x 20 + line hops 3 x 15",
-      "Retour au calme: 5 min mobilité haut du corps",
-    ],
-    expectations: [
-      "Vitesse d'exécution maximale.",
-      "Repos complet, pas de fatigue résiduelle.",
-    ],
-  },
-  {
-    category: "VITESSE",
-    title: "SPEED #1 — Accélération 0-20 m",
-    intensity: "hard",
-    duration: "30-40 min",
-    objective: "Premiers appuis explosifs et angle de projection",
-    focus: "speed",
-    location: "pitch",
-    equipment: ["Cônes", "Chrono"],
-    tags: ["Accel", "Technique", "Terrain"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Échauffement: 12 min footing + gammes + 3 lignes droites",
-      "Bloc 1 — Technique: wall drill 2 x 20\" + falling start 4 x 10 m",
-      "Bloc 2 — Accélération: 3 x 3 x 10-20 m, 20\" rec, 2' entre séries",
-      "Bloc 3 — Finition: 4 x 10 m départ statique (RPE 7)",
-      "Retour au calme: 6 min footing léger",
-    ],
-    expectations: [
-      "Repos long pour garder la vitesse.",
-      "Position neutre, poussée horizontale.",
-      "Arrête si la technique se dégrade.",
-    ],
-  },
-  {
-    category: "VITESSE",
-    title: "SPEED #2 — MaxV flying 10 m",
-    intensity: "hard",
-    duration: "35-45 min",
-    objective: "Vitesse max sans fatigue résiduelle",
-    focus: "speed",
-    location: "pitch",
-    equipment: ["Cônes"],
-    tags: ["MaxV", "Terrain"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Échauffement: 12-15 min footing + gammes + 4 lignes droites",
-      "Bloc 1 — Build-up: 4 x 30 m progressifs (60\" rec)",
-      "Bloc 2 — Flying: 6 x 10 m lancés (20 m d'élan, 2-3' rec)",
-      "Bloc 3 — Relâché: 4 x 60 m à 90% (RPE 6)",
-      "Retour au calme: 6-8 min footing léger",
-    ],
-    expectations: [
-      "Repos complet. Qualité avant quantité.",
-      "Regard haut, relâchement épaules.",
-      "Arrêter si la foulée raccourcit.",
-    ],
-  },
-  {
-    category: "FORCE",
-    title: "FORCE #1 — Lower strength (gym)",
-    intensity: "hard",
-    duration: "55-65 min",
-    objective: "Force maximale utile aux duels",
-    focus: "strength",
-    location: "gym",
-    equipment: ["Barre", "Rack", "Banc"],
-    tags: ["Lower", "Max Force", "Gym"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Échauffement: 10 min vélo + activation hanches/post chaine",
-      "Bloc 1 — Squat: 5 x 4 @ 80-85% (2-3' rec)",
-      "Bloc 2 — Hinge: RDL 4 x 6 (2' rec)",
-      "Bloc 3 — Unilat: Bulgarian split squat 3 x 6 / jambe",
-      "Bloc 4 — Core: Copenhagen 3 x 20\" / côté + planche 3 x 30\"",
-      "Retour au calme: 6 min étirements dynamiques",
-    ],
-    expectations: [
-      "Priorité au contrôle et à la profondeur.",
-      "RPE 7-8 sur les séries lourdes.",
-      "Pas d'échec musculaire.",
-    ],
-  },
-  {
-    category: "FORCE",
-    title: "FORCE #2 — Upper duel + core",
-    intensity: "moderate",
-    duration: "45-55 min",
-    objective: "Haut du corps solide + gainage anti-contact",
-    focus: "strength",
-    location: "gym",
-    equipment: ["Banc", "Haltères", "Tirage"],
-    tags: ["Upper", "Core", "Gym"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Échauffement: 8 min mobilité épaules + band pull-apart",
-      "Bloc 1 — Push/Pull: Bench press 4 x 6 + Row 4 x 8",
-      "Bloc 2 — Unilat: One-arm row 3 x 10 / côté + Landmine press 3 x 8",
-      "Bloc 3 — Core: Pallof press 3 x 10 / côté + side plank 3 x 25\"",
-      "Retour au calme: 5 min mobilité scapulaire",
-    ],
-    expectations: [
-      "Amplitude contrôlée, pas de douleurs épaules.",
-      "Rythme régulier, tempo propre.",
-      "RPE 6-7 global.",
-    ],
-  },
-  {
-    category: "FORCE",
-    title: "FORCE #3 — Full body maintenance (in-season)",
-    intensity: "moderate",
-    duration: "40-50 min",
-    objective: "Entretenir sans générer trop de fatigue",
-    focus: "strength",
-    location: "gym",
-    equipment: ["Haltères", "Banc"],
-    tags: ["Maintenance", "Full Body"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Échauffement: 8 min circuit léger (squat, push-up, hip hinge)",
-      "Bloc 1 — Full body: Goblet squat 3 x 8 + Row 3 x 10 + Hip thrust 3 x 8",
-      "Bloc 2 — Unilat: Split squat 3 x 6 / jambe",
-      "Bloc 3 — Core: Dead bug 3 x 10 / côté + hollow 3 x 20\"",
-      "Retour au calme: 5 min mobilité",
-    ],
-    expectations: [
-      "RPE 6-7, garder des reps en réserve.",
-      "Objectif = fraîcheur, pas de fatigue résiduelle.",
-    ],
-  },
-  {
-    category: "PRÉPA",
-    title: "PREPA #1 — Base athlétique (terrain)",
-    intensity: "moderate",
-    duration: "45-55 min",
-    objective: "Base endurance + force légère",
-    focus: "circuit",
-    location: "pitch",
-    equipment: ["Cônes", "Tapis"],
-    tags: ["Base", "Circuit", "Terrain"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Échauffement: 10 min footing + mobilité hanches/chevilles",
-      "Circuit 1: 3 tours — squat 12, pompe 10, gainage 30\", 60\" rec",
-      "Bloc 2 — Course: 3 x 6 min allure confort-dur, 2 min rec",
-      "Bloc 3 — Core: dead bug 3 x 10 / côté + side plank 2 x 25\"",
-      "Retour au calme: 6 min footing léger",
-    ],
-    expectations: [
-      "RPE 6-7, garder de la marge.",
-      "Technique propre sur tous les mouvements.",
-    ],
-  },
-  {
-    category: "PRÉPA",
-    title: "PREPA #2 — Force + accel (gym)",
-    intensity: "hard",
-    duration: "55-65 min",
-    objective: "Force utile + départs courts",
-    focus: "strength",
-    location: "gym",
-    equipment: ["Barre", "Box", "Chrono"],
-    tags: ["Force", "Accel", "Gym"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Échauffement: 8-10 min vélo + activation post chaîne",
-      "Bloc 1 — Squat: 4 x 4 @ 80-85% (2'30 rec)",
-      "Bloc 2 — Trap bar jump: 4 x 4 @ 20-30% (2' rec)",
-      "Bloc 3 — Accel: 6 x 10 m départ statique (90\" rec)",
-      "Bloc 4 — Core: pallof press 3 x 10 / côté",
-      "Retour au calme: 6 min mobilité",
-    ],
-    expectations: [
-      "Qualité d'appui, pas d'échec.",
-      "Explosif sur les départs, repos complet.",
-    ],
-  },
-  {
-    category: "PRÉPA",
-    title: "PREPA #3 — Prévention + mobilité (home)",
+    category: "ACTIVATION",
+    title: "Réveil musculaire express",
     intensity: "easy",
-    duration: "30-40 min",
-    objective: "Préparer les tissus sans fatigue",
+    duration: "8-10 min",
+    objective: "Booste ton explosivité dès le réveil",
     focus: "mobility",
     location: "home",
-    equipment: ["Élastiques", "Tapis"],
-    tags: ["Prévention", "Mobilité", "Home"],
+    equipment: [],
+    tags: ["Express", "Matin", "Activation"],
     level: "Tout niveau",
     detail: [
-      "Respiration: 2 min 90/90 breathing",
-      "Bloc 1 — Chevilles: tib raise 3 x 12 + calf raise 3 x 12",
-      "Bloc 2 — Ischios: ham walkout 3 x 6 + nordic assisté 3 x 4",
-      "Bloc 3 — Hanches: 90/90 switches 3 x 6 / côté",
-      "Fin: 3 min étirements doux",
+      "Cat-camel: 8 répétitions lentes — À 4 pattes, alterne dos rond (chat) et dos creux (chameau)",
+      "World's greatest stretch: 5 / côté — Fente avant + rotation du buste, bras vers le ciel",
+      "Leg swings: 10 / jambe — Balancier jambe tendue avant-arrière puis latéral, mains sur un mur",
+      "Pogos légers: 2 x 15 rebonds — Petits sauts sur place, chevilles rigides, contacts au sol rapides",
+      "A-skip sur place: 2 x 10 / jambe — Montée de genou dynamique avec petit saut, bras opposé",
     ],
     expectations: [
-      "RPE 4-5, pas de douleur.",
-      "Tempo lent, amplitude contrôlée.",
+      "Mouvement fluide, pas de force.",
+      "Respiration calme, relâchement.",
+      "Objectif = réveiller, pas fatiguer.",
     ],
   },
   {
-    category: "ENDURANCE",
-    title: "ENDURANCE #1 — Tempo aérobie",
-    intensity: "moderate",
-    duration: "45-55 min",
-    objective: "Tenir l'intensité match sans exploser",
-    focus: "run",
-    location: "pitch",
-    equipment: ["Chrono"],
-    tags: ["Tempo", "Terrain"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Échauffement: 10 min footing progressif + 2 lignes droites",
-      "Bloc: 3 x 8 min allure confort-dur, 3 min rec",
-      "Option: 4 x 20\" accélérations légères",
-      "Retour au calme: 8 min footing léger",
-    ],
-    expectations: [
-      "Respiration contrôlée, pas d'asphyxie.",
-      "Allure stable sur chaque répétition.",
-    ],
-  },
-  {
-    category: "ENDURANCE",
-    title: "ENDURANCE #2 — Intervalles 30/30",
-    intensity: "hard",
-    duration: "35-45 min",
-    objective: "Capacité à répéter des efforts intenses",
-    focus: "run",
-    location: "pitch",
-    equipment: ["Chrono"],
-    tags: ["Intervalles", "Terrain"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Échauffement: 10-12 min footing + gammes",
-      "Bloc: 2 x 8 x 30\" rapide / 30\" trot, 3 min rec entre séries",
-      "Option: 4 x 60 m progressifs",
-      "Retour au calme: 6-8 min footing léger",
-    ],
-    expectations: [
-      "Qualité de foulée, pas de sprint max.",
-      "RPE 7-8, gestion du rythme.",
-    ],
-  },
-  {
-    category: "PRÉVENTION",
-    title: "PREV #1 — Ischios + adducteurs",
-    intensity: "moderate",
-    duration: "35-45 min",
-    objective: "Prévention blessures clés du foot",
-    focus: "strength",
-    location: "home",
-    equipment: ["Élastiques", "Tapis"],
-    tags: ["Prévention", "Ischios", "Adducteurs"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Échauffement: 6-8 min mobilité hanches + activation fessiers",
-      "Bloc 1 — Ischios: Nordic assisté 4 x 4 + ham walkout 3 x 6",
-      "Bloc 2 — Adducteurs: Copenhagen 3 x 20\" / côté + squeeze 3 x 20\"",
-      "Bloc 3 — Hinge léger: RDL 3 x 8 (tempo contrôlé)",
-      "Retour au calme: 5 min mobilité adducteurs",
-    ],
-    expectations: [
-      "Qualité d'exécution avant volume.",
-      "Pas de douleur vive. Arrêter si gêne.",
-    ],
-  },
-  {
-    category: "PRÉVENTION",
-    title: "PREV #2 — Chevilles + plan frontal",
+    category: "ACTIVATION",
+    title: "Warm-up terrain complet",
     intensity: "easy",
-    duration: "30-40 min",
-    objective: "Stabilité appuis, genou et hanche",
+    duration: "12-15 min",
+    objective: "L'échauffement pro pour performer dès la 1ère minute",
+    focus: "mobility",
+    location: "pitch",
+    equipment: [],
+    tags: ["Terrain", "Complet", "Standard"],
+    level: "Tout niveau",
+    detail: [
+      "Footing léger: 3-4 min",
+      "Mobilité dynamique: hanches, chevilles, épaules (2 min)",
+      "Gammes athlétiques: montées de genoux, talons-fesses, pas chassés (3 min)",
+      "Accélérations progressives: 4 x 30 m (60-70-80-90%)",
+      "Étirements actifs: 1 min",
+    ],
+    expectations: [
+      "Progressif du début à la fin.",
+      "Terminer avec une légère sudation.",
+      "Pas d'étirements statiques prolongés.",
+    ],
+  },
+  {
+    category: "ACTIVATION",
+    title: "Activation neuro pré-vitesse",
+    intensity: "moderate",
+    duration: "10-12 min",
+    objective: "Déverrouille ta vitesse max avant les sprints",
+    focus: "speed",
+    location: "pitch",
+    equipment: ["Cônes"],
+    tags: ["Vitesse", "Neuro", "Explosif"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Pogo hops: 2 x 20 — Sauts chevilles rigides, contacts ultra-rapides au sol, mollets actifs",
+      "A-skip dynamiques: 2 x 20 m — Montées de genoux alternées avec impulsion, bras coordonnés",
+      "High knees rapides: 2 x 10 m — Montées de genoux fréquence max, rester sur les orteils",
+      "Falling starts: 4 x 10 m — Départ en déséquilibre avant, laisser tomber puis sprinter",
+      "Sprint progressif: 2 x 20 m @ 85-90% — Accélération contrôlée sans forcer au max",
+    ],
+    expectations: [
+      "Contacts au sol ultra-courts.",
+      "Récup complète entre les sprints.",
+      "Qualité > quantité.",
+    ],
+  },
+  {
+    category: "ACTIVATION",
+    title: "Activation force pré-salle",
+    intensity: "easy",
+    duration: "8-10 min",
+    objective: "Préparer muscles et articulations avant la muscu",
+    focus: "strength",
+    location: "gym",
+    equipment: ["Élastiques"],
+    tags: ["Salle", "Force", "Préparation"],
+    level: "Tout niveau",
+    detail: [
+      "Foam roller: 2 min — Rouleau sur cuisses avant/arrière et fessiers pour détendre les muscles",
+      "Band pull-apart: 2 x 15 — Élastique devant toi, écarte les bras en serrant les omoplates",
+      "Goblet squat léger: 2 x 8 — Squat avec poids (ou sans) tenu contre la poitrine",
+      "Hip circle: 10 / côté — Debout, dessine des cercles avec le genou en l'air",
+      "Glute bridge: 2 x 10 — Allongé dos au sol, monte le bassin en serrant les fessiers",
+    ],
+    expectations: [
+      "Pas de charge lourde.",
+      "Sentir les muscles s'activer.",
+      "Prêt à soulever après ça.",
+    ],
+  },
+
+  // ============================================================
+  // RÉCUPÉRATION — Routines post-effort
+  // ============================================================
+  {
+    category: "RÉCUPÉRATION",
+    title: "Cooldown post-entraînement",
+    intensity: "easy",
+    duration: "10-12 min",
+    objective: "Récupère 2x plus vite après l'effort",
+    focus: "mobility",
+    location: "pitch",
+    equipment: [],
+    tags: ["Post-training", "Cooldown", "Standard"],
+    level: "Tout niveau",
+    detail: [
+      "Marche ou footing très léger: 3-4 min — Redescendre le cardio progressivement",
+      "Respiration ventrale: 10 cycles — Inspir 4s par le nez, expir 6s par la bouche, ventre qui gonfle",
+      "Étirements légers: 30\" chaque — Cuisses, arrière des cuisses, mollets tenus sans forcer",
+      "Hip flexor stretch: 30\" / côté — Genou au sol, hanche avant, sentir l'étirement devant la hanche",
+      "Child's pose: 1 min — À genoux, assis sur les talons, bras tendus devant, front au sol",
+    ],
+    expectations: [
+      "Rythme cardiaque qui redescend.",
+      "Pas de douleur dans les étirements.",
+      "Sortir détendu, pas épuisé.",
+    ],
+  },
+  {
+    category: "RÉCUPÉRATION",
+    title: "Récup active J+1",
+    intensity: "easy",
+    duration: "20-25 min",
+    objective: "Efface les courbatures, reviens plus frais demain",
     focus: "mobility",
     location: "home",
-    equipment: ["Élastiques", "Tapis"],
-    tags: ["Chevilles", "Genou", "Appuis"],
-    level: "Amateur / semi-pro",
+    equipment: ["Tapis"],
+    tags: ["Lendemain", "Actif", "Circulation"],
+    level: "Tout niveau",
     detail: [
-      "Échauffement: 6 min mobilité cheville + genou",
-      "Bloc 1 — Chevilles: calf raise 3 x 12 + tib raise 3 x 15",
-      "Bloc 2 — Plan frontal: side lunge 3 x 8 / côté + lateral band walk 3 x 12",
-      "Bloc 3 — Équilibre: single-leg reach 3 x 6 / côté",
-      "Retour au calme: 5 min mobilité",
+      "Marche ou vélo très léger: 8-10 min — Cardio minimal pour faire circuler le sang",
+      "90/90 switches: 3 x 6 / côté — Assis, jambes à 90°, bascule d'un côté à l'autre sans les mains",
+      "Foam roller: 2 min — Roule sur les zones tendues pour détendre les muscles",
+      "Étirements doux: 5 min — Tiens chaque position 30-45s sans forcer",
+      "Respiration 4-7-8: 5 cycles — Inspir 4s, blocage 7s, expir lente 8s pour te relaxer",
     ],
     expectations: [
-      "Amplitude contrôlée, tempo lent.",
-      "Alignement genou-pied sur chaque rep.",
+      "Zéro intensité, zéro fatigue.",
+      "Bouger pour mieux récupérer.",
+      "Écouter son corps, adapter si besoin.",
     ],
   },
   {
-    category: "MOBILITÉ",
-    title: "MOBILITÉ #1 — Hanches & chevilles de sprinteur",
+    category: "RÉCUPÉRATION",
+    title: "Récup post-match complète",
     intensity: "easy",
     duration: "25-30 min",
-    objective: "Appuis plus libres, genou stable, amplitude utile au sprint",
+    objective: "Le protocole pro pour enchaîner les matchs sans fatigue",
     focus: "mobility",
     location: "home",
-    equipment: ["Tapis", "Mini-bands"],
-    tags: ["Hanches", "Chevilles", "Appuis"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Respiration + reset: 2 min 90/90 breathing + cat-camel 8 reps",
-      "Bloc 1 — Hanches: 90/90 switches 3 x 6 / cote + hip airplanes 2 x 5 / cote",
-      "Bloc 2 — Adducteurs: rockback 3 x 8 + copenhagen short lever 3 x 15\"",
-      "Bloc 3 — Chevilles: dorsiflexion murale 3 x 10 + tib raise 3 x 12",
-      "Fin: 2 min squat hold + respiration lente",
-    ],
-    expectations: [
-      "Tempo lent, controle avant amplitude.",
-      "Aucune douleur vive. Stop si gene.",
-      "Respiration nasale, relachement epaules.",
-    ],
-  },
-  {
-    category: "MOBILITÉ",
-    title: "MOBILITÉ #2 — T-spine + epaules solides",
-    intensity: "easy",
-    duration: "20-25 min",
-    objective: "Posture, epaules stables et rotation thoracique",
-    focus: "mobility",
-    location: "home",
-    equipment: ["Elastiques", "Mur"],
-    tags: ["Epaules", "Posture", "T-spine"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Echauffement: 3 min rotations thoraciques + open book",
-      "Bloc 1 — T-spine: open book 3 x 6 / cote + extensions sur serviette 3 x 8",
-      "Bloc 2 — Scapula: wall slides 3 x 8 + scap push-up 3 x 10",
-      "Bloc 3 — Rotateurs: band external rotation 3 x 12 + YTW 2 x 8",
-      "Fin: doorway stretch 2 x 30\" + respiration 2 min",
-    ],
-    expectations: [
-      "Amplitude propre, pas de pincement.",
-      "Mains legeres, nuque longue.",
-      "Rythme calme, pas de force.",
-    ],
-  },
-  {
-    category: "MOBILITÉ",
-    title: "MOBILITÉ #3 — Flow pre-seance 18 min",
-    intensity: "easy",
-    duration: "15-20 min",
-    objective: "Activer et lubrifier avant entrainement",
-    focus: "mobility",
-    location: "pitch",
-    equipment: ["Tapis"],
-    tags: ["Warm-up", "Flow", "Terrain"],
+    equipment: ["Tapis", "Foam roller"],
+    tags: ["Post-match", "Complet", "Récupération"],
     level: "Tout niveau",
     detail: [
-      "Flow 1: world greatest stretch 2 x 5 / cote",
-      "Flow 2: leg swings 2 x 12 / jambe + ankle rocks 2 x 10",
-      "Flow 3: squat to stand 2 x 8 + lunge rotation 2 x 6 / cote",
-      "Flow 4: pogo hops 2 x 15 + A-march 2 x 15 m",
-      "Fin: 2 lignes droites progressives",
+      "Hydratation + collation protéinée — Eau + shaker ou yaourt grec, à prendre en parallèle",
+      "Marche légère: 5 min — Redescends le rythme cardiaque tranquillement",
+      "Foam roller complet: 8 min — Roule cuisses avant/arrière, intérieur, mollets pour évacuer les tensions",
+      "Étirements passifs: 10 min — Maintiens chaque position 30-45s, respire dans l'étirement",
+      "Respiration profonde: 3 min — Yeux fermés, inspir lente, expir lente, relâche tout",
+      "Douche contrastée: conseillée après — Alterne 30s chaud / 30s froid pour activer la récup",
     ],
     expectations: [
-      "Objectif = readiness, pas fatigue.",
-      "Respiration fluide, mouvement propre.",
+      "Faire dans les 2h après le match.",
+      "Ne pas forcer sur les étirements.",
+      "Priorité = circulation + relâchement.",
     ],
   },
   {
-    category: "MOBILITÉ",
-    title: "MOBILITÉ #4 — Recovery active 25 min",
+    category: "RÉCUPÉRATION",
+    title: "Routine sommeil & récup",
     intensity: "easy",
-    duration: "20-25 min",
-    objective: "Récupération douce sans perte de mobilité",
+    duration: "10-12 min",
+    objective: "Dors mieux, régénère tes muscles pendant la nuit",
     focus: "mobility",
     location: "home",
     equipment: ["Tapis"],
-    tags: ["Recovery", "Mobilité", "Home"],
+    tags: ["Sommeil", "Soir", "Relaxation"],
     level: "Tout niveau",
     detail: [
-      "Respiration: 2 min 4-7-8",
-      "Bloc 1 — Hanches: hip flexor stretch 2 x 30\" / côté",
-      "Bloc 2 — T-spine: open book 2 x 6 / côté",
-      "Bloc 3 — Ischios: hamstring floss 2 x 8 / côté",
-      "Fin: relaxation 3 min",
+      "Lumière tamisée, écrans éteints — Prépare ton cerveau au sommeil",
+      "Child's pose: 1 min — À genoux, assis sur les talons, bras tendus devant, front au sol",
+      "Happy baby: 1 min — Sur le dos, attrape tes pieds, genoux vers les aisselles, bascule doucement",
+      "Supine twist: 30\" / côté — Allongé, genoux pliés qui tombent d'un côté, regard à l'opposé",
+      "Legs up the wall: 3 min — Allongé, jambes verticales contre le mur, détend tout",
+      "Respiration 4-7-8: 8 cycles — Inspir 4s, blocage 7s, expir 8s pour ralentir le système nerveux",
+      "Body scan mental: 2 min — Allongé, scanne ton corps de la tête aux pieds en relâchant chaque zone",
     ],
     expectations: [
-      "Rythme calme, zéro douleur.",
-      "Sortir plus mobile qu'au départ.",
+      "Faire 30-60 min avant de dormir.",
+      "Environnement calme et frais.",
+      "Laisser les pensées passer.",
     ],
   },
+
+  // ============================================================
+  // MOBILITÉ EXPRESS — Routines courtes (5-15 min)
+  // ============================================================
   {
-    category: "MOBILITÉ 7 JOURS",
-    title: "MOB 7J — Jour 1: Reset hanches + chevilles",
+    category: "MOBILITÉ EXPRESS",
+    title: "Flow hanches 8 min",
     intensity: "easy",
-    duration: "18-22 min",
-    objective: "Redonner de la marge aux appuis des le jour 1",
+    duration: "8 min",
+    objective: "Gagne en amplitude pour des frappes plus puissantes",
     focus: "mobility",
     location: "home",
-    equipment: ["Tapis"],
-    tags: ["Pack 7J", "Jour 1", "Hanches", "Chevilles"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Respiration: 90/90 breathing 2 min",
-      "Hanches: 90/90 switches 3 x 6 / cote",
-      "Adducteurs: rockback 3 x 8",
-      "Chevilles: dorsiflexion murale 3 x 10 + tib raise 2 x 12",
-      "Fin: squat hold 2 x 30\"",
-    ],
-    expectations: [
-      "Tempo lent, pas d'a-coups.",
-      "Amplitude controlee, aucune douleur vive.",
-    ],
-  },
-  {
-    category: "MOBILITÉ 7 JOURS",
-    title: "MOB 7J — Jour 2: T-spine + epaules",
-    intensity: "easy",
-    duration: "18-22 min",
-    objective: "Posture haute pour duels et tirs",
-    focus: "mobility",
-    location: "home",
-    equipment: ["Elastiques", "Mur"],
-    tags: ["Pack 7J", "Jour 2", "Epaules", "T-spine"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Open book 3 x 6 / cote",
-      "Wall slides 3 x 8",
-      "Scap push-up 3 x 10",
-      "Band external rotation 3 x 12",
-      "Doorway stretch 2 x 30\"",
-    ],
-    expectations: [
-      "Pas de pincement, amplitude propre.",
-      "Nuque longue, epaules basses.",
-    ],
-  },
-  {
-    category: "MOBILITÉ 7 JOURS",
-    title: "MOB 7J — Jour 3: Ischios + chaine post",
-    intensity: "easy",
-    duration: "20-24 min",
-    objective: "Libere la chaine post sans perdre de force",
-    focus: "mobility",
-    location: "home",
-    equipment: ["Tapis"],
-    tags: ["Pack 7J", "Jour 3", "Ischios"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Cat-camel 2 x 8",
-      "Hip hinge drill 3 x 6",
-      "Hamstring floss 3 x 8 / cote",
-      "Couch stretch 2 x 30\" / cote",
-      "Fin: posterior stretch 2 min",
-    ],
-    expectations: [
-      "Pas de douleur, sensation d'allongement.",
-      "Respiration lente, relachement.",
-    ],
-  },
-  {
-    category: "MOBILITÉ 7 JOURS",
-    title: "MOB 7J — Jour 4: Adducteurs + plan frontal",
-    intensity: "easy",
-    duration: "18-22 min",
-    objective: "Securiser les changements d'appui",
-    focus: "mobility",
-    location: "home",
-    equipment: ["Tapis", "Mini-bands"],
-    tags: ["Pack 7J", "Jour 4", "Adducteurs"],
-    level: "Amateur / semi-pro",
-    detail: [
-      "Copenhagen short lever 3 x 15\" / cote",
-      "Side lunge 3 x 6 / cote",
-      "Lateral band walk 2 x 12",
-      "Single-leg reach 3 x 6 / cote",
-      "Fin: adductor stretch 2 x 30\"",
-    ],
-    expectations: [
-      "Alignement genou-pied.",
-      "Controle lent, pas de rebond.",
-    ],
-  },
-  {
-    category: "MOBILITÉ 7 JOURS",
-    title: "MOB 7J — Jour 5: Flow terrain express",
-    intensity: "easy",
-    duration: "15-20 min",
-    objective: "Activation rapide avant seance ou match",
-    focus: "mobility",
-    location: "pitch",
-    equipment: ["Tapis"],
-    tags: ["Pack 7J", "Jour 5", "Flow", "Terrain"],
+    equipment: [],
+    tags: ["Hanches", "Express", "Quotidien"],
     level: "Tout niveau",
     detail: [
-      "Leg swings 2 x 12 / jambe",
-      "Squat to stand 2 x 8",
-      "Lunge rotation 2 x 6 / cote",
-      "Pogo hops 2 x 15",
-      "2 lignes droites progressives",
+      "90/90 position: 30\" / côté — Assis, une jambe devant à 90°, l'autre derrière à 90°, buste droit",
+      "90/90 switches: 8 transitions — Bascule d'un côté à l'autre en gardant les genoux au sol",
+      "Hip circles: 8 / côté — Debout sur une jambe, dessine des cercles avec le genou levé",
+      "Pigeon stretch: 45\" / côté — Une jambe pliée devant, l'autre tendue derrière, descends le buste",
+      "Deep squat hold: 1 min — Squat complet, talons au sol, coudes qui écartent les genoux",
     ],
     expectations: [
-      "Objectif readiness, pas fatigue.",
-      "Mouvement fluide, controle.",
+      "Respiration calme.",
+      "Aucune douleur vive.",
+      "Idéal le matin ou après position assise.",
     ],
   },
   {
-    category: "MOBILITÉ 7 JOURS",
-    title: "MOB 7J — Jour 6: Recuperation profonde",
+    category: "MOBILITÉ EXPRESS",
+    title: "Flow chevilles 6 min",
     intensity: "easy",
-    duration: "22-28 min",
-    objective: "Relacher sans casser la nervosité",
+    duration: "6 min",
+    objective: "Préviens les entorses et améliore tes appuis",
     focus: "mobility",
     location: "home",
-    equipment: ["Tapis"],
-    tags: ["Pack 7J", "Jour 6", "Recup"],
+    equipment: [],
+    tags: ["Chevilles", "Express", "Appuis"],
     level: "Tout niveau",
     detail: [
-      "Respiration 4-7-8: 3 cycles",
-      "Hip flexor stretch 2 x 40\" / cote",
-      "Hamstring stretch 2 x 40\" / cote",
-      "T-spine rotation 2 x 6 / cote",
-      "Fin: relaxation 3 min",
+      "Ankle circles: 10 / côté / sens — Pied en l'air, dessine des cercles avec les orteils",
+      "Dorsiflexion murale: 15 / côté — Face au mur, genou qui pousse vers le mur sans lever le talon",
+      "Calf raises lents: 12 — Monte sur la pointe des pieds 2s, redescends 2s, contrôle total",
+      "Single leg balance: 30\" / côté — Debout sur une jambe, yeux fixes devant, ne pas trembler",
+      "Tib raises: 15 — Dos contre un mur, lève la pointe des pieds vers toi, muscle le tibia",
     ],
     expectations: [
-      "Aucune douleur, uniquement relachement.",
-      "Sortir frais, pas endormi.",
+      "Sentir l'étirement devant le tibia.",
+      "Contrôle sur les raises.",
+      "Essentiel pour les sprints et changements de direction.",
     ],
   },
   {
-    category: "MOBILITÉ 7 JOURS",
-    title: "MOB 7J — Jour 7: Full reset + respiration",
+    category: "MOBILITÉ EXPRESS",
+    title: "Flow T-spine 7 min",
     intensity: "easy",
-    duration: "20-25 min",
-    objective: "Faire le point avant un nouveau cycle",
+    duration: "7 min",
+    objective: "Libère ton dos pour des rotations plus fluides",
     focus: "mobility",
     location: "home",
-    equipment: ["Tapis"],
-    tags: ["Pack 7J", "Jour 7", "Reset"],
+    equipment: [],
+    tags: ["Dos", "Rotation", "Posture"],
     level: "Tout niveau",
     detail: [
-      "Cat-camel 2 x 8 + open book 2 x 6 / cote",
-      "90/90 switches 2 x 6 / cote",
-      "Ankle rocks 2 x 10 / cote",
-      "Couch stretch 2 x 30\" / cote",
-      "Respiration lente 3 min",
+      "Cat-camel: 8 reps — À 4 pattes, alterne dos rond (chat) puis dos creux (chameau)",
+      "Thread the needle: 6 / côté — À 4 pattes, passe un bras sous le corps, épaule au sol, tourne le buste",
+      "Open book: 6 / côté — Sur le côté, ouvre le bras du dessus en tournant le buste, regard suit la main",
+      "Prone Y-T-W: 6 de chaque — Ventre au sol, dessine Y puis T puis W avec les bras, omoplates serrées",
+      "Child's pose avec rotation: 30\" / côté — Position de l'enfant avec un bras qui pousse sur le côté",
     ],
     expectations: [
-      "Rythme calme, focus sur la respiration.",
-      "Terminer plus mobile qu'au debut.",
+      "Rotation thoracique, pas lombaire.",
+      "Épaules détendues.",
+      "Parfait après une journée de bureau.",
     ],
   },
+  {
+    category: "MOBILITÉ EXPRESS",
+    title: "Réveil complet 10 min",
+    intensity: "easy",
+    duration: "10 min",
+    objective: "10 min le matin = énergie toute la journée",
+    focus: "mobility",
+    location: "home",
+    equipment: [],
+    tags: ["Matin", "Full body", "Réveil"],
+    level: "Tout niveau",
+    detail: [
+      "Au lit: 1 min — Étire bras au-dessus de la tête, jambes tendues, bâille un bon coup",
+      "Cat-camel: 8 — À 4 pattes, alterne dos rond (chat) puis dos creux (chameau)",
+      "World's greatest stretch: 5 / côté — Fente avant + rotation du buste, bras vers le ciel",
+      "Squat to stand: 8 — Attrape tes orteils, tends les jambes, puis descends en squat complet",
+      "Shoulder circles + neck rolls: 1 min — Grands cercles d'épaules + rotations douces de la nuque",
+      "Jumping jacks légers: 20 — Sauts écartés bras en l'air, version tranquille pour se réveiller",
+    ],
+    expectations: [
+      "Progressif, pas brutal.",
+      "Hydratation avant ou pendant.",
+      "Donne de l'énergie pour la journée.",
+    ],
+  },
+  {
+    category: "MOBILITÉ EXPRESS",
+    title: "Pause bureau 5 min",
+    intensity: "easy",
+    duration: "5 min",
+    objective: "Annule les dégâts de la chaise de bureau",
+    focus: "mobility",
+    location: "home",
+    equipment: [],
+    tags: ["Bureau", "Assis", "Pause"],
+    level: "Tout niveau",
+    detail: [
+      "Standing hip flexor stretch: 30\" / côté — Grand pas en avant, bassin vers l'avant, étire le psoas",
+      "Chest opener: 30\" — Mains derrière la tête, coudes en arrière, ouvre la poitrine",
+      "Neck stretches: 20\" / côté — Oreille vers l'épaule, main qui tire doucement, étire le cou",
+      "Standing figure-4: 30\" / côté — Debout, cheville sur le genou opposé, descends les fesses",
+      "10 squats légers — Squats poids du corps pour réactiver la circulation dans les jambes",
+    ],
+    expectations: [
+      "Faire toutes les 2h si possible.",
+      "Debout, près du bureau.",
+      "Empêche les raideurs de s'installer.",
+    ],
+  },
+
+  // ============================================================
+  // PRÉVENTION — Protocoles ciblés anti-blessures
+  // ============================================================
+  {
+    category: "PRÉVENTION",
+    title: "Protocole ischios (Nordic)",
+    intensity: "moderate",
+    duration: "15-18 min",
+    objective: "Divise par 2 ton risque de claquage",
+    focus: "strength",
+    location: "home",
+    equipment: ["Tapis", "Point d'ancrage"],
+    tags: ["Ischios", "Nordic", "Excentrique"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Hip hinge drill: 2 x 8 — Debout, pousse les fesses en arrière en gardant le dos plat, genoux légèrement fléchis",
+      "Glute bridge: 2 x 12 — Allongé, genoux pliés, monte le bassin en serrant les fessiers",
+      "Nordic curl assisté: 4 x 4 — À genoux, quelqu'un tient tes chevilles, descends lentement 3-4s en freinant",
+      "Single leg RDL: 3 x 6 / côté — Debout sur une jambe, penche le buste en avant, jambe arrière tendue",
+      "Hamstring stretch: 30\" / côté — Jambe tendue devant, penche le buste vers le pied, étire l'arrière de la cuisse",
+    ],
+    expectations: [
+      "Contrôle de la descente = clé.",
+      "Adapter l'assistance selon le niveau.",
+      "2-3x / semaine pour résultats.",
+    ],
+  },
+  {
+    category: "PRÉVENTION",
+    title: "Protocole adducteurs",
+    intensity: "moderate",
+    duration: "15-18 min",
+    objective: "Protège-toi de la pubalgie, le fléau des footeux",
+    focus: "strength",
+    location: "home",
+    equipment: ["Tapis"],
+    tags: ["Adducteurs", "Pubalgie", "Prévention"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Adductor rockback: 2 x 10 — À 4 pattes, une jambe tendue sur le côté, recule les fesses vers les talons",
+      "Copenhagen plank: 3 x 15-20\" / côté — Planche latérale, jambe du dessus sur un banc, l'autre en l'air",
+      "Sumo squat: 3 x 10 — Squat pieds très écartés, pointes vers l'extérieur, descends profond",
+      "Side lunge: 2 x 8 / côté — Grand pas latéral, une jambe pliée, l'autre tendue, fesses en arrière",
+      "Adductor stretch: 45\" / côté — Assis jambes écartées, penche vers une jambe, étire l'intérieur de la cuisse",
+    ],
+    expectations: [
+      "Pas de douleur vive.",
+      "Progression lente sur le Copenhagen.",
+      "Essentiel pour les changements de direction.",
+    ],
+  },
+  {
+    category: "PRÉVENTION",
+    title: "Protocole genoux (ACL)",
+    intensity: "moderate",
+    duration: "18-20 min",
+    objective: "Blinde tes genoux contre les ruptures des croisés",
+    focus: "strength",
+    location: "home",
+    equipment: ["Mini-band"],
+    tags: ["Genou", "ACL", "Stabilité"],
+    level: "Tout niveau",
+    detail: [
+      "Terminal knee extension: 2 x 15 / côté — Élastique derrière le genou, tends la jambe complètement, muscle le vaste",
+      "Mini-band walks: 2 x 15 pas / direction — Élastique aux chevilles, marche en crabe, genoux écartés",
+      "Single leg squat partiel: 3 x 8 / côté — Sur une jambe, descends légèrement en contrôlant l'alignement du genou",
+      "Step down contrôlé: 3 x 8 / côté — Sur une marche, descends sur une jambe très lentement, contrôle le genou",
+      "Balance instable: 3 x 30\" / côté — Debout sur un coussin ou serviette pliée, maintiens l'équilibre",
+    ],
+    expectations: [
+      "Alignement genou-orteil = priorité.",
+      "Pas d'effondrement vers l'intérieur.",
+      "Progression lente et contrôlée.",
+    ],
+  },
+  {
+    category: "PRÉVENTION",
+    title: "Protocole chevilles",
+    intensity: "moderate",
+    duration: "15 min",
+    objective: "Fini les entorses qui gâchent ta saison",
+    focus: "strength",
+    location: "home",
+    equipment: ["Mini-band"],
+    tags: ["Chevilles", "Entorse", "Proprioception"],
+    level: "Tout niveau",
+    detail: [
+      "Ankle circles: 15 / côté / sens — Pied en l'air, dessine des cercles lents avec les orteils",
+      "Calf raises: 3 x 15 — Monte sur la pointe des pieds, redescends contrôlé, muscle les mollets",
+      "Tib raises: 3 x 15 — Dos au mur, talons au sol, lève les orteils vers toi, muscle le tibia",
+      "Single leg balance: 3 x 30\" / côté — Debout sur une jambe, yeux fixes, contrôle la stabilité",
+      "Single leg hops: 2 x 10 / côté — Petits sauts sur place sur une jambe, réceptions stables",
+      "Band inversion/eversion: 2 x 12 / côté — Élastique au pied, tourne la cheville dedans puis dehors",
+    ],
+    expectations: [
+      "Essentiel après une entorse.",
+      "Progression vers surfaces instables.",
+      "Intégrer dans le warm-up régulier.",
+    ],
+  },
+  {
+    category: "PRÉVENTION",
+    title: "Core anti-rotation football",
+    intensity: "moderate",
+    duration: "12-15 min",
+    objective: "Gagne tes duels grâce à un gainage de pro",
+    focus: "strength",
+    location: "home",
+    equipment: ["Élastique"],
+    tags: ["Core", "Gainage", "Duels"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Dead bug: 3 x 8 / côté — Sur le dos, bras en l'air, étends une jambe et le bras opposé sans cambrer",
+      "Pallof press: 3 x 10 / côté — Élastique sur le côté, pousse les mains devant toi sans tourner le buste",
+      "Side plank: 3 x 25\" / côté — Sur le coude, corps aligné, hanche haute, gainage latéral",
+      "Bird dog: 3 x 8 / côté — À 4 pattes, tends un bras et la jambe opposée, dos plat",
+      "Hollow hold: 3 x 20\" — Sur le dos, jambes et épaules décollées du sol, bas du dos plaqué",
+    ],
+    expectations: [
+      "Dos plat, pas de cambrure.",
+      "Gainage = résister au mouvement.",
+      "Transfert direct sur le terrain.",
+    ],
+  },
+
+  // ============================================================
+  // MATCH DAY — Routines spécifiques jour de match
+  // ============================================================
   {
     category: "MATCH DAY",
-    title: "MATCH DAY-1 — Activation express",
+    title: "J-1 Match — Activation légère",
     intensity: "easy",
     duration: "20-25 min",
-    objective: "Réveiller le système sans fatigue",
-    focus: "speed",
+    objective: "Arrive au match frais et affûté comme un pro",
+    focus: "mobility",
     location: "pitch",
     equipment: ["Cônes"],
-    tags: ["Activation", "Match-1"],
+    tags: ["J-1", "Activation", "Fraîcheur"],
     level: "Tout niveau",
     detail: [
-      "Échauffement: 6-8 min footing + gammes",
-      "Bloc: 4 x 20 m progressifs + 4 x 10 m accélérations",
-      "Bloc technique: 5 min appuis rapides",
-      "Retour au calme: 4 min trot léger",
+      "Footing très léger: 5 min — Petit trot pour faire monter le cardio doucement",
+      "Mobilité dynamique: 5 min — Rotations hanches, chevilles, épaules, mouvements amples",
+      "Gammes courtes: 3 min — Montées de genoux, talons-fesses, pas chassés sur 10-15 m",
+      "Accélérations progressives: 4-6 x 20 m — Monte à 80-85% max, jamais à fond la veille",
+      "Étirements actifs: 2 min — Mouvements dynamiques, pas de positions tenues longtemps",
+      "Visualisation: 2 min — Ferme les yeux et imagine tes actions clés du match à venir",
     ],
     expectations: [
-      "RPE 4-5 max.",
-      "Sortir frais, pas fatigué.",
+      "RPE max = 4.",
+      "Sortir activé, pas fatigué.",
+      "Bonne nuit de sommeil après.",
     ],
   },
   {
     category: "MATCH DAY",
-    title: "MATCH DAY+1 — Regen + circulation",
-    intensity: "easy",
-    duration: "25-35 min",
-    objective: "Récupérer des impacts du match",
-    focus: "mobility",
-    location: "home",
-    equipment: ["Tapis"],
-    tags: ["Regen", "Match+1"],
+    title: "Warm-up pré-match terrain",
+    intensity: "moderate",
+    duration: "20-25 min",
+    objective: "Sois 100% prêt dès le coup d'envoi",
+    focus: "speed",
+    location: "pitch",
+    equipment: [],
+    tags: ["Pré-match", "Échauffement", "Terrain"],
     level: "Tout niveau",
     detail: [
-      "Bloc 1: 10 min mobilité douce (hanches, dos, chevilles)",
-      "Bloc 2: 10-12 min cardio très léger (trot ou vélo)",
-      "Bloc 3: 5 min respiration + étirements légers",
+      "Footing collectif: 4-5 min — Tour de terrain ensemble, cardio progressif",
+      "Mobilité dynamique: 3 min — Cercles de hanches, rotations chevilles, ouvertures de buste",
+      "Gammes montantes: 4 min — Montées de genoux de plus en plus hautes, talons-fesses rapides, pas chassés",
+      "Courses progressives: 3 x 40 m — Monte l'intensité: 70% puis 80% puis 90%",
+      "Sprints courts: 3 x 15 m @ 95% — Explosivité quasi-max, réveille le système nerveux",
+      "Activation contacts: 2-3 min — Petits duels d'épaules ou exercice technique avec ballon",
+      "Focus mental: 1-2 min — Respire, visualise tes objectifs, entre dans ta bulle",
     ],
     expectations: [
-      "RPE 2-3.",
-      "Aucune douleur ou contrainte.",
+      "Finir 5-8 min avant le coup d'envoi.",
+      "Légère sudation = signe que c'est bon.",
+      "Mental focus, pas de bavardage.",
     ],
   },
   {
-    category: "HOME",
-    title: "HOME #1 — Circuit sans matos",
-    intensity: "moderate",
-    duration: "30-35 min",
-    objective: "Full body efficace, zéro matériel",
-    focus: "circuit",
-    location: "home",
-    equipment: ["Poids du corps"],
-    tags: ["Maison", "Circuit"],
+    category: "MATCH DAY",
+    title: "Routine mi-temps",
+    intensity: "easy",
+    duration: "5-7 min",
+    objective: "Reste chaud et explosif pour la 2e mi-temps",
+    focus: "mobility",
+    location: "pitch",
+    equipment: [],
+    tags: ["Mi-temps", "Maintien", "Match"],
     level: "Tout niveau",
     detail: [
-      "Échauffement: 6-8 min mobilité + activation",
-      "Circuit 1: 4 tours — 30\" squat, 30\" pompe, 30\" fente, 30\" gainage, 60\" rec",
-      "Circuit 2: 3 tours — 20\" mountain climber, 20\" hollow hold, 20\" repos, 90\" rec",
-      "Retour au calme: 5 min étirements",
+      "Rester debout/en mouvement — Ne t'assieds pas plus de 2-3 min, les muscles refroidissent vite",
+      "Hydratation + nutrition — Petites gorgées d'eau, gel ou barre si besoin d'énergie",
+      "Mobilité légère: 2 min — Cercles de hanches et chevilles debout, genoux hauts légers",
+      "Accélérations courtes: 2-3 x 10 m — Petits sprints pour rester réactif",
+      "Respiration + focus: 1 min — Inspire profond, expire lent, rappelle-toi tes objectifs",
     ],
     expectations: [
-      "RPE 6-7, garder de la marge.",
-      "Tempo contrôlé, qualité d'exécution.",
+      "Ne pas se refroidir.",
+      "Écouter le coach en bougeant.",
+      "Reprendre le match aussi réactif qu'au début.",
+    ],
+  },
+  {
+    category: "MATCH DAY",
+    title: "J+1 Match — Régénération",
+    intensity: "easy",
+    duration: "25-30 min",
+    objective: "Régénère tes jambes pour être prêt dès lundi",
+    focus: "mobility",
+    location: "home",
+    equipment: ["Tapis", "Foam roller"],
+    tags: ["J+1", "Récupération", "Régénération"],
+    level: "Tout niveau",
+    detail: [
+      "Marche ou vélo très léger: 10 min — Cardio minimal pour faire circuler le sang, FC sous 120 bpm",
+      "Foam roller complet: 8-10 min — Roule cuisses, mollets, fessiers, dos, zones sensibles du match",
+      "Mobilité douce: 5 min — Cercles de hanches, rotations du dos, bras, tout en douceur",
+      "Étirements passifs légers: 5 min — Positions tenues 30-40s, respire dans l'étirement",
+      "Respiration profonde: 2 min — Inspir 4s, expir 6s, active la récupération du système nerveux",
+    ],
+    expectations: [
+      "Zéro intensité.",
+      "Objectif = circulation + relâchement.",
+      "Bien dormir le soir suivant.",
+    ],
+  },
+
+  // ============================================================
+  // PACK 7 JOURS — Programme mobilité progressif
+  // ============================================================
+  {
+    category: "PACK 7 JOURS",
+    title: "Jour 1 — Reset hanches",
+    intensity: "easy",
+    duration: "18-20 min",
+    objective: "Débute ta transformation mobilité par les hanches",
+    focus: "mobility",
+    location: "home",
+    equipment: [],
+    tags: ["Pack 7J", "Jour 1", "Hanches"],
+    level: "Tout niveau",
+    detail: [
+      "Respiration 90/90: 2 min — En position 90/90, respire profond pour détendre les hanches",
+      "90/90 switches: 3 x 6 / côté — Assis jambes à 90°, bascule d'un côté à l'autre fluidement",
+      "Hip circles: 10 / côté — Debout, genou levé, dessine des cercles amples avec le genou",
+      "Pigeon stretch: 45\" / côté — Jambe avant pliée, jambe arrière tendue, descends le buste",
+      "Deep squat hold: 2 x 45\" — Squat complet, talons au sol, coudes écartent les genoux",
+    ],
+    expectations: [
+      "Premier jour = évaluation.",
+      "Noter les zones raides.",
+      "Pas de forcing.",
+    ],
+  },
+  {
+    category: "PACK 7 JOURS",
+    title: "Jour 2 — T-spine & épaules",
+    intensity: "easy",
+    duration: "18-20 min",
+    objective: "Améliorer la rotation thoracique et libérer les épaules",
+    focus: "mobility",
+    location: "home",
+    equipment: [],
+    tags: ["Pack 7J", "Jour 2", "Haut du corps"],
+    level: "Tout niveau",
+    detail: [
+      "Cat-camel: 10 — À 4 pattes, alterne dos rond (chat) puis dos creux (chameau)",
+      "Thread the needle: 8 / côté — À 4 pattes, passe un bras sous le corps, épaule au sol, tourne le buste",
+      "Open book: 8 / côté — Sur le côté, ouvre le bras du dessus en tournant, regard suit la main",
+      "Wall slides: 2 x 10 — Dos au mur, coudes et mains contre le mur, glisse les bras de haut en bas",
+      "Doorway stretch: 30\" / côté — Avant-bras sur le cadre de porte, avance le buste, ouvre la poitrine",
+    ],
+    expectations: [
+      "Rotation du thorax, pas du bassin.",
+      "Épaules basses et détendues.",
+      "Sentir l'ouverture de la cage thoracique.",
+    ],
+  },
+  {
+    category: "PACK 7 JOURS",
+    title: "Jour 3 — Chaîne postérieure",
+    intensity: "easy",
+    duration: "20 min",
+    objective: "Assouplir ischios et dos sans perdre de force",
+    focus: "mobility",
+    location: "home",
+    equipment: [],
+    tags: ["Pack 7J", "Jour 3", "Ischios"],
+    level: "Tout niveau",
+    detail: [
+      "Hip hinge drill: 2 x 8 — Debout, pousse les fesses en arrière, dos plat, genoux légèrement fléchis",
+      "Hamstring floss: 3 x 8 / côté — Sur le dos, jambe en l'air, tends et plie le genou alternativement",
+      "Jefferson curl: 2 x 6 — Debout, enroule la colonne vertèbre par vertèbre, mains vers le sol",
+      "Downward dog: 3 x 30\" — Mains et pieds au sol, fesses en l'air, talons qui poussent vers le sol",
+      "Forward fold: 1 min — Debout, jambes tendues, penche le buste vers les pieds, relâche le haut du corps",
+    ],
+    expectations: [
+      "Flexion à partir des hanches.",
+      "Sensation d'étirement, pas de douleur.",
+      "Ne pas arrondir excessivement le dos.",
+    ],
+  },
+  {
+    category: "PACK 7 JOURS",
+    title: "Jour 4 — Chevilles & appuis",
+    intensity: "easy",
+    duration: "18 min",
+    objective: "Améliorer la mobilité et stabilité des chevilles",
+    focus: "mobility",
+    location: "home",
+    equipment: [],
+    tags: ["Pack 7J", "Jour 4", "Chevilles"],
+    level: "Tout niveau",
+    detail: [
+      "Ankle circles: 15 / côté / sens — Pied en l'air, dessine des cercles lents avec les orteils",
+      "Dorsiflexion murale: 3 x 12 / côté — Face au mur, genou qui pousse vers le mur sans lever le talon",
+      "Calf raises lents: 3 x 12 — Monte sur la pointe des pieds 2s, redescends 2s, contrôle total",
+      "Tib raises: 2 x 15 — Dos au mur, talons au sol, lève les orteils vers toi",
+      "Single leg balance: 3 x 30\" / côté — Debout sur une jambe, yeux fixes, maintiens l'équilibre",
+    ],
+    expectations: [
+      "Genou qui dépasse les orteils = objectif.",
+      "Contrôle sur toute l'amplitude.",
+      "Fondamental pour les sprints.",
+    ],
+  },
+  {
+    category: "PACK 7 JOURS",
+    title: "Jour 5 — Adducteurs & plan frontal",
+    intensity: "easy",
+    duration: "18 min",
+    objective: "Préparer les adducteurs aux changements de direction",
+    focus: "mobility",
+    location: "home",
+    equipment: [],
+    tags: ["Pack 7J", "Jour 5", "Adducteurs"],
+    level: "Tout niveau",
+    detail: [
+      "Adductor rockback: 3 x 10 — À 4 pattes, une jambe tendue sur le côté, recule les fesses vers les talons",
+      "Cossack squat: 3 x 6 / côté — Squat latéral profond, une jambe pliée, l'autre tendue sur le côté",
+      "Side lunge: 2 x 8 / côté — Grand pas latéral, une jambe pliée, l'autre tendue, fesses en arrière",
+      "Frog stretch: 2 x 45\" — À 4 pattes, genoux très écartés, pousse les fesses en arrière",
+      "Butterfly stretch: 1 min — Assis, plantes de pieds jointes, genoux qui tombent vers le sol",
+    ],
+    expectations: [
+      "Aller chercher l'amplitude progressivement.",
+      "Pas de rebond.",
+      "Zone souvent négligée mais cruciale.",
+    ],
+  },
+  {
+    category: "PACK 7 JOURS",
+    title: "Jour 6 — Flow complet",
+    intensity: "easy",
+    duration: "22-25 min",
+    objective: "Le flow ultime : ton corps bouge comme jamais",
+    focus: "mobility",
+    location: "home",
+    equipment: [],
+    tags: ["Pack 7J", "Jour 6", "Flow"],
+    level: "Tout niveau",
+    detail: [
+      "Sun salutation modifié: 3 cycles — Mains en l'air → penche → planche → chien tête en bas → fente → debout",
+      "World's greatest stretch flow: 5 / côté — Fente avant + rotation du buste + coude au sol, enchaîne fluide",
+      "Squat to stand: 10 — Attrape tes orteils, tends les jambes, puis descends en squat complet",
+      "Lunge with rotation: 6 / côté — Grande fente avant, tourne le buste vers la jambe avant",
+      "Hip flow: 3 cycles — Enchaîne position 90/90 → pigeon → squat profond sans t'arrêter",
+      "Standing balance flow: 2 min — Debout sur une jambe, mouvements de bras et jambe libres, change de côté",
+    ],
+    expectations: [
+      "Enchaîner sans pause.",
+      "Respiration fluide.",
+      "Sentir le corps bouger comme un tout.",
+    ],
+  },
+  {
+    category: "PACK 7 JOURS",
+    title: "Jour 7 — Reset & bilan",
+    intensity: "easy",
+    duration: "20-22 min",
+    objective: "Mesure tes progrès et consolide tes gains",
+    focus: "mobility",
+    location: "home",
+    equipment: [],
+    tags: ["Pack 7J", "Jour 7", "Bilan"],
+    level: "Tout niveau",
+    detail: [
+      "Test hanches: 90/90 — Assis jambes à 90°, note si c'est plus facile qu'au jour 1",
+      "Test T-spine: rotation — Allongé, mesure jusqu'où tes épaules touchent le sol en tournant",
+      "Test chevilles: dorsiflexion — Genou au mur, note la distance pied-mur sans lever le talon",
+      "Flow libre: 10 min — Bouge librement, insiste sur les zones encore raides",
+      "Respiration + visualisation: 3 min — Ferme les yeux, respire, visualise ton corps plus mobile",
+    ],
+    expectations: [
+      "Comparer avec le jour 1.",
+      "Noter les progrès.",
+      "Identifier les zones à travailler.",
+    ],
+  },
+
+  // ============================================================
+  // DÉFIS — Challenges et routines fun
+  // ============================================================
+  {
+    category: "DÉFIS",
+    title: "Challenge Core 5 min",
+    intensity: "moderate",
+    duration: "5 min",
+    objective: "5 min pour forger des abdos en béton",
+    focus: "strength",
+    location: "home",
+    equipment: [],
+    tags: ["Challenge", "Core", "Rapide"],
+    level: "Amateur / semi-pro",
+    detail: [
+      "Planche: 45\" — Sur les coudes, corps aligné de la tête aux pieds, gainage frontal",
+      "Mountain climbers: 30\" — Position pompe, ramène les genoux vers la poitrine en alternant rapidement",
+      "Planche latérale droite: 30\" — Sur le coude droit, corps aligné, hanche haute",
+      "Planche latérale gauche: 30\" — Sur le coude gauche, corps aligné, hanche haute",
+      "Dead bug: 30\" — Sur le dos, bras en l'air, alterne jambe/bras opposés sans cambrer",
+      "Hollow hold: 30\" — Sur le dos, jambes et épaules décollées, bas du dos plaqué au sol",
+      "Superman: 30\" — Sur le ventre, décolle bras et jambes en même temps, serre le dos",
+      "Planche finale: 45\" — Dernière planche, tiens jusqu'au bout, finish strong",
+    ],
+    expectations: [
+      "Pas de pause entre les exercices.",
+      "Qualité de gainage > survie.",
+      "Bats ton record la prochaine fois.",
+    ],
+  },
+  {
+    category: "DÉFIS",
+    title: "Challenge Squats 100",
+    intensity: "moderate",
+    duration: "8-12 min",
+    objective: "Le défi qui construit des jambes explosives",
+    focus: "strength",
+    location: "home",
+    equipment: [],
+    tags: ["Challenge", "Squats", "Endurance"],
+    level: "Tout niveau",
+    detail: [
+      "Objectif: 100 squats poids du corps — Fais 100 squats le plus vite possible avec bonne forme",
+      "Fractionne comme tu veux — Par exemple 10 x 10, 5 x 20, ou 4 x 25, adapte à ton niveau",
+      "Repos minimal entre les séries — Juste le temps de reprendre ton souffle",
+      "Profondeur: cuisses parallèles au sol — Pas de demi-squats, descends correctement",
+      "Chronomètre ton temps total — Note-le pour battre ton record la prochaine fois",
+    ],
+    expectations: [
+      "Forme correcte sur chaque rep.",
+      "Note ton temps pour progresser.",
+      "Objectif avancé: < 6 min.",
+    ],
+  },
+  {
+    category: "DÉFIS",
+    title: "Test mobilité FKS",
+    intensity: "easy",
+    duration: "15 min",
+    objective: "Découvre tes points faibles avant qu'ils te blessent",
+    focus: "mobility",
+    location: "home",
+    equipment: [],
+    tags: ["Test", "Évaluation", "Mobilité"],
+    level: "Tout niveau",
+    detail: [
+      "Test dorsiflexion — Genou qui touche le mur sans lever le talon, note la distance pied-mur",
+      "Test hanches — Squat complet talons au sol, note si tu y arrives et la position du buste",
+      "Test T-spine — Allongé, bras écartés, tourne le buste, note si l'épaule touche le sol",
+      "Test ischios — Debout, jambes tendues, penche vers les pieds, note la distance doigts-sol",
+      "Test épaules — Une main par le haut, l'autre par le bas, essaie de les toucher dans le dos",
+      "Note tout — Garde tes résultats pour voir ta progression dans 1 mois",
+    ],
+    expectations: [
+      "Pas de forcing, juste évaluer.",
+      "Refaire chaque mois.",
+      "Identifier tes points faibles.",
+    ],
+  },
+  {
+    category: "DÉFIS",
+    title: "Routine minimaliste 3 min",
+    intensity: "easy",
+    duration: "3 min",
+    objective: "3 min chrono, zéro excuse, max de résultats",
+    focus: "mobility",
+    location: "home",
+    equipment: [],
+    tags: ["Express", "Minimal", "Quotidien"],
+    level: "Tout niveau",
+    detail: [
+      "Cat-camel: 30\" — À 4 pattes, alterne dos rond puis dos creux, mobilise toute la colonne",
+      "World's greatest stretch: 4 / côté — Fente avant + rotation du buste, bras vers le ciel",
+      "Deep squat hold: 30\" — Squat complet, talons au sol, coudes écartent les genoux",
+      "Standing hip circles: 8 / côté — Debout, genou levé, dessine des cercles avec le genou",
+    ],
+    expectations: [
+      "Mieux que rien.",
+      "Faire tous les jours si possible.",
+      "3 min = aucune excuse.",
     ],
   },
 ];
@@ -732,13 +920,25 @@ const PREBUILT_SESSIONS: Prebuilt[] = [
 const INTENSITY_LABEL: Record<string, string> = {
   easy: "Facile",
   moderate: "Modéré",
-  hard: "Dur",
+  hard: "Intense",
+};
+
+const INTENSITY_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  easy: "sunny-outline",
+  moderate: "flame-outline",
+  hard: "flash",
 };
 
 const INTENSITY_COLOR: Record<string, string> = {
-  easy: palette.success,
-  moderate: palette.accent,
-  hard: palette.danger,
+  easy: "#10b981",
+  moderate: "#f59e0b",
+  hard: "#ef4444",
+};
+
+const LOCATION_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  gym: "barbell-outline",
+  pitch: "football-outline",
+  home: "home-outline",
 };
 
 const LOCATION_LABEL: Record<string, string> = {
@@ -747,17 +947,15 @@ const LOCATION_LABEL: Record<string, string> = {
   home: "Maison",
 };
 
+// Ordre des catégories de routines (toutes sont des compléments au cycle IA)
 const CATEGORY_ORDER = [
-  "EXPLOSIVITÉ",
-  "VITESSE",
-  "FORCE",
-  "PRÉPA",
-  "ENDURANCE",
+  "ACTIVATION",
+  "RÉCUPÉRATION",
+  "MOBILITÉ EXPRESS",
   "PRÉVENTION",
-  "MOBILITÉ",
-  "MOBILITÉ 7 JOURS",
   "MATCH DAY",
-  "HOME",
+  "PACK 7 JOURS",
+  "DÉFIS",
 ];
 
 const intensityRank: Record<Prebuilt["intensity"], number> = {
@@ -777,11 +975,292 @@ const parseDurationMin = (raw?: string) => {
   return Math.round(avg);
 };
 
+// ============================================================
+// COMPOSANTS ANIMÉS
+// ============================================================
+
+function AnimatedCategoryCard({
+  category,
+  count,
+  config,
+  index,
+  isActive,
+  onPress,
+}: {
+  category: string;
+  count: number;
+  config: CategoryConfig;
+  index: number;
+  isActive: boolean;
+  onPress: () => void;
+}) {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(15)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 280,
+        delay: index * 60,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 280,
+        delay: index * 60,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [fadeAnim, slideAnim, index]);
+
+  const haptics = useHaptics();
+
+  const handlePress = () => {
+    haptics.impactLight();
+    onPress();
+  };
+
+  return (
+    <Animated.View
+      style={{
+        opacity: fadeAnim,
+        transform: [{ translateX: slideAnim }],
+      }}
+    >
+      <TouchableOpacity
+        style={[styles.categoryChip, isActive && styles.categoryChipActive]}
+        onPress={handlePress}
+        activeOpacity={0.85}
+      >
+        <LinearGradient
+          colors={isActive ? config.gradient : [palette.cardSoft, palette.cardSoft]}
+          style={styles.categoryChipIcon}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        >
+          <Ionicons
+            name={config.icon}
+            size={14}
+            color={isActive ? "#fff" : palette.sub}
+          />
+        </LinearGradient>
+        <Text style={[styles.categoryChipText, isActive && styles.categoryChipTextActive]}>
+          {category}
+        </Text>
+        <View style={[styles.categoryChipBadge, isActive && styles.categoryChipBadgeActive]}>
+          <Text style={[styles.categoryChipBadgeText, isActive && styles.categoryChipBadgeTextActive]}>
+            {count}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+function AnimatedRoutineCard({
+  routine,
+  index,
+  onPress,
+}: {
+  routine: Prebuilt;
+  index: number;
+  onPress: () => void;
+}) {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(18)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 280,
+        delay: index * 70,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 280,
+        delay: index * 70,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [fadeAnim, slideAnim, index]);
+
+  const haptics = useHaptics();
+
+  const handlePress = () => {
+    haptics.impactLight();
+    onPress();
+  };
+
+  const config = CATEGORY_CONFIG[routine.category];
+  const intensityColor = INTENSITY_COLOR[routine.intensity] ?? palette.accent;
+  const intensityIcon = INTENSITY_ICON[routine.intensity] ?? "flash-outline";
+  const locationIcon = LOCATION_ICON[routine.location ?? "home"] ?? "home-outline";
+
+  return (
+    <Animated.View
+      style={{
+        opacity: fadeAnim,
+        transform: [{ translateY: slideAnim }],
+      }}
+    >
+      <TouchableOpacity
+        style={styles.routineCard}
+        onPress={handlePress}
+        activeOpacity={0.9}
+      >
+        <View style={styles.routineCardContent}>
+          {/* Icône gradient à gauche */}
+          <LinearGradient
+            colors={config?.gradient ?? ["#6b7280", "#9ca3af"]}
+            style={styles.routineCardIcon}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <Ionicons name={config?.icon ?? "sparkles"} size={20} color="#fff" />
+          </LinearGradient>
+
+          {/* Contenu principal */}
+          <View style={styles.routineCardBody}>
+            <Text style={styles.routineCardTitle} numberOfLines={1}>
+              {routine.title}
+            </Text>
+            <Text style={styles.routineCardObjective} numberOfLines={2}>
+              {routine.objective}
+            </Text>
+
+            {/* Tags row */}
+            <View style={styles.routineTagsRow}>
+              {/* Intensité */}
+              <View style={[styles.routineTag, { borderColor: intensityColor }]}>
+                <Ionicons name={intensityIcon} size={10} color={intensityColor} />
+                <Text style={[styles.routineTagText, { color: intensityColor }]}>
+                  {INTENSITY_LABEL[routine.intensity]}
+                </Text>
+              </View>
+
+              {/* Durée */}
+              <View style={styles.routineTag}>
+                <Ionicons name="time-outline" size={10} color={palette.sub} />
+                <Text style={styles.routineTagText}>{routine.duration}</Text>
+              </View>
+
+              {/* Lieu */}
+              {routine.location && (
+                <View style={styles.routineTag}>
+                  <Ionicons name={locationIcon} size={10} color={palette.sub} />
+                  <Text style={styles.routineTagText}>
+                    {LOCATION_LABEL[routine.location]}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* Chevron */}
+          <Ionicons name="chevron-forward" size={18} color={palette.sub} />
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+function CategorySection({
+  category,
+  routines,
+  baseIndex,
+  onRoutinePress,
+}: {
+  category: string;
+  routines: Prebuilt[];
+  baseIndex: number;
+  onRoutinePress: (routine: Prebuilt) => void;
+}) {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 280,
+        delay: baseIndex * 80,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 280,
+        delay: baseIndex * 80,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [fadeAnim, slideAnim, baseIndex]);
+
+  const config = CATEGORY_CONFIG[category] ?? {
+    icon: "sparkles",
+    gradient: ["#6b7280", "#9ca3af"],
+    tagline: "",
+  };
+
+  return (
+    <Animated.View
+      style={[
+        styles.categorySection,
+        { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+      ]}
+    >
+      {/* Header de catégorie */}
+      <View style={styles.categorySectionHeader}>
+        <View style={styles.categorySectionLeft}>
+          <LinearGradient
+            colors={config.gradient}
+            style={styles.categorySectionIcon}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <Ionicons name={config.icon} size={18} color="#fff" />
+          </LinearGradient>
+          <View>
+            <Text style={styles.categorySectionTitle}>{category}</Text>
+            <Text style={styles.categorySectionTagline}>{config.tagline}</Text>
+          </View>
+        </View>
+        <View style={styles.categorySectionBadge}>
+          <Text style={styles.categorySectionBadgeText}>{routines.length}</Text>
+        </View>
+      </View>
+
+      {/* Liste des routines */}
+      <View style={styles.routinesList}>
+        {routines.map((routine, idx) => (
+          <AnimatedRoutineCard
+            key={routine.title}
+            routine={routine}
+            index={idx}
+            onPress={() => onRoutinePress(routine)}
+          />
+        ))}
+      </View>
+    </Animated.View>
+  );
+}
+
 export default function PrebuiltSessionsScreen() {
   const sessions = useTrainingStore((s) => s.sessions);
   const pending = sessions.filter((s) => !s.completed);
   const nav = useNavigation<any>();
   const [selectedCategory, setSelectedCategory] = useState<string>("Tous");
+  const [animationKey, setAnimationKey] = useState(0);
+  const badges = useRoutineBadges();
+
+  // Reset animations on focus
+  useFocusEffect(
+    useCallback(() => {
+      setAnimationKey((k) => k + 1);
+    }, [])
+  );
 
   const grouped = useMemo(() => {
     const map: Record<string, Prebuilt[]> = {};
@@ -815,215 +1294,185 @@ export default function PrebuiltSessionsScreen() {
     const fromSessions = grouped.map(([category, list]) => ({
       category,
       count: list.length,
+      config: CATEGORY_CONFIG[category] ?? {
+        icon: "sparkles" as keyof typeof Ionicons.glyphMap,
+        gradient: ["#6b7280", "#9ca3af"] as [string, string],
+        tagline: "",
+      },
     }));
-    return [{ category: "Tous", count: PREBUILT_SESSIONS.length }, ...fromSessions];
-  }, []);
+    return [
+      {
+        category: "Tous",
+        count: PREBUILT_SESSIONS.length,
+        config: {
+          icon: "apps" as keyof typeof Ionicons.glyphMap,
+          gradient: ["#ff7a1a", "#ff9a4a"] as [string, string],
+          tagline: "Toutes les routines",
+        },
+      },
+      ...fromSessions,
+    ];
+  }, [grouped]);
 
-  const pendingCount = pending.length;
+  const haptics = useHaptics();
+
+  const handleRoutinePress = (routine: Prebuilt) => {
+    haptics.impactLight();
+    nav.navigate("PrebuiltSessionDetail", { session: routine });
+  };
+
+  const filteredGroups = useMemo(
+    () =>
+      grouped.filter(([category]) =>
+        selectedCategory === "Tous" ? true : selectedCategory === category
+      ),
+    [grouped, selectedCategory]
+  );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: palette.bg }}>
+    <SafeAreaView style={styles.safeArea}>
       <ScrollView
-        style={{ flex: 1 }}
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
-        {/* HERO */}
-        <View style={styles.heroCard}>
-          <View style={styles.heroGlow} />
-          <View style={styles.heroTopRow}>
-            <View>
-              <Text style={styles.heroTitle}>Séances FKS</Text>
-              <Text style={styles.heroSubtitle}>Bibliothèque opti par catégorie</Text>
-            </View>
-            <View style={styles.heroBadge}>
-              <Text style={styles.heroBadgeLabel}>Pré-construites</Text>
-              <Text style={styles.heroBadgeValue}>
-                {PREBUILT_SESSIONS.length}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.heroBottomRow}>
-            <View style={styles.heroStat}>
-              <Text style={styles.heroStatLabel}>En attente</Text>
-              <Text style={styles.heroStatValue}>{pendingCount}</Text>
-              <Text style={styles.heroStatSub}>séance(s)</Text>
-            </View>
-            <View style={styles.heroDivider} />
-            <View style={styles.heroStat}>
-              <Text style={styles.heroStatLabel}>Catégories</Text>
-              <Text style={styles.heroStatValue}>{grouped.length}</Text>
-              <Text style={styles.heroStatSub}>types de travail</Text>
-            </View>
-          </View>
+        {/* Header moderne */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Routines & extras</Text>
+          <Text style={styles.headerSubtitle}>
+            Compléments express à ton cycle IA
+          </Text>
         </View>
 
-        {/* Pending sessions block */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Séances planifiées</Text>
-            {pendingCount > 0 && (
-              <View style={styles.sectionChip}>
-                <Text style={styles.sectionChipText}>{pendingCount} en attente</Text>
+        {/* Badges de progression */}
+        {badges.total > 0 ? (
+          <View style={styles.badgesCard}>
+            <View style={styles.badgesHeader}>
+              <View style={styles.badgesIconCircle}>
+                <Ionicons name="medal" size={18} color="#f59e0b" />
+              </View>
+              <Text style={styles.badgesTitle}>Tes stats routines</Text>
+            </View>
+            <View style={styles.badgesGrid}>
+              <View style={styles.badgeItem}>
+                <LinearGradient
+                  colors={["#10b981", "#34d399"]}
+                  style={styles.badgeIconBg}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <Ionicons name="calendar" size={16} color="#fff" />
+                </LinearGradient>
+                <Text style={styles.badgeValue}>{badges.thisMonth}</Text>
+                <Text style={styles.badgeLabel}>ce mois</Text>
+              </View>
+              <View style={styles.badgeItem}>
+                <LinearGradient
+                  colors={["#f59e0b", "#fbbf24"]}
+                  style={styles.badgeIconBg}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <Ionicons name="flame" size={16} color="#fff" />
+                </LinearGradient>
+                <Text style={styles.badgeValue}>{badges.streak}</Text>
+                <Text style={styles.badgeLabel}>jours streak</Text>
+              </View>
+              <View style={styles.badgeItem}>
+                <LinearGradient
+                  colors={["#8b5cf6", "#a78bfa"]}
+                  style={styles.badgeIconBg}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <Ionicons name="trophy" size={16} color="#fff" />
+                </LinearGradient>
+                <Text style={styles.badgeValue}>{badges.total}</Text>
+                <Text style={styles.badgeLabel}>total</Text>
+              </View>
+            </View>
+            {badges.favoriteCategory && (
+              <View style={styles.favCategoryRow}>
+                <Ionicons name="heart" size={12} color="#ef4444" />
+                <Text style={styles.favCategoryText}>
+                  Ta catégorie préférée : <Text style={styles.favCategoryName}>{badges.favoriteCategory}</Text>
+                </Text>
               </View>
             )}
           </View>
-
-          {pendingCount === 0 ? (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyText}>
-                Aucune séance en attente. Tu peux lancer une séance FKS ou choisir un
-                template ci-dessous.
-              </Text>
+        ) : (
+          <Card variant="soft" style={styles.introCard}>
+            <View style={styles.introHeader}>
+              <View style={styles.introIconCircle}>
+                <Ionicons name="bulb" size={20} color="#f59e0b" />
+              </View>
+              <View style={styles.introTextContainer}>
+                <Text style={styles.introTitle}>Compléments intelligents</Text>
+                <Text style={styles.introDescription}>
+                  Ces routines s'ajoutent à ton cycle IA pour optimiser ta prépa : échauffement, récup, prévention des blessures...
+                </Text>
+              </View>
             </View>
-          ) : (
-            <View style={{ gap: 8 }}>
-              {pending.map((s) => {
-                const date = (s.dateISO ?? (s as any).date ?? "").slice(0, 10);
-                const focus = s.focus ?? (s as any).modality ?? "—";
-                const dur =
-                  typeof s.durationMin === "number"
-                    ? `${Math.round(s.durationMin)} min`
-                    : typeof s.volumeScore === "number"
-                    ? `${Math.round(s.volumeScore)} min`
-                    : "—";
+          </Card>
+        )}
 
-                return (
-                  <View key={s.id} style={styles.pendingCard}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.pendingTitle}>{focus}</Text>
-                      <Text style={styles.pendingSub}>
-                        {date} · {s.intensity ?? "—"} · {dur}
-                      </Text>
-                    </View>
-                    <Text style={styles.arrow}>›</Text>
-                  </View>
-                );
-              })}
-            </View>
-          )}
+        {/* Stats rapides */}
+        <View style={styles.statsRow}>
+          <View style={styles.statChip}>
+            <Ionicons name="sparkles" size={14} color={palette.accent} />
+            <Text style={styles.statText}>
+              <Text style={styles.statHighlight}>{PREBUILT_SESSIONS.length}</Text> routines
+            </Text>
+          </View>
+          <View style={styles.statChip}>
+            <Ionicons name="layers" size={14} color="#14b8a6" />
+            <Text style={styles.statText}>
+              <Text style={styles.statHighlight}>{grouped.length}</Text> catégories
+            </Text>
+          </View>
         </View>
 
-        {/* Library by category */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Bibliothèque FKS</Text>
-            <Text style={styles.sectionSubTitle}>Séances prêtes à l’emploi</Text>
-          </View>
-
+        {/* Filtre catégories avec animations */}
+        <View style={styles.filtersSection}>
+          <Text style={styles.filtersSectionTitle}>Catégories</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterRow}
+            contentContainerStyle={styles.filtersRow}
+            key={animationKey}
           >
-            {categories.map((item) => {
-              const active = selectedCategory === item.category;
-              return (
-                <TouchableOpacity
-                  key={item.category}
-                  style={[styles.filterChip, active && styles.filterChipActive]}
-                  onPress={() => setSelectedCategory(item.category)}
-                  activeOpacity={0.85}
-                >
-                  <Text
-                    style={[
-                      styles.filterChipText,
-                      active && styles.filterChipTextActive,
-                    ]}
-                  >
-                    {item.category}
-                  </Text>
-                  <View
-                    style={[
-                      styles.filterBadge,
-                      active && styles.filterBadgeActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.filterBadgeText,
-                        active && styles.filterBadgeTextActive,
-                      ]}
-                    >
-                      {item.count}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+            {categories.map((item, index) => (
+              <AnimatedCategoryCard
+                key={item.category}
+                category={item.category}
+                count={item.count}
+                config={item.config}
+                index={index}
+                isActive={selectedCategory === item.category}
+                onPress={() => setSelectedCategory(item.category)}
+              />
+            ))}
           </ScrollView>
+        </View>
 
-          {grouped
-            .filter(([category]) =>
-              selectedCategory === "Tous" ? true : selectedCategory === category
-            )
-            .map(([category, list]) => (
-            <View key={category} style={styles.categoryBlock}>
-              <View style={styles.categoryHeader}>
-                <Text style={styles.categoryLabel}>{category}</Text>
-                <View style={styles.categoryBadge}>
-                  <Text style={styles.categoryBadgeText}>{list.length} séances</Text>
-                </View>
-              </View>
-
-              <View style={{ gap: 8 }}>
-                {list.map((s) => {
-                  const intensityColor =
-                    INTENSITY_COLOR[s.intensity] ?? palette.accent;
-
-                  return (
-                    <TouchableOpacity
-                      key={s.title}
-                      style={styles.prebuiltCard}
-                      activeOpacity={0.9}
-                      onPress={() =>
-                        nav.navigate(
-                          "PrebuiltSessionDetail" as never,
-                          { session: s } as never
-                        )
-                      }
-                    >
-                      <View style={{ flex: 1 }}>
-                        <View style={styles.cardTopRow}>
-                          <Text style={styles.cardTitle}>{s.title}</Text>
-                        </View>
-
-                        <View style={styles.tagsRow}>
-                          <View style={[styles.tag, { borderColor: intensityColor }]}>
-                            <View
-                              style={[
-                                styles.tagDot,
-                                { backgroundColor: intensityColor },
-                              ]}
-                            />
-                            <Text style={styles.tagText}>
-                              {INTENSITY_LABEL[s.intensity] ?? s.intensity}
-                            </Text>
-                          </View>
-                          <View style={styles.tag}>
-                            <Text style={styles.tagText}>{s.duration}</Text>
-                          </View>
-                          {s.location ? (
-                            <View style={styles.tag}>
-                              <Text style={styles.tagText}>
-                                {LOCATION_LABEL[s.location] ?? s.location}
-                              </Text>
-                            </View>
-                          ) : null}
-                        </View>
-
-                        <Text style={styles.cardObjective} numberOfLines={2}>
-                          {s.objective}
-                        </Text>
-                      </View>
-                      <Text style={styles.arrow}>›</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
+        {/* Routines par catégorie */}
+        <View style={styles.routinesContainer} key={`${animationKey}-${selectedCategory}`}>
+          {filteredGroups.map(([category, list], idx) => (
+            <CategorySection
+              key={category}
+              category={category}
+              routines={list}
+              baseIndex={idx}
+              onRoutinePress={handleRoutinePress}
+            />
           ))}
+        </View>
+
+        {/* Tip en bas */}
+        <View style={styles.tipContainer}>
+          <Ionicons name="information-circle-outline" size={14} color={palette.sub} />
+          <Text style={styles.tipText}>
+            Ces routines sont des compléments à ton entraînement principal. Utilise-les pour t'échauffer, récupérer ou prévenir les blessures.
+          </Text>
         </View>
 
         <View style={{ height: 24 }} />
@@ -1033,292 +1482,357 @@ export default function PrebuiltSessionsScreen() {
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: palette.bg,
+  },
   container: {
     padding: 16,
     gap: 16,
-    backgroundColor: palette.bg,
   },
 
-  // HERO
-  heroCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: palette.border,
-    padding: 16,
-    backgroundColor: palette.card,
-    overflow: "hidden",
+  // Header moderne (comme SessionHubScreen)
+  header: {
+    gap: 4,
   },
-  heroGlow: {
-    position: "absolute",
-    top: -60,
-    right: -80,
-    width: 220,
-    height: 220,
-    borderRadius: 999,
-    backgroundColor: palette.accentSoft,
-    opacity: 0.9,
-  },
-  heroTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12,
-  },
-  heroTitle: {
-    fontSize: 20,
+  headerTitle: {
+    fontSize: 26,
     fontWeight: "800",
     color: palette.text,
   },
-  heroSubtitle: {
-    fontSize: 12,
+  headerSubtitle: {
+    fontSize: 14,
+    color: palette.sub,
+  },
+
+  // Stats row
+  statsRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  statChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: palette.cardSoft,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: palette.border,
+  },
+  statText: {
+    fontSize: 13,
+    color: palette.sub,
+  },
+  statHighlight: {
+    color: palette.text,
+    fontWeight: "700",
+  },
+
+  // Intro card
+  introCard: {
+    padding: 14,
+    gap: 12,
+  },
+  introHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  introIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "rgba(245,158,11,0.15)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  introTextContainer: {
+    flex: 1,
+  },
+  introTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: palette.text,
+  },
+  introDescription: {
+    fontSize: 13,
     color: palette.sub,
     marginTop: 4,
+    lineHeight: 18,
   },
-  heroBadge: {
-    alignItems: "flex-end",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
+
+  // Badges card
+  badgesCard: {
+    padding: 16,
+    backgroundColor: palette.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: palette.border,
+    gap: 14,
+  },
+  badgesHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  badgesIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "rgba(245,158,11,0.15)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  badgesTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: palette.text,
+  },
+  badgesGrid: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+  },
+  badgeItem: {
+    alignItems: "center",
+    gap: 6,
+  },
+  badgeIconBg: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  badgeValue: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: palette.text,
+  },
+  badgeLabel: {
+    fontSize: 11,
+    color: palette.sub,
+    fontWeight: "500",
+  },
+  favCategoryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: palette.borderSoft,
+  },
+  favCategoryText: {
+    fontSize: 12,
+    color: palette.sub,
+  },
+  favCategoryName: {
+    color: palette.text,
+    fontWeight: "600",
+  },
+
+  // Filters section
+  filtersSection: {
+    gap: 8,
+  },
+  filtersSectionTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: palette.sub,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  filtersRow: {
+    gap: 8,
+    paddingVertical: 4,
+  },
+
+  // Category chips (animated)
+  categoryChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingRight: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.cardSoft,
+  },
+  categoryChipActive: {
+    borderColor: palette.accent,
+    backgroundColor: palette.accentSoft,
+  },
+  categoryChipIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  categoryChipText: {
+    fontSize: 13,
+    color: palette.sub,
+    fontWeight: "600",
+  },
+  categoryChipTextActive: {
+    color: palette.accent,
+  },
+  categoryChipBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
     backgroundColor: palette.bgSoft,
     borderWidth: 1,
     borderColor: palette.borderSoft,
-  },
-  heroBadgeLabel: {
-    fontSize: 10,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    color: palette.sub,
-  },
-  heroBadgeValue: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: palette.accent,
-    marginTop: 2,
-  },
-  heroBottomRow: {
-    flexDirection: "row",
+    minWidth: 22,
     alignItems: "center",
-    marginTop: 8,
   },
-  heroStat: {
-    flex: 1,
+  categoryChipBadgeActive: {
+    borderColor: palette.accent,
+    backgroundColor: "rgba(255,122,26,0.1)",
   },
-  heroStatLabel: {
+  categoryChipBadgeText: {
     fontSize: 11,
     color: palette.sub,
-  },
-  heroStatValue: {
-    fontSize: 20,
     fontWeight: "700",
-    color: palette.text,
-    marginTop: 2,
   },
-  heroStatSub: {
-    fontSize: 11,
-    color: palette.sub,
-  },
-  heroDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: palette.border,
-    marginHorizontal: 16,
+  categoryChipBadgeTextActive: {
+    color: palette.accent,
   },
 
-  // Sections
-  section: {
-    gap: 8,
+  // Routines container
+  routinesContainer: {
+    gap: 20,
   },
-  sectionHeaderRow: {
+
+  // Category section
+  categorySection: {
+    gap: 12,
+  },
+  categorySectionHeader: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
+  },
+  categorySectionLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  categorySectionIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    justifyContent: "center",
     alignItems: "center",
   },
-  sectionTitle: {
+  categorySectionTitle: {
     fontSize: 16,
     fontWeight: "700",
     color: palette.text,
   },
-  sectionSubTitle: {
+  categorySectionTagline: {
     fontSize: 12,
     color: palette.sub,
-  },
-  filterRow: {
-    gap: 8,
-    paddingVertical: 8,
-  },
-  filterChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    backgroundColor: palette.cardSoft,
-  },
-  filterChipActive: {
-    borderColor: palette.accent,
-    backgroundColor: palette.accentSoft,
-  },
-  filterChipText: {
-    fontSize: 12,
-    color: palette.sub,
-    fontWeight: "600",
-  },
-  filterChipTextActive: {
-    color: palette.accent,
-  },
-  filterBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 999,
-    backgroundColor: palette.bgSoft,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-  },
-  filterBadgeActive: {
-    borderColor: palette.accent,
-    backgroundColor: palette.card,
-  },
-  filterBadgeText: {
-    fontSize: 10,
-    color: palette.sub,
-    fontWeight: "700",
-  },
-  filterBadgeTextActive: {
-    color: palette.accent,
-  },
-  sectionChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: palette.bgSoft,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-  },
-  sectionChipText: {
-    fontSize: 11,
-    color: palette.sub,
-  },
-
-  // Pending
-  emptyCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    padding: 12,
-    backgroundColor: palette.bgSoft,
-  },
-  emptyText: {
-    fontSize: 12,
-    color: palette.sub,
-  },
-  pendingCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    padding: 12,
-    backgroundColor: palette.cardSoft,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  pendingTitle: {
-    color: palette.text,
-    fontWeight: "600",
-    fontSize: 14,
-  },
-  pendingSub: {
-    color: palette.sub,
-    fontSize: 12,
     marginTop: 2,
   },
-
-  // Categories
-  categoryBlock: {
-    marginTop: 8,
-    gap: 8,
-  },
-  categoryHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  categoryLabel: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: palette.sub,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  categoryBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-    backgroundColor: palette.bgSoft,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-  },
-  categoryBadgeText: {
-    fontSize: 11,
-    color: palette.sub,
-  },
-
-  // Prebuilt cards
-  prebuiltCard: {
-    borderRadius: 16,
+  categorySectionBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: palette.cardSoft,
     borderWidth: 1,
     borderColor: palette.border,
-    padding: 12,
-    backgroundColor: palette.cardSoft,
+  },
+  categorySectionBadgeText: {
+    fontSize: 12,
+    color: palette.sub,
+    fontWeight: "600",
+  },
+
+  // Routines list
+  routinesList: {
+    gap: 10,
+  },
+
+  // Routine card
+  routineCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.card,
+    padding: 14,
+  },
+  routineCardContent: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 12,
   },
-  cardTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
+  routineCardIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  cardTitle: {
-    fontSize: 14,
+  routineCardBody: {
+    flex: 1,
+    gap: 4,
+  },
+  routineCardTitle: {
+    fontSize: 15,
     fontWeight: "700",
     color: palette.text,
   },
-  tagsRow: {
+  routineCardObjective: {
+    fontSize: 12,
+    color: palette.sub,
+    lineHeight: 16,
+  },
+  routineTagsRow: {
     flexDirection: "row",
     gap: 6,
     marginTop: 6,
+    flexWrap: "wrap",
   },
-  tag: {
+  routineTag: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 4,
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
+    paddingVertical: 3,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.bgSoft,
   },
-  tagDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 999,
-    marginRight: 4,
-  },
-  tagText: {
-    fontSize: 11,
+  routineTagText: {
+    fontSize: 10,
     color: palette.sub,
-  },
-  cardObjective: {
-    fontSize: 12,
-    color: palette.sub,
-    marginTop: 6,
+    fontWeight: "500",
   },
 
-  arrow: {
-    fontSize: 20,
+  // Tip container
+  tipContainer: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: palette.cardSoft,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+  },
+  tipText: {
+    flex: 1,
+    fontSize: 12,
     color: palette.sub,
-    marginLeft: 8,
+    lineHeight: 16,
   },
 });

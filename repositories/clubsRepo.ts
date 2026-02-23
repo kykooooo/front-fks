@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDocs,
   limit,
@@ -114,4 +115,9 @@ export async function attachUserToClub(opts: { uid: string; clubId: string; role
     },
     { merge: true }
   );
+}
+
+export async function removeClubMembership(opts: { clubId: string; uid: string }) {
+  const memberRef = doc(db, "clubs", opts.clubId, "members", opts.uid);
+  await deleteDoc(memberRef);
 }

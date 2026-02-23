@@ -16,7 +16,7 @@ import { createPlanningSlice } from "./trainingStore/slices/planningSlice";
 import { createDebugSlice } from "./trainingStore/slices/debugSlice";
 import { createSubjectiveSlice } from "./trainingStore/slices/subjectiveSlice";
 import { createLoadSlice } from "./trainingStore/slices/loadSlice";
-import { createFirestoreSlice } from "./trainingStore/slices/firestoreSlice";
+import { createFirestoreSlice, resetWatchGuard } from "./trainingStore/slices/firestoreSlice";
 import { computeResilience } from "./trainingStore/helpers";
 
 // ---------------------------------------------------------------------------
@@ -32,6 +32,8 @@ const baseTrainingState = () => ({
   lastUpdateISO: null as string | null,
   lastLoadDayKey: null as string | null,
   tsbHistory: [] as number[],
+  ignoreFatigueCap: false,
+  autoExternalEnabled: true,
   lastAiSessionV2: null as any,
   lastAiContext: null as any,
   devNowISO: DEV_FLAGS.ENABLED && DEV_FLAGS.VIRTUAL_CLOCK ? todayISO() : null,
@@ -40,6 +42,7 @@ const baseTrainingState = () => ({
   weekly: { hasRunStructured: false, hasCircuit: false },
 
   externalLoads: [],
+  completedRoutines: [],
   favoriteExerciseIds: [],
   recentExerciseIds: [],
   clubTrainingDays: [],
@@ -49,6 +52,8 @@ const baseTrainingState = () => ({
   microcycleGoal: null as string | null,
   microcycleSessionIndex: 0,
   microcycleAppliedSessionIds: [],
+  activePathwayId: null as string | null,
+  activePathwayIndex: 0,
 
   plannedFksDays: [],
   lastAppliedDate: null as string | null,
@@ -80,6 +85,7 @@ const persistableKeys = [
   "dayStates",
   "weekly",
   "externalLoads",
+  "completedRoutines",
   "favoriteExerciseIds",
   "recentExerciseIds",
   "clubTrainingDays",
@@ -87,6 +93,8 @@ const persistableKeys = [
   "matchDays",
   "autoExternalConfig",
   "tsbHistory",
+  "ignoreFatigueCap",
+  "autoExternalEnabled",
   "lastAiContext",
   "sessions",
   "lastAiSessionV2",
@@ -96,6 +104,8 @@ const persistableKeys = [
   "microcycleGoal",
   "microcycleSessionIndex",
   "microcycleAppliedSessionIds",
+  "activePathwayId",
+  "activePathwayIndex",
 ] as const;
 
 const persistKeyForUid = (uid: string) => `training-store-snapshot-${uid}`;
@@ -166,6 +176,19 @@ export const useTrainingStore = create<TrainingState>()(
             const next = [exerciseId, ...current.filter((id) => id !== exerciseId)];
             return { recentExerciseIds: next.slice(0, 30) };
           }),
+        addCompletedRoutine: (routine) =>
+          set((state: TrainingState) => {
+            const now = state.devNowISO ?? todayISO();
+            const entry = {
+              id: `routine-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              dateISO: now,
+              category: routine.category,
+              title: routine.title,
+              durationMin: routine.durationMin,
+            };
+            const updated = [entry, ...(state.completedRoutines ?? [])].slice(0, 200);
+            return { completedRoutines: updated };
+          }),
         setMicrocycleGoal: (goal) =>
           set((state) => {
             const normalize = (v: any) => String(v ?? "").trim().toLowerCase();
@@ -182,6 +205,8 @@ export const useTrainingStore = create<TrainingState>()(
         setMicrocycleSessionIndex: (idx) => set({ microcycleSessionIndex: Math.max(0, Math.trunc(idx)) }),
         bumpMicrocycleSessionIndex: () =>
           set((state) => ({ microcycleSessionIndex: Math.max(0, Math.trunc(state.microcycleSessionIndex ?? 0)) + 1 })),
+        setActivePathway: (pathwayId, index = 0) =>
+          set({ activePathwayId: pathwayId, activePathwayIndex: index }),
         resetForUser: async (uid) => {
           const current = get()._currentUid ?? null;
           if (get()._rehydrating) return;
@@ -193,8 +218,11 @@ export const useTrainingStore = create<TrainingState>()(
           }
 
           const st = get();
+          st._unsubAuth?.();
           st._unsubSessions?.();
           st._unsubProfile?.();
+          st._unsubPlanned?.();
+          resetWatchGuard();
 
           // charge snapshot du nouveau user
           let restored: Partial<TrainingState> | null = null;
@@ -234,6 +262,25 @@ export const useTrainingStore = create<TrainingState>()(
               tsbHistory: [tsb, ...(state.tsbHistory ?? [])].slice(0, 7),
             };
           }),
+        resetLoadMetrics: () =>
+          set((state: TrainingState) => {
+            const dayKey = toDayKey(state.devNowISO ?? todayISO());
+            const tsb0 = TRAINING_DEFAULTS.CTL0 - TRAINING_DEFAULTS.ATL0;
+            return {
+              atl: TRAINING_DEFAULTS.ATL0,
+              ctl: TRAINING_DEFAULTS.CTL0,
+              tsb: tsb0,
+              tsbHistory: [tsb0],
+              externalLoads: [],
+              dailyApplied: {},
+              lastRpe: null,
+              lastUpdateISO: new Date().toISOString(),
+              lastLoadDayKey: dayKey,
+              debugLog: [],
+            };
+          }),
+        setIgnoreFatigueCap: (enabled) => set({ ignoreFatigueCap: Boolean(enabled) }),
+        setAutoExternalEnabled: (enabled) => set({ autoExternalEnabled: Boolean(enabled) }),
 
         getSessionById: (id) => get().sessions.find((s) => s.id === id),
         updateWeekly: (updater) => set((state) => ({ weekly: updater(state.weekly) })),
@@ -265,6 +312,8 @@ export const useTrainingStore = create<TrainingState>()(
         storage: createJSONStorage(() => AsyncStorage),
 
         partialize: (s) => ({
+          // CRITICAL: _currentUid must be persisted to prevent data reset on app restart
+          _currentUid: s._currentUid,
           atl: s.atl,
           ctl: s.ctl,
           tsb: s.tsb,
@@ -273,10 +322,13 @@ export const useTrainingStore = create<TrainingState>()(
           dailyApplied: s.dailyApplied,
           devNowISO: s.devNowISO,
           phase: s.phase,
-          phaseCount: s.phaseCount, 
+          phaseCount: s.phaseCount,
           dayStates: s.dayStates,
           weekly: s.weekly,
           externalLoads: s.externalLoads,
+          completedRoutines: s.completedRoutines ?? [],
+          favoriteExerciseIds: s.favoriteExerciseIds ?? [],
+          recentExerciseIds: s.recentExerciseIds ?? [],
           clubTrainingDays: s.clubTrainingDays,
           matchDay: s.matchDay ?? null,
           matchDays: s.matchDays,
@@ -291,6 +343,10 @@ export const useTrainingStore = create<TrainingState>()(
           microcycleGoal: s.microcycleGoal ?? null,
           microcycleSessionIndex: s.microcycleSessionIndex ?? 0,
           microcycleAppliedSessionIds: s.microcycleAppliedSessionIds ?? [],
+          activePathwayId: s.activePathwayId ?? null,
+          activePathwayIndex: s.activePathwayIndex ?? 0,
+          ignoreFatigueCap: s.ignoreFatigueCap ?? false,
+          autoExternalEnabled: s.autoExternalEnabled ?? true,
         }),
 
         onRehydrateStorage: () => () => {

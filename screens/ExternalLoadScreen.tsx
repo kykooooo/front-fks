@@ -5,7 +5,6 @@ import {
   Text,
   TextInput,
   Pressable,
-  Alert,
   Platform,
   KeyboardAvoidingView,
   TouchableWithoutFeedback,
@@ -14,6 +13,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useTrainingStore } from "../state/trainingStore";
 import { EXTERNAL_WEIGHTS } from "../config/trainingDefaults";
@@ -21,6 +21,8 @@ import { theme } from "../constants/theme";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
+import { ModalContainer } from "../components/modal/ModalContainer";
+import { showToast } from "../utils/toast";
 
 type Modality = "Match" | "TeamTraining" | "Physio" | "Other";
 type ExternalSource = "match" | "club" | "other";
@@ -74,7 +76,7 @@ export default function ExternalLoadScreen() {
   const onSubmit = () => {
     Keyboard.dismiss();            // ✅ ferme le clavier au submit
     if (parsedDuration <= 0 || parsedRpe <= 0) {
-      Alert.alert("Entrée invalide", "Durée et RPE doivent être > 0");
+      showToast({ type: "warn", title: "Entrée invalide", message: "Durée et RPE doivent être > 0" });
       return;
     }
     try {
@@ -89,26 +91,41 @@ export default function ExternalLoadScreen() {
       };
       addExternalLoad(payload as any); // garde 'as any' si le type du store diffère encore
 
-      Alert.alert("Ajouté ✅", "La charge externe a été enregistrée.");
+      showToast({ type: "success", title: "Ajouté", message: "La charge externe a été enregistrée." });
       // @ts-ignore
       nav.goBack();
     } catch (e: any) {
-      Alert.alert("Erreur", e?.message ?? "Impossible d’ajouter la charge.");
+      showToast({ type: "error", title: "Erreur", message: e?.message ?? "Impossible d'ajouter la charge." });
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0} // ajuste selon la hauteur de ton header
-    >
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-        <ScrollView
-          contentContainerStyle={styles.container}
-          keyboardShouldPersistTaps="handled"
+    <View style={styles.modalRoot}>
+      <ModalContainer
+        visible
+        onClose={() => nav.goBack()}
+        animationType="slide"
+        blurIntensity={40}
+        allowBackdropDismiss
+        allowSwipeDismiss
+      >
+        <KeyboardAvoidingView
+          style={styles.root}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0} // ajuste selon la hauteur de ton header
         >
-          <SectionHeader title="Ajouter une charge externe" />
+          <View style={styles.modalHeaderRow}>
+            <Text style={styles.modalHeaderTitle}>Charge externe</Text>
+            <Pressable onPress={() => nav.goBack()} style={styles.modalClose}>
+              <Ionicons name="close" size={22} color={palette.text} />
+            </Pressable>
+          </View>
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+            <ScrollView
+              contentContainerStyle={styles.container}
+              keyboardShouldPersistTaps="handled"
+            >
+              <SectionHeader title="Ajouter une charge externe" />
 
           {/* Date */}
           <View style={styles.section}>
@@ -224,14 +241,30 @@ export default function ExternalLoadScreen() {
           </Card>
 
           {/* Submit */}
-          <Button label="Enregistrer" onPress={onSubmit} fullWidth size="lg" />
-        </ScrollView>
-      </TouchableWithoutFeedback>
-    </KeyboardAvoidingView>
+              <Button label="Enregistrer" onPress={onSubmit} fullWidth size="lg" />
+            </ScrollView>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+      </ModalContainer>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  modalRoot: { flex: 1, backgroundColor: "transparent" },
+  modalHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+  },
+  modalHeaderTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: palette.text,
+  },
+  modalClose: { paddingHorizontal: 8, paddingVertical: 6 },
   root: { flex: 1, backgroundColor: palette.bg },
   container: { padding: 16, gap: 16 },
   section: { gap: 8 },

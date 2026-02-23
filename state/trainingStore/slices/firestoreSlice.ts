@@ -27,6 +27,9 @@ type FirestoreSlice = Pick<
   | "persistPlannedSession"
 >;
 
+let _watchGuard = false;
+export const resetWatchGuard = () => { _watchGuard = false; };
+
 export const createFirestoreSlice = (set: SetFn, get: GetFn): FirestoreSlice => ({
  
 
@@ -131,21 +134,29 @@ export const createFirestoreSlice = (set: SetFn, get: GetFn): FirestoreSlice => 
     if (microcycleGoal) userPatch.microcycleGoal = microcycleGoal;
     userPatch.microcycleSessionIndex = microcycleSessionIndex;
 
+    // Persist pathway state
+    const activePathwayId = get().activePathwayId;
+    if (activePathwayId) {
+      userPatch.activePathwayId = activePathwayId;
+      userPatch.activePathwayIndex = get().activePathwayIndex ?? 0;
+    }
+
     await setDoc(doc(db, "users", uid), userPatch, { merge: true });
   },
 
   startFirestoreWatch: () => {
     const st = get();
-    if (st._unsubAuth) return;
+    if (st._unsubAuth || _watchGuard) return;
+    _watchGuard = true;
 
     const unsubAuth = onAuthStateChanged(auth, (user) => {
       if (get()._unsubSessions) {
         get()._unsubSessions!();
         set({ _unsubSessions: undefined });
       }
-      if ((get() as any)._unsubPlanned) {
-        (get() as any)._unsubPlanned!();
-        set({ _unsubPlanned: undefined } as any);
+      if (get()._unsubPlanned) {
+        get()._unsubPlanned!();
+        set({ _unsubPlanned: undefined });
       }
       if (get()._unsubProfile) {
         get()._unsubProfile!();
@@ -164,17 +175,29 @@ export const createFirestoreSlice = (set: SetFn, get: GetFn): FirestoreSlice => 
           const matchDay = typeof data?.matchDay === "string" ? data!.matchDay : null;
           const matchDays = Array.isArray(data?.matchDays) ? data!.matchDays : matchDay ? [matchDay] : [];
 
-          const goalRaw =
+          // Ne lit QUE microcycleGoal (pas de fallback programGoal/goal
+          // pour éviter de reset l'index avec une vieille valeur)
+          const firestoreGoal =
             typeof (data as any)?.microcycleGoal === "string"
-              ? String((data as any).microcycleGoal)
-              : typeof (data as any)?.programGoal === "string"
-                ? String((data as any).programGoal)
-                : typeof (data as any)?.goal === "string"
-                  ? String((data as any).goal)
-                  : null;
-          const goal = goalRaw?.trim() ? goalRaw.trim() : null;
-          if (get().setMicrocycleGoal) {
-            get().setMicrocycleGoal(goal);
+              ? String((data as any).microcycleGoal).trim()
+              : null;
+
+          // Sync seulement si Firestore a un goal ET qu'il diffère du local
+          if (firestoreGoal) {
+            const localGoal = (get().microcycleGoal ?? "").trim().toLowerCase();
+            const remoteGoal = firestoreGoal.toLowerCase();
+            if (localGoal !== remoteGoal) {
+              get().setMicrocycleGoal(firestoreGoal);
+            }
+          } else if (!get().microcycleGoal) {
+            // Firestore n'a pas de goal et le local non plus : on ne fait rien
+          }
+
+          // Sync pathway state
+          const pathwayId = typeof data?.activePathwayId === "string" ? data.activePathwayId : null;
+          const pathwayIndex = typeof data?.activePathwayIndex === "number" ? data.activePathwayIndex : 0;
+          if (pathwayId !== get().activePathwayId) {
+            get().setActivePathway(pathwayId, pathwayIndex);
           }
 
           const autoExternalConfig = {
@@ -218,7 +241,14 @@ export const createFirestoreSlice = (set: SetFn, get: GetFn): FirestoreSlice => 
             .filter(Boolean)
         );
 
+        const today = todayISO().slice(0, 10);
+
         const planned = (list ?? [])
+          .filter((p) => {
+            // Ignore les séances planifiées dont la date est passée (ancien cycle / jamais complétées)
+            const dayKey = toDayKey((p.date ?? p.dateISO ?? "").toString());
+            return dayKey >= today;
+          })
           .filter((p) => !completedLocalIds.has(p.id)) // si déjà complété localement, ne réinjecte pas en "open"
           .filter((p) => {
             const dayKey = toDayKey((p.date ?? p.dateISO ?? "").toString());
@@ -236,12 +266,13 @@ export const createFirestoreSlice = (set: SetFn, get: GetFn): FirestoreSlice => 
             aiV2: p.ai,
           })) as any[];
 
-        // garde tout ce qui n'est pas planifié (ou déjà complété)
-        const nonPlanned = local.filter((s: any) => s.completed || !list.some((p) => p.id === s.id));
+        // garde tout ce qui n'est pas remplacé par une version Firestore
+        const plannedIds = new Set(planned.map((p: any) => p.id));
+        const nonPlanned = local.filter((s: any) => !plannedIds.has(s.id));
         set({ sessions: [...planned, ...nonPlanned] });
       });
 
-      set({ _unsubSessions: unsub, _unsubPlanned: unsubPlanned, _unsubProfile: unsubProfile } as any);
+      set({ _unsubSessions: unsub, _unsubPlanned: unsubPlanned, _unsubProfile: unsubProfile });
     });
 
     set({ _unsubAuth: unsubAuth });

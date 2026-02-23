@@ -2,7 +2,7 @@
 // Système de queue pour gérer les actions hors-ligne (feedback, sessions, etc.)
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert } from 'react-native';
+import { showToast } from './toast';
 import { STORAGE_KEYS } from '../constants/storage';
 
 const QUEUE_KEY = STORAGE_KEYS.OFFLINE_QUEUE;
@@ -42,7 +42,7 @@ export async function enqueueAction(
       console.log('[OfflineQueue] Action enqueued:', action.type, action.id);
     }
   } catch (error) {
-    console.error('[OfflineQueue] Failed to enqueue action:', error);
+    if (__DEV__) console.error('[OfflineQueue] Failed to enqueue action:', error);
   }
 }
 
@@ -55,7 +55,7 @@ export async function getQueue(): Promise<QueuedAction[]> {
     if (!raw) return [];
     return JSON.parse(raw) as QueuedAction[];
   } catch (error) {
-    console.error('[OfflineQueue] Failed to get queue:', error);
+    if (__DEV__) console.error('[OfflineQueue] Failed to get queue:', error);
     return [];
   }
 }
@@ -67,7 +67,7 @@ async function saveQueue(queue: QueuedAction[]): Promise<void> {
   try {
     await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
   } catch (error) {
-    console.error('[OfflineQueue] Failed to save queue:', error);
+    if (__DEV__) console.error('[OfflineQueue] Failed to save queue:', error);
   }
 }
 
@@ -84,7 +84,7 @@ export async function removeFromQueue(actionId: string): Promise<void> {
       console.log('[OfflineQueue] Action removed:', actionId);
     }
   } catch (error) {
-    console.error('[OfflineQueue] Failed to remove from queue:', error);
+    if (__DEV__) console.error('[OfflineQueue] Failed to remove from queue:', error);
   }
 }
 
@@ -102,7 +102,7 @@ async function incrementRetry(actionId: string): Promise<void> {
     });
     await saveQueue(updated);
   } catch (error) {
-    console.error('[OfflineQueue] Failed to increment retry:', error);
+    if (__DEV__) console.error('[OfflineQueue] Failed to increment retry:', error);
   }
 }
 
@@ -116,7 +116,7 @@ export async function clearQueue(): Promise<void> {
       console.log('[OfflineQueue] Queue cleared');
     }
   } catch (error) {
-    console.error('[OfflineQueue] Failed to clear queue:', error);
+    if (__DEV__) console.error('[OfflineQueue] Failed to clear queue:', error);
   }
 }
 
@@ -207,14 +207,11 @@ export function notifySyncResult(result: { success: number; failed: number; pend
         ? '1 feedback synchronisé avec succès.'
         : `${result.success} feedbacks synchronisés avec succès.`;
 
-    Alert.alert('Synchronisation réussie', message);
+    showToast({ type: 'success', title: 'Synchronisation réussie', message });
   }
 
   if (result.failed > 0 && result.pending === 0) {
-    Alert.alert(
-      'Synchronisation partielle',
-      `${result.failed} action(s) n'ont pas pu être synchronisées. Elles ont été supprimées.`
-    );
+    showToast({ type: 'warn', title: 'Synchronisation partielle', message: `${result.failed} action(s) n'ont pas pu être synchronisées.` });
   }
 
   if (result.pending > 0) {
@@ -224,7 +221,7 @@ export function notifySyncResult(result: { success: number; failed: number; pend
         : `${result.pending} actions en attente de synchronisation.`;
 
     if (result.success > 0) {
-      Alert.alert('Synchronisation partielle', `${result.success} réussies, mais ${pendingMsg}`);
+      showToast({ type: 'info', title: 'Synchronisation partielle', message: `${result.success} réussies, mais ${pendingMsg}` });
     }
   }
 }

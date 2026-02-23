@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Alert } from "react-native";
+import { showToast } from "../../utils/toast";
 import { buildAIPromptContext } from "../../services/aiContext";
 import type { EnvironmentSelection } from "./types";
 import type React from "react";
@@ -12,6 +12,17 @@ type AiContextState = {
   setAvailableEquipment: (eq: string[]) => void;
   setSelectedEquipment: React.Dispatch<React.SetStateAction<string[]>>;
 };
+
+const BALL_EQUIPMENT_IDS = new Set([
+  "medball",
+  "medicine_ball",
+  "swiss_ball",
+  "home_swiss_ball",
+  "fitball",
+]);
+
+const filterOutBallEquipment = (list: string[]) =>
+  list.filter((id) => !BALL_EQUIPMENT_IDS.has(String(id)));
 
 export function useAiContextLoader(
   storeHydrated: boolean,
@@ -38,12 +49,13 @@ export function useAiContextLoader(
         setAiContext(ctx);
 
         const eq = Array.isArray(ctx.equipment_available) ? ctx.equipment_available : [];
-        setAvailableEquipment(eq.length ? eq : []);
-        if (eq.length) setSelectedEquipment(eq);
+        const safeEq = filterOutBallEquipment(eq);
+        setAvailableEquipment(safeEq.length ? safeEq : []);
+        if (safeEq.length) setSelectedEquipment(safeEq);
       } catch (e) {
         if (!cancelled) {
           console.warn("Failed to load AI context", e);
-          Alert.alert("Contexte IA", "Impossible de charger ton contexte. Réessaie.");
+          showToast({ type: "error", title: "Contexte IA", message: "Impossible de charger ton contexte. Réessaie." });
         }
       } finally {
         if (!cancelled) setContextLoading(false);
@@ -69,9 +81,35 @@ export function useEnvironmentEquipment(
   environment: EnvironmentSelection,
   availableEquipment: string[],
   catalog: { id: string; source: string }[],
-  setSelectedEquipment: React.Dispatch<React.SetStateAction<string[]>>
+  setSelectedEquipment: React.Dispatch<React.SetStateAction<string[]>>,
+  options?: { gymMachinesEnabled?: boolean; pitchSmallGearEnabled?: boolean }
 ) {
   useEffect(() => {
+    const autoEquipment: string[] = [];
+    if (options?.gymMachinesEnabled && environment.includes("gym")) {
+      autoEquipment.push("gym_full", "bodyweight");
+    }
+  if (options?.pitchSmallGearEnabled && environment.includes("pitch")) {
+    autoEquipment.push(
+      "field",
+      "cones",
+      "flat_markers",
+      "speed_ladder",
+      "mini_hurdles",
+      "minibands",
+      "long_bands",
+      "bodyweight"
+    );
+  }
+  if (autoEquipment.length > 0) {
+    const homeExtras = environment.includes("home")
+      ? ["home_small", "backpack", "water_bottles", "chair"]
+      : [];
+      setSelectedEquipment(
+        filterOutBallEquipment(Array.from(new Set([...autoEquipment, ...homeExtras])))
+      );
+      return;
+    }
     const homeExtras = environment.includes("home")
       ? ["home_small", "backpack", "water_bottles", "chair"]
       : [];
@@ -84,11 +122,19 @@ export function useEnvironmentEquipment(
       })
       .map((item) => item.id)
       .concat(homeExtras);
+    const allowedSafe = filterOutBallEquipment(allowed);
 
     setSelectedEquipment((prev) => {
-      const filtered = prev.filter((id) => allowed.includes(id));
+      const filtered = filterOutBallEquipment(prev).filter((id) => allowedSafe.includes(id));
       if (filtered.length > 0) return filtered;
-      return allowed.length > 0 ? [allowed[0]] : [];
+      return allowedSafe.length > 0 ? [allowedSafe[0]] : [];
     });
-  }, [environment, availableEquipment, catalog, setSelectedEquipment]);
+  }, [
+    environment,
+    availableEquipment,
+    catalog,
+    setSelectedEquipment,
+    options?.gymMachinesEnabled,
+    options?.pitchSmallGearEnabled,
+  ]);
 }

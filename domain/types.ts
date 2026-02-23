@@ -13,7 +13,7 @@ export type Intensity =
 
 // ⚠️ Garde ce Modality en source de vérité côté domaine.
 // (Si tu utilises domain/exerciseTypes.ts, veille à ce que les valeurs matchent.)
-export type Modality = 'run' | 'circuit' | 'strength' | 'plyo' | 'cod' | 'core' | 'mobility';
+export type Modality = 'run' | 'circuit' | 'strength' | 'plyo' | 'cod' | 'speed' | 'core' | 'mobility';
 
 export type RPE1to10 = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 export type Rating1to5 = 1 | 2 | 3 | 4 | 5;
@@ -64,8 +64,9 @@ export const DEFAULT_MODALITY_WEIGHTS: ModalityLoadWeights = {
   run: 1.0,
   circuit: 1.1,
   strength: 0.9,
-  plyo: 1.2,
-  cod: 1.0,
+  plyo: 1.3,
+  cod: 1.15,
+  speed: 1.25,
   core: 0.6,
   mobility: 0.3,
 };

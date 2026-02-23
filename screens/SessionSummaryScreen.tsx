@@ -9,6 +9,7 @@ import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
 import { SectionHeader } from "../components/ui/SectionHeader";
+import { Ionicons } from "@expo/vector-icons";
 import { useTrainingStore } from "../state/trainingStore";
 import { updateTrainingLoad } from "../engine/loadModel";
 import { useSettingsStore } from "../state/settingsStore";
@@ -107,13 +108,10 @@ export default function SessionSummaryScreen() {
     if (didNavigateRef.current) return;
     didNavigateRef.current = true;
     clearAuto();
-    nav.navigate(
-      "Feedback" as never,
-      {
-        sessionId,
-        prefill,
-      } as never
-    );
+    nav.navigate("Feedback", {
+      sessionId,
+      prefill,
+    });
   }, [sessionId, sessionCompleted, clearAuto, nav, prefill]);
 
   useEffect(() => {
@@ -206,7 +204,7 @@ export default function SessionSummaryScreen() {
           </Card>
 
           <Card variant="surface" style={styles.loadCard}>
-            <SectionHeader title="Charge du jour" />
+            <SectionHeader title="Effort du jour" />
             <Text style={styles.loadValue}>
               {estimatedLoad != null ? `${estimatedLoad} UA` : "—"}
             </Text>
@@ -230,6 +228,20 @@ export default function SessionSummaryScreen() {
             </View>
           </Card>
 
+          {summary.recoveryTips && summary.recoveryTips.length > 0 ? (
+            <Card variant="soft" style={styles.recoveryCard}>
+              <SectionHeader title="Récupération" />
+              <View style={{ gap: 8 }}>
+                {summary.recoveryTips.map((tip: string, i: number) => (
+                  <View key={`rec_${i}`} style={styles.recoveryRow}>
+                    <Ionicons name="leaf-outline" size={14} color="#14b8a6" />
+                    <Text style={styles.recoveryText}>{tip}</Text>
+                  </View>
+                ))}
+              </View>
+            </Card>
+          ) : null}
+
           <View style={styles.ctaBlock}>
             <Button
               label="Donner le feedback"
@@ -252,7 +264,13 @@ export default function SessionSummaryScreen() {
             ) : null}
             <Button
               label="Retour"
-              onPress={() => nav.goBack()}
+              onPress={() => {
+                if (nav.canGoBack?.()) {
+                  nav.goBack();
+                  return;
+                }
+                nav.navigate("Tabs", { screen: "Home" });
+              }}
               fullWidth
               size="md"
               variant="ghost"
@@ -379,6 +397,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+  },
+  recoveryCard: {
+    padding: 14,
+    gap: 10,
+  },
+  recoveryRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  recoveryText: {
+    flex: 1,
+    color: palette.text,
+    fontSize: 13,
+    lineHeight: 18,
   },
   ctaBlock: {
     gap: 10,

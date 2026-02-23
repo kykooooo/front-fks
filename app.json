@@ -13,7 +13,12 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "bundleIdentifier": "com.fks.app",
+      "buildNumber": "1",
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -26,9 +31,21 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "plugins": [],
     "extra": {
+      "BACKEND_URL": "https://fks-backend-xmnb.onrender.com",
+      "BACKEND_API_KEY": "fF4AwO5ICvAn30B0GYEgptyfHsCXcYm-6MyE49axVRc",
       "SENTRY_DSN": "",
-      "AMPLITUDE_API_KEY": ""
+      "AMPLITUDE_API_KEY": "",
+      "eas": {
+        "projectId": "607ef5fa-ce96-4c07-9643-b79885aa28a3"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/607ef5fa-ce96-4c07-9643-b79885aa28a3"
     }
   }
 }

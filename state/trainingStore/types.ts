@@ -13,6 +13,15 @@ import { AiNextSession } from "../../repositories/sessionsRepo";
 import type { FKS_NextSessionV2 } from "../../screens/newSession/types";
 import type { FKS_AiContext } from "../../services/aiContext";
 
+// Routine complétée (pour badges, sans impact sur charge)
+export type CompletedRoutine = {
+  id: string;
+  dateISO: string;
+  category: string;
+  title: string;
+  durationMin?: number;
+};
+
 // Charges externes (club / match)
 export type ExternalLoad = {
   id: string;
@@ -71,6 +80,10 @@ export type TrainingState = {
 
   // historique court TSB (0 = aujourd'hui)
   tsbHistory: number[];
+  // debug: ignorer cap fatigue côté backend
+  ignoreFatigueCap: boolean;
+  // charges externes auto (club/match)
+  autoExternalEnabled: boolean;
 
   // horloge virtuelle (DEV)
   devNowISO: string | null;
@@ -82,6 +95,7 @@ export type TrainingState = {
   sessions: Session[];
   weekly: WeeklyIndicators;
   externalLoads: ExternalLoad[];
+  completedRoutines: CompletedRoutine[];
   favoriteExerciseIds: string[];
   recentExerciseIds: string[];
   clubTrainingDays?: string[];
@@ -94,6 +108,8 @@ export type TrainingState = {
   microcycleGoal: string | null;
   microcycleSessionIndex: number;
   microcycleAppliedSessionIds: string[];
+  activePathwayId: string | null;
+  activePathwayIndex: number;
   setClubTrainingDays: (days: string[]) => void;
   setMatchDays: (days: string[]) => void;
   toggleFavoriteExercise: (exerciseId: string) => void;
@@ -101,6 +117,7 @@ export type TrainingState = {
   setMicrocycleGoal: (goal: string | null) => void;
   setMicrocycleSessionIndex: (idx: number) => void;
   bumpMicrocycleSessionIndex: () => void;
+  setActivePathway: (pathwayId: string | null, index?: number) => void;
   runTestHarness?: (days?: number) => void;
   lastAppliedDate?: string | null;
 
@@ -126,12 +143,18 @@ export type TrainingState = {
   pushSession: (s: Session) => void;
   setLastAiContext: (ctx: FKS_AiContext | null) => void;
   setManualLoad: (atl: number, ctl: number, tsb: number) => void;
+  resetLoadMetrics: () => void;
+  setIgnoreFatigueCap: (enabled: boolean) => void;
+  setAutoExternalEnabled: (enabled: boolean) => void;
 
   // feedback (chemin officiel de complétion)
   addFeedback: (sessionId: string, feedback: SessionFeedback) => TrainingLogItem | null;
 
   // charges externes
   addExternalLoad: (load: ExternalLoad) => void;
+
+  // routines (sans impact sur charge, pour badges uniquement)
+  addCompletedRoutine: (routine: Omit<CompletedRoutine, "id" | "dateISO">) => void;
 
   // legacy (debug uniquement)
   completeSession: (sessionId: string, rpe: number) => TrainingLogItem | null;

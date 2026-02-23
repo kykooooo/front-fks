@@ -6,7 +6,10 @@ export type FKS_TimerPreset = {
 };
 
 export type FKS_BlockItem = {
+  exercise_id?: string | null;
   name: string;
+  description?: string | null;
+  football_context?: string | null;
   sets?: number | null;
   reps?: number | null;
   work_s?: number | null;
@@ -42,6 +45,7 @@ export type FKS_NextSessionV2 = {
   blocks: FKS_Block[];
   safety_notes?: string | null;
   guardrails_applied?: string[];
+  session_theme?: string | null;
   coaching_tips?: string[];
   post_session?: {
     cooldown_min?: number;

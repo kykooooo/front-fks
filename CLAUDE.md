@@ -1,155 +1,315 @@
-# FKS - App de Préparation Physique Football
+# FKS - App de Preparation Physique Football
 
-## 🎯 Vision
-Application mobile de préparation physique personnalisée pour footballeurs, pilotée par IA.
+## Vision
+Application mobile de preparation physique personnalisee pour footballeurs, pilotee par IA.
 
-## 🏗️ Architecture Technique
+## ✅ Mises a jour recentes (resume)
+- **Zero ballon** : aucune seance ne doit inclure medball/swiss/fitball/football.
+- **Materiel** : ne plus proposer ces equipements cote app (meme si envoyes, le backend les filtre).
+- **Cycles** : blocs “football/medball” retires (coherence avec l’objectif prepa physique).
+- **Auth flow pro** :
+  - Welcome dirige maintenant vers la bonne entree (`Register` ou `Login`) selon le CTA choisi.
+  - Ecrans `Login/Register/Onboarding/Welcome` passes en style premium dark coherent (sans dependance image externe).
+  - Stack auth simplifiee (`headerShown: false`) pour garder une UI maitrisee.
+- **Inscription/connexion plus fiables** :
+  - Boutons submit desactives tant que les champs ne sont pas valides.
+  - Messages Firebase mappes en messages clairs FR (invalid credential, email deja pris, weak password, reseau, too many requests).
+- **Dates & timezone** :
+  - Normalisation progressive vers `toDateKey` pour eviter les decalages jour local/UTC.
+  - Corrections de tri/date label sur profils/historiques/coaching.
+- **Coach robustness** :
+  - Hook coach (`useCoachPlayersData`) durci : lecture `getDocs`, normalisation des jours, guards anti-setState apres unmount.
+  - Composants calendrier/analytics relies aux day keys normalisees.
+- **Settings fiabilises** :
+  - Toggles notifications/rappels proteges par gestion d’erreur + rollback UI en cas d’echec.
+- **Tests terrain** :
+  - Chargement historique assaini (normalisation entree, tri, limite), affichage timestamp plus robuste.
+- **Pipeline Force 2-agents** :
+  - Backend genere via Agent A (prescription blocs) + Agent B (coaching textuel).
+  - Champs enrichis : `session_theme`, `coaching_tips[]`, `post_session.recovery_tips[]`.
+  - Labels blocs Force affines par token (`FORCE_TOKEN_LABEL` dans `blockConfig.ts`) : Force/Renfo/Prevention/Appuis/Core.
+  - `recovery_tips` affiches dans SessionPreviewScreen (post-seance) et SessionSummaryScreen.
+- **Notifications push locales** :
+  - `expo-notifications` integre, service dans `services/notifications.ts`.
+  - Rappels seance, streak, veille de match, recap hebdo.
+  - Toggles dans Settings avec rollback UI.
+- **ProgressScreen repense** :
+  - Hero football-friendly (plus de jargon ATL/CTL/TSB cote joueur).
+  - Systeme de milestones (6 accomplissements avec lock/unlock).
+  - Comparaison tests terrain avant/apres.
+- **Backend dev local** :
+  - `config/backend.ts` pointe automatiquement vers l'IP du Mac (via `hostUri`) en dev, port 4000.
+  - Retry automatique sur timeout (cold start Render) dans `api.ts`.
+
+## Architecture Technique
 
 ### Backend
-- **Langage** : [Node.js/Python/autre - mettez ce que GPT a utilisé]
-- **Base de données** : Firestore
-- **Cœur métier** : Génération de séances d'entraînement via système de tokens/formats/cycles
+- **Langage** : Node.js (Express)
+- **Base de donnees** : Firestore
+- **Coeur metier** : Generation de seances d'entrainement via systeme de tokens/formats/cycles
+- **IA** : OpenAI (generation de seances + assistant chat)
 
 ### Frontend
-- **Framework** : React Native
-- **State Management** : Zustand (avec persistance AsyncStorage)
-- **Auth & Sync** : Firebase Auth + watchers Firestore
+- **Framework** : React Native (Expo SDK 54, React 19, RN 0.81)
+- **State Management** : Zustand 5 (avec persistance AsyncStorage)
+- **Auth & Sync** : Firebase Auth + watchers Firestore temps reel
+- **Navigation** : React Navigation 7 (native-stack + bottom-tabs)
+- **Animations** : react-native-reanimated 4 (modals, gestures) + Animated RN (entrees, micro-animations)
+- **Gestures** : react-native-gesture-handler 2.28
+- **Haptics** : expo-haptics
+- **Charts** : react-native-svg (sparklines TSB faites a la main)
+- **Notifications** : expo-notifications (rappels locaux planifies)
+- **Monitoring** : Sentry (sentry-expo) + Amplitude analytics
+- **Validation** : Zod 4
 
-## 🧠 Concepts Clés Métier
+## Concepts Cles Metier
 
-### Système de Génération (Backend)
+### Systeme de Generation (Backend)
 - **Token** = type d'exercice (accel, force, core, run, recovery, etc.)
-- **Format** = template de structure (A, B, C) pour la variété
-- **Cycle/Playlist** = programme de 12 séances (Fondation, Force, Endurance, Technique & Vitesse)
-- **Archetype** = séance type dans un cycle
-- **Whitelist** = liste d'exercices autorisés par token/format pour éviter les exos hors scope
+- **Format** = template de structure (A, B, C) pour la variete
+- **Cycle/Playlist** = programme de 12 seances (Fondation, Force, Endurance, Technique & Vitesse)
+- **Archetype** = seance type dans un cycle
+- **Whitelist** = liste d'exercices autorises par token/format pour eviter les exos hors scope
 
-### Génération de Séance (Flow)
-1. Context envoyé par le front (profil, ATL/CTL/TSB, contraintes, temps dispo, matériel, douleurs)
+### Generation de Seance (Flow)
+1. Context envoye par le front (profil, ATL/CTL/TSB, contraintes, temps dispo, materiel, douleurs)
 2. Backend choisit un archetype dans le cycle actif
-3. Génère un plan de blocs (tokens)
+3. Genere un plan de blocs (tokens)
 4. Pour chaque token, choisit format + pioche exercices dans exercise bank
-5. Applique filtres (matériel/douleurs) + garde-fous (durée, volume)
+5. Applique filtres (materiel/douleurs) + garde-fous (duree, volume)
 6. Retourne JSON fks.next_session.v2
 
-### Métriques de Charge
-- **ATL** (Acute Training Load) = charge aiguë
-- **CTL** (Chronic Training Load) = charge chronique  
-- **TSB** (Training Stress Balance) = équilibre forme/fatigue
+### Pipeline 2-Agents (Force)
+- **Agent A** (prescription) : genere blocs + exercices + sets/reps/tempos
+- **Agent B** (coaching) : enrichit avec `coaching_tips[]`, `post_session.recovery_tips[]`, `session_theme`
+- Chaque bloc porte un `token:xxx` dans ses notes (ex: `token:strength_force_lower_main`)
+- Le front mappe les tokens vers des labels affines via `FORCE_TOKEN_LABEL` dans `blockConfig.ts`
 
-### Cycles Disponibles (avec lieux recommandés)
-- **Fondation**  
-  Maison ✅ · Terrain ✅ · Salle ✅  
-  Objectif : base physique générale, renfo + run facile.
-- **Force**  
-  Maison ✅ (version light) · Terrain ❌ · Salle ✅ (idéal)  
-  Objectif : renfo bas/haut, besoin d’équipement si possible.
-- **Endurance / Engine**  
-  Maison ✅ (cardio léger) · Terrain ✅ · Salle ✅ (vélo/rameur/tapis)  
-  Objectif : aérobie, tempo, intervalles.
-- **Explosivité (vitesse & technique)**  
-  Maison ⚠️ (drills + technique light) · Terrain ✅ (idéal) · Salle ✅ (medball + drills)  
-  Objectif : vitesse, appuis, accélération.
-- **Explosif (puissance)**  
-  Maison ⚠️ (version light) · Terrain ✅ · Salle ✅ (idéal)  
-  Objectif : sprint + power + plyo.
-- **RSA (Repeated Sprint Ability)**  
-  Maison ⚠️ (version light) · Terrain ✅ (idéal) · Salle ✅ (cardio + circuits)  
-  Objectif : répéter les sprints, récup courte.
-- **Saison / Maintien**  
-  Maison ✅ · Terrain ✅ · Salle ✅  
-  Objectif : rester frais sans fatigue.
-- **Off‑Season / Transition**  
-  Maison ✅ · Terrain ✅ · Salle ✅  
-  Objectif : récup active, fun, maintien léger.
+## Contraintes Globales (2026-02)
+- **Zero ballon** : aucun exercice impliquant medball/swiss/fitball/football.
+- **UI materiel** : ne pas proposer ces equipements cote app (meme si envoyes, le backend les filtre).
+- **Preset salle** : `gym_full` n’inclut plus `medball`.
 
-## 📱 Parcours Utilisateur (Frontend)
+### Metriques de Charge
+- **ATL** (Acute Training Load) = charge aigue
+- **CTL** (Chronic Training Load) = charge chronique
+- **TSB** (Training Stress Balance) = equilibre forme/fatigue
+- Calcul via EMA (Exponential Moving Average) dans `engine/loadModel.ts`
+
+### Cycles Disponibles (avec lieux recommandes)
+- **Fondation** : Maison / Terrain / Salle - base physique generale
+- **Force** : Maison (light) / Salle (ideal) - renfo bas/haut
+- **Endurance / Engine** : Maison (cardio leger) / Terrain / Salle - aerobie, tempo, intervalles
+- **Explosivite (vitesse & technique)** : Terrain (ideal) / Salle - vitesse, appuis
+- **Explosif (puissance)** : Terrain / Salle (ideal) - sprint + power + plyo
+- **RSA (Repeated Sprint Ability)** : Terrain (ideal) / Salle - repeter les sprints
+- **Saison / Maintien** : Partout - rester frais sans fatigue
+- **Off-Season / Transition** : Partout - recup active, maintien leger
+
+## Structure du Projet
+
+```
+/
+  App.tsx                    # Point d'entree, NavigationContainer + ToastHost
+  package.json
+
+  /config
+    backend.ts               # URL backend
+    devFlags.ts              # Feature flags dev (bypass feedback, etc.)
+    firebaseConfig.ts        # Config Firebase
+    trainingDefaults.ts      # Constantes ATL0, CTL0, poids externes
+
+  /constants
+    theme.ts                 # Design system (couleurs, radius, spacing)
+    feedback.ts              # Limites RPE/fatigue/douleur
+    warmups.ts               # Templates echauffements
+
+  /domain
+    microcycles.ts           # Definition des cycles (id, label, icon, locations, highlights)
+    recommendMicrocycle.ts   # Algorithme de recommandation de cycle
+    types.ts                 # Types metier (SessionFeedback, InjuryRecord, Modality, etc.)
+
+  /engine
+    loadModel.ts             # Calcul ATL/CTL/TSB (updateTrainingLoad)
+    dailyAggregation.ts      # Agregation charges par jour
+    exerciseBank.ts          # Banque d'exercices principale
+    exerciseInstructions.ts  # Consignes textuelles par exercice
+    exerciseVideos.ts        # Refs videos par exercice
+
+  /state
+    trainingStore.ts         # Store Zustand principal (sessions, charges, ATL/CTL/TSB, Firestore sync)
+    settingsStore.ts         # Preferences utilisateur (theme, haptics, weekStart, weeklyGoal)
+    appModeStore.ts          # Mode coach/joueur
+
+  /services
+    firebase.ts              # Instance auth + db
+    aiContext.ts              # Construction du contexte IA envoye au backend
+    notifications.ts         # Push notifications locales (rappels, streak, match)
+    analytics.ts             # Amplitude tracking
+    monitoring.ts            # Sentry init
+
+  /navigation
+    RootNavigator.tsx        # Auth flow + App flow + modals (transparentModal)
+
+  /screens
+    HomeScreen.tsx            # Dashboard principal (StatusBar + Hero + CTA + Carousel)
+    LoginScreen.tsx           # Connexion (shake + toast sur erreur)
+    RegisterScreen.tsx        # Inscription (fade in + slide up + shake)
+    ProfileSetupScreen.tsx    # Setup profil multi-etapes
+    CycleModalScreen.tsx      # Selection/gestion cycle (modal)
+    FeedbackScreen.tsx        # Feedback post-seance (modal, readiness score)
+    ExternalLoadScreen.tsx    # Ajout charge externe (modal)
+    SessionPreviewScreen.tsx  # Preview seance avant lancement (modal)
+    SessionLiveScreen.tsx     # Seance en cours (timer, blocs)
+    SessionSummaryScreen.tsx  # Resume post-seance
+    SessionHistoryScreen.tsx  # Historique (stagger animation)
+    VideoLibraryScreen.tsx    # Catalogue exercices + videos
+    ChatScreen.tsx            # Assistant IA
+    NewSessionScreen.tsx      # Generation de seance
+    ProgressScreen.tsx        # Milestones, hero football-friendly, comparaison tests
+    TestsScreen.tsx           # Tests terrain
+    SettingsScreen.tsx        # Parametres
+    WelcomeScreen.tsx         # Ecran d'accueil premium (CTA -> Login ou Register)
+    LegalNoticeScreen.tsx     # Mentions legales
+    PrivacyPolicyScreen.tsx   # Politique de confidentialite
+    /newSession               # Sous-modules generation (api, orchestrator, transform, UI)
+
+  /components
+    /home
+      HomeStatusBar.tsx       # Bande compacte : phase + TSB + alerte match
+      HomeReadinessHero.tsx   # Card large readiness + sparkline TSB (SVG)
+      HomePrimaryCTA.tsx      # Bouton action principale contextuel (pulse animation)
+      HomeCarousel.tsx        # FlatList horizontale + pagination dots
+      HomeCarouselCard.tsx    # Template card pour carousel
+      HomeTestsNudge.tsx      # Nudge tests terrain
+      HomeCycleHero.tsx       # (legacy) Hero cycle
+      HomeDashboardCard.tsx   # (legacy) Dashboard metriques
+      HomeReadinessCard.tsx   # (legacy) Card readiness ancienne version
+      HomeNextSessionCard.tsx # (legacy) Card prochaine seance
+      HomeWeekSummaryCard.tsx # (legacy) Resume semaine
+
+    /modal
+      ModalContainer.tsx      # Wrapper modal universel (blur + slide + handle)
+      useModalAnimation.ts    # Hook animation entree/sortie (slide/fade/right)
+      useSwipeToDismiss.ts    # Hook gesture swipe-to-dismiss
+
+    /session
+      blockConfig.ts          # Config blocs (couleurs, icones, labels Force par token)
+
+    /ui
+      Button.tsx              # Bouton avec press animation (scale + darken + haptic)
+      Card.tsx                # Card generique (variants: surface, soft)
+      Badge.tsx               # Badge/pill
+      SectionHeader.tsx       # Header de section
+      ScreenContainer.tsx     # Wrapper ecran avec SafeArea + scroll
+      ToastHost.tsx           # Systeme de toast global (slide from top)
+      LoadingOverlay.tsx      # Overlay de chargement
+
+  /hooks
+    useHaptics.ts             # Hook haptics centralise (respecte reduceMotion + settings)
+    useNetworkStatus.ts       # Statut reseau + queue count
+    /home
+      useLoadSeries.ts        # Calcul serie TSB 7 jours (warmup 21j)
+      useMatchSoon.ts         # Detection match < 48h
+      useWeekDays.ts          # Jours de la semaine avec statuts (FKS, club, match, etc.)
+      useWeekSummary.ts       # Resume semaine (fksCount, extCount, message)
+      useActivityStreak.ts    # Streak d'activite consecutive
+      usePrimaryCta.ts        # Logique CTA intelligent (repos/generer/commencer/feedback)
+      useHomeCarouselItems.tsx # Construction items carousel
+
+  /utils
+    dateHelpers.ts            # Helpers partages (toDateKey, isSameDay, frToKey)
+    toast.ts                  # Bus de toast (showToast/onToast via DeviceEventEmitter)
+    animations.ts             # Animations utilitaires (shake, fadeIn, scale, slideUp)
+    errorHandler.ts           # Gestion erreurs (classify, showError, showErrorWithRetry, safeFetch)
+    legalContent.ts           # Textes mentions legales / politique confidentialite
+    offlineQueue.ts           # Queue hors-ligne pour actions en attente
+    virtualClock.ts           # Horloge virtuelle (mode dev)
+```
+
+## Parcours Utilisateur (Frontend)
 
 ### Onboarding
-Login/register → Setup profil (poste, niveau, pied fort, objectif, charge club/match, matériel, code club)
+Welcome -> Login/Register -> Setup profil (poste, niveau, pied fort, objectif, charge club/match, materiel, code club) -> Choix mode (joueur/coach) -> Onboarding slides
 
 ### Mode Joueur
-- **Home** : readiness, semaine (séances + charges), cycle en cours, boutons génération
-- **Cycles** : 1 seul cycle actif, choix/gestion cycles
-- **Génération** : choix environnement + matériel → backend génère → preview → live → feedback (RPE, fatigue, douleur)
-- **Tests terrain** : batterie de tests par playlist, conseillés avant démarrage cycle
-- **Bibliothèque** : catalogue exercices + vidéos validées + alternatives
+- **Home** : StatusBar (phase + TSB + match) -> ReadinessHero (ATL/CTL/TSB + sparkline) -> CTA intelligent -> Carousel (semaine, tests, progression)
+- **Cycles** : 1 seul cycle actif, choix/gestion via modal, recommandation basee sur objectif + tests
+- **Generation** : choix environnement + materiel -> backend genere -> preview -> live -> feedback (RPE, fatigue, douleur)
+- **Tests terrain** : batterie de tests par playlist, conseilles avant demarrage cycle
+- **Bibliotheque** : catalogue exercices + videos validees + alternatives + favoris
+- **Chat** : assistant IA contextuel (rate limit 30 msg/jour, 500 chars max)
 
-### Mode Coach  
-Dashboard coach : création club + code invitation, liste joueurs, détails joueur (profil + séances)
+### Mode Coach
+Dashboard coach : liste joueurs, details joueur (profil + seances)
 
-## 🔧 Points Techniques Importants
+## Systeme de Modals
+
+Tous les ecrans modals utilisent `ModalContainer` (composant wrapper universel) :
+- **Presentation** : `transparentModal` + `animation: "fade"` dans le navigator
+- **Backdrop** : BlurView (expo-blur) avec tap-to-dismiss
+- **Animation** : slide from bottom (300ms in / 250ms out) via reanimated
+- **Gesture** : swipe-to-dismiss (threshold 150px ou velocity > 1200)
+- **Style** : rounded corners 20px + handle bar + shadow
+
+Ecrans concernes : FeedbackScreen, CycleModalScreen, ExternalLoadScreen, SessionPreviewScreen
+
+## Systeme d'Animations
+
+### Micro-animations (Phase 3)
+- **Button** : scale down 0.96 au press + overlay darken + haptic impactLight
+- **Erreurs** : shake animation (3 secousses) sur formulaires login/register
+- **Entrees** : stagger fade+slideUp sur HomeScreen (hero, CTA, carousel) et SessionHistory
+- **CTA** : pulse subtil (scale 1 -> 1.015) en boucle quand actif
+- **Toast** : slide from top + fade, auto-dismiss apres 2.2s
+
+### Haptics
+Hook `useHaptics()` centralise :
+- Respecte le setting utilisateur (`hapticsEnabled`)
+- Respecte `reduceMotion` (accessibilite)
+- Pas de haptics sur web
+- API : `impactLight()`, `impactMedium()`, `impactHeavy()`, `success()`, `warning()`, `error()`
+
+## Points Techniques Importants
 
 ### Garde-fous Backend
-- Caps durée selon match/club/deload
-- Fallback vers séances "safe" si contraintes trop strictes
-- Anti-répétition (système de mémoire)
-- Post-traitements validation (structure, volume, équipement)
+- Caps duree selon match/club/deload
+- Fallback vers seances "safe" si contraintes trop strictes
+- Anti-repetition (systeme de memoire)
+- Post-traitements validation (structure, volume, equipement)
 
-### Contraintes Génération
-- **Obligatoire** : respecter matériel disponible + douleurs/blessures
-- **Cycle actif** : obligatoire pour générer
-- **Feedback** : doit être rempli après séance (bloque prochaine génération hors mode dev)
-- **12 séances** : fin de cycle → prompt choix nouveau cycle
+### Contraintes Generation
+- **Obligatoire** : respecter materiel disponible + douleurs/blessures
+- **Cycle actif** : obligatoire pour generer
+- **Feedback** : doit etre rempli apres seance (bloque prochaine generation hors mode dev)
+- **12 seances** : fin de cycle -> prompt choix nouveau cycle
 
-### Assistant Chat (endpoint séparé)
-- Explique séances générées
-- Propose variantes/adaptations légères
-- Ne contredit JAMAIS la séance proposée
-- Auth + rate limit + timeout serveur
+### Gestion d'erreurs
+- `ErrorBoundary` global dans App.tsx
+- `withSessionErrorBoundary` HOC pour les ecrans session
+- `showErrorWithRetry` pour erreurs avec action de retry
+- `classifyError` pour distinguer reseau / auth / autre
+- Queue offline (`offlineQueue.ts`) pour feedback en mode hors-ligne
 
-## 📂 Structure Probablement
-```
-/backend
-  /routes
-  /services
-    - sessionGenerator.js (ou .py)
-    - tokenManager.js
-    - exerciseBank.js
-  /models
-  
-/frontend  
-  /screens
-    - Home.jsx
-    - CycleManager.jsx
-    - SessionLive.jsx
-    - Feedback.jsx
-    - CoachDashboard.jsx
-  /store (Zustand)
-  /components
-  /services
-    - firebaseService.js
-```
+### Navigation
+- Auth flow : Welcome -> Login/Register (route initiale dynamique selon CTA welcome)
+- Profile setup obligatoire avant acces app
+- Onboarding affiche une seule fois (AsyncStorage flag)
+- Mode coach/joueur choisi au premier lancement
+- Modals en `transparentModal` pour le blur/swipe custom
 
-## ⚠️ Règles à TOUJOURS Respecter
+## Regles a TOUJOURS Respecter
 
-1. **Jamais de génération sans cycle actif**
-2. **Filtres matériel/douleurs = priorité absolue**
-3. **12 séances = cycle complet**
-4. **Feedback obligatoire après séance** (met à jour charge + avance cycle)
-5. **Un seul cycle actif à la fois**
-6. **Format JSON fks.next_session.v2 pour les séances**
+1. **Jamais de generation sans cycle actif**
+2. **Filtres materiel/douleurs = priorite absolue**
+3. **12 seances = cycle complet**
+4. **Feedback obligatoire apres seance** (met a jour charge + avance cycle)
+5. **Un seul cycle actif a la fois**
+6. **Format JSON fks.next_session.v2 pour les seances**
+7. **Toast (pas Alert.alert) pour les notifications utilisateur simples**
+8. **Haptics via useHaptics() uniquement** (jamais d'appel direct expo-haptics)
+9. **Helpers partages dans utils/** (pas de duplication de toDateKey, isSameDay, frToKey)
+10. **Hooks metier du Home dans hooks/home/** (garder HomeScreen leger)
 
-## 💬 Note pour Claude
-Je ne suis pas développeur, j'ai créé cette app avec GPT. Quand tu m'expliques du code, utilise un français simple et des analogies foot si possible. Merci ! ⚽
-```
-
-**Adaptez** ce template avec vos vraies infos (langages, structure de dossiers, etc.)
-
----
-
-### **2. Première Conversation avec Claude** (5 min)
-
-Une fois le fichier `CLAUDE.md` créé, lancez Claude dans VS Code et dites juste :
-```
-Lis le fichier CLAUDE.md puis explore le projet. 
-Dis-moi si tu comprends bien l'architecture et s'il y a des choses à clarifier.
-```
-
-Claude va :
-1. ✅ Lire CLAUDE.md
-2. ✅ Explorer votre arborescence
-3. ✅ Regarder quelques fichiers clés
-4. ✅ Vous poser des questions pour clarifier si besoin
-
----
+## Note pour Claude
+Je ne suis pas developpeur, j'ai cree cette app avec GPT. Quand tu m'expliques du code, utilise un francais simple et des analogies foot si possible.

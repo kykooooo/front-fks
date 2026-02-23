@@ -1,17 +1,70 @@
 import React from "react";
-import { View, Text, TouchableOpacity } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { palette } from "../theme";
 import type { EnvironmentSelection } from "../types";
+import { MICROCYCLES, isMicrocycleId, type MicrocycleId } from "../../../domain/microcycles";
 
 type Props = {
   environment: EnvironmentSelection;
   setEnvironment: React.Dispatch<React.SetStateAction<EnvironmentSelection>>;
   allowed?: Array<"gym" | "pitch" | "home">;
-  descriptionOverrides?: Partial<Record<"gym" | "pitch" | "home", string>>;
+  currentCycleId?: MicrocycleId | string | null;
 };
 
-export function EnvironmentSelector({ environment, setEnvironment, allowed, descriptionOverrides }: Props) {
+type LocationConfig = {
+  id: "gym" | "pitch" | "home";
+  label: string;
+  icon: string;
+  color: string;
+  bgColor: string;
+  defaultDescription: string;
+  features: string[];
+};
+
+const LOCATIONS: LocationConfig[] = [
+  {
+    id: "gym",
+    label: "Salle",
+    icon: "barbell",
+    color: "#8b5cf6",
+    bgColor: "rgba(139, 92, 246, 0.12)",
+    defaultDescription: "Machines, charges lourdes, haltères",
+    features: ["Force max", "Machines guidées", "Charges progressives"],
+  },
+  {
+    id: "pitch",
+    label: "Terrain",
+    icon: "football",
+    color: "#22c55e",
+    bgColor: "rgba(34, 197, 94, 0.12)",
+    defaultDescription: "Gazon, synthé, stabilisé",
+    features: ["Sprints", "Appuis", "Travail spécifique"],
+  },
+  {
+    id: "home",
+    label: "Maison",
+    icon: "home",
+    color: "#f59e0b",
+    bgColor: "rgba(245, 158, 11, 0.12)",
+    defaultDescription: "Salon, jardin, peu de matériel",
+    features: ["Poids de corps", "Core", "Mobilité"],
+  },
+];
+
+export function EnvironmentSelector({
+  environment,
+  setEnvironment,
+  allowed,
+  currentCycleId,
+}: Props) {
   const allowedSet = new Set(allowed ?? ["gym", "pitch", "home"]);
+
+  // Get cycle-specific descriptions if available
+  const cycle = currentCycleId && isMicrocycleId(currentCycleId)
+    ? MICROCYCLES[currentCycleId]
+    : null;
+
   const toggle = (key: "gym" | "pitch" | "home") => {
     if (!allowedSet.has(key)) return;
     setEnvironment((prev) => {
@@ -23,116 +76,236 @@ export function EnvironmentSelector({ environment, setEnvironment, allowed, desc
     });
   };
 
+  const filteredLocations = LOCATIONS.filter((loc) => allowedSet.has(loc.id));
+
   return (
-    <View style={{ marginBottom: 12 }}>
-      <Text style={styles.cardTitle}>Où tu t’entraînes aujourd’hui ?</Text>
-      <Text style={styles.cardSubtitle}>
-        Dis à FKS si tu vas à la salle, sur un terrain ou tu restes chez toi.
-      </Text>
-      <View style={styles.environmentRow}>
-        {allowedSet.has("gym") ? (
-          <EnvButton
-            label="Salle"
-            description={descriptionOverrides?.gym ?? "Machines, charges lourdes"}
-            selected={environment.includes("gym")}
-            onPress={() => toggle("gym")}
-          />
-        ) : null}
-        {allowedSet.has("pitch") ? (
-          <EnvButton
-            label="Terrain"
-            description={descriptionOverrides?.pitch ?? "Gazon, stabilisé, synthé"}
-            selected={environment.includes("pitch")}
-            onPress={() => toggle("pitch")}
-          />
-        ) : null}
-        {allowedSet.has("home") ? (
-          <EnvButton
-            label="Chez toi"
-            description={descriptionOverrides?.home ?? "Salon, jardin, cage d’escalier"}
-            selected={environment.includes("home")}
-            onPress={() => toggle("home")}
-          />
-        ) : null}
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <View style={styles.headerIcon}>
+          <Ionicons name="location" size={18} color={palette.accent} />
+        </View>
+        <View style={styles.headerText}>
+          <Text style={styles.title}>Où t'entraînes-tu ?</Text>
+          <Text style={styles.subtitle}>
+            Choisis ton lieu pour adapter la séance
+          </Text>
+        </View>
       </View>
+
+      <View style={styles.locationsGrid}>
+        {filteredLocations.map((location) => {
+          const selected = environment.includes(location.id);
+          const cycleDescription = cycle?.locationDescriptions?.[location.id];
+
+          return (
+            <TouchableOpacity
+              key={location.id}
+              onPress={() => toggle(location.id)}
+              activeOpacity={0.85}
+              style={[
+                styles.locationCard,
+                selected && styles.locationCardSelected,
+                selected && { borderColor: location.color },
+              ]}
+            >
+              {/* Header with icon and label */}
+              <View style={styles.locationHeader}>
+                <View
+                  style={[
+                    styles.locationIconWrap,
+                    { backgroundColor: selected ? location.bgColor : palette.cardSoft },
+                  ]}
+                >
+                  <Ionicons
+                    name={location.icon as any}
+                    size={22}
+                    color={selected ? location.color : palette.sub}
+                  />
+                </View>
+                <View style={styles.locationLabelWrap}>
+                  <Text
+                    style={[
+                      styles.locationLabel,
+                      selected && { color: location.color },
+                    ]}
+                  >
+                    {location.label}
+                  </Text>
+                  {selected && (
+                    <View style={[styles.selectedBadge, { backgroundColor: location.bgColor }]}>
+                      <Ionicons name="checkmark" size={10} color={location.color} />
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              {/* Cycle-specific focus (if available) */}
+              {cycleDescription && (
+                <View style={[styles.focusBadge, { backgroundColor: location.bgColor }]}>
+                  <Ionicons name="flash" size={12} color={location.color} />
+                  <Text style={[styles.focusText, { color: location.color }]}>
+                    {cycleDescription}
+                  </Text>
+                </View>
+              )}
+
+              {/* Features */}
+              <View style={styles.featuresWrap}>
+                {location.features.map((feature, idx) => (
+                  <View key={idx} style={styles.featureRow}>
+                    <View
+                      style={[
+                        styles.featureDot,
+                        { backgroundColor: selected ? location.color : palette.borderSoft },
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.featureText,
+                        selected && { color: palette.text },
+                      ]}
+                    >
+                      {feature}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {environment.length > 0 && (
+        <View style={styles.selectionSummary}>
+          <Ionicons name="checkmark-circle" size={16} color={palette.accent} />
+          <Text style={styles.selectionText}>
+            {environment.length === 1
+              ? `Séance ${environment[0] === "gym" ? "salle" : environment[0] === "pitch" ? "terrain" : "maison"}`
+              : `Séance mixte (${environment.map(e => e === "gym" ? "salle" : e === "pitch" ? "terrain" : "maison").join(" + ")})`}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
 
-function EnvButton({
-  label,
-  description,
-  selected,
-  onPress,
-}: {
-  label: string;
-  description: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      style={[styles.envCard, selected ? styles.envCardSelected : undefined]}
-    >
-      <Text style={[styles.envLabel, selected ? styles.envLabelSelected : undefined]}>
-        {label}
-      </Text>
-      <Text
-        style={[
-          styles.envDescription,
-          selected ? styles.envDescriptionSelected : undefined,
-        ]}
-      >
-        {description}
-      </Text>
-    </TouchableOpacity>
-  );
-}
-
-const styles = {
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: "700" as const,
+const styles = StyleSheet.create({
+  container: {
+    gap: 16,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  headerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "rgba(37, 99, 235, 0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerText: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 17,
+    fontWeight: "800",
     color: palette.text,
   },
-  cardSubtitle: {
+  subtitle: {
     fontSize: 13,
-    marginTop: 4,
     color: palette.sub,
+    marginTop: 2,
   },
-  environmentRow: {
-    flexDirection: "row" as const,
-    gap: 8,
-    marginTop: 12,
+  locationsGrid: {
+    gap: 12,
   },
-  envCard: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    borderRadius: 14,
-    borderWidth: 1,
+  locationCard: {
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 2,
     borderColor: palette.borderSoft,
+    backgroundColor: palette.card,
+    gap: 12,
+  },
+  locationCardSelected: {
     backgroundColor: palette.cardSoft,
   },
-  envCardSelected: {
-    borderColor: palette.accent,
-    backgroundColor: palette.accentSoft,
+  locationHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
-  envLabel: {
-    fontSize: 13,
-    fontWeight: "700" as const,
+  locationIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  locationLabelWrap: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  locationLabel: {
+    fontSize: 16,
+    fontWeight: "700",
     color: palette.text,
   },
-  envLabelSelected: {
-    color: palette.accent,
+  selectedBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  envDescription: {
-    fontSize: 11,
+  focusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  focusText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  featuresWrap: {
+    gap: 6,
+    paddingLeft: 4,
+  },
+  featureRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  featureDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+  },
+  featureText: {
+    fontSize: 13,
     color: palette.sub,
-    marginTop: 4,
   },
-  envDescriptionSelected: {
+  selectionSummary: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: "rgba(37, 99, 235, 0.08)",
+  },
+  selectionText: {
+    fontSize: 13,
+    fontWeight: "600",
     color: palette.accent,
   },
-};
+});

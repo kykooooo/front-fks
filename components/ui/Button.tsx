@@ -1,15 +1,18 @@
 // components/ui/Button.tsx
-import React from "react";
+import React, { useRef } from "react";
 import {
-  TouchableOpacity,
+  Pressable,
   Text,
   StyleSheet,
   View,
+  Animated,
   type StyleProp,
   type ViewStyle,
   type TextStyle,
+  Platform,
 } from "react-native";
 import { theme } from "../../constants/theme";
+import { useHaptics } from "../../hooks/useHaptics";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "outline";
 type ButtonSize = "sm" | "md" | "lg";
@@ -25,6 +28,8 @@ type ButtonProps = {
   fullWidth?: boolean;
   leftAccessory?: React.ReactNode;
   rightAccessory?: React.ReactNode;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 };
 
 export function Button({
@@ -38,7 +43,38 @@ export function Button({
   fullWidth = false,
   leftAccessory,
   rightAccessory,
+  accessibilityLabel,
+  accessibilityHint,
 }: ButtonProps) {
+  const pressAnim = useRef(new Animated.Value(0)).current;
+  const haptics = useHaptics();
+
+  const onPressIn = () => {
+    haptics.impactLight();
+    Animated.timing(pressAnim, {
+      toValue: 1,
+      duration: 150,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const onPressOut = () => {
+    Animated.timing(pressAnim, {
+      toValue: 0,
+      duration: 100,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const scale = pressAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0.96],
+  });
+
+  const overlayOpacity = pressAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 0.08],
+  });
   const labelColor =
     variant === "primary"
       ? theme.colors.text
@@ -59,25 +95,36 @@ export function Button({
           : styles.ghost;
 
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.9}
-      disabled={disabled}
-      style={[
-        styles.base,
-        sizeStyle,
-        variantStyle,
-        fullWidth && styles.fullWidth,
-        disabled && styles.disabled,
-        style,
-      ]}
-    >
-      {leftAccessory ? <View style={styles.accessory}>{leftAccessory}</View> : null}
-      <Text style={[styles.label, labelSize, { color: labelColor }, textStyle]}>
-        {label}
-      </Text>
-      {rightAccessory ? <View style={styles.accessory}>{rightAccessory}</View> : null}
-    </TouchableOpacity>
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+        disabled={disabled}
+        accessibilityLabel={accessibilityLabel}
+        accessibilityHint={accessibilityHint}
+        android_ripple={
+          Platform.OS === "android"
+            ? { color: "rgba(0,0,0,0.08)", borderless: false }
+            : undefined
+        }
+        style={[
+          styles.base,
+          sizeStyle,
+          variantStyle,
+          fullWidth && styles.fullWidth,
+          disabled && styles.disabled,
+          style,
+        ]}
+      >
+        <Animated.View style={[styles.pressOverlay, { opacity: overlayOpacity }]} />
+        {leftAccessory ? <View style={styles.accessory}>{leftAccessory}</View> : null}
+        <Text style={[styles.label, labelSize, { color: labelColor }, textStyle]}>
+          {label}
+        </Text>
+        {rightAccessory ? <View style={styles.accessory}>{rightAccessory}</View> : null}
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -89,6 +136,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
+    overflow: "hidden",
   },
   fullWidth: {
     width: "100%",
@@ -142,5 +190,9 @@ const styles = StyleSheet.create({
   },
   accessory: {
     marginHorizontal: 2,
+  },
+  pressOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#000",
   },
 });

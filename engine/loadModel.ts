@@ -1,9 +1,36 @@
 // engine/loadModel.ts
+// ===========================================================================
+// FKS Load Model - Exponential Weighted Moving Average (EWMA)
+// ===========================================================================
+// Basé sur le modèle Banister Impulse-Response (1975)
+// ATL = Acute Training Load (fatigue, répond vite)
+// CTL = Chronic Training Load (fitness, répond lentement)
+// TSB = Training Stress Balance = CTL - ATL
+// ===========================================================================
 
-// Tuned pour un public amateur/semi-pro : fatigue moins brusque, forme plus réactive
-const ATL_TAU = 14;  // montée fatigue plus progressive
-const CTL_TAU = 28;  // forme réagit un peu plus vite pour réduire les plongées TSB
+import { TAU } from "../config/trainingDefaults";
 
+// Constantes de temps (importées depuis config)
+const ATL_TAU = TAU.ATL;  // 14 jours - fatigue décroît plus vite
+const CTL_TAU = TAU.CTL;  // 28 jours - forme persiste plus longtemps
+
+/**
+ * Met à jour ATL/CTL/TSB après une charge d'entraînement.
+ *
+ * Formule EWMA :
+ *   k = 1 - exp(-dt / τ)
+ *   next = current + k × (delta - current)
+ *
+ * Où :
+ *   - dt = nombre de jours depuis la dernière mise à jour
+ *   - τ (tau) = constante de temps (14 pour ATL, 28 pour CTL)
+ *   - delta = charge du jour
+ *
+ * @param atl - ATL actuel
+ * @param ctl - CTL actuel
+ * @param delta - Charge journalière à appliquer
+ * @param opts.dtDays - Nombre de jours (défaut: 1)
+ */
 export function updateTrainingLoad(
   atl: number,
   ctl: number,

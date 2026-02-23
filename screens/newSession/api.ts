@@ -1,5 +1,5 @@
 import { getAuth } from "firebase/auth";
-import { BACKEND_URL } from "../../config/backend";
+import { BACKEND_URL, backendAuthHeaders } from "../../config/backend";
 import { BACKEND_EXERCISE_IDS } from "../../engine/backendExerciseIds";
 import { EXERCISE_BY_ID } from "../../engine/exerciseBank";
 import type { FKS_NextSessionV2 } from "./types";
@@ -23,6 +23,11 @@ export function prepareBackendContext(
   selectedEquipment: string[],
   environment: string[]
 ) {
+  const normalizedEquipment = Array.from(
+    new Set(
+      selectedEquipment.flatMap((id) => [id])
+    )
+  );
   const resolvedGoal = ctx.profile?.goal ?? ctx.goal ?? "fondation";
   const availableTimeMin =
     typeof ctx?.constraints?.available_time_min === "number"
@@ -51,18 +56,18 @@ export function prepareBackendContext(
     ...ctx,
     training_environment: environment,
     location,
-    equipment_available: selectedEquipment,
-    equipment_used: selectedEquipment,
+    equipment_available: normalizedEquipment,
+    equipment_used: normalizedEquipment,
     goal: resolvedGoal,
     profile: {
       ...(ctx.profile ?? {}),
       goal: resolvedGoal,
-      venue: (ctx.profile ?? {})?.venue ?? venue,
+      venue,
     },
     constraints: {
       ...(ctx as any)?.constraints,
       venue,
-      equipment: selectedEquipment,
+      equipment: normalizedEquipment,
       pains: (ctx as any)?.constraints?.pains ?? [],
       ...(typeof availableTimeMin === "number" ? { available_time_min: availableTimeMin } : {}),
     },
@@ -80,14 +85,31 @@ export async function fetchV2(
 ): Promise<{ v2: FKS_NextSessionV2; debug: any }> {
   const auth = getAuth();
   const userId = auth.currentUser?.uid ?? "test-user-dev";
+  const idToken = await auth.currentUser?.getIdToken();
   const url = `${BACKEND_URL}/api/fks/generate`;
 
-  // Utilisation de safeFetch qui gère automatiquement les erreurs réseau et timeout
-  const r = await safeFetch(url, {
+  // Timeout long : Render free-tier cold start (~30-50s) + génération IA (~15s)
+  const fetchOptions = {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...backendAuthHeaders(),
+      ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+    },
     body: JSON.stringify({ userId, context }),
-  }, 45000); // Timeout de 45 secondes pour la génération IA
+  };
+
+  let r: Response;
+  try {
+    r = await safeFetch(url, fetchOptions, 90000);
+  } catch (firstError: any) {
+    // Si timeout (cold start probable), retry une fois
+    if (firstError.code === "ETIMEDOUT") {
+      r = await safeFetch(url, fetchOptions, 90000);
+    } else {
+      throw firstError;
+    }
+  }
 
   const data: any = await r.json();
 

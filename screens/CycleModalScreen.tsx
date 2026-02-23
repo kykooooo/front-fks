@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -7,8 +7,12 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Platform,
+  KeyboardAvoidingView,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
@@ -20,15 +24,20 @@ import { useTrainingStore } from "../state/trainingStore";
 import {
   MICROCYCLES,
   MICROCYCLE_TOTAL_SESSIONS_DEFAULT,
+  CYCLE_PATHWAYS,
+  suggestNextCycle,
   type MicrocycleId,
+  type CyclePathway,
   isMicrocycleId,
 } from "../domain/microcycles";
 import { recommendMicrocycle } from "../domain/recommendMicrocycle";
 import { Badge } from "../components/ui/Badge";
+import { showToast } from "../utils/toast";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { trackEvent } from "../services/analytics";
+import { ModalContainer } from "../components/modal/ModalContainer";
 
 const palette = theme.colors;
 
@@ -74,6 +83,7 @@ const clampInt = (value: any) => {
 };
 
 export default function CycleModalScreen() {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const params = (route.params ?? {}) as RouteParams;
@@ -81,6 +91,7 @@ export default function CycleModalScreen() {
   const microcycleGoal = useTrainingStore((s) => s.microcycleGoal);
   const microcycleSessionIndex = useTrainingStore((s) => s.microcycleSessionIndex);
   const setMicrocycleGoal = useTrainingStore((s) => s.setMicrocycleGoal);
+  const setActivePathway = useTrainingStore((s) => s.setActivePathway);
 
   const activeCycleId: MicrocycleId | null = useMemo(() => {
     if (isMicrocycleId(microcycleGoal)) return microcycleGoal;
@@ -98,6 +109,7 @@ export default function CycleModalScreen() {
   const [abandonReasonId, setAbandonReasonId] = useState<string>("too_hard");
   const [abandonOtherText, setAbandonOtherText] = useState("");
   const [selectionTouched, setSelectionTouched] = useState(false);
+  const [pendingPathway, setPendingPathway] = useState<{ id: string; index: number } | null>(null);
   const [testsNudgeDismissed, setTestsNudgeDismissed] = useState(false);
   const [suppressTestsPrompt, setSuppressTestsPrompt] = useState(false);
 
@@ -162,15 +174,6 @@ export default function CycleModalScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recommendedId, selectionTouched]);
 
-  useLayoutEffect(() => {
-    navigation.setOptions?.({
-      headerStyle: { backgroundColor: palette.bg },
-      headerTintColor: palette.text,
-      headerTitleStyle: { color: palette.text },
-      headerLeft: () => <ModalCloseButton onPress={() => navigation.goBack()} />,
-    });
-  }, [navigation]);
-
   const activeCycle = activeCycleId ? MICROCYCLES[activeCycleId] : null;
 
   const persistCycle = async (payload: Record<string, any>) => {
@@ -190,7 +193,7 @@ export default function CycleModalScreen() {
 
   const startCycleNow = async () => {
     try {
-      await persistCycle({
+      const cyclePayload: Record<string, any> = {
         microcycleGoal: selectedId,
         goal: selectedId,
         programGoal: selectedId,
@@ -198,16 +201,35 @@ export default function CycleModalScreen() {
         microcycleTotalSessions: total,
         microcycleSessionIndex: 0,
         microcycleStartedAt: serverTimestamp(),
-      });
+      };
+
+      // Persist pathway info
+      if (pendingPathway) {
+        cyclePayload.activePathwayId = pendingPathway.id;
+        cyclePayload.activePathwayIndex = pendingPathway.index;
+      } else {
+        cyclePayload.activePathwayId = null;
+        cyclePayload.activePathwayIndex = 0;
+      }
+
+      await persistCycle(cyclePayload);
       setMicrocycleGoal(selectedId);
+
+      if (pendingPathway) {
+        setActivePathway(pendingPathway.id, pendingPathway.index);
+      } else {
+        setActivePathway(null);
+      }
+
       setAbandonOpen(false);
       trackEvent("cycle_selected", {
         cycleId: selectedId,
+        pathway: pendingPathway?.id ?? "none",
         origin: params.origin ?? "unknown",
       });
       goNextAfterStart();
     } catch {
-      Alert.alert("Erreur", "Impossible d’enregistrer ton cycle. Réessaie.");
+      showToast({ type: "error", title: "Erreur", message: "Impossible d'enregistrer ton programme. Réessaie." });
     }
   };
 
@@ -222,7 +244,7 @@ export default function CycleModalScreen() {
           {
             text: "Faire mes tests",
             onPress: () =>
-              navigation.navigate("Tests" as never, { initialPlaylist: selectedId } as never),
+              navigation.navigate("Tests", { initialPlaylist: selectedId }),
           },
           { text: "Démarrer quand même", style: "default", onPress: startCycleNow },
           { text: "Annuler", style: "cancel" },
@@ -252,8 +274,11 @@ export default function CycleModalScreen() {
         microcycleSessionIndex: 0,
         microcycleAbandonedAt: serverTimestamp(),
         microcycleAbandonReason: reason,
+        activePathwayId: null,
+        activePathwayIndex: 0,
       });
       setMicrocycleGoal(null);
+      setActivePathway(null);
       setSelectionTouched(false);
       setSelectedId(recommendedId);
       setAbandonOpen(false);
@@ -263,7 +288,7 @@ export default function CycleModalScreen() {
         origin: params.origin ?? "unknown",
       });
     } catch {
-      Alert.alert("Erreur", "Impossible d’abandonner le cycle. Réessaie.");
+      showToast({ type: "error", title: "Erreur", message: "Impossible d'abandonner le programme. Réessaie." });
     }
   };
 
@@ -302,288 +327,396 @@ export default function CycleModalScreen() {
 
   const canCloseSelect = !hasActiveCycle;
 
+  const selectedCycle = MICROCYCLES[selectedId];
+  const confidenceLabel =
+    recommendation.confidence === "high"
+      ? "On te le conseille"
+      : recommendation.confidence === "medium"
+        ? "Bonne option"
+        : "Suggestion";
+
+  const locationLabels: Record<string, string> = {
+    home: "Maison",
+    pitch: "Terrain",
+    gym: "Salle",
+  };
+
   return (
-    <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        {hasActiveCycle ? (
-          <View style={styles.section}>
-            <SectionHeader
-              title="Mon cycle"
-              right={<Badge label={activeCycle?.label ?? "Cycle"} tone="ok" />}
-            />
-            <Card variant="surface" style={styles.activeCard}>
-              <View style={styles.activeHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.activeTitle}>{activeCycle?.subtitle ?? "Cycle actif"}</Text>
-                  <Text style={styles.activeSub}>
-                    Progression · {completed}/{total} séances complétées
-                  </Text>
-                </View>
-                {activeCycle ? (
-                  <View style={styles.iconPill}>
-                    <Ionicons name={activeCycle.icon as any} size={18} color={palette.accent} />
-                  </View>
-                ) : null}
-              </View>
-
-              <View style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: `${(completed / total) * 100}%` }]} />
-              </View>
-
-              <View style={styles.activeActions}>
-                <Button label="Continuer" onPress={handleContinue} fullWidth />
-                <Button
-                  label="Abandonner / changer"
-                  variant="ghost"
-                  onPress={() => {
-                    setAbandonOpen(true);
-                  }}
-                  fullWidth
-                />
-              </View>
-
-              <Text style={styles.activeHint}>
-                Le changement est volontaire : abandonne le cycle en cours avant d’en choisir un autre (rare et sérieux).
-              </Text>
-            </Card>
-
-            <SectionHeader title="Séances du cycle" right={<Badge label="12" />} />
-            {renderTimeline()}
-
-            {abandonOpen ? (
-              <Card variant="surface" style={styles.abandonCard}>
-                <Text style={styles.abandonTitle}>Abandonner ce cycle</Text>
-                <Text style={styles.abandonSub}>
-                  Tu perds ta progression actuelle ({completed}/{total}). Tu pourras relancer un cycle plus tard.
-                </Text>
-
-                <View style={styles.reasonGrid}>
-                  {ABANDON_REASONS.map((r) => {
-                    const selected = abandonReasonId === r.id;
-                    return (
-                      <TouchableOpacity
-                        key={r.id}
-                        onPress={() => setAbandonReasonId(r.id)}
-                        style={[styles.reasonChip, selected && styles.reasonChipSelected]}
-                        activeOpacity={0.9}
-                      >
-                        <Text style={[styles.reasonChipText, selected && styles.reasonChipTextSelected]}>
-                          {r.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {abandonReasonId === "other" ? (
-                  <TextInput
-                    value={abandonOtherText}
-                    onChangeText={setAbandonOtherText}
-                    placeholder="Précise (optionnel)"
-                    placeholderTextColor={palette.sub}
-                    style={styles.input}
-                  />
-                ) : null}
-
-                <View style={styles.abandonActions}>
-                  <Button
-                    label="Annuler"
-                    variant="secondary"
-                    onPress={() => setAbandonOpen(false)}
-                    fullWidth
-                  />
-                  <TouchableOpacity
-                    onPress={() => {
-                      Alert.alert(
-                        "Confirmer l’abandon",
-                        "Tu es sûr ? Ta progression sera remise à zéro.",
-                        [
-                          { text: "Annuler", style: "cancel" },
-                          { text: "Abandonner", style: "destructive", onPress: handleAbandon },
-                        ]
-                      );
-                    }}
-                    style={styles.dangerButton}
-                    activeOpacity={0.9}
-                  >
-                    <Text style={styles.dangerButtonText}>Abandonner</Text>
-                  </TouchableOpacity>
-                </View>
-              </Card>
-            ) : null}
+    <View style={styles.modalRoot}>
+      <ModalContainer
+        visible
+        onClose={() => navigation.goBack()}
+        animationType="slide"
+        blurIntensity={40}
+        allowBackdropDismiss
+        allowSwipeDismiss
+      >
+        <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
+          <View style={[styles.modalHeaderRow, { paddingTop: insets.top }]}>
+            <Text style={styles.modalHeaderTitle}>Programme</Text>
+            <ModalCloseButton onPress={() => navigation.goBack()} />
           </View>
-        ) : (
-          <View style={styles.section}>
-            <SectionHeader title="Choisir un cycle" right={<Badge label={`${total} séances`} />} />
 
-            {isCompleted ? (
-              <Card variant="surface" style={styles.completedCard}>
-                <View style={styles.completedHeader}>
-                  <Text style={styles.completedTitle}>Cycle terminé</Text>
-                  <Badge label={activeCycle?.label ?? "Cycle"} tone="ok" />
-                </View>
-                <Text style={styles.completedSub}>
-                  Tu as validé {completed}/{total} séances. Relance un cycle pour continuer ta progression.
-                </Text>
-                <View style={styles.completedProgressTrack}>
-                  <View style={[styles.completedProgressFill, { width: "100%" }]} />
-                </View>
-              </Card>
-            ) : null}
-
-            <Card variant="surface" style={styles.selectIntro}>
-              <Text style={styles.selectTitle}>Ton objectif du moment</Text>
-              <Text style={styles.selectSub}>
-                1 cycle actif à la fois, à ton rythme. FKS te propose une recommandation selon ton objectif et tes tests.
-              </Text>
-            </Card>
-
-            {shouldSuggestTests && !testsNudgeDismissed ? (
-              <Card variant="soft" style={styles.testsCard}>
-                <View style={styles.testsHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.testsKicker}>TESTS TERRAIN</Text>
-                    <Text style={styles.testsTitle}>
-                      {testsCount === 0 ? "À faire avant de commencer" : "À mettre à jour"}
-                    </Text>
-                    <Text style={styles.testsSub}>
-                      {testsCount === 0
-                        ? "Tu peux démarrer sans, mais les tests rendent le suivi plus sérieux (progrès, choix de cycle)."
-                        : testsAgeDays != null
-                          ? `Derniers tests : il y a ${testsAgeDays} jours.`
-                          : "Tes tests méritent une mise à jour."}
-                    </Text>
-                  </View>
-                  <View style={styles.testsIconPill}>
-                    <Ionicons name="analytics-outline" size={18} color={palette.accent} />
-                  </View>
-                </View>
-                <View style={styles.testsActions}>
-                  <Button
-                    label="Faire mes tests"
-                    onPress={() =>
-                      navigation.navigate("Tests" as never, { initialPlaylist: selectedId } as never)
-                    }
-                    fullWidth
-                  />
-                  <Button
-                    label="Continuer sans tests"
-                    variant="ghost"
-                    onPress={() => {
-                      setTestsNudgeDismissed(true);
-                      setSuppressTestsPrompt(true);
-                    }}
-                    fullWidth
-                  />
-                </View>
-              </Card>
-            ) : null}
-
-            <Card variant="soft" style={styles.recoCard}>
-              <View style={styles.recoHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.recoKicker}>RECOMMANDÉ POUR TOI</Text>
-                  <Text style={styles.recoTitle}>{MICROCYCLES[recommendedId].label}</Text>
-                  <Text style={styles.recoSub}>
-                    {recommendation.confidence === "high"
-                      ? "Recommandation forte"
-                      : recommendation.confidence === "medium"
-                        ? "Recommandation probable"
-                        : "Recommandation indicative"}
-                  </Text>
-                </View>
-                <View style={styles.recoIconPill}>
-                  <Ionicons name="sparkles-outline" size={18} color={palette.accent} />
-                </View>
-              </View>
-              <View style={styles.recoReasons}>
-                {recommendation.reasons.slice(0, 2).map((r) => (
-                  <Text key={r} style={styles.recoReasonText}>
-                    • {r}
-                  </Text>
-                ))}
-              </View>
-              <Button
-                label={`Sélectionner ${MICROCYCLES[recommendedId].label}`}
-                variant="secondary"
-                onPress={() => {
-                  setSelectionTouched(true);
-                  setSelectedId(recommendedId);
-                }}
-                fullWidth
-              />
-            </Card>
-
-            <View style={styles.cycleList}>
-              {(Object.keys(MICROCYCLES) as MicrocycleId[]).map((id) => {
-                const item = MICROCYCLES[id];
-                const selected = selectedId === id;
-                const isReco = id === recommendedId;
-                const locationLabels: Record<string, string> = {
-                  home: "Maison",
-                  pitch: "Terrain",
-                  gym: "Salle",
-                };
-                return (
-                  <TouchableOpacity
-                    key={id}
-                    onPress={() => {
-                      setSelectionTouched(true);
-                      setSelectedId(id);
-                    }}
-                    style={[styles.cycleCard, selected && styles.cycleCardSelected]}
-                    activeOpacity={0.9}
-                  >
-                    <View style={styles.cycleHeader}>
-                      <View style={styles.cycleIcon}>
-                        <Ionicons name={item.icon as any} size={18} color={selected ? palette.accent : palette.sub} />
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
+          >
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+              <ScrollView
+                contentContainerStyle={styles.container}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {hasActiveCycle ? (
+                  <View style={styles.section}>
+                    <SectionHeader
+                      title="Mon programme"
+                      right={<Badge label={activeCycle?.label ?? "Programme"} tone="ok" />}
+                    />
+                    <Card variant="surface" style={styles.activeCard}>
+                      <View style={styles.activeHeader}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.activeTitle}>{activeCycle?.subtitle ?? "Programme actif"}</Text>
+                          <Text style={styles.activeSub}>
+                            {completed}/{total} séances complétées
+                          </Text>
+                        </View>
+                        {activeCycle ? (
+                          <View style={styles.iconPill}>
+                            <Ionicons name={activeCycle.icon as any} size={18} color={palette.accent} />
+                          </View>
+                        ) : null}
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.cycleLabel}>{item.label}</Text>
-                        <Text style={styles.cycleSubtitle}>{item.subtitle}</Text>
+
+                      <View style={styles.progressTrack}>
+                        <View style={[styles.progressFill, { width: `${(completed / total) * 100}%` }]} />
                       </View>
-                      {isReco && !selected ? <Badge label="Recommandé" /> : null}
-                      {selected ? <Ionicons name="checkmark-circle" size={20} color={palette.accent} /> : null}
-                    </View>
-                    <Text style={styles.cycleDesc}>{item.description}</Text>
-                    <View style={styles.locationRow}>
-                      {item.allowedLocations.map((loc) => {
-                        const extra = item.locationDescriptions?.[loc];
-                        const label = extra ? `${locationLabels[loc]} · ${extra}` : locationLabels[loc];
-                        return <Badge key={`${id}_${loc}`} label={label} />;
+
+                      <View style={styles.activeActions}>
+                        <Button label="Continuer ma séance" onPress={handleContinue} fullWidth />
+                        <Button
+                          label="Changer de programme"
+                          variant="ghost"
+                          onPress={() => setAbandonOpen(true)}
+                          fullWidth
+                        />
+                      </View>
+                    </Card>
+
+                    <SectionHeader title="Séances du programme" right={<Badge label="12" />} />
+                    {renderTimeline()}
+
+                    {abandonOpen ? (
+                      <Card variant="surface" style={styles.abandonCard}>
+                        <Text style={styles.abandonTitle}>Abandonner ce programme</Text>
+                        <Text style={styles.abandonSub}>
+                          Ta progression ({completed}/{total}) sera remise à zéro.
+                        </Text>
+
+                        <View style={styles.reasonGrid}>
+                          {ABANDON_REASONS.map((r) => {
+                            const selected = abandonReasonId === r.id;
+                            return (
+                              <TouchableOpacity
+                                key={r.id}
+                                onPress={() => setAbandonReasonId(r.id)}
+                                style={[styles.reasonChip, selected && styles.reasonChipSelected]}
+                                activeOpacity={0.9}
+                              >
+                                <Text style={[styles.reasonChipText, selected && styles.reasonChipTextSelected]}>
+                                  {r.label}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+
+                        {abandonReasonId === "other" ? (
+                          <TextInput
+                            value={abandonOtherText}
+                            onChangeText={setAbandonOtherText}
+                            placeholder="Précise (optionnel)"
+                            placeholderTextColor={palette.sub}
+                            style={styles.input}
+                          />
+                        ) : null}
+
+                        <View style={styles.abandonActions}>
+                          <Button
+                            label="Annuler"
+                            variant="secondary"
+                            onPress={() => setAbandonOpen(false)}
+                            fullWidth
+                          />
+                          <TouchableOpacity
+                            onPress={() => {
+                              Alert.alert(
+                                "Confirmer l'abandon",
+                                "Tu es sûr ? Ta progression sera remise à zéro.",
+                                [
+                                  { text: "Annuler", style: "cancel" },
+                                  { text: "Abandonner", style: "destructive", onPress: handleAbandon },
+                                ]
+                              );
+                            }}
+                            style={styles.dangerButton}
+                            activeOpacity={0.9}
+                          >
+                            <Text style={styles.dangerButtonText}>Abandonner</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </Card>
+                    ) : null}
+                  </View>
+                ) : (
+                  <View style={styles.section}>
+                    {/* Cycle terminé */}
+                    {isCompleted ? (
+                      <Card variant="surface" style={styles.completedCard}>
+                        <View style={styles.completedHeader}>
+                          <Text style={styles.completedTitle}>Programme terminé !</Text>
+                          <Badge label={activeCycle?.label ?? "Programme"} tone="ok" />
+                        </View>
+                        <Text style={styles.completedSub}>
+                          {completed}/{total} séances validées. Choisis ton prochain programme.
+                        </Text>
+                        <View style={styles.completedProgressTrack}>
+                          <View style={[styles.completedProgressFill, { width: "100%" }]} />
+                        </View>
+                        {activeCycleId ? (() => {
+                          const { suggestedNext: nextIds, tip } = suggestNextCycle(activeCycleId);
+                          return nextIds.length > 0 ? (
+                            <View style={styles.nextSuggestion}>
+                              <Ionicons name="arrow-forward-circle-outline" size={16} color={palette.accent} />
+                              <Text style={styles.nextSuggestionText}>{tip}</Text>
+                            </View>
+                          ) : null;
+                        })() : null}
+                      </Card>
+                    ) : null}
+
+                    {/* Recommandation IA — section premium en haut */}
+                    <SectionHeader title="Recommandé pour toi" right={<Badge label={confidenceLabel} tone="ok" />} />
+                    <Card variant="surface" style={styles.recoCard}>
+                      <View style={styles.recoHeader}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.recoTitle}>{MICROCYCLES[recommendedId].label}</Text>
+                          <Text style={styles.recoSub}>{MICROCYCLES[recommendedId].subtitle}</Text>
+                        </View>
+                        <View style={styles.recoIconPill}>
+                          <Ionicons name="sparkles-outline" size={18} color={palette.accent} />
+                        </View>
+                      </View>
+                      <View style={styles.recoReasons}>
+                        {recommendation.reasons.slice(0, 3).map((r) => (
+                          <View key={r} style={styles.recoReasonRow}>
+                            <Ionicons name="checkmark-circle" size={14} color={palette.success} />
+                            <Text style={styles.recoReasonText}>{r}</Text>
+                          </View>
+                        ))}
+                      </View>
+                      <Button
+                        label={selectedId === recommendedId ? "Sélectionné" : `Choisir ${MICROCYCLES[recommendedId].label}`}
+                        variant={selectedId === recommendedId ? "primary" : "secondary"}
+                        onPress={() => {
+                          setSelectionTouched(true);
+                          setSelectedId(recommendedId);
+                          setPendingPathway(null);
+                        }}
+                        fullWidth
+                      />
+                    </Card>
+
+                    {/* Tests terrain — nudge compact */}
+                    {shouldSuggestTests && !testsNudgeDismissed ? (
+                      <Card variant="soft" style={styles.testsCard}>
+                        <View style={styles.testsRow}>
+                          <Ionicons name="analytics-outline" size={18} color={palette.accent} />
+                          <Text style={styles.testsText}>
+                            {testsCount === 0
+                              ? "Fais tes tests pour qu'on puisse mieux cibler tes séances."
+                              : `Tests datant de ${testsAgeDays}j — une mise à jour améliore la précision.`}
+                          </Text>
+                        </View>
+                        <View style={styles.testsActions}>
+                          <Button
+                            label="Faire mes tests"
+                            size="sm"
+                            onPress={() =>
+                              navigation.navigate("Tests", { initialPlaylist: selectedId })
+                            }
+                            fullWidth
+                          />
+                          <Button
+                            label="Passer"
+                            variant="ghost"
+                            size="sm"
+                            onPress={() => {
+                              setTestsNudgeDismissed(true);
+                              setSuppressTestsPrompt(true);
+                            }}
+                            fullWidth
+                          />
+                        </View>
+                      </Card>
+                    ) : null}
+
+                    {/* Parcours recommandés */}
+                    <SectionHeader title="Parcours" right={<Badge label="Guide" />} />
+                    <View style={styles.pathwayList}>
+                      {CYCLE_PATHWAYS.map((pw) => {
+                        const isPathwaySelected = pendingPathway?.id === pw.id;
+                        return (
+                          <TouchableOpacity
+                            key={pw.id}
+                            onPress={() => {
+                              setSelectionTouched(true);
+                              setSelectedId(pw.sequence[0]);
+                              setPendingPathway({ id: pw.id, index: 0 });
+                            }}
+                            style={[styles.pathwayCard, isPathwaySelected && styles.pathwayCardSelected]}
+                            activeOpacity={0.9}
+                          >
+                            <View style={styles.pathwayHeader}>
+                              <View style={[styles.pathwayIcon, isPathwaySelected && styles.pathwayIconSelected]}>
+                                <Ionicons name={pw.icon as any} size={18} color={palette.accent} />
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.pathwayLabel}>{pw.label}</Text>
+                                <Text style={styles.pathwayDesc}>{pw.description}</Text>
+                              </View>
+                              {isPathwaySelected ? (
+                                <Ionicons name="checkmark-circle" size={20} color={palette.accent} />
+                              ) : null}
+                            </View>
+                            <View style={styles.pathwaySequence}>
+                              {pw.sequence.map((cycleId, idx) => (
+                                <React.Fragment key={`${pw.id}_${cycleId}_${idx}`}>
+                                  <View style={[styles.pathwayStep, isPathwaySelected && idx === 0 && styles.pathwayStepActive]}>
+                                    <Text style={[styles.pathwayStepNum, isPathwaySelected && idx === 0 && styles.pathwayStepNumActive]}>{idx + 1}</Text>
+                                    <Text style={[styles.pathwayStepLabel, isPathwaySelected && idx === 0 && styles.pathwayStepLabelActive]}>{MICROCYCLES[cycleId].label}</Text>
+                                  </View>
+                                  {idx < pw.sequence.length - 1 ? (
+                                    <Ionicons name="arrow-forward" size={12} color={palette.sub} />
+                                  ) : null}
+                                </React.Fragment>
+                              ))}
+                            </View>
+                            <Text style={styles.pathwayForWhom}>{pw.forWhom}</Text>
+                          </TouchableOpacity>
+                        );
                       })}
                     </View>
-                    <View style={styles.highlightRow}>
-                      {item.highlights.slice(0, 3).map((h) => (
-                        <Badge key={`${id}_${h}`} label={h} />
-                      ))}
+
+                    {/* Tous les cycles */}
+                    <SectionHeader title="Tous les programmes" right={<Badge label={`${total} séances`} />} />
+                    <View style={styles.cycleList}>
+                      {(Object.keys(MICROCYCLES) as MicrocycleId[]).map((id) => {
+                        const item = MICROCYCLES[id];
+                        const selected = selectedId === id;
+                        const isReco = id === recommendedId;
+                        return (
+                          <TouchableOpacity
+                            key={id}
+                            onPress={() => {
+                              setSelectionTouched(true);
+                              setSelectedId(id);
+                              setPendingPathway(null);
+                            }}
+                            style={[styles.cycleCard, selected && styles.cycleCardSelected]}
+                            activeOpacity={0.9}
+                          >
+                            <View style={styles.cycleHeader}>
+                              <View style={[styles.cycleIcon, selected && styles.cycleIconSelected]}>
+                                <Ionicons name={item.icon as any} size={18} color={selected ? palette.accent : palette.sub} />
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.cycleLabel}>{item.label}</Text>
+                                <Text style={styles.cycleSubtitle}>{item.subtitle}</Text>
+                              </View>
+                              {isReco && !selected ? <Badge label="Reco" tone="ok" /> : null}
+                              {selected ? <Ionicons name="checkmark-circle" size={20} color={palette.accent} /> : null}
+                            </View>
+                            {item.footballTip ? (
+                              <View style={styles.cycleTipRow}>
+                                <Ionicons name="football-outline" size={13} color={palette.accent} />
+                                <Text style={styles.cycleTipText}>{item.footballTip}</Text>
+                              </View>
+                            ) : null}
+                            <View style={styles.locationRow}>
+                              {item.allowedLocations.map((loc) => {
+                                const extra = item.locationDescriptions?.[loc];
+                                const locLabel = extra ? `${locationLabels[loc]} · ${extra}` : locationLabels[loc];
+                                return <Badge key={`${id}_${loc}`} label={locLabel} />;
+                              })}
+                            </View>
+                            <View style={styles.highlightRow}>
+                              {item.highlights.slice(0, 3).map((h) => (
+                                <Badge key={`${id}_${h}`} label={h} />
+                              ))}
+                            </View>
+                            {item.suggestedNext && item.suggestedNext.length > 0 ? (
+                              <Text style={styles.cycleNextHint}>
+                                Ensuite → {item.suggestedNext.map((nid) => MICROCYCLES[nid].label).join(" ou ")}
+                              </Text>
+                            ) : null}
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
 
-            <View style={styles.selectActions}>
-              <Button label="Démarrer ce cycle" onPress={handleStartCycle} fullWidth />
-              {canCloseSelect ? (
-                <Button label="Fermer" variant="ghost" onPress={() => navigation.goBack()} fullWidth />
-              ) : null}
-            </View>
+                    {/* Résumé sélection + CTA */}
+                    <Card variant="surface" style={styles.selectionSummary}>
+                      <View style={styles.selectionRow}>
+                        <View style={[styles.cycleIcon, styles.cycleIconSelected]}>
+                          <Ionicons name={selectedCycle.icon as any} size={18} color={palette.accent} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.selectionLabel}>{selectedCycle.label}</Text>
+                          <Text style={styles.selectionHighlights}>
+                            {pendingPathway
+                              ? `Parcours : ${CYCLE_PATHWAYS.find((p) => p.id === pendingPathway.id)?.label ?? ""} · ${selectedCycle.highlights.slice(0, 2).join(" · ")}`
+                              : selectedCycle.highlights.slice(0, 2).join(" · ")}
+                          </Text>
+                        </View>
+                      </View>
+                    </Card>
 
-            {!canCloseSelect ? (
-              <Text style={styles.footerNote}>
-                Un cycle est déjà en cours. Abandonne-le d’abord pour en choisir un autre.
-              </Text>
-            ) : null}
-          </View>
-        )}
-      </ScrollView>
-    </SafeAreaView>
+                    <View style={styles.selectActions}>
+                      <Button label={pendingPathway ? "Commencer ce parcours" : "Commencer ce programme"} onPress={handleStartCycle} fullWidth />
+                      {canCloseSelect ? (
+                        <Button label="Fermer" variant="ghost" onPress={() => navigation.goBack()} fullWidth />
+                      ) : null}
+                    </View>
+
+                    {!canCloseSelect ? (
+                      <Text style={styles.footerNote}>
+                        Abandonne ton programme actuel avant d'en choisir un autre.
+                      </Text>
+                    ) : null}
+                  </View>
+                )}
+              </ScrollView>
+            </TouchableWithoutFeedback>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </ModalContainer>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: palette.bg },
+  modalRoot: { flex: 1, backgroundColor: "transparent" },
+  modalHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+  },
+  modalHeaderTitle: { fontSize: 16, fontWeight: "800", color: palette.text },
+  safeArea: { flexGrow: 1, backgroundColor: palette.bg },
   container: { padding: 16, paddingBottom: 28, gap: 14 },
   section: { gap: 12 },
   headerClose: { paddingHorizontal: 12, paddingVertical: 8 },
@@ -675,6 +808,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   cycleCardSelected: { borderColor: palette.accent },
+  cycleIconSelected: { borderColor: palette.accent, backgroundColor: palette.accentSoft },
   cycleHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
   cycleIcon: {
     width: 34,
@@ -692,6 +826,10 @@ const styles = StyleSheet.create({
   highlightRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 },
   locationRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 6 },
 
+  selectionSummary: { padding: 14, gap: 8, borderColor: palette.accent },
+  selectionRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  selectionLabel: { fontSize: 15, fontWeight: "900", color: palette.text },
+  selectionHighlights: { fontSize: 12, color: palette.sub, marginTop: 2 },
   selectActions: { gap: 10, marginTop: 4 },
   footerNote: { color: palette.sub, fontSize: 12, lineHeight: 17, textAlign: "center" },
 
@@ -716,31 +854,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.borderSoft,
   },
-  recoReasons: { gap: 2 },
-  recoReasonText: { color: palette.sub, fontSize: 12, lineHeight: 17 },
+  recoReasons: { gap: 6 },
+  recoReasonRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  recoReasonText: { flex: 1, color: palette.sub, fontSize: 12, lineHeight: 17 },
 
   testsCard: { padding: 14, gap: 10 },
-  testsHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
-  testsKicker: {
-    fontSize: 10,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-    color: palette.sub,
-    fontWeight: "800",
-  },
-  testsTitle: { marginTop: 4, fontSize: 16, fontWeight: "900", color: palette.text },
-  testsSub: { marginTop: 2, fontSize: 12, color: palette.sub, lineHeight: 17 },
-  testsIconPill: {
-    width: 38,
-    height: 38,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: palette.accentSoft,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-  },
-  testsActions: { gap: 10, marginTop: 4 },
+  testsRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  testsText: { flex: 1, fontSize: 12, color: palette.sub, lineHeight: 17 },
+  testsActions: { flexDirection: "row", gap: 10 },
 
   completedCard: { padding: 14, gap: 8 },
   completedHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
@@ -756,5 +877,99 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: palette.success,
     borderRadius: 999,
+  },
+  nextSuggestion: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginTop: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: palette.accentSoft,
+  },
+  nextSuggestionText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "600",
+    color: palette.accent,
+    lineHeight: 17,
+  },
+
+  /* Pathways */
+  pathwayList: { gap: 10 },
+  pathwayCard: {
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.card,
+    padding: 14,
+    gap: 10,
+  },
+  pathwayCardSelected: {
+    borderColor: palette.accent,
+    borderWidth: 2,
+    backgroundColor: palette.accentSoft,
+  },
+  pathwayHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
+  pathwayIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.accentSoft,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+  },
+  pathwayIconSelected: {
+    borderColor: palette.accent,
+    backgroundColor: palette.accent + "22",
+  },
+  pathwayLabel: { color: palette.text, fontSize: 15, fontWeight: "900" },
+  pathwayDesc: { color: palette.sub, fontSize: 12, marginTop: 2 },
+  pathwaySequence: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+  pathwayStep: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: palette.cardSoft,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+  },
+  pathwayStepActive: {
+    borderColor: palette.accent,
+    backgroundColor: palette.accentSoft,
+  },
+  pathwayStepNum: { fontSize: 10, fontWeight: "800", color: palette.accent },
+  pathwayStepNumActive: { color: palette.accent },
+  pathwayStepLabel: { fontSize: 11, fontWeight: "700", color: palette.text },
+  pathwayStepLabelActive: { color: palette.accent, fontWeight: "800" },
+  pathwayForWhom: { fontSize: 11, color: palette.sub, fontStyle: "italic", lineHeight: 16 },
+
+  /* Cycle card extras */
+  cycleTipRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: palette.accentSoft,
+  },
+  cycleTipText: { flex: 1, fontSize: 11, fontWeight: "600", color: palette.accent, lineHeight: 16 },
+  cycleNextHint: {
+    fontSize: 11,
+    color: palette.sub,
+    fontStyle: "italic",
+    marginTop: 2,
   },
 });

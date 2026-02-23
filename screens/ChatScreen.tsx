@@ -10,18 +10,19 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
-  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { auth } from "../services/firebase";
+import { showToast } from "../utils/toast";
 import { theme } from "../constants/theme";
 import { Button } from "../components/ui/Button";
-import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
-import { SectionHeader } from "../components/ui/SectionHeader";
-import { BACKEND_URL } from "../config/backend";
+import { ModalContainer } from "../components/modal/ModalContainer";
+import { Card } from "../components/ui/Card";
+import { BACKEND_URL, backendAuthHeaders } from "../config/backend";
 import { buildAIPromptContext } from "../services/aiContext";
 import { useAppModeStore } from "../state/appModeStore";
 
@@ -36,7 +37,7 @@ type ChatMessage = {
 const palette = theme.colors;
 
 const MAX_INPUT_CHARS = 500;
-const MAX_MESSAGES_PER_DAY = 30;
+const MAX_MESSAGES_PER_DAY = 10;
 const SEND_COOLDOWN_MS = 2500;
 const GUIDELINES_VERSION = 1;
 
@@ -45,10 +46,6 @@ const usageKey = (uid: string) => `fks_chat_usage_v1:${uid}`;
 const guidelinesKey = (uid: string) => `fks_chat_guidelines_v${GUIDELINES_VERSION}:${uid}`;
 
 const mkId = () => `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-
-function Separator() {
-  return <View style={styles.separator} />;
-}
 
 type UsageState = { dayKey: string; count: number; lastSentAt: number };
 
@@ -64,22 +61,71 @@ const extractReply = (data: any): string | null => {
   return null;
 };
 
+// Assistant avatar component
+function AssistantAvatar({ size = 32 }: { size?: number }) {
+  return (
+    <LinearGradient
+      colors={["#3b82f6", "#8b5cf6"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[styles.assistantAvatar, { width: size, height: size, borderRadius: size / 2 }]}
+    >
+      <Ionicons name="sparkles" size={size * 0.5} color="#fff" />
+    </LinearGradient>
+  );
+}
+
+// Message bubble
 function Bubble({ role, content }: { role: ChatRole; content: string }) {
   const isUser = role === "user";
+
+  if (isUser) {
+    return (
+      <View style={styles.userBubble}>
+        <Text style={styles.userBubbleText}>{content}</Text>
+      </View>
+    );
+  }
+
   return (
-    <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
-      <Text style={[styles.bubbleText, isUser ? styles.bubbleTextUser : styles.bubbleTextAssistant]}>
-        {content}
-      </Text>
+    <View style={styles.assistantRow}>
+      <AssistantAvatar size={28} />
+      <View style={styles.assistantBubble}>
+        <Text style={styles.assistantBubbleText}>{content}</Text>
+      </View>
     </View>
   );
 }
 
-function QuickChip({ label, onPress }: { label: string; onPress: () => void }) {
+// Quick suggestion chip
+function SuggestionChip({ label, onPress }: { label: string; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.chip, pressed && styles.pressed]}>
-      <Text style={styles.chipText}>{label}</Text>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.suggestionChip, pressed && styles.chipPressed]}
+    >
+      <Ionicons name="chatbubble-outline" size={14} color={palette.accent} />
+      <Text style={styles.suggestionText} numberOfLines={2}>
+        {label}
+      </Text>
     </Pressable>
+  );
+}
+
+// Typing indicator
+function TypingIndicator() {
+  return (
+    <View style={styles.assistantRow}>
+      <AssistantAvatar size={28} />
+      <View style={styles.typingBubble}>
+        <View style={styles.typingDots}>
+          <View style={[styles.dot, styles.dot1]} />
+          <View style={[styles.dot, styles.dot2]} />
+          <View style={[styles.dot, styles.dot3]} />
+        </View>
+        <Text style={styles.typingText}>Réflexion en cours…</Text>
+      </View>
+    </View>
   );
 }
 
@@ -91,7 +137,7 @@ export default function ChatScreen() {
       id: mkId(),
       role: "assistant",
       content:
-        "Je suis ton assistant FKS. Pose-moi tes questions sur ton programme, ta charge, tes séances, ta récup, etc.",
+        "Salut ! Je suis ton assistant FKS. Pose-moi tes questions sur ton programme, ta forme, tes séances ou ta récupération.",
       createdAt: Date.now(),
     },
   ]);
@@ -100,7 +146,7 @@ export default function ChatScreen() {
   const [showGuidelines, setShowGuidelines] = useState(false);
   const [guidelinesAccepted, setGuidelinesAccepted] = useState(false);
   const [usage, setUsage] = useState<UsageState>({ dayKey: todayKey(), count: 0, lastSentAt: 0 });
-  const listRef = useRef<FlatList<ChatMessage> | null>(null);
+  const listRef = useRef<FlatList<ChatMessage>>(null);
 
   useEffect(() => {
     if (!uid) return;
@@ -195,16 +241,14 @@ export default function ChatScreen() {
     () =>
       appMode === "coach"
         ? [
-            "Quels indicateurs surveiller pour éviter le surmenage ?",
-            "Comment structurer une semaine avec match le samedi ?",
-            "Quelles questions poser après une séance ?",
-            "Explique-moi ATL/CTL/TSB simplement",
+            "Quels indicateurs surveiller ?",
+            "Structurer une semaine match",
+            "Explique ATL/CTL/TSB",
           ]
         : [
-            "Qu’est-ce que je fais aujourd’hui ?",
-            "Je suis fatigué, j’adapte comment ?",
-            "Explique-moi la séance IA en 3 points",
-            "Je dois jouer demain, je fais quoi ?",
+            "Qu'est-ce que je fais aujourd'hui ?",
+            "Je suis fatigué, j'adapte ?",
+            "J'ai match demain, je fais quoi ?",
           ],
     [appMode]
   );
@@ -220,19 +264,13 @@ export default function ChatScreen() {
     return Math.max(0, MAX_MESSAGES_PER_DAY - count);
   }, [usage.count, usage.dayKey]);
 
-  const quotaTone = useMemo(() => {
-    if (remaining <= 3) return "danger";
-    if (remaining <= 8) return "warn";
-    return "default";
-  }, [remaining]);
-
   const clearChat = async () => {
     if (!uid) return;
     setMessages([
       {
         id: mkId(),
         role: "assistant",
-        content: "Ok. On repart de zéro. Quelle est ta question ?",
+        content: "Conversation effacée. Quelle est ta question ?",
         createdAt: Date.now(),
       },
     ]);
@@ -259,19 +297,19 @@ export default function ChatScreen() {
       return;
     }
     if (text.length > MAX_INPUT_CHARS) {
-      Alert.alert("Message trop long", `Max ${MAX_INPUT_CHARS} caractères.`);
+      showToast({ type: "warn", title: "Message trop long", message: `Max ${MAX_INPUT_CHARS} caractères.` });
       return;
     }
 
     const day = todayKey();
     const countToday = usage.dayKey === day ? usage.count : 0;
     if (countToday >= MAX_MESSAGES_PER_DAY) {
-      Alert.alert("Limite atteinte", `Tu as atteint la limite (${MAX_MESSAGES_PER_DAY} messages/jour).`);
+      showToast({ type: "warn", title: "Limite atteinte", message: `Tu as atteint la limite (${MAX_MESSAGES_PER_DAY} messages/jour).` });
       return;
     }
     const now = Date.now();
     if (usage.lastSentAt && now - usage.lastSentAt < SEND_COOLDOWN_MS) {
-      Alert.alert("Doucement", "Attends une seconde avant d’envoyer un autre message.");
+      showToast({ type: "warn", title: "Doucement", message: "Attends une seconde avant d'envoyer un autre message." });
       return;
     }
 
@@ -293,9 +331,14 @@ export default function ChatScreen() {
         .slice(-12)
         .map((m) => ({ role: m.role, content: m.content }));
 
+      const idToken = await auth.currentUser?.getIdToken();
       const r = await fetch(`${BACKEND_URL}/api/fks/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...backendAuthHeaders(),
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
         body: JSON.stringify({
           userId: uid,
           messages: history,
@@ -318,16 +361,16 @@ export default function ChatScreen() {
       }
 
       const data: any = await r.json();
-      const reply = extractReply(data) ?? "Je n’ai pas compris la réponse du backend.";
+      const reply = extractReply(data) ?? "Je n'ai pas compris la réponse du backend.";
       setMessages((prev) => [...prev, { id: mkId(), role: "assistant", content: reply, createdAt: Date.now() }]);
     } catch (e: any) {
       const msg =
         typeof e?.message === "string"
           ? e.message
-          : "Impossible d’envoyer le message (réseau/backend).";
+          : "Impossible d'envoyer le message (réseau/backend).";
       setMessages((prev) => [
         ...prev,
-        { id: mkId(), role: "assistant", content: `Erreur: ${msg}`, createdAt: Date.now() },
+        { id: mkId(), role: "assistant", content: `Oups, erreur : ${msg}`, createdAt: Date.now() },
       ]);
     } finally {
       setSending(false);
@@ -338,12 +381,15 @@ export default function ChatScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.center}>
-          <Text style={styles.title}>Assistant</Text>
-          <Text style={styles.sub}>Connecte-toi pour utiliser le chat.</Text>
+          <AssistantAvatar size={64} />
+          <Text style={styles.emptyTitle}>Assistant FKS</Text>
+          <Text style={styles.emptySubtitle}>Connecte-toi pour utiliser l'assistant.</Text>
         </View>
       </SafeAreaView>
     );
   }
+
+  const showSuggestions = messages.length <= 2 && !sending;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -352,131 +398,147 @@ export default function ChatScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
       >
+        {/* Header */}
         <View style={styles.header}>
-          <Card variant="surface" style={styles.heroCard}>
-            <View style={styles.heroGlow} />
-            <View style={styles.heroRow}>
-              <View style={styles.heroIcon}>
-                <Ionicons name="chatbubble-ellipses" size={18} color={palette.accent} />
-              </View>
-              <View style={styles.flex1}>
-                <Text style={styles.heroTitle}>Assistant</Text>
-                <Text style={styles.heroSub}>Onglet Assistant • rôle : {appMode === "coach" ? "Coach" : "Joueur"}</Text>
-              </View>
-              <Badge label={`${remaining}/${MAX_MESSAGES_PER_DAY}`} tone={quotaTone as any} />
-              <Pressable onPress={openGuidelines} style={({ pressed }) => [styles.iconBtn, pressed && styles.pressed]}>
-                <Ionicons name="information-circle" size={18} color={palette.sub} />
-              </Pressable>
-              <Button
-                label="Reset"
-                variant="ghost"
-                size="sm"
-                onPress={() =>
-                  Alert.alert("Réinitialiser", "Effacer la conversation ?", [
-                    { text: "Annuler", style: "cancel" },
-                    { text: "Effacer", style: "destructive", onPress: clearChat },
-                  ])
-                }
-              />
+          <View style={styles.headerLeft}>
+            <AssistantAvatar size={40} />
+            <View>
+              <Text style={styles.headerTitle}>Assistant FKS</Text>
+              <Text style={styles.headerSubtitle}>
+                {remaining}/{MAX_MESSAGES_PER_DAY} messages restants
+              </Text>
             </View>
-          </Card>
-
-          <View style={styles.section}>
-            <SectionHeader title="Questions rapides" />
-            <View style={styles.chipsRow}>
-              {suggestions.map((s) => (
-                <QuickChip key={s} label={s} onPress={() => setInput(s)} />
-              ))}
-            </View>
+          </View>
+          <View style={styles.headerActions}>
+            <Pressable
+              onPress={openGuidelines}
+              style={({ pressed }) => [styles.headerBtn, pressed && styles.pressed]}
+            >
+              <Ionicons name="information-circle-outline" size={22} color={palette.sub} />
+            </Pressable>
+            <Pressable
+              onPress={() =>
+                Alert.alert("Nouvelle conversation", "Effacer l'historique ?", [
+                  { text: "Annuler", style: "cancel" },
+                  { text: "Effacer", style: "destructive", onPress: clearChat },
+                ])
+              }
+              style={({ pressed }) => [styles.headerBtn, pressed && styles.pressed]}
+            >
+              <Ionicons name="trash-outline" size={20} color={palette.sub} />
+            </Pressable>
           </View>
         </View>
 
+        {/* Messages */}
         <FlatList
-          ref={(r) => {
-            listRef.current = r;
-          }}
+          ref={listRef}
           data={messages}
           keyExtractor={(m) => m.id}
           contentContainerStyle={styles.list}
           keyboardShouldPersistTaps="handled"
-          ItemSeparatorComponent={Separator}
+          showsVerticalScrollIndicator={false}
           renderItem={({ item }) => (
-            <View style={[styles.row, item.role === "user" ? styles.rowUser : styles.rowAssistant]}>
+            <View style={styles.messageRow}>
               <Bubble role={item.role} content={item.content} />
             </View>
           )}
-          ListFooterComponent={
-            sending ? (
-              <View style={[styles.row, styles.rowAssistant]}>
-                <View style={[styles.bubble, styles.bubbleAssistant, styles.typingBubble]}>
-                  <ActivityIndicator color={palette.accent} />
-                  <Text style={styles.typingText}>Réflexion…</Text>
+          ListHeaderComponent={
+            showSuggestions ? (
+              <View style={styles.suggestionsContainer}>
+                <Text style={styles.suggestionsTitle}>Suggestions</Text>
+                <View style={styles.suggestionsGrid}>
+                  {suggestions.map((s) => (
+                    <SuggestionChip key={s} label={s} onPress={() => setInput(s)} />
+                  ))}
                 </View>
               </View>
-            ) : (
-              <View style={styles.footerSpacer} />
-            )
+            ) : null
+          }
+          ListFooterComponent={
+            sending ? <TypingIndicator /> : <View style={styles.footerSpacer} />
           }
         />
 
-        <Card variant="surface" style={styles.composer}>
-          <View style={styles.flex1}>
+        {/* Composer */}
+        <View style={styles.composerContainer}>
+          <View style={styles.composer}>
             <TextInput
               value={input}
               onChangeText={setInput}
-              placeholder={guidelinesAccepted ? "Question sur ton programme FKS…" : "Lis les règles pour commencer…"}
+              placeholder={guidelinesAccepted ? "Pose ta question…" : "Accepte les règles pour commencer"}
               placeholderTextColor={palette.sub}
               style={styles.input}
               multiline
               maxLength={MAX_INPUT_CHARS}
             />
-            <Text style={styles.counter}>
-              {Math.min(MAX_INPUT_CHARS, input.length)}/{MAX_INPUT_CHARS} • {remaining} restant(s) aujourd’hui
-            </Text>
+            <Pressable
+              onPress={send}
+              disabled={!canSend}
+              style={({ pressed }) => [
+                styles.sendButton,
+                !canSend && styles.sendDisabled,
+                pressed && canSend && styles.pressed,
+              ]}
+            >
+              <Ionicons name="arrow-up" size={20} color="#fff" />
+            </Pressable>
           </View>
-          <Pressable
-            onPress={send}
-            disabled={!canSend}
-            style={({ pressed }) => [
-              styles.send,
-              !canSend && styles.sendDisabled,
-              pressed && canSend ? styles.pressed : null,
-            ]}
-          >
-            <Ionicons name="arrow-up" size={18} color={palette.text} />
-          </Pressable>
-        </Card>
+          <Text style={styles.composerHint}>
+            {input.length}/{MAX_INPUT_CHARS} caractères
+          </Text>
+        </View>
 
-        <Modal visible={showGuidelines} transparent animationType="fade" onRequestClose={() => setShowGuidelines(false)}>
-          <View style={styles.modalBackdrop}>
-            <Card variant="surface" style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Assistant FKS — règles</Text>
-              <Text style={styles.modalSub}>
-                Pour garder l’expérience propre (et éviter l’abus), l’assistant est limité et orienté “programme”.
-              </Text>
+        {/* Guidelines Modal */}
+        <ModalContainer
+          visible={showGuidelines}
+          onClose={() => setShowGuidelines(false)}
+          animationType="fade"
+          blurIntensity={40}
+          allowBackdropDismiss
+          allowSwipeDismiss={false}
+          showHandle={false}
+          contentStyle={styles.modalContent}
+        >
+          <Card variant="surface" style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <AssistantAvatar size={48} />
+              <Text style={styles.modalTitle}>Assistant FKS</Text>
+              <Text style={styles.modalSubtitle}>Quelques règles avant de commencer</Text>
+            </View>
 
-              <View style={styles.rules}>
-                <Text style={styles.rule}>• Objectif : répondre à des questions sur ton programme, ta charge, ta récup.</Text>
-                <Text style={styles.rule}>• Pas un avis médical : en cas de blessure/douleur importante → pro de santé.</Text>
-                <Text style={styles.rule}>• Confidentialité : ne partage pas d’infos perso sur d’autres joueurs.</Text>
-                <Text style={styles.rule}>• Messages : {MAX_MESSAGES_PER_DAY}/jour et {MAX_INPUT_CHARS} caractères max.</Text>
+            <View style={styles.rulesList}>
+              <View style={styles.ruleItem}>
+                <View style={[styles.ruleIcon, { backgroundColor: "rgba(34, 197, 94, 0.15)" }]}>
+                  <Ionicons name="fitness" size={16} color="#22c55e" />
+                </View>
+                <Text style={styles.ruleText}>Questions sur ton programme, ta forme, ta récup uniquement</Text>
               </View>
-
-              <View style={styles.modalActions}>
-                <Button label="J’ai compris" fullWidth onPress={acceptGuidelines} />
-                <Button
-                  label="Plus tard"
-                  fullWidth
-                  variant="secondary"
-                  onPress={() => {
-                    setShowGuidelines(false);
-                    setGuidelinesAccepted(false);
-                  }}
-                />
+              <View style={styles.ruleItem}>
+                <View style={[styles.ruleIcon, { backgroundColor: "rgba(239, 68, 68, 0.15)" }]}>
+                  <Ionicons name="medical" size={16} color="#ef4444" />
+                </View>
+                <Text style={styles.ruleText}>Pas un avis médical — consulte un pro si besoin</Text>
               </View>
-            </Card>
-          </View>
-        </Modal>
+              <View style={styles.ruleItem}>
+                <View style={[styles.ruleIcon, { backgroundColor: "rgba(59, 130, 246, 0.15)" }]}>
+                  <Ionicons name="shield-checkmark" size={16} color="#3b82f6" />
+                </View>
+                <Text style={styles.ruleText}>Tes données restent privées et sécurisées</Text>
+              </View>
+              <View style={styles.ruleItem}>
+                <View style={[styles.ruleIcon, { backgroundColor: "rgba(139, 92, 246, 0.15)" }]}>
+                  <Ionicons name="timer" size={16} color="#8b5cf6" />
+                </View>
+                <Text style={styles.ruleText}>{MAX_MESSAGES_PER_DAY} messages/jour • {MAX_INPUT_CHARS} car. max</Text>
+              </View>
+            </View>
+
+            <View style={styles.modalActions}>
+              <Button label="C'est compris !" fullWidth onPress={acceptGuidelines} />
+            </View>
+          </Card>
+        </ModalContainer>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -485,122 +547,228 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: palette.bg },
   flex1: { flex: 1 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20, gap: 8 },
-  header: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, gap: 12 },
-  heroCard: { padding: 14, overflow: "hidden" },
-  heroGlow: {
-    position: "absolute",
-    top: -60,
-    right: -70,
-    width: 220,
-    height: 220,
-    borderRadius: 999,
-    backgroundColor: palette.accentSoft,
-    opacity: 0.95,
+  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 16 },
+  emptyTitle: { fontSize: 22, fontWeight: "800", color: palette.text },
+  emptySubtitle: { fontSize: 14, color: palette.sub, textAlign: "center" },
+
+  // Header
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: palette.borderSoft,
+    backgroundColor: palette.bg,
   },
-  heroRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  heroIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 999,
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
+  headerTitle: { fontSize: 17, fontWeight: "800", color: palette.text },
+  headerSubtitle: { fontSize: 12, color: palette.sub, marginTop: 1 },
+  headerActions: { flexDirection: "row", gap: 4 },
+  headerBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: palette.bgSoft,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
   },
-  heroTitle: { fontSize: 18, fontWeight: "900", color: palette.text },
-  heroSub: { fontSize: 12, color: palette.sub, marginTop: 2 },
-  title: { fontSize: 20, fontWeight: "900", color: palette.text },
-  sub: { fontSize: 13, color: palette.sub, marginTop: 2 },
-  section: { gap: 8 },
-  chipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: {
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
+
+  // Messages
+  list: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
+  messageRow: { marginBottom: 16 },
+  footerSpacer: { height: 8 },
+
+  // Bubbles
+  userBubble: {
+    alignSelf: "flex-end",
+    maxWidth: "80%",
+    backgroundColor: palette.accent,
+    borderRadius: 20,
+    borderBottomRightRadius: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  userBubbleText: {
+    fontSize: 15,
+    color: "#fff",
+    lineHeight: 22,
+  },
+  assistantRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 10,
+  },
+  assistantAvatar: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  assistantBubble: {
+    maxWidth: "80%",
     backgroundColor: palette.cardSoft,
-  },
-  chipText: { color: palette.text, fontSize: 12, fontWeight: "600" },
-  iconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 999,
+    borderRadius: 20,
+    borderBottomLeftRadius: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderWidth: 1,
     borderColor: palette.borderSoft,
-    backgroundColor: palette.bgSoft,
+  },
+  assistantBubbleText: {
+    fontSize: 15,
+    color: palette.text,
+    lineHeight: 22,
+  },
+
+  // Typing
+  typingBubble: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-  },
-  list: { paddingHorizontal: 16, paddingBottom: 12 },
-  separator: { height: 10 },
-  footerSpacer: { height: 6 },
-  row: { flexDirection: "row" },
-  rowUser: { justifyContent: "flex-end" },
-  rowAssistant: { justifyContent: "flex-start" },
-  bubble: {
-    maxWidth: "86%",
-    borderRadius: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    gap: 10,
+    backgroundColor: palette.cardSoft,
+    borderRadius: 20,
+    borderBottomLeftRadius: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderWidth: 1,
+    borderColor: palette.borderSoft,
   },
-  bubbleUser: { backgroundColor: palette.accent, borderColor: palette.accent },
-  bubbleAssistant: { backgroundColor: palette.cardSoft, borderColor: palette.borderSoft },
-  bubbleText: { fontSize: 14, lineHeight: 20 },
-  bubbleTextUser: { color: palette.text, fontWeight: "600" },
-  bubbleTextAssistant: { color: palette.text },
-  typingBubble: { flexDirection: "row", alignItems: "center", gap: 8 },
-  typingText: { color: palette.sub, fontSize: 13, fontWeight: "600" },
+  typingDots: { flexDirection: "row", gap: 4 },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: palette.accent,
+    opacity: 0.4,
+  },
+  dot1: { opacity: 0.8 },
+  dot2: { opacity: 0.5 },
+  dot3: { opacity: 0.3 },
+  typingText: { fontSize: 13, color: palette.sub, fontStyle: "italic" },
+
+  // Suggestions
+  suggestionsContainer: {
+    marginBottom: 20,
+    gap: 12,
+  },
+  suggestionsTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: palette.sub,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  suggestionsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  suggestionChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: palette.cardSoft,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    maxWidth: "100%",
+  },
+  chipPressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
+  suggestionText: {
+    fontSize: 13,
+    color: palette.text,
+    fontWeight: "600",
+    flexShrink: 1,
+  },
+
+  // Composer
+  composerContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: palette.borderSoft,
+    backgroundColor: palette.bg,
+    gap: 6,
+  },
   composer: {
-    margin: 12,
-    padding: 10,
     flexDirection: "row",
     alignItems: "flex-end",
     gap: 10,
   },
   input: {
-    minHeight: 40,
+    flex: 1,
+    minHeight: 44,
     maxHeight: 120,
+    backgroundColor: palette.cardSoft,
+    borderRadius: 22,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    paddingRight: 14,
+    fontSize: 15,
     color: palette.text,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 12,
     borderWidth: 1,
     borderColor: palette.borderSoft,
-    backgroundColor: palette.cardSoft,
   },
-  counter: { color: palette.sub, fontSize: 11, marginTop: 6 },
-  send: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: palette.accent,
+  sendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: palette.accent,
     alignItems: "center",
     justifyContent: "center",
-    minWidth: 86,
   },
-  sendDisabled: {
-    opacity: 0.5,
+  sendDisabled: { opacity: 0.4 },
+  composerHint: {
+    fontSize: 11,
+    color: palette.sub,
+    marginLeft: 4,
   },
-  sendText: { color: palette.text, fontWeight: "800" },
-  pressed: { opacity: 0.85 },
+  pressed: { opacity: 0.8 },
 
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    padding: 16,
+  // Modal
+  modalContent: {
+    alignSelf: "center",
+    width: "92%",
+    maxWidth: 400,
+  },
+  modalCard: {
+    padding: 24,
+    gap: 20,
+    borderRadius: 24,
+  },
+  modalHeader: {
+    alignItems: "center",
+    gap: 12,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: palette.text,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: palette.sub,
+    textAlign: "center",
+  },
+  rulesList: { gap: 14 },
+  ruleItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  ruleIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
-  modalCard: { width: "100%", maxWidth: 520, padding: 16, gap: 10 },
-  modalTitle: { fontSize: 18, fontWeight: "900", color: palette.text },
-  modalSub: { fontSize: 13, color: palette.sub, lineHeight: 18 },
-  rules: { gap: 8, marginTop: 4 },
-  rule: { fontSize: 13, color: palette.text, lineHeight: 18 },
-  modalActions: { gap: 10, marginTop: 8 },
+  ruleText: {
+    flex: 1,
+    fontSize: 14,
+    color: palette.text,
+    lineHeight: 20,
+  },
+  modalActions: { marginTop: 4 },
 });
