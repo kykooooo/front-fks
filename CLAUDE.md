@@ -238,7 +238,7 @@ Welcome -> Login/Register -> Setup profil (poste, niveau, pied fort, objectif, c
 - **Generation** : choix environnement + materiel -> backend genere -> preview -> live -> feedback (RPE, fatigue, douleur)
 - **Tests terrain** : batterie de tests par playlist, conseilles avant demarrage cycle
 - **Bibliotheque** : catalogue exercices + videos validees + alternatives + favoris
-- **Chat** : assistant IA contextuel (rate limit 30 msg/jour, 500 chars max)
+- **Chat** : assistant IA contextuel (rate limit 10 msg/jour, 500 chars max)
 
 ### Mode Coach
 Dashboard coach : liste joueurs, details joueur (profil + seances)

@@ -342,7 +342,16 @@ export default function NewSessionScreen() {
 
       if (isBeforeNextAllowed) {
         const d = nextAllowedISO ? new Date(nextAllowedISO) : null;
-        showToast({ type: "info", title: "Repos planifié", message: d ? `Repos prévu jusqu'au ${d.toISOString().slice(0, 10)}.` : "Repos planifié." });
+        const dateLabel = d
+          ? d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
+          : null;
+        showToast({
+          type: "info",
+          title: "Repos programmé",
+          message: dateLabel
+            ? `Repos jusqu'au ${dateLabel} — reviens te reposer avant ta prochaine séance !`
+            : "Une période de repos est programmée. Reviens bientôt !",
+        });
         return;
       }
 

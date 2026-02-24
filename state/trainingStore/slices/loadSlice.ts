@@ -476,6 +476,16 @@ export const createLoadSlice = (set: any, get: any): LoadSlice => ({
     get()._applyAutoExternalLoads?.(dayKeys);
   },
 
+  /**
+   * Programme une période de repos obligatoire.
+   *
+   * `nextAllowedDateISO` = date ISO à partir de laquelle la génération de séance
+   * est à nouveau autorisée. Une fois la date dépassée, le check dans
+   * NewSessionScreen.tsx (isBeforeNextAllowed) revient automatiquement à false
+   * sans nécessiter de reset manuel.
+   *
+   * Exemple : restUntil(2) → bloque la génération pendant 2 jours.
+   */
   restUntil: (days) => {
     const baseISO = get().devNowISO ?? new Date().toISOString();
     const target = addDaysISO(baseISO, Math.max(0, Math.floor(days)));

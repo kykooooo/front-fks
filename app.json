@@ -31,10 +31,10 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": [],
+    "plugins": [
+      ["@sentry/react-native/expo", { "url": "https://sentry.io/" }]
+    ],
     "extra": {
-      "BACKEND_URL": "https://fks-backend-xmnb.onrender.com",
-      "BACKEND_API_KEY": "fF4AwO5ICvAn30B0GYEgptyfHsCXcYm-6MyE49axVRc",
       "SENTRY_DSN": "",
       "AMPLITUDE_API_KEY": "",
       "eas": {

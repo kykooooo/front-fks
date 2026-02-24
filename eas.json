@@ -27,6 +27,15 @@
         "NO_FLIPPER": "1"
       }
     },
+    "android-preview": {
+      "distribution": "internal",
+      "autoIncrement": true,
+      "environment": "production",
+      "channel": "production",
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "production": {
       "distribution": "store",
       "autoIncrement": true,

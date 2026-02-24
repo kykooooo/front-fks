@@ -1,10 +1,20 @@
-// Sentry monitoring - temporarily disabled for build
-// TODO: Re-enable when sentry-expo is compatible with Expo SDK 54
+import * as Sentry from '@sentry/react-native';
+import Constants from 'expo-constants';
 
 export const initSentry = () => {
-  // No-op: Sentry disabled
+  const dsn =
+    process.env.EXPO_PUBLIC_SENTRY_DSN ??
+    (Constants.expoConfig?.extra?.SENTRY_DSN as string | undefined) ??
+    '';
+  if (!dsn) return;
+
+  Sentry.init({
+    dsn,
+    tracesSampleRate: 0.1,
+    environment: __DEV__ ? 'development' : 'production',
+  });
 };
 
-export const setSentryUser = (_uid: string | null) => {
-  // No-op: Sentry disabled
+export const setSentryUser = (uid: string | null) => {
+  Sentry.setUser(uid ? { id: uid } : null);
 };

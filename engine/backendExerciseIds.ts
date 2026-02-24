@@ -318,7 +318,65 @@ export const BACKEND_EXERCISE_IDS = [
   "mob_hips",
   "mob_thoracic",
   "generic_breathing_nasal",
-  "mob_hamstring"
+  "mob_hamstring",
+
+  // ── Plyo (ajouts) ──────────────────────────────────────────────────────────
+  "plyo_ankling",
+  "plyo_drop_jump",
+  "plyo_hurdle_hop_low",
+  "plyo_jump_rope_easy",
+  "plyo_lateral_hop",
+  "plyo_low_box_drop_stick",
+  "plyo_pogo_backward",
+  "plyo_pogo_forward",
+  "plyo_pogo_in_out",
+  "plyo_pogo_lateral",
+  "plyo_single_leg_pogo_lateral_low",
+  "plyo_single_leg_pogo_low",
+  "plyo_skater_jump",
+
+  // ── Speed / COD (ajouts) ───────────────────────────────────────────────────
+  "spd_a_march",
+  "spd_hill_sprints",
+  "spd_maxv_30_60",
+  "cod_drop_lunge_stick",
+  "cod_skater_bound",
+  "cod_medball_rotational_throw",
+
+  // ── RSA (ajouts) ───────────────────────────────────────────────────────────
+  "rsa_runs_10_20_2x10",
+  "rsa_runs_15_15_2x10",
+  "rsa_runs_30_30_2x6",
+  "rsa_sprint_30m_repeat",
+  "rsa_sprint_5_5_5",
+  "rsa_ssg_2v2",
+  "rsa_ssg_3v2",
+  "rsa_ssg_4v3",
+  "rsa_ssg_6v6",
+  "rsa_curve_sprint_20m",
+  "rsa_circuit_lateral_bound_shuttle",
+  "rsa_circuit_medball_slam_shuttle",
+  "rsa_circuit_mountain_climber_sprint",
+  "rsa_circuit_split_squat_jump",
+  "rsa_circuit_sprint_pushup",
+
+  // ── Run / Cardio (ajouts) ──────────────────────────────────────────────────
+  "run_engine_intervals_4x1000",
+  "run_engine_threshold_2x10",
+  "bike_engine_intervals_10x40_20",
+  "row_engine_intervals_6x500",
+  "vma_long",
+  "vma_long_1000",
+
+  // ── Force (ajouts) ─────────────────────────────────────────────────────────
+  "str_db_thruster_power",
+
+  // ── Machines essentielles ──────────────────────────────────────────────────
+  "str_leg_extension_machine",
+  "str_hip_abductor_machine",
+  "str_hip_adductor_machine",
+  "str_cable_fly",
+  "str_cable_tricep_pushdown",
 ] as const;
 
 export type BackendExerciseId = (typeof BACKEND_EXERCISE_IDS)[number];

@@ -9,6 +9,7 @@ import { todayISO } from "../utils/virtualClock";
 import { toDayKey } from "../engine/dailyAggregation";
 
 import { auth } from "../services/firebase";
+import type { FKS_NextSessionV2 } from "../screens/newSession/types";
 
 import type { TrainingState } from "./trainingStore/types";
 
@@ -34,7 +35,7 @@ const baseTrainingState = () => ({
   tsbHistory: [] as number[],
   ignoreFatigueCap: false,
   autoExternalEnabled: true,
-  lastAiSessionV2: null as any,
+  lastAiSessionV2: null as { v2: FKS_NextSessionV2; date: string; sessionId: string } | null,
   lastAiContext: null as any,
   devNowISO: DEV_FLAGS.ENABLED && DEV_FLAGS.VIRTUAL_CLOCK ? todayISO() : null,
 
