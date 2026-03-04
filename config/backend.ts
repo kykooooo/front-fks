@@ -14,7 +14,7 @@ const envKey =
 // On extrait l'IP pour pointer vers le backend local sur le port 3000.
 const devHostIp = Constants.expoConfig?.hostUri?.split(":")[0];
 const fallbackDev = devHostIp
-  ? `http://${devHostIp}:4000`
+  ? `http://${devHostIp}:3000`
   : "http://localhost:4000";
 // envUrl wins if set (even in dev) — fallback to local IP only when no env var
 const resolvedEnvUrl =
