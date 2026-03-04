@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useWindowDimensions } from "react-native";
 import Animated, {
   Easing,
@@ -35,6 +35,11 @@ export function useModalAnimation({
     onClosedRef.current = onClosed;
   }, [onClosed]);
 
+  // Read .current on JS thread to avoid Reanimated worklet serialization warning
+  const fireOnClosed = useCallback(() => {
+    onClosedRef.current?.();
+  }, []);
+
   useEffect(() => {
     if (visible) {
       progress.value = withTiming(1, {
@@ -46,11 +51,11 @@ export function useModalAnimation({
         0,
         { duration: durationOut, easing: Easing.in(Easing.cubic) },
         (finished) => {
-          if (finished && onClosedRef.current) runOnJS(onClosedRef.current)();
+          if (finished) runOnJS(fireOnClosed)();
         }
       );
     }
-  }, [visible, durationIn, durationOut, progress, onClosedRef]);
+  }, [visible, durationIn, durationOut, progress, fireOnClosed]);
 
   const contentStyle = useAnimatedStyle(() => {
     const opacity = progress.value;
