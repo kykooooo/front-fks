@@ -25,6 +25,7 @@ export const BACKEND_API_KEY =
 
 if (__DEV__) {
   console.log("[FKS] hostUri:", Constants.expoConfig?.hostUri);
+  console.log("[FKS] envUrl:", envUrl, "| extra.BACKEND_URL:", extra.BACKEND_URL, "| process.env:", process.env.EXPO_PUBLIC_BACKEND_URL);
   console.log("[FKS] BACKEND_URL:", BACKEND_URL);
 }
 if (__DEV__ && !BACKEND_URL) {
