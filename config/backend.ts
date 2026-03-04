@@ -16,11 +16,10 @@ const devHostIp = Constants.expoConfig?.hostUri?.split(":")[0];
 const fallbackDev = devHostIp
   ? `http://${devHostIp}:4000`
   : "http://localhost:4000";
-export const BACKEND_URL = __DEV__
-  ? fallbackDev
-  : typeof envUrl === "string" && envUrl.trim()
-    ? envUrl.trim()
-    : "";
+// envUrl wins if set (even in dev) — fallback to local IP only when no env var
+const resolvedEnvUrl =
+  typeof envUrl === "string" && envUrl.trim() ? envUrl.trim() : "";
+export const BACKEND_URL = resolvedEnvUrl || (__DEV__ ? fallbackDev : "");
 export const BACKEND_API_KEY =
   typeof envKey === "string" && envKey.trim() ? envKey.trim() : "";
 
