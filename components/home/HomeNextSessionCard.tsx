@@ -19,7 +19,7 @@ type Props = {
   secondaryDisabled?: boolean;
 };
 
-export default function HomeNextSessionCard({
+function HomeNextSessionCardInner({
   hasPending,
   upcomingLabel,
   onPrimary,
@@ -30,6 +30,7 @@ export default function HomeNextSessionCard({
   primaryDisabled = false,
   secondaryDisabled = false,
 }: Props) {
+  if (__DEV__) console.log("[RENDER] HomeNextSessionCard");
   const primaryTextColor = primaryDisabled ? palette.sub : palette.accent;
   const secondaryTextColor = secondaryDisabled ? palette.sub : palette.text;
   return (
@@ -190,3 +191,5 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 });
+
+export default React.memo(HomeNextSessionCardInner);

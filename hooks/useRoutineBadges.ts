@@ -2,8 +2,10 @@
 // Calcul des badges pour les routines complétées (sans impact sur ATL/CTL/TSB)
 
 import { useMemo } from "react";
-import { useTrainingStore } from "../state/trainingStore";
-import { startOfMonth, isSameMonth, isSameDay, subDays, parseISO } from "date-fns";
+import { useExternalStore } from "../state/stores/useExternalStore";
+import { useDebugStore } from "../state/stores/useDebugStore";
+import { isSameMonth, subDays, parseISO } from "date-fns";
+import { toDateKey } from "../utils/dateHelpers";
 
 export type RoutineBadges = {
   thisMonth: number;
@@ -14,8 +16,8 @@ export type RoutineBadges = {
 };
 
 export function useRoutineBadges(): RoutineBadges {
-  const completedRoutines = useTrainingStore((s) => s.completedRoutines ?? []);
-  const devNowISO = useTrainingStore((s) => s.devNowISO);
+  const completedRoutines = useExternalStore((s) => s.completedRoutines ?? []);
+  const devNowISO = useDebugStore((s) => s.devNowISO);
 
   return useMemo(() => {
     const now = devNowISO ? parseISO(devNowISO) : new Date();
@@ -50,14 +52,12 @@ export function useRoutineBadges(): RoutineBadges {
     // Créer un Set des jours avec routines pour lookup rapide
     const daysWithRoutines = new Set<string>();
     for (const r of completedRoutines) {
-      const date = parseISO(r.dateISO);
-      const dayKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-      daysWithRoutines.add(dayKey);
+      daysWithRoutines.add(toDateKey(parseISO(r.dateISO)));
     }
 
     // Vérifier les jours consécutifs en remontant
     for (let i = 0; i < 365; i++) {
-      const dayKey = `${checkDate.getFullYear()}-${checkDate.getMonth()}-${checkDate.getDate()}`;
+      const dayKey = toDateKey(checkDate);
       if (daysWithRoutines.has(dayKey)) {
         streak++;
         checkDate = subDays(checkDate, 1);

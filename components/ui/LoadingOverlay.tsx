@@ -48,7 +48,7 @@ function BouncingDots() {
 
 const dotStyles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 20 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#ff7a1a' },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.accent },
 });
 
 // ─── Rotating Glow Ring ───
@@ -85,7 +85,7 @@ const ringStyles = StyleSheet.create({
     height: 88,
     borderRadius: 44,
     borderWidth: 3,
-    borderColor: 'rgba(255,122,26,0.15)',
+    borderColor: theme.colors.accentSoft,
   },
   arc: {
     position: 'absolute',
@@ -96,7 +96,7 @@ const ringStyles = StyleSheet.create({
     borderRadius: 44,
     borderWidth: 3,
     borderColor: 'transparent',
-    borderTopColor: '#ff7a1a',
+    borderTopColor: theme.colors.accent,
   },
 });
 
@@ -171,7 +171,7 @@ export function LoadingOverlay({
           <View style={styles.iconArea}>
             <GlowRing />
             <Animated.View style={[styles.iconCircle, { transform: [{ scale: iconPulse }] }]}>
-              <Ionicons name="flash" size={32} color="#ff7a1a" />
+              <Ionicons name="flash" size={32} color={theme.colors.accent} />
             </Animated.View>
           </View>
 
@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
     minWidth: 300,
     maxWidth: '85%',
     gap: 20,
-    shadowColor: '#ff7a1a',
+    shadowColor: theme.colors.accent,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
     shadowRadius: 24,
@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,122,26,0.12)',
+    backgroundColor: theme.colors.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -301,7 +301,7 @@ const styles = StyleSheet.create({
   },
   stepDotActive: {
     width: 18,
-    backgroundColor: '#ff7a1a',
+    backgroundColor: theme.colors.accent,
   },
   progressTrack: {
     width: '100%',
@@ -313,6 +313,6 @@ const styles = StyleSheet.create({
   progressFill: {
     height: '100%',
     borderRadius: 2,
-    backgroundColor: '#ff7a1a',
+    backgroundColor: theme.colors.accent,
   },
 });

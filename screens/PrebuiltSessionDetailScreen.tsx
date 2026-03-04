@@ -18,7 +18,7 @@ import { useHaptics } from "../hooks/useHaptics";
 import type { AppStackParamList } from "../navigation/RootNavigator";
 import { theme } from "../constants/theme";
 import { Card } from "../components/ui/Card";
-import { useTrainingStore } from "../state/trainingStore";
+import { useExternalStore } from "../state/stores/useExternalStore";
 
 const palette = theme.colors;
 
@@ -155,7 +155,7 @@ export default function PrebuiltSessionDetailScreen() {
   const navigation = useNavigation<any>();
   const haptics = useHaptics();
   const session = route.params.session as unknown as Prebuilt;
-  const addCompletedRoutine = useTrainingStore((s) => s.addCompletedRoutine);
+  const addCompletedRoutine = useExternalStore((s) => s.addCompletedRoutine);
 
   const expectations = Array.isArray(session.expectations)
     ? session.expectations.filter((line) => !!line && line.trim().length > 0)

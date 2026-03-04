@@ -8,15 +8,16 @@ import {
   Platform,
   FlatList,
   Pressable,
-  ActivityIndicator,
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getEncryptedItem, setEncryptedItem, removeEncryptedItem } from "../services/encryptedStorage";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { auth } from "../services/firebase";
 import { showToast } from "../utils/toast";
+import { toDateKey } from "../utils/dateHelpers";
 import { theme } from "../constants/theme";
 import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
@@ -49,7 +50,7 @@ const mkId = () => `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
 type UsageState = { dayKey: string; count: number; lastSentAt: number };
 
-const todayKey = () => new Date().toISOString().slice(0, 10);
+const todayKey = () => toDateKey(new Date());
 
 const extractReply = (data: any): string | null => {
   if (typeof data?.reply === "string") return data.reply;
@@ -200,7 +201,7 @@ export default function ChatScreen() {
     if (!uid) return;
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(chatKey(uid));
+        const raw = await getEncryptedItem(chatKey(uid));
         if (!raw) return;
         const parsed = JSON.parse(raw);
         if (!Array.isArray(parsed)) return;
@@ -226,7 +227,7 @@ export default function ChatScreen() {
     if (!uid) return;
     (async () => {
       try {
-        await AsyncStorage.setItem(chatKey(uid), JSON.stringify(messages.slice(-50)));
+        await setEncryptedItem(chatKey(uid), JSON.stringify(messages.slice(-50)));
       } catch {
         // ignore
       }
@@ -275,8 +276,10 @@ export default function ChatScreen() {
       },
     ]);
     try {
-      await AsyncStorage.removeItem(chatKey(uid));
-    } catch {}
+      await removeEncryptedItem(chatKey(uid));
+    } catch (err) {
+      if (__DEV__) console.warn("[Chat] clearChat storage error:", err);
+    }
   };
 
   const openGuidelines = () => setShowGuidelines(true);
@@ -284,7 +287,9 @@ export default function ChatScreen() {
     if (!uid) return;
     try {
       await AsyncStorage.setItem(guidelinesKey(uid), "1");
-    } catch {}
+    } catch (err) {
+      if (__DEV__) console.warn("[Chat] acceptGuidelines storage error:", err);
+    }
     setGuidelinesAccepted(true);
     setShowGuidelines(false);
   };
@@ -317,7 +322,7 @@ export default function ChatScreen() {
     setMessages((prev) => [...prev, nextUser]);
     setInput("");
     setSending(true);
-    setUsage({ dayKey: day, count: countToday + 1, lastSentAt: now });
+    setUsage({ dayKey: day, count: countToday, lastSentAt: now });
 
     try {
       let context: any = null;
@@ -363,14 +368,13 @@ export default function ChatScreen() {
       const data: any = await r.json();
       const reply = extractReply(data) ?? "Je n'ai pas compris la réponse du backend.";
       setMessages((prev) => [...prev, { id: mkId(), role: "assistant", content: reply, createdAt: Date.now() }]);
+      setUsage((prev) => ({ ...prev, count: prev.count + 1 }));
     } catch (e: any) {
-      const msg =
-        typeof e?.message === "string"
-          ? e.message
-          : "Impossible d'envoyer le message (réseau/backend).";
+      if (__DEV__) console.error("[Chat] API error:", e?.message ?? e);
+      showToast({ type: "error", title: "Erreur réseau", message: "Message non envoyé, réessaie." });
       setMessages((prev) => [
         ...prev,
-        { id: mkId(), role: "assistant", content: `Oups, erreur : ${msg}`, createdAt: Date.now() },
+        { id: mkId(), role: "assistant", content: "Une erreur est survenue, réessaie dans quelques instants.", createdAt: Date.now() },
       ]);
     } finally {
       setSending(false);
@@ -395,7 +399,7 @@ export default function ChatScreen() {
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.flex1}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
       >
         {/* Header */}

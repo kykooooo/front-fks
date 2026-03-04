@@ -15,7 +15,7 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { useTrainingStore } from "../state/trainingStore";
+import { applyExternalLoad } from "../state/orchestrators/applyExternalLoad";
 import { EXTERNAL_WEIGHTS } from "../config/trainingDefaults";
 import { theme } from "../constants/theme";
 import { SectionHeader } from "../components/ui/SectionHeader";
@@ -50,7 +50,7 @@ const sourceMap: Record<Modality, ExternalSource> = {
 
 export default function ExternalLoadScreen() {
   const nav = useNavigation();
-  const addExternalLoad = useTrainingStore((s) => s.addExternalLoad);
+  const addExternalLoad = applyExternalLoad;
 
   const [date, setDate] = useState<Date>(new Date());
   const [showPicker, setShowPicker] = useState(false);
@@ -111,7 +111,7 @@ export default function ExternalLoadScreen() {
       >
         <KeyboardAvoidingView
           style={styles.root}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
           keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0} // ajuste selon la hauteur de ton header
         >
           <View style={styles.modalHeaderRow}>

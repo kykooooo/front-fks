@@ -33,9 +33,9 @@ const pickVaried = (items: string[], count: number, seed: number) => {
 };
 
 const pickCategory = (v2: FKS_NextSessionV2) => {
-  const focus = normalize(v2.focus_primary);
+  const focus = normalize(v2.focusPrimary);
   const intensity = normalize(v2.intensity);
-  const archetype = normalize(v2.archetype_id);
+  const archetype = normalize(v2.archetypeId);
 
   if (focus.includes("strength") || focus.includes("force")) return "strength";
   if (focus.includes("speed") || focus.includes("vitesse") || focus.includes("sprint")) return "speed";
@@ -82,18 +82,18 @@ export function buildSessionExplain(v2: FKS_NextSessionV2, profile?: PlayerProfi
   const category = pickCategory(v2);
   const reasons: string[] = [];
 
-  if (v2.focus_primary) reasons.push(`Focus principal : ${v2.focus_primary}.`);
-  if (v2.duration_min != null) reasons.push(`Durée : ${v2.duration_min} min.`);
+  if (v2.focusPrimary) reasons.push(`Focus principal : ${v2.focusPrimary}.`);
+  if (v2.durationMin != null) reasons.push(`Durée : ${v2.durationMin} min.`);
   if (v2.intensity) reasons.push(`Intensité : ${formatIntensity(v2.intensity)}.`);
   const objective = objectiveHint(profile?.main_objective);
   if (objective) reasons.push(objective);
 
   const pos = positionLabel(profile);
   const place = locationLabel(v2.location);
-  const duration = v2.duration_min != null ? `${v2.duration_min} min` : "20–30 min";
+  const duration = v2.durationMin != null ? `${v2.durationMin} min` : "20–30 min";
   const intensity = formatIntensity(v2.intensity);
   const seed = hashString(
-    `${v2.archetype_id ?? ""}|${v2.focus_primary ?? ""}|${v2.intensity ?? ""}|${v2.duration_min ?? ""}|${pos}|${objective ?? ""}`
+    `${v2.archetypeId ?? ""}|${v2.focusPrimary ?? ""}|${v2.intensity ?? ""}|${v2.durationMin ?? ""}|${pos}|${objective ?? ""}`
   );
 
   let pool: string[] = [];

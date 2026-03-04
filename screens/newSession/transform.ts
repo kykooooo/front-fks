@@ -3,6 +3,10 @@ import type { Exercise, Session } from "../../domain/types";
 import { modalityFromBlockType, normalizeFocus, prettifyName, toPlannedIntensity } from "./helpers";
 import type { FKS_Block, FKS_NextSessionV2 } from "./types";
 
+/** Guard: retourne fallback si la valeur n'est pas un nombre fini > 0 */
+const safeDur = (v: unknown, fallback: number): number =>
+  typeof v === "number" && Number.isFinite(v) && v > 0 ? v : fallback;
+
 export function v2ToLocalSession(
   v2: FKS_NextSessionV2,
   phase: Session["phase"],
@@ -42,42 +46,42 @@ export function v2ToLocalSession(
   const blocks: Exercise[] = Array.isArray(v2.blocks)
     ? v2.blocks.flatMap((block, blockIdx) => {
         const blockType =
-          (block as any)?.type ||
-          (block as any)?.block_id ||
-          (block as any)?.focus ||
+          block.type ||
+          block.blockId ||
+          block.focus ||
           "run";
         const modality = modalityFromBlockType(blockType);
         const blockIntensity = toPlannedIntensity(
-          (block as any)?.intensity ?? v2.intensity ?? "moderate"
+          block.intensity ?? v2.intensity ?? "moderate"
         );
 
         if (!Array.isArray(block.items) || block.items.length === 0) {
           const solo = [
             {
               id: `${block.id || blockType || "block"}_${blockIdx}`,
-              name: (block as FKS_Block).goal || blockType || "Bloc",
+              name: block.goal || blockType || "Bloc",
               modality,
               intensity: blockIntensity as Exercise["intensity"],
               sets: undefined,
               reps: undefined,
-              durationSec: Math.max(120, Math.round(((block as FKS_Block).duration_min || 5) * 60)),
+              durationSec: Math.max(120, Math.round(safeDur(block.durationMin, 5) * 60)),
               restSec: undefined,
-              notes: (block as FKS_Block).notes || undefined,
+              notes: block.notes || undefined,
             } as Exercise,
           ];
-          return ensureMinItems(solo, modality, (block as FKS_Block).duration_min ?? 10, blockIdx);
+          return ensureMinItems(solo, modality, safeDur(block.durationMin, 10), blockIdx);
         }
 
         const mapped = block.items.map((item, i) => {
           let friendlyName = prettifyName(
             item.name ||
-              (item as any).exercise_id ||
-              (item as any).id ||
-              (block as FKS_Block).goal ||
+              item.exerciseId ||
+              item.id ||
+              block.goal ||
               blockType ||
               "Exercice"
           );
-          const workRest = typeof (item as any).work_rest === "string" ? (item as any).work_rest : "";
+          const workRest = typeof item.workRest === "string" ? item.workRest : "";
           let parsedWork: number | undefined;
           let parsedRest: number | undefined;
           if (workRest.includes("/")) {
@@ -86,22 +90,22 @@ export function v2ToLocalSession(
             if (Number.isFinite(r)) parsedRest = r;
           }
 
-          const hasWork = typeof item.work_s === "number" && Number.isFinite(item.work_s);
+          const hasWork = typeof item.workS === "number" && Number.isFinite(item.workS);
           const hasDurationMin =
-            typeof (item as any).duration_min === "number" &&
-            Number.isFinite((item as any).duration_min);
+            typeof item.durationMin === "number" &&
+            Number.isFinite(item.durationMin);
           const setsVal =
             typeof item.sets === "number" && Number.isFinite(item.sets)
               ? item.sets
               : undefined;
           const effectiveWork =
-            hasWork && Number.isFinite(item.work_s)
-              ? item.work_s
+            hasWork && Number.isFinite(item.workS)
+              ? item.workS
               : parsedWork;
           const durationSec = typeof effectiveWork === "number"
             ? effectiveWork * (setsVal ?? 1)
             : hasDurationMin
-            ? Math.round(((item as any).duration_min as number) * 60)
+            ? Math.round((item.durationMin as number) * 60)
             : undefined;
 
           const hasAnyLoad =
@@ -114,9 +118,8 @@ export function v2ToLocalSession(
           }
 
           const rawExerciseId: string | null =
-            (item as any)?.exercise_id ??
-            (item as any)?.id ??
-            (item as any)?.exerciseId ??
+            item.exerciseId ??
+            item.id ??
             null;
 
           let exerciseId = rawExerciseId ? String(rawExerciseId) : null;
@@ -133,7 +136,7 @@ export function v2ToLocalSession(
           }
 
           return {
-            id: exerciseId ?? `${(block as FKS_Block).id || blockType || "block"}_${blockIdx}_${i}`,
+            id: exerciseId ?? `${block.id || blockType || "block"}_${blockIdx}_${i}`,
             name: friendlyName,
             modality,
             intensity: blockIntensity as Exercise["intensity"],
@@ -144,18 +147,18 @@ export function v2ToLocalSession(
                 : undefined,
             durationSec,
             restSec:
-              typeof item.rest_s === "number" && Number.isFinite(item.rest_s)
-                ? item.rest_s
+              typeof item.restS === "number" && Number.isFinite(item.restS)
+                ? item.restS
                 : parsedRest,
             notes: item.notes ?? undefined,
           } as Exercise;
         }).filter(Boolean) as Exercise[];
 
-        return ensureMinItems(mapped, modality, (block as FKS_Block).duration_min ?? 10, blockIdx);
+        return ensureMinItems(mapped, modality, safeDur(block.durationMin, 10), blockIdx);
       })
     : [];
 
-  const baseModality = normalizeFocus(v2.focus_primary || "run");
+  const baseModality = normalizeFocus(v2.focusPrimary || "run");
   const baseIntensity = toPlannedIntensity(v2.intensity) as Exercise["intensity"];
   const placeholder: Exercise = {
     id: "placeholder_1",
@@ -166,7 +169,7 @@ export function v2ToLocalSession(
     reps: 1,
     durationSec: Math.max(
       300,
-      Math.round((v2.duration_min || 30) * 60 * 0.3)
+      Math.round(safeDur(v2.durationMin, 30) * 60 * 0.3)
     ),
   };
 
@@ -175,19 +178,19 @@ export function v2ToLocalSession(
   const id = `planned_${plannedDateISO}_${Math.random()
     .toString(36)
     .slice(2, 8)}`;
-  const srpeVal = v2?.estimated_load?.srpe;
+  const srpeVal = v2?.estimatedLoad?.srpe;
   const volumeScore =
     typeof srpeVal === "number" &&
     Number.isFinite(srpeVal) &&
     srpeVal > 0
       ? Math.round(srpeVal)
-      : Math.max(1, Math.round(v2.duration_min || 45));
+      : Math.max(1, Math.round(safeDur(v2.durationMin, 45)));
 
   return {
     id,
     phase,
-    focus: (v2.focus_primary as any) ?? baseModality,
-    intensity: baseIntensity as any,
+    focus: v2.focusPrimary ?? baseModality,
+    intensity: baseIntensity,
     dateISO: `${plannedDateISO}T00:00:00.000Z`,
     completed: false,
     volumeScore,

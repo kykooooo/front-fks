@@ -2,7 +2,13 @@
 import { getAuth } from "firebase/auth";
 import { db } from "./firebase";
 import { doc, getDoc } from "firebase/firestore";
-import { useTrainingStore } from "../state/trainingStore";
+import { useLoadStore } from "../state/stores/useLoadStore";
+import { useSessionsStore } from "../state/stores/useSessionsStore";
+import { useDebugStore } from "../state/stores/useDebugStore";
+import { useFeedbackStore } from "../state/stores/useFeedbackStore";
+import { toDateKey } from "../utils/dateHelpers";
+import type { Session, Exercise } from "../domain/types";
+import { userProfileSchema, logValidationIssues } from "../schemas/firestoreSchemas";
 
 // Phases FKS
 export type FKS_PhaseId = "playlist" | "construction" | "progression" | "performance" | "deload";
@@ -83,7 +89,7 @@ export interface FKS_AiContext {
 }
 
 // Normalise l’intensité appli (store) → enum IA
-function toFksIntensity(x: any): FKS_IntensityLevel {
+function toFksIntensity(x: string | null | undefined): FKS_IntensityLevel {
   const k = String(x || "").toLowerCase();
   if (k.includes("hard") || k.includes("max")) return "hard";
   if (k.includes("mod")) return "moderate";
@@ -91,7 +97,7 @@ function toFksIntensity(x: any): FKS_IntensityLevel {
 }
 
 // Normalise la modalité principale → focus IA
-function toFksFocus(modality: any): FKS_SessionFocus {
+function toFksFocus(modality: string | null | undefined): FKS_SessionFocus {
   const k = String(modality || "").toLowerCase();
   if (["strength", "force", "muscu"].some((t) => k.includes(t))) return "strength";
   if (["speed", "vma", "sprint"].some((t) => k.includes(t))) return "speed";
@@ -101,8 +107,8 @@ function toFksFocus(modality: any): FKS_SessionFocus {
   return "run";
 }
 
-function focusFromExercises(session: any): { primary: FKS_SessionFocus; secondary: FKS_SessionFocus | null } {
-  const exos: any[] = Array.isArray(session?.exercises) ? session.exercises : [];
+function focusFromExercises(session: Pick<Session, 'exercises' | 'focus' | 'modality'>): { primary: FKS_SessionFocus; secondary: FKS_SessionFocus | null } {
+  const exos: Exercise[] = Array.isArray(session?.exercises) ? session.exercises : [];
   if (!exos.length) {
     const f = toFksFocus(session?.focus ?? session?.modality);
     return { primary: f, secondary: null };
@@ -110,7 +116,7 @@ function focusFromExercises(session: any): { primary: FKS_SessionFocus; secondar
 
   const tally = new Map<FKS_SessionFocus, number>();
   exos.forEach((e) => {
-    const mod = toFksFocus(e?.modality ?? e?.focus);
+    const mod = toFksFocus(e?.modality);
     const weight =
       typeof e?.durationSec === "number" && Number.isFinite(e.durationSec)
         ? e.durationSec / 60
@@ -126,7 +132,7 @@ function focusFromExercises(session: any): { primary: FKS_SessionFocus; secondar
   return { primary, secondary };
 }
 
-function inferStrengthRegion(exercises: any[]): "upper" | "lower" | "both" | null {
+function inferStrengthRegion(exercises: Pick<Exercise, 'name' | 'id'>[]): "upper" | "lower" | "both" | null {
   const lowerKeys = ["squat", "hinge", "deadlift", "rdl", "split", "lunge", "hip", "glute", "ham", "posterior", "quad", "calf", "copenhagen"];
   const upperKeys = ["press", "row", "pull", "push", "bench", "shoulder", "overhead", "landmine", "curl", "triceps", "biceps"];
   let hasLower = false;
@@ -142,7 +148,7 @@ function inferStrengthRegion(exercises: any[]): "upper" | "lower" | "both" | nul
   return null;
 }
 
-function buildRecentByFocus(sessions: any[], limit = 3): Record<string, string[]> {
+function buildRecentByFocus(sessions: Session[], limit = 3): Record<string, string[]> {
   const res: Record<string, string[]> = {};
   const sorted = [...sessions].sort(
     (a, b) =>
@@ -150,7 +156,7 @@ function buildRecentByFocus(sessions: any[], limit = 3): Record<string, string[]
       new Date(a?.dateISO ?? a?.date ?? 0).getTime()
   );
   sorted.forEach((s) => {
-    const exos: any[] = Array.isArray((s as any)?.exercises) ? (s as any).exercises : [];
+    const exos: Exercise[] = Array.isArray(s?.exercises) ? s.exercises : [];
     const focus = toFksFocus(s?.focus ?? s?.modality);
     if (!exos.length) return;
     res[focus] = res[focus] ?? [];
@@ -165,7 +171,7 @@ function buildRecentByFocus(sessions: any[], limit = 3): Record<string, string[]
 }
 
 // Helper : fusionner le matos de salle + maison en une seule liste
-function buildEquipmentFromProfile(profile: any): string[] {
+function buildEquipmentFromProfile(profile: Record<string, unknown>): string[] {
   const result: string[] = [];
 
   if (Array.isArray(profile.gymEquipment)) {
@@ -193,98 +199,75 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
     throw new Error("Utilisateur non connecté, impossible de construire le contexte IA.");
   }
 
-  // 1) Récup profil Firestore
+  // 1) Récup profil Firestore (validé par Zod)
   const userRef = doc(db, "users", user.uid);
   const snap = await getDoc(userRef);
-  const data = snap.data() ?? {};
+  const rawProfile = snap.data() ?? {};
+  const profileParsed = userProfileSchema.safeParse(rawProfile);
+  if (!profileParsed.success) {
+    logValidationIssues("userProfile (aiContext)", user.uid, profileParsed.error.issues);
+  }
+  const data = profileParsed.success ? profileParsed.data : userProfileSchema.parse({});
 
-  const firstName = (data.firstName as string | undefined)?.trim() ?? null;
-  const level = (data.level as string | undefined) ?? null;
-  const position = (data.position as string | undefined) ?? null;
-  const dominantFoot = (data.dominantFoot as string | undefined) ?? null;
-  const mainObjective = (data.mainObjective as string | undefined) ?? null;
-  const trainingState: any = useTrainingStore.getState();
-  const ignoreFatigueCap = Boolean(trainingState.ignoreFatigueCap);
+  const firstName = data.firstName?.trim() ?? null;
+  const level = data.level ?? null;
+  const position = data.position ?? null;
+  const dominantFoot = data.dominantFoot ?? null;
+  const mainObjective = data.mainObjective ?? null;
+  const loadState = useLoadStore.getState();
+  const sessionsState = useSessionsStore.getState();
+  const ignoreFatigueCap = Boolean(loadState.ignoreFatigueCap);
 
   const storeGoal =
-    typeof trainingState.microcycleGoal === "string"
-      ? trainingState.microcycleGoal.trim()
+    typeof sessionsState.microcycleGoal === "string"
+      ? sessionsState.microcycleGoal.trim()
       : "";
-  const dataGoal = (
-    (data.microcycleGoal as string | undefined) ??
-    ""
-  ).trim();
+  const dataGoal = (data.microcycleGoal ?? "").trim();
   const resolvedGoal = storeGoal || dataGoal;
   const microcycleGoal = resolvedGoal || "fondation";
   const microcycleSessionIndex =
-    typeof trainingState.microcycleSessionIndex === "number" && Number.isFinite(trainingState.microcycleSessionIndex)
-      ? trainingState.microcycleSessionIndex
+    typeof sessionsState.microcycleSessionIndex === "number" && Number.isFinite(sessionsState.microcycleSessionIndex)
+      ? sessionsState.microcycleSessionIndex
       : 0;
-  const availableTimeRaw =
-    (data as any).available_time_min ??
-    (data as any).availableTimeMin ??
-    (trainingState as any).available_time_min ??
-    (trainingState as any).availableTimeMin ??
-    null;
-  const availableTimeMin = (() => {
-    const parsed =
-      typeof availableTimeRaw === "number"
-        ? availableTimeRaw
-        : typeof availableTimeRaw === "string"
-          ? Number(availableTimeRaw)
-          : NaN;
-    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : null;
-  })();
-  const explosivitePlaylistLenRaw =
-    (data as any).explosivite_playlist_len ?? (data as any).explosivitePlaylistLen;
-  const explosivitePlaylistLen = (() => {
-    const parsed =
-      typeof explosivitePlaylistLenRaw === "number"
-        ? explosivitePlaylistLenRaw
-        : typeof explosivitePlaylistLenRaw === "string"
-          ? Number(explosivitePlaylistLenRaw)
-          : NaN;
-    const normalized = Number.isFinite(parsed) ? Math.trunc(parsed) : null;
-    if (normalized === 8 || normalized === 12) return normalized;
-    return null;
-  })();
+  const availableTimeMin = data.available_time_min ?? data.availableTimeMin ?? null;
+  const explosivitePlaylistLenRaw = data.explosivite_playlist_len ?? data.explosivitePlaylistLen ?? null;
+  const explosivitePlaylistLen =
+    explosivitePlaylistLenRaw === 8 || explosivitePlaylistLenRaw === 12
+      ? explosivitePlaylistLenRaw
+      : null;
   // Ne PAS appeler setMicrocycleGoal ici : buildAIPromptContext est une
   // fonction de lecture. L'appel provoquait un reset de microcycleSessionIndex
   // à chaque génération quand le goal différait (casse, fallback, etc.).
-  const clubTrainingDays = Array.isArray(data.clubTrainingDays) ? data.clubTrainingDays : [];
-  const matchDay = typeof data.matchDay === "string" ? data.matchDay : null;
-  const matchDays = Array.isArray(data.matchDays)
-    ? data.matchDays
-    : matchDay
-    ? [matchDay]
-    : [];
+  const clubTrainingDays = data.clubTrainingDays;
+  const matchDay = data.matchDay ?? null;
+  const matchDays = data.matchDays.length > 0 ? data.matchDays : matchDay ? [matchDay] : [];
 
-  const clubTrainingsPerWeek = Number(data.clubTrainingsPerWeek ?? 0);
-  const matchesPerWeek = Number(data.matchesPerWeek ?? 0);
-  const targetFksSessionsPerWeek = data.targetFksSessionsPerWeek
-    ? Number(data.targetFksSessionsPerWeek)
-    : null;
+  const clubTrainingsPerWeek = data.clubTrainingsPerWeek;
+  const matchesPerWeek = data.matchesPerWeek;
+  const targetFksSessionsPerWeek = data.targetFksSessionsPerWeek ?? null;
 
-  const equipment_available = buildEquipmentFromProfile(data);
+  const equipment_available = buildEquipmentFromProfile(data as Record<string, unknown>);
 
-  const nowISO = trainingState.devNowISO ?? new Date().toISOString();
-  const todayKey = nowISO.slice(0, 10);
+  const debugState = useDebugStore.getState();
+  const feedbackState = useFeedbackStore.getState();
+  const nowISO = debugState.devNowISO ?? new Date().toISOString();
+  const todayKey = toDateKey(nowISO);
   const pains: string[] =
-    (trainingState.dayStates?.[todayKey]?.feedback?.pains as string[]) ??
-    (trainingState.dayStates?.[todayKey]?.feedback?.painZones as string[]) ??
+    ((feedbackState.dayStates?.[todayKey]?.feedback as Record<string, unknown> | undefined)?.pains as string[] | undefined) ??
+    ((feedbackState.dayStates?.[todayKey]?.feedback as Record<string, unknown> | undefined)?.painZones as string[] | undefined) ??
     [];
 
   // 2) Récup état charge / phase depuis ton store FKS
   const phase: FKS_PhaseId =
-    (trainingState.currentPhase as FKS_PhaseId) ?? "playlist";
+    (sessionsState.phase as FKS_PhaseId) ?? "playlist";
 
-  const atl = typeof trainingState.atl === "number" ? trainingState.atl : 0;
-  const ctl = typeof trainingState.ctl === "number" ? trainingState.ctl : 0;
-  const tsb = typeof trainingState.tsb === "number" ? trainingState.tsb : 0;
+  const atl = typeof loadState.atl === "number" ? loadState.atl : 0;
+  const ctl = typeof loadState.ctl === "number" ? loadState.ctl : 0;
+  const tsb = typeof loadState.tsb === "number" ? loadState.tsb : 0;
 
   // 3) Séances récentes FKS (on prend les plus récentes du store)
-  const sessions: any[] = Array.isArray(trainingState.sessions)
-    ? [...trainingState.sessions]
+  const sessions: Session[] = Array.isArray(sessionsState.sessions)
+    ? [...sessionsState.sessions]
     : [];
   sessions.sort((a, b) => {
     const da = new Date(a?.dateISO ?? a?.date ?? 0).getTime();
@@ -295,13 +278,13 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
   const recent_fks_sessions: FKS_RecentSessionSummary[] = sessions.slice(0, 5).map((s) => {
     const dateISO: string =
       typeof s?.dateISO === "string"
-        ? s.dateISO.slice(0, 10)
+        ? toDateKey(s.dateISO)
         : typeof s?.date === "string"
-          ? s.date.slice(0, 10)
+          ? toDateKey(s.date)
           : "";
 
     const intensity = toFksIntensity(s?.intensity);
-    const exos = Array.isArray((s as any)?.exercises) ? (s as any).exercises : [];
+    const exos: Exercise[] = Array.isArray(s?.exercises) ? s.exercises : [];
     const { primary: focus, secondary } = focusFromExercises(s);
     const strengthRegion = focus === "strength" ? inferStrengthRegion(exos) : null;
     const phaseRecent: FKS_PhaseId =
@@ -352,8 +335,8 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
               ? [`focus_intensity:${s.focus_primary}:${s.intensity}`]
               : [];
           const strengthDetail =
-            (s as any).strength_region && s.focus_primary === "strength"
-              ? [`focus_strength:${(s as any).strength_region}`]
+            s.strength_region && s.focus_primary === "strength"
+              ? [`focus_strength:${s.strength_region}`]
               : [];
           return [...focusBadge, ...combo, ...strengthDetail];
         })
@@ -395,7 +378,7 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
     goal: microcycleGoal,
     available_time_min: availableTimeMin,
     nowISO,
-    devNowISO: trainingState.devNowISO ?? null,
+    devNowISO: debugState.devNowISO ?? null,
     constraints: {
       equipment: equipment_available,
       pains,
@@ -416,7 +399,7 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
   };
 
   // debug: stocke le contexte pour inspection
-  useTrainingStore.getState().setLastAiContext?.(context);
+  useSessionsStore.getState().setLastAiContext?.(context);
 
   return context;
 }

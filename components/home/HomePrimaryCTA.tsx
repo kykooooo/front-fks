@@ -13,13 +13,14 @@ type Props = {
   disabled?: boolean;
 };
 
-export default function HomePrimaryCTA({
+function HomePrimaryCTAInner({
   label,
   subLabel,
   tone = "primary",
   onPress,
   disabled = false,
 }: Props) {
+  if (__DEV__) console.log("[RENDER] HomePrimaryCTA");
   const isDisabled = disabled || tone === "disabled";
   const pulse = useRef(new Animated.Value(0)).current;
 
@@ -94,3 +95,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 });
+
+export default React.memo(HomePrimaryCTAInner);

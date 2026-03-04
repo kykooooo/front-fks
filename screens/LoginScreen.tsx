@@ -14,6 +14,8 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   ScrollView,
+  ActivityIndicator,
+  StatusBar,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -30,17 +32,9 @@ import { trackEvent } from "../services/analytics";
 import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
 import { runShake } from "../utils/animations";
+import { authColors } from "../theme/authColors";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
-
-const authColors = {
-  text: "#f8fafc",
-  sub: "#d0d9e8",
-  muted: "#9fb0c8",
-  accent: "#ff7a1a",
-  card: "rgba(8,12,20,0.74)",
-  footer: "rgba(8,12,20,0.62)",
-};
 
 const getLoginErrorMessage = (code?: string) => {
   switch (code) {
@@ -134,6 +128,7 @@ export default function LoginScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor="#05070c" />
       <LinearGradient
         colors={["#0b1120", "#111827", "#1f2937"]}
         style={StyleSheet.absoluteFill}
@@ -143,7 +138,7 @@ export default function LoginScreen({ navigation }: Props) {
       <View style={styles.vignette} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
@@ -278,7 +273,10 @@ export default function LoginScreen({ navigation }: Props) {
                   end={{ x: 1, y: 0 }}
                 >
                   {loading ? (
-                    <Text style={styles.loginButtonText}>Connexion...</Text>
+                    <View style={styles.loadingRow}>
+                      <ActivityIndicator size="small" color="#fff" />
+                      <Text style={styles.loginButtonText}>Connexion...</Text>
+                    </View>
                   ) : (
                     <>
                       <Text style={styles.loginButtonText}>Se connecter</Text>
@@ -476,6 +474,11 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 16,
     paddingHorizontal: 24,
+  },
+  loadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   loginButtonText: {
     fontSize: 16,

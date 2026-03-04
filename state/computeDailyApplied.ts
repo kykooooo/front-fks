@@ -12,11 +12,12 @@ import type { Session } from "../domain/types";
 import { EXTERNAL_WEIGHTS, GUARD_FACTORS } from "../config/trainingDefaults";
 import { addDaysISO } from "../utils/virtualClock";
 import {
-  toDayKey,
   diffDays,
   sumDailyWeightedLoad,
   clampDailyLoad,
 } from "../engine/dailyAggregation";
+import { safeNum } from "../engine/safeNum";
+import { toDateKey } from "../utils/dateHelpers";
 
 /**
  * External load minimal shape (store can keep extra fields: id, notes, etc.)
@@ -73,7 +74,7 @@ export function externalLoadForDay(
   dayKey: string
 ): number {
   return (externals ?? [])
-    .filter((x) => toDayKey(x.dateISO) === dayKey)
+    .filter((x) => toDateKey(x.dateISO) === dayKey)
     .reduce((sum, x) => {
       const w =
         x.source === "match"
@@ -81,7 +82,7 @@ export function externalLoadForDay(
           : x.source === "club"
             ? EXTERNAL_WEIGHTS.club
             : EXTERNAL_WEIGHTS.other;
-      return sum + w * x.rpe * x.durationMin;
+      return sum + safeNum(w, 1, "externalLoad.weight") * safeNum(x.rpe, 5, "externalLoad.rpe") * safeNum(x.durationMin, 0, "externalLoad.durationMin");
     }, 0);
 }
 
@@ -92,17 +93,21 @@ export function capByContextSessionsOnly(
   adjustedRpe: number,
   pain: number = 0
 ): number {
+  const rpe = safeNum(adjustedRpe, 6, "capByContext.adjustedRpe");
+  const safePain = safeNum(pain, 0, "capByContext.pain");
+  const safeClamped = safeNum(totalSessionsClamped, 0, "capByContext.totalSessionsClamped");
+
   // Caps progressifs : permet une charge minimale viable même à faible intensité
   let cap =
-    adjustedRpe <= 3 ? 110 :   // Séance récup/mobilité (était 90)
-    adjustedRpe <= 5 ? 140 :   // Séance légère (était 120)
-    adjustedRpe <= 7 ? 170 :   // Séance modérée (était 150)
-    adjustedRpe <= 9 ? 200 :   // Séance intense (était 180)
+    rpe <= 3 ? 110 :   // Séance récup/mobilité (était 90)
+    rpe <= 5 ? 140 :   // Séance légère (était 120)
+    rpe <= 7 ? 170 :   // Séance modérée (était 150)
+    rpe <= 9 ? 200 :   // Séance intense (était 180)
     220;                       // Séance très intense (était 200)
 
   // Réduction pour douleur : -8 par point (était -10)
-  cap = Math.max(70, cap - pain * 8);
-  return Math.min(totalSessionsClamped, cap);
+  cap = Math.max(70, cap - safePain * 8);
+  return Math.min(safeClamped, cap);
 }
 
 /**
@@ -156,7 +161,7 @@ export function computeDailyTotals(params: {
 
   // ✅ Sessions: completed-only, dayKey match
   const completedToday = (sessions ?? []).filter(
-    (s) => s.completed && toDayKey(s.dateISO) === dayKey
+    (s) => s.completed && toDateKey(s.dateISO) === dayKey
   );
 
   const sessionMap = sumDailyWeightedLoad(completedToday);
@@ -179,7 +184,7 @@ export function computeDailyTotals(params: {
 
   // --- GUARD SYSTEM ---
   // Priority: match > club (match is more important to protect)
-  const tomorrowKey = addDaysISO(`${dayKey}T00:00:00.000Z`, 1).slice(0, 10);
+  const tomorrowKey = toDateKey(addDaysISO(`${dayKey}T00:00:00.000Z`, 1));
   const todayDow = dayKeyToDowLocal(dayKey);
   const tomorrowDow = dayKeyToDowLocal(tomorrowKey);
 

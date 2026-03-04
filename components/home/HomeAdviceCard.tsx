@@ -49,7 +49,8 @@ const toneStyles: Record<
   },
 };
 
-export default function HomeAdviceCard({ advice }: Props) {
+function HomeAdviceCardInner({ advice }: Props) {
+  if (__DEV__) console.log("[RENDER] HomeAdviceCard");
   const nav = useNavigation<any>();
   const haptics = useHaptics();
   const colors = toneStyles[advice.tone];
@@ -197,3 +198,5 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
 });
+
+export default React.memo(HomeAdviceCardInner);

@@ -90,6 +90,18 @@ export type Session = {
   /** @deprecated Utiliser feedback.rpe */
   rpe?: number;             // encore là pour compat (agrégation existante)
 
+  // ---- AI session payload (stocké après génération) ----
+  aiV2?: Record<string, unknown>;
+  ai?: Record<string, unknown>;
+
+  // ---- Timestamps ----
+  createdAt?: string;       // ISO
+  completedAt?: string;     // ISO
+
+  // ---- Planned session fields (from Firestore) ----
+  plannedLoad?: number;
+  title?: string;
+
   // DEBUG M3 (optionnel, utilisé par HomeScreen)
   targetLoadBefore?: number;
   targetLoadAfter?: number;

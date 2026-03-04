@@ -104,7 +104,7 @@ function isDayPlannedOnly(day: WeekDay): boolean {
   return day.hasPlanned && !isDayCompleted(day);
 }
 
-export default function HomeWeekSummaryCard({
+function HomeWeekSummaryCardInner({
   title,
   summaryLabel,
   message,
@@ -114,6 +114,7 @@ export default function HomeWeekSummaryCard({
   activityStreak,
   onManageRoutine,
 }: Props) {
+  if (__DEV__) console.log("[RENDER] HomeWeekSummaryCard");
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
   const { impactLight } = useHaptics();
 
@@ -423,3 +424,5 @@ const styles = StyleSheet.create({
     color: palette.accent,
   },
 });
+
+export default React.memo(HomeWeekSummaryCardInner);

@@ -18,7 +18,6 @@ import SessionHubScreen from "../screens/SessionHubScreen";
 import SessionHistoryScreen from "../screens/SessionHistoryScreen";
 import PrebuiltSessionsScreen from "../screens/PrebuiltSessionsScreen";
 import PrebuiltSessionDetailScreen from "../screens/PrebuiltSessionDetailScreen";
-import AiContextDebugScreen from "../screens/AiContextDebugScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import TestsScreen from "../screens/TestsScreen";
 import WelcomeScreen from "../screens/WelcomeScreen";
@@ -28,7 +27,6 @@ import SettingsScreen from "../screens/SettingsScreen";
 import LegalNoticeScreen from "../screens/LegalNoticeScreen";
 import PrivacyPolicyScreen from "../screens/PrivacyPolicyScreen";
 import RoutineScreen from "../screens/RoutineScreen";
-import ModeSelectScreen from "../screens/ModeSelectScreen";
 import CoachDashboardScreen from "../screens/CoachDashboardScreen";
 import CoachPlayerDetailScreen from "../screens/CoachPlayerDetailScreen";
 import ChatScreen from "../screens/ChatScreen";
@@ -37,7 +35,7 @@ import ProgressScreen from "../screens/ProgressScreen";
 import { theme } from "../constants/theme";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useTrainingStore } from "../state/trainingStore";
+import { useSyncStore } from "../state/stores/useSyncStore";
 import { SwipeTabsWrapper } from "../components/SwipeTabsWrapper";
 import { useAppModeStore } from "../state/appModeStore";
 import { setAnalyticsUserId } from "../services/analytics";
@@ -91,10 +89,8 @@ export type AppStackParamList = {
   PrebuiltSessions: undefined;
   PrebuiltSessionDetail: { session: FKS_NextSessionV2 };
   ProfileSetup: undefined;
-  AiContextDebug: undefined;
   Tests: { initialPlaylist?: string } | undefined;
   ExerciseDetail: { highlightId: string };
-  ModeSelect: undefined;
   Progression: undefined;
   LegalNotice: undefined;
   PrivacyPolicy: undefined;
@@ -223,7 +219,6 @@ function AppNavigator() {
       }}
     >
       <AppStack.Screen name="Tabs" component={MainTabs} options={{ gestureEnabled: false }} />
-      <AppStack.Screen name="ModeSelect" component={ModeSelectScreen} options={{ headerShown: false }} />
       <AppStack.Screen
         name="CoachPlayerDetail"
         component={CoachPlayerDetailScreen}
@@ -255,7 +250,6 @@ function AppNavigator() {
       <AppStack.Screen name="SessionHistory" component={SessionHistoryScreen} options={{ headerShown: true, title: "Historique" }} />
       <AppStack.Screen name="PrebuiltSessions" component={PrebuiltSessionsScreen} options={{ headerShown: true, title: "Séances pré-construites" }} />
       <AppStack.Screen name="PrebuiltSessionDetail" component={PrebuiltSessionDetailScreen} options={{ headerShown: true, title: "Détails séance" }} />
-      <AppStack.Screen name="AiContextDebug" component={AiContextDebugScreen} options={{ headerShown: true, title: "Contexte IA" }} />
       <AppStack.Screen name="ProfileSetup" component={ProfileSetupScreen} options={{ headerShown: true, title: "Profil" }} />
       <AppStack.Screen name="Tests" component={TestsScreen} options={{ headerShown: true, title: "Tests terrain" }} />
       <AppStack.Screen name="ExerciseDetail" component={VideoLibraryScreen} options={{ headerShown: true, title: "Fiche exercice" }} />
@@ -319,9 +313,9 @@ export default function RootNavigator() {
   const [initializing, setInitializing] = useState(true);
   const [profileCompleted, setProfileCompleted] = useState<boolean | null>(null);
   const [welcomeDone, setWelcomeDone] = useState<boolean | null>(null);
-  const startFirestoreWatch = useTrainingStore((s) => s.startFirestoreWatch);
-  const storeHydrated = useTrainingStore((s) => s.storeHydrated ?? true);
-  const resetTrainingStore = useTrainingStore((s) => s.resetForUser);
+  const startFirestoreWatch = useSyncStore((s) => s.startFirestoreWatch);
+  const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
+  const resetTrainingStore = useSyncStore((s) => s.resetForUser);
   const mode = useAppModeStore((s) => s.mode);
   const modeLoading = useAppModeStore((s) => s.loading);
   const loadModeForUid = useAppModeStore((s) => s.loadForUid);

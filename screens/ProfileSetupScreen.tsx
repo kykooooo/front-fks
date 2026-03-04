@@ -6,6 +6,8 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
+  Keyboard,
   StyleSheet,
   ScrollView,
   Platform,
@@ -22,7 +24,7 @@ import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { LoadingOverlay } from "../components/ui/LoadingOverlay";
 import { findClubByInviteCode, normalizeInviteCode, setClubMembership } from "../repositories/clubsRepo";
 import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
-import { useTrainingStore } from "../state/trainingStore";
+import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { showToast } from "../utils/toast";
 import { runShake } from "../utils/animations";
 import { useAppModeStore } from "../state/appModeStore";
@@ -112,8 +114,8 @@ const toggleInList = (value: string, list: string[], setter: (next: string[]) =>
 export default function ProfileSetupScreen() {
   const navigation = useNavigation<any>();
   const haptics = useHaptics();
-  const activeCycleGoal = useTrainingStore((s) => s.microcycleGoal);
-  const microcycleSessionIndex = useTrainingStore((s) => s.microcycleSessionIndex);
+  const activeCycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
   const scrollRef = useRef<ScrollView>(null);
 
   /* ─── Step state ─── */
@@ -187,7 +189,10 @@ export default function ProfileSetupScreen() {
       if (Array.isArray(d.gymEquipment)) setGymEquipment(d.gymEquipment);
       if (typeof d.hasHomeEquipment === "boolean") setHasHomeEquipment(d.hasHomeEquipment ? "oui" : "non");
       if (Array.isArray(d.homeEquipment)) setHomeEquipment(d.homeEquipment);
-    }).catch(() => {});
+    }).catch((err) => {
+      if (__DEV__) console.error("[ProfileSetup] Failed to prefill profile:", err);
+      showToast({ type: "warn", title: "Profil", message: "Impossible de charger ton profil. Vérifie ta connexion et réessaie." });
+    });
   }, []);
 
   useEffect(() => {
@@ -606,7 +611,9 @@ export default function ProfileSetupScreen() {
       <View style={styles.glowTop} />
       <View style={styles.glowBottom} />
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <View style={{ flex: 1 }}>
 
         {/* ─── Progress section ─── */}
         <View style={styles.progressSection}>
@@ -693,6 +700,8 @@ export default function ProfileSetupScreen() {
           </TouchableOpacity>
         </View>
 
+          </View>
+        </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
 
       <LoadingOverlay

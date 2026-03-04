@@ -2,7 +2,7 @@
 // Helpers pour éviter la duplication de code lié aux sessions
 
 import type { Session } from '../domain/types';
-import { toDayKey } from '../engine/dailyAggregation';
+import { toDateKey } from './dateHelpers';
 
 /**
  * Obtenir la date d'une session de manière cohérente
@@ -17,7 +17,7 @@ export function getSessionDate(session: Session | any): string {
  */
 export function getSessionDayKey(session: Session | any): string {
   const date = getSessionDate(session);
-  return date ? toDayKey(date) : '';
+  return date ? toDateKey(date) : '';
 }
 
 /**
@@ -79,7 +79,7 @@ export function getLatestSession(sessions: Session[]): Session | null {
  * Obtenir les sessions d'une date spécifique
  */
 export function getSessionsByDate(sessions: Session[], dateISO: string): Session[] {
-  const targetDayKey = toDayKey(dateISO);
+  const targetDayKey = toDateKey(dateISO);
   return sessions.filter(s => getSessionDayKey(s) === targetDayKey);
 }
 
@@ -89,7 +89,7 @@ export function getSessionsByDate(sessions: Session[], dateISO: string): Session
 export function isSessionToday(session: Session | any, devNowISO?: string | null): boolean {
   const sessionDate = getSessionDate(session);
   const today = devNowISO ?? new Date().toISOString();
-  return toDayKey(sessionDate) === toDayKey(today);
+  return toDateKey(sessionDate) === toDateKey(today);
 }
 
 /**

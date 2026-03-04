@@ -2,12 +2,14 @@ import { useMemo } from "react";
 import { addDays, format, startOfWeek } from "date-fns";
 import { fr } from "date-fns/locale";
 import { frToKey, isSameDay, toDateKey } from "../../utils/dateHelpers";
+import type { Session } from "../../domain/types";
+import type { ExternalLoad } from "../../state/stores/types";
 
 type Params = {
   devNowISO?: string;
   weekStart: "mon" | "sun";
-  sessions: any[];
-  externalLoads: any[];
+  sessions: Session[];
+  externalLoads: ExternalLoad[];
   clubTrainingDays: string[];
   matchDays: string[];
   plannedFksDays: string[];
@@ -44,13 +46,13 @@ export function useWeekDays({
       const key = toDateKey(d);
       const label = format(d, "EEEEE", { locale: fr }).toUpperCase();
 
-      const hasFks = sessions.some((s: any) => {
-        const dateStr = toDateKey(s?.dateISO ?? s?.date);
+      const hasFks = sessions.some((s) => {
+        const dateStr = toDateKey(s.dateISO ?? s.date);
         return dateStr === key && s.completed;
       });
 
-      const hasExt = externalLoads.some((e: any) => {
-        const dateStr = toDateKey(e?.dateISO ?? e?.date);
+      const hasExt = externalLoads.some((e) => {
+        const dateStr = toDateKey(e.dateISO);
         return dateStr === key;
       });
 

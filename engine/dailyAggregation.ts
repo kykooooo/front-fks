@@ -1,24 +1,25 @@
 import type { Session, Modality, SessionFeedback } from '../domain/types';
 import { DEFAULT_MODALITY_WEIGHTS } from '../domain/types';
-
-/** YYYY-MM-DD depuis une ISO string */
-export function toDayKey(iso: string): string {
-  return iso.slice(0, 10);
-}
+import { toDateKey } from '../utils/dateHelpers';
+import { safeNum } from './safeNum';
 
 /** Nombre de jours entre deux dayKeys (YYYY-MM-DD) */
 export function diffDays(fromDayKey: string, toDayKeyStr: string): number {
   const a = new Date(fromDayKey + 'T00:00:00Z').getTime();
   const b = new Date(toDayKeyStr + 'T00:00:00Z').getTime();
-  return Math.round((b - a) / (1000 * 60 * 60 * 24));
+  const diff = Math.round((b - a) / (1000 * 60 * 60 * 24));
+  return Number.isFinite(diff) ? diff : 0;
 }
 
 /** Durée estimée (minutes) d'une séance */
 function estimateDurationMin(session: Session): number {
-  if (typeof session.durationMin === 'number' && isFinite(session.durationMin)) {
+  if (typeof session.durationMin === 'number' && Number.isFinite(session.durationMin)) {
     return Math.max(0, session.durationMin);
   }
-  const sec = session.exercises.reduce((acc, e) => acc + (e.durationSec ?? 0), 0);
+  const sec = session.exercises.reduce(
+    (acc, e) => acc + safeNum(e.durationSec, 0, "estimateDuration.durationSec"),
+    0,
+  );
   if (sec > 0) return sec / 60;
   return 30; // fallback minimaliste
 }
@@ -47,8 +48,8 @@ function dominantModality(session: Session): Modality | undefined {
 /** RPE utilisé pour la charge (feedback prioritaire) */
 function sessionRPE(session: Session): number {
   const f: SessionFeedback | undefined = session.feedback;
-  if (f && typeof f.rpe === 'number') return f.rpe;
-  if (typeof session.rpe === 'number') return session.rpe;
+  if (f && typeof f.rpe === 'number' && Number.isFinite(f.rpe)) return f.rpe;
+  if (typeof session.rpe === 'number' && Number.isFinite(session.rpe)) return session.rpe;
   return 5; // neutre
 }
 
@@ -63,19 +64,22 @@ function feedbackMultiplier(f?: SessionFeedback): number {
   if (!f) return 1.0;
 
   let m = 1.0;
+  const fatigue = safeNum(f.fatigue, 3, "feedbackMultiplier.fatigue");
+  const sleep = safeNum(f.sleep, 3, "feedbackMultiplier.sleep");
+  const pain = safeNum(f.pain, 0, "feedbackMultiplier.pain");
 
   // Fatigue : élevée -> charge perçue plus forte
-  if (f.fatigue >= 4) m *= 1.15;
-  else if (f.fatigue <= 2) m *= 0.9;
+  if (fatigue >= 4) m *= 1.15;
+  else if (fatigue <= 2) m *= 0.9;
 
   // Sommeil : faible -> charge plus lourde
-  if (f.sleep <= 2) m *= 1.1;
-  else if (f.sleep >= 4) m *= 0.95;
+  if (sleep <= 2) m *= 1.1;
+  else if (sleep >= 4) m *= 0.95;
 
   // Douleurs : amplifie la charge perçue
-  if (f.pain >= 4) m *= 1.25;
-  else if (f.pain === 3) m *= 1.1;
-  else if (f.pain <= 2) m *= 0.95;
+  if (pain >= 4) m *= 1.25;
+  else if (pain === 3) m *= 1.1;
+  else if (pain <= 2) m *= 0.95;
 
   // bornes globales
   return Math.min(Math.max(m, 0.8), 1.4);
@@ -90,16 +94,16 @@ export function sumDailyWeightedLoad(sessions: Session[]): Record<string, number
   for (const s of sessions) {
     if (!s.completed) continue;
 
-    const dayKey = toDayKey(s.dateISO);
+    const dayKey = toDateKey(s.dateISO);
     const dur = estimateDurationMin(s);
     const rpe = sessionRPE(s);
     const w = modalityWeight(dominantModality(s));
     const feedback = s.feedback;
 
-    const baseLoad = rpe * dur * w;
+    const baseLoad = safeNum(rpe, 5, "sumDailyWeightedLoad.rpe") * safeNum(dur, 30, "sumDailyWeightedLoad.dur") * safeNum(w, 1, "sumDailyWeightedLoad.weight");
     const adjusted = baseLoad * feedbackMultiplier(feedback);
 
-    daily[dayKey] = (daily[dayKey] ?? 0) + adjusted;
+    daily[dayKey] = (daily[dayKey] ?? 0) + (Number.isFinite(adjusted) ? adjusted : 0);
   }
   return daily;
 }
@@ -108,7 +112,9 @@ export function sumDailyWeightedLoad(sessions: Session[]): Record<string, number
  * Garde-fous de charge journalière.
  */
 export function clampDailyLoad(x: number, cap: number = 190): number {
-  const k = Math.max(60, cap);    // garde-fou
-  const adjustedX = Math.max(0, x);
+  const safeX = safeNum(x, 0, "clampDailyLoad.x");
+  const safeCap = safeNum(cap, 190, "clampDailyLoad.cap");
+  const k = Math.max(60, safeCap);    // garde-fou
+  const adjustedX = Math.max(0, safeX);
   return k * Math.tanh(adjustedX / k);    // soft-cap
 }

@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from "react";
 import {
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,7 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { theme } from "../constants/theme";
 import { auth, db } from "../services/firebase";
-import { useTrainingStore } from "../state/trainingStore";
+import { useSessionsStore } from "../state/stores/useSessionsStore";
 import {
   MICROCYCLES,
   MICROCYCLE_TOTAL_SESSIONS_DEFAULT,
@@ -88,10 +87,10 @@ export default function CycleModalScreen() {
   const route = useRoute<any>();
   const params = (route.params ?? {}) as RouteParams;
 
-  const microcycleGoal = useTrainingStore((s) => s.microcycleGoal);
-  const microcycleSessionIndex = useTrainingStore((s) => s.microcycleSessionIndex);
-  const setMicrocycleGoal = useTrainingStore((s) => s.setMicrocycleGoal);
-  const setActivePathway = useTrainingStore((s) => s.setActivePathway);
+  const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
+  const setMicrocycleGoal = useSessionsStore((s) => s.setMicrocycleGoal);
+  const setActivePathway = useSessionsStore((s) => s.setActivePathway);
 
   const activeCycleId: MicrocycleId | null = useMemo(() => {
     if (isMicrocycleId(microcycleGoal)) return microcycleGoal;
@@ -106,12 +105,14 @@ export default function CycleModalScreen() {
   const [selectedId, setSelectedId] = useState<MicrocycleId>(() => activeCycleId ?? "fondation");
 
   const [abandonOpen, setAbandonOpen] = useState(false);
+  const [confirmAbandon, setConfirmAbandon] = useState(false);
   const [abandonReasonId, setAbandonReasonId] = useState<string>("too_hard");
   const [abandonOtherText, setAbandonOtherText] = useState("");
   const [selectionTouched, setSelectionTouched] = useState(false);
   const [pendingPathway, setPendingPathway] = useState<{ id: string; index: number } | null>(null);
   const [testsNudgeDismissed, setTestsNudgeDismissed] = useState(false);
   const [suppressTestsPrompt, setSuppressTestsPrompt] = useState(false);
+  const [showTestsPrompt, setShowTestsPrompt] = useState(false);
 
   const [mainObjective, setMainObjective] = useState<string | null>(null);
   const [lastTestPlaylist, setLastTestPlaylist] = useState<MicrocycleId | null>(null);
@@ -235,21 +236,7 @@ export default function CycleModalScreen() {
 
   const handleStartCycle = async () => {
     if (!suppressTestsPrompt && shouldSuggestTests) {
-      Alert.alert(
-        "Tests conseillés",
-        testsCount === 0
-          ? "Tu n’as pas encore fait les tests terrain. Ils aident FKS à mieux te recommander et suivre tes progrès."
-          : `Tes tests datent de ${testsAgeDays} jours. Les refaire améliore la précision.`,
-        [
-          {
-            text: "Faire mes tests",
-            onPress: () =>
-              navigation.navigate("Tests", { initialPlaylist: selectedId }),
-          },
-          { text: "Démarrer quand même", style: "default", onPress: startCycleNow },
-          { text: "Annuler", style: "cancel" },
-        ]
-      );
+      setShowTestsPrompt(true);
       return;
     }
     await startCycleNow();
@@ -359,7 +346,7 @@ export default function CycleModalScreen() {
 
           <KeyboardAvoidingView
             style={{ flex: 1 }}
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
             keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
           >
             <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
@@ -446,25 +433,40 @@ export default function CycleModalScreen() {
                           <Button
                             label="Annuler"
                             variant="secondary"
-                            onPress={() => setAbandonOpen(false)}
+                            onPress={() => { setAbandonOpen(false); setConfirmAbandon(false); }}
                             fullWidth
                           />
-                          <TouchableOpacity
-                            onPress={() => {
-                              Alert.alert(
-                                "Confirmer l'abandon",
-                                "Tu es sûr ? Ta progression sera remise à zéro.",
-                                [
-                                  { text: "Annuler", style: "cancel" },
-                                  { text: "Abandonner", style: "destructive", onPress: handleAbandon },
-                                ]
-                              );
-                            }}
-                            style={styles.dangerButton}
-                            activeOpacity={0.9}
-                          >
-                            <Text style={styles.dangerButtonText}>Abandonner</Text>
-                          </TouchableOpacity>
+                          {confirmAbandon ? (
+                            <View style={styles.confirmBox}>
+                              <Text style={styles.confirmText}>
+                                Tu es sûr ? Ta progression sera remise à zéro.
+                              </Text>
+                              <View style={styles.confirmActions}>
+                                <Button
+                                  label="Non, annuler"
+                                  variant="secondary"
+                                  size="sm"
+                                  onPress={() => setConfirmAbandon(false)}
+                                  fullWidth
+                                />
+                                <TouchableOpacity
+                                  onPress={() => { setConfirmAbandon(false); handleAbandon(); }}
+                                  style={styles.dangerButton}
+                                  activeOpacity={0.9}
+                                >
+                                  <Text style={styles.dangerButtonText}>Oui, abandonner</Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          ) : (
+                            <TouchableOpacity
+                              onPress={() => setConfirmAbandon(true)}
+                              style={styles.dangerButton}
+                              activeOpacity={0.9}
+                            >
+                              <Text style={styles.dangerButtonText}>Abandonner</Text>
+                            </TouchableOpacity>
+                          )}
                         </View>
                       </Card>
                     ) : null}
@@ -683,6 +685,46 @@ export default function CycleModalScreen() {
                       </View>
                     </Card>
 
+                    {showTestsPrompt ? (
+                      <Card variant="surface" style={styles.testsPromptCard}>
+                        <View style={styles.testsPromptHeader}>
+                          <Ionicons name="analytics-outline" size={20} color={palette.accent} />
+                          <Text style={styles.testsPromptTitle}>Tests conseillés</Text>
+                        </View>
+                        <Text style={styles.testsPromptText}>
+                          {testsCount === 0
+                            ? "Tu n'as pas encore fait les tests terrain. Ils aident FKS à mieux te recommander et suivre tes progrès."
+                            : `Tes tests datent de ${testsAgeDays} jours. Les refaire améliore la précision.`}
+                        </Text>
+                        <View style={styles.testsPromptActions}>
+                          <Button
+                            label="Faire mes tests"
+                            onPress={() => {
+                              setShowTestsPrompt(false);
+                              navigation.navigate("Tests", { initialPlaylist: selectedId });
+                            }}
+                            fullWidth
+                          />
+                          <Button
+                            label="Démarrer quand même"
+                            variant="secondary"
+                            onPress={() => {
+                              setShowTestsPrompt(false);
+                              setSuppressTestsPrompt(true);
+                              startCycleNow();
+                            }}
+                            fullWidth
+                          />
+                          <Button
+                            label="Annuler"
+                            variant="ghost"
+                            onPress={() => setShowTestsPrompt(false)}
+                            fullWidth
+                          />
+                        </View>
+                      </Card>
+                    ) : null}
+
                     <View style={styles.selectActions}>
                       <Button label={pendingPathway ? "Commencer ce parcours" : "Commencer ce programme"} onPress={handleStartCycle} fullWidth />
                       {canCloseSelect ? (
@@ -794,6 +836,22 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(239,68,68,0.12)",
   },
   dangerButtonText: { color: palette.danger, fontSize: 14, fontWeight: "800" },
+  confirmBox: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: palette.danger,
+    backgroundColor: "rgba(239,68,68,0.06)",
+    padding: 12,
+    gap: 10,
+  },
+  confirmText: {
+    color: palette.text,
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  confirmActions: { gap: 8 },
 
   selectIntro: { padding: 14, gap: 6 },
   selectTitle: { color: palette.text, fontSize: 16, fontWeight: "900" },
@@ -971,5 +1029,31 @@ const styles = StyleSheet.create({
     color: palette.sub,
     fontStyle: "italic",
     marginTop: 2,
+  },
+
+  /* Tests prompt inline */
+  testsPromptCard: {
+    padding: 14,
+    gap: 10,
+    borderColor: palette.accent,
+  },
+  testsPromptHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  testsPromptTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: palette.text,
+  },
+  testsPromptText: {
+    fontSize: 13,
+    color: palette.sub,
+    lineHeight: 18,
+  },
+  testsPromptActions: {
+    gap: 8,
+    marginTop: 4,
   },
 });

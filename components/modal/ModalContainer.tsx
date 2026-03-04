@@ -10,6 +10,7 @@ import { BlurView } from "expo-blur";
 import Animated from "react-native-reanimated";
 import { useModalAnimation, type ModalAnimationType } from "./useModalAnimation";
 import { theme } from "../../constants/theme";
+import { zIndex as Z } from "../../theme/zIndex";
 import { GestureDetector } from "react-native-gesture-handler";
 import { useSwipeToDismiss } from "./useSwipeToDismiss";
 
@@ -88,7 +89,7 @@ const styles = StyleSheet.create({
   root: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: "flex-end",
-    zIndex: 50,
+    zIndex: Z.modal,
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,

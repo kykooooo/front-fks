@@ -1,15 +1,15 @@
 // hooks/useNetworkStatus.ts
 // Hook pour détecter l'état de la connexion réseau et synchroniser la queue hors-ligne
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { processQueue, getQueueCount, notifySyncResult } from '../utils/offlineQueue';
-import { useTrainingStore } from '../state/trainingStore';
+import { applyFeedback } from '../state/orchestrators/applyFeedback';
 
 export function useNetworkStatus() {
   const [isOnline, setIsOnline] = useState(true);
   const [queueCount, setQueueCount] = useState(0);
-  const addFeedback = useTrainingStore((s) => s.addFeedback);
+  const addFeedback = applyFeedback;
 
   // Vérifier la connexion en essayant de fetch une petite ressource
   const checkConnection = useCallback(async () => {
@@ -46,7 +46,8 @@ export function useNetworkStatus() {
 
     const result = await processQueue({
       feedback: async (data) => {
-        const { sessionId, feedback } = data;
+        const sessionId = data.sessionId as string;
+        const feedback = data.feedback as Parameters<typeof addFeedback>[1];
         // Appeler directement addFeedback du store
         const success = await addFeedback(sessionId, feedback);
         if (!success) {
@@ -89,19 +90,23 @@ export function useNetworkStatus() {
     };
   }, [checkConnection, syncQueue]);
 
+  // Ref pour accéder à queueCount dans le callback sans relancer le timer
+  const queueCountRef = useRef(queueCount);
+  queueCountRef.current = queueCount;
+
   // Vérification périodique toutes les 30 secondes (seulement quand l'app est active)
   useEffect(() => {
     const interval = setInterval(async () => {
       if (AppState.currentState === 'active') {
         const online = await checkConnection();
-        if (online && queueCount > 0) {
+        if (online && queueCountRef.current > 0) {
           await syncQueue();
         }
       }
     }, 30000); // 30 secondes
 
     return () => clearInterval(interval);
-  }, [checkConnection, syncQueue, queueCount]);
+  }, [checkConnection, syncQueue]);
 
   return {
     isOnline,

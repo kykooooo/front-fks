@@ -4,15 +4,16 @@ import { showToast } from "../../utils/toast";
 import { MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../../domain/microcycles";
 import { DEV_FLAGS } from "../../config/devFlags";
 import { toDateKey } from "../../utils/dateHelpers";
+import type { Session } from "../../domain/types";
 
 type Nav = {
-  navigate: (screen: string, params?: any) => void;
+  navigate: (screen: string, params?: Record<string, unknown>) => void;
 };
 
 type Params = {
   nav: Nav;
-  sessions: any[];
-  lastAiSessionV2: any;
+  sessions: Session[];
+  lastAiSessionV2: { v2: Record<string, unknown>; date: string; sessionId: string } | null;
   microcycleGoal: string | null;
   microcycleSessionIndex?: number | null;
   hasAppliedToday: boolean;
@@ -32,7 +33,7 @@ export function usePrimaryCta({
 }: Params) {
   const pendingSession = useMemo(
     () => {
-      const toSessionTime = (session: any) => {
+      const toSessionTime = (session: Session) => {
         const key = toDateKey(session?.dateISO ?? session?.date);
         if (!key) return Number.POSITIVE_INFINITY;
         const time = new Date(`${key}T12:00:00`).getTime();
@@ -40,8 +41,8 @@ export function usePrimaryCta({
       };
 
       return [...sessions]
-        .filter((s: any) => !s.completed)
-        .sort((a: any, b: any) => {
+        .filter((s) => !s.completed)
+        .sort((a, b) => {
           const da = toSessionTime(a);
           const db = toSessionTime(b);
           if (da === db) {
@@ -62,46 +63,48 @@ export function usePrimaryCta({
 
   const upcomingSessionLabel = useMemo(() => {
     if (!pendingSession) return "Pas de séance prévue";
-    const v2 = (pendingSession as any).aiV2 ?? (pendingSession as any).ai;
+    const v2 = pendingSession.aiV2 ?? pendingSession.ai;
     if (v2) {
       const title = v2.title || "Séance FKS";
-      const focus = v2.focus_primary ? ` · ${v2.focus_primary}` : "";
+      const focusVal = v2.focusPrimary ?? v2.focus_primary;
+      const focus = focusVal ? ` · ${focusVal}` : "";
       const intens = v2.intensity ? ` · ${v2.intensity}` : "";
+      const durVal = v2.durationMin ?? v2.duration_min;
       const dur =
-        typeof v2.duration_min === "number" ? ` · ${Math.round(v2.duration_min)} min` : "";
+        typeof durVal === "number" ? ` · ${Math.round(durVal)} min` : "";
       return `${title}${focus}${intens}${dur}`;
     }
-    const focus = (pendingSession as any)?.focus ?? (pendingSession as any)?.modality ?? "-";
-    const intens = (pendingSession as any)?.intensity ?? "-";
+    const focus = pendingSession.focus ?? pendingSession.modality ?? "-";
+    const intens = pendingSession.intensity ?? "-";
     return `Séance prévue · ${intens} · ${focus}`;
   }, [pendingSession]);
 
   const pendingDateKey = toDateKey(
-    (pendingSession as any)?.dateISO ?? (pendingSession as any)?.date
+    pendingSession?.dateISO ?? pendingSession?.date
   );
   const isPendingToday = pendingDateKey && pendingDateKey === todayKey;
 
   const startPendingSession = useCallback(() => {
     if (!pendingSession) return;
     const v2 =
-      (pendingSession as any).aiV2 ??
-      (pendingSession as any).ai ??
+      pendingSession.aiV2 ??
+      pendingSession.ai ??
       lastAiSessionV2?.v2;
     const plannedDateISO = toDateKey(
-      (pendingSession as any).dateISO ?? (pendingSession as any).date
+      pendingSession.dateISO ?? pendingSession.date
     );
     if (v2) {
       nav.navigate("SessionLive", {
         v2,
         plannedDateISO,
-        sessionId: (pendingSession as any).id,
+        sessionId: pendingSession.id,
       });
       return;
     }
     nav.navigate("SessionPreview", {
       v2: lastAiSessionV2?.v2,
       plannedDateISO,
-      sessionId: (pendingSession as any).id,
+      sessionId: pendingSession.id,
     });
   }, [nav, pendingSession, lastAiSessionV2]);
 
@@ -115,7 +118,7 @@ export function usePrimaryCta({
     }
 
     if (pendingSession && !DEV_FLAGS.ENABLED) {
-      const date = toDateKey((pendingSession as any).dateISO ?? (pendingSession as any).date);
+      const date = toDateKey(pendingSession.dateISO ?? pendingSession.date);
       Alert.alert(
         "Dis-nous comment ça s'est passé",
         date
@@ -127,23 +130,23 @@ export function usePrimaryCta({
             onPress: () =>
               nav.navigate(
                 "Feedback",
-                { sessionId: (pendingSession as any).id }
+                { sessionId: pendingSession.id }
               ),
           },
           {
             text: "Voir la séance",
             onPress: () => {
               const v2 =
-                (pendingSession as any).aiV2 ??
-                (pendingSession as any).ai ??
+                pendingSession.aiV2 ??
+                pendingSession.ai ??
                 lastAiSessionV2?.v2;
               const plannedDateISO =
-                toDateKey((pendingSession as any).dateISO ?? (pendingSession as any).date);
+                toDateKey(pendingSession.dateISO ?? pendingSession.date);
               if (v2) {
                 nav.navigate("SessionPreview", {
                   v2,
                   plannedDateISO,
-                  sessionId: (pendingSession as any).id,
+                  sessionId: pendingSession.id,
                 });
               }
             },

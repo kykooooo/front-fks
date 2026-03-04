@@ -1,5 +1,5 @@
 // screens/SettingsScreen.tsx
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,9 @@ import {
   Platform,
   DevSettings,
 } from "react-native";
+import { File, Paths } from "expo-file-system";
+import * as Sharing from "expo-sharing";
+import Constants from "expo-constants";
 import { useNavigation } from "@react-navigation/native";
 import { signOut } from "firebase/auth";
 import { auth } from "../services/firebase";
@@ -19,7 +22,12 @@ import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { ScreenContainer } from "../components/ui/ScreenContainer";
-import { useTrainingStore } from "../state/trainingStore";
+import { useLoadStore } from "../state/stores/useLoadStore";
+import { useSessionsStore } from "../state/stores/useSessionsStore";
+import { useFeedbackStore } from "../state/stores/useFeedbackStore";
+import { useExternalStore } from "../state/stores/useExternalStore";
+import { useSyncStore } from "../state/stores/useSyncStore";
+import { useDebugStore } from "../state/stores/useDebugStore";
 import { useSettingsStore, type SettingsState } from "../state/settingsStore";
 import { useAppModeStore, type AppMode } from "../state/appModeStore";
 import { DEV_FLAGS } from "../config/devFlags";
@@ -97,12 +105,12 @@ function SettingRow({
 
 export default function SettingsScreen() {
   const nav = useNavigation<any>();
-  const resetTrainingStore = useTrainingStore((s) => s.resetForUser);
-  const resetLoadMetrics = useTrainingStore((s) => s.resetLoadMetrics);
-  const ignoreFatigueCap = useTrainingStore((s) => s.ignoreFatigueCap);
-  const setIgnoreFatigueCap = useTrainingStore((s) => s.setIgnoreFatigueCap);
-  const autoExternalEnabled = useTrainingStore((s) => s.autoExternalEnabled);
-  const setAutoExternalEnabled = useTrainingStore((s) => s.setAutoExternalEnabled);
+  const resetTrainingStore = useSyncStore((s) => s.resetForUser);
+  const resetLoadMetrics = useLoadStore((s) => s.resetLoadMetrics);
+  const ignoreFatigueCap = useLoadStore((s) => s.ignoreFatigueCap);
+  const setIgnoreFatigueCap = useLoadStore((s) => s.setIgnoreFatigueCap);
+  const autoExternalEnabled = useExternalStore((s) => s.autoExternalEnabled);
+  const setAutoExternalEnabled = useExternalStore((s) => s.setAutoExternalEnabled);
   const settings = useSettingsStore((s) => s);
   const updateSettings = useSettingsStore((s) => s.updateSettings);
   const resetSettings = useSettingsStore((s) => s.resetSettings);
@@ -153,9 +161,48 @@ export default function SettingsScreen() {
     );
   }, [resetLoadMetrics]);
 
-  const handleExport = useCallback(() => {
-    showToast({ type: "info", title: "Export", message: "L'export des données arrive bientôt." });
-  }, []);
+  const [exporting, setExporting] = useState(false);
+  const handleExport = useCallback(async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const data = {
+        exportedAt: new Date().toISOString(),
+        load: (() => {
+          const { setManualLoad, resetLoadMetrics, setIgnoreFatigueCap, getResilience, computeLoadDeltas, advanceDays, restUntil, ...rest } = useLoadStore.getState();
+          return rest;
+        })(),
+        sessions: (() => {
+          const { pushSession, setPhase, updateWeekly, getSessionById, latestSessionId, setMicrocycleGoal, setMicrocycleSessionIndex, setActivePathway, setLastAiContext, setLastAiSessionV2, completeSession, ...rest } = useSessionsStore.getState();
+          return rest;
+        })(),
+        feedback: (() => {
+          const { getPrevFatigueSmoothed, setDailyFeedback, setInjury, getAdaptiveFactorsForDate, ...rest } = useFeedbackStore.getState();
+          return rest;
+        })(),
+        external: (() => {
+          const { addCompletedRoutine, toggleFavoriteExercise, addRecentExercise, setClubTrainingDays, setMatchDays, setAutoExternalEnabled, ...rest } = useExternalStore.getState();
+          return rest;
+        })(),
+        settings: useSettingsStore.getState(),
+      };
+      const json = JSON.stringify(data, null, 2);
+      const fileName = `fks-export-${new Date().toISOString().slice(0, 10)}.json`;
+      const file = new File(Paths.cache, fileName);
+      file.write(json);
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(file.uri, { mimeType: "application/json", dialogTitle: "Exporter mes données FKS" });
+      } else {
+        showToast({ type: "warn", title: "Export", message: "Le partage n'est pas disponible sur cet appareil." });
+      }
+    } catch (err) {
+      if (__DEV__) console.warn("[Settings] Export error:", err);
+      showToast({ type: "error", title: "Export", message: "Échec de l'export. Réessaie." });
+    } finally {
+      setExporting(false);
+    }
+  }, [exporting]);
 
   const handleLogout = useCallback(async () => {
     try {
@@ -626,7 +673,7 @@ export default function SettingsScreen() {
           <Card variant="soft" style={styles.sectionCard}>
             <SettingRow
               title="Exporter mes données"
-              subtitle="CSV ou PDF"
+              subtitle="Fichier JSON de toutes tes données"
               right={
                 <Button
                   label="Exporter"
@@ -653,7 +700,7 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>FKS · v1.0.0</Text>
+          <Text style={styles.footerText}>FKS · v{Constants.expoConfig?.version ?? "1.0.0"}</Text>
         </View>
       </ScreenContainer>
   );

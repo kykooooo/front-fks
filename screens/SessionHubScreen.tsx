@@ -15,7 +15,7 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useTrainingStore } from "../state/trainingStore";
+import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { theme } from "../constants/theme";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
@@ -182,11 +182,11 @@ function HubCard({
 
 export default function SessionHubScreen() {
   const nav = useNavigation<any>();
-  const pending = useTrainingStore((s) => s.sessions.find((x) => !x.completed));
+  const pending = useSessionsStore((s) => s.sessions.find((x) => !x.completed));
   const pendingId = typeof pending?.id === "string" ? pending.id : null;
-  const microcycleGoal = useTrainingStore((s) => s.microcycleGoal);
-  const microcycleSessionIndex = useTrainingStore((s) => s.microcycleSessionIndex);
-  const completedSessions = useTrainingStore((s) => s.sessions.filter((x) => x.completed).length);
+  const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
+  const completedSessions = useSessionsStore((s) => s.sessions.filter((x) => x.completed).length);
   const [testsEmpty, setTestsEmpty] = useState<boolean | null>(null);
 
   const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;

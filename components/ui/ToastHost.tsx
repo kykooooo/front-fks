@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Animated, StyleSheet, Text, View, Platform } from "react-native";
+import { AccessibilityInfo, Animated, StyleSheet, Text, View, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { onToast, type ToastPayload } from "../../utils/toast";
 import { theme } from "../../constants/theme";
+import { zIndex as Z } from "../../theme/zIndex";
 
 // Safe area top padding - accounts for notch on iOS devices
 const NOTCH_SAFE_TOP = Platform.OS === "ios" ? 54 : 24;
@@ -21,18 +22,32 @@ export function ToastHost() {
   const anim = useRef(new Animated.Value(0)).current;
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const reduceMotionRef = useRef(false);
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then((v) => { reduceMotionRef.current = v; });
+  }, []);
+
   useEffect(() => {
     return onToast((payload) => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
       }
       setToast(payload);
-      Animated.timing(anim, { toValue: 1, duration: 220, useNativeDriver: true }).start();
+      if (reduceMotionRef.current) {
+        anim.setValue(1);
+      } else {
+        Animated.timing(anim, { toValue: 1, duration: 220, useNativeDriver: true }).start();
+      }
       const duration = payload.durationMs ?? 2200;
       timerRef.current = setTimeout(() => {
-        Animated.timing(anim, { toValue: 0, duration: 180, useNativeDriver: true }).start(() => {
+        if (reduceMotionRef.current) {
+          anim.setValue(0);
           setToast(null);
-        });
+        } else {
+          Animated.timing(anim, { toValue: 0, duration: 180, useNativeDriver: true }).start(() => {
+            setToast(null);
+          });
+        }
       }, duration);
     });
   }, [anim]);
@@ -77,7 +92,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: "center",
-    zIndex: 999,
+    zIndex: Z.toast,
   },
   card: {
     minWidth: "86%",

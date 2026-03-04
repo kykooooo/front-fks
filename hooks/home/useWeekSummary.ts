@@ -1,9 +1,11 @@
 import { useMemo } from "react";
 import { toDateKey } from "../../utils/dateHelpers";
+import type { Session } from "../../domain/types";
+import type { ExternalLoad } from "../../state/stores/types";
 
 type Params = {
-  sessions: any[];
-  externalLoads: any[];
+  sessions: Session[];
+  externalLoads: ExternalLoad[];
   weekDays: { key: string }[];
   weeklyGoal: number;
 };
@@ -16,12 +18,12 @@ export function useWeekSummary({
 }: Params) {
   return useMemo(() => {
     const weekKeySet = new Set(weekDays.map((d) => d.key));
-    const fksCount = sessions.filter((s: any) => {
-      const key = toDateKey(s?.dateISO ?? s?.date);
+    const fksCount = sessions.filter((s) => {
+      const key = toDateKey(s.dateISO ?? s.date);
       return s.completed && weekKeySet.has(key);
     }).length;
-    const extCount = externalLoads.filter((e: any) => {
-      const key = toDateKey(e?.dateISO ?? e?.date);
+    const extCount = externalLoads.filter((e) => {
+      const key = toDateKey(e.dateISO);
       return weekKeySet.has(key);
     }).length;
     const remaining = Math.max(0, weeklyGoal - fksCount);

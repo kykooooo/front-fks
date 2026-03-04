@@ -1,20 +1,24 @@
 // screens/HomeScreen.tsx
-import React, { useMemo, useLayoutEffect, useEffect } from "react";
+import React, { useMemo, useLayoutEffect, useEffect, useCallback } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   ScrollView,
-  Alert,
   StyleSheet,
   Animated,
+  AccessibilityInfo,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { signOut } from "firebase/auth";
 import { Ionicons } from "@expo/vector-icons";
 
-import { useTrainingStore } from "../state/trainingStore";
+import { useLoadStore } from "../state/stores/useLoadStore";
+import { useSessionsStore } from "../state/stores/useSessionsStore";
+import { useExternalStore } from "../state/stores/useExternalStore";
+import { useSyncStore } from "../state/stores/useSyncStore";
+import { useDebugStore } from "../state/stores/useDebugStore";
 import { auth } from "../services/firebase";
 import { DEV_FLAGS } from "../config/devFlags";
 import { theme } from "../constants/theme";
@@ -38,16 +42,22 @@ import HomeAdviceCard from "../components/home/HomeAdviceCard";
 import { HomeCoachRecommendation } from "../components/home/HomeCoachRecommendation";
 import { useCoachRecommendations } from "../hooks/useCoachRecommendations";
 import { isSameDay, toDateKey } from "../utils/dateHelpers";
+import { showToast } from "../utils/toast";
 
 const palette = theme.colors;
 
+// Stable default references to prevent ?? [] from creating new arrays each render
+const EMPTY_STRINGS: string[] = [];
+const EMPTY_EXTERNALS: { source?: string; dateISO?: string }[] = [];
+
 export default function HomeScreen() {
+  if (__DEV__) console.log("[RENDER] HomeScreen");
   type RootNav = {
     navigate: (screen: string, params?: any) => void;
     setOptions?: (opts: any) => void;
   };
   const nav = useNavigation<RootNav>();
-  const resetTrainingStore = useTrainingStore((s) => s.resetForUser);
+  const resetTrainingStore = useSyncStore((s) => s.resetForUser);
   const clearModeForUid = useAppModeStore((s) => s.clearForUid);
 
   const heroAnim = React.useRef(new Animated.Value(0)).current;
@@ -63,7 +73,7 @@ export default function HomeScreen() {
         await clearModeForUid(uid);
       }
     } catch {
-      Alert.alert("Déconnexion", "Échec de la déconnexion. Réessaie.");
+      showToast({ type: "error", title: "Déconnexion", message: "Échec de la déconnexion. Réessaie." });
     }
   };
 
@@ -89,56 +99,68 @@ export default function HomeScreen() {
   }, [nav]);
 
   useEffect(() => {
-    Animated.stagger(80, [
-      Animated.timing(heroAnim, {
-        toValue: 1,
-        duration: 280,
-        useNativeDriver: true,
-      }),
-      Animated.timing(ctaAnim, {
-        toValue: 1,
-        duration: 240,
-        useNativeDriver: true,
-      }),
-      Animated.timing(cardsAnim, {
-        toValue: 1,
-        duration: 240,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    AccessibilityInfo.isReduceMotionEnabled().then((reduceMotion) => {
+      if (reduceMotion) {
+        heroAnim.setValue(1);
+        ctaAnim.setValue(1);
+        cardsAnim.setValue(1);
+        return;
+      }
+      Animated.stagger(80, [
+        Animated.timing(heroAnim, {
+          toValue: 1,
+          duration: 280,
+          useNativeDriver: true,
+        }),
+        Animated.timing(ctaAnim, {
+          toValue: 1,
+          duration: 240,
+          useNativeDriver: true,
+        }),
+        Animated.timing(cardsAnim, {
+          toValue: 1,
+          duration: 240,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
   }, [heroAnim, ctaAnim, cardsAnim]);
 
-  const startFirestoreWatch = useTrainingStore((s) => s.startFirestoreWatch);
-  const storeHydrated = useTrainingStore((s) => s.storeHydrated ?? true);
+  // ── Actions (stable refs) ──
+  const startFirestoreWatch = useSyncStore((s) => s.startFirestoreWatch);
+  const runTestHarness = useDebugStore((s) => s.runTestHarness);
+
+  // ── Load state ──
+  const phase = useSessionsStore((s) => s.phase);
+  const tsb = useLoadStore((s) => s.tsb);
+  const devNowISO = useDebugStore((s) => s.devNowISO);
+  const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
+  const dailyApplied = useLoadStore((s) => s.dailyApplied);
+  const lastAppliedDate = useLoadStore((s) => s.lastAppliedDate);
+
+  // ── Sessions & calendar ──
+  const sessions = useSessionsStore((s) => s.sessions);
+  const externalLoads = useExternalStore((s) => s.externalLoads ?? EMPTY_EXTERNALS);
+  const clubTrainingDays = useExternalStore((s) => s.clubTrainingDays ?? EMPTY_STRINGS);
+  const matchDays = useExternalStore((s) => s.matchDays ?? EMPTY_STRINGS);
+  const plannedFksDays = useSyncStore((s) => s.plannedFksDays ?? EMPTY_STRINGS);
+  const lastAiSessionV2 = useSessionsStore((s) => s.lastAiSessionV2);
+  const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
 
   useEffect(() => {
     if (!storeHydrated) return;
     startFirestoreWatch();
   }, [startFirestoreWatch, storeHydrated]);
 
-  const phase = useTrainingStore((s) => s.phase);
-  const tsb = useTrainingStore((s) => s.tsb);
-  const devNowISO = useTrainingStore((s) => s.devNowISO);
-  const externalLoads = useTrainingStore((s) => s.externalLoads);
-  const clubTrainingDays = useTrainingStore((s) => s.clubTrainingDays ?? []);
-  const matchDays = useTrainingStore((s) => s.matchDays ?? []);
-  const runTestHarness = useTrainingStore((s) => s.runTestHarness);
-  const plannedFksDays = useTrainingStore((s) => s.plannedFksDays ?? []);
-  const microcycleGoal = useTrainingStore((s) => s.microcycleGoal);
-  const microcycleSessionIndex = useTrainingStore((s) => s.microcycleSessionIndex);
   const weekStart = useSettingsStore((s) => s.weekStart);
   const weeklyGoal = useSettingsStore((s) => s.weeklyGoal ?? 2);
 
-  const dailyApplied = useTrainingStore((s) => s.dailyApplied);
-  const lastAppliedDate = useTrainingStore((s) => s.lastAppliedDate);
   const nowISO = devNowISO ?? undefined;
   const hasAppliedToday =
     !!dailyApplied &&
     !!lastAppliedDate &&
     isSameDay(new Date(lastAppliedDate), nowISO ? new Date(nowISO) : new Date());
-
-  const sessions = useTrainingStore((s) => s.sessions);
-  const lastAiSessionV2 = useTrainingStore((s) => s.lastAiSessionV2);
 
   const loadSeries = useLoadSeries(dailyApplied, nowISO);
 
@@ -150,7 +172,7 @@ export default function HomeScreen() {
     devNowISO: nowISO,
     weekStart,
     sessions,
-    externalLoads: externalLoads ?? [],
+    externalLoads,
     clubTrainingDays,
     matchDays,
     plannedFksDays,
@@ -167,6 +189,13 @@ export default function HomeScreen() {
     devNowISO: nowISO,
   });
 
+  // Stable callbacks for memoized children
+  const goToHistory = useCallback(() => nav.navigate("SessionHistory"), [nav]);
+  const goToRoutine = useCallback(() => nav.navigate("Routine"), [nav]);
+  const goToFeedback = useCallback(() => {
+    if (pendingSession) nav.navigate("Feedback", { sessionId: (pendingSession as any).id });
+  }, [nav, pendingSession]);
+
   const advice = useContextualAdvice();
 
   // Recommandations du coach
@@ -174,22 +203,19 @@ export default function HomeScreen() {
 
   const onRunHarness = () => {
     runTestHarness?.(7);
-    Alert.alert(
-      "Harness appliqué",
-      "Charges auto + externes de test injectées sur 7 jours."
-    );
+    showToast({ type: "info", title: "Harness appliqué", message: "Charges auto + externes de test injectées sur 7 jours." });
   };
 
   const weekSummary = useWeekSummary({
     sessions,
-    externalLoads: externalLoads ?? [],
+    externalLoads,
     weekDays,
     weeklyGoal,
   });
 
   const athleteName = auth.currentUser?.displayName ?? "joueur";
 
-  const activityStreak = useActivityStreak(sessions, externalLoads ?? [], nowISO);
+  const activityStreak = useActivityStreak(sessions, externalLoads, nowISO);
 
   const plannedThisWeek = useMemo(
     () => weekDays.filter((d) => d.hasPlanned).length,
@@ -381,12 +407,8 @@ export default function HomeScreen() {
                 onPrimary={pendingSession ? startPendingSession : onPressNew}
                   primaryDisabled={!pendingSession && Boolean(primaryCta.disabled)}
                   secondaryLabel="Historique"
-                  onSecondary={() => nav.navigate("SessionHistory")}
-                  onFeedback={
-                    pendingSession
-                    ? () => nav.navigate("Feedback", { sessionId: (pendingSession as any).id })
-                    : undefined
-                }
+                  onSecondary={goToHistory}
+                  onFeedback={pendingSession ? goToFeedback : undefined}
               />
 
               <View style={styles.sectionHeaderRow}>
@@ -402,7 +424,7 @@ export default function HomeScreen() {
                   plannedThisWeek={plannedThisWeek}
                   weeklyGoal={weeklyGoal}
                   activityStreak={activityStreak}
-                  onManageRoutine={() => nav.navigate("Routine")}
+                  onManageRoutine={goToRoutine}
                 />
               </View>
             </Animated.View>

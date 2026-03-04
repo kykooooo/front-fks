@@ -13,7 +13,8 @@ type Props = {
   matchSoon: boolean;
 };
 
-export default function HomeStatusBar({ phaseLabel, tsbValue, tsbTone, matchSoon }: Props) {
+function HomeStatusBarInner({ phaseLabel, tsbValue, tsbTone, matchSoon }: Props) {
+  if (__DEV__) console.log("[RENDER] HomeStatusBar");
   const football = getFootballLabel(tsbValue);
 
   return (
@@ -103,3 +104,5 @@ const styles = StyleSheet.create({
     color: palette.warn,
   },
 });
+
+export default React.memo(HomeStatusBarInner);

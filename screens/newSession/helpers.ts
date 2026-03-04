@@ -74,25 +74,25 @@ export function normalizeFocus(f: Session["focus"] | string): Exercise["modality
 
 // Nettoyeur profond : retire undefined/NaN/Infinity de tout objet/array
 export function deepClean<T>(val: T): T {
-  if (val === undefined) return undefined as any;
-  if (val === null) return null as any;
+  if (val === undefined) return undefined as T;
+  if (val === null) return null as T;
   if (typeof val === "number") {
-    if (!Number.isFinite(val)) return undefined as any;
-    return val as any;
+    if (!Number.isFinite(val)) return undefined as T;
+    return val as T;
   }
   if (Array.isArray(val)) {
     const arr = (val as unknown[])
-      .map((x: any) => deepClean<any>(x))
-      .filter((x: any) => x !== undefined);
-    return arr as any;
+      .map((x) => deepClean(x))
+      .filter((x) => x !== undefined);
+    return arr as T;
   }
   if (typeof val === "object") {
-    const out: any = {};
-    for (const [k, v] of Object.entries(val as any)) {
-      const cleaned = deepClean(v as any);
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+      const cleaned = deepClean(v);
       if (cleaned !== undefined) out[k] = cleaned;
     }
-    return out;
+    return out as T;
   }
-  return val as any;
+  return val;
 }

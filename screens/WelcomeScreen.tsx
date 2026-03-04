@@ -18,20 +18,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useHaptics } from '../hooks/useHaptics';
+import { authColors } from '../theme/authColors';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-// ====== PALETTE DARK PRO ======
-const darkPalette = {
-  bg: '#0a0a0a',
-  bgSoft: '#141414',
-  card: '#1a1a1a',
-  text: '#ffffff',
-  sub: '#a0a0a0',
-  accent: '#ff7a1a',
-  accentSoft: 'rgba(255,122,26,0.15)',
-  border: '#2a2a2a',
-};
 
 // ====== SLIDES DATA ======
 type Slide = {
@@ -321,7 +310,7 @@ export default function WelcomeScreen({ onComplete }: Props) {
                       {
                         width: dotWidth,
                         opacity: dotOpacity,
-                        backgroundColor: darkPalette.accent,
+                        backgroundColor: authColors.accent,
                       },
                     ]}
                   />
@@ -358,7 +347,7 @@ export default function WelcomeScreen({ onComplete }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: darkPalette.bg,
+    backgroundColor: authColors.bg,
   },
   bgGlowTop: {
     position: 'absolute',
@@ -410,7 +399,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   skipText: {
-    color: darkPalette.sub,
+    color: authColors.sub,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -464,7 +453,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: '800',
-    color: darkPalette.text,
+    color: authColors.text,
     textAlign: 'center',
     marginBottom: 16,
     letterSpacing: 0.5,
@@ -484,7 +473,7 @@ const styles = StyleSheet.create({
     marginTop: 24,
     paddingVertical: 10,
     paddingHorizontal: 20,
-    backgroundColor: darkPalette.accentSoft,
+    backgroundColor: authColors.accentSoft,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(255,122,26,0.3)',
@@ -492,7 +481,7 @@ const styles = StyleSheet.create({
   highlight: {
     fontSize: 14,
     fontWeight: '700',
-    color: darkPalette.accent,
+    color: authColors.accent,
     textAlign: 'center',
     letterSpacing: 0.5,
   },
@@ -531,7 +520,7 @@ const styles = StyleSheet.create({
   ctaSecondaryText: {
     fontSize: 15,
     fontWeight: '600',
-    color: darkPalette.sub,
+    color: authColors.sub,
   },
   bottomSection: {
     position: 'absolute',

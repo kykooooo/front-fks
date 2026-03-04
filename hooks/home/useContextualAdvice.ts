@@ -4,7 +4,11 @@
 import { useMemo } from "react";
 import { addDays, subDays, differenceInDays, format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { useTrainingStore } from "../../state/trainingStore";
+import { useLoadStore } from "../../state/stores/useLoadStore";
+import { useSessionsStore } from "../../state/stores/useSessionsStore";
+import { useExternalStore } from "../../state/stores/useExternalStore";
+import { useFeedbackStore } from "../../state/stores/useFeedbackStore";
+import { useDebugStore } from "../../state/stores/useDebugStore";
 import { useRoutineBadges } from "../useRoutineBadges";
 import { ADVICE_RULES, type Advice, type AdviceContext } from "../../domain/adviceRules";
 import { frToKey, toDateKey } from "../../utils/dateHelpers";
@@ -15,16 +19,16 @@ const MOBILITY_CATEGORIES = ["MOBILITÉ EXPRESS", "PACK 7 JOURS"];
 
 export function useContextualAdvice(): Advice | null {
   // Données du store
-  const tsb = useTrainingStore((s) => s.tsb);
-  const atl = useTrainingStore((s) => s.atl);
-  const ctl = useTrainingStore((s) => s.ctl);
-  const matchDays = useTrainingStore((s) => s.matchDays ?? []);
-  const clubTrainingDays = useTrainingStore((s) => s.clubTrainingDays ?? []);
-  const microcycleGoal = useTrainingStore((s) => s.microcycleGoal);
-  const microcycleSessionIndex = useTrainingStore((s) => s.microcycleSessionIndex ?? 0);
-  const devNowISO = useTrainingStore((s) => s.devNowISO);
-  const dayStates = useTrainingStore((s) => s.dayStates ?? {});
-  const completedRoutines = useTrainingStore((s) => s.completedRoutines ?? []);
+  const tsb = useLoadStore((s) => s.tsb);
+  const atl = useLoadStore((s) => s.atl);
+  const ctl = useLoadStore((s) => s.ctl);
+  const matchDays = useExternalStore((s) => s.matchDays ?? []);
+  const clubTrainingDays = useExternalStore((s) => s.clubTrainingDays ?? []);
+  const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex ?? 0);
+  const devNowISO = useDebugStore((s) => s.devNowISO);
+  const dayStates = useFeedbackStore((s) => s.dayStates ?? {});
+  const completedRoutines = useExternalStore((s) => s.completedRoutines ?? []);
 
   // Badges routines (pour streak)
   const routineBadges = useRoutineBadges();

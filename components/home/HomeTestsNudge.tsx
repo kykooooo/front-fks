@@ -12,7 +12,8 @@ type Props = {
   onPress: () => void;
 };
 
-export default function HomeTestsNudge({ title, sub, onPress }: Props) {
+function HomeTestsNudgeInner({ title, sub, onPress }: Props) {
+  if (__DEV__) console.log("[RENDER] HomeTestsNudge");
   return (
     <Card variant="soft" style={styles.testsNudgeCard}>
       <View style={styles.testsNudgeHeader}>
@@ -100,3 +101,5 @@ const styles = StyleSheet.create({
     color: palette.accent,
   },
 });
+
+export default React.memo(HomeTestsNudgeInner);

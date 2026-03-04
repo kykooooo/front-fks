@@ -11,6 +11,7 @@ import { MICROCYCLES, isMicrocycleId } from "../../domain/microcycles";
 import type { CoachRecommendation, RecommendationType } from "../../domain/coachRecommendations";
 import { dismissRecommendation, markRecommendationAsRead } from "../../repositories/coachRecommendationsRepo";
 import { auth } from "../../services/firebase";
+import { showToast } from "../../utils/toast";
 
 const palette = theme.colors;
 
@@ -54,7 +55,8 @@ const TYPE_CONFIG: Record<
   },
 };
 
-export function HomeCoachRecommendation({ recommendation, onDismiss }: Props) {
+function HomeCoachRecommendationInner({ recommendation, onDismiss }: Props) {
+  if (__DEV__) console.log("[RENDER] HomeCoachRecommendation");
   const nav = useNavigation<any>();
   const haptics = useHaptics();
   const playerId = auth.currentUser?.uid ?? "";
@@ -69,7 +71,9 @@ export function HomeCoachRecommendation({ recommendation, onDismiss }: Props) {
   const handlePress = () => {
     haptics.impactLight();
     if (!recommendation.readAt) {
-      markRecommendationAsRead(playerId, recommendation.id).catch(() => {});
+      markRecommendationAsRead(playerId, recommendation.id).catch((err) => {
+        if (__DEV__) console.error("[HomeCoachRecommendation] markAsRead failed:", err);
+      });
     }
     if (
       recommendation.type === "cycle_suggestion" &&
@@ -85,8 +89,9 @@ export function HomeCoachRecommendation({ recommendation, onDismiss }: Props) {
     try {
       await dismissRecommendation(playerId, recommendation.id);
       onDismiss?.();
-    } catch {
-      // Ignore
+    } catch (err) {
+      if (__DEV__) console.error("[HomeCoachRecommendation] dismiss failed:", err);
+      showToast({ type: "error", title: "Erreur", message: "Impossible de masquer la recommandation. Réessaie." });
     }
   };
 
@@ -248,3 +253,5 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
 });
+
+export const HomeCoachRecommendation = React.memo(HomeCoachRecommendationInner);

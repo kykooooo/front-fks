@@ -22,7 +22,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 
 import { theme } from "../constants/theme";
-import { useTrainingStore } from "../state/trainingStore";
+import { useLoadStore } from "../state/stores/useLoadStore";
+import { useSessionsStore } from "../state/stores/useSessionsStore";
+import { useExternalStore } from "../state/stores/useExternalStore";
+import { useDebugStore } from "../state/stores/useDebugStore";
 import { Card } from "../components/ui/Card";
 import { TRAINING_DEFAULTS, getFootballLabel } from "../config/trainingDefaults";
 import { updateTrainingLoad } from "../engine/loadModel";
@@ -180,11 +183,11 @@ function computeTestComparisons(tests: TestEntry[]): TestComparison[] {
 // ──────────────────────── Component ────────────────────────
 export default function ProgressScreen() {
   const navigation = useNavigation<any>();
-  const tsb = useTrainingStore((s) => s.tsb);
-  const devNowISO = useTrainingStore((s) => s.devNowISO);
-  const sessions = useTrainingStore((s) => s.sessions ?? []);
-  const externalLoads = useTrainingStore((s) => s.externalLoads ?? []);
-  const dailyApplied = useTrainingStore((s) => s.dailyApplied ?? {});
+  const tsb = useLoadStore((s) => s.tsb);
+  const devNowISO = useDebugStore((s) => s.devNowISO);
+  const sessions = useSessionsStore((s) => s.sessions ?? []);
+  const externalLoads = useExternalStore((s) => s.externalLoads ?? []);
+  const dailyApplied = useLoadStore((s) => s.dailyApplied ?? {});
   const [testEntries, setTestEntries] = useState<TestEntry[]>([]);
 
   useLayoutEffect(() => {
@@ -202,7 +205,9 @@ export default function ProgressScreen() {
       if (raw) {
         try {
           setTestEntries(JSON.parse(raw));
-        } catch {}
+        } catch (err) {
+          if (__DEV__) console.warn("[Progress] Failed to parse test data:", err);
+        }
       }
     });
   }, []);
@@ -292,7 +297,7 @@ export default function ProgressScreen() {
     const durations = monthSessions
       .map(
         (s: any) =>
-          s?.feedback?.durationMin ?? s?.durationMin ?? s?.aiV2?.duration_min
+          s?.feedback?.durationMin ?? s?.durationMin ?? s?.aiV2?.durationMin ?? s?.aiV2?.duration_min
       )
       .filter((v: any) => Number.isFinite(v));
     if (!durations.length) return null;

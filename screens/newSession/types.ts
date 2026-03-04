@@ -1,30 +1,45 @@
 export type FKS_TimerPreset = {
   label: string;
-  work_s: number;
-  rest_s: number;
+  workS: number;
+  restS: number;
   rounds: number | null;
 };
 
 export type FKS_BlockItem = {
-  exercise_id?: string | null;
+  exerciseId?: string | null;
+  id?: string | null;
   name: string;
   description?: string | null;
-  football_context?: string | null;
+  footballContext?: string | null;
   sets?: number | null;
   reps?: number | null;
-  work_s?: number | null;
-  rest_s?: number | null;
+  workS?: number | null;
+  restS?: number | null;
+  workRest?: string | null;
+  workRestSec?: number[] | null;
+  durationMin?: number | null;
+  durationPerSetSec?: number | null;
   notes?: string | null;
+  modality?: string | null;
 };
 
 export type FKS_Block = {
   id: string;
+  blockId?: string;
+  name?: string | null;
   type: string;
   goal: string;
+  focus?: string | null;
   intensity: string;
-  duration_min: number;
+  durationMin: number;
   items?: FKS_BlockItem[];
   notes?: string | null;
+  timerPresets?: {
+    label?: string;
+    workS?: number | null;
+    restS?: number | null;
+    rounds?: number | null;
+  }[] | null;
 };
 
 export type FKS_NextSessionV2 = {
@@ -32,44 +47,44 @@ export type FKS_NextSessionV2 = {
   title: string;
   subtitle?: string | null;
   intensity: string;
-  focus_primary: string;
-  focus_secondary?: string | null;
-  duration_min: number;
-  rpe_target: number;
-  estimated_load?: { srpe?: number; notes?: string } | null;
-  archetype_id?: string | null;
+  focusPrimary: string;
+  focusSecondary?: string | null;
+  durationMin: number;
+  rpeTarget: number;
+  estimatedLoad?: { srpe?: number; notes?: string } | null;
+  archetypeId?: string | null;
   location?: string | null;
-  equipment_used?: string[];
-  equipment_available?: string[];
+  equipmentUsed?: string[];
+  equipmentAvailable?: string[];
   badges?: string[];
   blocks: FKS_Block[];
-  safety_notes?: string | null;
-  guardrails_applied?: string[];
-  session_theme?: string | null;
-  coaching_tips?: string[];
-  post_session?: {
-    cooldown_min?: number;
+  safetyNotes?: string | null;
+  guardrailsApplied?: string[];
+  sessionTheme?: string | null;
+  coachingTips?: string[];
+  postSession?: {
+    cooldownMin?: number;
     mobility?: string[];
-    recovery_tips?: string[];
+    recoveryTips?: string[];
   } | null;
-  selection_debug?: {
+  selectionDebug?: {
     reasons?: string[];
-    reset_variant_id?: string;
+    resetVariantId?: string;
   };
   display?: {
-    color_theme?: string;
+    colorTheme?: string;
     icon?: string;
-    timer_presets?: FKS_TimerPreset[];
+    timerPresets?: FKS_TimerPreset[];
   } | null;
   analytics?: {
-    target_metrics?: { total_reps?: number };
+    targetMetrics?: { totalReps?: number };
     rationale?: string;
   } | null;
-  reset_variants?: Array<{
+  resetVariants?: Array<{
     id: string;
     title?: string;
     subtitle?: string;
-    duration_min?: number;
+    durationMin?: number;
     blocks?: FKS_Block[];
     display?: FKS_NextSessionV2["display"];
   }>;
@@ -82,16 +97,16 @@ export type ResetVariant = {
   id: string;
   title: string;
   subtitle: string;
-  duration_min?: number;
+  durationMin?: number;
   blocks?: FKS_Block[];
   display?: FKS_NextSessionV2["display"];
 };
 
 export type SessionDebugInfo = {
   reasons?: string[];
-  reset_variant_id?: string;
-  context_used?: Record<string, unknown>;
-  generation_params?: Record<string, unknown>;
+  resetVariantId?: string;
+  contextUsed?: Record<string, unknown>;
+  generationParams?: Record<string, unknown>;
 };
 
 export type ResetChoiceState = {

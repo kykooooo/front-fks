@@ -1,10 +1,17 @@
 import { getAuth } from "firebase/auth";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BACKEND_URL, backendAuthHeaders } from "../../config/backend";
 import { BACKEND_EXERCISE_IDS } from "../../engine/backendExerciseIds";
 import { EXERCISE_BY_ID } from "../../engine/exerciseBank";
 import type { FKS_NextSessionV2 } from "./types";
 import { safeFetch, BackendError } from "../../utils/errorHandler";
+import { sessionV2Schema } from "../../schemas/sessionSchema";
+import { snakeToCamel } from "../../utils/caseTransform";
 
+// TODO: Backend optimization — envoyer uniquement les IDs d'exercices au lieu des objets
+// complets (~20 KB économisés par requête). Nécessite que le backend maintienne sa propre
+// banque d'exercices côté serveur. Actuellement le backend dépend des données complètes
+// envoyées par le client pour le matching des token pools.
 export const buildAllowedExercisesPayload = () =>
   BACKEND_EXERCISE_IDS.map((id) => EXERCISE_BY_ID[id])
     .filter(Boolean)
@@ -18,8 +25,83 @@ export const buildAllowedExercisesPayload = () =>
       tags: ex.tags,
     }));
 
+/* ─── Session cache ─── */
+const SESSION_CACHE_KEY = "fks_session_cache_v1";
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function hashContext(context: Record<string, unknown>): string {
+  // Exclure allowed_exercises (toujours identique ~20KB) et flags debug du hash
+  const { allowed_exercises, debug, debug_allow_all_exercises, ...rest } = context;
+  const str = JSON.stringify(rest);
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+  }
+  return (h >>> 0).toString(36);
+}
+
+type CachedSession = {
+  hash: string;
+  timestamp: number;
+  response: { v2: FKS_NextSessionV2; debug: Record<string, unknown> };
+};
+
+/** Vérifie si un cache récent (<5 min) existe pour ce contexte. */
+export async function getSessionCache(
+  context: Record<string, unknown>
+): Promise<{ v2: FKS_NextSessionV2; debug: Record<string, unknown>; ageMs: number } | null> {
+  try {
+    const raw = await AsyncStorage.getItem(SESSION_CACHE_KEY);
+    if (!raw) return null;
+    const cached: CachedSession = JSON.parse(raw);
+    if (!cached || typeof cached !== "object") return null;
+
+    const hash = hashContext(context);
+    if (cached.hash !== hash) return null;
+
+    const ageMs = Date.now() - cached.timestamp;
+    if (ageMs > CACHE_TTL_MS) return null;
+
+    return { ...cached.response, ageMs };
+  } catch {
+    return null;
+  }
+}
+
+/** Sauvegarde la réponse API dans le cache. */
+export async function setSessionCache(
+  context: Record<string, unknown>,
+  response: { v2: FKS_NextSessionV2; debug: Record<string, unknown> }
+): Promise<void> {
+  try {
+    const cached: CachedSession = {
+      hash: hashContext(context),
+      timestamp: Date.now(),
+      response,
+    };
+    await AsyncStorage.setItem(SESSION_CACHE_KEY, JSON.stringify(cached));
+  } catch {
+    // Échec écriture cache — non critique
+  }
+}
+
+/** Supprime le cache de séance. */
+export async function clearSessionCache(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(SESSION_CACHE_KEY);
+  } catch {
+    // non critique
+  }
+}
+
+import type { FKS_AiContext } from "../../services/aiContext";
+
+// The backend context is a superset of FKS_AiContext with extra fields
+// Use Record<string, unknown> intersection for the extra backend-specific fields
+type BackendCtx = FKS_AiContext & Record<string, unknown>;
+
 export function prepareBackendContext(
-  ctx: any,
+  ctx: FKS_AiContext,
   selectedEquipment: string[],
   environment: string[]
 ) {
@@ -29,13 +111,15 @@ export function prepareBackendContext(
     )
   );
   const resolvedGoal = ctx.profile?.goal ?? ctx.goal ?? "fondation";
+  const constraints = ctx.constraints as Record<string, unknown> | undefined;
+  const profile = ctx.profile as Record<string, unknown>;
   const availableTimeMin =
-    typeof ctx?.constraints?.available_time_min === "number"
-      ? ctx.constraints.available_time_min
+    typeof constraints?.available_time_min === "number"
+      ? constraints.available_time_min
       : typeof ctx?.available_time_min === "number"
       ? ctx.available_time_min
-      : typeof ctx?.profile?.available_time_min === "number"
-      ? ctx.profile.available_time_min
+      : typeof profile?.available_time_min === "number"
+      ? profile.available_time_min as number
       : undefined;
   const derivedVenue = environment.includes("gym")
     ? "gym"
@@ -45,7 +129,7 @@ export function prepareBackendContext(
   const venue =
     environment.length > 0
       ? derivedVenue
-      : ctx.constraints?.venue ?? ctx.profile?.venue ?? derivedVenue;
+      : (constraints?.venue as string | undefined) ?? (profile?.venue as string | undefined) ?? derivedVenue;
   const location = environment.includes("gym")
     ? "gym"
     : environment.includes("pitch")
@@ -65,10 +149,10 @@ export function prepareBackendContext(
       venue,
     },
     constraints: {
-      ...(ctx as any)?.constraints,
+      ...(ctx.constraints ?? {}),
       venue,
       equipment: normalizedEquipment,
-      pains: (ctx as any)?.constraints?.pains ?? [],
+      pains: ctx.constraints?.pains ?? [],
       ...(typeof availableTimeMin === "number" ? { available_time_min: availableTimeMin } : {}),
     },
     // aide au debug backend : pools non vides + logs [FKS][token_pools]
@@ -81,8 +165,8 @@ export function prepareBackendContext(
 }
 
 export async function fetchV2(
-  context: any
-): Promise<{ v2: FKS_NextSessionV2; debug: any }> {
+  context: Record<string, unknown>
+): Promise<{ v2: FKS_NextSessionV2; debug: Record<string, unknown> }> {
   const auth = getAuth();
   const userId = auth.currentUser?.uid ?? "test-user-dev";
   const idToken = await auth.currentUser?.getIdToken();
@@ -111,7 +195,7 @@ export async function fetchV2(
     }
   }
 
-  const data: any = await r.json();
+  const data = (await r.json()) as Record<string, unknown>;
 
   // Validation de la réponse
   if (!data || typeof data.v2 !== "object" || data.v2 === null) {
@@ -123,6 +207,20 @@ export async function fetchV2(
     );
   }
 
-  const v2 = data.v2 as FKS_NextSessionV2;
+  const parsed = sessionV2Schema.safeParse(data.v2);
+
+  if (!parsed.success) {
+    if (__DEV__) {
+      console.warn("[FKS] Session V2 validation failed:", JSON.stringify(parsed.error.issues, null, 2));
+    }
+    throw new BackendError(
+      500,
+      'Validation Error',
+      'La séance reçue est incomplète ou corrompue',
+      'Le serveur a renvoyé une séance invalide. Réessaie dans quelques instants.'
+    );
+  }
+
+  const v2 = snakeToCamel<FKS_NextSessionV2>(parsed.data);
   return { v2, debug: data };
 }

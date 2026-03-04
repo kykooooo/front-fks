@@ -14,6 +14,8 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   ScrollView,
+  ActivityIndicator,
+  StatusBar,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -27,17 +29,9 @@ import { showError } from "../utils/errorHandler";
 import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
 import { runFadeIn, runShake, runSlideUp } from "../utils/animations";
+import { authColors } from "../theme/authColors";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Register">;
-
-const authColors = {
-  text: "#f8fafc",
-  sub: "#d0d9e8",
-  muted: "#9fb0c8",
-  accent: "#ff7a1a",
-  card: "rgba(8,12,20,0.76)",
-  footer: "rgba(8,12,20,0.64)",
-};
 
 const getRegisterErrorMessage = (code?: string) => {
   switch (code) {
@@ -158,6 +152,7 @@ export default function RegisterScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor="#05070c" />
       <LinearGradient
         colors={["#0b1120", "#111827", "#1f2937"]}
         style={StyleSheet.absoluteFill}
@@ -167,7 +162,7 @@ export default function RegisterScreen({ navigation }: Props) {
       <View style={styles.vignette} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
@@ -375,7 +370,10 @@ export default function RegisterScreen({ navigation }: Props) {
                   end={{ x: 1, y: 0 }}
                 >
                   {loading ? (
-                    <Text style={styles.registerButtonText}>Création en cours...</Text>
+                    <View style={styles.loadingRow}>
+                      <ActivityIndicator size="small" color="#fff" />
+                      <Text style={styles.registerButtonText}>Création en cours...</Text>
+                    </View>
                   ) : (
                     <>
                       <Text style={styles.registerButtonText}>Créer mon compte</Text>
@@ -577,6 +575,11 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 16,
     paddingHorizontal: 24,
+  },
+  loadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   registerButtonText: {
     fontSize: 16,

@@ -1,7 +1,22 @@
 // utils/errorHandler.ts
 // Système centralisé de gestion des erreurs avec messages clairs pour l'utilisateur
 
-import { Alert } from 'react-native';
+import { Alert, type AlertButton } from 'react-native';
+
+/** Narrow an unknown caught value into something with common error fields */
+type ErrorLike = {
+  message?: string;
+  code?: string;
+  name?: string;
+  status?: number;
+  statusText?: string;
+  userMessage?: string;
+  stack?: string;
+};
+function toErrorLike(err: unknown): ErrorLike {
+  if (err && typeof err === 'object') return err as ErrorLike;
+  return { message: String(err) };
+}
 
 /**
  * Types d'erreurs possibles dans l'app
@@ -30,14 +45,22 @@ export interface AppError {
 /**
  * Classifier automatiquement une erreur
  */
-export function classifyError(error: any): AppError {
+export function classifyError(error: unknown): AppError {
+  const error_ = toErrorLike(error);
+  return classifyErrorLike(error_);
+}
+function classifyErrorLike(error: ErrorLike): AppError {
+  const msg = error.message ?? '';
+  const code = error.code;
+  const status = error.status ?? 0;
+
   // Erreur réseau (pas de connexion)
-  if (error.message?.includes('Network request failed') ||
-      error.message?.includes('fetch failed') ||
-      error.code === 'NETWORK_ERROR') {
+  if (msg.includes('Network request failed') ||
+      msg.includes('fetch failed') ||
+      code === 'NETWORK_ERROR') {
     return {
       type: ErrorType.NETWORK,
-      message: error.message,
+      message: msg,
       userMessage: 'Pas de connexion internet. Vérifie que tu es bien connecté au WiFi ou aux données mobiles.',
       technicalDetails: error.stack,
       retryable: true,
@@ -45,10 +68,10 @@ export function classifyError(error: any): AppError {
   }
 
   // Timeout
-  if (error.message?.includes('timeout') || error.code === 'ETIMEDOUT') {
+  if (msg.includes('timeout') || code === 'ETIMEDOUT') {
     return {
       type: ErrorType.TIMEOUT,
-      message: error.message,
+      message: msg,
       userMessage: 'La requête a pris trop de temps. Le serveur est peut-être surchargé. Réessaie dans quelques secondes.',
       technicalDetails: error.stack,
       retryable: true,
@@ -56,39 +79,39 @@ export function classifyError(error: any): AppError {
   }
 
   // Erreurs Firebase Auth
-  if (error.code?.startsWith('auth/')) {
+  if (code?.startsWith('auth/')) {
     return classifyFirebaseAuthError(error);
   }
 
   // Erreurs Firebase Firestore
-  if (error.code?.startsWith('firestore/') || error.name === 'FirebaseError') {
+  if (code?.startsWith('firestore/') || error.name === 'FirebaseError') {
     return {
       type: ErrorType.FIREBASE,
-      message: error.message,
-      userMessage: getFirestoreErrorMessage(error.code),
+      message: msg,
+      userMessage: getFirestoreErrorMessage(code ?? ''),
       technicalDetails: error.stack,
-      retryable: error.code === 'firestore/unavailable',
+      retryable: code === 'firestore/unavailable',
     };
   }
 
   // Erreur serveur backend (status 5xx)
-  if (error.status >= 500 && error.status < 600) {
+  if (status >= 500 && status < 600) {
     return {
       type: ErrorType.SERVER,
-      message: error.message,
+      message: msg,
       userMessage: 'Le serveur rencontre un problème technique. Réessaie dans quelques minutes.',
-      technicalDetails: `Status ${error.status}: ${error.statusText}`,
+      technicalDetails: `Status ${status}: ${error.statusText ?? ''}`,
       retryable: true,
     };
   }
 
   // Erreur validation (status 4xx)
-  if (error.status >= 400 && error.status < 500) {
+  if (status >= 400 && status < 500) {
     return {
       type: ErrorType.VALIDATION,
-      message: error.message,
+      message: msg,
       userMessage: error.userMessage || 'Les données envoyées sont incorrectes. Vérifie ton formulaire.',
-      technicalDetails: `Status ${error.status}: ${error.statusText}`,
+      technicalDetails: `Status ${status}: ${error.statusText ?? ''}`,
       retryable: false,
     };
   }
@@ -96,7 +119,7 @@ export function classifyError(error: any): AppError {
   // Erreur inconnue
   return {
     type: ErrorType.UNKNOWN,
-    message: error.message || String(error),
+    message: msg || String(error),
     userMessage: 'Une erreur inattendue s\'est produite. Si le problème persiste, contacte le support.',
     technicalDetails: error.stack,
     retryable: false,
@@ -106,7 +129,7 @@ export function classifyError(error: any): AppError {
 /**
  * Messages spécifiques pour les erreurs Firebase Auth
  */
-function classifyFirebaseAuthError(error: any): AppError {
+function classifyFirebaseAuthError(error: ErrorLike): AppError {
   const errorMessages: Record<string, string> = {
     'auth/email-already-in-use': 'Cet email est déjà utilisé. Essaie de te connecter ou utilise un autre email.',
     'auth/invalid-email': 'L\'adresse email n\'est pas valide. Vérifie ta saisie.',
@@ -122,9 +145,9 @@ function classifyFirebaseAuthError(error: any): AppError {
 
   return {
     type: ErrorType.AUTH,
-    message: error.message,
-    userMessage: errorMessages[error.code] || 'Problème d\'authentification. Réessaie ou contacte le support.',
-    technicalDetails: `${error.code}: ${error.message}`,
+    message: error.message ?? '',
+    userMessage: (error.code ? errorMessages[error.code] : undefined) || 'Problème d\'authentification. Réessaie ou contacte le support.',
+    technicalDetails: `${error.code ?? 'unknown'}: ${error.message ?? ''}`,
     retryable: error.code === 'auth/network-request-failed' || error.code === 'auth/too-many-requests',
   };
 }
@@ -150,7 +173,7 @@ function getFirestoreErrorMessage(code: string): string {
 /**
  * Afficher une erreur à l'utilisateur avec un message clair
  */
-export function showError(error: any, context?: string) {
+export function showError(error: unknown, context?: string) {
   const appError = classifyError(error);
 
   // Log technique pour le debug (uniquement en dev)
@@ -166,7 +189,7 @@ export function showError(error: any, context?: string) {
   // Message utilisateur
   const title = getErrorTitle(appError.type);
   const message = appError.userMessage;
-  const buttons: any[] = [{ text: 'OK', style: 'cancel' }];
+  const buttons: AlertButton[] = [{ text: 'OK', style: 'cancel' }];
 
   Alert.alert(title, message, buttons);
 }
@@ -237,20 +260,22 @@ export async function safeFetch(
     }
 
     return response;
-  } catch (error: any) {
+  } catch (error: unknown) {
     clearTimeout(timeoutId);
 
+    const err = toErrorLike(error);
+
     // Erreur d'abort (timeout)
-    if (error.name === 'AbortError') {
-      const timeoutError = new Error('Request timeout');
-      (timeoutError as any).code = 'ETIMEDOUT';
+    if (err.name === 'AbortError') {
+      const timeoutError: Error & { code?: string } = new Error('Request timeout');
+      timeoutError.code = 'ETIMEDOUT';
       throw timeoutError;
     }
 
     // Erreur réseau
-    if (error.message === 'Failed to fetch' || error.message?.includes('Network')) {
-      const networkError = new Error('Network request failed');
-      (networkError as any).code = 'NETWORK_ERROR';
+    if (err.message === 'Failed to fetch' || err.message?.includes('Network')) {
+      const networkError: Error & { code?: string } = new Error('Network request failed');
+      networkError.code = 'NETWORK_ERROR';
       throw networkError;
     }
 
@@ -259,10 +284,42 @@ export async function safeFetch(
 }
 
 /**
+ * Retry une opération async avec backoff exponentiel.
+ * Utile pour les sauvegardes critiques (Firestore persist, etc.)
+ */
+export async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  options: { maxRetries?: number; baseDelayMs?: number; context?: string } = {}
+): Promise<T> {
+  const { maxRetries = 3, baseDelayMs = 500, context = 'operation' } = options;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (__DEV__) {
+        console.warn(
+          `[retryWithBackoff] ${context} attempt ${attempt + 1}/${maxRetries + 1} failed:`,
+          err
+        );
+      }
+      if (attempt < maxRetries) {
+        const delay = baseDelayMs * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+/**
  * Helper pour afficher une erreur avec possibilité de retry
  */
 export function showErrorWithRetry(
-  error: any,
+  error: unknown,
   context: string,
   onRetry: () => void
 ) {
@@ -278,7 +335,7 @@ export function showErrorWithRetry(
   }
 
   const title = getErrorTitle(appError.type);
-  const buttons: any[] = [{ text: 'Annuler', style: 'cancel' }];
+  const buttons: AlertButton[] = [{ text: 'Annuler', style: 'cancel' }];
 
   if (appError.retryable) {
     buttons.push({

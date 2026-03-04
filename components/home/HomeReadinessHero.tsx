@@ -12,10 +12,11 @@ type Props = {
   tsbHistory: number[];
 };
 
-export default function HomeReadinessHero({
+function HomeReadinessHeroInner({
   tsb,
   tsbHistory,
 }: Props) {
+  if (__DEV__) console.log("[RENDER] HomeReadinessHero");
   const [chartWidth, setChartWidth] = useState(0);
   const chartHeight = 90;
   const pad = 8;
@@ -156,3 +157,5 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
+
+export default React.memo(HomeReadinessHeroInner);

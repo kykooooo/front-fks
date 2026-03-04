@@ -4,10 +4,12 @@ import { buildAIPromptContext } from "../../services/aiContext";
 import type { EnvironmentSelection } from "./types";
 import type React from "react";
 
+import type { FKS_AiContext } from "../../services/aiContext";
+
 type AiContextState = {
-  aiContext: any | null;
+  aiContext: FKS_AiContext | null;
   contextLoading: boolean;
-  setAiContext: (ctx: any | null) => void;
+  setAiContext: (ctx: FKS_AiContext | null) => void;
   setContextLoading: (b: boolean) => void;
   setAvailableEquipment: (eq: string[]) => void;
   setSelectedEquipment: React.Dispatch<React.SetStateAction<string[]>>;
@@ -54,7 +56,7 @@ export function useAiContextLoader(
         if (safeEq.length) setSelectedEquipment(safeEq);
       } catch (e) {
         if (!cancelled) {
-          console.warn("Failed to load AI context", e);
+          if (__DEV__) console.warn("Failed to load AI context", e);
           showToast({ type: "error", title: "Contexte IA", message: "Impossible de charger ton contexte. Réessaie." });
         }
       } finally {
@@ -118,7 +120,7 @@ export function useEnvironmentEquipment(
         if (availableEquipment.length > 0 && !availableEquipment.includes(item.id)) return false;
         if (environment.length === 0) return true;
         if (item.source === "both") return true;
-        return environment.includes(item.source as any);
+        return environment.includes(item.source as EnvironmentSelection[number]);
       })
       .map((item) => item.id)
       .concat(homeExtras);

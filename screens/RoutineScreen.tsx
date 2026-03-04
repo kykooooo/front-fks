@@ -16,8 +16,12 @@ import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { SectionHeader } from "../components/ui/SectionHeader";
-import { useTrainingStore } from "../state/trainingStore";
+import { useSessionsStore } from "../state/stores/useSessionsStore";
+import { useExternalStore } from "../state/stores/useExternalStore";
+import { useSyncStore } from "../state/stores/useSyncStore";
+import { useDebugStore } from "../state/stores/useDebugStore";
 import { useSettingsStore } from "../state/settingsStore";
+import { toDateKey } from "../utils/dateHelpers";
 
 const palette = theme.colors;
 const REMINDER_LABELS: Record<string, string> = {
@@ -36,18 +40,16 @@ const isSameDay = (a: Date, b: Date) =>
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate();
 
-const toDateKey = (value?: string) => (value ?? "").slice(0, 10);
-
 export default function RoutineScreen() {
   const nav = useNavigation<any>();
-  const sessions = useTrainingStore((s) => s.sessions);
-  const externalLoads = useTrainingStore((s) => s.externalLoads);
-  const clubTrainingDays = useTrainingStore((s) => s.clubTrainingDays ?? []);
-  const matchDays = useTrainingStore((s) => s.matchDays ?? []);
-  const plannedFksDays = useTrainingStore((s) => s.plannedFksDays ?? []);
-  const togglePlannedFksDay = useTrainingStore((s) => s.togglePlannedFksDay);
-  const setPlannedFksDays = useTrainingStore((s) => s.setPlannedFksDays);
-  const devNowISO = useTrainingStore((s) => s.devNowISO);
+  const sessions = useSessionsStore((s) => s.sessions);
+  const externalLoads = useExternalStore((s) => s.externalLoads);
+  const clubTrainingDays = useExternalStore((s) => s.clubTrainingDays ?? []);
+  const matchDays = useExternalStore((s) => s.matchDays ?? []);
+  const plannedFksDays = useSyncStore((s) => s.plannedFksDays ?? []);
+  const togglePlannedFksDay = useSyncStore((s) => s.togglePlannedFksDay);
+  const setPlannedFksDays = useSyncStore((s) => s.setPlannedFksDays);
+  const devNowISO = useDebugStore((s) => s.devNowISO);
 
   const weekStart = useSettingsStore((s) => s.weekStart);
   const weeklyGoal = useSettingsStore((s) => s.weeklyGoal ?? 2);
@@ -73,7 +75,7 @@ export default function RoutineScreen() {
 
     for (let i = 0; i < 7; i += 1) {
       const d = addDays(start, i);
-      const key = d.toISOString().slice(0, 10);
+      const key = toDateKey(d);
       const label = format(d, "EEEEE", { locale: fr }).toUpperCase();
 
       const hasFks = sessions.some((s: any) => {
@@ -157,7 +159,7 @@ export default function RoutineScreen() {
     const base = devNowISO ? new Date(devNowISO) : new Date();
     let count = 0;
     for (let i = 0; i < 10; i += 1) {
-      const key = subDays(base, i).toISOString().slice(0, 10);
+      const key = toDateKey(subDays(base, i));
       if (!activity.has(key)) break;
       count += 1;
     }
@@ -222,7 +224,7 @@ export default function RoutineScreen() {
 
   const nextPlannedDay = useMemo(() => {
     if (!weekDays.length) return null;
-    const todayKey = (devNowISO ?? new Date().toISOString()).slice(0, 10);
+    const todayKey = toDateKey(devNowISO ?? new Date());
     const todayIndex = weekDays.findIndex((d) => d.key === todayKey);
     if (todayIndex < 0) {
       return weekDays.find((d) => d.hasPlanned) ?? null;

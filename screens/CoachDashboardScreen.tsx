@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, TouchableOpacity, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
@@ -66,6 +66,8 @@ export default function CoachDashboardScreen() {
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [players, setPlayers] = useState<ClubUser[]>([]);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [playersLoading, setPlayersLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queryText, setQueryText] = useState("");
   const [activeTab, setActiveTab] = useState<TabId>("players");
@@ -82,9 +84,11 @@ export default function CoachDashboardScreen() {
         const d = snap.data() as any;
         const raw = typeof d?.clubId === "string" ? d.clubId : null;
         setClubId(raw?.trim() ? raw.trim() : null);
+        setInitialLoading(false);
       },
       (err: any) => {
         setError(err?.code === "permission-denied" ? "Accès refusé (Firestore)." : "Impossible de charger ton profil.");
+        setInitialLoading(false);
       }
     );
   }, [uid]);
@@ -115,10 +119,12 @@ export default function CoachDashboardScreen() {
   useEffect(() => {
     if (!clubId) {
       setPlayers([]);
+      setPlayersLoading(false);
       return;
     }
 
     setError(null);
+    setPlayersLoading(true);
     const q = query(collection(db, "clubs", clubId, "members"), where("role", "==", "player"));
     return onSnapshot(
       q,
@@ -149,10 +155,13 @@ export default function CoachDashboardScreen() {
           setPlayers(list);
         } catch (e: any) {
           setError(e?.code === "permission-denied" ? "Accès refusé (Firestore)." : "Impossible de charger les joueurs.");
+        } finally {
+          setPlayersLoading(false);
         }
       },
       (err: any) => {
         setError(err?.code === "permission-denied" ? "Accès refusé (Firestore)." : "Impossible de charger les joueurs.");
+        setPlayersLoading(false);
       }
     );
   }, [clubId, uid]);
@@ -244,7 +253,12 @@ export default function CoachDashboardScreen() {
           </View>
         </Card>
 
-        {!clubId ? (
+        {initialLoading ? (
+          <View style={styles.loaderContainer}>
+            <ActivityIndicator size="large" color={palette.accent} />
+            <Text style={styles.loaderText}>Chargement…</Text>
+          </View>
+        ) : !clubId ? (
           <Card variant="soft" style={styles.sectionCard}>
             <Text style={styles.emptyTitle}>Crée ton club</Text>
             <Text style={styles.emptySub}>
@@ -321,12 +335,25 @@ export default function CoachDashboardScreen() {
                     style={styles.searchInput}
                   />
                   {error ? <Text style={styles.error}>{error}</Text> : null}
-                  {filteredPlayers.length === 0 && !error ? (
-                    <Text style={styles.emptySub}>
-                      {players.length === 0
-                        ? "Aucun joueur trouvé pour ce club."
-                        : "Aucun résultat pour cette recherche."}
-                    </Text>
+                  {playersLoading ? (
+                    <View style={styles.loaderContainer}>
+                      <ActivityIndicator size="small" color={palette.accent} />
+                      <Text style={styles.loaderText}>Chargement des joueurs…</Text>
+                    </View>
+                  ) : filteredPlayers.length === 0 && !error ? (
+                    <View style={styles.emptyState}>
+                      <Ionicons name="people-outline" size={40} color={palette.sub} />
+                      <Text style={styles.emptyStateTitle}>
+                        {players.length === 0
+                          ? "Aucun athlète pour le moment"
+                          : "Aucun résultat"}
+                      </Text>
+                      <Text style={styles.emptySub}>
+                        {players.length === 0
+                          ? "Partage le code d'invitation à tes joueurs pour qu'ils rejoignent ton club."
+                          : "Aucun joueur ne correspond à ta recherche."}
+                      </Text>
+                    </View>
                   ) : null}
                   {filteredPlayers.map((p) => {
                     const name = (p.firstName || "Joueur").trim();
@@ -458,8 +485,21 @@ const styles = StyleSheet.create({
   section: { gap: 10 },
   sectionCard: { padding: 14, gap: 10 },
   error: { color: palette.danger, fontSize: 13 },
+  loaderContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+    gap: 12,
+  },
+  loaderText: { color: palette.sub, fontSize: 13 },
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: 24,
+    gap: 8,
+  },
+  emptyStateTitle: { color: palette.text, fontWeight: "800", fontSize: 16 },
   emptyTitle: { color: palette.text, fontWeight: "800", fontSize: 16 },
-  emptySub: { color: palette.sub, fontSize: 13, lineHeight: 18 },
+  emptySub: { color: palette.sub, fontSize: 13, lineHeight: 18, textAlign: "center" },
   searchInput: {
     borderWidth: 1,
     borderColor: palette.border,

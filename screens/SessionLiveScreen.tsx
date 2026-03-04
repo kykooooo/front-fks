@@ -1,5 +1,5 @@
 // screens/SessionLiveScreen.tsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -10,9 +10,11 @@ import {
   Animated,
   Vibration,
   Platform,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { AppStackParamList } from "../navigation/RootNavigator";
 import { theme } from "../constants/theme";
 import { Card } from "../components/ui/Card";
@@ -23,40 +25,53 @@ import { SectionHeader } from "../components/ui/SectionHeader";
 import { useSettingsStore } from "../state/settingsStore";
 
 type BlockItem = {
+  id?: string | null;
   name?: string | null;
   description?: string | null;
-  football_context?: string | null;
-  exercise_id?: string | null;
+  footballContext?: string | null;
+  exerciseId?: string | null;
   sets?: number | null;
   reps?: number | null;
-  work_s?: number | null;
-  rest_s?: number | null;
-  work_rest_sec?: number[] | null;
-  work_rest?: string | null;
-  duration_min?: number | null;
-  duration_per_set_sec?: number | null;
+  workS?: number | null;
+  restS?: number | null;
+  workRestSec?: number[] | null;
+  workRest?: string | null;
+  durationMin?: number | null;
+  durationPerSetSec?: number | null;
   notes?: string | null;
   modality?: string | null;
 };
 
 type Block = {
+  blockId?: string;
   name?: string | null;
   type?: string;
   goal?: string | null;
   focus?: string | null;
   intensity?: string;
-  duration_min?: number;
+  durationMin?: number;
   items?: BlockItem[];
   notes?: string | null;
-  timer_presets?: {
+  timerPresets?: {
     label?: string;
-    work_s?: number | null;
-    rest_s?: number | null;
+    workS?: number | null;
+    restS?: number | null;
     rounds?: number | null;
   }[] | null;
 };
 
 type LiveRoute = RouteProp<AppStackParamList, "SessionLive">;
+
+const LIVE_SESSION_KEY = "fks_live_session";
+
+type PersistedLiveState = {
+  sessionId?: string;
+  checkedSets: Record<string, boolean[]>;
+  activeBlock: number;
+  sessionSec: number;
+  sessionRunning: boolean;
+  savedAt: number;
+};
 
 const palette = theme.colors;
 const ITEM_SPACING = 12;
@@ -96,14 +111,14 @@ const cleanDisplayNote = (value?: string | null) => {
 
 const formatPresetLabel = (preset: {
   label?: string | null;
-  work_s?: number | null;
-  rest_s?: number | null;
+  workS?: number | null;
+  restS?: number | null;
   rounds?: number | null;
 }) => {
   const parts: string[] = [];
   if (preset.label) parts.push(String(preset.label));
-  if (Number.isFinite(Number(preset.work_s)) && Number.isFinite(Number(preset.rest_s))) {
-    parts.push(`${Number(preset.work_s)}s/${Number(preset.rest_s)}s`);
+  if (Number.isFinite(Number(preset.workS)) && Number.isFinite(Number(preset.restS))) {
+    parts.push(`${Number(preset.workS)}s/${Number(preset.restS)}s`);
   }
   if (Number.isFinite(Number(preset.rounds)) && Number(preset.rounds) > 0) {
     parts.push(`x${Number(preset.rounds)}`);
@@ -180,33 +195,160 @@ function SessionLiveScreen() {
     }
   ).current;
   const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 70 }).current;
+  // --- Fix 1: Disable swipe back + confirm before leaving ---
+  const hasStarted = sessionRunning || Object.keys(checkedSets).length > 0;
+
+  useEffect(() => {
+    nav.setOptions({ gestureEnabled: false });
+  }, [nav]);
+
+  useEffect(() => {
+    if (!hasStarted) return;
+    const unsubscribe = nav.addListener("beforeRemove", (e: any) => {
+      // Allow programmatic navigation (e.g. finishAction → SessionSummary)
+      if (e.data.action.type === "NAVIGATE") return;
+      e.preventDefault();
+      Alert.alert(
+        "Quitter la séance ?",
+        "Ta progression sera perdue.",
+        [
+          { text: "Rester", style: "cancel" },
+          {
+            text: "Quitter",
+            style: "destructive",
+            onPress: () => {
+              AsyncStorage.removeItem("fks_live_session").catch((err) => {
+                if (__DEV__) console.error("[SessionLive] Failed to clear live session on quit:", err);
+              });
+              nav.dispatch(e.data.action);
+            },
+          },
+        ]
+      );
+    });
+    return unsubscribe;
+  }, [nav, hasStarted]);
+
+  // --- Fix 2: Persist progress to AsyncStorage ---
+  const persistState = useCallback(() => {
+    const data: PersistedLiveState = {
+      sessionId,
+      checkedSets,
+      activeBlock,
+      sessionSec,
+      sessionRunning,
+      savedAt: Date.now(),
+    };
+    AsyncStorage.setItem(LIVE_SESSION_KEY, JSON.stringify(data)).catch((err) => {
+      if (__DEV__) console.error("[SessionLive] Failed to persist live session state:", err);
+    });
+  }, [sessionId, checkedSets, activeBlock, sessionSec, sessionRunning]);
+
+  // Save on every significant change (set toggled, block changed)
+  const lastPersistRef = useRef<string>("");
+  useEffect(() => {
+    const fingerprint = `${JSON.stringify(checkedSets)}|${activeBlock}`;
+    if (fingerprint === lastPersistRef.current) return;
+    lastPersistRef.current = fingerprint;
+    persistState();
+  }, [checkedSets, activeBlock, persistState]);
+
+  // Also save chrono every 30s while running
+  useEffect(() => {
+    if (!sessionRunning) return;
+    const id = setInterval(persistState, 30_000);
+    return () => clearInterval(id);
+  }, [sessionRunning, persistState]);
+
+  // Restore on mount if matching session exists
+  const [showRecovery, setShowRecovery] = useState(false);
+  const recoveredRef = useRef(false);
+  useEffect(() => {
+    if (recoveredRef.current) return;
+    recoveredRef.current = true;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(LIVE_SESSION_KEY);
+        if (!raw) return;
+        const saved: PersistedLiveState = JSON.parse(raw);
+        // Only recover if it's the same session and less than 4h old
+        const isSameSession =
+          saved.sessionId === sessionId ||
+          (!saved.sessionId && !sessionId);
+        const isFresh = Date.now() - saved.savedAt < 4 * 60 * 60 * 1000;
+        if (!isSameSession || !isFresh) {
+          await AsyncStorage.removeItem(LIVE_SESSION_KEY);
+          return;
+        }
+        const hasMeaningfulProgress =
+          Object.values(saved.checkedSets).some((arr) => arr.some(Boolean)) ||
+          saved.sessionSec > 30;
+        if (!hasMeaningfulProgress) {
+          await AsyncStorage.removeItem(LIVE_SESSION_KEY);
+          return;
+        }
+        Alert.alert(
+          "Séance en cours retrouvée",
+          "Tu veux reprendre là où tu en étais ?",
+          [
+            {
+              text: "Recommencer",
+              style: "destructive",
+              onPress: () => AsyncStorage.removeItem(LIVE_SESSION_KEY).catch((err) => {
+                if (__DEV__) console.error("[SessionLive] Failed to clear live session on restart:", err);
+              }),
+            },
+            {
+              text: "Reprendre",
+              onPress: () => {
+                setCheckedSets(saved.checkedSets);
+                setActiveBlock(saved.activeBlock);
+                setSessionSec(saved.sessionSec);
+                if (saved.sessionRunning) setSessionRunning(true);
+              },
+            },
+          ]
+        );
+      } catch {
+        // Corrupted data — ignore
+      }
+    })();
+  }, [sessionId]);
+
+  // Clear persistence when finishing the session
+  const clearPersistedSession = useCallback(() => {
+    AsyncStorage.removeItem(LIVE_SESSION_KEY).catch((err) => {
+      if (__DEV__) console.error("[SessionLive] Failed to clear persisted session on finish:", err);
+    });
+  }, []);
+
   const coachTip = useMemo(
     () => getCoachTip(blocks[activeBlock], activeBlock),
     [blocks, activeBlock]
   );
   const timerPresets = useMemo(() => {
-    const globalRaw = Array.isArray(v2.display?.timer_presets) ? v2.display?.timer_presets : [];
-    const blockRaw = Array.isArray(blocks[activeBlock]?.timer_presets)
-      ? blocks[activeBlock]?.timer_presets ?? []
+    const globalRaw = Array.isArray(v2.display?.timerPresets) ? v2.display?.timerPresets : [];
+    const blockRaw = Array.isArray(blocks[activeBlock]?.timerPresets)
+      ? blocks[activeBlock]?.timerPresets ?? []
       : [];
     const source = blockRaw.length > 0 ? blockRaw : globalRaw;
     const unique = new Set<string>();
     return source
       .map((preset) => ({
         label: preset.label ?? null,
-        work_s: typeof preset.work_s === "number" ? preset.work_s : null,
-        rest_s: typeof preset.rest_s === "number" ? preset.rest_s : null,
+        workS: typeof preset.workS === "number" ? preset.workS : null,
+        restS: typeof preset.restS === "number" ? preset.restS : null,
         rounds: typeof preset.rounds === "number" ? preset.rounds : null,
       }))
-      .filter((preset) => preset.label || (preset.work_s != null && preset.rest_s != null))
+      .filter((preset) => preset.label || (preset.workS != null && preset.restS != null))
       .filter((preset) => {
-        const key = `${preset.label ?? ""}|${preset.work_s ?? ""}|${preset.rest_s ?? ""}|${preset.rounds ?? ""}`;
+        const key = `${preset.label ?? ""}|${preset.workS ?? ""}|${preset.restS ?? ""}|${preset.rounds ?? ""}`;
         if (unique.has(key)) return false;
         unique.add(key);
         return true;
       })
       .slice(0, 4);
-  }, [v2.display?.timer_presets, blocks, activeBlock]);
+  }, [v2.display?.timerPresets, blocks, activeBlock]);
   const enterTranslate = enter.interpolate({
     inputRange: [0, 1],
     outputRange: [18, 0],
@@ -252,10 +394,18 @@ function SessionLiveScreen() {
     ]).start();
   };
 
+  // Chrono principal avec timeout de sécurité (4h max)
+  const MAX_SESSION_SEC = 4 * 60 * 60; // 4 heures
   useEffect(() => {
     if (sessionRunning) {
       sessionRef.current = setInterval(() => {
-        setSessionSec((s) => s + 1);
+        setSessionSec((prev) => {
+          if (prev + 1 >= MAX_SESSION_SEC) {
+            setSessionRunning(false);
+            return prev;
+          }
+          return prev + 1;
+        });
       }, 1000);
     }
     return () => {
@@ -377,14 +527,14 @@ function SessionLiveScreen() {
   };
 
   const getAutoRestSeconds = (item: BlockItem) => {
-    if (Array.isArray(item?.work_rest_sec) && item.work_rest_sec.length >= 2) {
-      const rest = Number(item.work_rest_sec[1]);
+    if (Array.isArray(item?.workRestSec) && item.workRestSec.length >= 2) {
+      const rest = Number(item.workRestSec[1]);
       return Number.isFinite(rest) ? rest : null;
     }
-    if (typeof item?.rest_s === "number" && Number.isFinite(item.rest_s)) {
-      return item.rest_s;
+    if (typeof item?.restS === "number" && Number.isFinite(item.restS)) {
+      return item.restS;
     }
-    const parsed = parseRestFromText(item?.work_rest);
+    const parsed = parseRestFromText(item?.workRest);
     return parsed;
   };
 
@@ -454,27 +604,27 @@ function SessionLiveScreen() {
     const parts: string[] = [];
     if (item?.sets != null && item.sets > 0) parts.push(`${item.sets}x`);
     if (item?.reps != null && item.reps > 0) parts.push(`${item.reps} reps`);
-    if (Array.isArray(item?.work_rest_sec) && item.work_rest_sec.length >= 2) {
-      const [w, r] = item.work_rest_sec;
+    if (Array.isArray(item?.workRestSec) && item.workRestSec.length >= 2) {
+      const [w, r] = item.workRestSec;
       parts.push(`${w ?? "?"}s/${r ?? "?"}s`);
-    } else if (item?.work_s || item?.rest_s) {
-      if (item.work_s) parts.push(`${item.work_s}s`);
-      if (item.rest_s) parts.push(`/${item.rest_s}s`);
-    } else if (item?.work_rest && item.work_rest.trim().length > 0) {
-      parts.push(item.work_rest.trim());
+    } else if (item?.workS || item?.restS) {
+      if (item.workS) parts.push(`${item.workS}s`);
+      if (item.restS) parts.push(`/${item.restS}s`);
+    } else if (item?.workRest && item.workRest.trim().length > 0) {
+      parts.push(item.workRest.trim());
     }
-    if (item?.duration_per_set_sec) parts.push(`${item.duration_per_set_sec}s / série`);
-    if (item?.duration_min) parts.push(`${item.duration_min} min`);
+    if (item?.durationPerSetSec) parts.push(`${item.durationPerSetSec}s / série`);
+    if (item?.durationMin) parts.push(`${item.durationMin} min`);
     return parts.join(" · ");
   };
 
   const getDisplayName = (item: BlockItem) => {
     const displayNameRaw = (item?.name || "").trim();
     const fallbackId =
-      typeof (item as any)?.exercise_id === "string" && (item as any).exercise_id.trim()
-        ? (item as any).exercise_id.trim()
-        : typeof (item as any)?.id === "string" && (item as any).id.trim()
-          ? (item as any).id.trim()
+      typeof item?.exerciseId === "string" && item.exerciseId.trim()
+        ? item.exerciseId.trim()
+        : typeof item?.id === "string" && item.id.trim()
+          ? item.id.trim()
           : undefined;
     const displayName =
       displayNameRaw.length > 0
@@ -488,11 +638,11 @@ function SessionLiveScreen() {
   };
 
   const getExerciseId = (item: BlockItem) => {
-    if (typeof (item as any)?.exercise_id === "string" && (item as any).exercise_id.trim()) {
-      return (item as any).exercise_id.trim();
+    if (typeof item?.exerciseId === "string" && item.exerciseId.trim()) {
+      return item.exerciseId.trim();
     }
-    if (typeof (item as any)?.id === "string" && (item as any).id.trim()) {
-      return (item as any).id.trim();
+    if (typeof item?.id === "string" && item.id.trim()) {
+      return item.id.trim();
     }
     return null;
   };
@@ -502,9 +652,10 @@ function SessionLiveScreen() {
     : "Terminer la séance";
 
   const finishAction = () => {
+    clearPersistedSession();
     const estimatedRpe = (() => {
-      if (typeof v2.rpe_target === "number" && Number.isFinite(v2.rpe_target)) {
-        return Math.max(1, Math.min(10, Math.round(v2.rpe_target)));
+      if (typeof v2.rpeTarget === "number" && Number.isFinite(v2.rpeTarget)) {
+        return Math.max(1, Math.min(10, Math.round(v2.rpeTarget)));
       }
       const intensity = (v2.intensity ?? "").toLowerCase();
       if (intensity.includes("hard")) return 8;
@@ -514,13 +665,17 @@ function SessionLiveScreen() {
     const durationMin =
       sessionSec >= 60
         ? Math.max(5, Math.round(sessionSec / 60))
-        : typeof v2.duration_min === "number"
-          ? Math.round(v2.duration_min)
+        : typeof v2.durationMin === "number"
+          ? Math.round(v2.durationMin)
           : undefined;
     const intensity = typeof v2.intensity === "string" ? v2.intensity : undefined;
-    const focusRaw = v2.focus_primary ?? v2.focus_secondary;
+    const focusRaw = v2.focusPrimary ?? v2.focusSecondary;
     const focus = typeof focusRaw === "string" ? focusRaw : undefined;
     const location = typeof v2.location === "string" ? v2.location : undefined;
+    const recoveryTips =
+      Array.isArray(v2?.postSession?.recoveryTips) && v2.postSession.recoveryTips.length > 0
+        ? v2.postSession.recoveryTips
+        : undefined;
     const summary = {
       title,
       subtitle,
@@ -533,9 +688,10 @@ function SessionLiveScreen() {
       focus,
       location,
       srpe:
-        typeof v2?.estimated_load?.srpe === "number" && Number.isFinite(v2.estimated_load.srpe)
-          ? v2.estimated_load.srpe
+        typeof v2?.estimatedLoad?.srpe === "number" && Number.isFinite(v2.estimatedLoad.srpe)
+          ? v2.estimatedLoad.srpe
           : undefined,
+      recoveryTips,
     };
     nav.navigate("SessionSummary", {
       sessionId,
@@ -571,9 +727,9 @@ function SessionLiveScreen() {
                 {v2.intensity ? (
                   <Badge label={v2.intensity} tone={intensityTone(v2.intensity)} />
                 ) : null}
-                {v2.focus_primary ? <Badge label={v2.focus_primary} /> : null}
-                {v2.duration_min ? <Badge label={`${v2.duration_min} min`} /> : null}
-                {v2.rpe_target ? <Badge label={`RPE ${v2.rpe_target}`} /> : null}
+                {v2.focusPrimary ? <Badge label={v2.focusPrimary} /> : null}
+                {v2.durationMin ? <Badge label={`${v2.durationMin} min`} /> : null}
+                {v2.rpeTarget ? <Badge label={`RPE ${v2.rpeTarget}`} /> : null}
                 {v2.location ? <Badge label={v2.location} /> : null}
               </View>
 
@@ -627,6 +783,8 @@ function SessionLiveScreen() {
                     style={styles.restChip}
                     onPress={() => startRest(s, "manual")}
                     activeOpacity={0.85}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Repos ${s} secondes`}
                   >
                     <Text style={styles.restChipText}>{s}s</Text>
                   </TouchableOpacity>
@@ -638,6 +796,8 @@ function SessionLiveScreen() {
                     setRestSec(0);
                     setRestSource(null);
                   }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Arrêter le repos"
                 >
                   <Text style={styles.restChipGhostText}>Stop</Text>
                 </TouchableOpacity>
@@ -649,7 +809,7 @@ function SessionLiveScreen() {
                       key={`preset_${idx}`}
                       style={styles.restChip}
                       onPress={() => {
-                        const rest = Number(preset.rest_s);
+                        const rest = Number(preset.restS);
                         if (Number.isFinite(rest) && rest > 0) {
                           startRest(rest, "manual");
                         }
@@ -705,7 +865,7 @@ function SessionLiveScreen() {
                         <View>
                           <Text style={styles.blockTitle} numberOfLines={2}>{blockTitle}</Text>
                           <Text style={styles.blockMeta}>
-                            {block.intensity ?? "—"} · {block.duration_min ?? "?"} min
+                            {block.intensity ?? "—"} · {block.durationMin ?? "?"} min
                           </Text>
                         </View>
                         {isComplete ? <Badge label="OK" tone="ok" /> : null}
@@ -739,7 +899,11 @@ function SessionLiveScreen() {
                                       onPress={() =>
                                         toggleSet(blockIndex, itemIndex, 0, item, items)
                                       }
+                                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                                       activeOpacity={0.85}
+                                      accessibilityRole="checkbox"
+                                      accessibilityLabel={`${itemName}, ${checkedItem ? 'terminé' : 'à faire'}`}
+                                      accessibilityState={{ checked: !!checkedItem }}
                                     >
                                       <Animated.View
                                         style={[
@@ -771,11 +935,15 @@ function SessionLiveScreen() {
                                                 items
                                               )
                                             }
+                                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                                             style={[
                                               styles.setChip,
                                               done && styles.setChipDone,
                                             ]}
                                             activeOpacity={0.85}
+                                            accessibilityRole="checkbox"
+                                            accessibilityLabel={`Série ${setIndex + 1} sur ${setCount}, ${done ? 'terminée' : 'à faire'}`}
+                                            accessibilityState={{ checked: !!done }}
                                           >
                                             <Text
                                               style={[
@@ -796,8 +964,8 @@ function SessionLiveScreen() {
                                       <Text style={styles.itemNote}>{item.description}</Text>
                                     ) : null}
                                     {meta ? <Text style={styles.itemMeta}>{meta}</Text> : null}
-                                    {item.football_context ? (
-                                      <Text style={styles.itemContext}>{item.football_context}</Text>
+                                    {item.footballContext ? (
+                                      <Text style={styles.itemContext}>{item.footballContext}</Text>
                                     ) : null}
                                     {cleanDisplayNote(item.notes) ? (
                                       <Text style={styles.itemNote}>{cleanDisplayNote(item.notes)}</Text>
@@ -872,11 +1040,11 @@ function SessionLiveScreen() {
               </Card>
             ) : null}
 
-            {Array.isArray(v2.coaching_tips) && v2.coaching_tips.length > 0 ? (
+            {Array.isArray(v2.coachingTips) && v2.coachingTips.length > 0 ? (
               <Card variant="soft" style={styles.coachCard}>
                 <SectionHeader title="Coaching rapide" />
                 <View style={{ gap: 6 }}>
-                  {v2.coaching_tips.map((tip: string, i: number) => (
+                  {v2.coachingTips.map((tip: string, i: number) => (
                     <Text key={`coach_${i}`} style={styles.coachText}>
                       • {tip}
                     </Text>
@@ -965,12 +1133,14 @@ const styles = StyleSheet.create({
   restRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   presetRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   restChip: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     borderRadius: theme.radius.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
+    minHeight: 44,
+    justifyContent: "center",
   },
   restChipGhost: {
     backgroundColor: palette.accentSoft,
@@ -1023,10 +1193,10 @@ const styles = StyleSheet.create({
   itemMain: { flex: 1, flexDirection: "row", gap: 10, alignItems: "flex-start" },
   setsWrap: { minWidth: 70, alignItems: "flex-start", gap: 6 },
   setsLabel: { fontSize: 10, color: palette.sub, fontWeight: "600" },
-  setsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  setsRow: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
   setChip: {
-    width: 22,
-    height: 22,
+    width: 32,
+    height: 32,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: palette.borderSoft,
@@ -1038,35 +1208,37 @@ const styles = StyleSheet.create({
     backgroundColor: palette.accent,
     borderColor: palette.accent,
   },
-  setChipText: { fontSize: 10, color: palette.sub, fontWeight: "700" },
+  setChipText: { fontSize: 12, color: palette.sub, fontWeight: "700" },
   setChipTextDone: { color: palette.bg },
   checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 2,
+    marginTop: 0,
   },
   checkboxChecked: {
     backgroundColor: palette.accent,
     borderColor: palette.accent,
   },
-  checkboxIcon: { color: palette.bg, fontSize: 12, fontWeight: "800" },
+  checkboxIcon: { color: palette.bg, fontSize: 16, fontWeight: "800" },
   itemName: { color: palette.text, fontSize: 14, fontWeight: "600" },
   itemMeta: { color: palette.sub, fontSize: 12, marginTop: 2 },
   itemContext: { color: palette.text, fontSize: 11, marginTop: 2 },
   itemNote: { color: palette.sub, fontSize: 12, marginTop: 2 },
   itemLink: {
     alignSelf: "flex-start",
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     borderRadius: theme.radius.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.cardSoft,
+    minHeight: 44,
+    justifyContent: "center",
   },
   itemLinkText: { color: palette.accent, fontSize: 11, fontWeight: "700" },
   dotsRow: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: -6 },

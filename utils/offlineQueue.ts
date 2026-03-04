@@ -1,7 +1,8 @@
 // utils/offlineQueue.ts
 // Système de queue pour gérer les actions hors-ligne (feedback, sessions, etc.)
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+import { getEncryptedItem, setEncryptedItem, removeEncryptedItem } from '../services/encryptedStorage';
 import { showToast } from './toast';
 import { STORAGE_KEYS } from '../constants/storage';
 
@@ -11,7 +12,7 @@ export type QueuedAction = {
   id: string;
   type: 'feedback' | 'session' | 'profile';
   timestamp: string;
-  data: any;
+  data: Record<string, unknown>;
   retries: number;
   maxRetries: number;
 };
@@ -21,7 +22,7 @@ export type QueuedAction = {
  */
 export async function enqueueAction(
   type: QueuedAction['type'],
-  data: any,
+  data: Record<string, unknown>,
   maxRetries: number = 3
 ): Promise<void> {
   try {
@@ -51,7 +52,7 @@ export async function enqueueAction(
  */
 export async function getQueue(): Promise<QueuedAction[]> {
   try {
-    const raw = await AsyncStorage.getItem(QUEUE_KEY);
+    const raw = await getEncryptedItem(QUEUE_KEY);
     if (!raw) return [];
     return JSON.parse(raw) as QueuedAction[];
   } catch (error) {
@@ -65,7 +66,7 @@ export async function getQueue(): Promise<QueuedAction[]> {
  */
 async function saveQueue(queue: QueuedAction[]): Promise<void> {
   try {
-    await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+    await setEncryptedItem(QUEUE_KEY, JSON.stringify(queue));
   } catch (error) {
     if (__DEV__) console.error('[OfflineQueue] Failed to save queue:', error);
   }
@@ -111,7 +112,7 @@ async function incrementRetry(actionId: string): Promise<void> {
  */
 export async function clearQueue(): Promise<void> {
   try {
-    await AsyncStorage.removeItem(QUEUE_KEY);
+    await removeEncryptedItem(QUEUE_KEY);
     if (__DEV__) {
       console.log('[OfflineQueue] Queue cleared');
     }
@@ -134,9 +135,9 @@ export async function getQueueCount(): Promise<number> {
  */
 export async function processQueue(
   handlers: {
-    feedback?: (data: any) => Promise<void>;
-    session?: (data: any) => Promise<void>;
-    profile?: (data: any) => Promise<void>;
+    feedback?: (data: Record<string, unknown>) => Promise<void>;
+    session?: (data: Record<string, unknown>) => Promise<void>;
+    profile?: (data: Record<string, unknown>) => Promise<void>;
   }
 ): Promise<{ success: number; failed: number; pending: number }> {
   const queue = await getQueue();
@@ -223,5 +224,50 @@ export function notifySyncResult(result: { success: number; failed: number; pend
     if (result.success > 0) {
       showToast({ type: 'info', title: 'Synchronisation partielle', message: `${result.success} réussies, mais ${pendingMsg}` });
     }
+  }
+}
+
+// ─── Auto-sync au retour réseau via NetInfo ───
+
+type SyncHandlers = {
+  feedback?: (data: any) => Promise<void>;
+  session?: (data: any) => Promise<void>;
+  profile?: (data: any) => Promise<void>;
+};
+
+let _autoSyncUnsub: (() => void) | null = null;
+
+/**
+ * Démarre l'écoute NetInfo : quand la connexion revient,
+ * la queue hors-ligne est automatiquement traitée + toast.
+ */
+export function setupAutoSync(handlers: SyncHandlers) {
+  if (_autoSyncUnsub) return; // déjà actif
+
+  let wasOffline = false;
+
+  _autoSyncUnsub = NetInfo.addEventListener(async (state) => {
+    const online = state.isConnected && state.isInternetReachable !== false;
+
+    if (online && wasOffline) {
+      const count = await getQueueCount();
+      if (count > 0) {
+        if (__DEV__) console.log(`[OfflineQueue] Connexion restaurée, sync de ${count} élément(s)…`);
+        const result = await processQueue(handlers);
+        notifySyncResult(result);
+      }
+    }
+
+    wasOffline = !online;
+  });
+}
+
+/**
+ * Arrête l'écoute NetInfo.
+ */
+export function teardownAutoSync() {
+  if (_autoSyncUnsub) {
+    _autoSyncUnsub();
+    _autoSyncUnsub = null;
   }
 }

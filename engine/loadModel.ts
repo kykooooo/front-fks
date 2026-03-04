@@ -9,6 +9,7 @@
 // ===========================================================================
 
 import { TAU } from "../config/trainingDefaults";
+import { safeNum } from "./safeNum";
 
 // Constantes de temps (importées depuis config)
 const ATL_TAU = TAU.ATL;  // 14 jours - fatigue décroît plus vite
@@ -37,25 +38,30 @@ export function updateTrainingLoad(
   delta: number,
   opts?: { dtDays?: number }
 ) {
-  const dt = Math.max(1, Math.floor(opts?.dtDays ?? 1));
+  const safeAtl = safeNum(atl, 0, "updateTrainingLoad.atl");
+  const safeCtl = safeNum(ctl, 0, "updateTrainingLoad.ctl");
+  const safeDelta = safeNum(delta, 0, "updateTrainingLoad.delta");
+  const dt = Math.max(1, Math.floor(safeNum(opts?.dtDays, 1, "updateTrainingLoad.dtDays")));
   const kATL = 1 - Math.exp(-dt / ATL_TAU);
   const kCTL = 1 - Math.exp(-dt / CTL_TAU);
 
-  const nextATL = atl + kATL * (delta - atl);
-  const nextCTL = ctl + kCTL * (delta - ctl);
+  const nextATL = safeAtl + kATL * (safeDelta - safeAtl);
+  const nextCTL = safeCtl + kCTL * (safeDelta - safeCtl);
   const tsb = nextCTL - nextATL;
   return { atl: nextATL, ctl: nextCTL, tsb };
 }
 
 export function decayLoadOverDays(atl: number, ctl: number, days: number) {
-  const d = Math.max(0, Math.floor(days));
-  if (d === 0) return { atl, ctl, tsb: ctl - atl };
+  const safeAtl = safeNum(atl, 0, "decayLoad.atl");
+  const safeCtl = safeNum(ctl, 0, "decayLoad.ctl");
+  const d = Math.max(0, Math.floor(safeNum(days, 0, "decayLoad.days")));
+  if (d === 0) return { atl: safeAtl, ctl: safeCtl, tsb: safeCtl - safeAtl };
 
   const decayATL = Math.exp(-d / ATL_TAU);
   const decayCTL = Math.exp(-d / CTL_TAU);
 
-  const nextATL = atl * decayATL;
-  const nextCTL = ctl * decayCTL;
+  const nextATL = safeAtl * decayATL;
+  const nextCTL = safeCtl * decayCTL;
   const tsb = nextCTL - nextATL;
   return { atl: nextATL, ctl: nextCTL, tsb };
 }

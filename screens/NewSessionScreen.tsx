@@ -5,13 +5,16 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert,
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { subDays } from "date-fns";
 import { useNavigation, NavigationProp, useFocusEffect } from "@react-navigation/native";
-import { useTrainingStore } from "../state/trainingStore";
+import { useLoadStore } from "../state/stores/useLoadStore";
+import { useSessionsStore } from "../state/stores/useSessionsStore";
+import { useExternalStore } from "../state/stores/useExternalStore";
+import { useSyncStore } from "../state/stores/useSyncStore";
+import { useDebugStore } from "../state/stores/useDebugStore";
 import type { Session } from "../domain/types";
 import { buildAIPromptContext } from "../services/aiContext";
 import { DEV_FLAGS } from "../config/devFlags";
@@ -21,7 +24,7 @@ import {
   EnvironmentSelection,
 } from "./newSession/types";
 import { isSameDay, RESET_VARIANT_FALLBACKS } from "./newSession/helpers";
-import { prepareBackendContext, fetchV2 } from "./newSession/api";
+import { prepareBackendContext, fetchV2, getSessionCache, setSessionCache, clearSessionCache } from "./newSession/api";
 import { processV2 } from "./newSession/orchestrator";
 import { buildFallbackSession } from "./newSession/fallback";
 import { classifyError, ErrorType } from "../utils/errorHandler";
@@ -105,25 +108,25 @@ type RootStackParamList = {
 export default function NewSessionScreen() {
   const nav = useNavigation<NavigationProp<RootStackParamList>>();
 
-  const phase = useTrainingStore((s) => s.phase);
-  const sessions = useTrainingStore((s) => s.sessions);
-  const pushSession = useTrainingStore((s) => s.pushSession);
-  const devNowISO = useTrainingStore((s) => s.devNowISO);
-  const nextAllowedISO = useTrainingStore((s) => s.nextAllowedDateISO);
-  const persistPlanned = useTrainingStore((s) => s.persistPlannedSession);
-  const setLastAiSessionV2 = useTrainingStore(
+  const phase = useSessionsStore((s) => s.phase);
+  const sessions = useSessionsStore((s) => s.sessions);
+  const pushSession = useSessionsStore((s) => s.pushSession);
+  const devNowISO = useDebugStore((s) => s.devNowISO);
+  const nextAllowedISO = useLoadStore((s) => s.nextAllowedDateISO);
+  const persistPlanned = useSyncStore((s) => s.persistPlannedSession);
+  const setLastAiSessionV2 = useSessionsStore(
     (s) => s.setLastAiSessionV2 ?? (() => {})
   );
-  const tsb = useTrainingStore((s) => s.tsb);
-  const clubTrainingDays = useTrainingStore((s) => s.clubTrainingDays ?? []);
-  const microcycleGoal = useTrainingStore((s) => s.microcycleGoal);
-  const microcycleSessionIndex = useTrainingStore((s) => s.microcycleSessionIndex);
+  const tsb = useLoadStore((s) => s.tsb);
+  const clubTrainingDays = useExternalStore((s) => s.clubTrainingDays ?? []);
+  const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
 
-  const dailyApplied = useTrainingStore((s) => s.dailyApplied);
-  const lastAppliedDate = useTrainingStore((s) => s.lastAppliedDate);
-  const advanceDays = useTrainingStore((s) => s.advanceDays);
-  const restUntil = useTrainingStore((s) => s.restUntil);
-  const storeHydrated = useTrainingStore((s) => s.storeHydrated ?? true);
+  const dailyApplied = useLoadStore((s) => s.dailyApplied);
+  const lastAppliedDate = useLoadStore((s) => s.lastAppliedDate);
+  const advanceDays = useLoadStore((s) => s.advanceDays);
+  const restUntil = useLoadStore((s) => s.restUntil);
+  const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
 
   const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
   const cycleDef = cycleId ? MICROCYCLES[cycleId] : null;
@@ -147,6 +150,12 @@ export default function NewSessionScreen() {
   const [setupDone, setSetupDone] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [resetChoice, setResetChoice] = useState<ResetChoiceState>(null);
+  const [cachePrompt, setCachePrompt] = useState<{
+    cached: { v2: FKS_NextSessionV2; debug: Record<string, unknown> };
+    preparedCtx: Record<string, unknown>;
+    location: string;
+    ageMin: number;
+  } | null>(null);
 
   useEffect(() => {
     setEnvironment((prev) => {
@@ -160,6 +169,7 @@ export default function NewSessionScreen() {
 
   useEffect(() => {
     setSetupDone(false);
+    setCachePrompt(null);
   }, [environment.join("|"), selectedEquipment.join("|")]);
 
   const current: Session | undefined = useMemo(
@@ -169,16 +179,16 @@ export default function NewSessionScreen() {
       const withDate = sessions
         .filter((s) => !s.completed)
         .filter((s) => {
-          const day = toDateKey((s as any).dateISO ?? (s as any).date);
+          const day = toDateKey(s.dateISO ?? s.date);
           if (!day) return true;
           return day >= oldestAllowedKey;
         })
         .sort((a, b) => {
-          const da = toDateKey((a as any).dateISO ?? (a as any).date) || "9999-12-31";
-          const db = toDateKey((b as any).dateISO ?? (b as any).date) || "9999-12-31";
+          const da = toDateKey(a.dateISO ?? a.date) || "9999-12-31";
+          const db = toDateKey(b.dateISO ?? b.date) || "9999-12-31";
           if (da === db) {
-            const ca = new Date((a as any).createdAt ?? 0).getTime();
-            const cb = new Date((b as any).createdAt ?? 0).getTime();
+            const ca = new Date(a.createdAt ?? 0).getTime();
+            const cb = new Date(b.createdAt ?? 0).getTime();
             return ca - cb;
           }
           return da.localeCompare(db);
@@ -203,16 +213,16 @@ export default function NewSessionScreen() {
   const advice = useContextualAdvice();
 
   const isResetPlan = (v2: FKS_NextSessionV2) =>
-    v2?.archetype_id === "foundation_X_reset" ||
-    (v2?.selection_debug?.reasons || []).includes("reset_selected");
+    v2?.archetypeId === "foundation_X_reset" ||
+    (v2?.selectionDebug?.reasons || []).includes("reset_selected");
 
   const buildResetVariants = (v2: FKS_NextSessionV2) => {
-    if (Array.isArray(v2.reset_variants) && v2.reset_variants.length) {
-      return v2.reset_variants.map((rv) => ({
+    if (Array.isArray(v2.resetVariants) && v2.resetVariants.length) {
+      return v2.resetVariants.map((rv) => ({
         id: rv.id,
         title: rv.title ?? rv.id,
         subtitle: rv.subtitle ?? "RPE 3–4 · 12–16 min · zéro fatigue",
-        duration_min: rv.duration_min,
+        durationMin: rv.durationMin,
         blocks: rv.blocks,
         display: rv.display,
       }));
@@ -229,12 +239,12 @@ export default function NewSessionScreen() {
       ...resetChoice.v2,
       title: chosen.title || resetChoice.v2.title,
       subtitle: chosen.subtitle || resetChoice.v2.subtitle,
-      duration_min: chosen.duration_min ?? resetChoice.v2.duration_min,
+      durationMin: chosen.durationMin ?? resetChoice.v2.durationMin,
       blocks: chosen.blocks ?? resetChoice.v2.blocks,
       display: chosen.display ?? resetChoice.v2.display,
-      selection_debug: {
-        ...(resetChoice.v2.selection_debug ?? {}),
-        reset_variant_id: chosen.id,
+      selectionDebug: {
+        ...(resetChoice.v2.selectionDebug ?? {}),
+        resetVariantId: chosen.id,
       },
     };
     setResetChoice(null);
@@ -287,6 +297,20 @@ export default function NewSessionScreen() {
     { gymMachinesEnabled, pitchSmallGearEnabled }
   );
 
+  // Block back navigation while generating (prevents setState on unmounted component)
+  useEffect(() => {
+    const unsubscribe = nav.addListener("beforeRemove", (e: any) => {
+      if (!generating) return;
+      e.preventDefault();
+    });
+    return unsubscribe;
+  }, [nav, generating]);
+
+  // Disable header back button while generating
+  useEffect(() => {
+    (nav as any).setOptions?.({ headerBackVisible: !generating });
+  }, [nav, generating]);
+
   // Fallback : auto-open CycleModal si arrivé sans cycle actif (anti-boucle via ref)
   const cyclePickerAutoOpened = useRef(false);
   useFocusEffect(
@@ -312,31 +336,13 @@ export default function NewSessionScreen() {
   const handleGenerate = async () => {
     try {
       if (!cycleId) {
-        Alert.alert(
-          "Choisir un cycle",
-          "Choisis ton cycle (playlist) avant de générer des séances.",
-          [
-            {
-              text: "Choisir mon cycle",
-              onPress: () => nav.navigate("CycleModal", { mode: "select", origin: "newSession" }),
-            },
-            { text: "Annuler", style: "cancel" },
-          ]
-        );
+        showToast({ type: "warn", title: "Choisir un cycle", message: "Choisis ton cycle (playlist) avant de générer des séances." });
+        nav.navigate("CycleModal", { mode: "select", origin: "newSession" });
         return;
       }
       if (cycleCompleted) {
-        Alert.alert(
-          "Cycle terminé",
-          "Bien joué. Choisis un nouveau cycle pour continuer.",
-          [
-            {
-              text: "Choisir un nouveau cycle",
-              onPress: () => nav.navigate("CycleModal", { mode: "select", origin: "newSession" }),
-            },
-            { text: "Annuler", style: "cancel" },
-          ]
-        );
+        showToast({ type: "info", title: "Cycle terminé", message: "Bien joué. Choisis un nouveau cycle pour continuer." });
+        nav.navigate("CycleModal", { mode: "select", origin: "newSession" });
         return;
       }
 
@@ -389,8 +395,22 @@ export default function NewSessionScreen() {
         environment
       );
 
-      // 2) Appel backend → workflow → v2
+      // 2) Vérifier le cache avant l'appel API
+      const cached = await getSessionCache(preparedCtx);
+      if (cached) {
+        setGenerating(false);
+        setCachePrompt({
+          cached: { v2: cached.v2, debug: cached.debug },
+          preparedCtx,
+          location,
+          ageMin: Math.max(1, Math.round(cached.ageMs / 60000)),
+        });
+        return;
+      }
+
+      // 3) Appel backend → workflow → v2
       const { v2, debug } = await fetchV2(preparedCtx);
+      await setSessionCache(preparedCtx, { v2, debug });
       if (isResetPlan(v2)) {
         const variants = buildResetVariants(v2).map((rv) => ({
           ...rv,
@@ -465,23 +485,15 @@ export default function NewSessionScreen() {
         appError.type === ErrorType.TIMEOUT;
 
       if (shouldUseFallback) {
-        const todayISO = now.toISOString().slice(0, 10);
+        const todayISO = toDateKey(now);
         const { session, aiV2 } = buildFallbackSession(todayISO, phase as any);
         pushSession({ ...session, aiV2 } as any);
-        Alert.alert(
-          "Séance de secours",
-          `${appError.userMessage}\n\nUne séance cardio+mobilité de secours a été préparée pour toi.`,
-          [
-            {
-              text: "Voir la séance",
-              onPress: () => nav.navigate("SessionPreview", {
-                v2: aiV2 as any,
-                plannedDateISO: todayISO,
-                sessionId: session.id,
-              }),
-            }
-          ]
-        );
+        showToast({ type: "warn", title: "Séance de secours", message: "Une séance cardio+mobilité de secours a été préparée pour toi." });
+        nav.navigate("SessionPreview", {
+          v2: aiV2 as any,
+          plannedDateISO: todayISO,
+          sessionId: session.id,
+        });
       } else {
         showToast({ type: "error", title: appError.type === ErrorType.VALIDATION ? "Données invalides" : "Erreur", message: appError.userMessage });
       }
@@ -493,6 +505,55 @@ export default function NewSessionScreen() {
   const goFeedback = () => {
     if (!current) return;
     nav.navigate("Feedback", { sessionId: current.id });
+  };
+
+  const useCachedSession = async () => {
+    if (!cachePrompt) return;
+    const { cached, location } = cachePrompt;
+    setCachePrompt(null);
+    setGenerating(true);
+    try {
+      const { v2, debug } = cached;
+      if (isResetPlan(v2)) {
+        const variants = buildResetVariants(v2).map((rv) => ({
+          ...rv,
+          title: rv.title || "Prime reset",
+          subtitle: rv.subtitle ?? "RPE 3–4 · 12–16 min · zéro fatigue",
+        }));
+        setResetChoice({ v2, debug, variants, location });
+        setGenerating(false);
+        return;
+      }
+      setDebugAgent(debug);
+      await processV2({
+        v2,
+        location,
+        phase,
+        now,
+        clubTrainingDays,
+        tsb,
+        alreadyAppliedToday,
+        pushSession,
+        persistPlanned,
+        setLastAiSessionV2,
+        navigate: ({ v2: navV2, plannedDateISO, sessionId }) =>
+          nav.navigate("SessionPreview", { v2: navV2, plannedDateISO, sessionId }),
+        alertPlanified: (dateISO: string) => {
+          showToast({ type: "info", title: "Planifiée pour demain", message: `Séance planifiée pour le ${dateISO}.` });
+        },
+      });
+      trackEvent("session_generate_from_cache", { cycleId });
+    } catch {
+      showToast({ type: "error", title: "Erreur", message: "Impossible de charger la séance en cache." });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const regenerateIgnoringCache = async () => {
+    setCachePrompt(null);
+    await clearSessionCache();
+    handleGenerate();
   };
 
   /** ------------------------------------------------------------------
@@ -627,8 +688,29 @@ export default function NewSessionScreen() {
             />
           </View>
 
+          {/* Cache prompt */}
+          {cachePrompt && setupDone ? (
+            <View style={[styles.card, { gap: 10 }]}>
+              <Text style={styles.cardTitle}>Séance récente en cache</Text>
+              <Text style={styles.cardSubtitle}>
+                Une séance a été générée il y a {cachePrompt.ageMin} min avec les mêmes paramètres.
+              </Text>
+              <Button
+                label="Utiliser cette séance"
+                onPress={useCachedSession}
+                fullWidth
+              />
+              <Button
+                label="Générer une nouvelle"
+                variant="ghost"
+                onPress={regenerateIgnoringCache}
+                fullWidth
+              />
+            </View>
+          ) : null}
+
           {/* Étape 2 : CTA Génération (affiché après validation) */}
-	          {setupDone ? (
+	          {setupDone && !cachePrompt ? (
 	            <GenerationActions
 	              disabled={isBeforeNextAllowed || contextLoading || generating || !storeHydrated || !!current}
 	              generating={generating}
@@ -656,8 +738,8 @@ export default function NewSessionScreen() {
         />
       )}
 
-      {/* Bloc debug replié */}
-      {debugAgent && (
+      {/* Bloc debug replié — dev only */}
+      {__DEV__ && debugAgent && (
         <View style={[styles.card, { marginTop: 12 }]}>
           <TouchableOpacity
             onPress={() => setShowDebug((v) => !v)}

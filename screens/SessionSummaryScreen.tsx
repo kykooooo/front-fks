@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Animated } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
+import { CommonActions, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import type { AppStackParamList } from "../navigation/RootNavigator";
 import { theme } from "../constants/theme";
 import { Card } from "../components/ui/Card";
@@ -10,7 +10,8 @@ import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { Ionicons } from "@expo/vector-icons";
-import { useTrainingStore } from "../state/trainingStore";
+import { useLoadStore } from "../state/stores/useLoadStore";
+import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { updateTrainingLoad } from "../engine/loadModel";
 import { useSettingsStore } from "../state/settingsStore";
 
@@ -34,10 +35,10 @@ export default function SessionSummaryScreen() {
   const nav = useNavigation<any>();
   const route = useRoute<SummaryRoute>();
   const { summary, sessionId } = route.params;
-  const atl = useTrainingStore((s) => s.atl);
-  const ctl = useTrainingStore((s) => s.ctl);
-  const tsb = useTrainingStore((s) => s.tsb);
-  const sessionCompleted = useTrainingStore((s) =>
+  const atl = useLoadStore((s) => s.atl);
+  const ctl = useLoadStore((s) => s.ctl);
+  const tsb = useLoadStore((s) => s.tsb);
+  const sessionCompleted = useSessionsStore((s) =>
     sessionId ? !!s.sessions.find((session) => session.id === sessionId)?.completed : false
   );
   const autoFeedbackEnabled = useSettingsStore((s) => s.autoFeedbackEnabled);
@@ -96,6 +97,15 @@ export default function SessionSummaryScreen() {
     return Object.keys(next).length ? next : undefined;
   }, [rpe, durationMin]);
 
+  const goHome = useCallback(() => {
+    nav.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: "Tabs", params: { screen: "Home" } }],
+      })
+    );
+  }, [nav]);
+
   const clearAuto = useCallback(() => {
     if (autoTimeoutRef.current) clearTimeout(autoTimeoutRef.current);
     if (autoTickRef.current) clearInterval(autoTickRef.current);
@@ -113,6 +123,17 @@ export default function SessionSummaryScreen() {
       prefill,
     });
   }, [sessionId, sessionCompleted, clearAuto, nav, prefill]);
+
+  // Block hardware back / gesture from going back to SessionLiveScreen
+  useEffect(() => {
+    const unsubscribe = nav.addListener("beforeRemove", (e: any) => {
+      // Allow programmatic reset (our goHome / goFeedback)
+      if (e.data.action.type === "RESET" || e.data.action.type === "NAVIGATE") return;
+      e.preventDefault();
+      goHome();
+    });
+    return unsubscribe;
+  }, [nav, goHome]);
 
   useEffect(() => {
     Animated.timing(enter, {
@@ -264,13 +285,7 @@ export default function SessionSummaryScreen() {
             ) : null}
             <Button
               label="Retour"
-              onPress={() => {
-                if (nav.canGoBack?.()) {
-                  nav.goBack();
-                  return;
-                }
-                nav.navigate("Tabs", { screen: "Home" });
-              }}
+              onPress={goHome}
               fullWidth
               size="md"
               variant="ghost"

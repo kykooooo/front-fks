@@ -13,6 +13,7 @@ import {
   } from 'firebase/firestore';
   import { db } from '../services/firebase';
   import type { Phase } from '../domain/types';
+  import { completedSessionSchema, plannedSessionSchema, logValidationIssues } from '../schemas/firestoreSchemas';
   
   /** ——— Exercices "simples" (ton type peut remplacer celui-ci si tu en as déjà un) ——— */
   export type Exercise = {
@@ -148,10 +149,17 @@ export function watchSessions(
   return onSnapshot(
     q,
     (snap) => {
-      const items = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as CompletedSession),
-      }));
+      const items = snap.docs.map((d) => {
+        const raw = d.data();
+        const parsed = completedSessionSchema.safeParse(raw);
+        if (!parsed.success) {
+          logValidationIssues("completedSession", d.id, parsed.error.issues);
+        }
+        return {
+          ...(parsed.success ? parsed.data : completedSessionSchema.parse({})),
+          id: d.id,
+        } as CompletedSession & { id: string };
+      });
       cb(items);
     },
     (err) => {
@@ -173,10 +181,17 @@ export function watchPlannedSessions(
   return onSnapshot(
     q,
     (snap) => {
-      const items = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as PlannedSession),
-      }));
+      const items = snap.docs.map((d) => {
+        const raw = d.data();
+        const parsed = plannedSessionSchema.safeParse(raw);
+        if (!parsed.success) {
+          logValidationIssues("plannedSession", d.id, parsed.error.issues);
+        }
+        return {
+          ...(parsed.success ? parsed.data : plannedSessionSchema.parse({})),
+          id: d.id,
+        } as PlannedSession & { id: string };
+      });
       cb(items);
     },
     (err) => {
@@ -187,7 +202,7 @@ export function watchPlannedSessions(
     }
   );
 }
-  
+
   /** ——— (optionnel) si tu as des collections racine ——— */
   export function watchSessionsByUserIdRoot(
     userId: string,
@@ -198,10 +213,17 @@ export function watchPlannedSessions(
     return onSnapshot(
       q,
       (snap) => {
-        const items = snap.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as CompletedSession),
-        }));
+        const items = snap.docs.map((d) => {
+          const raw = d.data();
+          const parsed = completedSessionSchema.safeParse(raw);
+          if (!parsed.success) {
+            logValidationIssues("completedSession (root)", d.id, parsed.error.issues);
+          }
+          return {
+            ...(parsed.success ? parsed.data : completedSessionSchema.parse({})),
+            id: d.id,
+          } as CompletedSession & { id: string };
+        });
         cb(items);
       },
       (err) => {

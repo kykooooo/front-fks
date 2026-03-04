@@ -78,8 +78,8 @@ export async function processV2(params: {
     ? (sessionFromV2.phase as PlannedPhase)
     : "Playlist";
 
-  const guardrailsApplied: string[] = Array.isArray(v2.guardrails_applied)
-    ? [...v2.guardrails_applied]
+  const guardrailsApplied: string[] = Array.isArray(v2.guardrailsApplied)
+    ? [...v2.guardrailsApplied]
     : [];
 
   let intensityPlanned = toPlannedIntensity(sessionFromV2.intensity);
@@ -126,14 +126,14 @@ export async function processV2(params: {
     plannedLoad: plannedLoadSafe,
     title: v2.title ?? null,
     subtitle: v2.subtitle ?? null,
-    rpeTarget: typeof v2.rpe_target === "number" ? v2.rpe_target : null,
-    durationMin: typeof v2.duration_min === "number" ? v2.duration_min : null,
+    rpeTarget: typeof v2.rpeTarget === "number" ? v2.rpeTarget : null,
+    durationMin: typeof v2.durationMin === "number" ? v2.durationMin : null,
     location: v2.location ?? location ?? null,
     badges: Array.isArray(v2.badges) ? v2.badges : [],
-    coachingTips: Array.isArray(v2.coaching_tips) ? v2.coaching_tips : [],
-    safetyNotes: v2.safety_notes ?? null,
+    coachingTips: Array.isArray(v2.coachingTips) ? v2.coachingTips : [],
+    safetyNotes: v2.safetyNotes ?? null,
     guardrailsApplied,
-    postSession: v2.post_session ?? null,
+    postSession: v2.postSession ?? null,
     aiV2: v2,
     exercises: exercisesPlanned.map((e: Exercise) => ({
       id: String(e.id),

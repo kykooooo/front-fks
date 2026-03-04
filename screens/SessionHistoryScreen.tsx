@@ -3,30 +3,31 @@ import React, { useEffect, useMemo, useRef } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useTrainingStore } from "../state/trainingStore";
+import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useNavigation } from "@react-navigation/native";
 import { theme } from "../constants/theme";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { toDateKey } from "../utils/dateHelpers";
+import type { Session } from "../domain/types";
 
 const palette = theme.colors;
 
 export default function SessionHistoryScreen() {
-  const sessions = useTrainingStore((s) => s.sessions);
+  const sessions = useSessionsStore((s) => s.sessions);
   const nav = useNavigation<any>();
 
   const sorted = useMemo(
     () => {
-      const toSessionDay = (session: any) => toDateKey(session?.dateISO ?? session?.date);
+      const toSessionDay = (session: Session) => toDateKey(session.dateISO ?? session.date);
       return [...sessions]
         .filter((s) => s.completed)
         .sort((a, b) => {
           const da = toSessionDay(a);
           const db = toSessionDay(b);
           if (da === db) {
-            const ca = new Date((a as any).completedAt ?? (a as any).createdAt ?? 0).getTime();
-            const cb = new Date((b as any).completedAt ?? (b as any).createdAt ?? 0).getTime();
+            const ca = new Date(a.completedAt ?? a.createdAt ?? 0).getTime();
+            const cb = new Date(b.completedAt ?? b.createdAt ?? 0).getTime();
             return cb - ca;
           }
           return db.localeCompare(da);
@@ -47,6 +48,7 @@ export default function SessionHistoryScreen() {
     });
   }, [sorted, animMap]);
 
+  // Stagger animation + stale key cleanup (runs when sorted changes)
   useEffect(() => {
     if (!sorted.length) return;
     const ids = new Set(sorted.map((s) => s.id));
@@ -70,6 +72,14 @@ export default function SessionHistoryScreen() {
     sorted.forEach((s) => animatedIds.add(s.id));
   }, [sorted, animMap, animatedIds]);
 
+  // Full cleanup on unmount only
+  useEffect(() => {
+    return () => {
+      animMap.clear();
+      animatedIds.clear();
+    };
+  }, [animMap, animatedIds]);
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: palette.bg }}>
       <ScrollView contentContainerStyle={styles.container}>
@@ -87,12 +97,11 @@ export default function SessionHistoryScreen() {
         ) : (
           <View style={{ gap: 10 }}>
             {sorted.map((s, idx) => {
-              const date = toDateKey(s.dateISO ?? (s as any).date);
+              const date = toDateKey(s.dateISO ?? s.date);
               const focus =
                 s.focus ||
-                (s as any).aiV2?.focus_primary ||
-                (s as any).ai?.focus_primary ||
-                (s as any).modality ||
+                ((s.aiV2?.focusPrimary ?? s.aiV2?.focus_primary ?? s.ai?.focusPrimary ?? s.ai?.focus_primary) as string | undefined) ||
+                s.modality ||
                 "—";
               const rpe = s.feedback?.rpe ?? s.rpe ?? "—";
               const dur =
@@ -101,7 +110,7 @@ export default function SessionHistoryScreen() {
                   : typeof s.volumeScore === "number"
                   ? `${Math.round(s.volumeScore)} min`
                   : "—";
-              const canPreview = !!(s as any).aiV2 || !!(s as any).ai;
+              const canPreview = !!s.aiV2 || !!s.ai;
               const anim = rowAnims[idx];
               return (
                 <Animated.View
@@ -121,7 +130,7 @@ export default function SessionHistoryScreen() {
                   <TouchableOpacity
                   onPress={() => {
                     if (!canPreview) return;
-                    const v2 = (s as any).aiV2 ?? (s as any).ai;
+                    const v2 = s.aiV2 ?? s.ai;
                     nav.navigate("SessionPreview", {
                       v2,
                       plannedDateISO: date,

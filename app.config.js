@@ -44,6 +44,10 @@ module.exports = ({ config }) => {
       BACKEND_API_KEY: backendApiKey,
       FIREBASE_API_KEY: firebaseApiKey,
     },
+    plugins: [
+      ...(base.plugins ?? []),
+      "expo-secure-store",
+    ],
     // Preserve runtimeVersion and updates from app.json
     runtimeVersion: base.runtimeVersion,
     updates: base.updates,

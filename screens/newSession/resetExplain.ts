@@ -65,13 +65,13 @@ export function buildResetExplain(
   profile?: PlayerProfile | null
 ): ResetExplain {
   const selection: SelectionDebug | null =
-    (v2?.selection_debug as SelectionDebug | undefined) ??
-    (debug?.v2?.selection_debug as SelectionDebug | undefined) ??
-    (debug?.debug?.output_parsed?.selection_debug as SelectionDebug | undefined) ??
-    (debug?.debug?.selection_debug as SelectionDebug | undefined) ??
+    (v2?.selectionDebug as SelectionDebug | undefined) ??
+    (debug?.v2?.selectionDebug as SelectionDebug | undefined) ??
+    (debug?.debug?.output_parsed?.selectionDebug as SelectionDebug | undefined) ??
+    (debug?.debug?.selectionDebug as SelectionDebug | undefined) ??
     null;
 
-  const reasonsRaw = normalizeReasons(selection?.reasons ?? v2?.selection_debug?.reasons);
+  const reasonsRaw = normalizeReasons(selection?.reasons ?? v2?.selectionDebug?.reasons);
 
   const capEasy = selection?.cap === "easy" || reasonsRaw.includes("intensity_cap:easy");
   const capModerate = selection?.cap === "moderate" || reasonsRaw.includes("intensity_cap:moderate");
@@ -103,9 +103,9 @@ export function buildResetExplain(
   const position = profile?.position?.trim() || "joueur";
   const objective = (profile?.main_objective ?? "").toString().toLowerCase();
   const place = locationLabel(location || v2.location);
-  const duration = v2.duration_min != null ? `${v2.duration_min} min` : "12–16 min";
+  const duration = v2.durationMin != null ? `${v2.durationMin} min` : "12–16 min";
   const seed = hashString(
-    `${v2.archetype_id ?? ""}|${selection?.cap ?? ""}|${position}|${objective}|${duration}`
+    `${v2.archetypeId ?? ""}|${selection?.cap ?? ""}|${position}|${objective}|${duration}`
   );
 
   const pool: string[] = [];

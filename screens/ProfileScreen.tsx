@@ -10,9 +10,13 @@ import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { useTrainingStore } from '../state/trainingStore';
+import { useSessionsStore } from '../state/stores/useSessionsStore';
+import { useLoadStore } from '../state/stores/useLoadStore';
+import { useExternalStore } from '../state/stores/useExternalStore';
+import { useDebugStore } from '../state/stores/useDebugStore';
 import { auth } from '../services/firebase';
-import { computeStreakStats, lastNDates } from '../state/trainingStore/helpers';
+import { computeStreakStats } from '../utils/streakStats';
+import { lastNDates } from '../utils/dateHelpers';
 import { toDateKey } from '../utils/dateHelpers';
 import { theme } from '../constants/theme';
 import { Card } from '../components/ui/Card';
@@ -94,21 +98,21 @@ export default function ProfileScreen() {
   const nav = useNavigation<any>();
 
   /* ─── Store ─── */
-  const sessions = useTrainingStore((s) => s.sessions);
-  const phase = useTrainingStore((s) => s.phase);
-  const tsb = useTrainingStore((s) => s.tsb);
-  const atl = useTrainingStore((s) => s.atl);
-  const ctl = useTrainingStore((s) => s.ctl);
-  const tsbHistory = useTrainingStore((s) => s.tsbHistory ?? []);
-  const dailyApplied = useTrainingStore((s) => s.dailyApplied ?? {});
-  const clubDays = useTrainingStore((s) => s.clubTrainingDays ?? []);
-  const matchDays = useTrainingStore((s) => s.matchDays ?? []);
-  const devNowISO = useTrainingStore((s) => s.devNowISO);
-  const microcycleGoal = useTrainingStore((s) => s.microcycleGoal);
-  const microcycleSessionIndex = useTrainingStore((s) => s.microcycleSessionIndex);
-  const activePathwayId = useTrainingStore((s) => s.activePathwayId);
-  const activePathwayIndex = useTrainingStore((s) => s.activePathwayIndex);
-  const profile = useTrainingStore((s) => s.lastAiContext?.profile ?? null);
+  const sessions = useSessionsStore((s) => s.sessions);
+  const phase = useSessionsStore((s) => s.phase);
+  const tsb = useLoadStore((s) => s.tsb);
+  const atl = useLoadStore((s) => s.atl);
+  const ctl = useLoadStore((s) => s.ctl);
+  const tsbHistory = useLoadStore((s) => s.tsbHistory ?? []);
+  const dailyApplied = useLoadStore((s) => s.dailyApplied ?? {});
+  const clubDays = useExternalStore((s) => s.clubTrainingDays ?? []);
+  const matchDays = useExternalStore((s) => s.matchDays ?? []);
+  const devNowISO = useDebugStore((s) => s.devNowISO);
+  const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
+  const activePathwayId = useSessionsStore((s) => s.activePathwayId);
+  const activePathwayIndex = useSessionsStore((s) => s.activePathwayIndex);
+  const profile = useSessionsStore((s) => s.lastAiContext?.profile ?? null);
 
   /* ─── Tests terrain ─── */
   const [testsCount, setTestsCount] = useState(0);
@@ -181,8 +185,8 @@ export default function ProfileScreen() {
       .map((session: any) => {
         const v2 = session?.aiV2 ?? session?.ai;
         const title = v2?.title || session?.focus || session?.modality || 'Séance FKS';
-        const rawFocus = (v2?.focus_primary ?? session?.focus ?? session?.modality ?? '').toLowerCase();
-        const focus = labelize(v2?.focus_primary ?? session?.focus ?? session?.modality);
+        const rawFocus = (v2?.focusPrimary ?? v2?.focus_primary ?? session?.focus ?? session?.modality ?? '').toLowerCase();
+        const focus = labelize(v2?.focusPrimary ?? v2?.focus_primary ?? session?.focus ?? session?.modality);
         const intensity = labelize(v2?.intensity ?? session?.intensity);
         const dateLabel = formatDayLabel(session?.dateISO ?? session?.date ?? null);
         const rpe = session?.feedback?.rpe ?? session?.rpe;

@@ -1,13 +1,13 @@
 import Constants from "expo-constants";
 
-const extra = Constants.expoConfig?.extra ?? {};
+const extra: Record<string, unknown> = Constants.expoConfig?.extra ?? {};
 const envUrl =
-  (extra as any).BACKEND_URL ??
-  (extra as any).EXPO_PUBLIC_BACKEND_URL ??
+  extra.BACKEND_URL ??
+  extra.EXPO_PUBLIC_BACKEND_URL ??
   process.env.EXPO_PUBLIC_BACKEND_URL;
 const envKey =
-  (extra as any).BACKEND_API_KEY ??
-  (extra as any).EXPO_PUBLIC_BACKEND_API_KEY ??
+  extra.BACKEND_API_KEY ??
+  extra.EXPO_PUBLIC_BACKEND_API_KEY ??
   process.env.EXPO_PUBLIC_BACKEND_API_KEY;
 
 // En dev, Expo expose l'IP du Mac via hostUri (ex: "192.168.1.42:8081").
@@ -28,11 +28,10 @@ if (__DEV__) {
   console.log("[FKS] hostUri:", Constants.expoConfig?.hostUri);
   console.log("[FKS] BACKEND_URL:", BACKEND_URL);
 }
-if (!BACKEND_URL) {
-  // Avoid crashing; warn so misconfig is visible in logs.
+if (__DEV__ && !BACKEND_URL) {
   console.warn("[FKS] BACKEND_URL is not configured.");
 }
-if (!BACKEND_API_KEY) {
+if (__DEV__ && !BACKEND_API_KEY) {
   console.warn("[FKS] BACKEND_API_KEY is not configured.");
 }
 

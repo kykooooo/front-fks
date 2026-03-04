@@ -65,11 +65,11 @@ type Focus =
   | "mobility"
   | "core";
 
-export function getWarmupForSession(session: { focus_primary?: string | null; focus_secondary?: string | null }):
+export function getWarmupForSession(session: { focusPrimary?: string | null; focusSecondary?: string | null; focus_primary?: string | null; focus_secondary?: string | null }):
   | Warmup
   | null {
-  const focus = (session.focus_primary ?? "").toLowerCase() as Focus;
-  const secondary = (session.focus_secondary ?? "").toLowerCase() as Focus;
+  const focus = ((session.focusPrimary ?? session.focus_primary) ?? "").toLowerCase() as Focus;
+  const secondary = ((session.focusSecondary ?? session.focus_secondary) ?? "").toLowerCase() as Focus;
 
   if (focus === "strength") return WARMUPS.strength;
   if (focus === "run") return WARMUPS.run;
