@@ -28,12 +28,10 @@ import { useSettingsStore } from '../state/settingsStore';
 import { withSessionErrorBoundary } from '../components/withErrorBoundary';
 import { ModalContainer } from '../components/modal/ModalContainer';
 import { buildResetExplain } from './newSession/resetExplain';
-import { buildSessionExplain } from './newSession/sessionExplain';
 
 import {
   type Block,
   intensityTone,
-  buildReasons,
 } from './sessionPreview/sessionPreviewConfig';
 import { HeroCard } from './sessionPreview/components/HeroCard';
 import { FlowStrip } from './sessionPreview/components/FlowStrip';
@@ -107,17 +105,11 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
   const durationLabel = v2.durationMin != null ? `${v2.durationMin} min` : '\u2014';
   const rpeLabel = v2.rpeTarget != null ? `${v2.rpeTarget}` : '\u2014';
   const blockCount = blocks.length;
-  const tsbLabel = tsb >= 0 ? 'Plutôt frais' : tsb <= -10 ? 'Fatigue élevée' : 'Charge modérée';
-  const tsbTone = tsb >= 0 ? 'ok' : tsb <= -10 ? 'danger' : 'warn';
   const isResetPlan =
     v2?.archetypeId === 'foundation_X_reset' ||
     (v2?.selectionDebug?.reasons ?? []).includes('reset_selected');
   const resetExplain = useMemo(
     () => (isResetPlan ? buildResetExplain(v2, undefined, v2?.location ?? undefined, profile) : null),
-    [isResetPlan, v2, profile]
-  );
-  const sessionExplain = useMemo(
-    () => (!isResetPlan ? buildSessionExplain(v2, profile) : null),
     [isResetPlan, v2, profile]
   );
 
@@ -348,41 +340,7 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
               {/* Flow strip */}
               <FlowStrip blocks={blocks} isBlockComplete={isBlockComplete} />
 
-              {/* Rationale */}
-              <Card variant="soft" style={styles.rationaleCard}>
-                <View style={styles.rationaleHeader}>
-                  <Ionicons name="bulb-outline" size={16} color={palette.accent} />
-                  <Text style={styles.rationaleTitle}>Pourquoi cette séance</Text>
-                </View>
-                {v2.analytics?.rationale ? (
-                  <Text style={styles.rationaleBody}>{v2.analytics.rationale}</Text>
-                ) : null}
-                {sessionExplain ? (
-                  <>
-                    <Text style={styles.rationaleLabel}>Repères rapides</Text>
-                    <View style={styles.rationaleReasons}>
-                      {sessionExplain.reasons.map((r, i) => (
-                        <Text key={`why_${i}`} style={styles.bullet}>{'\u2022'} {r}</Text>
-                      ))}
-                    </View>
-                    <Text style={styles.rationaleLabel}>{sessionExplain.title}</Text>
-                    <View style={styles.rationaleReasons}>
-                      {sessionExplain.examples.map((r, i) => (
-                        <Text key={`ex_${i}`} style={styles.bullet}>{'\u2022'} {r}</Text>
-                      ))}
-                    </View>
-                  </>
-                ) : null}
-                <View style={styles.rationaleReasons}>
-                  {buildReasons(plannedDateISO, clubDays, matchDays).map((r, i) => (
-                    <Text key={`cal_${i}`} style={styles.bullet}>{'\u2022'} {r}</Text>
-                  ))}
-                </View>
-                <View style={styles.contextBadges}>
-                  <Badge label={`Phase ${phase || '\u2014'}`} />
-                  <Badge label={`Forme ${tsb.toFixed(0)} \u00b7 ${tsbLabel}`} tone={tsbTone} />
-                </View>
-              </Card>
+              {/* Rationale — masqué en production (trop technique pour les joueurs) */}
 
               {/* Warmup */}
               {warmup ? (
@@ -531,13 +489,6 @@ const styles = StyleSheet.create({
   resetBulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
   resetBullet: { color: palette.accent, fontSize: 12, marginTop: 1 },
   resetBulletText: { flex: 1, color: palette.text, fontSize: 12, lineHeight: 16 },
-  rationaleCard: { padding: 14, gap: 8 },
-  rationaleHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  rationaleTitle: { fontSize: 13, fontWeight: '800', color: palette.text },
-  rationaleBody: { fontSize: 13, color: palette.sub, lineHeight: 18 },
-  rationaleLabel: { fontSize: 12, fontWeight: '700', color: palette.text },
-  rationaleReasons: { gap: 2 },
-  contextBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   sectionHeader: { marginTop: 12 },
   warmupCard: { padding: 10 },
   cardTitle: { color: palette.text, fontSize: 15, fontWeight: '700' },
