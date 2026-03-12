@@ -1,7 +1,7 @@
 // screens/SessionHistoryScreen.tsx
 import React, { useEffect, useMemo, useRef } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useNavigation } from "@react-navigation/native";
@@ -80,9 +80,11 @@ export default function SessionHistoryScreen() {
     };
   }, [animMap, animatedIds]);
 
+  const insets = useSafeAreaInsets();
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: palette.bg }}>
-      <ScrollView contentContainerStyle={styles.container}>
+    <View style={{ flex: 1, backgroundColor: palette.bg }}>
+      <ScrollView contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + 16 }]}>
         <SectionHeader title="Historique" />
         <Text style={styles.subtitle}>Tes dernières séances complétées.</Text>
 
@@ -159,7 +161,7 @@ export default function SessionHistoryScreen() {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
