@@ -269,7 +269,7 @@ export default function TestsScreen() {
   // --- Render ---
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <TestHeader
           lastEntry={lastEntry}

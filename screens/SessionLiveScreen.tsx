@@ -705,7 +705,7 @@ function SessionLiveScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
       <View style={styles.root}>
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
           <Animated.View

@@ -601,7 +601,7 @@ export default function ProfileSetupScreen() {
   const progressPercent = ((step + 1) / TOTAL_STEPS) * 100;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
       <LinearGradient
         colors={["#0b1120", "#111827", "#1f2937"]}
         style={StyleSheet.absoluteFill}

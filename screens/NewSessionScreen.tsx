@@ -573,7 +573,7 @@ export default function NewSessionScreen() {
       : "Générer une séance";
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: palette.bg }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: palette.bg }} edges={["right", "left", "bottom"]}>
       {resetChoice && (
         <ResetVariantModal
           variants={resetChoice.variants}

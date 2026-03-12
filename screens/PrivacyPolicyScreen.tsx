@@ -9,7 +9,7 @@ const palette = theme.colors;
 
 export default function PrivacyPolicyScreen() {
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Politique de confidentialite</Text>
         <Text style={styles.subtitle}>
