@@ -43,6 +43,11 @@ export const CATEGORY_CONFIG: Record<string, CategoryConfig> = {
     gradient: ["#ff7a1a", "#ff9a4a"],
     tagline: "Teste tes limites et progresse",
   },
+  CIRCUITS: {
+    icon: "repeat",
+    gradient: ["#e11d48", "#fb7185"],
+    tagline: "Enchaîne les tours, repousse tes limites",
+  },
 };
 
 export type Prebuilt = {
@@ -99,6 +104,7 @@ export const CATEGORY_ORDER = [
   "MATCH DAY",
   "PACK 7 JOURS",
   "DÉFIS",
+  "CIRCUITS",
 ];
 
 export const intensityRank: Record<Prebuilt["intensity"], number> = {
