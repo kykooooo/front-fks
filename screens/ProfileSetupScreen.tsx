@@ -1,4 +1,6 @@
 // screens/ProfileSetupScreen.tsx
+// Setup profil multi-étapes — image de foot en fond, même DA que le reste de l'app
+
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -28,21 +30,11 @@ import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { showToast } from "../utils/toast";
 import { runShake } from "../utils/animations";
 import { useAppModeStore } from "../state/appModeStore";
+import { theme } from "../constants/theme";
+import { AuthBackground, AUTH_IMAGES } from "../components/auth/AuthBackground";
 
 const TOTAL_STEPS = 5;
-
-const colors = {
-  text: "#f8fafc",
-  sub: "#d0d9e8",
-  accent: "#ff7a1a",
-  accentEnd: "#ff9a4a",
-  card: "rgba(8,12,20,0.74)",
-  cardBorder: "rgba(255,255,255,0.15)",
-  inputBg: "rgba(255,255,255,0.06)",
-  inputBorder: "rgba(255,255,255,0.12)",
-  selectedBg: "rgba(255,122,26,0.15)",
-  progressBg: "rgba(255,255,255,0.1)",
-};
+const palette = theme.colors;
 
 /* ─── Steps config ─── */
 const STEPS: { label: string; icon: keyof typeof Ionicons.glyphMap; subtitle: string }[] = [
@@ -318,7 +310,6 @@ export default function ProfileSetupScreen() {
       const user = auth.currentUser;
       if (!user) { fail("Connexion requise", "Connecte-toi pour enregistrer ton profil."); return; }
 
-      // Set mode (player/coach) avant le write Firestore
       if (selectedMode === "player" || selectedMode === "coach") {
         await setModeForUid(user.uid, selectedMode);
       }
@@ -374,7 +365,7 @@ export default function ProfileSetupScreen() {
     >
       <Text style={[styles.choiceText, selected && styles.choiceTextSelected]}>{lbl}</Text>
       {selected && (
-        <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
+        <Ionicons name="checkmark-circle" size={20} color={palette.accent} />
       )}
     </TouchableOpacity>
   );
@@ -392,7 +383,6 @@ export default function ProfileSetupScreen() {
   /* ─── Step content ─── */
   const renderStep = () => {
     switch (step) {
-      /* ── IDENTITE ── */
       case 0:
         return (
           <>
@@ -404,7 +394,7 @@ export default function ProfileSetupScreen() {
             <TextInput
               style={styles.input}
               placeholder="Ex: Kylian"
-              placeholderTextColor="rgba(255,255,255,0.3)"
+              placeholderTextColor={palette.muted}
               value={firstName}
               onChangeText={setFirstName}
               autoCapitalize="words"
@@ -414,7 +404,7 @@ export default function ProfileSetupScreen() {
             <TextInput
               style={styles.input}
               placeholder="Ex: FKSFC-2026"
-              placeholderTextColor="rgba(255,255,255,0.3)"
+              placeholderTextColor={palette.muted}
               value={clubInviteCode}
               onChangeText={setClubInviteCode}
               autoCapitalize="characters"
@@ -439,7 +429,6 @@ export default function ProfileSetupScreen() {
           </>
         );
 
-      /* ── OBJECTIF ── */
       case 1:
         return (
           <>
@@ -473,7 +462,6 @@ export default function ProfileSetupScreen() {
           </>
         );
 
-      /* ── CHARGE CLUB ── */
       case 2:
         return (
           <>
@@ -499,7 +487,7 @@ export default function ProfileSetupScreen() {
               <>
                 <Text style={styles.fieldLabel}>Entrainements club / semaine</Text>
                 <TextInput style={styles.input} keyboardType="number-pad" placeholder="ex: 3"
-                  placeholderTextColor="rgba(255,255,255,0.3)" value={clubTrainingsPerWeek} onChangeText={setClubTrainingsPerWeek} />
+                  placeholderTextColor={palette.muted} value={clubTrainingsPerWeek} onChangeText={setClubTrainingsPerWeek} />
               </>
             ) : hasClubTrainings === "non" ? (
               <Text style={styles.hintText}>Aucun entrainement club pris en compte.</Text>
@@ -509,16 +497,16 @@ export default function ProfileSetupScreen() {
               <>
                 <Text style={styles.fieldLabel}>RPE typique d'un entrainement club</Text>
                 <TextInput style={styles.input} keyboardType="decimal-pad" placeholder="ex: 6"
-                  placeholderTextColor="rgba(255,255,255,0.3)" value={clubTypicalRPE} onChangeText={setClubTypicalRPE} />
+                  placeholderTextColor={palette.muted} value={clubTypicalRPE} onChangeText={setClubTypicalRPE} />
                 <Text style={styles.fieldLabel}>Duree typique (min)</Text>
                 <TextInput style={styles.input} keyboardType="number-pad" placeholder="ex: 75"
-                  placeholderTextColor="rgba(255,255,255,0.3)" value={clubTypicalDurationMin} onChangeText={setClubTypicalDurationMin} />
+                  placeholderTextColor={palette.muted} value={clubTypicalDurationMin} onChangeText={setClubTypicalDurationMin} />
               </>
             )}
 
             <Text style={styles.fieldLabel}>Matchs / semaine</Text>
             <TextInput style={styles.input} keyboardType="number-pad" placeholder="ex: 1"
-              placeholderTextColor="rgba(255,255,255,0.3)" value={matchesPerWeek} onChangeText={setMatchesPerWeek} />
+              placeholderTextColor={palette.muted} value={matchesPerWeek} onChangeText={setMatchesPerWeek} />
 
             {Number(matchesPerWeek) > 0 ? (
               <>
@@ -538,16 +526,15 @@ export default function ProfileSetupScreen() {
               <>
                 <Text style={styles.fieldLabel}>RPE typique d'un match</Text>
                 <TextInput style={styles.input} keyboardType="decimal-pad" placeholder="ex: 8"
-                  placeholderTextColor="rgba(255,255,255,0.3)" value={matchTypicalRPE} onChangeText={setMatchTypicalRPE} />
+                  placeholderTextColor={palette.muted} value={matchTypicalRPE} onChangeText={setMatchTypicalRPE} />
                 <Text style={styles.fieldLabel}>Duree typique d'un match (min)</Text>
                 <TextInput style={styles.input} keyboardType="number-pad" placeholder="ex: 90"
-                  placeholderTextColor="rgba(255,255,255,0.3)" value={matchTypicalDurationMin} onChangeText={setMatchTypicalDurationMin} />
+                  placeholderTextColor={palette.muted} value={matchTypicalDurationMin} onChangeText={setMatchTypicalDurationMin} />
               </>
             )}
           </>
         );
 
-      /* ── SALLE ── */
       case 3:
         return (
           <>
@@ -570,7 +557,6 @@ export default function ProfileSetupScreen() {
           </>
         );
 
-      /* ── MATERIEL HORS SALLE ── */
       case 4:
         return (
           <>
@@ -601,115 +587,107 @@ export default function ProfileSetupScreen() {
   const progressPercent = ((step + 1) / TOTAL_STEPS) * 100;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
-      <LinearGradient
-        colors={["#0b1120", "#111827", "#1f2937"]}
-        style={StyleSheet.absoluteFill}
-      />
+    <AuthBackground image={AUTH_IMAGES.setup}>
+      <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+            <View style={{ flex: 1 }}>
 
-      {/* Glow circles */}
-      <View style={styles.glowTop} />
-      <View style={styles.glowBottom} />
-
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <View style={{ flex: 1 }}>
-
-        {/* ─── Progress section ─── */}
-        <View style={styles.progressSection}>
-          <View style={styles.progressLabelRow}>
-            <Text style={styles.progressStep}>Etape {step + 1}/{TOTAL_STEPS}</Text>
-            <Text style={styles.progressName}>{STEPS[step].label}</Text>
-          </View>
-          <View style={styles.progressBarBg}>
-            <LinearGradient
-              colors={[colors.accent, colors.accentEnd]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={[styles.progressBarFill, { width: `${progressPercent}%` }]}
-            />
-          </View>
-        </View>
-
-        {/* ─── Content ─── */}
-        <ScrollView
-          ref={scrollRef}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <Animated.View style={{ opacity: stepFade, transform: [{ translateX: shake }] }}>
-
-            {/* Step header */}
-            <View style={styles.stepHeader}>
-              <LinearGradient
-                colors={[colors.accent, colors.accentEnd]}
-                style={styles.stepIconCircle}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <Ionicons name={STEPS[step].icon} size={28} color="#fff" />
-              </LinearGradient>
-              <View>
-                <Text style={styles.stepTitle}>{STEPS[step].label}</Text>
-                <Text style={styles.stepSubtitle}>{STEPS[step].subtitle}</Text>
+              {/* ─── Progress section ─── */}
+              <View style={styles.progressSection}>
+                <View style={styles.progressLabelRow}>
+                  <Text style={styles.progressStep}>Etape {step + 1}/{TOTAL_STEPS}</Text>
+                  <Text style={styles.progressName}>{STEPS[step].label}</Text>
+                </View>
+                <View style={styles.progressBarBg}>
+                  <LinearGradient
+                    colors={[palette.accent, "#ff9a4a"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={[styles.progressBarFill, { width: `${progressPercent}%` }]}
+                  />
+                </View>
               </View>
+
+              {/* ─── Content ─── */}
+              <ScrollView
+                ref={scrollRef}
+                contentContainerStyle={styles.scrollContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                <Animated.View style={{ opacity: stepFade, transform: [{ translateX: shake }] }}>
+
+                  {/* Step header */}
+                  <View style={styles.stepHeader}>
+                    <LinearGradient
+                      colors={[palette.accent, "#ff9a4a"]}
+                      style={styles.stepIconCircle}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Ionicons name={STEPS[step].icon} size={28} color="#fff" />
+                    </LinearGradient>
+                    <View>
+                      <Text style={styles.stepTitle}>{STEPS[step].label}</Text>
+                      <Text style={styles.stepSubtitle}>{STEPS[step].subtitle}</Text>
+                    </View>
+                  </View>
+
+                  {/* Card container */}
+                  <View style={styles.card}>
+                    {renderStep()}
+                  </View>
+
+                </Animated.View>
+              </ScrollView>
+
+              {/* ─── Footer ─── */}
+              <View style={styles.footer}>
+                {step > 0 ? (
+                  <TouchableOpacity style={styles.backButton} onPress={goBack} activeOpacity={0.7}>
+                    <Ionicons name="chevron-back" size={20} color={palette.sub} />
+                    <Text style={styles.backText}>Retour</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={{ flex: 1 }} />
+                )}
+
+                <TouchableOpacity
+                  style={[styles.nextButton, loading && { opacity: 0.4 }]}
+                  onPress={isLastStep ? handleSave : goNext}
+                  disabled={loading}
+                  activeOpacity={0.85}
+                >
+                  <LinearGradient
+                    colors={[palette.accent, "#ff9a4a"]}
+                    style={styles.nextButtonGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                  >
+                    <Text style={styles.nextButtonText}>
+                      {isLastStep ? (loading ? "Enregistrement..." : "Terminer") : "Suivant"}
+                    </Text>
+                    <Ionicons
+                      name={isLastStep ? "checkmark-circle" : "arrow-forward"}
+                      size={20}
+                      color="#fff"
+                    />
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+
             </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
 
-            {/* Card container */}
-            <View style={styles.card}>
-              {renderStep()}
-              <View style={styles.cardGlow} />
-            </View>
-
-          </Animated.View>
-        </ScrollView>
-
-        {/* ─── Footer ─── */}
-        <View style={styles.footer}>
-          {step > 0 ? (
-            <TouchableOpacity style={styles.backButton} onPress={goBack} activeOpacity={0.7}>
-              <Ionicons name="chevron-back" size={20} color={colors.sub} />
-              <Text style={styles.backText}>Retour</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={{ flex: 1 }} />
-          )}
-
-          <TouchableOpacity
-            style={[styles.nextButton, loading && { opacity: 0.4 }]}
-            onPress={isLastStep ? handleSave : goNext}
-            disabled={loading}
-            activeOpacity={0.85}
-          >
-            <LinearGradient
-              colors={[colors.accent, colors.accentEnd]}
-              style={styles.nextButtonGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-            >
-              <Text style={styles.nextButtonText}>
-                {isLastStep ? (loading ? "Enregistrement..." : "Terminer") : "Suivant"}
-              </Text>
-              <Ionicons
-                name={isLastStep ? "checkmark-circle" : "arrow-forward"}
-                size={20}
-                color="#fff"
-              />
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-
-          </View>
-        </TouchableWithoutFeedback>
-      </KeyboardAvoidingView>
-
-      <LoadingOverlay
-        visible={loading}
-        message="Enregistrement de ton profil..."
-        submessage="Configuration initiale en cours."
-      />
-    </SafeAreaView>
+        <LoadingOverlay
+          visible={loading}
+          message="Enregistrement de ton profil..."
+          submessage="Configuration initiale en cours."
+        />
+      </SafeAreaView>
+    </AuthBackground>
   );
 }
 
@@ -717,27 +695,6 @@ export default function ProfileSetupScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#05070c",
-  },
-
-  /* Glow */
-  glowTop: {
-    position: "absolute",
-    top: -120,
-    left: -120,
-    width: 320,
-    height: 320,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,122,26,0.2)",
-  },
-  glowBottom: {
-    position: "absolute",
-    bottom: -180,
-    right: -140,
-    width: 380,
-    height: 380,
-    borderRadius: 999,
-    backgroundColor: "rgba(14,165,233,0.18)",
   },
 
   /* Progress */
@@ -755,19 +712,19 @@ const styles = StyleSheet.create({
   progressStep: {
     fontSize: 12,
     fontWeight: "600",
-    color: colors.sub,
+    color: palette.sub,
   },
   progressName: {
     fontSize: 13,
     fontWeight: "700",
-    color: colors.accent,
+    color: palette.accent,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   progressBarBg: {
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.progressBg,
+    backgroundColor: palette.borderSoft,
     overflow: "hidden",
   },
   progressBarFill: {
@@ -795,48 +752,35 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#ff7a1a",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 6,
+    ...theme.shadow.accent,
   },
   stepTitle: {
     fontSize: 24,
     fontWeight: "800",
-    color: colors.text,
+    color: palette.text,
   },
   stepSubtitle: {
     fontSize: 14,
-    color: colors.sub,
+    color: palette.sub,
     marginTop: 2,
   },
 
-  /* Card */
+  /* Card — semi-transparent pour voir l'image de fond */
   card: {
-    borderRadius: 22,
+    borderRadius: theme.radius.xxl,
     padding: 20,
-    backgroundColor: colors.card,
+    backgroundColor: "rgba(255,255,255,0.08)",
     borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderColor: palette.borderSoft,
     overflow: "hidden",
     gap: 4,
-  },
-  cardGlow: {
-    position: "absolute",
-    top: -70,
-    right: -80,
-    width: 200,
-    height: 200,
-    borderRadius: 120,
-    backgroundColor: "rgba(255,122,26,0.08)",
   },
 
   /* Fields */
   fieldLabel: {
     fontSize: 13,
     fontWeight: "700",
-    color: colors.sub,
+    color: palette.sub,
     marginTop: 14,
     marginBottom: 8,
     textTransform: "uppercase",
@@ -844,13 +788,13 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: colors.inputBorder,
-    borderRadius: 14,
+    borderColor: palette.borderSoft,
+    borderRadius: theme.radius.md,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 15,
-    color: colors.text,
-    backgroundColor: colors.inputBg,
+    color: palette.text,
+    backgroundColor: "rgba(255,255,255,0.06)",
   },
 
   /* Choice */
@@ -858,8 +802,8 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 18,
     borderWidth: 1,
-    borderColor: colors.inputBorder,
-    borderRadius: 14,
+    borderColor: palette.borderSoft,
+    borderRadius: theme.radius.md,
     marginBottom: 8,
     backgroundColor: "transparent",
     flexDirection: "row",
@@ -867,16 +811,16 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   choiceSelected: {
-    borderColor: colors.accent,
-    backgroundColor: colors.selectedBg,
+    borderColor: palette.accent,
+    backgroundColor: palette.accentSoft,
   },
   choiceText: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 15,
     flex: 1,
   },
   choiceTextSelected: {
-    color: colors.accent,
+    color: palette.accent,
     fontWeight: "700",
   },
 
@@ -895,22 +839,22 @@ const styles = StyleSheet.create({
   chip: {
     paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 12,
+    borderRadius: theme.radius.md,
     borderWidth: 1,
-    borderColor: colors.inputBorder,
+    borderColor: palette.borderSoft,
     backgroundColor: "transparent",
   },
   chipSelected: {
-    borderColor: colors.accent,
-    backgroundColor: colors.selectedBg,
+    borderColor: palette.accent,
+    backgroundColor: palette.accentSoft,
   },
   chipText: {
-    color: colors.sub,
+    color: palette.sub,
     fontWeight: "600",
     fontSize: 14,
   },
   chipTextSelected: {
-    color: colors.accent,
+    color: palette.accent,
     fontWeight: "700",
     fontSize: 14,
   },
@@ -922,18 +866,18 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 8,
     padding: 14,
-    borderRadius: 14,
+    borderRadius: theme.radius.md,
     backgroundColor: "rgba(255,255,255,0.04)",
     borderWidth: 1,
-    borderColor: colors.inputBorder,
+    borderColor: palette.borderSoft,
   },
   cycleLabel: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 14,
     fontWeight: "700",
   },
   cycleHint: {
-    color: colors.sub,
+    color: palette.sub,
     fontSize: 12,
     lineHeight: 16,
     marginTop: 2,
@@ -943,17 +887,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: colors.accent,
+    borderColor: palette.accent,
     backgroundColor: "transparent",
   },
   cycleButtonText: {
-    color: colors.accent,
+    color: palette.accent,
     fontSize: 13,
     fontWeight: "700",
   },
 
   hintText: {
-    color: colors.sub,
+    color: palette.sub,
     fontSize: 13,
     marginTop: 8,
     fontStyle: "italic",
@@ -967,7 +911,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.08)",
+    borderTopColor: palette.borderSoft,
+    backgroundColor: "rgba(0,0,0,0.5)",
   },
   backButton: {
     flex: 1,
@@ -978,18 +923,14 @@ const styles = StyleSheet.create({
   },
   backText: {
     fontSize: 14,
-    color: colors.sub,
+    color: palette.sub,
     fontWeight: "600",
   },
   nextButton: {
     flex: 2,
-    borderRadius: 14,
+    borderRadius: theme.radius.lg,
     overflow: "hidden",
-    shadowColor: "#ff7a1a",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
+    ...theme.shadow.accent,
   },
   nextButtonGradient: {
     flexDirection: "row",
