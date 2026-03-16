@@ -1,5 +1,5 @@
 // screens/WelcomeScreen.tsx
-// Écrans de présentation pro avant inscription - style dark sport/fitness
+// Écran de présentation — image de foot en fond, même DA que le reste de l'app
 
 import React, { useState, useRef, useCallback } from 'react';
 import {
@@ -10,17 +10,17 @@ import {
   FlatList,
   TouchableOpacity,
   Animated,
-  StatusBar,
-  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useHaptics } from '../hooks/useHaptics';
-import { authColors } from '../theme/authColors';
+import { theme } from '../constants/theme';
+import { AuthBackground, AUTH_IMAGES } from '../components/auth/AuthBackground';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const palette = theme.colors;
 
 // ====== SLIDES DATA ======
 type Slide = {
@@ -86,7 +86,6 @@ export default function WelcomeScreen({ onComplete }: Props) {
   const flatListRef = useRef<FlatList>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
 
-  // Animations d'entrée par slide
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
 
@@ -100,34 +99,16 @@ export default function WelcomeScreen({ onComplete }: Props) {
 
   const goToSlide = useCallback((index: number) => {
     haptics.impactLight();
-    // Fade out
     Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: -20,
-        duration: 150,
-        useNativeDriver: true,
-      }),
+      Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: -20, duration: 150, useNativeDriver: true }),
     ]).start(() => {
       flatListRef.current?.scrollToIndex({ index, animated: true });
       setCurrentIndex(index);
-      // Fade in
       slideAnim.setValue(20);
       Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true,
-        }),
+        Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
       ]).start();
     });
   }, [fadeAnim, slideAnim]);
@@ -214,34 +195,24 @@ export default function WelcomeScreen({ onComplete }: Props) {
               </TouchableOpacity>
             </View>
           ) : null}
-          <View style={styles.slideCardEdge} />
         </View>
       </View>
     );
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
-
-      <LinearGradient
-        colors={["#0b1120", "#111827", "#1f2937"]}
-        style={StyleSheet.absoluteFillObject}
-        start={{ x: 0.2, y: 0 }}
-        end={{ x: 0.8, y: 1 }}
-      />
-      <View style={styles.bgGlowTop} />
-      <View style={styles.bgGlowBottom} />
-      <View style={[styles.pitchTag, { top: insets.top + 4 }]}>
-        <Ionicons name="football-outline" size={12} color="rgba(255,255,255,0.9)" />
-        <Text style={styles.pitchTagText}>Football Performance System</Text>
-      </View>
-
+    <AuthBackground image={AUTH_IMAGES.welcome}>
       <SafeAreaView style={styles.safeArea}>
+        {/* Tag football */}
+        <View style={styles.pitchTag}>
+          <Ionicons name="football-outline" size={12} color="rgba(255,255,255,0.9)" />
+          <Text style={styles.pitchTagText}>Football Performance System</Text>
+        </View>
+
         {/* Skip button (hidden on last slide) */}
         {!isLastSlide ? (
           <TouchableOpacity
-            style={[styles.skipButton, { top: insets.top + 8 }]}
+            style={styles.skipButton}
             onPress={handleSkip}
             activeOpacity={0.7}
           >
@@ -310,7 +281,7 @@ export default function WelcomeScreen({ onComplete }: Props) {
                       {
                         width: dotWidth,
                         opacity: dotOpacity,
-                        backgroundColor: authColors.accent,
+                        backgroundColor: palette.accent,
                       },
                     ]}
                   />
@@ -339,39 +310,18 @@ export default function WelcomeScreen({ onComplete }: Props) {
           ) : null}
         </View>
       </SafeAreaView>
-    </View>
+    </AuthBackground>
   );
 }
 
 // ====== STYLES ======
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: authColors.bg,
-  },
-  bgGlowTop: {
-    position: 'absolute',
-    top: -160,
-    left: -120,
-    width: 360,
-    height: 360,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,122,26,0.22)',
-  },
-  bgGlowBottom: {
-    position: 'absolute',
-    bottom: -220,
-    right: -170,
-    width: 420,
-    height: 420,
-    borderRadius: 999,
-    backgroundColor: 'rgba(14,165,233,0.15)',
-  },
   safeArea: {
     flex: 1,
   },
   pitchTag: {
     position: 'absolute',
+    top: 8,
     left: 16,
     zIndex: 9,
     flexDirection: 'row',
@@ -379,10 +329,10 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: theme.radius.pill,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
-    backgroundColor: 'rgba(6,8,14,0.55)',
+    borderColor: palette.borderSoft,
+    backgroundColor: 'rgba(0,0,0,0.5)',
   },
   pitchTagText: {
     color: 'rgba(255,255,255,0.9)',
@@ -394,12 +344,13 @@ const styles = StyleSheet.create({
   skipButton: {
     position: 'absolute',
     right: 20,
+    top: 8,
     zIndex: 10,
     paddingVertical: 8,
     paddingHorizontal: 16,
   },
   skipText: {
-    color: authColors.sub,
+    color: palette.sub,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -417,22 +368,13 @@ const styles = StyleSheet.create({
   slideCard: {
     width: '100%',
     maxWidth: 380,
-    borderRadius: 24,
+    borderRadius: theme.radius.xl,
     paddingVertical: 28,
     paddingHorizontal: 22,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-    backgroundColor: 'rgba(8,12,20,0.72)',
+    borderColor: palette.borderSoft,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     overflow: 'hidden',
-  },
-  slideCardEdge: {
-    position: 'absolute',
-    top: -80,
-    right: -90,
-    width: 220,
-    height: 220,
-    borderRadius: 120,
-    backgroundColor: 'rgba(255,122,26,0.16)',
   },
   iconContainer: {
     marginBottom: 32,
@@ -444,16 +386,12 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#ff7a1a',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 12,
+    ...theme.shadow.accent,
   },
   title: {
     fontSize: 32,
     fontWeight: '800',
-    color: authColors.text,
+    color: palette.text,
     textAlign: 'center',
     marginBottom: 16,
     letterSpacing: 0.5,
@@ -465,7 +403,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: '#d8deea',
+    color: palette.sub,
     textAlign: 'center',
     lineHeight: 24,
   },
@@ -473,15 +411,15 @@ const styles = StyleSheet.create({
     marginTop: 24,
     paddingVertical: 10,
     paddingHorizontal: 20,
-    backgroundColor: authColors.accentSoft,
-    borderRadius: 12,
+    backgroundColor: palette.accentSoft,
+    borderRadius: theme.radius.md,
     borderWidth: 1,
     borderColor: 'rgba(255,122,26,0.3)',
   },
   highlight: {
     fontSize: 14,
     fontWeight: '700',
-    color: authColors.accent,
+    color: palette.accent,
     textAlign: 'center',
     letterSpacing: 0.5,
   },
@@ -491,13 +429,9 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   ctaPrimary: {
-    borderRadius: 16,
+    borderRadius: theme.radius.lg,
     overflow: 'hidden',
-    shadowColor: '#ff7a1a',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
+    ...theme.shadow.accent,
   },
   ctaPrimaryGradient: {
     flexDirection: 'row',
@@ -520,7 +454,7 @@ const styles = StyleSheet.create({
   ctaSecondaryText: {
     fontSize: 15,
     fontWeight: '600',
-    color: authColors.sub,
+    color: palette.sub,
   },
   bottomSection: {
     position: 'absolute',
@@ -531,13 +465,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 24,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: 'rgba(5,8,14,0.62)',
+    borderTopColor: palette.borderSoft,
+    backgroundColor: 'rgba(0,0,0,0.6)',
   },
   dotsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    paddingTop: 16,
   },
   dot: {
     height: 8,
@@ -545,13 +480,9 @@ const styles = StyleSheet.create({
   },
   nextButton: {
     width: '100%',
-    borderRadius: 16,
+    borderRadius: theme.radius.lg,
     overflow: 'hidden',
-    shadowColor: '#ff7a1a',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
+    ...theme.shadow.accent,
   },
   nextButtonGradient: {
     flexDirection: 'row',

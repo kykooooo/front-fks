@@ -1,5 +1,5 @@
-// src/screens/LoginScreen.tsx
-// Login modernisé - design épuré avec accent orange
+// screens/LoginScreen.tsx
+// Login — image de foot en fond, même DA que le reste de l'app
 
 import React, { useRef, useState } from "react";
 import {
@@ -15,7 +15,6 @@ import {
   Keyboard,
   ScrollView,
   ActivityIndicator,
-  StatusBar,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -32,9 +31,11 @@ import { trackEvent } from "../services/analytics";
 import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
 import { runShake } from "../utils/animations";
-import { authColors } from "../theme/authColors";
+import { theme } from "../constants/theme";
+import { AuthBackground, AUTH_IMAGES } from "../components/auth/AuthBackground";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
+const palette = theme.colors;
 
 const getLoginErrorMessage = (code?: string) => {
   switch (code) {
@@ -127,212 +128,182 @@ export default function LoginScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="#05070c" />
-      <LinearGradient
-        colors={["#0b1120", "#111827", "#1f2937"]}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={styles.bgGlowTop} />
-      <View style={styles.bgGlowBottom} />
-      <View style={styles.vignette} />
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
-      >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <ScrollView
-            contentContainerStyle={styles.container}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Back button */}
-            {navigation.canGoBack() ? (
-              <Pressable
-                onPress={() => navigation.goBack()}
-                style={styles.backButton}
-                accessibilityLabel="Retour"
-                accessibilityRole="button"
-              >
-                <Ionicons name="chevron-back" size={24} color={authColors.sub} />
-              </Pressable>
-            ) : null}
-
-            {/* Logo / Brand */}
-            <View style={styles.brandSection}>
-              <View style={styles.logoContainer}>
-                <LinearGradient
-                  colors={["#ff7a1a", "#ff9a4a"]}
-                  style={styles.logoGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
+    <AuthBackground image={AUTH_IMAGES.welcome}>
+      <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+            <ScrollView
+              contentContainerStyle={styles.container}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Back button */}
+              {navigation.canGoBack() ? (
+                <Pressable
+                  onPress={() => navigation.goBack()}
+                  style={styles.backButton}
+                  accessibilityLabel="Retour"
+                  accessibilityRole="button"
                 >
-                  <Ionicons name="fitness-outline" size={32} color="#fff" />
-                </LinearGradient>
-              </View>
-              <Text style={styles.brandName}>FKS</Text>
-            </View>
+                  <Ionicons name="chevron-back" size={24} color={palette.sub} />
+                </Pressable>
+              ) : null}
 
-            {/* Header */}
-            <View style={styles.header}>
-              <Text style={styles.title}>Content de te revoir</Text>
-              <Text style={styles.subtitle}>Connecte-toi pour reprendre ta progression.</Text>
-              <Text style={styles.heroHint}>Connexion sécurisée</Text>
-            </View>
-
-            {/* Form */}
-            <Animated.View style={[styles.formContainer, { transform: [{ translateX: shake }] }]}>
-              {/* Email */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Email</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="mail-outline" size={18} color={authColors.muted} style={styles.inputIcon} />
-                  <TextInput
-                    placeholder="ton@email.com"
-                    placeholderTextColor={authColors.muted}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    autoComplete="email"
-                    value={email}
-                    onChangeText={setEmail}
-                    returnKeyType="next"
-                    onSubmitEditing={() => pwdInputRef.current?.focus()}
-                    style={styles.input}
-                    accessibilityLabel="Champ email"
-                    accessibilityHint="Entre ton adresse email pour te connecter"
-                  />
-                </View>
-                {email.length > 0 && !emailLooksValid ? (
-                  <Text style={styles.inlineError}>Format email invalide.</Text>
-                ) : null}
-              </View>
-
-              {/* Password */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Mot de passe</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="lock-closed-outline" size={18} color={authColors.muted} style={styles.inputIcon} />
-                  <TextInput
-                    ref={pwdInputRef}
-                    placeholder="••••••••"
-                    placeholderTextColor={authColors.muted}
-                    secureTextEntry={!showPwd}
-                    autoComplete="password"
-                    value={pwd}
-                    onChangeText={setPwd}
-                    returnKeyType="go"
-                    onSubmitEditing={() => {
-                      if (!loading && canSubmit) void onLogin();
-                    }}
-                    style={styles.input}
-                    accessibilityLabel="Champ mot de passe"
-                    accessibilityHint="Entre ton mot de passe"
-                  />
-                  <Pressable
-                    onPress={() => setShowPwd(!showPwd)}
-                    style={styles.eyeButton}
-                    accessibilityLabel={showPwd ? "Masquer mot de passe" : "Afficher mot de passe"}
+              {/* Logo / Brand */}
+              <View style={styles.brandSection}>
+                <View style={styles.logoContainer}>
+                  <LinearGradient
+                    colors={["#ff7a1a", "#ff9a4a"]}
+                    style={styles.logoGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
                   >
-                    <Ionicons
-                      name={showPwd ? "eye-off-outline" : "eye-outline"}
-                      size={20}
-                      color={authColors.muted}
-                    />
-                  </Pressable>
+                    <Ionicons name="fitness-outline" size={32} color="#fff" />
+                  </LinearGradient>
                 </View>
+                <Text style={styles.brandName}>FKS</Text>
               </View>
 
-              {/* Forgot password */}
-              <Pressable
-                onPress={onForgot}
-                disabled={loading}
-                style={[styles.forgot, loading && styles.forgotDisabled]}
-                accessibilityLabel="Mot de passe oublié"
-                accessibilityRole="button"
-              >
-                <Text style={styles.forgotText}>Mot de passe oublié ?</Text>
-              </Pressable>
+              {/* Header */}
+              <View style={styles.header}>
+                <Text style={styles.title}>Content de te revoir</Text>
+                <Text style={styles.subtitle}>Connecte-toi pour reprendre ta progression.</Text>
+              </View>
 
-              {/* Login button */}
-              <Pressable
-                onPress={onLogin}
-                disabled={loading || !canSubmit}
-                style={({ pressed }) => [
-                  styles.loginButton,
-                  pressed && styles.loginButtonPressed,
-                  (loading || !canSubmit) && styles.loginButtonDisabled,
-                ]}
-                accessibilityLabel="Se connecter"
-                accessibilityRole="button"
-              >
-                <LinearGradient
-                  colors={loading ? ["#666", "#555"] : ["#ff7a1a", "#ff9a4a"]}
-                  style={styles.loginButtonGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
+              {/* Form */}
+              <Animated.View style={[styles.formContainer, { transform: [{ translateX: shake }] }]}>
+                {/* Email */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Email</Text>
+                  <View style={styles.inputWrapper}>
+                    <Ionicons name="mail-outline" size={18} color={palette.muted} style={styles.inputIcon} />
+                    <TextInput
+                      placeholder="ton@email.com"
+                      placeholderTextColor={palette.muted}
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      autoComplete="email"
+                      value={email}
+                      onChangeText={setEmail}
+                      returnKeyType="next"
+                      onSubmitEditing={() => pwdInputRef.current?.focus()}
+                      style={styles.input}
+                      accessibilityLabel="Champ email"
+                      accessibilityHint="Entre ton adresse email pour te connecter"
+                    />
+                  </View>
+                  {email.length > 0 && !emailLooksValid ? (
+                    <Text style={styles.inlineError}>Format email invalide.</Text>
+                  ) : null}
+                </View>
+
+                {/* Password */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Mot de passe</Text>
+                  <View style={styles.inputWrapper}>
+                    <Ionicons name="lock-closed-outline" size={18} color={palette.muted} style={styles.inputIcon} />
+                    <TextInput
+                      ref={pwdInputRef}
+                      placeholder="••••••••"
+                      placeholderTextColor={palette.muted}
+                      secureTextEntry={!showPwd}
+                      autoComplete="password"
+                      value={pwd}
+                      onChangeText={setPwd}
+                      returnKeyType="go"
+                      onSubmitEditing={() => {
+                        if (!loading && canSubmit) void onLogin();
+                      }}
+                      style={styles.input}
+                      accessibilityLabel="Champ mot de passe"
+                      accessibilityHint="Entre ton mot de passe"
+                    />
+                    <Pressable
+                      onPress={() => setShowPwd(!showPwd)}
+                      style={styles.eyeButton}
+                      accessibilityLabel={showPwd ? "Masquer mot de passe" : "Afficher mot de passe"}
+                    >
+                      <Ionicons
+                        name={showPwd ? "eye-off-outline" : "eye-outline"}
+                        size={20}
+                        color={palette.muted}
+                      />
+                    </Pressable>
+                  </View>
+                </View>
+
+                {/* Forgot password */}
+                <Pressable
+                  onPress={onForgot}
+                  disabled={loading}
+                  style={[styles.forgot, loading && styles.forgotDisabled]}
+                  accessibilityLabel="Mot de passe oublié"
+                  accessibilityRole="button"
                 >
-                  {loading ? (
-                    <View style={styles.loadingRow}>
-                      <ActivityIndicator size="small" color="#fff" />
-                      <Text style={styles.loginButtonText}>Connexion...</Text>
-                    </View>
-                  ) : (
-                    <>
-                      <Text style={styles.loginButtonText}>Se connecter</Text>
-                      <Ionicons name="arrow-forward" size={18} color="#fff" />
-                    </>
-                  )}
-                </LinearGradient>
-              </Pressable>
-            </Animated.View>
+                  <Text style={styles.forgotText}>Mot de passe oublié ?</Text>
+                </Pressable>
 
-            {/* Footer - Register link */}
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>Pas encore de compte ?</Text>
-              <Pressable
-                onPress={() => navigation.navigate("Register")}
-                style={styles.registerLink}
-                accessibilityLabel="Créer un compte"
-                accessibilityRole="button"
-              >
-                <Text style={styles.registerLinkText}>Créer un compte</Text>
-                <Ionicons name="chevron-forward" size={16} color={authColors.accent} />
-              </Pressable>
-            </View>
-          </ScrollView>
-        </TouchableWithoutFeedback>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+                {/* Login button */}
+                <Pressable
+                  onPress={onLogin}
+                  disabled={loading || !canSubmit}
+                  style={({ pressed }) => [
+                    styles.loginButton,
+                    pressed && styles.loginButtonPressed,
+                    (loading || !canSubmit) && styles.loginButtonDisabled,
+                  ]}
+                  accessibilityLabel="Se connecter"
+                  accessibilityRole="button"
+                >
+                  <LinearGradient
+                    colors={loading ? ["#666", "#555"] : ["#ff7a1a", "#ff9a4a"]}
+                    style={styles.loginButtonGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                  >
+                    {loading ? (
+                      <View style={styles.loadingRow}>
+                        <ActivityIndicator size="small" color="#fff" />
+                        <Text style={styles.loginButtonText}>Connexion...</Text>
+                      </View>
+                    ) : (
+                      <>
+                        <Text style={styles.loginButtonText}>Se connecter</Text>
+                        <Ionicons name="arrow-forward" size={18} color="#fff" />
+                      </>
+                    )}
+                  </LinearGradient>
+                </Pressable>
+              </Animated.View>
+
+              {/* Footer - Register link */}
+              <View style={styles.footer}>
+                <Text style={styles.footerText}>Pas encore de compte ?</Text>
+                <Pressable
+                  onPress={() => navigation.navigate("Register")}
+                  style={styles.registerLink}
+                  accessibilityLabel="Créer un compte"
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.registerLinkText}>Créer un compte</Text>
+                  <Ionicons name="chevron-forward" size={16} color={palette.accent} />
+                </Pressable>
+              </View>
+            </ScrollView>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </AuthBackground>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#05070c",
-  },
-  vignette: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(5,7,12,0.18)",
-  },
-  bgGlowTop: {
-    position: "absolute",
-    top: -120,
-    right: -100,
-    width: 320,
-    height: 320,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,122,26,0.2)",
-  },
-  bgGlowBottom: {
-    position: "absolute",
-    bottom: -160,
-    left: -120,
-    width: 360,
-    height: 360,
-    borderRadius: 999,
-    backgroundColor: "rgba(14,165,233,0.18)",
   },
   backButton: {
     alignSelf: "flex-start",
@@ -350,11 +321,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   logoContainer: {
-    shadowColor: "#ff7a1a",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
+    ...theme.shadow.accent,
   },
   logoGradient: {
     width: 64,
@@ -366,7 +333,7 @@ const styles = StyleSheet.create({
   brandName: {
     fontSize: 28,
     fontWeight: "900",
-    color: authColors.text,
+    color: palette.text,
     letterSpacing: 3,
   },
   header: {
@@ -376,29 +343,21 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: "800",
-    color: authColors.text,
+    color: palette.text,
     textAlign: "center",
   },
   subtitle: {
     fontSize: 14,
-    color: authColors.sub,
+    color: palette.sub,
     textAlign: "center",
-  },
-  heroHint: {
-    marginTop: 4,
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
-    color: "rgba(248,250,252,0.74)",
   },
   formContainer: {
     gap: 16,
     padding: 16,
-    borderRadius: 18,
+    borderRadius: theme.radius.xl,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
-    backgroundColor: authColors.card,
+    borderColor: palette.borderSoft,
+    backgroundColor: "rgba(255,255,255,0.08)",
   },
   inputGroup: {
     gap: 6,
@@ -406,33 +365,32 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13,
     fontWeight: "600",
-    color: authColors.text,
+    color: palette.text,
     marginLeft: 4,
   },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    borderRadius: 14,
+    borderColor: palette.borderSoft,
+    borderRadius: theme.radius.md,
     backgroundColor: "rgba(255,255,255,0.06)",
     paddingHorizontal: 14,
   },
   inputIcon: {
     marginRight: 10,
-    color: authColors.muted,
   },
   input: {
     flex: 1,
     paddingVertical: 14,
-    color: authColors.text,
+    color: palette.text,
     fontSize: 15,
   },
   inlineError: {
     marginLeft: 4,
     marginTop: 2,
     fontSize: 12,
-    color: "#fda4af",
+    color: palette.danger,
     fontWeight: "600",
   },
   eyeButton: {
@@ -445,19 +403,15 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   forgotText: {
-    color: authColors.accent,
+    color: palette.accent,
     fontSize: 13,
     fontWeight: "600",
   },
   loginButton: {
-    borderRadius: 14,
+    borderRadius: theme.radius.lg,
     overflow: "hidden",
     marginTop: 8,
-    shadowColor: "#ff7a1a",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
+    ...theme.shadow.accent,
   },
   loginButtonPressed: {
     opacity: 0.9,
@@ -490,11 +444,11 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 8,
     paddingVertical: 10,
-    borderRadius: 14,
-    backgroundColor: "rgba(8,12,20,0.62)",
+    borderRadius: theme.radius.lg,
+    backgroundColor: "rgba(0,0,0,0.5)",
   },
   footerText: {
-    color: authColors.sub,
+    color: palette.sub,
     fontSize: 14,
   },
   registerLink: {
@@ -503,7 +457,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   registerLinkText: {
-    color: authColors.accent,
+    color: palette.accent,
     fontSize: 15,
     fontWeight: "700",
   },
