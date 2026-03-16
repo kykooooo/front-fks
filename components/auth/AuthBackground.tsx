@@ -15,20 +15,24 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { theme } from "../../constants/theme";
 
-// Images de football via Pexels (gratuites, haute qualité)
-// Compressées côté serveur via ?auto=compress&w=1080
+// Images prépa physique via Pexels (gratuites, haute qualité)
+// Une image DIFFÉRENTE par écran — toutes orientées prépa physique / training
 export const AUTH_IMAGES = {
-  // Terrain de foot au crépuscule — vue large, ambiance
+  // Welcome : sprinter sur piste — ambiance explosive, premier contact avec l'app
   welcome: {
-    uri: "https://images.pexels.com/photos/46798/the-ball-stadion-football-the-pitch-46798.jpeg?auto=compress&cs=tinysrgb&w=1080",
+    uri: "https://images.pexels.com/photos/3764014/pexels-photo-3764014.jpeg?auto=compress&cs=tinysrgb&w=1080",
   },
-  // Joueur à l'entraînement — action
+  // Login : athlète qui s'étire / récupère — "content de te revoir"
+  login: {
+    uri: "https://images.pexels.com/photos/6455927/pexels-photo-6455927.jpeg?auto=compress&cs=tinysrgb&w=1080",
+  },
+  // Register : musculation / haltères — action, puissance, nouveau départ
   register: {
-    uri: "https://images.pexels.com/photos/3621104/pexels-photo-3621104.jpeg?auto=compress&cs=tinysrgb&w=1080",
+    uri: "https://images.pexels.com/photos/4164761/pexels-photo-4164761.jpeg?auto=compress&cs=tinysrgb&w=1080",
   },
-  // Crampons / préparation — ambiance vestiaire
+  // Setup profil : course / agilité — préparation, progression
   setup: {
-    uri: "https://images.pexels.com/photos/274422/pexels-photo-274422.jpeg?auto=compress&cs=tinysrgb&w=1080",
+    uri: "https://images.pexels.com/photos/3766211/pexels-photo-3766211.jpeg?auto=compress&cs=tinysrgb&w=1080",
   },
 } as const;
 

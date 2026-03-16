@@ -128,7 +128,7 @@ export default function LoginScreen({ navigation }: Props) {
   };
 
   return (
-    <AuthBackground image={AUTH_IMAGES.welcome}>
+    <AuthBackground image={AUTH_IMAGES.login}>
       <SafeAreaView style={styles.safeArea}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
