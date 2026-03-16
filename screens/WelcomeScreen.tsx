@@ -1,50 +1,78 @@
 // screens/WelcomeScreen.tsx
-// Onboarding premium — Nike TC × Strava
+// Écrans de présentation pro avant inscription - style dark sport/fitness
 
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Dimensions,
   FlatList,
-  Pressable,
+  TouchableOpacity,
   Animated,
   StatusBar,
-  AccessibilityInfo,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useHaptics } from "../hooks/useHaptics";
-import { ds, typo, space, radius, anim } from "../theme/authDesignSystem";
+  Platform,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useHaptics } from '../hooks/useHaptics';
+import { authColors } from '../theme/authColors';
 
-const { width: SCREEN_W } = Dimensions.get("window");
-const SLIDE_COUNT = 3;
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const FEATURES = [
+// ====== SLIDES DATA ======
+type Slide = {
+  id: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  iconBg: string[];
+  title: string;
+  subtitle: string;
+  highlight?: string;
+};
+
+const SLIDES: Slide[] = [
   {
-    icon: "flash-outline" as const,
-    title: "Adapte chaque s\u00e9ance",
-    desc: "L\u2019IA ajuste selon ta fatigue, ton poste et ta semaine",
+    id: 'hero',
+    icon: 'fitness-outline',
+    iconBg: ['#ff7a1a', '#ff9a4a'],
+    title: 'FKS',
+    subtitle: 'Ta prépa physique football,\noptimisée par l\'IA',
+    highlight: 'Entraîne-toi comme un pro.',
   },
   {
-    icon: "trending-up-outline" as const,
-    title: "Progresse vraiment",
-    desc: "Suis ta charge et tes perfs, semaine apr\u00e8s semaine",
+    id: 'ai',
+    icon: 'bulb-outline',
+    iconBg: ['#8b5cf6', '#a78bfa'],
+    title: 'Séances intelligentes',
+    subtitle: 'L\'IA génère des séances adaptées à ta charge, ton calendrier club et tes objectifs.',
+    highlight: 'Personnalisé. Chaque jour.',
   },
   {
-    icon: "location-outline" as const,
-    title: "Partout, avec ton matos",
-    desc: "Salle, terrain ou chez toi \u2014 on s\u2019adapte",
+    id: 'tracking',
+    icon: 'trending-up-outline',
+    iconBg: ['#06b6d4', '#22d3ee'],
+    title: 'Suivi complet',
+    subtitle: 'Forme, fatigue, tests terrain... ta progression est visible semaine après semaine.',
+    highlight: 'Mesure. Progresse. Domine.',
   },
-];
-
-const AVATARS = [
-  { initials: "KM", bg: "#E8553A" },
-  { initials: "AB", bg: "#6366F1" },
-  { initials: "LT", bg: "#0EA5E9" },
+  {
+    id: 'cycles',
+    icon: 'layers-outline',
+    iconBg: ['#16a34a', '#4ade80'],
+    title: 'Programmes structurés',
+    subtitle: 'Force, Explosivité, Endurance, RSA... Des cycles de 12 séances pour progresser vraiment.',
+    highlight: '12 séances. 1 objectif.',
+  },
+  {
+    id: 'cta',
+    icon: 'rocket-outline',
+    iconBg: ['#ff7a1a', '#ff9a4a'],
+    title: 'Prêt à passer au\nniveau supérieur ?',
+    subtitle: 'Rejoins les footballeurs qui prennent leur prépa physique au sérieux.',
+    highlight: '',
+  },
 ];
 
 type Props = {
@@ -58,458 +86,485 @@ export default function WelcomeScreen({ onComplete }: Props) {
   const flatListRef = useRef<FlatList>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
 
-  const [noMotion, setNoMotion] = useState(false);
-  useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then(setNoMotion);
-  }, []);
-
-  // CTA pulse
-  const pulse = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    if (noMotion) return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: anim.pulseScale,
-          duration: anim.pulseDuration / 2,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: anim.pulseDuration / 2,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse, noMotion]);
-
-  // Slide entrance
+  // Animations d'entrée par slide
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
 
-  const isLast = currentIndex === SLIDE_COUNT - 1;
+  const isLastSlide = currentIndex === SLIDES.length - 1;
 
-  const handleComplete = useCallback(
-    async (entry: "login" | "register" = "login") => {
-      haptics.impactMedium();
-      await AsyncStorage.setItem("fks_welcome_done", "true");
-      onComplete(entry);
-    },
-    [onComplete, haptics]
-  );
+  const handleComplete = useCallback(async (entry: "login" | "register" = "login") => {
+    haptics.impactMedium();
+    await AsyncStorage.setItem('fks_welcome_done', 'true');
+    onComplete(entry);
+  }, [onComplete, haptics]);
 
-  const goToSlide = useCallback(
-    (index: number) => {
-      haptics.impactLight();
-      if (noMotion) {
-        flatListRef.current?.scrollToIndex({ index, animated: false });
-        setCurrentIndex(index);
-        return;
-      }
+  const goToSlide = useCallback((index: number) => {
+    haptics.impactLight();
+    // Fade out
+    Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 0,
         duration: 150,
         useNativeDriver: true,
-      }).start(() => {
-        flatListRef.current?.scrollToIndex({ index, animated: true });
-        setCurrentIndex(index);
+      }),
+      Animated.timing(slideAnim, {
+        toValue: -20,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      flatListRef.current?.scrollToIndex({ index, animated: true });
+      setCurrentIndex(index);
+      // Fade in
+      slideAnim.setValue(20);
+      Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
-          duration: anim.medium,
+          duration: 250,
           useNativeDriver: true,
-        }).start();
-      });
-    },
-    [fadeAnim, noMotion, haptics]
-  );
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+  }, [fadeAnim, slideAnim]);
 
-  const onViewRef = useRef(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) setCurrentIndex(viewableItems[0].index ?? 0);
+  const handleNext = useCallback(() => {
+    if (isLastSlide) {
+      handleComplete("register");
+    } else {
+      goToSlide(currentIndex + 1);
+    }
+  }, [isLastSlide, currentIndex, goToSlide, handleComplete]);
+
+  const handleSkip = useCallback(() => {
+    handleComplete("login");
+  }, [handleComplete]);
+
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (viewableItems.length > 0) {
+      setCurrentIndex(viewableItems[0].index ?? 0);
+    }
   }).current;
-  const viewConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
 
-  // ── CTA button ──
-  const CTA = ({ label }: { label: string }) => (
-    <Animated.View style={{ transform: [{ scale: pulse }], width: "100%" }}>
-      <Pressable
-        style={({ pressed }) => [s.cta, pressed && s.ctaPressed]}
-        onPress={() => handleComplete("register")}
-        accessibilityLabel={label}
-        accessibilityRole="button"
-      >
-        <LinearGradient
-          colors={[...ds.gradientAccent]}
-          style={s.ctaInner}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-        >
-          <Text style={s.ctaText}>{label}</Text>
-          <Ionicons name="arrow-forward" size={18} color={ds.textOnAccent} />
-        </LinearGradient>
-      </Pressable>
-    </Animated.View>
-  );
+  const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
 
-  // ── Slide 1 : Hero ──
-  const renderHero = () => (
-    <View style={s.inner}>
-      <View style={{ gap: 8, alignItems: "center" }}>
-        <Text style={s.brand}>FKS</Text>
-        <View style={s.signatureBar} />
-      </View>
+  const renderSlide = ({ item, index }: { item: Slide; index: number }) => {
+    const isHero = index === 0;
+    const isCta = index === SLIDES.length - 1;
 
-      <View style={{ height: space.xxxl }} />
+    return (
+      <View style={styles.slide}>
+        <View style={styles.slideCard}>
+          {/* Icon avec gradient */}
+          <View style={styles.iconContainer}>
+            <LinearGradient
+              colors={item.iconBg as [string, string]}
+              style={styles.iconGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Ionicons name={item.icon} size={isHero ? 56 : 48} color="#fff" />
+            </LinearGradient>
+          </View>
 
-      <Text style={s.heroTitle}>
-        Ta pr\u00e9pa physique,{"\n"}ton terrain.
-      </Text>
-      <Text style={s.heroSub}>
-        Des s\u00e9ances pilot\u00e9es par l\u2019IA, adapt\u00e9es \u00e0 ton poste et ta fatigue.
-      </Text>
+          {/* Title */}
+          <Text style={[styles.title, isHero && styles.titleHero]}>
+            {item.title}
+          </Text>
 
-      <View style={{ height: space.xl }} />
-      <CTA label="C'est parti" />
+          {/* Subtitle */}
+          <Text style={styles.subtitle}>{item.subtitle}</Text>
 
-      <Pressable
-        onPress={() => handleComplete("login")}
-        style={s.secondaryLink}
-        accessibilityLabel="Se connecter"
-        accessibilityRole="button"
-      >
-        <Text style={s.secondaryLinkText}>J'ai d\u00e9j\u00e0 un compte</Text>
-      </Pressable>
-    </View>
-  );
-
-  // ── Slide 2 : Features ──
-  const renderFeatures = () => (
-    <View style={s.inner}>
-      <Text style={s.sectionLabel}>POURQUOI FKS</Text>
-      <View style={{ height: space.lg }} />
-
-      <View style={{ gap: space.sectionGap, width: "100%" }}>
-        {FEATURES.map((f, i) => (
-          <View key={i} style={s.featureRow}>
-            <View style={s.featureIcon}>
-              <Ionicons name={f.icon} size={22} color={ds.accent} />
+          {/* Highlight */}
+          {item.highlight ? (
+            <View style={styles.highlightContainer}>
+              <Text style={styles.highlight}>{item.highlight}</Text>
             </View>
-            <View style={{ flex: 1, gap: 4 }}>
-              <Text style={s.featureTitle}>{f.title}</Text>
-              <Text style={s.featureDesc}>{f.desc}</Text>
+          ) : null}
+
+          {/* CTA buttons on last slide */}
+          {isCta ? (
+            <View style={styles.ctaContainer}>
+              <TouchableOpacity
+                style={styles.ctaPrimary}
+                onPress={() => handleComplete("register")}
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={['#ff7a1a', '#ff9a4a']}
+                  style={styles.ctaPrimaryGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <Text style={styles.ctaPrimaryText}>Créer un compte</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#fff" />
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.ctaSecondary}
+                onPress={() => handleComplete("login")}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.ctaSecondaryText}>J'ai déjà un compte</Text>
+              </TouchableOpacity>
             </View>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-
-  // ── Slide 3 : Social proof ──
-  const renderSocial = () => (
-    <View style={s.inner}>
-      <Text style={s.sectionLabel}>COMMUNAUT\u00c9</Text>
-      <View style={{ height: space.lg }} />
-
-      <Text style={s.socialTitle}>+500 joueurs{"\n"}nous font confiance</Text>
-      <View style={{ height: space.xl }} />
-
-      {/* Avatars */}
-      <View style={s.avatarsRow}>
-        {AVATARS.map((a, i) => (
-          <View
-            key={i}
-            style={[s.avatar, { backgroundColor: a.bg, marginLeft: i > 0 ? -8 : 0 }]}
-          >
-            <Text style={s.avatarInitials}>{a.initials}</Text>
-          </View>
-        ))}
-        <View style={s.ratingPill}>
-          <Text style={s.ratingValue}>4.8</Text>
-          <View style={s.ratingStar}>
-            <Ionicons name="star" size={12} color={ds.accent} />
-          </View>
+          ) : null}
+          <View style={styles.slideCardEdge} />
         </View>
       </View>
-
-      <View style={{ height: space.sectionGap }} />
-      <CTA label="Cr\u00e9er mon compte" />
-
-      <Pressable
-        onPress={() => handleComplete("login")}
-        style={s.secondaryLink}
-        accessibilityLabel="Se connecter"
-        accessibilityRole="button"
-      >
-        <Text style={s.secondaryLinkText}>J'ai d\u00e9j\u00e0 un compte</Text>
-      </Pressable>
-    </View>
-  );
-
-  const renderSlide = ({ index }: { item: number; index: number }) => (
-    <View style={s.slide}>
-      {index === 0 && renderHero()}
-      {index === 1 && renderFeatures()}
-      {index === 2 && renderSocial()}
-    </View>
-  );
-
-  const data = [0, 1, 2];
+    );
+  };
 
   return (
-    <View style={s.container}>
-      <StatusBar barStyle="light-content" backgroundColor={ds.bg} />
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
 
-      {/* Skip */}
-      {!isLast && (
-        <Pressable
-          style={[s.skipBtn, { top: insets.top + 12 }]}
-          onPress={() => goToSlide(SLIDE_COUNT - 1)}
-          accessibilityLabel="Passer"
-          accessibilityRole="button"
-        >
-          <Text style={s.skipText}>Passer</Text>
-        </Pressable>
-      )}
-
-      {/* Slides */}
-      <Animated.View
-        style={[s.slides, { opacity: fadeAnim, paddingTop: insets.top + 16 }]}
-      >
-        <FlatList
-          ref={flatListRef}
-          data={data}
-          renderItem={renderSlide}
-          keyExtractor={String}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-            { useNativeDriver: false }
-          )}
-          onViewableItemsChanged={onViewRef}
-          viewabilityConfig={viewConfig}
-          scrollEventThrottle={16}
-          bounces={false}
-        />
-      </Animated.View>
-
-      {/* Dots — traits Nike */}
-      <View style={[s.dotsWrap, { paddingBottom: insets.bottom + 20 }]}>
-        <View style={s.dotsRow}>
-          {data.map((_, i) => {
-            const range = [(i - 1) * SCREEN_W, i * SCREEN_W, (i + 1) * SCREEN_W];
-            const w = scrollX.interpolate({
-              inputRange: range,
-              outputRange: [24, 24, 24],
-              extrapolate: "clamp",
-            });
-            const bg = scrollX.interpolate({
-              inputRange: range,
-              outputRange: [ds.border, ds.accent, ds.border],
-              extrapolate: "clamp",
-            });
-            return (
-              <Pressable key={i} onPress={() => goToSlide(i)}>
-                <Animated.View
-                  style={[s.dot, { width: w, backgroundColor: bg }]}
-                />
-              </Pressable>
-            );
-          })}
-        </View>
+      <LinearGradient
+        colors={["#0b1120", "#111827", "#1f2937"]}
+        style={StyleSheet.absoluteFillObject}
+        start={{ x: 0.2, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
+      />
+      <View style={styles.bgGlowTop} />
+      <View style={styles.bgGlowBottom} />
+      <View style={[styles.pitchTag, { top: insets.top + 4 }]}>
+        <Ionicons name="football-outline" size={12} color="rgba(255,255,255,0.9)" />
+        <Text style={styles.pitchTagText}>Football Performance System</Text>
       </View>
+
+      <SafeAreaView style={styles.safeArea}>
+        {/* Skip button (hidden on last slide) */}
+        {!isLastSlide ? (
+          <TouchableOpacity
+            style={[styles.skipButton, { top: insets.top + 8 }]}
+            onPress={handleSkip}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.skipText}>Passer</Text>
+          </TouchableOpacity>
+        ) : null}
+
+        {/* Slides */}
+        <Animated.View
+          style={[
+            styles.slidesContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          <FlatList
+            ref={flatListRef}
+            data={SLIDES}
+            renderItem={renderSlide}
+            keyExtractor={(item) => item.id}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onScroll={Animated.event(
+              [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+              { useNativeDriver: false }
+            )}
+            onViewableItemsChanged={onViewableItemsChanged}
+            viewabilityConfig={viewabilityConfig}
+            scrollEventThrottle={16}
+            bounces={false}
+          />
+        </Animated.View>
+
+        {/* Bottom section: dots + next button */}
+        <View style={[styles.bottomSection, { paddingBottom: insets.bottom + 16 }]}>
+          {/* Pagination dots */}
+          <View style={styles.dotsContainer}>
+            {SLIDES.map((_, index) => {
+              const inputRange = [
+                (index - 1) * SCREEN_WIDTH,
+                index * SCREEN_WIDTH,
+                (index + 1) * SCREEN_WIDTH,
+              ];
+              const dotWidth = scrollX.interpolate({
+                inputRange,
+                outputRange: [8, 24, 8],
+                extrapolate: 'clamp',
+              });
+              const dotOpacity = scrollX.interpolate({
+                inputRange,
+                outputRange: [0.3, 1, 0.3],
+                extrapolate: 'clamp',
+              });
+              return (
+                <TouchableOpacity
+                  key={index}
+                  onPress={() => goToSlide(index)}
+                  activeOpacity={0.7}
+                >
+                  <Animated.View
+                    style={[
+                      styles.dot,
+                      {
+                        width: dotWidth,
+                        opacity: dotOpacity,
+                        backgroundColor: authColors.accent,
+                      },
+                    ]}
+                  />
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Next button (hidden on last slide) */}
+          {!isLastSlide ? (
+            <TouchableOpacity
+              style={styles.nextButton}
+              onPress={handleNext}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={['#ff7a1a', '#ff9a4a']}
+                style={styles.nextButtonGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                <Text style={styles.nextButtonText}>Suivant</Text>
+                <Ionicons name="arrow-forward" size={18} color="#fff" />
+              </LinearGradient>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </SafeAreaView>
     </View>
   );
 }
 
-// ──────────────────────────────────────────
-const s = StyleSheet.create({
+// ====== STYLES ======
+const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: ds.bg,
+    backgroundColor: authColors.bg,
   },
-  slides: {
+  bgGlowTop: {
+    position: 'absolute',
+    top: -160,
+    left: -120,
+    width: 360,
+    height: 360,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,122,26,0.22)',
+  },
+  bgGlowBottom: {
+    position: 'absolute',
+    bottom: -220,
+    right: -170,
+    width: 420,
+    height: 420,
+    borderRadius: 999,
+    backgroundColor: 'rgba(14,165,233,0.15)',
+  },
+  safeArea: {
     flex: 1,
   },
-  slide: {
-    width: SCREEN_W,
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: space.screenH,
-    paddingBottom: 64,
-  },
-  inner: {
-    width: "100%",
-    maxWidth: 340,
-    alignItems: "center",
-  },
-
-  // ── Brand ──
-  brand: {
-    color: ds.text,
-    ...typo.brand,
-  },
-  signatureBar: {
-    width: 40,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: ds.accent,
-  },
-
-  // ── Hero ──
-  heroTitle: {
-    color: ds.text,
-    ...typo.hero,
-    textAlign: "center",
-  },
-  heroSub: {
-    color: ds.textSecondary,
-    ...typo.subtitle,
-    textAlign: "center",
-    marginTop: space.md,
-  },
-
-  // ── Section label ──
-  sectionLabel: {
-    color: ds.textTertiary,
-    ...typo.sectionLabel,
-  },
-
-  // ── Features ──
-  featureRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 16,
-  },
-  featureIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: ds.surface,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  featureTitle: {
-    color: ds.text,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  featureDesc: {
-    color: ds.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-
-  // ── Social ──
-  socialTitle: {
-    color: ds.text,
-    ...typo.title,
-    textAlign: "center",
-  },
-  avatarsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: ds.bg,
-  },
-  avatarInitials: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  ratingPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
+  pitchTag: {
+    position: 'absolute',
+    left: 16,
+    zIndex: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: radius.pill,
-    backgroundColor: ds.surface,
-    marginLeft: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: 'rgba(6,8,14,0.55)',
   },
-  ratingValue: {
-    color: ds.text,
-    fontSize: 14,
-    fontWeight: "700",
+  pitchTagText: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
-  ratingStar: {
-    marginTop: -1,
-  },
-
-  // ── CTA ──
-  cta: {
-    height: 56,
-    borderRadius: radius.md,
-    overflow: "hidden",
-    width: "100%",
-  },
-  ctaPressed: {
-    opacity: anim.pressOpacity,
-    transform: [{ scale: anim.pressScale }],
-  },
-  ctaInner: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    paddingHorizontal: 24,
-  },
-  ctaText: {
-    color: ds.textOnAccent,
-    ...typo.button,
-  },
-
-  // ── Secondary link ──
-  secondaryLink: {
-    paddingVertical: 14,
-  },
-  secondaryLinkText: {
-    color: ds.textSecondary,
-    ...typo.body,
-    fontWeight: "500",
-  },
-
-  // ── Skip ──
-  skipBtn: {
-    position: "absolute",
-    right: space.screenH,
+  skipButton: {
+    position: 'absolute',
+    right: 20,
     zIndex: 10,
     paddingVertical: 8,
     paddingHorizontal: 16,
   },
   skipText: {
-    color: ds.textTertiary,
-    ...typo.caption,
+    color: authColors.sub,
+    fontSize: 14,
+    fontWeight: '600',
   },
-
-  // ── Dots ──
-  dotsWrap: {
-    position: "absolute",
+  slidesContainer: {
+    flex: 1,
+  },
+  slide: {
+    width: SCREEN_WIDTH,
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 22,
+    paddingBottom: 120,
+  },
+  slideCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 24,
+    paddingVertical: 28,
+    paddingHorizontal: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(8,12,20,0.72)',
+    overflow: 'hidden',
+  },
+  slideCardEdge: {
+    position: 'absolute',
+    top: -80,
+    right: -90,
+    width: 220,
+    height: 220,
+    borderRadius: 120,
+    backgroundColor: 'rgba(255,122,26,0.16)',
+  },
+  iconContainer: {
+    marginBottom: 32,
+    alignItems: 'center',
+  },
+  iconGradient: {
+    width: 100,
+    height: 100,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#ff7a1a',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: authColors.text,
+    textAlign: 'center',
+    marginBottom: 16,
+    letterSpacing: 0.5,
+  },
+  titleHero: {
+    fontSize: 48,
+    fontWeight: '900',
+    letterSpacing: 4,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#d8deea',
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  highlightContainer: {
+    marginTop: 24,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: authColors.accentSoft,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,122,26,0.3)',
+  },
+  highlight: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: authColors.accent,
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  ctaContainer: {
+    marginTop: 40,
+    width: '100%',
+    gap: 16,
+  },
+  ctaPrimary: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#ff7a1a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  ctaPrimaryGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 18,
+    paddingHorizontal: 32,
+  },
+  ctaPrimaryText: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: 0.3,
+  },
+  ctaSecondary: {
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  ctaSecondaryText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: authColors.sub,
+  },
+  bottomSection: {
+    position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    alignItems: "center",
-    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    gap: 24,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(5,8,14,0.62)',
   },
-  dotsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
+  dotsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   dot: {
-    height: 3,
-    borderRadius: 1.5,
+    height: 8,
+    borderRadius: 4,
+  },
+  nextButton: {
+    width: '100%',
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#ff7a1a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  nextButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 18,
+    paddingHorizontal: 32,
+  },
+  nextButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 0.3,
   },
 });

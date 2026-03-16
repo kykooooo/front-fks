@@ -1,9 +1,8 @@
-// screens/RegisterScreen.tsx
-// Inscription — Nike TC × Strava design
+// src/screens/RegisterScreen.tsx
+// Register modernisé - design épuré avec accent orange
 
 import React, { useEffect, useRef, useState } from "react";
 import {
-  AccessibilityInfo,
   Animated,
   View,
   Text,
@@ -29,8 +28,8 @@ import { auth, db } from "../services/firebase";
 import { showError } from "../utils/errorHandler";
 import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
-import { runShake } from "../utils/animations";
-import { ds, typo, space, radius, anim } from "../theme/authDesignSystem";
+import { runFadeIn, runShake, runSlideUp } from "../utils/animations";
+import { authColors } from "../theme/authColors";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Register">;
 
@@ -39,94 +38,86 @@ const getRegisterErrorMessage = (code?: string) => {
     case "auth/invalid-email":
       return "Email invalide.";
     case "auth/email-already-in-use":
-      return "Cet email est d\u00e9j\u00e0 utilis\u00e9.";
+      return "Cet email est déjà utilisé.";
     case "auth/weak-password":
-      return "Mot de passe trop faible (minimum 6 caract\u00e8res).";
+      return "Mot de passe trop faible (minimum 6 caractères).";
     case "auth/network-request-failed":
-      return "Probl\u00e8me r\u00e9seau. V\u00e9rifie ta connexion.";
+      return "Problème réseau. Vérifie ta connexion.";
     case "auth/too-many-requests":
-      return "Trop de tentatives. R\u00e9essaie dans quelques minutes.";
+      return "Trop de tentatives. Réessaie dans quelques minutes.";
     default:
-      return "V\u00e9rifie tes infos et r\u00e9essaie.";
+      return "Vérifie tes infos et réessaie.";
   }
 };
 
-const NAME_REGEX = /^[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u00FF\-' ]{2,}$/;
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 export default function RegisterScreen({ navigation }: Props) {
-  const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [pwd, setPwd] = useState("");
-  const [showPwd, setShowPwd] = useState(false);
+  const [confirm, setConfirm] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPwd, setShowPwd] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const haptics = useHaptics();
   const shake = useRef(new Animated.Value(0)).current;
   const fadeIn = useRef(new Animated.Value(0)).current;
-  const emailRef = useRef<TextInput>(null);
-  const pwdRef = useRef<TextInput>(null);
-
-  const nameTrimmed = displayName.trim();
+  const slideUp = useRef(new Animated.Value(0)).current;
+  const emailInputRef = useRef<TextInput>(null);
+  const pwdInputRef = useRef<TextInput>(null);
+  const confirmInputRef = useRef<TextInput>(null);
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const emailTrimmed = email.trim();
-  const nameValid = NAME_REGEX.test(nameTrimmed);
-  const emailValid = EMAIL_REGEX.test(emailTrimmed);
-  const pwdValid = pwd.length >= 6;
-  const canSubmit = nameValid && emailValid && pwdValid;
+  const emailLooksValid = emailRegex.test(emailTrimmed);
+  const canSubmit =
+    emailLooksValid &&
+    pwd.length >= 6 &&
+    confirm.length > 0 &&
+    pwd === confirm;
 
   useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
-      if (reduced) {
-        fadeIn.setValue(1);
-      } else {
-        Animated.timing(fadeIn, {
-          toValue: 1,
-          duration: anim.slow,
-          useNativeDriver: true,
-        }).start();
-      }
-    });
-  }, [fadeIn]);
-
-  const safeShake = () => {
-    AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
-      if (!reduced) runShake(shake);
-    });
-  };
+    runFadeIn(fadeIn);
+    runSlideUp(slideUp);
+  }, [fadeIn, slideUp]);
 
   const fail = (title: string, message?: string) => {
-    safeShake();
+    runShake(shake);
     haptics.warning();
     showToast({ type: "error", title, message });
   };
 
   const onRegister = async () => {
-    if (!nameTrimmed) {
-      fail("Pr\u00e9nom requis", "Entre ton pr\u00e9nom pour continuer.");
+    if (!email || !pwd) {
+      fail("Champs manquants", "Email et mot de passe sont requis.");
       return;
     }
-    if (!nameValid) {
-      fail("Pr\u00e9nom invalide", "2 caract\u00e8res minimum, pas de caract\u00e8res sp\u00e9ciaux.");
+    // Validation email
+    if (!emailLooksValid) {
+      fail("Email invalide", "Entre une adresse email valide (ex: nom@exemple.com).");
       return;
     }
-    if (!emailValid) {
-      fail("Email invalide", "Entre une adresse email valide.");
+    if (pwd.length < 6) {
+      fail("Mot de passe trop court", "Minimum 6 caractères.");
       return;
     }
-    if (!pwdValid) {
-      fail("Mot de passe trop court", "Minimum 6 caract\u00e8res.");
+    if (pwd !== confirm) {
+      fail("Mots de passe différents", "Les mots de passe ne correspondent pas.");
       return;
     }
 
     setLoading(true);
     try {
+      const cleanDisplayName = displayName.trim();
       const cred = await createUserWithEmailAndPassword(auth, emailTrimmed, pwd);
-      await updateProfile(cred.user, { displayName: nameTrimmed });
+      if (cleanDisplayName) {
+        await updateProfile(cred.user, { displayName: cleanDisplayName });
+      }
+      // Crée le doc utilisateur Firestore pour isoler les données
+      const userRef = doc(db, "users", cred.user.uid);
       await setDoc(
-        doc(db, "users", cred.user.uid),
+        userRef,
         {
           email: cred.user.email ?? emailTrimmed,
-          displayName: nameTrimmed,
-          firstName: nameTrimmed,
+          displayName: cleanDisplayName || cred.user.displayName || emailTrimmed.split("@")[0],
           profileCompleted: false,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -136,16 +127,17 @@ export default function RegisterScreen({ navigation }: Props) {
       haptics.success();
       showToast({
         type: "success",
-        title: "Bienvenue !",
-        message: `Salut ${nameTrimmed}, ton compte est cr\u00e9\u00e9.`,
+        title: "Compte créé",
+        message: "Bienvenue dans FKS.",
       });
+      // onAuthStateChanged basculera vers RootNavigator
     } catch (e: any) {
       showError(e, "Inscription");
-      safeShake();
+      runShake(shake);
       haptics.error();
       showToast({
         type: "error",
-        title: "Inscription \u00e9chou\u00e9e",
+        title: "Inscription échouée",
         message: getRegisterErrorMessage(e?.code),
       });
     } finally {
@@ -153,291 +145,389 @@ export default function RegisterScreen({ navigation }: Props) {
     }
   };
 
-  // Password strength
-  const strength = pwd.length === 0 ? 0 : pwd.length < 6 ? 1 : pwd.length < 10 ? 2 : 3;
-  const strengthColor = ["transparent", ds.error, "#FFB84D", ds.success];
-  const strengthLabel = ["", "Faible", "Moyen", "Fort"];
-
-  const showNameErr = displayName.length > 0 && !nameValid;
-  const showEmailErr = email.length > 0 && !emailValid;
+  // Password strength indicator
+  const pwdStrength = pwd.length === 0 ? 0 : pwd.length < 6 ? 1 : pwd.length < 10 ? 2 : 3;
+  const strengthColors = ["transparent", "#ef4444", "#f59e0b", "#16a34a"];
+  const strengthLabels = ["", "Faible", "Moyen", "Fort"];
 
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="light-content" backgroundColor={ds.bg} />
-      <SafeAreaView style={s.safe}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
-        >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-            <ScrollView
-              contentContainerStyle={s.scroll}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor="#05070c" />
+      <LinearGradient
+        colors={["#0b1120", "#111827", "#1f2937"]}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={styles.bgGlowTop} />
+      <View style={styles.bgGlowBottom} />
+      <View style={styles.vignette} />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <ScrollView
+            contentContainerStyle={styles.container}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Back button */}
+            <Pressable
+              onPress={() => navigation.goBack()}
+              style={styles.backButton}
+              accessibilityLabel="Retour"
+              accessibilityRole="button"
             >
-              {/* Back */}
+              <Ionicons name="arrow-back" size={24} color={authColors.text} />
+            </Pressable>
+
+            {/* Header */}
+            <View style={styles.header}>
+              <View style={styles.headerIcon}>
+                <LinearGradient
+                  colors={["#ff7a1a", "#ff9a4a"]}
+                  style={styles.headerIconGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <Ionicons name="person-add-outline" size={28} color="#fff" />
+                </LinearGradient>
+              </View>
+              <Text style={styles.title}>Créer un compte</Text>
+              <Text style={styles.subtitle}>Crée ton compte pour démarrer ta progression.</Text>
+              <Text style={styles.heroHint}>Inscription rapide</Text>
+            </View>
+
+            {/* Form */}
+            <Animated.View
+              style={[
+                styles.formContainer,
+                {
+                  opacity: fadeIn,
+                  transform: [
+                    { translateX: shake },
+                    {
+                      translateY: slideUp.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [16, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              {/* Display Name */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Prénom ou surnom</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="person-outline" size={18} color={authColors.muted} style={styles.inputIcon} />
+                  <TextInput
+                    placeholder="Ex: Karim"
+                    placeholderTextColor={authColors.muted}
+                    value={displayName}
+                    onChangeText={setDisplayName}
+                    autoComplete="name"
+                    returnKeyType="next"
+                    onSubmitEditing={() => emailInputRef.current?.focus()}
+                    style={styles.input}
+                    accessibilityLabel="Champ prénom"
+                  />
+                </View>
+              </View>
+
+              {/* Email */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Email</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="mail-outline" size={18} color={authColors.muted} style={styles.inputIcon} />
+                  <TextInput
+                    ref={emailInputRef}
+                    placeholder="ton@email.com"
+                    placeholderTextColor={authColors.muted}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    autoComplete="email"
+                    value={email}
+                    onChangeText={setEmail}
+                    returnKeyType="next"
+                    onSubmitEditing={() => pwdInputRef.current?.focus()}
+                    style={styles.input}
+                    accessibilityLabel="Champ email"
+                  />
+                </View>
+                {email.length > 0 && !emailLooksValid ? (
+                  <Text style={styles.errorText}>Format email invalide</Text>
+                ) : null}
+              </View>
+
+              {/* Password */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Mot de passe</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="lock-closed-outline" size={18} color={authColors.muted} style={styles.inputIcon} />
+                  <TextInput
+                    ref={pwdInputRef}
+                    placeholder="Minimum 6 caractères"
+                    placeholderTextColor={authColors.muted}
+                    secureTextEntry={!showPwd}
+                    autoComplete="new-password"
+                    value={pwd}
+                    onChangeText={setPwd}
+                    returnKeyType="next"
+                    onSubmitEditing={() => confirmInputRef.current?.focus()}
+                    style={styles.input}
+                    accessibilityLabel="Champ mot de passe"
+                  />
+                  <Pressable
+                    onPress={() => setShowPwd(!showPwd)}
+                    style={styles.eyeButton}
+                    accessibilityLabel={showPwd ? "Masquer" : "Afficher"}
+                  >
+                    <Ionicons
+                      name={showPwd ? "eye-off-outline" : "eye-outline"}
+                      size={20}
+                      color={authColors.muted}
+                    />
+                  </Pressable>
+                </View>
+                {/* Strength indicator */}
+                {pwd.length > 0 ? (
+                  <View style={styles.strengthRow}>
+                    <View style={styles.strengthBars}>
+                      {[1, 2, 3].map((level) => (
+                        <View
+                          key={level}
+                          style={[
+                            styles.strengthBar,
+                            { backgroundColor: pwdStrength >= level ? strengthColors[pwdStrength] : "rgba(255,255,255,0.18)" },
+                          ]}
+                        />
+                      ))}
+                    </View>
+                    <Text style={[styles.strengthLabel, { color: strengthColors[pwdStrength] }]}>
+                      {strengthLabels[pwdStrength]}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+
+              {/* Confirm Password */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Confirmer le mot de passe</Text>
+                <View style={[
+                  styles.inputWrapper,
+                  confirm.length > 0 && pwd !== confirm && styles.inputError,
+                  confirm.length > 0 && pwd === confirm && styles.inputSuccess,
+                ]}>
+                  <Ionicons name="shield-checkmark-outline" size={18} color={authColors.muted} style={styles.inputIcon} />
+                  <TextInput
+                    ref={confirmInputRef}
+                    placeholder="Confirme ton mot de passe"
+                    placeholderTextColor={authColors.muted}
+                    secureTextEntry={!showConfirm}
+                    autoComplete="new-password"
+                    value={confirm}
+                    onChangeText={setConfirm}
+                    returnKeyType="done"
+                    onSubmitEditing={() => {
+                      if (!loading && canSubmit) void onRegister();
+                    }}
+                    style={styles.input}
+                    accessibilityLabel="Champ confirmation"
+                  />
+                  <Pressable
+                    onPress={() => setShowConfirm(!showConfirm)}
+                    style={styles.eyeButton}
+                  >
+                    <Ionicons
+                      name={showConfirm ? "eye-off-outline" : "eye-outline"}
+                      size={20}
+                      color={authColors.muted}
+                    />
+                  </Pressable>
+                </View>
+                {confirm.length > 0 && pwd !== confirm ? (
+                  <Text style={styles.errorText}>Les mots de passe ne correspondent pas</Text>
+                ) : null}
+              </View>
+
+              {/* Register button */}
               <Pressable
-                onPress={() => navigation.goBack()}
-                style={s.back}
-                accessibilityLabel="Retour"
+                onPress={onRegister}
+                disabled={loading || !canSubmit}
+                style={({ pressed }) => [
+                  styles.registerButton,
+                  pressed && styles.registerButtonPressed,
+                  (loading || !canSubmit) && styles.registerButtonDisabled,
+                ]}
+                accessibilityLabel="S'inscrire"
                 accessibilityRole="button"
               >
-                <Ionicons name="chevron-back" size={24} color={ds.textSecondary} />
-              </Pressable>
-
-              {/* Header */}
-              <View style={s.header}>
-                <Text style={s.title}>Cr\u00e9e ton compte</Text>
-                <Text style={s.subtitle}>
-                  En 30 secondes, c'est promis.
-                </Text>
-              </View>
-
-              {/* Form */}
-              <Animated.View
-                style={[
-                  s.form,
-                  {
-                    opacity: fadeIn,
-                    transform: [{ translateX: shake }],
-                  },
-                ]}
-              >
-                {/* Pr\u00e9nom */}
-                <View style={s.field}>
-                  <Text style={s.label}>PR\u00c9NOM</Text>
-                  <View style={s.inputWrap}>
-                    <Ionicons name="person-outline" size={18} color={ds.textTertiary} style={s.inputIcon} />
-                    <TextInput
-                      placeholder="Ton pr\u00e9nom"
-                      placeholderTextColor={ds.textTertiary}
-                      value={displayName}
-                      onChangeText={setDisplayName}
-                      autoComplete="name"
-                      autoCapitalize="words"
-                      returnKeyType="next"
-                      onSubmitEditing={() => emailRef.current?.focus()}
-                      style={s.input}
-                      accessibilityLabel="Champ pr\u00e9nom"
-                    />
-                  </View>
-                  {showNameErr && (
-                    <Text style={s.error}>2 caract\u00e8res minimum, lettres uniquement</Text>
-                  )}
-                </View>
-
-                {/* Email */}
-                <View style={s.field}>
-                  <Text style={s.label}>EMAIL</Text>
-                  <View style={s.inputWrap}>
-                    <Ionicons name="mail-outline" size={18} color={ds.textTertiary} style={s.inputIcon} />
-                    <TextInput
-                      ref={emailRef}
-                      placeholder="Ton email"
-                      placeholderTextColor={ds.textTertiary}
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                      autoComplete="email"
-                      value={email}
-                      onChangeText={setEmail}
-                      returnKeyType="next"
-                      onSubmitEditing={() => pwdRef.current?.focus()}
-                      style={s.input}
-                      accessibilityLabel="Champ email"
-                    />
-                  </View>
-                  {showEmailErr && (
-                    <Text style={s.error}>Format email invalide</Text>
-                  )}
-                </View>
-
-                {/* Mot de passe */}
-                <View style={s.field}>
-                  <Text style={s.label}>MOT DE PASSE</Text>
-                  <View style={s.inputWrap}>
-                    <Ionicons name="lock-closed-outline" size={18} color={ds.textTertiary} style={s.inputIcon} />
-                    <TextInput
-                      ref={pwdRef}
-                      placeholder="Minimum 6 caract\u00e8res"
-                      placeholderTextColor={ds.textTertiary}
-                      secureTextEntry={!showPwd}
-                      autoComplete="new-password"
-                      value={pwd}
-                      onChangeText={setPwd}
-                      returnKeyType="done"
-                      onSubmitEditing={() => {
-                        if (!loading && canSubmit) void onRegister();
-                      }}
-                      style={s.input}
-                      accessibilityLabel="Champ mot de passe"
-                    />
-                    <Pressable
-                      onPress={() => setShowPwd(!showPwd)}
-                      style={s.eyeBtn}
-                      accessibilityLabel={showPwd ? "Masquer" : "Afficher"}
-                    >
-                      <Ionicons
-                        name={showPwd ? "eye-off-outline" : "eye-outline"}
-                        size={20}
-                        color={ds.textTertiary}
-                      />
-                    </Pressable>
-                  </View>
-                  {pwd.length > 0 && (
-                    <View style={s.strengthRow}>
-                      <View style={s.strengthBars}>
-                        {[1, 2, 3].map((lvl) => (
-                          <View
-                            key={lvl}
-                            style={[
-                              s.strengthBar,
-                              {
-                                backgroundColor:
-                                  strength >= lvl
-                                    ? strengthColor[strength]
-                                    : ds.border,
-                              },
-                            ]}
-                          />
-                        ))}
-                      </View>
-                      <Text style={[s.strengthText, { color: strengthColor[strength] }]}>
-                        {strengthLabel[strength]}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* Submit */}
-                <View style={{ height: space.sm }} />
-                <Pressable
-                  onPress={onRegister}
-                  disabled={loading || !canSubmit}
-                  style={({ pressed }) => [
-                    s.cta,
-                    pressed && s.ctaPressed,
-                    (loading || !canSubmit) && s.ctaDisabled,
-                  ]}
-                  accessibilityLabel="Suivant"
-                  accessibilityRole="button"
+                <LinearGradient
+                  colors={loading ? ["#666", "#555"] : ["#ff7a1a", "#ff9a4a"]}
+                  style={styles.registerButtonGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
                 >
-                  <LinearGradient
-                    colors={loading || !canSubmit ? [...ds.gradientDisabled] : [...ds.gradientAccent]}
-                    style={s.ctaInner}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                  >
-                    {loading ? (
-                      <View style={s.loadingRow}>
-                        <ActivityIndicator size="small" color="#fff" />
-                        <Text style={s.ctaText}>Cr\u00e9ation...</Text>
-                      </View>
-                    ) : (
-                      <>
-                        <Text style={s.ctaText}>Suivant</Text>
-                        <Ionicons name="arrow-forward" size={18} color={ds.textOnAccent} />
-                      </>
-                    )}
-                  </LinearGradient>
-                </Pressable>
-              </Animated.View>
+                  {loading ? (
+                    <View style={styles.loadingRow}>
+                      <ActivityIndicator size="small" color="#fff" />
+                      <Text style={styles.registerButtonText}>Création en cours...</Text>
+                    </View>
+                  ) : (
+                    <>
+                      <Text style={styles.registerButtonText}>Créer mon compte</Text>
+                      <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                    </>
+                  )}
+                </LinearGradient>
+              </Pressable>
+            </Animated.View>
 
-              {/* Footer */}
-              <View style={s.footer}>
-                <Text style={s.footerText}>
-                  D\u00e9j\u00e0 un compte ?{" "}
-                  <Text
-                    style={s.footerLink}
-                    onPress={() => navigation.navigate("Login")}
-                    accessibilityLabel="Se connecter"
-                    accessibilityRole="button"
-                  >
-                    Se connecter
-                  </Text>
-                </Text>
-              </View>
-            </ScrollView>
-          </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </View>
+            {/* Footer */}
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>Déjà un compte ?</Text>
+              <Pressable
+                onPress={() => navigation.navigate("Login")}
+                style={styles.loginLink}
+                accessibilityLabel="Se connecter"
+                accessibilityRole="button"
+              >
+                <Text style={styles.loginLinkText}>Se connecter</Text>
+                <Ionicons name="chevron-forward" size={16} color={authColors.accent} />
+              </Pressable>
+            </View>
+          </ScrollView>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
-const s = StyleSheet.create({
-  root: {
+const styles = StyleSheet.create({
+  safeArea: {
     flex: 1,
-    backgroundColor: ds.bg,
+    backgroundColor: "#05070c",
   },
-  safe: {
-    flex: 1,
+  vignette: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(5,7,12,0.2)",
   },
-  scroll: {
+  bgGlowTop: {
+    position: "absolute",
+    top: -120,
+    left: -110,
+    width: 320,
+    height: 320,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,122,26,0.22)",
+  },
+  bgGlowBottom: {
+    position: "absolute",
+    bottom: -180,
+    right: -130,
+    width: 360,
+    height: 360,
+    borderRadius: 999,
+    backgroundColor: "rgba(34,197,94,0.16)",
+  },
+  container: {
     flexGrow: 1,
-    paddingHorizontal: space.screenH,
-    paddingBottom: space.xxl,
-    justifyContent: "center",
-    gap: space.sectionGap,
+    padding: 24,
+    gap: 20,
   },
-  back: {
+  backButton: {
     alignSelf: "flex-start",
-    padding: space.sm,
+    padding: 4,
+    marginBottom: 8,
   },
   header: {
-    gap: space.sm,
+    alignItems: "center",
+    gap: 8,
+  },
+  headerIcon: {
+    marginBottom: 8,
+    shadowColor: "#ff7a1a",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  headerIconGradient: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
   },
   title: {
-    color: ds.text,
-    ...typo.title,
+    fontSize: 26,
+    fontWeight: "800",
+    color: authColors.text,
+    textAlign: "center",
   },
   subtitle: {
-    color: ds.textSecondary,
-    ...typo.subtitle,
+    fontSize: 14,
+    color: authColors.sub,
+    textAlign: "center",
   },
-  form: {
-    gap: space.inputGap,
+  heroHint: {
+    marginTop: 4,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    color: "rgba(248,250,252,0.74)",
   },
-  field: {
-    gap: space.sm,
+  formContainer: {
+    gap: 16,
+    padding: 16,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+    backgroundColor: authColors.card,
+  },
+  inputGroup: {
+    gap: 6,
   },
   label: {
-    color: ds.textSecondary,
-    ...typo.sectionLabel,
+    fontSize: 13,
+    fontWeight: "600",
+    color: authColors.text,
     marginLeft: 4,
   },
-  inputWrap: {
+  inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    height: 52,
-    backgroundColor: ds.surface,
-    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: ds.border,
-    paddingHorizontal: 16,
+    borderColor: "rgba(255,255,255,0.18)",
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    paddingHorizontal: 14,
+  },
+  inputError: {
+    borderColor: "#ef4444",
+  },
+  inputSuccess: {
+    borderColor: "#16a34a",
   },
   inputIcon: {
-    marginRight: 12,
+    marginRight: 10,
   },
   input: {
     flex: 1,
-    color: ds.text,
-    ...typo.body,
-    paddingVertical: 0,
+    paddingVertical: 14,
+    color: authColors.text,
+    fontSize: 15,
   },
-  eyeBtn: {
+  eyeButton: {
     padding: 4,
-  },
-  error: {
-    color: ds.error,
-    ...typo.caption,
-    marginLeft: 4,
   },
   strengthRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    marginTop: 4,
+    marginTop: 6,
     marginLeft: 4,
   },
   strengthBars: {
@@ -446,55 +536,76 @@ const s = StyleSheet.create({
   },
   strengthBar: {
     width: 32,
-    height: 3,
-    borderRadius: 1.5,
+    height: 4,
+    borderRadius: 2,
   },
-  strengthText: {
-    ...typo.caption,
+  strengthLabel: {
+    fontSize: 12,
+    fontWeight: "600",
   },
-
-  // CTA
-  cta: {
-    height: 56,
-    borderRadius: radius.md,
+  errorText: {
+    color: "#fda4af",
+    fontSize: 12,
+    marginLeft: 4,
+    marginTop: 4,
+    fontWeight: "600",
+  },
+  registerButton: {
+    borderRadius: 14,
     overflow: "hidden",
+    marginTop: 8,
+    shadowColor: "#ff7a1a",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  ctaPressed: {
-    opacity: anim.pressOpacity,
-    transform: [{ scale: anim.pressScale }],
+  registerButtonPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.98 }],
   },
-  ctaDisabled: {
-    opacity: 0.5,
+  registerButtonDisabled: {
+    opacity: 0.6,
+    shadowOpacity: 0,
   },
-  ctaInner: {
-    flex: 1,
+  registerButtonGradient: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
+    paddingVertical: 16,
     paddingHorizontal: 24,
-  },
-  ctaText: {
-    color: ds.textOnAccent,
-    ...typo.button,
   },
   loadingRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
-
-  // Footer
+  registerButtonText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#fff",
+  },
   footer: {
     alignItems: "center",
-    paddingVertical: space.lg,
+    gap: 8,
+    marginTop: 8,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: authColors.footer,
   },
   footerText: {
-    color: ds.textSecondary,
-    ...typo.body,
+    color: authColors.sub,
+    fontSize: 14,
   },
-  footerLink: {
-    color: ds.accent,
+  loginLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  loginLinkText: {
+    color: authColors.accent,
+    fontSize: 15,
     fontWeight: "700",
   },
 });
