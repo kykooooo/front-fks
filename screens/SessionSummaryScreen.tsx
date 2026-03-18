@@ -14,6 +14,8 @@ import { useLoadStore } from "../state/stores/useLoadStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { updateTrainingLoad } from "../engine/loadModel";
 import { useSettingsStore } from "../state/settingsStore";
+import { ImageBanner } from "../components/ui/ImageBanner";
+import { BANNER_IMAGES, BANNER_FALLBACK } from "../constants/bannerImages";
 
 type SummaryRoute = RouteProp<AppStackParamList, "SessionSummary">;
 
@@ -177,29 +179,37 @@ export default function SessionSummaryScreen() {
           ]}
         >
           <Card variant="surface" style={styles.heroCard}>
-            <View style={styles.heroGlow} />
-            <Text style={styles.heroKicker}>Séance terminée</Text>
-            <Text style={styles.heroTitle}>{summary.title}</Text>
-            {summary.subtitle ? (
-              <Text style={styles.heroSubtitle}>{summary.subtitle}</Text>
-            ) : null}
-            <View style={styles.heroBadges}>
-              {summary.plannedDateISO ? <Badge label={summary.plannedDateISO} /> : null}
-              {summary.intensity ? (
-                <Badge label={summary.intensity} tone={intensityTone(summary.intensity)} />
+            <ImageBanner
+              source={BANNER_IMAGES.celebration}
+              height={200}
+              fallbackColor={BANNER_FALLBACK.celebration}
+              borderRadius={18}
+            >
+              <Text style={styles.heroKicker}>Séance terminée 🔥</Text>
+              <Text style={styles.heroTitle}>{summary.title}</Text>
+            </ImageBanner>
+            <View style={styles.heroBody}>
+              {summary.subtitle ? (
+                <Text style={styles.heroSubtitle}>{summary.subtitle}</Text>
               ) : null}
-              {summary.focus ? <Badge label={summary.focus} /> : null}
-              {summary.location ? <Badge label={summary.location} /> : null}
-            </View>
-            <View style={styles.heroProgress}>
-              <Text style={styles.progressLabel}>
-                Progression : {itemsLabel}
-                {completionPct != null ? ` · ${completionPct}%` : ""}
-              </Text>
-              <View style={styles.progressTrack}>
-                <View
-                  style={[styles.progressFill, { width: `${completionRatio * 100}%` }]}
-                />
+              <View style={styles.heroBadges}>
+                {summary.plannedDateISO ? <Badge label={summary.plannedDateISO} /> : null}
+                {summary.intensity ? (
+                  <Badge label={summary.intensity} tone={intensityTone(summary.intensity)} />
+                ) : null}
+                {summary.focus ? <Badge label={summary.focus} /> : null}
+                {summary.location ? <Badge label={summary.location} /> : null}
+              </View>
+              <View style={styles.heroProgress}>
+                <Text style={styles.progressLabel}>
+                  Progression : {itemsLabel}
+                  {completionPct != null ? ` · ${completionPct}%` : ""}
+                </Text>
+                <View style={styles.progressTrack}>
+                  <View
+                    style={[styles.progressFill, { width: `${completionRatio * 100}%` }]}
+                  />
+                </View>
               </View>
             </View>
           </Card>
@@ -310,31 +320,30 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   heroCard: {
-    padding: 18,
-    gap: 10,
+    padding: 0,
     overflow: "hidden",
   },
-  heroGlow: {
-    position: "absolute",
-    top: -60,
-    right: -40,
-    width: 180,
-    height: 180,
-    borderRadius: 999,
-    backgroundColor: palette.accentSoft,
-    opacity: 0.9,
+  heroBody: {
+    padding: 14,
+    gap: 10,
   },
   heroKicker: {
-    color: palette.accent,
-    fontSize: 11,
+    color: "#fff",
+    fontSize: 13,
     letterSpacing: 1,
     textTransform: "uppercase",
     fontWeight: "700",
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   heroTitle: {
-    color: palette.text,
-    fontSize: 20,
+    color: "#fff",
+    fontSize: 22,
     fontWeight: "800",
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   heroSubtitle: {
     color: palette.sub,

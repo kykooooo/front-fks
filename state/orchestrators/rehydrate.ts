@@ -1,16 +1,14 @@
 // state/orchestrators/rehydrate.ts
-// Post-hydration time-decay: applies load decay for days elapsed since last update.
+// Post-hydration: rebuilds ATL/CTL/TSB from cached session history on app mount.
 // Also coordinates cross-store hydration: waits for all 6 stores to hydrate before running.
 import { todayISO, addDaysISO } from "../../utils/virtualClock";
 import { toDateKey } from "../../utils/dateHelpers";
-import { diffDays } from "../../engine/dailyAggregation";
-import { decayLoadOverDays } from "../../engine/loadModel";
 import { DEV_FLAGS } from "../../config/devFlags";
 
-import { useLoadStore } from "../stores/useLoadStore";
 import { useDebugStore } from "../stores/useDebugStore";
 import { useSyncStore } from "../stores/useSyncStore";
 import { applyAutoExternalLoads } from "./applyExternalLoad";
+import { rebuildLoad } from "./rebuildLoad";
 
 // ---------------------------------------------------------------------------
 // Hydration coordination: wait for all 6 stores before running rehydrate
@@ -57,7 +55,6 @@ export function rehydrateFromStorage(): void {
   useSyncStore.setState({ _rehydrating: true });
 
   try {
-    const loadState = useLoadStore.getState();
     const debugState = useDebugStore.getState();
 
     // Reset virtual clock if not in dev mode
@@ -65,48 +62,20 @@ export function rehydrateFromStorage(): void {
       useDebugStore.setState({ devNowISO: null });
     }
 
-    const lastKey = loadState.lastLoadDayKey ?? (loadState.lastUpdateISO ? toDateKey(loadState.lastUpdateISO) : null);
     const nowISO = debugState.devNowISO ?? todayISO();
     const nowKey = toDateKey(nowISO);
 
-    if (!lastKey) {
-      useLoadStore.setState({
-        tsb: loadState.ctl - loadState.atl,
-        lastUpdateISO: nowISO,
-        lastLoadDayKey: nowKey,
-        tsbHistory: [loadState.ctl - loadState.atl],
-      });
-      useSyncStore.setState({ storeHydrated: true, _rehydrating: false });
-      return;
-    }
-
-    let gapDays = Math.max(0, diffDays(lastKey, nowKey));
-    if (gapDays > 14) gapDays = 14;
-
-    if (gapDays > 0) {
-      const decayed = decayLoadOverDays(loadState.atl, loadState.ctl, gapDays);
-      useLoadStore.setState({
-        atl: decayed.atl,
-        ctl: decayed.ctl,
-        tsb: decayed.tsb,
-        lastUpdateISO: nowISO,
-        lastLoadDayKey: nowKey,
-        tsbHistory: [decayed.tsb, ...(loadState.tsbHistory ?? [])].slice(0, 7),
-      });
-    } else {
-      useLoadStore.setState({
-        tsb: loadState.ctl - loadState.atl,
-        lastUpdateISO: nowISO,
-        lastLoadDayKey: loadState.lastLoadDayKey ?? nowKey,
-        tsbHistory: [loadState.ctl - loadState.atl, ...(loadState.tsbHistory ?? [])].slice(0, 7),
-      });
-    }
-
-    // Auto-external loads for recent 7 days
+    // Auto-external loads for recent 7 days (club/match)
     const recentKeys = Array.from({ length: 7 }).map((_, i) =>
       addDaysISO(`${nowKey}T00:00:00.000Z`, -i).slice(0, 10)
     );
     applyAutoExternalLoads(recentKeys);
+
+    // Full rebuild from cached session + external history.
+    // This correctly decays ATL/CTL for every rest day (load=0) between
+    // sessions and from the last session to today, fixing the stale-TSB bug
+    // where a player returning after days of rest still saw "Chargé".
+    rebuildLoad();
   } finally {
     useSyncStore.setState({ storeHydrated: true, _rehydrating: false });
   }

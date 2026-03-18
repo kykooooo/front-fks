@@ -98,6 +98,12 @@ export function applyExternalLoad(load: ExternalLoad): void {
   useDebugStore.setState((s) => ({ debugLog: [evt, ...s.debugLog].slice(0, 200) }));
 }
 
+// Defaults raisonnables pour footballeur amateur quand le joueur n'a pas configuré RPE/durée
+const EXTERNAL_DEFAULTS = {
+  match: { rpe: 8, durationMin: 90 },
+  club: { rpe: 6, durationMin: 75 },
+};
+
 /**
  * Auto-apply external loads for a set of day keys (club training / match days).
  */
@@ -105,23 +111,29 @@ export function applyAutoExternalLoads(dayKeys: string[]): void {
   const externalState = useExternalStore.getState();
   if (!externalState.autoExternalEnabled) return;
 
+  const cfg = externalState.autoExternalConfig ?? {};
+  const matchRpe = cfg.match?.rpe ?? EXTERNAL_DEFAULTS.match.rpe;
+  const matchDuration = cfg.match?.durationMin ?? EXTERNAL_DEFAULTS.match.durationMin;
+  const clubRpe = cfg.club?.rpe ?? EXTERNAL_DEFAULTS.club.rpe;
+  const clubDuration = cfg.club?.durationMin ?? EXTERNAL_DEFAULTS.club.durationMin;
+
+  const allMatchDays: string[] = externalState.matchDays?.length
+    ? externalState.matchDays
+    : externalState.matchDay ? [externalState.matchDay] : [];
+
   const uniq = Array.from(new Set(dayKeys)).sort();
   for (const dayKey of uniq) {
-    const cfg = externalState.autoExternalConfig ?? {};
-    const matchDay = externalState.matchDay ?? externalState.matchDays?.[0] ?? null;
     const dow = dayKeyToDow(dayKey);
 
     let candidate: { source: ExternalLoad["source"]; rpe: number; durationMin: number } | null = null;
 
-    if (matchDay && dow === matchDay && cfg.match?.rpe && cfg.match?.durationMin) {
-      candidate = { source: "match", rpe: cfg.match.rpe, durationMin: cfg.match.durationMin };
+    if (allMatchDays.includes(dow)) {
+      candidate = { source: "match", rpe: matchRpe, durationMin: matchDuration };
     } else if (
       Array.isArray(externalState.clubTrainingDays) &&
-      externalState.clubTrainingDays.includes(dow) &&
-      cfg.club?.rpe &&
-      cfg.club?.durationMin
+      externalState.clubTrainingDays.includes(dow)
     ) {
-      candidate = { source: "club", rpe: cfg.club.rpe, durationMin: cfg.club.durationMin };
+      candidate = { source: "club", rpe: clubRpe, durationMin: clubDuration };
     }
 
     if (!candidate) continue;

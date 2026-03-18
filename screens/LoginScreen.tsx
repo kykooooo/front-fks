@@ -1,5 +1,5 @@
 // screens/LoginScreen.tsx
-// Login — image de foot en fond, même DA que le reste de l'app
+// Connexion — même DA que le reste de l'app
 
 import React, { useRef, useState } from "react";
 import {
@@ -15,12 +15,12 @@ import {
   Keyboard,
   ScrollView,
   ActivityIndicator,
+  StatusBar,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { AuthStackParamList } from "../navigation/RootNavigator";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import {
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
@@ -32,7 +32,6 @@ import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
 import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
-import { AuthBackground, AUTH_IMAGES } from "../components/auth/AuthBackground";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
 const palette = theme.colors;
@@ -128,337 +127,153 @@ export default function LoginScreen({ navigation }: Props) {
   };
 
   return (
-    <AuthBackground image={AUTH_IMAGES.login}>
-      <SafeAreaView style={styles.safeArea}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
-        >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-            <ScrollView
-              contentContainerStyle={styles.container}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
-              {/* Back button */}
-              {navigation.canGoBack() ? (
-                <Pressable
-                  onPress={() => navigation.goBack()}
-                  style={styles.backButton}
-                  accessibilityLabel="Retour"
-                  accessibilityRole="button"
-                >
-                  <Ionicons name="chevron-back" size={24} color={palette.sub} />
-                </Pressable>
+    <SafeAreaView style={styles.safe}>
+      <StatusBar barStyle="light-content" backgroundColor={palette.bg} />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <ScrollView
+            contentContainerStyle={styles.scroll}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Back */}
+            {navigation.canGoBack() ? (
+              <Pressable onPress={() => navigation.goBack()} style={styles.back}>
+                <Ionicons name="chevron-back" size={24} color={palette.sub} />
+              </Pressable>
+            ) : null}
+
+            {/* Logo */}
+            <Text style={styles.logo}>FKS</Text>
+
+            {/* Header */}
+            <Text style={styles.title}>Content de te revoir</Text>
+            <Text style={styles.subtitle}>Connecte-toi pour reprendre ta progression.</Text>
+
+            {/* Form */}
+            <Animated.View style={[styles.form, { transform: [{ translateX: shake }] }]}>
+              <View style={styles.inputWrap}>
+                <Ionicons name="mail-outline" size={18} color={palette.muted} style={styles.inputIcon} />
+                <TextInput
+                  placeholder="Email"
+                  placeholderTextColor={palette.muted}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  autoComplete="email"
+                  value={email}
+                  onChangeText={setEmail}
+                  returnKeyType="next"
+                  onSubmitEditing={() => pwdInputRef.current?.focus()}
+                  style={styles.input}
+                />
+              </View>
+              {email.length > 0 && !emailLooksValid ? (
+                <Text style={styles.error}>Format email invalide</Text>
               ) : null}
 
-              {/* Logo / Brand */}
-              <View style={styles.brandSection}>
-                <View style={styles.logoContainer}>
-                  <LinearGradient
-                    colors={["#ff7a1a", "#ff9a4a"]}
-                    style={styles.logoGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="fitness-outline" size={32} color="#fff" />
-                  </LinearGradient>
-                </View>
-                <Text style={styles.brandName}>FKS</Text>
-              </View>
-
-              {/* Header */}
-              <View style={styles.header}>
-                <Text style={styles.title}>Content de te revoir</Text>
-                <Text style={styles.subtitle}>Connecte-toi pour reprendre ta progression.</Text>
-              </View>
-
-              {/* Form */}
-              <Animated.View style={[styles.formContainer, { transform: [{ translateX: shake }] }]}>
-                {/* Email */}
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Email</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons name="mail-outline" size={18} color={palette.muted} style={styles.inputIcon} />
-                    <TextInput
-                      placeholder="ton@email.com"
-                      placeholderTextColor={palette.muted}
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                      autoComplete="email"
-                      value={email}
-                      onChangeText={setEmail}
-                      returnKeyType="next"
-                      onSubmitEditing={() => pwdInputRef.current?.focus()}
-                      style={styles.input}
-                      accessibilityLabel="Champ email"
-                      accessibilityHint="Entre ton adresse email pour te connecter"
-                    />
-                  </View>
-                  {email.length > 0 && !emailLooksValid ? (
-                    <Text style={styles.inlineError}>Format email invalide.</Text>
-                  ) : null}
-                </View>
-
-                {/* Password */}
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Mot de passe</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons name="lock-closed-outline" size={18} color={palette.muted} style={styles.inputIcon} />
-                    <TextInput
-                      ref={pwdInputRef}
-                      placeholder="••••••••"
-                      placeholderTextColor={palette.muted}
-                      secureTextEntry={!showPwd}
-                      autoComplete="password"
-                      value={pwd}
-                      onChangeText={setPwd}
-                      returnKeyType="go"
-                      onSubmitEditing={() => {
-                        if (!loading && canSubmit) void onLogin();
-                      }}
-                      style={styles.input}
-                      accessibilityLabel="Champ mot de passe"
-                      accessibilityHint="Entre ton mot de passe"
-                    />
-                    <Pressable
-                      onPress={() => setShowPwd(!showPwd)}
-                      style={styles.eyeButton}
-                      accessibilityLabel={showPwd ? "Masquer mot de passe" : "Afficher mot de passe"}
-                    >
-                      <Ionicons
-                        name={showPwd ? "eye-off-outline" : "eye-outline"}
-                        size={20}
-                        color={palette.muted}
-                      />
-                    </Pressable>
-                  </View>
-                </View>
-
-                {/* Forgot password */}
-                <Pressable
-                  onPress={onForgot}
-                  disabled={loading}
-                  style={[styles.forgot, loading && styles.forgotDisabled]}
-                  accessibilityLabel="Mot de passe oublié"
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.forgotText}>Mot de passe oublié ?</Text>
-                </Pressable>
-
-                {/* Login button */}
-                <Pressable
-                  onPress={onLogin}
-                  disabled={loading || !canSubmit}
-                  style={({ pressed }) => [
-                    styles.loginButton,
-                    pressed && styles.loginButtonPressed,
-                    (loading || !canSubmit) && styles.loginButtonDisabled,
-                  ]}
-                  accessibilityLabel="Se connecter"
-                  accessibilityRole="button"
-                >
-                  <LinearGradient
-                    colors={loading ? ["#666", "#555"] : ["#ff7a1a", "#ff9a4a"]}
-                    style={styles.loginButtonGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                  >
-                    {loading ? (
-                      <View style={styles.loadingRow}>
-                        <ActivityIndicator size="small" color="#fff" />
-                        <Text style={styles.loginButtonText}>Connexion...</Text>
-                      </View>
-                    ) : (
-                      <>
-                        <Text style={styles.loginButtonText}>Se connecter</Text>
-                        <Ionicons name="arrow-forward" size={18} color="#fff" />
-                      </>
-                    )}
-                  </LinearGradient>
-                </Pressable>
-              </Animated.View>
-
-              {/* Footer - Register link */}
-              <View style={styles.footer}>
-                <Text style={styles.footerText}>Pas encore de compte ?</Text>
-                <Pressable
-                  onPress={() => navigation.navigate("Register")}
-                  style={styles.registerLink}
-                  accessibilityLabel="Créer un compte"
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.registerLinkText}>Créer un compte</Text>
-                  <Ionicons name="chevron-forward" size={16} color={palette.accent} />
+              <View style={styles.inputWrap}>
+                <Ionicons name="lock-closed-outline" size={18} color={palette.muted} style={styles.inputIcon} />
+                <TextInput
+                  ref={pwdInputRef}
+                  placeholder="Mot de passe"
+                  placeholderTextColor={palette.muted}
+                  secureTextEntry={!showPwd}
+                  autoComplete="password"
+                  value={pwd}
+                  onChangeText={setPwd}
+                  returnKeyType="go"
+                  onSubmitEditing={() => {
+                    if (!loading && canSubmit) void onLogin();
+                  }}
+                  style={styles.input}
+                />
+                <Pressable onPress={() => setShowPwd(!showPwd)} style={styles.eye}>
+                  <Ionicons
+                    name={showPwd ? "eye-off-outline" : "eye-outline"}
+                    size={20}
+                    color={palette.muted}
+                  />
                 </Pressable>
               </View>
-            </ScrollView>
-          </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </AuthBackground>
+
+              <Pressable
+                onPress={onForgot}
+                disabled={loading}
+                style={[styles.forgot, loading && { opacity: 0.5 }]}
+              >
+                <Text style={styles.forgotText}>Mot de passe oublié ?</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={onLogin}
+                disabled={loading || !canSubmit}
+                style={({ pressed }) => [
+                  styles.cta,
+                  pressed && styles.ctaPressed,
+                  (loading || !canSubmit) && styles.ctaDisabled,
+                ]}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.ctaText}>Se connecter</Text>
+                )}
+              </Pressable>
+            </Animated.View>
+
+            {/* Footer */}
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>Pas de compte ?</Text>
+              <Pressable onPress={() => navigation.navigate("Register")}>
+                <Text style={styles.footerLink}>Inscris-toi</Text>
+              </Pressable>
+            </View>
+          </ScrollView>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  backButton: {
-    alignSelf: "flex-start",
-    padding: 8,
-    marginBottom: 4,
-  },
-  container: {
-    flexGrow: 1,
-    padding: 24,
-    justifyContent: "center",
-    gap: 24,
-  },
-  brandSection: {
-    alignItems: "center",
-    gap: 8,
-  },
-  logoContainer: {
-    ...theme.shadow.accent,
-  },
-  logoGradient: {
-    width: 64,
-    height: 64,
-    borderRadius: 18,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  brandName: {
-    fontSize: 28,
-    fontWeight: "900",
-    color: palette.text,
-    letterSpacing: 3,
-  },
-  header: {
-    alignItems: "center",
-    gap: 6,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: palette.text,
-    textAlign: "center",
-  },
-  subtitle: {
-    fontSize: 14,
-    color: palette.sub,
-    textAlign: "center",
-  },
-  formContainer: {
-    gap: 16,
-    padding: 16,
-    borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    backgroundColor: "rgba(255,255,255,0.08)",
-  },
-  inputGroup: {
-    gap: 6,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: palette.text,
-    marginLeft: 4,
-  },
-  inputWrapper: {
+  safe: { flex: 1, backgroundColor: palette.bg },
+  scroll: { flexGrow: 1, paddingHorizontal: 24, justifyContent: "center", gap: 8 },
+  back: { alignSelf: "flex-start", padding: 8, marginBottom: 16 },
+  logo: { fontSize: 28, fontWeight: "900", color: palette.text, letterSpacing: 3, textAlign: "center" },
+  title: { fontSize: 24, fontWeight: "800", color: palette.text, textAlign: "center", marginTop: 24 },
+  subtitle: { fontSize: 14, color: palette.sub, textAlign: "center", marginBottom: 24 },
+  form: { gap: 12 },
+  inputWrap: {
     flexDirection: "row",
     alignItems: "center",
+    backgroundColor: palette.cardSoft,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     borderRadius: theme.radius.md,
-    backgroundColor: "rgba(255,255,255,0.06)",
     paddingHorizontal: 14,
   },
-  inputIcon: {
-    marginRight: 10,
-  },
-  input: {
-    flex: 1,
-    paddingVertical: 14,
-    color: palette.text,
-    fontSize: 15,
-  },
-  inlineError: {
-    marginLeft: 4,
-    marginTop: 2,
-    fontSize: 12,
-    color: palette.danger,
-    fontWeight: "600",
-  },
-  eyeButton: {
-    padding: 4,
-  },
-  forgot: {
-    alignSelf: "flex-end",
-  },
-  forgotDisabled: {
-    opacity: 0.6,
-  },
-  forgotText: {
-    color: palette.accent,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  loginButton: {
-    borderRadius: theme.radius.lg,
-    overflow: "hidden",
+  inputIcon: { marginRight: 10 },
+  input: { flex: 1, paddingVertical: 14, color: palette.text, fontSize: 15 },
+  eye: { padding: 4 },
+  error: { color: palette.danger, fontSize: 12, fontWeight: "600", marginLeft: 4 },
+  forgot: { alignSelf: "flex-end" },
+  forgotText: { color: palette.sub, fontSize: 13, fontWeight: "600" },
+  cta: {
+    backgroundColor: palette.accent,
+    borderRadius: theme.radius.pill,
+    paddingVertical: 16,
+    alignItems: "center",
     marginTop: 8,
     ...theme.shadow.accent,
   },
-  loginButtonPressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.98 }],
-  },
-  loginButtonDisabled: {
-    opacity: 0.6,
-    shadowOpacity: 0,
-  },
-  loginButtonGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-  },
-  loadingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  loginButtonText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#fff",
-  },
-  footer: {
-    alignItems: "center",
-    gap: 8,
-    marginTop: 8,
-    paddingVertical: 10,
-    borderRadius: theme.radius.lg,
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  footerText: {
-    color: palette.sub,
-    fontSize: 14,
-  },
-  registerLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  registerLinkText: {
-    color: palette.accent,
-    fontSize: 15,
-    fontWeight: "700",
-  },
+  ctaPressed: { transform: [{ scale: 0.96 }] },
+  ctaDisabled: { opacity: 0.6 },
+  ctaText: { fontSize: 16, fontWeight: "700", color: "#fff" },
+  footer: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: 32, paddingVertical: 16 },
+  footerText: { color: palette.sub, fontSize: 14 },
+  footerLink: { color: palette.accent, fontSize: 14, fontWeight: "700" },
 });

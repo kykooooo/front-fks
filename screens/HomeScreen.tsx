@@ -43,6 +43,8 @@ import { HomeCoachRecommendation } from "../components/home/HomeCoachRecommendat
 import { useCoachRecommendations } from "../hooks/useCoachRecommendations";
 import { isSameDay, toDateKey } from "../utils/dateHelpers";
 import { showToast } from "../utils/toast";
+import { ImageBanner } from "../components/ui/ImageBanner";
+import { BANNER_IMAGES, BANNER_FALLBACK } from "../constants/bannerImages";
 
 const palette = theme.colors;
 
@@ -254,33 +256,39 @@ export default function HomeScreen() {
 
         <View style={styles.mainContent}>
           <View style={styles.heroShell}>
-            <View style={styles.heroGlow} />
-            <View style={styles.heroGlowAlt} />
-            <View style={styles.heroRing} />
-            <View style={styles.heroTopRow}>
-              <View style={styles.heroBadge}>
-                <Text style={styles.heroBadgeText}>FKS</Text>
+            <ImageBanner
+              source={BANNER_IMAGES.home}
+              height={260}
+              fallbackColor={BANNER_FALLBACK.home}
+              borderRadius={24}
+            >
+              <View style={styles.heroBannerContent}>
+                <View style={styles.heroTopRow}>
+                  <View style={styles.heroBadge}>
+                    <Text style={styles.heroBadgeText}>FKS</Text>
+                  </View>
+                  <Text style={styles.heroDate}>{todayLabel}</Text>
+                </View>
+                <Text style={styles.helloTitle}>Salut, {athleteName}</Text>
+                <Text style={styles.helloSub}>
+                  Ton état du jour et ta prochaine séance.
+                </Text>
+                <View style={styles.quickRow}>
+                  <View style={styles.quickChip}>
+                    <Text style={styles.quickLabel}>Semaine</Text>
+                    <Text style={styles.quickValue}>{weekSummary.fksCount}/{weeklyGoal}</Text>
+                  </View>
+                  <View style={styles.quickChip}>
+                    <Text style={styles.quickLabel}>Série</Text>
+                    <Text style={styles.quickValue}>{activityStreak}j</Text>
+                  </View>
+                  <View style={[styles.quickChip, matchSoon ? styles.quickChipWarn : null]}>
+                    <Text style={styles.quickLabel}>Match</Text>
+                    <Text style={styles.quickValue}>{matchSoon ? "Proche" : "—"}</Text>
+                  </View>
+                </View>
               </View>
-              <Text style={styles.heroDate}>{todayLabel}</Text>
-            </View>
-            <Text style={styles.helloTitle}>Salut, {athleteName}</Text>
-            <Text style={styles.helloSub}>
-              Ton état du jour et ta prochaine séance.
-            </Text>
-            <View style={styles.quickRow}>
-              <View style={styles.quickChip}>
-                <Text style={styles.quickLabel}>Semaine</Text>
-                <Text style={styles.quickValue}>{weekSummary.fksCount}/{weeklyGoal}</Text>
-              </View>
-              <View style={styles.quickChip}>
-                <Text style={styles.quickLabel}>Série</Text>
-                <Text style={styles.quickValue}>{activityStreak}j</Text>
-              </View>
-              <View style={[styles.quickChip, matchSoon ? styles.quickChipWarn : null]}>
-                <Text style={styles.quickLabel}>Match</Text>
-                <Text style={styles.quickValue}>{matchSoon ? "Proche" : "—"}</Text>
-              </View>
-            </View>
+            </ImageBanner>
           </View>
 
           <Animated.View
@@ -476,45 +484,13 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   heroShell: {
-    position: "relative",
-    overflow: "hidden",
     borderRadius: 24,
-    padding: 16,
-    backgroundColor: palette.card,
+    overflow: "hidden",
     borderWidth: 1,
     borderColor: palette.border,
-    gap: 12,
   },
-  heroGlow: {
-    position: "absolute",
-    top: -60,
-    right: -40,
-    width: 180,
-    height: 180,
-    borderRadius: 180,
-    backgroundColor: palette.accentSoft,
-    opacity: 0.9,
-  },
-  heroGlowAlt: {
-    position: "absolute",
-    bottom: -90,
-    left: -60,
-    width: 220,
-    height: 220,
-    borderRadius: 220,
-    backgroundColor: palette.cardSoft,
-    opacity: 0.9,
-  },
-  heroRing: {
-    position: "absolute",
-    top: 18,
-    right: 16,
-    width: 60,
-    height: 60,
-    borderRadius: 60,
-    borderWidth: 2,
-    borderColor: palette.borderSoft,
-    opacity: 0.6,
+  heroBannerContent: {
+    gap: 8,
   },
   heroTopRow: {
     flexDirection: "row",

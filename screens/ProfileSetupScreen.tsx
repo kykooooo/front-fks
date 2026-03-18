@@ -127,10 +127,6 @@ export default function ProfileSetupScreen() {
   const [hasClubTrainings, setHasClubTrainings] = useState<"oui" | "non" | "">("");
   const [clubTrainingDays, setClubTrainingDays] = useState<string[]>([]);
   const [matchDays, setMatchDays] = useState<string[]>([]);
-  const [clubTypicalRPE, setClubTypicalRPE] = useState("");
-  const [clubTypicalDurationMin, setClubTypicalDurationMin] = useState("");
-  const [matchTypicalRPE, setMatchTypicalRPE] = useState("");
-  const [matchTypicalDurationMin, setMatchTypicalDurationMin] = useState("");
   const [hasGymAccess, setHasGymAccess] = useState<"oui" | "occasionnel" | "non" | "">("");
   const [gymEquipment, setGymEquipment] = useState<string[]>([]);
   const [hasHomeEquipment, setHasHomeEquipment] = useState<"oui" | "non" | "">("");
@@ -171,10 +167,6 @@ export default function ProfileSetupScreen() {
       if (Array.isArray(d.clubTrainingDays)) setClubTrainingDays(d.clubTrainingDays);
       if (Array.isArray(d.matchDays)) setMatchDays(d.matchDays);
       if (typeof d.matchDay === "string" && (!d.matchDays || !d.matchDays.length)) setMatchDays([d.matchDay]);
-      if (typeof d.clubTypicalRPE === "number") setClubTypicalRPE(String(d.clubTypicalRPE));
-      if (typeof d.clubTypicalDurationMin === "number") setClubTypicalDurationMin(String(d.clubTypicalDurationMin));
-      if (typeof d.matchTypicalRPE === "number") setMatchTypicalRPE(String(d.matchTypicalRPE));
-      if (typeof d.matchTypicalDurationMin === "number") setMatchTypicalDurationMin(String(d.matchTypicalDurationMin));
       if (typeof d.hasGymAccess === "string") {
         setHasGymAccess(d.hasGymAccess === "regular" ? "oui" : d.hasGymAccess === "occasional" ? "occasionnel" : "non");
       }
@@ -190,8 +182,6 @@ export default function ProfileSetupScreen() {
   useEffect(() => {
     if (hasClubTrainings !== "oui") {
       setClubTrainingDays([]);
-      setClubTypicalRPE("");
-      setClubTypicalDurationMin("");
       if (hasClubTrainings === "non") setClubTrainingsPerWeek("0");
     }
   }, [hasClubTrainings]);
@@ -200,8 +190,6 @@ export default function ProfileSetupScreen() {
     const matches = Number(matchesPerWeek);
     if (!Number.isFinite(matches) || matches <= 0) {
       setMatchDays([]);
-      setMatchTypicalRPE("");
-      setMatchTypicalDurationMin("");
     }
   }, [matchesPerWeek]);
 
@@ -254,22 +242,6 @@ export default function ProfileSetupScreen() {
         if (!hasClubTrainings) { fail("Champs manquants", "Indique si tu as des entrainements club."); return false; }
         if (hasClubTrainings === "oui" && clubTrainingDays.length === 0) { fail("Champs manquants", "Precise les jours club."); return false; }
         if (matches > 0 && matchDays.length === 0) { fail("Champs manquants", "Precise les jours de match."); return false; }
-        if (hasClubTrainings === "oui") {
-          const r = Number(clubTypicalRPE || 0);
-          const d = Number(clubTypicalDurationMin || 0);
-          if (!Number.isFinite(r) || r <= 0 || !Number.isFinite(d) || d <= 0) {
-            fail("Champs manquants", "Indique RPE et duree d'un entrainement club.");
-            return false;
-          }
-        }
-        if (matches > 0) {
-          const r = Number(matchTypicalRPE || 0);
-          const d = Number(matchTypicalDurationMin || 0);
-          if (!Number.isFinite(r) || r <= 0 || !Number.isFinite(d) || d <= 0) {
-            fail("Champs manquants", "Indique RPE et duree d'un match.");
-            return false;
-          }
-        }
         return true;
       }
       case 3:
@@ -332,10 +304,6 @@ export default function ProfileSetupScreen() {
         matchesPerWeek: matches,
         hasClubTrainings, clubTrainingDays,
         matchDay: matchDays[0] ?? null, matchDays,
-        clubTypicalRPE: Number(clubTypicalRPE || 0) || null,
-        clubTypicalDurationMin: Number(clubTypicalDurationMin || 0) || null,
-        matchTypicalRPE: Number(matchTypicalRPE || 0) || null,
-        matchTypicalDurationMin: Number(matchTypicalDurationMin || 0) || null,
         hasGymAccess: hasGymAccess === "oui" ? "regular" : hasGymAccess === "occasionnel" ? "occasional" : "none",
         gymEquipment,
         hasHomeEquipment: hasHomeEquipment === "oui",
@@ -493,17 +461,6 @@ export default function ProfileSetupScreen() {
               <Text style={styles.hintText}>Aucun entrainement club pris en compte.</Text>
             ) : null}
 
-            {hasClubTrainings === "oui" && (
-              <>
-                <Text style={styles.fieldLabel}>RPE typique d'un entrainement club</Text>
-                <TextInput style={styles.input} keyboardType="decimal-pad" placeholder="ex: 6"
-                  placeholderTextColor={palette.muted} value={clubTypicalRPE} onChangeText={setClubTypicalRPE} />
-                <Text style={styles.fieldLabel}>Duree typique (min)</Text>
-                <TextInput style={styles.input} keyboardType="number-pad" placeholder="ex: 75"
-                  placeholderTextColor={palette.muted} value={clubTypicalDurationMin} onChangeText={setClubTypicalDurationMin} />
-              </>
-            )}
-
             <Text style={styles.fieldLabel}>Matchs / semaine</Text>
             <TextInput style={styles.input} keyboardType="number-pad" placeholder="ex: 1"
               placeholderTextColor={palette.muted} value={matchesPerWeek} onChangeText={setMatchesPerWeek} />
@@ -522,16 +479,6 @@ export default function ProfileSetupScreen() {
               <Text style={styles.hintText}>Aucun match selectionne.</Text>
             )}
 
-            {Number(matchesPerWeek) > 0 && (
-              <>
-                <Text style={styles.fieldLabel}>RPE typique d'un match</Text>
-                <TextInput style={styles.input} keyboardType="decimal-pad" placeholder="ex: 8"
-                  placeholderTextColor={palette.muted} value={matchTypicalRPE} onChangeText={setMatchTypicalRPE} />
-                <Text style={styles.fieldLabel}>Duree typique d'un match (min)</Text>
-                <TextInput style={styles.input} keyboardType="number-pad" placeholder="ex: 90"
-                  placeholderTextColor={palette.muted} value={matchTypicalDurationMin} onChangeText={setMatchTypicalDurationMin} />
-              </>
-            )}
           </>
         );
 

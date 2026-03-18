@@ -55,6 +55,7 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
   const clubDays = useExternalStore((s) => s.clubTrainingDays ?? []);
   const matchDays = useExternalStore((s) => s.matchDays ?? []);
   const sessions = useSessionsStore((s) => s.sessions);
+  const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
   const currentSession = sessionId ? sessions.find((s: any) => s.id === sessionId) : null;
   const canStart = !currentSession?.completed;
   const isCompleted = !!currentSession?.completed;
@@ -307,6 +308,7 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
                   setRestRunning(false);
                   nav.navigate('SessionLive', { v2, plannedDateISO, sessionId });
                 }}
+                cycleType={microcycleGoal}
               />
 
               {/* Reset explain */}

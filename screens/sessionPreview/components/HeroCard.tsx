@@ -7,6 +7,12 @@ import { Card } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
 import { Button } from "../../../components/ui/Button";
 import { intensityTone } from "../sessionPreviewConfig";
+import { ImageBanner } from "../../../components/ui/ImageBanner";
+import {
+  BANNER_IMAGES,
+  BANNER_FALLBACK,
+  cycleToBannerKey,
+} from "../../../constants/bannerImages";
 
 const palette = theme.colors;
 
@@ -27,6 +33,7 @@ type Props = {
   progress: number;
   canStart: boolean;
   onGoLive: () => void;
+  cycleType?: string | null;
 };
 
 export function HeroCard({
@@ -46,94 +53,164 @@ export function HeroCard({
   progress,
   canStart,
   onGoLive,
+  cycleType,
 }: Props) {
+  const bannerKey = cycleToBannerKey(cycleType);
+
   return (
     <Card variant="surface" style={styles.heroCard}>
-      <View style={styles.heroGlow} />
-      <View style={styles.heroTop}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title} numberOfLines={2}>{title}</Text>
-          {subtitle ? <Text style={styles.subtitle} numberOfLines={3}>{subtitle}</Text> : null}
-          {sessionTheme ? (
-            <View style={styles.sessionThemeRow}>
-              <Ionicons name="color-palette-outline" size={13} color={palette.accent} />
-              <Text style={styles.sessionThemeText}>{sessionTheme}</Text>
-            </View>
+      {/* Bandeau image pleine largeur */}
+      <ImageBanner
+        source={BANNER_IMAGES[bannerKey]}
+        height={180}
+        fallbackColor={BANNER_FALLBACK[bannerKey]}
+        borderRadius={20}
+      >
+        <View style={styles.bannerOverlay}>
+          <Text style={styles.bannerTitle} numberOfLines={2}>
+            {title}
+          </Text>
+          {subtitle ? (
+            <Text style={styles.bannerSubtitle} numberOfLines={2}>
+              {subtitle}
+            </Text>
           ) : null}
+          <View style={styles.bannerBadges}>
+            <Badge label={plannedDateISO} />
+            {intensity ? (
+              <Badge label={intensity} tone={intensityTone(intensity)} />
+            ) : null}
+          </View>
         </View>
-        <Badge label={plannedDateISO} />
-      </View>
+      </ImageBanner>
 
-      <View style={styles.heroTags}>
-        {intensity ? <Badge label={intensity} tone={intensityTone(intensity)} /> : null}
-        {focusPrimary ? <Badge label={focusPrimary} /> : null}
-        {focusSecondary ? <Badge label={focusSecondary} /> : null}
-        {location ? <Badge label={location} /> : null}
-      </View>
+      {/* Contenu sous le bandeau */}
+      <View style={styles.body}>
+        {sessionTheme ? (
+          <View style={styles.sessionThemeRow}>
+            <Ionicons
+              name="color-palette-outline"
+              size={13}
+              color={palette.accent}
+            />
+            <Text style={styles.sessionThemeText}>{sessionTheme}</Text>
+          </View>
+        ) : null}
 
-      <View style={styles.heroStats}>
-        <View style={styles.heroStat}>
-          <Text style={styles.heroStatLabel}>Durée</Text>
-          <Text style={styles.heroStatValue}>{durationLabel}</Text>
+        <View style={styles.heroTags}>
+          {focusPrimary ? <Badge label={focusPrimary} /> : null}
+          {focusSecondary ? <Badge label={focusSecondary} /> : null}
+          {location ? <Badge label={location} /> : null}
         </View>
-        <View style={styles.heroDivider} />
-        <View style={styles.heroStat}>
-          <Text style={styles.heroStatLabel}>Charge</Text>
-          <Text style={styles.heroStatValue}>{srpeLabel}</Text>
-        </View>
-        <View style={styles.heroDivider} />
-        <View style={styles.heroStat}>
-          <Text style={styles.heroStatLabel}>RPE cible</Text>
-          <Text style={styles.heroStatValue}>{rpeLabel}</Text>
-        </View>
-      </View>
 
-      <View style={styles.progressWrap}>
-        <Text style={styles.progressLabel}>
-          Progression : {completedItems}/{totalItems || '\u2014'}
-        </Text>
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+        <View style={styles.heroStats}>
+          <View style={styles.heroStat}>
+            <Text style={styles.heroStatLabel}>Durée</Text>
+            <Text style={styles.heroStatValue}>{durationLabel}</Text>
+          </View>
+          <View style={styles.heroDivider} />
+          <View style={styles.heroStat}>
+            <Text style={styles.heroStatLabel}>Charge</Text>
+            <Text style={styles.heroStatValue}>{srpeLabel}</Text>
+          </View>
+          <View style={styles.heroDivider} />
+          <View style={styles.heroStat}>
+            <Text style={styles.heroStatLabel}>RPE cible</Text>
+            <Text style={styles.heroStatValue}>{rpeLabel}</Text>
+          </View>
         </View>
-      </View>
 
-      {canStart ? (
-        <Button
-          label="Passer en mode live"
-          onPress={onGoLive}
-          fullWidth
-          size="md"
-          variant="secondary"
-          style={styles.heroCta}
-        />
-      ) : null}
+        <View style={styles.progressWrap}>
+          <Text style={styles.progressLabel}>
+            Progression : {completedItems}/{totalItems || "\u2014"}
+          </Text>
+          <View style={styles.progressTrack}>
+            <View
+              style={[styles.progressFill, { width: `${progress * 100}%` }]}
+            />
+          </View>
+        </View>
+
+        {canStart ? (
+          <Button
+            label="Passer en mode live"
+            onPress={onGoLive}
+            fullWidth
+            size="md"
+            variant="secondary"
+            style={styles.heroCta}
+          />
+        ) : null}
+      </View>
     </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  heroCard: { padding: 14, gap: 10, borderRadius: 20, overflow: "hidden" },
-  heroGlow: {
-    position: "absolute",
-    top: -90,
-    right: -130,
-    width: 260,
-    height: 260,
-    borderRadius: 999,
-    backgroundColor: palette.accentSoft,
-    opacity: 0.85,
+  heroCard: {
+    padding: 0,
+    borderRadius: 20,
+    overflow: "hidden",
   },
-  heroTop: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
-  title: { fontSize: 22, fontWeight: "800", color: palette.text },
-  subtitle: { fontSize: 13, color: palette.sub, marginTop: 4 },
-  sessionThemeRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 4 },
-  sessionThemeText: { fontSize: 12, color: palette.accent, fontWeight: "600", fontStyle: "italic" },
+  bannerOverlay: {
+    gap: 6,
+  },
+  bannerTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#fff",
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  bannerSubtitle: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.85)",
+    textShadowColor: "rgba(0,0,0,0.5)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  bannerBadges: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 4,
+  },
+  body: {
+    padding: 14,
+    gap: 10,
+  },
+  sessionThemeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  sessionThemeText: {
+    fontSize: 12,
+    color: palette.accent,
+    fontWeight: "600",
+    fontStyle: "italic",
+  },
   heroTags: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   heroStats: { flexDirection: "row", alignItems: "center", marginTop: 2 },
   heroStat: { flex: 1 },
-  heroStatLabel: { color: palette.sub, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6 },
-  heroStatValue: { color: palette.text, fontSize: 16, fontWeight: "700", marginTop: 2 },
-  heroDivider: { width: 1, height: 36, backgroundColor: palette.borderSoft, marginHorizontal: 12 },
+  heroStatLabel: {
+    color: palette.sub,
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  heroStatValue: {
+    color: palette.text,
+    fontSize: 16,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  heroDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: palette.borderSoft,
+    marginHorizontal: 12,
+  },
   heroCta: { marginTop: 4 },
   progressWrap: { gap: 4 },
   progressLabel: { color: palette.sub, fontSize: 12 },
