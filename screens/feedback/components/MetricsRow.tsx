@@ -30,6 +30,10 @@ export function MetricsRow({
         <TextInput
           value={durationMin}
           onChangeText={onDurationChange}
+          onFocus={() => {
+            // Vider le champ au focus pour que le joueur puisse taper directement sa valeur
+            if (durationMin) onDurationChange("");
+          }}
           placeholder="ex: 60"
           placeholderTextColor={COLORS.textMuted}
           keyboardType="number-pad"

@@ -60,6 +60,15 @@ export const BANNER_FALLBACK: Record<BannerKey, string> = {
   empty: "#141414",      // gris sombre
 };
 
+// Images pour le carrousel WelcomeScreen (crossfade automatique)
+export const WELCOME_CAROUSEL = [
+  BANNER_IMAGES.welcome,   // Stade grand angle
+  BANNER_IMAGES.home,      // Terrain au crépuscule
+  BANNER_IMAGES.engine,    // Joueur qui court
+  BANNER_IMAGES.force,     // Salle de muscu
+  BANNER_IMAGES.explosif,  // Sprint
+];
+
 // Mapping cycle → clé de bannière
 export function cycleToBannerKey(cycle?: string | null): BannerKey {
   const c = (cycle ?? "").toLowerCase();

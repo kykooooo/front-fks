@@ -1,14 +1,16 @@
 // screens/HomeScreen.tsx
-import React, { useMemo, useLayoutEffect, useEffect, useCallback } from "react";
+import React, { useMemo, useLayoutEffect, useEffect, useCallback, useRef, useState } from "react";
 import {
   View,
   Text,
+  Image,
   TouchableOpacity,
   ScrollView,
   StyleSheet,
   Animated,
   AccessibilityInfo,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { signOut } from "firebase/auth";
@@ -43,8 +45,7 @@ import { HomeCoachRecommendation } from "../components/home/HomeCoachRecommendat
 import { useCoachRecommendations } from "../hooks/useCoachRecommendations";
 import { isSameDay, toDateKey } from "../utils/dateHelpers";
 import { showToast } from "../utils/toast";
-import { ImageBanner } from "../components/ui/ImageBanner";
-import { BANNER_IMAGES, BANNER_FALLBACK } from "../constants/bannerImages";
+import { WELCOME_CAROUSEL, BANNER_FALLBACK } from "../constants/bannerImages";
 
 const palette = theme.colors;
 
@@ -52,8 +53,32 @@ const palette = theme.colors;
 const EMPTY_STRINGS: string[] = [];
 const EMPTY_EXTERNALS: { source?: string; dateISO?: string }[] = [];
 
+const CROSSFADE_MS = 1200;
+const INTERVAL_MS = 5000;
+
 export default function HomeScreen() {
   if (__DEV__) console.log("[RENDER] HomeScreen");
+
+  // ─── Carrousel hero ───
+  const [heroIndex, setHeroIndex] = useState(0);
+  const heroFades = useRef(WELCOME_CAROUSEL.map((_, i) => new Animated.Value(i === 0 ? 1 : 0))).current;
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setInterval(() => {
+      if (cancelled) return;
+      setHeroIndex((prev) => {
+        const next = (prev + 1) % WELCOME_CAROUSEL.length;
+        Animated.parallel([
+          Animated.timing(heroFades[next], { toValue: 1, duration: CROSSFADE_MS, useNativeDriver: true }),
+          Animated.timing(heroFades[prev], { toValue: 0, duration: CROSSFADE_MS, useNativeDriver: true }),
+        ]).start();
+        return next;
+      });
+    }, INTERVAL_MS);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [heroFades]);
+
   type RootNav = {
     navigate: (screen: string, params?: any) => void;
     setOptions?: (opts: any) => void;
@@ -256,39 +281,65 @@ export default function HomeScreen() {
 
         <View style={styles.mainContent}>
           <View style={styles.heroShell}>
-            <ImageBanner
-              source={BANNER_IMAGES.home}
-              height={260}
-              fallbackColor={BANNER_FALLBACK.home}
-              borderRadius={24}
-            >
-              <View style={styles.heroBannerContent}>
-                <View style={styles.heroTopRow}>
-                  <View style={styles.heroBadge}>
-                    <Text style={styles.heroBadgeText}>FKS</Text>
-                  </View>
-                  <Text style={styles.heroDate}>{todayLabel}</Text>
+            {/* Carrousel d'images en crossfade */}
+            {WELCOME_CAROUSEL.map((source, i) => (
+              <Animated.View
+                key={i}
+                style={[StyleSheet.absoluteFill, { opacity: heroFades[i] }]}
+                pointerEvents="none"
+              >
+                <Image source={source} style={[StyleSheet.absoluteFill, { borderRadius: 24 }]} resizeMode="cover" />
+              </Animated.View>
+            ))}
+            <View style={styles.heroTint} />
+            <LinearGradient
+              colors={["transparent", `${palette.bg}DD`, palette.card]}
+              locations={[0.15, 0.65, 1]}
+              style={styles.heroGradient}
+            />
+
+            {/* Contenu par-dessus */}
+            <View style={styles.heroBannerContent}>
+              <View style={styles.heroTopRow}>
+                <View style={styles.heroBadge}>
+                  <Text style={styles.heroBadgeText}>FKS</Text>
                 </View>
-                <Text style={styles.helloTitle}>Salut, {athleteName}</Text>
-                <Text style={styles.helloSub}>
-                  Ton état du jour et ta prochaine séance.
-                </Text>
-                <View style={styles.quickRow}>
-                  <View style={styles.quickChip}>
-                    <Text style={styles.quickLabel}>Semaine</Text>
-                    <Text style={styles.quickValue}>{weekSummary.fksCount}/{weeklyGoal}</Text>
-                  </View>
-                  <View style={styles.quickChip}>
-                    <Text style={styles.quickLabel}>Série</Text>
-                    <Text style={styles.quickValue}>{activityStreak}j</Text>
-                  </View>
-                  <View style={[styles.quickChip, matchSoon ? styles.quickChipWarn : null]}>
-                    <Text style={styles.quickLabel}>Match</Text>
-                    <Text style={styles.quickValue}>{matchSoon ? "Proche" : "—"}</Text>
-                  </View>
+                <Text style={styles.heroDate}>{todayLabel}</Text>
+              </View>
+              <Text style={styles.helloTitle}>Salut, {athleteName}</Text>
+              <Text style={styles.helloSub}>
+                Ton état du jour et ta prochaine séance.
+              </Text>
+              <View style={styles.quickRow}>
+                <View style={styles.quickChip}>
+                  <Text style={styles.quickLabel}>Semaine</Text>
+                  <Text style={styles.quickValue}>{weekSummary.fksCount}/{weeklyGoal}</Text>
+                </View>
+                <View style={styles.quickChip}>
+                  <Text style={styles.quickLabel}>Série</Text>
+                  <Text style={styles.quickValue}>{activityStreak}j</Text>
+                </View>
+                <View style={[styles.quickChip, matchSoon ? styles.quickChipWarn : null]}>
+                  <Text style={styles.quickLabel}>Match</Text>
+                  <Text style={styles.quickValue}>{matchSoon ? "Proche" : "—"}</Text>
                 </View>
               </View>
-            </ImageBanner>
+              {/* Dots */}
+              <View style={styles.heroDots}>
+                {WELCOME_CAROUSEL.map((_, i) => (
+                  <Animated.View
+                    key={i}
+                    style={[
+                      styles.heroDot,
+                      {
+                        opacity: heroFades[i].interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }),
+                        transform: [{ scale: heroFades[i].interpolate({ inputRange: [0, 1], outputRange: [1, 1.4] }) }],
+                      },
+                    ]}
+                  />
+                ))}
+              </View>
+            </View>
           </View>
 
           <Animated.View
@@ -486,11 +537,43 @@ const styles = StyleSheet.create({
   heroShell: {
     borderRadius: 24,
     overflow: "hidden",
-    borderWidth: 1,
-    borderColor: palette.border,
+    height: 280,
+    position: "relative" as const,
+    backgroundColor: BANNER_FALLBACK.home,
+  },
+  heroTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.3)",
+    borderRadius: 24,
+  },
+  heroGradient: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: "65%",
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
   },
   heroBannerContent: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
     gap: 8,
+  },
+  heroDots: {
+    flexDirection: "row",
+    gap: 6,
+    alignSelf: "center",
+    marginTop: 4,
+  },
+  heroDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: "#fff",
   },
   heroTopRow: {
     flexDirection: "row",
@@ -514,18 +597,27 @@ const styles = StyleSheet.create({
   },
   heroDate: {
     fontSize: 12,
-    color: palette.sub,
+    color: "rgba(255,255,255,0.7)",
     textTransform: "uppercase",
     letterSpacing: 1,
+    textShadowColor: "rgba(0,0,0,0.5)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   helloTitle: {
     fontSize: 24,
     fontWeight: "800",
-    color: palette.text,
+    color: "#fff",
+    textShadowColor: "rgba(0,0,0,0.5)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   helloSub: {
     fontSize: 13,
-    color: palette.sub,
+    color: "rgba(255,255,255,0.8)",
+    textShadowColor: "rgba(0,0,0,0.4)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   quickRow: {
     flexDirection: "row",
