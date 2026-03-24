@@ -7,7 +7,7 @@ import {
   Text,
   Image,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions,
   FlatList,
   Pressable,
   StatusBar,
@@ -19,7 +19,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useHaptics } from "../hooks/useHaptics";
 import { theme } from "../constants/theme";
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 const palette = theme.colors;
 
 /* ─── Slides data ─── */
@@ -51,10 +50,14 @@ type Props = {
 };
 
 /* ─── Slide component ─── */
-function Slide({ item }: { item: SlideData }) {
+function Slide({ item, width, height }: { item: SlideData; width: number; height: number }) {
   return (
-    <View style={styles.slide}>
-      <Image source={item.image} style={StyleSheet.absoluteFill} resizeMode="cover" />
+    <View style={[styles.slide, { width, height }]}>
+      <Image
+        source={item.image}
+        style={{ width, height, position: "absolute", top: 0, left: 0 }}
+        resizeMode="cover"
+      />
       <View style={styles.tint} />
       <LinearGradient
         colors={["transparent", "rgba(0,0,0,0.7)", "rgba(0,0,0,0.92)"]}
@@ -72,6 +75,7 @@ function Slide({ item }: { item: SlideData }) {
 /* ─── Main ─── */
 export default function WelcomeScreen({ onComplete }: Props) {
   const haptics = useHaptics();
+  const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList<SlideData>>(null);
 
@@ -98,8 +102,8 @@ export default function WelcomeScreen({ onComplete }: Props) {
   }, [haptics, onComplete]);
 
   const renderItem = useCallback(
-    ({ item }: ListRenderItemInfo<SlideData>) => <Slide item={item} />,
-    []
+    ({ item }: ListRenderItemInfo<SlideData>) => <Slide item={item} width={SCREEN_W} height={SCREEN_H} />,
+    [SCREEN_W, SCREEN_H]
   );
 
   const isLastSlide = activeIndex === SLIDES.length - 1;
@@ -120,6 +124,8 @@ export default function WelcomeScreen({ onComplete }: Props) {
         bounces={false}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
+        snapToInterval={SCREEN_W}
+        decelerationRate="fast"
         getItemLayout={(_, index) => ({
           length: SCREEN_W,
           offset: SCREEN_W * index,
@@ -166,9 +172,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#000",
   },
   slide: {
-    width: SCREEN_W,
-    height: SCREEN_H,
-    position: "relative",
+    position: "relative" as const,
   },
   tint: {
     ...StyleSheet.absoluteFillObject,

@@ -33,6 +33,7 @@ import ChatScreen from "../screens/ChatScreen";
 import CycleModalScreen from "../screens/CycleModalScreen";
 import ProgressScreen from "../screens/ProgressScreen";
 import { theme } from "../constants/theme";
+import { DEV_FLAGS } from "../config/devFlags";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useSyncStore } from "../state/stores/useSyncStore";
@@ -288,8 +289,9 @@ function AuthNavigator({
         {(props) => (
           <WelcomeScreen
             onComplete={(entry) => {
-              onWelcomeComplete?.();
               props.navigation.navigate(entry === "register" ? "Register" : "Login");
+              // Marquer après navigation pour éviter le re-render avant navigate
+              setTimeout(() => onWelcomeComplete?.(), 100);
             }}
           />
         )}
@@ -319,6 +321,15 @@ export default function RootNavigator() {
   const mode = useAppModeStore((s) => s.mode);
   const modeLoading = useAppModeStore((s) => s.loading);
   const loadModeForUid = useAppModeStore((s) => s.loadForUid);
+
+  // 0) DEV: force welcome screen (déconnecte + reset flag)
+  useEffect(() => {
+    if (!DEV_FLAGS.FORCE_WELCOME) return;
+    (async () => {
+      await AsyncStorage.removeItem(WELCOME_KEY);
+      try { await auth.signOut(); } catch {}
+    })();
+  }, []);
 
   // 1) Auth state
   useEffect(() => {

@@ -55,7 +55,7 @@ export function MetricsRow({
           {estimatedLoad != null ? `${estimatedLoad} UA` : '—'}
         </Text>
         <Text style={styles.metricHint}>
-          TSB {tsb.toFixed(1)} → {projectedTsb ?? '—'}
+          Forme {tsb.toFixed(1)} → {projectedTsb ?? '—'}
           {projectedDelta != null ? ` (${projectedDelta >= 0 ? '+' : ''}${projectedDelta})` : ''}
         </Text>
       </View>
