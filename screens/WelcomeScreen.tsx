@@ -1,108 +1,89 @@
 // screens/WelcomeScreen.tsx
-// Écran d'accueil — carrousel d'images foot en crossfade + CTA
+// Onboarding swipeable — 3 slides plein écran avec images foot + CTA
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useRef, useState, useCallback } from "react";
 import {
   View,
   Text,
   Image,
   StyleSheet,
-  Animated,
+  Dimensions,
+  FlatList,
   Pressable,
   StatusBar,
-  AccessibilityInfo,
-  type ImageSourcePropType,
+  type ViewToken,
+  type ListRenderItemInfo,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useHaptics } from "../hooks/useHaptics";
 import { theme } from "../constants/theme";
-import { WELCOME_CAROUSEL, BANNER_FALLBACK } from "../constants/bannerImages";
 
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 const palette = theme.colors;
-const CROSSFADE_MS = 1200;
-const INTERVAL_MS = 4000;
 
+/* ─── Slides data ─── */
+const SLIDES = [
+  {
+    id: "1",
+    image: require("../assets/images/slide1-ball.jpg"),
+    title: "Ta prépa physique,\nton avantage",
+    subtitle: "Des séances créées par l'IA, adaptées à ton niveau et ton calendrier.",
+  },
+  {
+    id: "2",
+    image: require("../assets/images/slide2-sprint.jpg"),
+    title: "Progresse à\nchaque séance",
+    subtitle: "Force, vitesse, endurance — chaque programme te rapproche de ton meilleur niveau.",
+  },
+  {
+    id: "3",
+    image: require("../assets/images/slide3-tunnel.jpg"),
+    title: "Prêt le jour\ndu match",
+    subtitle: "L'app gère ta charge pour que tu arrives frais et performant.",
+  },
+] as const;
+
+/* ─── Types ─── */
+type SlideData = (typeof SLIDES)[number];
 type Props = {
   onComplete: (entry?: "login" | "register") => void;
 };
 
+/* ─── Slide component ─── */
+function Slide({ item }: { item: SlideData }) {
+  return (
+    <View style={styles.slide}>
+      <Image source={item.image} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      <View style={styles.tint} />
+      <LinearGradient
+        colors={["transparent", "rgba(0,0,0,0.7)", "rgba(0,0,0,0.92)"]}
+        locations={[0.3, 0.6, 1]}
+        style={styles.gradient}
+      />
+      <View style={styles.slideContent}>
+        <Text style={styles.title}>{item.title}</Text>
+        <Text style={styles.subtitle}>{item.subtitle}</Text>
+      </View>
+    </View>
+  );
+}
+
+/* ─── Main ─── */
 export default function WelcomeScreen({ onComplete }: Props) {
   const haptics = useHaptics();
   const [activeIndex, setActiveIndex] = useState(0);
-  const fadeAnims = useRef(WELCOME_CAROUSEL.map((_, i) => new Animated.Value(i === 0 ? 1 : 0))).current;
+  const flatListRef = useRef<FlatList<SlideData>>(null);
 
-  // Animations d'entrée du contenu
-  const logoAnim = useRef(new Animated.Value(0)).current;
-  const titleAnim = useRef(new Animated.Value(0)).current;
-  const titleSlide = useRef(new Animated.Value(20)).current;
-  const subAnim = useRef(new Animated.Value(0)).current;
-  const subSlide = useRef(new Animated.Value(20)).current;
-  const ctaAnim = useRef(new Animated.Value(0)).current;
-
-  // Intro animations
-  useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then((reduce) => {
-      if (reduce) {
-        [logoAnim, titleAnim, subAnim, ctaAnim].forEach((a) => a.setValue(1));
-        [titleSlide, subSlide].forEach((a) => a.setValue(0));
-        return;
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      if (viewableItems.length > 0 && viewableItems[0].index != null) {
+        setActiveIndex(viewableItems[0].index);
       }
-      Animated.timing(logoAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
-      setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(titleAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
-          Animated.timing(titleSlide, { toValue: 0, duration: 400, useNativeDriver: true }),
-        ]).start();
-      }, 200);
-      setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(subAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
-          Animated.timing(subSlide, { toValue: 0, duration: 400, useNativeDriver: true }),
-        ]).start();
-      }, 300);
-      setTimeout(() => {
-        Animated.timing(ctaAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
-      }, 500);
-    });
-  }, []);
+    }
+  ).current;
 
-  // Crossfade automatique entre les images
-  useEffect(() => {
-    let cancelled = false;
-    let reduceMotion = false;
-
-    AccessibilityInfo.isReduceMotionEnabled().then((reduce) => {
-      reduceMotion = reduce;
-    });
-
-    const timer = setInterval(() => {
-      if (cancelled || reduceMotion) return;
-
-      setActiveIndex((prev) => {
-        const next = (prev + 1) % WELCOME_CAROUSEL.length;
-        // Fade in la nouvelle image, fade out l'ancienne
-        Animated.parallel([
-          Animated.timing(fadeAnims[next], {
-            toValue: 1,
-            duration: CROSSFADE_MS,
-            useNativeDriver: true,
-          }),
-          Animated.timing(fadeAnims[prev], {
-            toValue: 0,
-            duration: CROSSFADE_MS,
-            useNativeDriver: true,
-          }),
-        ]).start();
-        return next;
-      });
-    }, INTERVAL_MS);
-
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [fadeAnims]);
+  const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
 
   const handleStart = useCallback(async () => {
     haptics.impactMedium();
@@ -116,110 +97,82 @@ export default function WelcomeScreen({ onComplete }: Props) {
     onComplete("login");
   }, [haptics, onComplete]);
 
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<SlideData>) => <Slide item={item} />,
+    []
+  );
+
+  const isLastSlide = activeIndex === SLIDES.length - 1;
+
   return (
-    <View style={styles.safe}>
+    <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* Carrousel d'images en crossfade */}
-      <View style={styles.carouselWrap}>
-        {WELCOME_CAROUSEL.map((source, i) => (
-          <Animated.View
-            key={i}
-            style={[StyleSheet.absoluteFill, { opacity: fadeAnims[i] }]}
-            pointerEvents="none"
-          >
-            <Image
-              source={source}
-              style={StyleSheet.absoluteFill}
-              resizeMode="cover"
+      {/* Slides */}
+      <FlatList
+        ref={flatListRef}
+        data={SLIDES as unknown as SlideData[]}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.id}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        bounces={false}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
+        getItemLayout={(_, index) => ({
+          length: SCREEN_W,
+          offset: SCREEN_W * index,
+          index,
+        })}
+      />
+
+      {/* Bottom overlay — dots + CTA */}
+      <View style={styles.bottomOverlay}>
+        {/* Dots */}
+        <View style={styles.dots}>
+          {SLIDES.map((_, i) => (
+            <View
+              key={i}
+              style={[
+                styles.dot,
+                i === activeIndex ? styles.dotActive : styles.dotInactive,
+              ]}
             />
-          </Animated.View>
-        ))}
-
-        {/* Assombrissement pour lisibilité */}
-        <View style={styles.tint} />
-
-        {/* Gradient bas → fond app */}
-        <LinearGradient
-          colors={["transparent", `${palette.bg}CC`, palette.bg]}
-          locations={[0.3, 0.7, 1]}
-          style={styles.gradient}
-        />
-
-        {/* Contenu par-dessus */}
-        <View style={styles.overlayContent}>
-          <Animated.View style={[styles.logoWrap, { opacity: logoAnim }]}>
-            <Text style={styles.logo}>FKS</Text>
-            <View style={styles.accentBar} />
-          </Animated.View>
-          <Animated.Text
-            style={[styles.title, { opacity: titleAnim, transform: [{ translateY: titleSlide }] }]}
-          >
-            Ton terrain. Ta prépa.
-          </Animated.Text>
-          <Animated.Text
-            style={[styles.subtitle, { opacity: subAnim, transform: [{ translateY: subSlide }] }]}
-          >
-            Séances créées par l'IA, adaptées à toi.
-          </Animated.Text>
-
-          {/* Dots indicateurs */}
-          <View style={styles.dots}>
-            {WELCOME_CAROUSEL.map((_, i) => (
-              <Animated.View
-                key={i}
-                style={[
-                  styles.dot,
-                  {
-                    opacity: fadeAnims[i].interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.3, 1],
-                    }),
-                    transform: [{
-                      scale: fadeAnims[i].interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [1, 1.3],
-                      }),
-                    }],
-                  },
-                ]}
-              />
-            ))}
-          </View>
+          ))}
         </View>
-      </View>
 
-      {/* Bottom — CTA */}
-      <View style={styles.bottomArea}>
-        <Animated.View style={[styles.bottom, { opacity: ctaAnim }]}>
+        {/* CTA buttons */}
+        <View style={styles.ctaRow}>
           <Pressable
             onPress={handleStart}
-            style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
+            style={({ pressed }) => [styles.ctaPrimary, pressed && styles.ctaPressed]}
           >
-            <Text style={styles.ctaText}>Commencer</Text>
+            <Text style={styles.ctaPrimaryText}>Commencer</Text>
           </Pressable>
-          <Pressable onPress={handleLogin} style={styles.loginLink}>
-            <Text style={styles.loginLinkText}>J'ai déjà un compte</Text>
-          </Pressable>
-        </Animated.View>
+        </View>
+        <Pressable onPress={handleLogin} style={styles.loginLink}>
+          <Text style={styles.loginLinkText}>J'ai déjà un compte</Text>
+        </Pressable>
       </View>
     </View>
   );
 }
 
+/* ─── Styles ─── */
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: palette.bg },
-
-  // ─── Carrousel ───
-  carouselWrap: {
-    height: 420,
+  container: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  slide: {
+    width: SCREEN_W,
+    height: SCREEN_H,
     position: "relative",
-    overflow: "hidden",
-    backgroundColor: BANNER_FALLBACK.welcome,
   },
   tint: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.35)",
+    backgroundColor: "rgba(0,0,0,0.15)",
   },
   gradient: {
     position: "absolute",
@@ -228,75 +181,86 @@ const styles = StyleSheet.create({
     right: 0,
     height: "55%",
   },
-  overlayContent: {
+  slideContent: {
     position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 24,
-    paddingBottom: 16,
-    alignItems: "center",
+    bottom: 220,
+    left: 24,
+    right: 24,
   },
-  dots: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 16,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#fff",
-  },
-
-  // ─── Contenu texte ───
-  logoWrap: { alignItems: "center", gap: 12, marginBottom: 16 },
-  logo: {
-    fontSize: 56,
+  title: {
+    fontSize: 34,
     fontWeight: "900",
     color: "#fff",
-    letterSpacing: 6,
-    textShadowColor: "rgba(0,0,0,0.5)",
+    lineHeight: 42,
+    textShadowColor: "rgba(0,0,0,0.6)",
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 6,
   },
-  accentBar: { width: 40, height: 3, borderRadius: 2, backgroundColor: palette.accent },
-  title: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#fff",
-    textAlign: "center",
+  subtitle: {
+    fontSize: 16,
+    color: "rgba(255,255,255,0.85)",
+    marginTop: 12,
+    lineHeight: 22,
     textShadowColor: "rgba(0,0,0,0.5)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
-  subtitle: {
-    fontSize: 15,
-    color: "rgba(255,255,255,0.8)",
-    textAlign: "center",
-    textShadowColor: "rgba(0,0,0,0.4)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
 
-  // ─── CTA ───
-  bottomArea: {
-    flex: 1,
-    justifyContent: "flex-end",
+  // ─── Bottom overlay ───
+  bottomOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
     paddingHorizontal: 24,
-    paddingBottom: 40,
+    paddingBottom: 50,
+    alignItems: "center",
   },
-  bottom: { alignItems: "center", gap: 20 },
-  cta: {
+  dots: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 28,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  dotActive: {
+    backgroundColor: "#fff",
+    width: 24,
+  },
+  dotInactive: {
+    backgroundColor: "rgba(255,255,255,0.35)",
+  },
+  ctaRow: {
+    width: "100%",
+    marginBottom: 16,
+  },
+  ctaPrimary: {
     width: "100%",
     backgroundColor: palette.accent,
     borderRadius: theme.radius.pill,
-    paddingVertical: 16,
+    paddingVertical: 17,
     alignItems: "center",
     ...theme.shadow.accent,
   },
-  ctaPressed: { transform: [{ scale: 0.96 }] },
-  ctaText: { fontSize: 16, fontWeight: "700", color: "#fff" },
-  loginLink: { paddingVertical: 8 },
-  loginLinkText: { fontSize: 14, fontWeight: "600", color: palette.accent },
+  ctaPressed: {
+    transform: [{ scale: 0.96 }],
+    opacity: 0.9,
+  },
+  ctaPrimaryText: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#fff",
+    letterSpacing: 0.3,
+  },
+  loginLink: {
+    paddingVertical: 10,
+  },
+  loginLinkText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "rgba(255,255,255,0.7)",
+  },
 });
