@@ -289,9 +289,11 @@ function AuthNavigator({
         {(props) => (
           <WelcomeScreen
             onComplete={(entry) => {
-              props.navigation.navigate(entry === "register" ? "Register" : "Login");
-              // Marquer après navigation pour éviter le re-render avant navigate
-              setTimeout(() => onWelcomeComplete?.(), 100);
+              props.navigation.reset({
+                index: 0,
+                routes: [{ name: entry === "register" ? "Register" : "Login" }],
+              });
+              onWelcomeComplete?.();
             }}
           />
         )}
