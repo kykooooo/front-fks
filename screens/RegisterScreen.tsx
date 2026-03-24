@@ -107,7 +107,8 @@ export default function RegisterScreen({ navigation }: Props) {
       await signOut(auth);
       haptics.success();
       showToast({ type: "success", title: "Compte créé", message: "Connecte-toi pour continuer." });
-      navigation.navigate("Login");
+      // Le signOut déclenche le re-render vers AuthStack automatiquement
+      // navigation.navigate("Login") n'est plus nécessaire
     } catch (e: any) {
       showError(e, "Inscription");
       runShake(shake);
