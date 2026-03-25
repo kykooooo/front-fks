@@ -1,8 +1,9 @@
 // screens/tests/components/TestHeader.tsx
 import React from "react";
-import { View, Text, StyleSheet, Animated } from "react-native";
+import { View, Text, StyleSheet, Animated, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useNavigation } from "@react-navigation/native";
 import { theme } from "../../../constants/theme";
 import { formatEntryTimestamp } from "../testHelpers";
 import type { TestEntry } from "../testConfig";
@@ -16,6 +17,8 @@ type Props = {
 };
 
 export function TestHeader({ lastEntry, fadeAnim, slideAnim }: Props) {
+  const navigation = useNavigation();
+
   return (
     <Animated.View
       style={[
@@ -26,6 +29,9 @@ export function TestHeader({ lastEntry, fadeAnim, slideAnim }: Props) {
         },
       ]}
     >
+      <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton} activeOpacity={0.7}>
+        <Ionicons name="chevron-back" size={22} color={palette.text} />
+      </TouchableOpacity>
       <View style={styles.headerLeft}>
         <LinearGradient
           colors={["#ff7a1a", "#ff9a4a"]}
@@ -55,6 +61,16 @@ export function TestHeader({ lastEntry, fadeAnim, slideAnim }: Props) {
 }
 
 const styles = StyleSheet.create({
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: palette.card,
+    borderWidth: 1,
+    borderColor: palette.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
