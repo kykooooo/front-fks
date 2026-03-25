@@ -123,14 +123,15 @@ const styles = StyleSheet.create({
   rpeSelector: { flexDirection: 'row', justifyContent: 'space-between', gap: 4 },
   rpeDot: {
     flex: 1,
-    paddingVertical: 8,
-    borderRadius: 10,
+    minHeight: 44,
+    paddingVertical: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.surface,
   },
-  rpeDotText: { color: COLORS.textMuted, fontSize: 13, fontWeight: '600' },
+  rpeDotText: { color: COLORS.textMuted, fontSize: 14, fontWeight: '700' },
   rpeDotTextSelected: { color: '#fff', fontWeight: '700' },
 });
