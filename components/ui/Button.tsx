@@ -77,7 +77,7 @@ export function Button({
   });
   const labelColor =
     variant === "primary"
-      ? theme.colors.text
+      ? "#fff"
       : variant === "secondary"
         ? theme.colors.text
         : theme.colors.accent;
@@ -147,6 +147,7 @@ const styles = StyleSheet.create({
   primary: {
     backgroundColor: theme.colors.accent,
     borderColor: theme.colors.accent,
+    ...theme.shadow.accent,
   },
   secondary: {
     backgroundColor: theme.colors.card,
@@ -154,7 +155,7 @@ const styles = StyleSheet.create({
   },
   ghost: {
     backgroundColor: "transparent",
-    borderColor: theme.colors.borderSoft,
+    borderColor: "transparent",
   },
   outline: {
     backgroundColor: "transparent",
@@ -162,32 +163,35 @@ const styles = StyleSheet.create({
   },
   sm: {
     minHeight: 44,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
   },
   md: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
   },
   lg: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 17,
+    paddingHorizontal: 24,
   },
   label: {
     textAlign: "center",
     flexShrink: 1,
   },
   labelSm: {
-    fontSize: 12,
-    fontWeight: "600",
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.2,
   },
   labelMd: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  labelLg: {
     fontSize: 15,
     fontWeight: "700",
+    letterSpacing: 0.3,
+  },
+  labelLg: {
+    fontSize: 17,
+    fontWeight: "800",
+    letterSpacing: 0.3,
   },
   accessory: {
     marginHorizontal: 2,
