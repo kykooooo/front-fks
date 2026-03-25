@@ -335,7 +335,7 @@ export default function FeedbackScreen() {
           <LoadingOverlay
             visible={isSaving}
             message="Enregistrement de ton feedback..."
-            submessage="Mise à jour de ta charge d'entraînement (ATL/CTL/TSB) en cours."
+            submessage="Mise à jour de ta charge d'entraînement en cours."
           />
         </SafeAreaView>
       </ModalContainer>
@@ -353,7 +353,7 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
   },
   modalHeaderTitle: { fontSize: 16, fontWeight: '800', color: COLORS.text },
-  modalClose: { paddingHorizontal: 8, paddingVertical: 6 },
+  modalClose: { paddingHorizontal: 12, paddingVertical: 10, minWidth: 44, minHeight: 44, alignItems: "center" as const, justifyContent: "center" as const },
   safeArea: { flex: 1, backgroundColor: COLORS.background },
   root: { flex: 1, backgroundColor: COLORS.background },
   scroll: { flex: 1 },

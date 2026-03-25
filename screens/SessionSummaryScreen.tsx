@@ -170,7 +170,7 @@ export default function SessionSummaryScreen() {
   });
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Animated.View
           style={[
@@ -240,7 +240,7 @@ export default function SessionSummaryScreen() {
               {estimatedLoad != null ? `${estimatedLoad} UA` : "—"}
             </Text>
             <Text style={styles.loadHint}>
-              TSB {tsb.toFixed(1)} → {projectedTsb ?? "—"}
+              Forme {tsb.toFixed(1)} → {projectedTsb ?? "—"}
               {projectedDelta != null
                 ? ` (${projectedDelta >= 0 ? "+" : ""}${projectedDelta})`
                 : ""}

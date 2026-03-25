@@ -305,7 +305,7 @@ export default function RoutineScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Card variant="surface" style={styles.heroCard}>
           <View style={styles.heroGlow} />

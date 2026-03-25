@@ -144,7 +144,7 @@ export default function CoachPlayerDetailScreen() {
     typeof profile?.lastSessionDate === "string" ? profile.lastSessionDate : sessions[0]?.date ?? null;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Card variant="surface" style={styles.heroCard}>
           <Text style={styles.heroTitle}>{userName || profile?.firstName || "Joueur"}</Text>

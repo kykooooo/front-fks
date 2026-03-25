@@ -15,6 +15,7 @@ import {
   type ListRenderItemInfo,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useHaptics } from "../hooks/useHaptics";
 import { theme } from "../constants/theme";
@@ -75,6 +76,7 @@ function Slide({ item, width, height }: { item: SlideData; width: number; height
 /* ─── Main ─── */
 export default function WelcomeScreen({ onComplete }: Props) {
   const haptics = useHaptics();
+  const insets = useSafeAreaInsets();
   const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList<SlideData>>(null);
@@ -134,7 +136,7 @@ export default function WelcomeScreen({ onComplete }: Props) {
       />
 
       {/* Bottom overlay — dots + CTA */}
-      <View style={styles.bottomOverlay}>
+      <View style={[styles.bottomOverlay, { paddingBottom: Math.max(insets.bottom, 20) + 16 }]}>
         {/* Dots */}
         <View style={styles.dots}>
           {SLIDES.map((_, i) => (

@@ -9,7 +9,7 @@ const palette = theme.colors;
 
 export default function LegalNoticeScreen() {
   return (
-    <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Mentions legales</Text>
         <Text style={styles.subtitle}>

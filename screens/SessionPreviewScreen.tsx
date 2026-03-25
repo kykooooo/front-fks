@@ -478,7 +478,7 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
   },
   modalHeaderTitle: { fontSize: 16, fontWeight: '800', color: palette.text },
-  modalClose: { paddingHorizontal: 8, paddingVertical: 6 },
+  modalClose: { paddingHorizontal: 12, paddingVertical: 10, minWidth: 44, minHeight: 44, alignItems: "center" as const, justifyContent: "center" as const },
   safeArea: { flex: 1, backgroundColor: palette.bg },
   container: { padding: 14, paddingBottom: 24 },
   content: { gap: 12 },

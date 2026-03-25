@@ -13,6 +13,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { applyExternalLoad } from "../state/orchestrators/applyExternalLoad";
@@ -109,10 +110,11 @@ export default function ExternalLoadScreen() {
         allowBackdropDismiss
         allowSwipeDismiss
       >
+        <SafeAreaView style={{ flex: 1 }} edges={["bottom"]}>
         <KeyboardAvoidingView
           style={styles.root}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0} // ajuste selon la hauteur de ton header
+          keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
         >
           <View style={styles.modalHeaderRow}>
             <Text style={styles.modalHeaderTitle}>Charge externe</Text>
@@ -245,6 +247,7 @@ export default function ExternalLoadScreen() {
             </ScrollView>
           </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
+        </SafeAreaView>
       </ModalContainer>
     </View>
   );
@@ -264,7 +267,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: palette.text,
   },
-  modalClose: { paddingHorizontal: 8, paddingVertical: 6 },
+  modalClose: { paddingHorizontal: 12, paddingVertical: 10, minWidth: 44, minHeight: 44, alignItems: "center" as const, justifyContent: "center" as const },
   root: { flex: 1, backgroundColor: palette.bg },
   container: { padding: 16, gap: 16 },
   section: { gap: 8 },

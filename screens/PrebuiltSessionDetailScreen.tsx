@@ -268,7 +268,7 @@ export default function PrebuiltSessionDetailScreen() {
     : 0;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
       <View style={styles.root}>
         <ScrollView
           style={{ flex: 1 }}

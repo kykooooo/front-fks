@@ -162,15 +162,17 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.accent,
   },
   sm: {
-    minHeight: 44,
+    minHeight: 48,
     paddingVertical: 10,
     paddingHorizontal: 16,
   },
   md: {
+    minHeight: 52,
     paddingVertical: 14,
     paddingHorizontal: 20,
   },
   lg: {
+    minHeight: 56,
     paddingVertical: 17,
     paddingHorizontal: 24,
   },
