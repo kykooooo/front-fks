@@ -9,7 +9,6 @@ import {
   TextInput,
   TouchableOpacity,
   Animated,
-  Linking,
 } from "react-native";
 import { RouteProp, useRoute } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -29,6 +28,7 @@ import {
 } from "../engine/exerciseBank";
 import { EXERCISE_INSTRUCTIONS } from "../engine/exerciseInstructions";
 import { getExerciseVideoRef } from "../engine/exerciseVideos";
+import { YouTubePlayer } from "../components/ui/YouTubePlayer";
 
 import {
   MODALITY_LABELS,
@@ -190,11 +190,14 @@ export default function VideoLibraryScreen() {
 
   const closeDetail = () => setDetailExerciseId(null);
 
+  const [videoPlayerUrl, setVideoPlayerUrl] = useState<string | null>(null);
+  const [videoPlayerLabel, setVideoPlayerLabel] = useState<string>("");
+
   const openVideoRef = useCallback((exerciseId: string) => {
     const ref = getExerciseVideoRef(exerciseId);
-    Linking.openURL(ref.url).catch(() => {
-      showToast({ type: "error", title: "Vidéo indisponible", message: "Impossible d'ouvrir le lien pour l'instant." });
-    });
+    const ex = EXERCISE_BY_ID[exerciseId];
+    setVideoPlayerLabel(ex?.name ?? "Vidéo exercice");
+    setVideoPlayerUrl(ref.url);
   }, []);
 
   const resetFilters = () => {
@@ -394,6 +397,12 @@ export default function VideoLibraryScreen() {
           </View>
         </ScrollView>
         <ExerciseDetailModal {...detailModalProps} />
+        <YouTubePlayer
+          visible={videoPlayerUrl !== null}
+          url={videoPlayerUrl}
+          label={videoPlayerLabel}
+          onClose={() => setVideoPlayerUrl(null)}
+        />
       </SafeAreaView>
     );
   }
@@ -497,6 +506,12 @@ export default function VideoLibraryScreen() {
         showsVerticalScrollIndicator={false}
       />
       <ExerciseDetailModal {...detailModalProps} />
+      <YouTubePlayer
+        visible={videoPlayerUrl !== null}
+        url={videoPlayerUrl}
+        label={videoPlayerLabel}
+        onClose={() => setVideoPlayerUrl(null)}
+      />
     </SafeAreaView>
   );
 }
