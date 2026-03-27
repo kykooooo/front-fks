@@ -44,7 +44,7 @@ const palette = theme.colors;
 function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
   const { v2, plannedDateISO, sessionId } = route.params;
   const nav = useNavigation<any>();
-  const title = v2.title || 'Séance IA';
+  const title = v2.title || 'Séance personnalisée';
   const subtitle = v2.subtitle;
   const blocks: Block[] = Array.isArray(v2.blocks) ? v2.blocks : [];
   const soundsEnabled = useSettingsStore((s) => s.soundsEnabled);

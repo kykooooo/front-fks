@@ -114,7 +114,7 @@ export default function PrebuiltSessionsScreen() {
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Routines & extras</Text>
           <Text style={styles.headerSubtitle}>
-            Compléments express à ton cycle IA
+            Compléments express à ton cycle
           </Text>
         </View>
 
@@ -130,7 +130,7 @@ export default function PrebuiltSessionsScreen() {
               <View style={styles.introTextContainer}>
                 <Text style={styles.introTitle}>Compléments intelligents</Text>
                 <Text style={styles.introDescription}>
-                  Ces routines s'ajoutent à ton cycle IA pour optimiser ta prépa : échauffement, récup, prévention des blessures...
+                  Ces routines s'ajoutent à ton cycle pour optimiser ta prépa : échauffement, récup, prévention des blessures...
                 </Text>
               </View>
             </View>

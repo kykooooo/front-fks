@@ -156,7 +156,7 @@ export default function SessionHistoryScreen() {
                         {canPreview ? (
                           <Text style={styles.rowHint}>Voir le détail →</Text>
                         ) : (
-                          <Text style={styles.rowHintMuted}>Aucun détail IA</Text>
+                          <Text style={styles.rowHintMuted}>Aucun détail disponible</Text>
                         )}
                       </View>
                     </Card>

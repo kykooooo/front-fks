@@ -41,7 +41,7 @@ const HUB_OPTIONS: HubOption[] = [
     icon: "flash",
     iconBg: ["#ff7a1a", "#ff9a4a"],
     title: "Créer une séance",
-    subtitle: "Séance IA adaptée à ton contexte",
+    subtitle: "Séance adaptée à ton contexte",
     route: "GenerateSession",
     primary: true,
   },

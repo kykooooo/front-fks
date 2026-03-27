@@ -28,7 +28,7 @@ const SLIDES = [
     id: "1",
     image: require("../assets/images/slide1-ball.jpg"),
     title: "Ta prépa physique,\nton avantage",
-    subtitle: "Des séances créées par l'IA, adaptées à ton niveau et ton calendrier.",
+    subtitle: "Des séances adaptées à ton niveau, ton calendrier et tes objectifs.",
   },
   {
     id: "2",
