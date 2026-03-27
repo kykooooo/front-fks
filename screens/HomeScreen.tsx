@@ -1,5 +1,5 @@
 // screens/HomeScreen.tsx
-import React, { useMemo, useLayoutEffect, useEffect, useCallback, useRef, useState } from "react";
+import React, { useMemo, useLayoutEffect, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -45,39 +45,22 @@ import { HomeCoachRecommendation } from "../components/home/HomeCoachRecommendat
 import { useCoachRecommendations } from "../hooks/useCoachRecommendations";
 import { isSameDay, toDateKey } from "../utils/dateHelpers";
 import { showToast } from "../utils/toast";
-import { WELCOME_CAROUSEL, BANNER_FALLBACK } from "../constants/bannerImages";
+import { BANNER_FALLBACK } from "../constants/bannerImages";
 
 const palette = theme.colors;
+const HERO_DARK = require("../assets/images/hero-dark.jpg");
+const HERO_LIGHT = require("../assets/images/hero-light.jpg");
 
 // Stable default references to prevent ?? [] from creating new arrays each render
 const EMPTY_STRINGS: string[] = [];
 const EMPTY_EXTERNALS: { source?: string; dateISO?: string }[] = [];
 
-const CROSSFADE_MS = 1200;
-const INTERVAL_MS = 5000;
 
 export default function HomeScreen() {
   if (__DEV__) console.log("[RENDER] HomeScreen");
 
   // ─── Carrousel hero ───
-  const [heroIndex, setHeroIndex] = useState(0);
-  const heroFades = useRef(WELCOME_CAROUSEL.map((_, i) => new Animated.Value(i === 0 ? 1 : 0))).current;
 
-  useEffect(() => {
-    let cancelled = false;
-    const timer = setInterval(() => {
-      if (cancelled) return;
-      setHeroIndex((prev) => {
-        const next = (prev + 1) % WELCOME_CAROUSEL.length;
-        Animated.parallel([
-          Animated.timing(heroFades[next], { toValue: 1, duration: CROSSFADE_MS, useNativeDriver: true }),
-          Animated.timing(heroFades[prev], { toValue: 0, duration: CROSSFADE_MS, useNativeDriver: true }),
-        ]).start();
-        return next;
-      });
-    }, INTERVAL_MS);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, [heroFades]);
 
   type RootNav = {
     navigate: (screen: string, params?: any) => void;
@@ -182,6 +165,8 @@ export default function HomeScreen() {
 
   const weekStart = useSettingsStore((s) => s.weekStart);
   const weeklyGoal = useSettingsStore((s) => s.weeklyGoal ?? 2);
+  const themeMode = useSettingsStore((s) => s.themeMode);
+  const heroImage = themeMode === "light" ? HERO_LIGHT : HERO_DARK;
 
   const nowISO = devNowISO ?? undefined;
   const hasAppliedToday =
@@ -281,20 +266,23 @@ export default function HomeScreen() {
 
         <View style={styles.mainContent}>
           <View style={styles.heroShell}>
-            {/* Carrousel d'images en crossfade */}
-            {WELCOME_CAROUSEL.map((source, i) => (
-              <Animated.View
-                key={i}
-                style={[StyleSheet.absoluteFill, { opacity: heroFades[i] }]}
-                pointerEvents="none"
-              >
-                <Image source={source} style={[StyleSheet.absoluteFill, { borderRadius: 24 }]} resizeMode="cover" />
-              </Animated.View>
-            ))}
+            <Image
+              source={heroImage}
+              style={styles.heroPhotoBackdrop}
+              resizeMode="cover"
+              blurRadius={10}
+              fadeDuration={0}
+            />
+            <Image
+              source={heroImage}
+              style={styles.heroPhotoFigure}
+              resizeMode="contain"
+              fadeDuration={0}
+            />
             <View style={styles.heroTint} />
             <LinearGradient
-              colors={["transparent", `${palette.bg}DD`, palette.card]}
-              locations={[0.15, 0.65, 1]}
+              colors={["rgba(5,8,10,0.08)", "rgba(5,8,10,0.58)", "rgba(5,8,10,0.9)"]}
+              locations={[0.08, 0.6, 1]}
               style={styles.heroGradient}
             />
 
@@ -323,21 +311,6 @@ export default function HomeScreen() {
                   <Text style={styles.quickLabel}>Match</Text>
                   <Text style={styles.quickValue}>{matchSoon ? "Proche" : "—"}</Text>
                 </View>
-              </View>
-              {/* Dots */}
-              <View style={styles.heroDots}>
-                {WELCOME_CAROUSEL.map((_, i) => (
-                  <Animated.View
-                    key={i}
-                    style={[
-                      styles.heroDot,
-                      {
-                        opacity: heroFades[i].interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }),
-                        transform: [{ scale: heroFades[i].interpolate({ inputRange: [0, 1], outputRange: [1, 1.4] }) }],
-                      },
-                    ]}
-                  />
-                ))}
               </View>
             </View>
           </View>
@@ -537,13 +510,25 @@ const styles = StyleSheet.create({
   heroShell: {
     borderRadius: 24,
     overflow: "hidden",
-    height: 280,
+    height: 232,
     position: "relative" as const,
-    backgroundColor: BANNER_FALLBACK.home,
+    backgroundColor: BANNER_FALLBACK.explosif,
+  },
+  heroPhotoBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.5,
+    transform: [{ scale: 1.08 }],
+  },
+  heroPhotoFigure: {
+    position: "absolute",
+    right: -18,
+    top: -8,
+    bottom: 0,
+    width: "62%",
   },
   heroTint: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.3)",
+    backgroundColor: "rgba(4,8,10,0.18)",
     borderRadius: 24,
   },
   heroGradient: {
@@ -551,7 +536,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: "65%",
+    height: "72%",
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
   },
@@ -560,20 +545,8 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    padding: 16,
-    gap: 8,
-  },
-  heroDots: {
-    flexDirection: "row",
+    padding: 14,
     gap: 6,
-    alignSelf: "center",
-    marginTop: 4,
-  },
-  heroDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: "#fff",
   },
   heroTopRow: {
     flexDirection: "row",
@@ -584,16 +557,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: palette.cardSoft,
+    backgroundColor: "rgba(255,255,255,0.16)",
     borderWidth: 1,
-    borderColor: palette.borderSoft,
+    borderColor: "rgba(255,255,255,0.22)",
   },
   heroBadgeText: {
     fontSize: 10,
     fontWeight: "800",
     letterSpacing: 1.2,
     textTransform: "uppercase",
-    color: palette.text,
+    color: "#ffffff",
   },
   heroDate: {
     fontSize: 12,
@@ -605,7 +578,7 @@ const styles = StyleSheet.create({
     textShadowRadius: 3,
   },
   helloTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "800",
     color: "#fff",
     textShadowColor: "rgba(0,0,0,0.5)",
@@ -613,7 +586,7 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
   },
   helloSub: {
-    fontSize: 13,
+    fontSize: 12,
     color: "rgba(255,255,255,0.8)",
     textShadowColor: "rgba(0,0,0,0.4)",
     textShadowOffset: { width: 0, height: 1 },
@@ -627,28 +600,28 @@ const styles = StyleSheet.create({
   quickChip: {
     flexGrow: 1,
     minWidth: 96,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: palette.borderSoft,
-    backgroundColor: palette.bgSoft,
+    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.14)",
   },
   quickChipWarn: {
-    borderColor: palette.warn,
-    backgroundColor: "rgba(245,158,11,0.12)",
+    borderColor: "rgba(245,158,11,0.5)",
+    backgroundColor: "rgba(245,158,11,0.16)",
   },
   quickLabel: {
     fontSize: 10,
-    color: palette.sub,
+    color: "rgba(255,255,255,0.62)",
     letterSpacing: 1,
     textTransform: "uppercase",
   },
   quickValue: {
-    marginTop: 4,
-    fontSize: 14,
+    marginTop: 3,
+    fontSize: 13,
     fontWeight: "800",
-    color: palette.text,
+    color: "#ffffff",
   },
   sectionHeaderRow: {
     marginTop: 4,
