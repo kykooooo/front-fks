@@ -9,6 +9,7 @@ import {
   FlatList,
   Pressable,
   Alert,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -18,12 +19,12 @@ import { LinearGradient } from "expo-linear-gradient";
 import { auth } from "../services/firebase";
 import { showToast } from "../utils/toast";
 import { toDateKey } from "../utils/dateHelpers";
-import { theme } from "../constants/theme";
+import { theme, TYPE, RADIUS } from "../constants/theme";
 import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
 import { ModalContainer } from "../components/modal/ModalContainer";
 import { Card } from "../components/ui/Card";
-import { BACKEND_URL, backendAuthHeaders } from "../config/backend";
+import { BACKEND_URL } from "../config/backend";
 import { buildAIPromptContext } from "../services/aiContext";
 import { useAppModeStore } from "../state/appModeStore";
 
@@ -37,9 +38,9 @@ type ChatMessage = {
 
 const palette = theme.colors;
 
-const MAX_INPUT_CHARS = 500;
-const MAX_MESSAGES_PER_DAY = 10;
-const SEND_COOLDOWN_MS = 2500;
+const MAX_INPUT_CHARS = 800;
+const MAX_MESSAGES_PER_DAY = 25;
+const SEND_COOLDOWN_MS = 1500;
 const GUIDELINES_VERSION = 1;
 
 const chatKey = (uid: string) => `fks_chat_v1:${uid}`;
@@ -66,12 +67,12 @@ const extractReply = (data: any): string | null => {
 function AssistantAvatar({ size = 32 }: { size?: number }) {
   return (
     <LinearGradient
-      colors={["#3b82f6", "#8b5cf6"]}
+      colors={[theme.colors.blue500, theme.colors.violet500]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
-      style={[styles.assistantAvatar, { width: size, height: size, borderRadius: size / 2 }]}
+      style={[styles.assistantAvatar, { width: size, height: size, borderRadius: RADIUS.pill }]}
     >
-      <Ionicons name="sparkles" size={size * 0.5} color="#fff" />
+      <Ionicons name="sparkles" size={size * 0.5} color={theme.colors.white} />
     </LinearGradient>
   );
 }
@@ -244,7 +245,7 @@ export default function ChatScreen() {
         ? [
             "Quels indicateurs surveiller ?",
             "Structurer une semaine match",
-            "Explique ATL/CTL/TSB",
+            "Explique la charge d'entraînement",
           ]
         : [
             "Qu'est-ce que je fais aujourd'hui ?",
@@ -337,12 +338,15 @@ export default function ChatScreen() {
         .map((m) => ({ role: m.role, content: m.content }));
 
       const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) {
+        // Backend refusera sans Firebase token (requireUserAuth strict).
+        throw new Error("firebase_auth_required");
+      }
       const r = await fetch(`${BACKEND_URL}/api/fks/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...backendAuthHeaders(),
-          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+          Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
           userId: uid,
@@ -485,7 +489,7 @@ export default function ChatScreen() {
                 pressed && canSend && styles.pressed,
               ]}
             >
-              <Ionicons name="arrow-up" size={20} color="#fff" />
+              <Ionicons name="arrow-up" size={20} color={theme.colors.white} />
             </Pressable>
           </View>
           <Text style={styles.composerHint}>
@@ -493,7 +497,14 @@ export default function ChatScreen() {
           </Text>
         </View>
 
-        {/* Guidelines Modal */}
+        {/* Guidelines Modal — wrapped in native Modal for proper portal rendering in release builds (new arch) */}
+        <Modal
+          visible={showGuidelines}
+          transparent
+          animationType="none"
+          statusBarTranslucent
+          onRequestClose={() => setShowGuidelines(false)}
+        >
         <ModalContainer
           visible={showGuidelines}
           onClose={() => setShowGuidelines(false)}
@@ -513,26 +524,26 @@ export default function ChatScreen() {
 
             <View style={styles.rulesList}>
               <View style={styles.ruleItem}>
-                <View style={[styles.ruleIcon, { backgroundColor: "rgba(34, 197, 94, 0.15)" }]}>
-                  <Ionicons name="fitness" size={16} color="#22c55e" />
+                <View style={[styles.ruleIcon, { backgroundColor: theme.colors.green500Soft15 }]}>
+                  <Ionicons name="fitness" size={16} color={theme.colors.green500} />
                 </View>
                 <Text style={styles.ruleText}>Questions sur ton programme, ta forme, ta récup uniquement</Text>
               </View>
               <View style={styles.ruleItem}>
-                <View style={[styles.ruleIcon, { backgroundColor: "rgba(239, 68, 68, 0.15)" }]}>
-                  <Ionicons name="medical" size={16} color="#ef4444" />
+                <View style={[styles.ruleIcon, { backgroundColor: theme.colors.redSoft15 }]}>
+                  <Ionicons name="medical" size={16} color={theme.colors.red500} />
                 </View>
                 <Text style={styles.ruleText}>Pas un avis médical — consulte un pro si besoin</Text>
               </View>
               <View style={styles.ruleItem}>
-                <View style={[styles.ruleIcon, { backgroundColor: "rgba(59, 130, 246, 0.15)" }]}>
-                  <Ionicons name="shield-checkmark" size={16} color="#3b82f6" />
+                <View style={[styles.ruleIcon, { backgroundColor: theme.colors.blue500Soft15 }]}>
+                  <Ionicons name="shield-checkmark" size={16} color={theme.colors.blue500} />
                 </View>
                 <Text style={styles.ruleText}>Tes données restent privées et sécurisées</Text>
               </View>
               <View style={styles.ruleItem}>
-                <View style={[styles.ruleIcon, { backgroundColor: "rgba(139, 92, 246, 0.15)" }]}>
-                  <Ionicons name="timer" size={16} color="#8b5cf6" />
+                <View style={[styles.ruleIcon, { backgroundColor: theme.colors.violetSoft15 }]}>
+                  <Ionicons name="timer" size={16} color={theme.colors.violet500} />
                 </View>
                 <Text style={styles.ruleText}>{MAX_MESSAGES_PER_DAY} messages/jour • {MAX_INPUT_CHARS} car. max</Text>
               </View>
@@ -543,6 +554,7 @@ export default function ChatScreen() {
             </View>
           </Card>
         </ModalContainer>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -552,8 +564,8 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: palette.bg },
   flex1: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 16 },
-  emptyTitle: { fontSize: 22, fontWeight: "800", color: palette.text },
-  emptySubtitle: { fontSize: 14, color: palette.sub, textAlign: "center" },
+  emptyTitle: { fontSize: TYPE.title.fontSize, fontWeight: "800", color: palette.text },
+  emptySubtitle: { fontSize: TYPE.body.fontSize, color: palette.sub, textAlign: "center" },
 
   // Header
   header: {
@@ -567,13 +579,13 @@ const styles = StyleSheet.create({
     backgroundColor: palette.bg,
   },
   headerLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
-  headerTitle: { fontSize: 17, fontWeight: "800", color: palette.text },
-  headerSubtitle: { fontSize: 12, color: palette.sub, marginTop: 1 },
+  headerTitle: { fontSize: TYPE.subtitle.fontSize, fontWeight: "800", color: palette.text },
+  headerSubtitle: { fontSize: TYPE.caption.fontSize, color: palette.sub, marginTop: 1 },
   headerActions: { flexDirection: "row", gap: 4 },
   headerBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: RADIUS.xl,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -588,14 +600,14 @@ const styles = StyleSheet.create({
     alignSelf: "flex-end",
     maxWidth: "80%",
     backgroundColor: palette.accent,
-    borderRadius: 20,
+    borderRadius: RADIUS.xl,
     borderBottomRightRadius: 6,
     paddingVertical: 12,
     paddingHorizontal: 16,
   },
   userBubbleText: {
-    fontSize: 15,
-    color: "#fff",
+    fontSize: TYPE.body.fontSize,
+    color: theme.colors.white,
     lineHeight: 22,
   },
   assistantRow: {
@@ -610,7 +622,7 @@ const styles = StyleSheet.create({
   assistantBubble: {
     maxWidth: "80%",
     backgroundColor: palette.cardSoft,
-    borderRadius: 20,
+    borderRadius: RADIUS.xl,
     borderBottomLeftRadius: 6,
     paddingVertical: 12,
     paddingHorizontal: 16,
@@ -618,7 +630,7 @@ const styles = StyleSheet.create({
     borderColor: palette.borderSoft,
   },
   assistantBubbleText: {
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     color: palette.text,
     lineHeight: 22,
   },
@@ -629,7 +641,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
     backgroundColor: palette.cardSoft,
-    borderRadius: 20,
+    borderRadius: RADIUS.xl,
     borderBottomLeftRadius: 6,
     paddingVertical: 12,
     paddingHorizontal: 16,
@@ -640,14 +652,14 @@ const styles = StyleSheet.create({
   dot: {
     width: 6,
     height: 6,
-    borderRadius: 3,
+    borderRadius: RADIUS.xs,
     backgroundColor: palette.accent,
     opacity: 0.4,
   },
   dot1: { opacity: 0.8 },
   dot2: { opacity: 0.5 },
   dot3: { opacity: 0.3 },
-  typingText: { fontSize: 13, color: palette.sub, fontStyle: "italic" },
+  typingText: { fontSize: TYPE.caption.fontSize, color: palette.sub, fontStyle: "italic" },
 
   // Suggestions
   suggestionsContainer: {
@@ -655,7 +667,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   suggestionsTitle: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     color: palette.sub,
     textTransform: "uppercase",
@@ -672,7 +684,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 10,
     paddingHorizontal: 14,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     backgroundColor: palette.cardSoft,
     borderWidth: 1,
     borderColor: palette.borderSoft,
@@ -680,7 +692,7 @@ const styles = StyleSheet.create({
   },
   chipPressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
   suggestionText: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.text,
     fontWeight: "600",
     flexShrink: 1,
@@ -705,11 +717,11 @@ const styles = StyleSheet.create({
     minHeight: 44,
     maxHeight: 120,
     backgroundColor: palette.cardSoft,
-    borderRadius: 22,
+    borderRadius: RADIUS.xl,
     paddingHorizontal: 18,
     paddingVertical: 12,
     paddingRight: 14,
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     color: palette.text,
     borderWidth: 1,
     borderColor: palette.borderSoft,
@@ -717,14 +729,14 @@ const styles = StyleSheet.create({
   sendButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: RADIUS.xl,
     backgroundColor: palette.accent,
     alignItems: "center",
     justifyContent: "center",
   },
   sendDisabled: { opacity: 0.4 },
   composerHint: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     marginLeft: 4,
   },
@@ -739,19 +751,19 @@ const styles = StyleSheet.create({
   modalCard: {
     padding: 24,
     gap: 20,
-    borderRadius: 24,
+    borderRadius: RADIUS.xl,
   },
   modalHeader: {
     alignItems: "center",
     gap: 12,
   },
   modalTitle: {
-    fontSize: 22,
+    fontSize: TYPE.title.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   modalSubtitle: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     color: palette.sub,
     textAlign: "center",
   },
@@ -764,13 +776,13 @@ const styles = StyleSheet.create({
   ruleIcon: {
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     alignItems: "center",
     justifyContent: "center",
   },
   ruleText: {
     flex: 1,
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     color: palette.text,
     lineHeight: 20,
   },

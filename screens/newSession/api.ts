@@ -1,6 +1,6 @@
 import { getAuth } from "firebase/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { BACKEND_URL, backendAuthHeaders } from "../../config/backend";
+import { BACKEND_URL } from "../../config/backend";
 import { BACKEND_EXERCISE_IDS } from "../../engine/backendExerciseIds";
 import { EXERCISE_BY_ID } from "../../engine/exerciseBank";
 import type { FKS_NextSessionV2 } from "./types";
@@ -168,8 +168,20 @@ export async function fetchV2(
   context: Record<string, unknown>
 ): Promise<{ v2: FKS_NextSessionV2; debug: Record<string, unknown> }> {
   const auth = getAuth();
-  const userId = auth.currentUser?.uid ?? "test-user-dev";
-  const idToken = await auth.currentUser?.getIdToken();
+  const currentUser = auth.currentUser;
+  // Firebase Auth est la SEULE source d'auth backend : si pas d'utilisateur connecté,
+  // le backend va refuser (401). On bloque ici avec un message clair plutôt que de
+  // laisser passer une requête qui va échouer côté serveur.
+  if (!currentUser) {
+    throw new BackendError(
+      401,
+      "Unauthorized",
+      "Connexion requise pour générer une séance",
+      "Tu dois être connecté pour générer une séance. Reconnecte-toi et réessaie."
+    );
+  }
+  const userId = currentUser.uid;
+  const idToken = await currentUser.getIdToken();
   const url = `${BACKEND_URL}/api/fks/generate`;
 
   // Timeout long : Render free-tier cold start (~30-50s) + génération IA (~15s)
@@ -177,8 +189,7 @@ export async function fetchV2(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...backendAuthHeaders(),
-      ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+      Authorization: `Bearer ${idToken}`,
     },
     body: JSON.stringify({ userId, context }),
   };

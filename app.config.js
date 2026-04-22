@@ -3,8 +3,13 @@
 // Les variables EXPO_PUBLIC_* sont chargées automatiquement depuis .env.local
 // par Expo CLI (SDK 49+). Ne jamais commiter .env.local dans git.
 //
+// ⚠️ IMPORTANT — Les variables EXPO_PUBLIC_* sont embarquées dans le bundle JS
+// du client et donc EXTRACTIBLES (`strings app.ipa` suffit). Elles ne sont pas
+// des secrets. N'y mettre que des identifiants publics ou des URLs.
+// La clé backend `FKS_API_KEY` a été retirée : l'auth se fait désormais
+// uniquement via Firebase ID token (Authorization: Bearer <idToken>).
+//
 // Pour les builds EAS (cloud) :
-//   eas secret:create --scope project --name EXPO_PUBLIC_BACKEND_API_KEY --value "..."
 //   eas secret:create --scope project --name EXPO_PUBLIC_BACKEND_URL --value "..."
 //   eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_API_KEY --value "..."
 
@@ -14,10 +19,9 @@ module.exports = ({ config }) => {
   const base = appJson.expo ?? {};
   const extra = { ...(base.extra ?? {}) };
 
-  // Secrets — lus depuis .env.local (dev) ou EAS secrets (cloud builds)
-  // Ne pas utiliser de fallback sur app.json pour les secrets
+  // Identifiants publics (URL backend, clé Firebase web API).
+  // Ne jamais ajouter ici de secret backend ou de clé OpenAI.
   const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || process.env.BACKEND_URL || "";
-  const backendApiKey = process.env.EXPO_PUBLIC_BACKEND_API_KEY || process.env.BACKEND_API_KEY || "";
   const firebaseApiKey = process.env.EXPO_PUBLIC_FIREBASE_API_KEY || "";
 
   return {
@@ -35,18 +39,17 @@ module.exports = ({ config }) => {
       },
     },
     extra: {
-      // Identifiants publics (non secrets)
       SENTRY_DSN: process.env.EXPO_PUBLIC_SENTRY_DSN ?? extra.SENTRY_DSN ?? "",
       AMPLITUDE_API_KEY: extra.AMPLITUDE_API_KEY ?? "",
       eas: extra.eas,
-      // Secrets via env vars
       BACKEND_URL: backendUrl,
-      BACKEND_API_KEY: backendApiKey,
       FIREBASE_API_KEY: firebaseApiKey,
+      // BACKEND_API_KEY volontairement absent : auth backend = Firebase Bearer uniquement.
     },
     plugins: [
       ...(base.plugins ?? []),
       "expo-secure-store",
+      "@sentry/react-native/expo",
     ],
     // Preserve runtimeVersion and updates from app.json
     runtimeVersion: base.runtimeVersion,

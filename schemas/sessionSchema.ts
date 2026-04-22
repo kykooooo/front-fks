@@ -54,6 +54,17 @@ const resetVariantSchema = z.object({
   display: displaySchema.optional().catch(null),
 });
 
+const playerContextSchema = z.object({
+  title: z.string().nullable().optional().catch(null),
+  summary: z.string().nullable().optional().catch(null),
+  cycle_key: z.string().nullable().optional().catch(null),
+  cycle_label: z.string().nullable().optional().catch(null),
+  cycle_progress_label: z.string().nullable().optional().catch(null),
+  cycle_phase_label: z.string().nullable().optional().catch(null),
+  adaptation_labels: z.array(z.string()).optional().catch([]),
+  coach_note: z.string().nullable().optional().catch(null),
+}).nullable().catch(null);
+
 // ---------------------------------------------------------------------------
 // Schema principal FKS_NextSessionV2
 // ---------------------------------------------------------------------------
@@ -81,6 +92,7 @@ export const sessionV2Schema = z.object({
   guardrails_applied: z.array(z.string()).optional().catch([]),
   session_theme: z.string().nullable().optional().catch(null),
   coaching_tips: z.array(z.string()).optional().catch([]),
+  recovery_tips: z.array(z.string()).optional().catch([]),
   post_session: postSessionSchema.optional().catch(null),
   selection_debug: z.object({
     reasons: z.array(z.string()).optional().catch([]),
@@ -93,6 +105,7 @@ export const sessionV2Schema = z.object({
     }).optional().catch(undefined),
     rationale: z.string().optional().catch(undefined),
   }).nullable().optional().catch(null),
+  player_context: playerContextSchema.optional().catch(null),
   reset_variants: z.array(resetVariantSchema).optional().catch([]),
 });
 

@@ -21,8 +21,14 @@ Dans le repo app :
 cd /Users/macbookair/fks-apps
 npx eas-cli@latest login
 npx eas-cli@latest secret:create --name EXPO_PUBLIC_BACKEND_URL --value https://ton-backend.render.com
-npx eas-cli@latest secret:create --name EXPO_PUBLIC_BACKEND_API_KEY --value TA_CLE_BACKEND
+npx eas-cli@latest secret:create --name EXPO_PUBLIC_FIREBASE_API_KEY --value TA_CLE_FIREBASE_WEB
+# Optionnel : Sentry (crash reporting)
+# npx eas-cli@latest secret:create --name EXPO_PUBLIC_SENTRY_DSN --value TON_DSN
 ```
+
+⚠️ **Ne JAMAIS ajouter `EXPO_PUBLIC_BACKEND_API_KEY`** (retirée avril 2026).
+Les variables `EXPO_PUBLIC_*` sont embarquées dans le bundle client et
+extractibles. Auth backend = Firebase ID token uniquement.
 
 ## 3) Build TestFlight
 ```bash

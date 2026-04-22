@@ -26,6 +26,11 @@
       "**/__tests__/**/*.test.ts",
       "**/__tests__/**/*.test.tsx"
     ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/.claude/worktrees/",
+      "/.expo/"
+    ],
     "transformIgnorePatterns": [
       "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg)"
     ]
@@ -35,12 +40,14 @@
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/datetimepicker": "8.4.4",
     "@react-native-community/netinfo": "11.4.1",
+    "@react-native-google-signin/google-signin": "^16.1.2",
     "@react-navigation/bottom-tabs": "^7.8.6",
     "@react-navigation/native": "^7.1.19",
     "@react-navigation/native-stack": "^7.6.0",
-    "@sentry/react-native": "^8.1.0",
+    "@sentry/react-native": "~7.2.0",
     "date-fns": "^4.1.0",
     "expo": "~54.0.33",
+    "expo-apple-authentication": "~8.0.8",
     "expo-application": "^7.0.8",
     "expo-blur": "^15.0.8",
     "expo-constants": "^18.0.13",
@@ -80,6 +87,7 @@
     "jest": "^29.7.0",
     "jest-expo": "~54.0.0",
     "prettier": "^3.3.3",
+    "sharp": "^0.34.5",
     "typescript": "~5.9.2"
   },
   "engines": {

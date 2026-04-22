@@ -1,4 +1,4 @@
-// screens/SessionLiveScreen.tsx
+﻿// screens/SessionLiveScreen.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -14,15 +14,28 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Svg, { Circle } from "react-native-svg";
 import type { AppStackParamList } from "../navigation/RootNavigator";
-import { theme } from "../constants/theme";
+import { theme, TYPE, RADIUS } from "../constants/theme";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
 import { withSessionErrorBoundary } from "../components/withErrorBoundary";
 import { SectionHeader } from "../components/ui/SectionHeader";
+import { SafetyBanner } from "../components/ui/SafetyBanner";
+import { YouTubePlayer } from "../components/ui/YouTubePlayer";
 import { useSettingsStore } from "../state/settingsStore";
+import { useLoadStore } from "../state/stores/useLoadStore";
+import { useSessionsStore } from "../state/stores/useSessionsStore";
+import { getBeginnerSafetyWarning } from "../utils/beginnerSafety";
+import { useSyncStore } from "../state/stores/useSyncStore";
+import { resolvePlayerPreviewContext } from "./sessionPreview/playerContext";
+import { LIVE_SESSION_KEY } from "../utils/sessionEntry";
+import { getSessionStatus } from "../utils/sessionStatus";
+import { EXERCISE_BY_ID } from "../engine/exerciseBank";
+import { getExerciseVideoRef } from "../engine/exerciseVideos";
 
 type BlockItem = {
   id?: string | null;
@@ -62,8 +75,6 @@ type Block = {
 
 type LiveRoute = RouteProp<AppStackParamList, "SessionLive">;
 
-const LIVE_SESSION_KEY = "fks_live_session";
-
 type PersistedLiveState = {
   sessionId?: string;
   checkedSets: Record<string, boolean[]>;
@@ -75,6 +86,10 @@ type PersistedLiveState = {
 
 const palette = theme.colors;
 const ITEM_SPACING = 12;
+const REST_RING_RADIUS = 80;
+const REST_RING_STROKE = 6;
+const REST_RING_SIZE = (REST_RING_RADIUS + REST_RING_STROKE) * 2;
+const REST_RING_CIRCUMFERENCE = 2 * Math.PI * REST_RING_RADIUS;
 
 const formatTime = (total: number) => {
   const minutes = Math.floor(total / 60)
@@ -85,6 +100,9 @@ const formatTime = (total: number) => {
     .padStart(2, "0");
   return `${minutes}:${seconds}`;
 };
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, value));
 
 const prettifyName = (name: string) => {
   const trimmed = (name || "").trim();
@@ -164,6 +182,16 @@ function SessionLiveScreen() {
   const { v2, plannedDateISO, sessionId } = route.params;
   const soundsEnabled = useSettingsStore((s) => s.soundsEnabled);
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
+  const tsb = useLoadStore((s) => s.tsb);
+  const profile = useSessionsStore((s) => s.lastAiContext?.profile ?? null);
+  const playerLevel = useSessionsStore((s) => s.playerLevel);
+  const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
+  const setSessionStatus = useSessionsStore((s) => s.setSessionStatus);
+  const persistSessionStatus = useSyncStore((s) => s.persistSessionStatus);
+  const liveSession = useSessionsStore((s) =>
+    sessionId ? s.sessions.find((session) => session.id === sessionId) : undefined
+  );
+  const liveSessionStatus = getSessionStatus(liveSession);
 
   const { width } = useWindowDimensions();
   const blocks: Block[] = Array.isArray(v2.blocks) ? v2.blocks : [];
@@ -179,6 +207,7 @@ function SessionLiveScreen() {
 
   const [restRunning, setRestRunning] = useState(false);
   const [restSec, setRestSec] = useState(0);
+  const [restTotalSec, setRestTotalSec] = useState(0);
   const restRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [restSource, setRestSource] = useState<"auto" | "manual" | null>(null);
   const blockWidth = useMemo(() => Math.max(280, width - 32), [width]);
@@ -197,15 +226,59 @@ function SessionLiveScreen() {
   const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 70 }).current;
   // --- Fix 1: Disable swipe back + confirm before leaving ---
   const hasStarted = sessionRunning || Object.keys(checkedSets).length > 0;
+  const didMarkInProgressRef = useRef(false);
+
+  const resetSessionProgressState = useCallback(() => {
+    if (!sessionId) return;
+    setSessionStatus(sessionId, "planned", {
+      startedAt: null,
+      completedAt: null,
+    });
+    persistSessionStatus(sessionId, "planned", {
+      startedAt: null,
+      completedAt: null,
+    }).catch((err) => {
+      if (__DEV__) {
+        console.error("[SessionLive] Failed to reset session status:", err);
+      }
+    });
+  }, [sessionId, setSessionStatus, persistSessionStatus]);
 
   useEffect(() => {
     nav.setOptions({ gestureEnabled: false });
   }, [nav]);
 
   useEffect(() => {
+    if (!sessionId) return;
+    if (!hasStarted) {
+      if (liveSessionStatus === "planned") {
+        didMarkInProgressRef.current = false;
+      }
+      return;
+    }
+    if (liveSessionStatus === "completed" || didMarkInProgressRef.current) return;
+
+    const startedAt = liveSession?.startedAt ?? new Date().toISOString();
+    setSessionStatus(sessionId, "in_progress", { startedAt });
+    didMarkInProgressRef.current = true;
+    persistSessionStatus(sessionId, "in_progress", { startedAt }).catch((err) => {
+      if (__DEV__) {
+        console.error("[SessionLive] Failed to persist in-progress status:", err);
+      }
+    });
+  }, [
+    hasStarted,
+    sessionId,
+    liveSession,
+    liveSessionStatus,
+    setSessionStatus,
+    persistSessionStatus,
+  ]);
+
+  useEffect(() => {
     if (!hasStarted) return;
     const unsubscribe = nav.addListener("beforeRemove", (e: any) => {
-      // Allow programmatic navigation (e.g. finishAction → SessionSummary)
+      // Allow programmatic navigation (for example finishAction -> SessionSummary)
       if (e.data.action.type === "NAVIGATE") return;
       e.preventDefault();
       Alert.alert(
@@ -220,6 +293,7 @@ function SessionLiveScreen() {
               AsyncStorage.removeItem("fks_live_session").catch((err) => {
                 if (__DEV__) console.error("[SessionLive] Failed to clear live session on quit:", err);
               });
+              resetSessionProgressState();
               nav.dispatch(e.data.action);
             },
           },
@@ -227,7 +301,7 @@ function SessionLiveScreen() {
       );
     });
     return unsubscribe;
-  }, [nav, hasStarted]);
+  }, [nav, hasStarted, resetSessionProgressState]);
 
   // --- Fix 2: Persist progress to AsyncStorage ---
   const persistState = useCallback(() => {
@@ -262,6 +336,8 @@ function SessionLiveScreen() {
 
   // Restore on mount if matching session exists
   const [showRecovery, setShowRecovery] = useState(false);
+  const [videoPlayerUrl, setVideoPlayerUrl] = useState<string | null>(null);
+  const [videoPlayerLabel, setVideoPlayerLabel] = useState("");
   const recoveredRef = useRef(false);
   useEffect(() => {
     if (recoveredRef.current) return;
@@ -269,7 +345,12 @@ function SessionLiveScreen() {
     (async () => {
       try {
         const raw = await AsyncStorage.getItem(LIVE_SESSION_KEY);
-        if (!raw) return;
+        if (!raw) {
+          if (liveSessionStatus === "in_progress") {
+            resetSessionProgressState();
+          }
+          return;
+        }
         const saved: PersistedLiveState = JSON.parse(raw);
         // Only recover if it's the same session and less than 4h old
         const isSameSession =
@@ -278,6 +359,7 @@ function SessionLiveScreen() {
         const isFresh = Date.now() - saved.savedAt < 4 * 60 * 60 * 1000;
         if (!isSameSession || !isFresh) {
           await AsyncStorage.removeItem(LIVE_SESSION_KEY);
+          resetSessionProgressState();
           return;
         }
         const hasMeaningfulProgress =
@@ -285,6 +367,7 @@ function SessionLiveScreen() {
           saved.sessionSec > 30;
         if (!hasMeaningfulProgress) {
           await AsyncStorage.removeItem(LIVE_SESSION_KEY);
+          resetSessionProgressState();
           return;
         }
         Alert.alert(
@@ -294,9 +377,12 @@ function SessionLiveScreen() {
             {
               text: "Recommencer",
               style: "destructive",
-              onPress: () => AsyncStorage.removeItem(LIVE_SESSION_KEY).catch((err) => {
-                if (__DEV__) console.error("[SessionLive] Failed to clear live session on restart:", err);
-              }),
+              onPress: () => {
+                AsyncStorage.removeItem(LIVE_SESSION_KEY).catch((err) => {
+                  if (__DEV__) console.error("[SessionLive] Failed to clear live session on restart:", err);
+                });
+                resetSessionProgressState();
+              },
             },
             {
               text: "Reprendre",
@@ -310,17 +396,13 @@ function SessionLiveScreen() {
           ]
         );
       } catch {
-        // Corrupted data — ignore
+        // Corrupted data: ignore
+        if (liveSessionStatus === "in_progress") {
+          resetSessionProgressState();
+        }
       }
     })();
-  }, [sessionId]);
-
-  // Clear persistence when finishing the session
-  const clearPersistedSession = useCallback(() => {
-    AsyncStorage.removeItem(LIVE_SESSION_KEY).catch((err) => {
-      if (__DEV__) console.error("[SessionLive] Failed to clear persisted session on finish:", err);
-    });
-  }, []);
+  }, [sessionId, liveSessionStatus, resetSessionProgressState]);
 
   const coachTip = useMemo(
     () => getCoachTip(blocks[activeBlock], activeBlock),
@@ -349,6 +431,16 @@ function SessionLiveScreen() {
       })
       .slice(0, 4);
   }, [v2.display?.timerPresets, blocks, activeBlock]);
+  const livePlayerContext = useMemo(
+    () =>
+      resolvePlayerPreviewContext({
+        v2,
+        canUseLiveCycleFallback: false,
+        profilePosition: typeof profile?.position === "string" ? profile.position : null,
+        tsb,
+      }),
+    [v2, profile?.position, tsb]
+  );
   const enterTranslate = enter.interpolate({
     inputRange: [0, 1],
     outputRange: [18, 0],
@@ -394,7 +486,7 @@ function SessionLiveScreen() {
     ]).start();
   };
 
-  // Chrono principal avec timeout de sécurité (4h max)
+  // Main chrono with safety timeout (4h max)
   const MAX_SESSION_SEC = 4 * 60 * 60; // 4 heures
   useEffect(() => {
     if (sessionRunning) {
@@ -422,6 +514,7 @@ function SessionLiveScreen() {
         setRestSec((s) => {
           if (s <= 1) {
             setRestRunning(false);
+            setRestTotalSec(0);
             setRestSource(null);
             playRestSignal();
             return 0;
@@ -514,6 +607,9 @@ function SessionLiveScreen() {
   }, [blocks, checkedSets]);
 
   const progress = totalItems > 0 ? completedItems / totalItems : 0;
+  const restProgress = restTotalSec > 0 ? clamp(restSec / restTotalSec, 0, 1) : 0;
+  const restDashOffset = REST_RING_CIRCUMFERENCE * (1 - restProgress);
+  const restStroke = restSec <= 10 ? palette.warn : palette.accent;
 
   const parseRestFromText = (text?: string | null) => {
     if (!text) return null;
@@ -540,9 +636,18 @@ function SessionLiveScreen() {
 
   const startRest = (seconds: number, source: "auto" | "manual" = "manual") => {
     if (!Number.isFinite(seconds) || seconds <= 0) return;
+    const normalized = Math.max(1, Math.round(seconds));
     setRestSource(source);
-    setRestSec(Math.max(1, Math.round(seconds)));
+    setRestTotalSec(normalized);
+    setRestSec(normalized);
     setRestRunning(true);
+  };
+
+  const stopRest = () => {
+    setRestRunning(false);
+    setRestSec(0);
+    setRestTotalSec(0);
+    setRestSource(null);
   };
 
   const isItemComplete = (
@@ -613,7 +718,7 @@ function SessionLiveScreen() {
     } else if (item?.workRest && item.workRest.trim().length > 0) {
       parts.push(item.workRest.trim());
     }
-    if (item?.durationPerSetSec) parts.push(`${item.durationPerSetSec}s / série`);
+        if (item?.durationPerSetSec) parts.push(`${item.durationPerSetSec}s / série`);
     if (item?.durationMin) parts.push(`${item.durationMin} min`);
     return parts.join(" · ");
   };
@@ -652,7 +757,6 @@ function SessionLiveScreen() {
     : "Terminer la séance";
 
   const finishAction = () => {
-    clearPersistedSession();
     const estimatedRpe = (() => {
       if (typeof v2.rpeTarget === "number" && Number.isFinite(v2.rpeTarget)) {
         return Math.max(1, Math.min(10, Math.round(v2.rpeTarget)));
@@ -672,8 +776,12 @@ function SessionLiveScreen() {
     const focusRaw = v2.focusPrimary ?? v2.focusSecondary;
     const focus = typeof focusRaw === "string" ? focusRaw : undefined;
     const location = typeof v2.location === "string" ? v2.location : undefined;
+    // Backend emet recovery_tips au top-level (fksSchema.ts:102), pas dans post_session.
+    // Fallback sur postSession.recoveryTips pour compat retro.
     const recoveryTips =
-      Array.isArray(v2?.postSession?.recoveryTips) && v2.postSession.recoveryTips.length > 0
+      (Array.isArray(v2?.recoveryTips) && v2.recoveryTips.length > 0)
+        ? v2.recoveryTips
+        : (Array.isArray(v2?.postSession?.recoveryTips) && v2.postSession.recoveryTips.length > 0)
         ? v2.postSession.recoveryTips
         : undefined;
     const summary = {
@@ -692,6 +800,14 @@ function SessionLiveScreen() {
           ? v2.estimatedLoad.srpe
           : undefined,
       recoveryTips,
+      sessionTheme: v2.sessionTheme ?? null,
+      cycleLabel: livePlayerContext.cycleLabel,
+      cycleProgressLabel: livePlayerContext.cycleProgressLabel,
+      cyclePhaseLabel: livePlayerContext.cyclePhaseLabel,
+      adaptationLabels: livePlayerContext.adaptationLabels,
+      playerRationaleTitle: livePlayerContext.playerRationaleTitle,
+      playerRationale: livePlayerContext.playerRationale,
+      coachNote: livePlayerContext.coachNote,
     };
     nav.navigate("SessionSummary", {
       sessionId,
@@ -699,10 +815,13 @@ function SessionLiveScreen() {
     });
   };
 
-  const goToExercise = (exerciseId: string | null) => {
+  const openExerciseVideo = useCallback((exerciseId: string | null) => {
     if (!exerciseId) return;
-    nav.navigate("ExerciseDetail", { highlightId: exerciseId });
-  };
+    const ref = getExerciseVideoRef(exerciseId);
+    const exercise = EXERCISE_BY_ID[exerciseId];
+    setVideoPlayerLabel(exercise?.name ?? "Vidéo de l'exercice");
+    setVideoPlayerUrl(ref.url);
+  }, []);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
@@ -730,8 +849,30 @@ function SessionLiveScreen() {
                 {v2.focusPrimary ? <Badge label={v2.focusPrimary} /> : null}
                 {v2.durationMin ? <Badge label={`${v2.durationMin} min`} /> : null}
                 {v2.rpeTarget ? <Badge label={`RPE ${v2.rpeTarget}`} /> : null}
-                {v2.location ? <Badge label={v2.location} /> : null}
+                {livePlayerContext.locationTag ? <Badge label={livePlayerContext.locationTag} /> : null}
               </View>
+
+              {livePlayerContext.playerRationale ? (
+                <View style={styles.liveInsightCard}>
+                  <Text style={styles.liveInsightLabel}>
+                    {livePlayerContext.playerRationaleTitle ?? "Ce qu'on travaille aujourd'hui"}
+                  </Text>
+                  <Text style={styles.liveInsightText}>{livePlayerContext.playerRationale}</Text>
+                </View>
+              ) : null}
+
+              {livePlayerContext.coachNote ? (
+                <View style={styles.liveCoachCard}>
+                  <Text style={styles.liveCoachLabel}>Note du prépa</Text>
+                  <Text style={styles.liveCoachText}>{livePlayerContext.coachNote}</Text>
+                </View>
+              ) : null}
+
+              {v2.sessionTheme ? (
+                <View style={styles.themeRow}>
+                  <Text style={styles.themeText}>{v2.sessionTheme}</Text>
+                </View>
+              ) : null}
 
               <View style={styles.progressWrap}>
                 <Text style={styles.progressLabel}>
@@ -748,11 +889,20 @@ function SessionLiveScreen() {
               <View style={styles.timerRow}>
                 <View style={styles.timerBlock}>
                   <Text style={styles.timerLabel}>Séance</Text>
-                  <Text style={styles.timerValue}>{formatTime(sessionSec)}</Text>
+                  <Text style={[styles.timerValue, styles.timerValueQuiet]}>
+                    {formatTime(sessionSec)}
+                  </Text>
                 </View>
                 <View style={styles.timerBlock}>
                   <Text style={styles.timerLabel}>Repos</Text>
-                  <Text style={styles.timerValue}>{formatTime(restSec)}</Text>
+                  <Text
+                    style={[
+                      styles.timerValue,
+                      restRunning ? styles.timerValueResting : styles.timerValueQuiet,
+                    ]}
+                  >
+                    {formatTime(restSec)}
+                  </Text>
                 </View>
               </View>
 
@@ -765,7 +915,7 @@ function SessionLiveScreen() {
                   style={styles.timerButton}
                 />
                 <Button
-                  label="Réinit"
+                  label="Réinit."
                   onPress={() => {
                     setSessionRunning(false);
                     setSessionSec(0);
@@ -791,11 +941,7 @@ function SessionLiveScreen() {
                 ))}
                 <TouchableOpacity
                   style={[styles.restChip, styles.restChipGhost]}
-                  onPress={() => {
-                    setRestRunning(false);
-                    setRestSec(0);
-                    setRestSource(null);
-                  }}
+                  onPress={stopRest}
                   accessibilityRole="button"
                   accessibilityLabel="Arrêter le repos"
                 >
@@ -872,7 +1018,7 @@ function SessionLiveScreen() {
                       </View>
 
                       {items.length === 0 ? (
-                        <Text style={styles.blockEmpty}>Bloc sans items détaillés.</Text>
+                        <Text style={styles.blockEmpty}>Bloc sans exercices détaillés.</Text>
                       ) : (
                         <View style={{ gap: 10 }}>
                           {items.map((item, itemIndex) => {
@@ -960,6 +1106,19 @@ function SessionLiveScreen() {
                                   )}
                                   <View style={{ flex: 1 }}>
                                     <Text style={styles.itemName} numberOfLines={2}>{itemName}</Text>
+                                    {(() => {
+                                      const warning = getBeginnerSafetyWarning(
+                                        exerciseId,
+                                        playerLevel,
+                                        microcycleSessionIndex,
+                                      );
+                                      return warning ? (
+                                        <View style={styles.itemWarningRow}>
+                                          <Ionicons name="warning-outline" size={14} color={palette.warn} />
+                                          <Text style={styles.itemWarningText}>{warning}</Text>
+                                        </View>
+                                      ) : null;
+                                    })()}
                                     {item.description ? (
                                       <Text style={styles.itemNote}>{item.description}</Text>
                                     ) : null}
@@ -974,11 +1133,12 @@ function SessionLiveScreen() {
                                 </View>
                                 {exerciseId ? (
                                   <TouchableOpacity
-                                    onPress={() => goToExercise(exerciseId)}
+                                    onPress={() => openExerciseVideo(exerciseId)}
                                     activeOpacity={0.85}
                                     style={styles.itemLink}
                                   >
-                                    <Text style={styles.itemLinkText}>Fiche</Text>
+                                    <Ionicons name="logo-youtube" size={14} color={palette.accent} />
+                                    <Text style={styles.itemLinkText}>Vidéo</Text>
                                   </TouchableOpacity>
                                 ) : null}
                               </View>
@@ -1053,6 +1213,8 @@ function SessionLiveScreen() {
               </Card>
             ) : null}
 
+            <SafetyBanner variant="compact" />
+
             <Button label={finishLabel} onPress={finishAction} fullWidth size="lg" />
           </Animated.View>
         </ScrollView>
@@ -1075,30 +1237,63 @@ function SessionLiveScreen() {
           ]}
         >
           <View style={styles.restOverlayCard}>
-            <Text style={styles.restOverlayTitle}>
-              {restSource === "auto" ? "Repos auto" : "Repos"}
-            </Text>
-            <Text style={styles.restOverlayTime}>{formatTime(restSec)}</Text>
+            <View style={styles.restOverlayRingWrap}>
+              <Svg width={REST_RING_SIZE} height={REST_RING_SIZE}>
+                <Circle
+                  cx={REST_RING_SIZE / 2}
+                  cy={REST_RING_SIZE / 2}
+                  r={REST_RING_RADIUS}
+                  stroke={theme.colors.white08}
+                  strokeWidth={REST_RING_STROKE}
+                  fill="none"
+                />
+                <Circle
+                  cx={REST_RING_SIZE / 2}
+                  cy={REST_RING_SIZE / 2}
+                  r={REST_RING_RADIUS}
+                  stroke={restStroke}
+                  strokeWidth={REST_RING_STROKE}
+                  strokeLinecap="round"
+                  strokeDasharray={`${REST_RING_CIRCUMFERENCE} ${REST_RING_CIRCUMFERENCE}`}
+                  strokeDashoffset={restDashOffset}
+                  fill="none"
+                  rotation="-90"
+                  originX={REST_RING_SIZE / 2}
+                  originY={REST_RING_SIZE / 2}
+                />
+              </Svg>
+              <View style={styles.restOverlayRingCenter}>
+                <Text style={styles.restOverlayTime}>{formatTime(restSec)}</Text>
+                <Text style={styles.restOverlayTitle}>
+                  {restSource === "auto" ? "Repos auto" : "Repos"}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.restOverlayHint}>Respire, relâche, repars propre.</Text>
             <View style={styles.restOverlayActions}>
               <Button
                 label="Passer"
-                onPress={() => {
-                  setRestRunning(false);
-                  setRestSec(0);
-                  setRestSource(null);
-                }}
-                size="sm"
-                variant="ghost"
+                onPress={stopRest}
+                size="md"
+                variant="primary"
+                style={styles.restOverlayButton}
+                textStyle={styles.restOverlayButtonText}
               />
             </View>
           </View>
         </Animated.View>
+        <YouTubePlayer
+          visible={videoPlayerUrl !== null}
+          url={videoPlayerUrl}
+          label={videoPlayerLabel}
+          onClose={() => setVideoPlayerUrl(null)}
+        />
       </View>
     </SafeAreaView>
   );
 }
 
-// Export avec Error Boundary pour éviter les crashs
+// Export with Error Boundary to avoid crashes
 export default withSessionErrorBoundary(SessionLiveScreen);
 
 const styles = StyleSheet.create({
@@ -1106,16 +1301,71 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   container: { padding: 16 },
   content: { gap: 16 },
-  heroCard: { padding: 16, gap: 12 },
+  heroCard: {
+    padding: 16,
+    gap: 12,
+    ...theme.shadow.soft,
+  },
   heroTop: { flexDirection: "row", gap: 12, alignItems: "center" },
-  title: { fontSize: 22, fontWeight: "800", color: palette.text },
-  subtitle: { fontSize: 13, color: palette.sub, marginTop: 4 },
+  title: { fontSize: TYPE.title.fontSize, fontWeight: "800", color: palette.text },
+  subtitle: { fontSize: TYPE.caption.fontSize, color: palette.sub, marginTop: 4 },
+  methodRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  adaptationRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  adaptationChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.accentSoft,
+  },
+  adaptationChipText: { color: palette.text, fontSize: TYPE.caption.fontSize, fontWeight: "700" },
+  liveInsightCard: {
+    padding: 12,
+    gap: 6,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.cardSoft,
+  },
+  liveInsightLabel: {
+    color: palette.accent,
+    fontSize: TYPE.micro.fontSize,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  liveInsightText: { color: palette.text, fontSize: TYPE.caption.fontSize, lineHeight: 19, fontWeight: "600" },
+  liveCoachCard: {
+    padding: 12,
+    gap: 6,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.card,
+  },
+  liveCoachLabel: {
+    color: palette.accent,
+    fontSize: TYPE.micro.fontSize,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  liveCoachText: { color: palette.text, fontSize: TYPE.caption.fontSize, lineHeight: 19, fontWeight: "700" },
+  themeRow: {
+    alignSelf: "flex-start",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: RADIUS.pill,
+    backgroundColor: palette.cardSoft,
+  },
+  themeText: { color: palette.accent, fontSize: TYPE.caption.fontSize, fontWeight: "700" },
   progressWrap: { gap: 6 },
-  progressLabel: { color: palette.sub, fontSize: 12 },
+  progressLabel: { color: palette.sub, fontSize: TYPE.caption.fontSize },
   progressTrack: {
     height: 6,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.borderSoft,
     overflow: "hidden",
   },
@@ -1126,8 +1376,17 @@ const styles = StyleSheet.create({
   timerCard: { padding: 14, gap: 12 },
   timerRow: { flexDirection: "row", gap: 12 },
   timerBlock: { flex: 1 },
-  timerLabel: { color: palette.sub, fontSize: 12 },
-  timerValue: { color: palette.text, fontSize: 22, fontWeight: "800" },
+  timerLabel: { color: palette.sub, fontSize: TYPE.caption.fontSize },
+  timerValue: { color: palette.text, fontWeight: "800" },
+  timerValueQuiet: {
+    fontSize: TYPE.subtitle.fontSize,
+    letterSpacing: TYPE.subtitle.letterSpacing,
+  },
+  timerValueResting: {
+    color: palette.accent,
+    fontSize: TYPE.title.fontSize,
+    letterSpacing: TYPE.title.letterSpacing,
+  },
   timerActions: { flexDirection: "row", gap: 10 },
   timerButton: { flex: 1 },
   restRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
@@ -1135,7 +1394,7 @@ const styles = StyleSheet.create({
   restChip: {
     paddingVertical: 10,
     paddingHorizontal: 14,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
@@ -1146,8 +1405,8 @@ const styles = StyleSheet.create({
     backgroundColor: palette.accentSoft,
     borderColor: palette.accent,
   },
-  restChipText: { color: palette.text, fontWeight: "600", fontSize: 12 },
-  restChipGhostText: { color: palette.accent, fontWeight: "700", fontSize: 12 },
+  restChipText: { color: palette.text, fontWeight: "600", fontSize: TYPE.caption.fontSize },
+  restChipGhostText: { color: palette.accent, fontWeight: "700", fontSize: TYPE.caption.fontSize },
   restOverlay: {
     position: "absolute",
     top: 0,
@@ -1156,48 +1415,74 @@ const styles = StyleSheet.create({
     left: 0,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(9, 11, 16, 0.55)",
+    backgroundColor: theme.colors.black88,
   },
   restOverlayCard: {
-    paddingVertical: 18,
+    width: "100%",
+    maxWidth: 360,
+    paddingVertical: 24,
     paddingHorizontal: 20,
-    borderRadius: 18,
-    backgroundColor: palette.card,
     alignItems: "center",
-    gap: 8,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    minWidth: 180,
+    justifyContent: "center",
+    gap: 16,
   },
   restOverlayTitle: {
-    color: palette.sub,
-    fontSize: 12,
+    color: theme.colors.white70,
+    fontSize: TYPE.caption.fontSize,
     textTransform: "uppercase",
     letterSpacing: 1.2,
-    fontWeight: "700",
-  },
-  restOverlayTime: {
-    color: palette.text,
-    fontSize: 32,
     fontWeight: "800",
   },
-  restOverlayActions: { marginTop: 4, alignSelf: "stretch" },
-  swipeHint: { color: palette.sub, fontSize: 12, marginTop: -6 },
+  restOverlayTime: {
+    color: theme.colors.white,
+    fontSize: TYPE.display.xl.fontSize,
+    fontWeight: "800",
+    letterSpacing: TYPE.display.xl.letterSpacing,
+  },
+  restOverlayRingWrap: {
+    width: REST_RING_SIZE,
+    height: REST_RING_SIZE,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  restOverlayRingCenter: {
+    position: "absolute",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  restOverlayHint: {
+    color: theme.colors.white62,
+    fontSize: TYPE.body.fontSize,
+    fontWeight: "600",
+    textAlign: "center",
+    fontStyle: "italic",
+  },
+  restOverlayActions: { marginTop: 4 },
+  restOverlayButton: {
+    minWidth: 140,
+    backgroundColor: theme.colors.white,
+    borderColor: theme.colors.white,
+  },
+  restOverlayButtonText: {
+    color: theme.colors.black,
+  },
+  swipeHint: { color: palette.sub, fontSize: TYPE.caption.fontSize, marginTop: -6 },
   blockCardWrap: { marginBottom: 2 },
   blockCard: { padding: 14, gap: 10 },
   blockHeader: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
-  blockTitle: { color: palette.text, fontSize: 15, fontWeight: "700" },
-  blockMeta: { color: palette.sub, fontSize: 12, marginTop: 2 },
-  blockEmpty: { color: palette.sub, fontSize: 12 },
+  blockTitle: { color: palette.text, fontSize: TYPE.body.fontSize, fontWeight: "700" },
+  blockMeta: { color: palette.sub, fontSize: TYPE.caption.fontSize, marginTop: 2 },
+  blockEmpty: { color: palette.sub, fontSize: TYPE.caption.fontSize },
   itemRow: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
   itemMain: { flex: 1, flexDirection: "row", gap: 10, alignItems: "flex-start" },
   setsWrap: { minWidth: 70, alignItems: "flex-start", gap: 6 },
-  setsLabel: { fontSize: 10, color: palette.sub, fontWeight: "600" },
+  setsLabel: { fontSize: TYPE.micro.fontSize, color: palette.sub, fontWeight: "600" },
   setsRow: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
   setChip: {
     width: 32,
     height: 32,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     alignItems: "center",
@@ -1208,12 +1493,12 @@ const styles = StyleSheet.create({
     backgroundColor: palette.accent,
     borderColor: palette.accent,
   },
-  setChipText: { fontSize: 12, color: palette.sub, fontWeight: "700" },
+  setChipText: { fontSize: TYPE.caption.fontSize, color: palette.sub, fontWeight: "700" },
   setChipTextDone: { color: palette.bg },
   checkbox: {
     width: 32,
     height: 32,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     alignItems: "center",
@@ -1224,28 +1509,43 @@ const styles = StyleSheet.create({
     backgroundColor: palette.accent,
     borderColor: palette.accent,
   },
-  checkboxIcon: { color: palette.bg, fontSize: 16, fontWeight: "800" },
-  itemName: { color: palette.text, fontSize: 14, fontWeight: "600" },
-  itemMeta: { color: palette.sub, fontSize: 12, marginTop: 2 },
-  itemContext: { color: palette.text, fontSize: 11, marginTop: 2 },
-  itemNote: { color: palette.sub, fontSize: 12, marginTop: 2 },
+  checkboxIcon: { color: palette.bg, fontSize: TYPE.body.fontSize, fontWeight: "800" },
+  itemName: { color: palette.text, fontSize: 18, fontWeight: "700", lineHeight: 24 },
+  itemWarningRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    marginTop: 6,
+    padding: 8,
+    borderRadius: RADIUS.sm,
+    backgroundColor: palette.amberSoft10,
+    borderWidth: 1,
+    borderColor: palette.amberSoft30,
+  },
+  itemWarningText: { flex: 1, color: palette.warn, fontSize: TYPE.caption.fontSize, lineHeight: 17, fontWeight: "600" },
+  itemMeta: { color: palette.sub, fontSize: TYPE.caption.fontSize, marginTop: 2 },
+  itemContext: { color: palette.text, fontSize: TYPE.micro.fontSize, marginTop: 2 },
+  itemNote: { color: palette.sub, fontSize: TYPE.caption.fontSize, marginTop: 2 },
   itemLink: {
+    flexDirection: "row",
     alignSelf: "flex-start",
+    alignItems: "center",
+    gap: 4,
     paddingVertical: 10,
     paddingHorizontal: 14,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.cardSoft,
     minHeight: 44,
     justifyContent: "center",
   },
-  itemLinkText: { color: palette.accent, fontSize: 11, fontWeight: "700" },
+  itemLinkText: { color: palette.accent, fontSize: TYPE.micro.fontSize, fontWeight: "700" },
   dotsRow: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: -6 },
   dot: {
     width: 6,
     height: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.borderSoft,
   },
   dotActive: {
@@ -1256,7 +1556,11 @@ const styles = StyleSheet.create({
     backgroundColor: palette.success,
   },
   coachMiniCard: { padding: 12, gap: 6 },
-  coachMiniText: { color: palette.sub, fontSize: 12, lineHeight: 18 },
+  coachMiniText: { color: palette.sub, fontSize: TYPE.caption.fontSize, lineHeight: 18 },
   coachCard: { padding: 14, gap: 10 },
-  coachText: { color: palette.sub, fontSize: 12, lineHeight: 18 },
+  coachText: { color: palette.sub, fontSize: TYPE.caption.fontSize, lineHeight: 18 },
 });
+
+
+
+

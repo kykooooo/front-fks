@@ -26,6 +26,10 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 
+# Worktrees Claude Code (copies de code qui polluent Jest et git status)
+.claude/worktrees/
+.claude/settings.local.json
+
 # macOS
 .DS_Store
 *.pem
@@ -43,3 +47,6 @@ yarn-error.*
 
 # generated data
 backend-exercises.json
+
+# Image originals (backed up before compression — ne pas committer, trop lourds)
+assets/images/_originals/

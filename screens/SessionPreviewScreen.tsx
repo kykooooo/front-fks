@@ -14,29 +14,40 @@ import type { RouteProp } from '@react-navigation/native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { AppStackParamList } from '../navigation/RootNavigator';
 import { useLoadStore } from '../state/stores/useLoadStore';
 import { useSessionsStore } from '../state/stores/useSessionsStore';
-import { useExternalStore } from '../state/stores/useExternalStore';
 import { getWarmupForSession } from '../constants/warmups';
-import { theme } from '../constants/theme';
+import { theme, TYPE } from "../constants/theme";
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { SectionHeader } from '../components/ui/SectionHeader';
+import { SafetyBanner } from '../components/ui/SafetyBanner';
+import { YouTubePlayer } from '../components/ui/YouTubePlayer';
 import { useSettingsStore } from '../state/settingsStore';
 import { withSessionErrorBoundary } from '../components/withErrorBoundary';
 import { ModalContainer } from '../components/modal/ModalContainer';
 import { buildResetExplain } from './newSession/resetExplain';
+import {
+  MICROCYCLES,
+  MICROCYCLE_TOTAL_SESSIONS_DEFAULT,
+  isMicrocycleId,
+} from '../domain/microcycles';
+import { EXERCISE_BY_ID } from '../engine/exerciseBank';
+import { getExerciseVideoRef } from '../engine/exerciseVideos';
 
 import {
   type Block,
-  intensityTone,
 } from './sessionPreview/sessionPreviewConfig';
 import { HeroCard } from './sessionPreview/components/HeroCard';
 import { FlowStrip } from './sessionPreview/components/FlowStrip';
 import { BlockCard } from './sessionPreview/components/BlockCard';
 import { TimerCard } from './sessionPreview/components/TimerCard';
+import { resolvePlayerPreviewContext } from './sessionPreview/playerContext';
+import { getSessionStatus, isSessionCompleted } from '../utils/sessionStatus';
+import { useSyncStore } from '../state/stores/useSyncStore';
 
 type SessionPreviewRoute = RouteProp<AppStackParamList, 'SessionPreview'>;
 const palette = theme.colors;
@@ -44,6 +55,7 @@ const palette = theme.colors;
 function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
   const { v2, plannedDateISO, sessionId } = route.params;
   const nav = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const title = v2.title || 'Séance personnalisée';
   const subtitle = v2.subtitle;
   const blocks: Block[] = Array.isArray(v2.blocks) ? v2.blocks : [];
@@ -52,13 +64,15 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
   const phase = useSessionsStore((s) => s.phase);
   const tsb = useLoadStore((s) => s.tsb);
   const profile = useSessionsStore((s) => s.lastAiContext?.profile ?? null);
-  const clubDays = useExternalStore((s) => s.clubTrainingDays ?? []);
-  const matchDays = useExternalStore((s) => s.matchDays ?? []);
   const sessions = useSessionsStore((s) => s.sessions);
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
+  const setSessionStatus = useSessionsStore((s) => s.setSessionStatus);
+  const persistSessionStatus = useSyncStore((s) => s.persistSessionStatus);
   const currentSession = sessionId ? sessions.find((s: any) => s.id === sessionId) : null;
-  const canStart = !currentSession?.completed;
-  const isCompleted = !!currentSession?.completed;
+  const sessionStatus = getSessionStatus(currentSession);
+  const canStart = !isSessionCompleted(currentSession);
+  const isCompleted = isSessionCompleted(currentSession);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [sessionRunning, setSessionRunning] = useState(false);
   const [sessionSec, setSessionSec] = useState(0);
@@ -66,6 +80,9 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
   const [restRunning, setRestRunning] = useState(false);
   const [restSec, setRestSec] = useState(0);
   const restRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [videoPlayerUrl, setVideoPlayerUrl] = useState<string | null>(null);
+  const [videoPlayerLabel, setVideoPlayerLabel] = useState('');
+  const [showTimerTools, setShowTimerTools] = useState(false);
   const enter = useRef(new Animated.Value(0)).current;
   const pulseMap = useRef<Record<string, Animated.Value>>({});
   const blockAnims = useRef(blocks.map(() => new Animated.Value(0))).current;
@@ -101,10 +118,49 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
   });
 
   // ─── Computed labels ───
-  const srpe = v2.estimatedLoad?.srpe ?? null;
-  const srpeLabel = srpe != null && Number.isFinite(srpe) ? `${Math.round(srpe)} UA` : '\u2014';
   const durationLabel = v2.durationMin != null ? `${v2.durationMin} min` : '\u2014';
   const rpeLabel = v2.rpeTarget != null ? `${v2.rpeTarget}` : '\u2014';
+  const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
+  const cycleDef = cycleId ? MICROCYCLES[cycleId] : null;
+  const fallbackSessionNumber = Math.min(
+    MICROCYCLE_TOTAL_SESSIONS_DEFAULT,
+    Math.max(1, Math.trunc(microcycleSessionIndex ?? 0) + 1)
+  );
+  const fallbackCyclePhaseLabel = (() => {
+    const phaseKey = String(phase ?? '').toLowerCase().trim();
+    if (phaseKey === 'playlist') return 'Mise en route';
+    if (phaseKey === 'construction') return 'Construction';
+    if (phaseKey === 'progression') return 'Progression';
+    if (phaseKey === 'performance') return 'Progression';
+    if (phaseKey === 'deload') return 'Deload';
+    return null;
+  })();
+  const canUseLiveCycleFallback = !isSessionCompleted(currentSession);
+  const playerPreviewContext = useMemo(
+    () =>
+      resolvePlayerPreviewContext({
+        v2,
+        canUseLiveCycleFallback,
+        fallbackCycleLabel: cycleDef?.label ?? null,
+        fallbackCycleProgressLabel:
+          canUseLiveCycleFallback && cycleId
+            ? `Séance ${fallbackSessionNumber}/${MICROCYCLE_TOTAL_SESSIONS_DEFAULT}`
+            : null,
+        fallbackCyclePhaseLabel,
+        profilePosition: typeof profile?.position === 'string' ? profile.position : null,
+        tsb,
+      }),
+    [
+      v2,
+      canUseLiveCycleFallback,
+      cycleDef?.label,
+      cycleId,
+      fallbackSessionNumber,
+      fallbackCyclePhaseLabel,
+      profile?.position,
+      tsb,
+    ]
+  );
   const blockCount = blocks.length;
   const isResetPlan =
     v2?.archetypeId === 'foundation_X_reset' ||
@@ -121,6 +177,7 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
     return Object.values(checked).filter(Boolean).length;
   }, [checked]);
   const progress = totalItems > 0 ? completedItems / totalItems : 0;
+  const hasStarted = sessionRunning || completedItems > 0 || sessionStatus === 'in_progress';
 
   // ─── Timers & signals ───
   const playRestSignal = useCallback(() => {
@@ -170,6 +227,30 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
     };
   }, [restRunning, playRestSignal]);
 
+  const markSessionInProgress = useCallback(() => {
+    if (!sessionId || isCompleted) return;
+    if (sessionStatus === 'in_progress' || sessionStatus === 'completed') return;
+    const startedAt = currentSession?.startedAt ?? new Date().toISOString();
+    setSessionStatus(sessionId, 'in_progress', { startedAt });
+    persistSessionStatus(sessionId, 'in_progress', { startedAt }).catch((err) => {
+      if (__DEV__) {
+        console.error('[SessionPreview] Failed to persist in-progress status:', err);
+      }
+    });
+  }, [
+    sessionId,
+    isCompleted,
+    sessionStatus,
+    currentSession,
+    setSessionStatus,
+    persistSessionStatus,
+  ]);
+
+  useEffect(() => {
+    if (!hasStarted || isCompleted) return;
+    markSessionInProgress();
+  }, [hasStarted, isCompleted, markSessionInProgress]);
+
   // ─── Animations ───
   useEffect(() => {
     Animated.timing(enter, { toValue: 1, duration: 420, useNativeDriver: true }).start();
@@ -205,11 +286,17 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
 
   const toggleItem = (blockIndex: number, itemIndex: number) => {
     const key = `${blockIndex}-${itemIndex}`;
+    if (!isCompleted) {
+      markSessionInProgress();
+    }
     setChecked((prev) => {
       const nextValue = !prev[key];
       if (nextValue) triggerPulse(key);
       return { ...prev, [key]: nextValue };
     });
+    if (!sessionRunning && !isCompleted) {
+      setSessionRunning(true);
+    }
   };
 
   const isBlockComplete = (blockIndex: number) => {
@@ -218,12 +305,27 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
     return items.every((_, idx) => checked[`${blockIndex}-${idx}`]);
   };
 
-  const goToExercise = (exerciseId: string | null) => {
+  const openExerciseVideo = useCallback((exerciseId: string | null) => {
     if (!exerciseId) return;
-    nav.navigate('ExerciseDetail', { highlightId: exerciseId });
-  };
+    const ref = getExerciseVideoRef(exerciseId);
+    const exercise = EXERCISE_BY_ID[exerciseId];
+    setVideoPlayerLabel(exercise?.name ?? "Video de l'exercice");
+    setVideoPlayerUrl(ref.url);
+  }, []);
 
-  const finishLabel = sessionId ? 'Terminer et donner le feedback' : 'Terminer la séance';
+  const finishLabel = sessionId ? 'Terminer et donner le feedback' : 'Terminer la seance';
+  const heroCtaLabel = sessionRunning
+    ? 'Seance en cours'
+    : hasStarted
+      ? 'Reprendre la seance'
+      : 'Commencer la seance';
+
+  const handleStartSession = useCallback(() => {
+    if (isCompleted) return;
+    setSessionRunning(true);
+    setRestRunning(false);
+    markSessionInProgress();
+  }, [isCompleted, markSessionInProgress]);
 
   const finishAction = () => {
     const estimatedRpe = (() => {
@@ -245,10 +347,15 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
     const focusRaw = v2.focusPrimary ?? v2.focusSecondary;
     const focus = typeof focusRaw === 'string' ? focusRaw : undefined;
     const location = typeof v2.location === 'string' ? v2.location : undefined;
-    const recoveryTips =
-      Array.isArray(v2.postSession?.recoveryTips) && v2.postSession!.recoveryTips!.length > 0
+    // Backend emet recovery_tips au top-level (fksSchema.ts:102), pas dans post_session.
+    // Fallback sur postSession.recoveryTips pour compat retro.
+    const recoveryTipsSource =
+      (Array.isArray(v2.recoveryTips) && v2.recoveryTips.length > 0)
+        ? v2.recoveryTips
+        : (Array.isArray(v2.postSession?.recoveryTips) && v2.postSession!.recoveryTips!.length > 0)
         ? v2.postSession!.recoveryTips
         : undefined;
+    const recoveryTips = recoveryTipsSource;
     nav.navigate('SessionSummary', {
       sessionId,
       summary: {
@@ -257,6 +364,14 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
         srpe: typeof v2?.estimatedLoad?.srpe === 'number' && Number.isFinite(v2.estimatedLoad.srpe)
           ? v2.estimatedLoad.srpe : undefined,
         recoveryTips,
+        sessionTheme: v2.sessionTheme ?? null,
+        cycleLabel: playerPreviewContext.cycleLabel,
+        cycleProgressLabel: playerPreviewContext.cycleProgressLabel,
+        cyclePhaseLabel: playerPreviewContext.cyclePhaseLabel,
+        adaptationLabels: playerPreviewContext.adaptationLabels,
+        playerRationaleTitle: playerPreviewContext.playerRationaleTitle,
+        playerRationale: playerPreviewContext.playerRationale,
+        coachNote: playerPreviewContext.coachNote,
       },
     });
   };
@@ -271,7 +386,7 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
         allowBackdropDismiss
         allowSwipeDismiss
       >
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaView style={styles.safeArea} edges={['top', 'right', 'left', 'bottom']}>
           <View style={styles.modalHeaderRow}>
             <Text style={styles.modalHeaderTitle}>Séance</Text>
             <TouchableOpacity onPress={() => nav.goBack()} style={styles.modalClose}>
@@ -279,7 +394,10 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
             </TouchableOpacity>
           </View>
           <ScrollView
-            contentContainerStyle={styles.container}
+            contentContainerStyle={[
+              styles.container,
+              { paddingBottom: Math.max(24, insets.bottom + 20) },
+            ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
@@ -291,25 +409,38 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
                 title={title}
                 subtitle={subtitle}
                 sessionTheme={v2.sessionTheme}
+                playerRationaleTitle={playerPreviewContext.playerRationaleTitle}
+                playerRationale={playerPreviewContext.playerRationale}
+                cycleLabel={playerPreviewContext.cycleLabel}
+                cycleProgressLabel={playerPreviewContext.cycleProgressLabel}
+                cyclePhaseLabel={playerPreviewContext.cyclePhaseLabel}
+                adaptationLabels={playerPreviewContext.adaptationLabels}
                 plannedDateISO={plannedDateISO}
                 intensity={v2.intensity}
                 focusPrimary={v2.focusPrimary}
                 focusSecondary={v2.focusSecondary}
-                location={v2.location}
+                location={playerPreviewContext.locationTag}
                 durationLabel={durationLabel}
-                srpeLabel={srpeLabel}
                 rpeLabel={rpeLabel}
                 completedItems={completedItems}
                 totalItems={totalItems}
                 progress={progress}
                 canStart={canStart}
-                onGoLive={() => {
-                  setSessionRunning(false);
-                  setRestRunning(false);
-                  nav.navigate('SessionLive', { v2, plannedDateISO, sessionId });
-                }}
+                onGoLive={handleStartSession}
+                ctaLabel={heroCtaLabel}
+                ctaDisabled={sessionRunning}
                 cycleType={microcycleGoal}
               />
+
+              {playerPreviewContext.coachNote ? (
+                <Card variant="surface" style={styles.coachNoteCard}>
+                  <View style={styles.coachNoteHeader}>
+                    <Ionicons name="shield-checkmark-outline" size={16} color={palette.accent} />
+                    <Text style={styles.coachNoteTitle}>Note du prépa</Text>
+                  </View>
+                  <Text style={styles.coachNoteText}>{playerPreviewContext.coachNote}</Text>
+                </Card>
+              ) : null}
 
               {/* Reset explain */}
               {isResetPlan && resetExplain ? (
@@ -380,7 +511,7 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
                       isCompleted={isCompleted}
                       blockAnim={blockAnims[blockIndex] ?? new Animated.Value(1)}
                       onToggleItem={toggleItem}
-                      onGoToExercise={goToExercise}
+                      onOpenVideo={openExerciseVideo}
                       getPulse={getPulse}
                     />
                   ))}
@@ -391,18 +522,53 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
                 </Card>
               )}
 
-              {/* Timer */}
-              <TimerCard
-                sessionSec={sessionSec}
-                sessionRunning={sessionRunning}
-                restSec={restSec}
-                timerPresets={timerPresets}
-                isCompleted={isCompleted}
-                onToggleSession={() => setSessionRunning((v) => !v)}
-                onResetSession={() => { setSessionRunning(false); setSessionSec(0); }}
-                onStartRest={(s) => { setRestSec(s); setRestRunning(true); }}
-                onStopRest={() => { setRestRunning(false); setRestSec(0); }}
-              />
+              <Card variant="soft" style={styles.toolsCard}>
+                <TouchableOpacity
+                  style={styles.toolsRow}
+                  onPress={() => setShowTimerTools((v) => !v)}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.toolsLabelWrap}>
+                    <Ionicons name="time-outline" size={16} color={palette.accent} />
+                    <Text style={styles.toolsTitle}>Outils de seance (optionnel)</Text>
+                  </View>
+                  <Ionicons
+                    name={showTimerTools ? 'chevron-up' : 'chevron-down'}
+                    size={18}
+                    color={palette.sub}
+                  />
+                </TouchableOpacity>
+              </Card>
+
+              {showTimerTools ? (
+                <TimerCard
+                  sessionSec={sessionSec}
+                  sessionRunning={sessionRunning}
+                  restSec={restSec}
+                  timerPresets={timerPresets}
+                  isCompleted={isCompleted}
+                  onToggleSession={() => {
+                    if (!sessionRunning && !isCompleted) {
+                      markSessionInProgress();
+                    }
+                    setSessionRunning((v) => !v);
+                  }}
+                  onResetSession={() => { setSessionRunning(false); setSessionSec(0); }}
+                  onStartRest={(s) => { setRestSec(s); setRestRunning(true); }}
+                  onStopRest={() => { setRestRunning(false); setRestSec(0); }}
+                />
+              ) : null}
+
+              {/* Pourquoi cette séance (rationale IA) */}
+              {v2.analytics?.rationale ? (
+                <Card variant="soft" style={styles.coachCard}>
+                  <View style={styles.rationaleHeader}>
+                    <Ionicons name="sparkles" size={16} color={theme.colors.accent} />
+                    <Text style={styles.rationaleTitle}>Pourquoi cette séance</Text>
+                  </View>
+                  <Text style={styles.body}>{v2.analytics.rationale}</Text>
+                </Card>
+              ) : null}
 
               {/* Coaching */}
               {v2.coachingTips && v2.coachingTips.length > 0 ? (
@@ -416,7 +582,7 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
                 </Card>
               ) : null}
 
-              {/* Safety */}
+              {/* Safety notes from backend (conditional) */}
               {v2.safetyNotes ? (
                 <Card variant="soft" style={styles.coachCard}>
                   <SectionHeader title="Sécurité" />
@@ -424,15 +590,25 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
                 </Card>
               ) : null}
 
+              {/* Permanent safety banner */}
+              <SafetyBanner />
+
               {/* Post session */}
-              {(v2.postSession?.mobility && v2.postSession.mobility.length > 0) ||
-               (v2.postSession?.recoveryTips && v2.postSession.recoveryTips.length > 0) ? (
+              {(() => {
+                const recoveryTipsDisplay =
+                  (Array.isArray(v2.recoveryTips) && v2.recoveryTips.length > 0)
+                    ? v2.recoveryTips
+                    : (v2.postSession?.recoveryTips ?? []);
+                const hasMobility = v2.postSession?.mobility && v2.postSession.mobility.length > 0;
+                const hasRecovery = recoveryTipsDisplay.length > 0;
+                if (!hasMobility && !hasRecovery) return null;
+                return (
                 <Card variant="soft" style={styles.coachCard}>
                   <SectionHeader title="Post-séance" />
                   <View style={{ gap: 6 }}>
-                    {v2.postSession?.recoveryTips?.map((tip: string, i: number) => (
+                    {recoveryTipsDisplay.map((tip: string, i: number) => (
                       <View key={`rec_${i}`} style={styles.recoveryTipRow}>
-                        <Ionicons name="leaf-outline" size={13} color="#14b8a6" />
+                        <Ionicons name="leaf-outline" size={13} color={theme.colors.teal500} />
                         <Text style={styles.recoveryTipText}>{tip}</Text>
                       </View>
                     ))}
@@ -446,7 +622,8 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
                     ) : null}
                   </View>
                 </Card>
-              ) : null}
+                );
+              })()}
 
               {/* Finish */}
               <View style={{ marginBottom: 24 }}>
@@ -460,6 +637,12 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
               </View>
             </Animated.View>
           </ScrollView>
+          <YouTubePlayer
+            visible={videoPlayerUrl !== null}
+            url={videoPlayerUrl}
+            label={videoPlayerLabel}
+            onClose={() => setVideoPlayerUrl(null)}
+          />
         </SafeAreaView>
       </ModalContainer>
     </View>
@@ -477,28 +660,61 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 6,
   },
-  modalHeaderTitle: { fontSize: 16, fontWeight: '800', color: palette.text },
+  modalHeaderTitle: { fontSize: TYPE.body.fontSize, fontWeight: '800', color: palette.text },
   modalClose: { paddingHorizontal: 12, paddingVertical: 10, minWidth: 44, minHeight: 44, alignItems: "center" as const, justifyContent: "center" as const },
   safeArea: { flex: 1, backgroundColor: palette.bg },
   container: { padding: 14, paddingBottom: 24 },
   content: { gap: 12 },
+  coachNoteCard: {
+    padding: 14,
+    gap: 8,
+    backgroundColor: palette.accentSoft,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    ...theme.shadow.soft,
+  },
+  coachNoteHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  coachNoteTitle: {
+    fontSize: TYPE.caption.fontSize,
+    fontWeight: '800',
+    color: palette.accent,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  coachNoteText: { color: palette.text, fontSize: TYPE.body.fontSize, lineHeight: 20, fontWeight: '800' },
   resetExplainCard: { padding: 14, gap: 8 },
   resetExplainHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  resetExplainTitle: { fontSize: 14, fontWeight: '800', color: palette.text },
-  resetExplainSubtitle: { fontSize: 12, color: palette.sub, lineHeight: 16 },
-  resetExplainLabel: { fontSize: 12, fontWeight: '700', color: palette.text },
+  resetExplainTitle: { fontSize: TYPE.body.fontSize, fontWeight: '800', color: palette.text },
+  resetExplainSubtitle: { fontSize: TYPE.caption.fontSize, color: palette.sub, lineHeight: 16 },
+  resetExplainLabel: { fontSize: TYPE.caption.fontSize, fontWeight: '700', color: palette.text },
   resetExplainGroup: { gap: 6 },
   resetBulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
-  resetBullet: { color: palette.accent, fontSize: 12, marginTop: 1 },
-  resetBulletText: { flex: 1, color: palette.text, fontSize: 12, lineHeight: 16 },
+  resetBullet: { color: palette.accent, fontSize: TYPE.caption.fontSize, marginTop: 1 },
+  resetBulletText: { flex: 1, color: palette.text, fontSize: TYPE.caption.fontSize, lineHeight: 16 },
   sectionHeader: { marginTop: 12 },
   warmupCard: { padding: 10 },
-  cardTitle: { color: palette.text, fontSize: 15, fontWeight: '700' },
-  bullet: { color: palette.text, marginBottom: 4, fontSize: 13, lineHeight: 18 },
-  body: { color: palette.text, fontSize: 13, lineHeight: 18 },
+  cardTitle: { color: palette.text, fontSize: TYPE.body.fontSize, fontWeight: '700' },
+  bullet: { color: palette.text, marginBottom: 4, fontSize: TYPE.caption.fontSize, lineHeight: 18 },
+  body: { color: palette.text, fontSize: TYPE.caption.fontSize, lineHeight: 18 },
   coachCard: { padding: 12, gap: 8 },
+  rationaleHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 4,
+  },
+  rationaleTitle: {
+    fontSize: TYPE.bodyBold.fontSize,
+    fontWeight: "800",
+    color: palette.accent,
+    letterSpacing: 0.2,
+  },
   recoveryTipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
-  recoveryTipText: { flex: 1, color: palette.text, fontSize: 13, lineHeight: 18 },
-  blockEmpty: { color: palette.sub, fontSize: 12 },
+  recoveryTipText: { flex: 1, color: palette.text, fontSize: TYPE.caption.fontSize, lineHeight: 18 },
+  toolsCard: { paddingHorizontal: 12, paddingVertical: 10 },
+  toolsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  toolsLabelWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  toolsTitle: { color: palette.text, fontSize: TYPE.caption.fontSize, fontWeight: '700' },
+  blockEmpty: { color: palette.sub, fontSize: TYPE.caption.fontSize },
   emptyBlockCard: { padding: 10 },
 });

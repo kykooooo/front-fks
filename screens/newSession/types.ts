@@ -62,6 +62,7 @@ export type FKS_NextSessionV2 = {
   guardrailsApplied?: string[];
   sessionTheme?: string | null;
   coachingTips?: string[];
+  recoveryTips?: string[];
   postSession?: {
     cooldownMin?: number;
     mobility?: string[];
@@ -79,6 +80,16 @@ export type FKS_NextSessionV2 = {
   analytics?: {
     targetMetrics?: { totalReps?: number };
     rationale?: string;
+  } | null;
+  playerContext?: {
+    title?: string | null;
+    summary?: string | null;
+    cycleKey?: string | null;
+    cycleLabel?: string | null;
+    cycleProgressLabel?: string | null;
+    cyclePhaseLabel?: string | null;
+    adaptationLabels?: string[];
+    coachNote?: string | null;
   } | null;
   resetVariants?: Array<{
     id: string;

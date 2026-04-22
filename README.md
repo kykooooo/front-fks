@@ -49,14 +49,22 @@ Copier `.env.local.example` → `.env.local` et remplir :
 | Variable | Description |
 |---|---|
 | `EXPO_PUBLIC_BACKEND_URL` | URL de l'API backend (ex: `https://fks-backend-xmnb.onrender.com`) |
-| `EXPO_PUBLIC_BACKEND_API_KEY` | Clé d'authentification API backend (à récupérer dans Render) |
 | `EXPO_PUBLIC_FIREBASE_API_KEY` | Clé API Firebase Web (Firebase Console > Paramètres du projet) |
+| `EXPO_PUBLIC_SENTRY_DSN` | DSN Sentry (optionnel, crash reporting) |
 
 > `.env.local` est dans `.gitignore` — ne jamais commiter les vraies valeurs.
 >
+> ⚠️ `EXPO_PUBLIC_BACKEND_API_KEY` a été retirée (avril 2026) : elle était
+> embarquée dans le bundle JS et donc extractible. L'auth backend se fait
+> désormais uniquement via Firebase ID token (`Authorization: Bearer ...`),
+> et n'est acceptée que sur les endpoints user-facing (`/api/fks/generate`,
+> `/api/fks/chat`). La clé `FKS_API_KEY` côté serveur sert uniquement aux
+> endpoints internes (`/api/fks/metrics/*`).
+>
 > Pour les builds EAS (cloud) :
 > ```bash
-> eas secret:create --scope project --name EXPO_PUBLIC_BACKEND_API_KEY --value "..."
+> eas secret:create --scope project --name EXPO_PUBLIC_BACKEND_URL --value "..."
+> eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_API_KEY --value "..."
 > ```
 
 ---
