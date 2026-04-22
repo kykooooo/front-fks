@@ -6,9 +6,10 @@ import { useLoadStore } from "../state/stores/useLoadStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
 import { useFeedbackStore } from "../state/stores/useFeedbackStore";
-import { toDateKey } from "../utils/dateHelpers";
-import type { Session, Exercise } from "../domain/types";
-import { userProfileSchema, logValidationIssues } from "../schemas/firestoreSchemas";
+import { toDateKey, lastNDates } from "../utils/dateHelpers";
+import type { Session, Exercise, InjuryRecord } from "../domain/types";
+import { userProfileSchema, logValidationIssues, type ActiveInjuryParsed } from "../schemas/firestoreSchemas";
+import { mapAreaToPain } from "../shared/injuryMapping";
 
 // Phases FKS
 export type FKS_PhaseId = "playlist" | "construction" | "progression" | "performance" | "deload";
@@ -75,6 +76,12 @@ export interface FKS_AiContext {
   constraints?: {
     equipment?: string[];
     pains?: string[];
+    /**
+     * Max sévérité (0..3) parmi les `activeInjuries` du profil.
+     * Consommé côté backend (fksOrchestrator) pour forcer cap="easy" si >= 3.
+     * Absent ou 0 si aucune zone sensible active.
+     */
+    injury_max_severity?: number;
   };
   metrics: {
     atl: number;
@@ -191,6 +198,80 @@ function buildEquipmentFromProfile(profile: Record<string, unknown>): string[] {
   return Array.from(new Set(result));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Gestion "zones sensibles" — MVP Jour 2
+//
+// Deux sources contribuent à `constraints.pains[]` :
+//   1. Source primaire  : `profile.activeInjuries` (déclaré à l'inscription
+//                         ou via l'écran profil — blessures actives).
+//   2. Source fallback  : `dayStates[k].feedback.injury` des 7 derniers jours
+//                         (feedback post-séance — compat historique pour les
+//                         joueurs qui ont déclaré avant la release MVP).
+//
+// Chaque zone (fr) est mappée vers la contraindication backend via
+// `shared/injuryMapping.ts`. Fichier identique entre les 2 repos — voir
+// /sync-check point #6.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Sérialise les blessures actives du profil vers les contraindications
+ * backend attendues. N'inclut que les entrées avec `severity >= 1`.
+ */
+function collectProfileInjuryPains(activeInjuries: ActiveInjuryParsed[] | undefined): string[] {
+  if (!Array.isArray(activeInjuries) || activeInjuries.length === 0) return [];
+  const set = new Set<string>();
+  for (const inj of activeInjuries) {
+    if (!inj) continue;
+    const severity = Number(inj.severity ?? 0);
+    if (!Number.isFinite(severity) || severity < 1) continue;
+    const mapped = mapAreaToPain(inj.area);
+    if (mapped) set.add(mapped);
+  }
+  return Array.from(set);
+}
+
+/**
+ * Construit la liste des contraindications backend à partir des `injury`
+ * saisies via le feedback post-séance sur les N derniers jours.
+ *
+ * Utilisé comme FALLBACK pour les joueurs qui ont déclaré via FeedbackScreen
+ * avant la release MVP (avant que `profile.activeInjuries` n'existe).
+ * N'inclut que les blessures avec `severity >= 1` (0 = "Pas de gêne").
+ */
+function collectRecentInjuryPains(
+  dayStates: Record<string, { feedback?: { injury?: InjuryRecord | null } }> | undefined,
+  todayKey: string,
+  windowDays: number,
+): string[] {
+  if (!dayStates) return [];
+  const set = new Set<string>();
+  const days = lastNDates(todayKey, windowDays);
+  for (const key of days) {
+    const injury = dayStates[key]?.feedback?.injury;
+    if (!injury) continue;
+    const severity = Number(injury.severity ?? 0);
+    if (!Number.isFinite(severity) || severity < 1) continue;
+    const mapped = mapAreaToPain(injury.area);
+    if (mapped) set.add(mapped);
+  }
+  return Array.from(set);
+}
+
+/**
+ * Max sévérité (0..3) parmi les `activeInjuries` du profil.
+ * Utilisé par le backend (fksOrchestrator) pour forcer cap="easy" si >= 3.
+ * Renvoie 0 si aucune blessure active ou sévérités invalides.
+ */
+function computeInjuryMaxSeverity(activeInjuries: ActiveInjuryParsed[] | undefined): number {
+  if (!Array.isArray(activeInjuries) || activeInjuries.length === 0) return 0;
+  let max = 0;
+  for (const inj of activeInjuries) {
+    const s = Number(inj?.severity ?? 0);
+    if (Number.isFinite(s) && s > max) max = s;
+  }
+  return Math.min(3, Math.max(0, max));
+}
+
 // ⚙️ Fonction principale : construis le contexte pour l’IA
 export async function buildAIPromptContext(): Promise<FKS_AiContext> {
   const auth = getAuth();
@@ -252,10 +333,17 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
   const feedbackState = useFeedbackStore.getState();
   const nowISO = debugState.devNowISO ?? new Date().toISOString();
   const todayKey = toDateKey(nowISO);
-  const pains: string[] =
-    ((feedbackState.dayStates?.[todayKey]?.feedback as Record<string, unknown> | undefined)?.pains as string[] | undefined) ??
-    ((feedbackState.dayStates?.[todayKey]?.feedback as Record<string, unknown> | undefined)?.painZones as string[] | undefined) ??
-    [];
+
+  // Zones sensibles (MVP Jour 2) :
+  //   - Source primaire : `profile.activeInjuries` (déclaré à l'inscription/profil).
+  //   - Source fallback : `dayStates[*].feedback.injury` des 7 derniers jours
+  //                       (compat historique pour feedback post-séance pré-MVP).
+  // Les deux sources sont unifiées (Set) puis sérialisées en `constraints.pains[]`.
+  const activeInjuries = Array.isArray(data.activeInjuries) ? data.activeInjuries : [];
+  const painsFromProfile = collectProfileInjuryPains(activeInjuries);
+  const painsFromDayStates = collectRecentInjuryPains(feedbackState.dayStates, todayKey, 7);
+  const pains: string[] = Array.from(new Set<string>([...painsFromProfile, ...painsFromDayStates]));
+  const injuryMaxSeverity = computeInjuryMaxSeverity(activeInjuries);
 
   // 2) Récup état charge / phase depuis ton store FKS
   const phase: FKS_PhaseId =
@@ -382,6 +470,8 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
     constraints: {
       equipment: equipment_available,
       pains,
+      // Émission conditionnelle : inutile d'envoyer 0 au backend (valeur par défaut).
+      ...(injuryMaxSeverity > 0 ? { injury_max_severity: injuryMaxSeverity } : {}),
       ...(ignoreFatigueCap ? { ignore_fatigue_cap: true } : {}),
     },
     phase,

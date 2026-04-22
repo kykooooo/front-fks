@@ -30,6 +30,42 @@ export function logValidationIssues(
 }
 
 // ---------------------------------------------------------------------------
+// Injury base schemas (déclarés avant userProfile pour la référence)
+// ---------------------------------------------------------------------------
+
+const INJURY_AREAS = [
+  "cheville", "genou", "ischio", "quadriceps", "mollet",
+  "hanche", "dos", "épaule", "poignet", "autre",
+] as const;
+
+// Schéma de base (non-null) réutilisable :
+//   - `dailyFeedback.injury` l'enveloppe en `.nullable().optional().catch(null)`
+//     (la blessure peut être absente d'un feedback quotidien).
+//   - `userProfile.activeInjuries[]` utilise la version non-null directement
+//     (chaque entrée du tableau est garantie non-null, la liste vide sert
+//     de défaut via `.catch([])` au niveau du profil).
+const injuryRecordBaseSchema = z.object({
+  area: z.string().catch("autre"),
+  severity: z.number().min(0).max(3).catch(0),
+  type: z.enum(["aigu", "chronique"]).catch("aigu"),
+  restrictions: z.object({
+    avoidSprint: z.boolean().optional().catch(false),
+    avoidPlyo: z.boolean().optional().catch(false),
+    avoidHeavyLower: z.boolean().optional().catch(false),
+    avoidHeavyUpper: z.boolean().optional().catch(false),
+    avoidCutsImpacts: z.boolean().optional().catch(false),
+    avoidOverhead: z.boolean().optional().catch(false),
+  }).catch({}),
+  startDate: z.string().catch(""),
+  lastConfirm: z.string().catch(""),
+  note: z.string().nullable().optional().catch(null),
+});
+
+// Version pour `userProfile.activeInjuries[]` : exportée pour réutilisation.
+export const activeInjurySchema = injuryRecordBaseSchema;
+export type ActiveInjuryParsed = z.infer<typeof activeInjurySchema>;
+
+// ---------------------------------------------------------------------------
 // 1. User Profile  — users/{uid}
 // ---------------------------------------------------------------------------
 
@@ -76,6 +112,11 @@ export const userProfileSchema = z.object({
   clubTypicalDurationMin: z.number().min(0).nullable().optional().catch(null),
   matchTypicalRPE: z.number().min(1).max(10).nullable().optional().catch(null),
   matchTypicalDurationMin: z.number().min(0).nullable().optional().catch(null),
+
+  // Zones sensibles actives (MVP blessures Jour 2).
+  // Sérialisé par aiContext vers constraints.pains[] via shared/injuryMapping.
+  // `.catch([])` neutralise les profils legacy (pas de migration active requise).
+  activeInjuries: z.array(activeInjurySchema).catch([]),
 }).passthrough(); // allow extra Firestore fields we don't care about
 
 export type UserProfileParsed = z.infer<typeof userProfileSchema>;
@@ -94,6 +135,7 @@ const sessionFeedbackSchema = z.object({
 const PHASE_VALUES = ["Playlist", "Construction", "Progression", "Performance", "Deload"] as const;
 const FOCUS_VALUES = ["run", "strength", "speed", "circuit", "plyo", "mobility", "endurance", "threshold", "mixed"] as const;
 const INTENSITY_VALUES = ["easy", "moderate", "hard", "max"] as const;
+const SESSION_STATUS_VALUES = ["planned", "in_progress", "completed"] as const;
 
 const exerciseSchema = z.object({
   id: z.string().catch("unknown"),
@@ -116,6 +158,9 @@ export const completedSessionSchema = z.object({
   intensity: z.string().catch("moderate"),
   plannedLoad: z.number().min(0).optional().catch(undefined),
   exercises: z.array(exerciseSchema).catch([]),
+  status: z.enum(SESSION_STATUS_VALUES).optional().catch(undefined),
+  startedAt: z.union([z.string(), z.null()]).optional().catch(undefined),
+  completedAt: z.union([z.string(), z.null()]).optional().catch(undefined),
   rpe: z.number().min(1).max(10).nullable().optional().catch(null),
   feedback: sessionFeedbackSchema,
   ai: z.record(z.string(), z.unknown()).nullable().optional().catch(null),
@@ -136,6 +181,9 @@ export const plannedSessionSchema = z.object({
   intensity: z.string().catch("moderate"),
   plannedLoad: z.number().min(0).catch(0),
   exercises: z.array(exerciseSchema).catch([]),
+  status: z.enum(SESSION_STATUS_VALUES).optional().catch(undefined),
+  startedAt: z.union([z.string(), z.null()]).optional().catch(undefined),
+  completedAt: z.union([z.string(), z.null()]).optional().catch(undefined),
   ai: z.record(z.string(), z.unknown()).nullable().optional().catch(null),
 }).passthrough();
 
@@ -144,28 +192,12 @@ export type PlannedSessionParsed = z.infer<typeof plannedSessionSchema>;
 // ---------------------------------------------------------------------------
 // 4. Daily Feedback / Injury (embedded in dayStates)
 // ---------------------------------------------------------------------------
+// NOTE : `injuryRecordBaseSchema` + `activeInjurySchema` sont déclarés plus
+// haut dans ce fichier (avant `userProfileSchema`) pour permettre la
+// référence depuis `userProfile.activeInjuries[]`.
 
-const INJURY_AREAS = [
-  "cheville", "genou", "ischio", "quadriceps", "mollet",
-  "hanche", "dos", "épaule", "poignet", "autre",
-] as const;
-
-const injuryRecordSchema = z.object({
-  area: z.string().catch("autre"),
-  severity: z.number().min(0).max(3).catch(0),
-  type: z.enum(["aigu", "chronique"]).catch("aigu"),
-  restrictions: z.object({
-    avoidSprint: z.boolean().optional().catch(false),
-    avoidPlyo: z.boolean().optional().catch(false),
-    avoidHeavyLower: z.boolean().optional().catch(false),
-    avoidHeavyUpper: z.boolean().optional().catch(false),
-    avoidCutsImpacts: z.boolean().optional().catch(false),
-    avoidOverhead: z.boolean().optional().catch(false),
-  }).catch({}),
-  startDate: z.string().catch(""),
-  lastConfirm: z.string().catch(""),
-  note: z.string().nullable().optional().catch(null),
-}).nullable().optional().catch(null);
+// Version pour `dailyFeedback.injury` : peut être null/absente.
+const injuryRecordSchema = injuryRecordBaseSchema.nullable().optional().catch(null);
 
 export const dailyFeedbackSchema = z.object({
   fatigue: z.number().min(1).max(5).catch(3),
