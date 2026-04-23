@@ -4,8 +4,10 @@
 // Les messages sont écrits en langage football-friendly (pas de jargon ATL/CTL/TSB)
 
 import { getFootballLabel } from "../config/trainingDefaults";
+import { SAFETY_PHRASES } from "../shared/SAFETY_PHRASES";
 
 export type AdviceId =
+  | "injury_pain_spike"
   | "match_today"
   | "match_tomorrow"
   | "tsb_extreme_fatigue"
@@ -18,6 +20,7 @@ export type AdviceId =
   | "club_today"
   | "recovery_needed"
   | "good_shape"
+  | "injury_progress_detected"
   | "ready_default";
 
 export type AdviceTone = "info" | "warn" | "danger" | "success";
@@ -33,6 +36,20 @@ export type Advice = {
   actionParams?: Record<string, unknown>;
   /** Micro-tip éducatif football (optionnel) */
   tip?: string;
+  /**
+   * Actions complémentaires (ex: SAMU 15, Urgences 112) pour les règles
+   * critiques comme `injury_pain_spike`. L'UI les affiche sous le message.
+   */
+  extraActions?: Array<{
+    label: string;
+    telNumber?: string;
+    route?: string;
+  }>;
+  /**
+   * Si `true`, la carte ne peut pas être dismissée par un swipe.
+   * Utilisé par `injury_pain_spike` (règle 5 de INJURY_IA_CHARTER.md).
+   */
+  nonDismissable?: boolean;
 };
 
 export type AdviceContext = {
@@ -61,6 +78,25 @@ export type AdviceContext = {
   // Blessures
   hasActiveInjury: boolean;
   injuryArea?: string;
+  /**
+   * Max sévérité (0..3) parmi les `activeInjuries` du profil.
+   * Nécessaire pour les règles `injury_progress_detected` (>= 2) et
+   * `injury_pain_spike` (on ne déclenche que si le joueur a déjà une
+   * zone sensible active — un pic de douleur chez un joueur sans
+   * blessure déclarée n'est pas géré par ces règles).
+   */
+  injuryMaxSeverity?: number;
+  /**
+   * Scores de douleur (`feedback.pain`) des 3 dernières séances.
+   * Règle 4 de INJURY_IA_CHARTER.md : détecte une baisse si les 3
+   * sont <= 2 ET `injuryMaxSeverity >= 2`.
+   */
+  recentInjuryPainScores?: number[];
+  /**
+   * Dernier feedback avec une douleur élevée (>= 7 sur l'échelle 0-10
+   * Firestore). Si présent et dans les 24h, déclenche `injury_pain_spike`.
+   */
+  lastPainSpike?: { pain: number; dateISO: string } | null;
 
   // Date
   nowISO: string;
@@ -74,6 +110,36 @@ export type AdviceRule = {
 };
 
 export const ADVICE_RULES: AdviceRule[] = [
+  // Priorité 0 (CRITIQUE, passe avant tout) : pic de douleur signalé.
+  // Règle 5 de INJURY_IA_CHARTER.md : non-dismissable jusqu'à action.
+  // Trigger : dernier feedback avec `pain >= 7` dans les 24h.
+  {
+    id: "injury_pain_spike",
+    priority: 0,
+    condition: (ctx) => {
+      const spike = ctx.lastPainSpike;
+      if (!spike || typeof spike.pain !== "number" || spike.pain < 7) return false;
+      const spikeTime = new Date(spike.dateISO).getTime();
+      if (!Number.isFinite(spikeTime)) return false;
+      const nowTime = new Date(ctx.nowISO).getTime();
+      const ageMs = nowTime - spikeTime;
+      return ageMs >= 0 && ageMs <= 24 * 60 * 60 * 1000;
+    },
+    build: () => ({
+      id: "injury_pain_spike",
+      title: "Ta douleur a nettement augmenté",
+      message: SAFETY_PHRASES.PAIN_SPIKE_ALERT,
+      tone: "danger",
+      icon: "alert-circle",
+      nonDismissable: true,
+      extraActions: [
+        { label: "SAMU 15", telNumber: "15" },
+        { label: "Urgences 112", telNumber: "112" },
+        { label: "J'ai consulté c'est OK", route: "Profile" },
+      ],
+    }),
+  },
+
   // Priorité 1: Match aujourd'hui
   {
     id: "match_today",
@@ -270,6 +336,31 @@ export const ADVICE_RULES: AdviceRule[] = [
       tone: "success",
       icon: "rocket-outline",
       tip: "Quand tu es frais, c'est le meilleur moment pour travailler la vitesse et la puissance.",
+    }),
+  },
+
+  // Priorité 12.5 : progression d'une zone sensible détectée.
+  // Règle 4 de INJURY_IA_CHARTER.md : carte suggestion dismissable —
+  // 3 feedbacks consécutifs avec pain <= 2 ET injuryMaxSeverity >= 2.
+  // L'IA ne modifie JAMAIS activeInjuries automatiquement : la carte propose
+  // au joueur d'ajuster son statut lui-même (bouton "Ajuster" vers Profile).
+  {
+    id: "injury_progress_detected",
+    priority: 12,
+    condition: (ctx) => {
+      if ((ctx.injuryMaxSeverity ?? 0) < 2) return false;
+      const scores = ctx.recentInjuryPainScores ?? [];
+      if (scores.length < 3) return false;
+      return scores.slice(0, 3).every((p) => typeof p === "number" && p <= 2);
+    },
+    build: () => ({
+      id: "injury_progress_detected",
+      title: "Bonne nouvelle",
+      message: SAFETY_PHRASES.INJURY_PROGRESS_SUGGESTION,
+      tone: "success",
+      icon: "trending-up-outline",
+      actionLabel: "Ajuster",
+      actionRoute: "Profile",
     }),
   },
 

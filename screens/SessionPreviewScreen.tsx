@@ -25,7 +25,10 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { SectionHeader } from '../components/ui/SectionHeader';
 import { SafetyBanner } from '../components/ui/SafetyBanner';
+import { InjuryBanner } from '../components/InjuryBanner';
 import { YouTubePlayer } from '../components/ui/YouTubePlayer';
+import { SAFETY_PHRASES } from '../shared/SAFETY_PHRASES';
+import { showToast } from '../utils/toast';
 import { useSettingsStore } from '../state/settingsStore';
 import { withSessionErrorBoundary } from '../components/withErrorBoundary';
 import { ModalContainer } from '../components/modal/ModalContainer';
@@ -64,6 +67,14 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
   const phase = useSessionsStore((s) => s.phase);
   const tsb = useLoadStore((s) => s.tsb);
   const profile = useSessionsStore((s) => s.lastAiContext?.profile ?? null);
+  // MVP blessures Jour 3 — source : `lastAiContext.constraints.injury_max_severity`
+  // (émis par aiContext.ts quand activeInjuries non vide). Utilisé pour :
+  //   - afficher le bouton "Je préfère me reposer" (severity >= 2, règle 6 charte).
+  //   - afficher le disclaimer bas de séance (severity >= 2, règle 7 charte).
+  const injuryMaxSeverity = useSessionsStore(
+    (s) => s.lastAiContext?.constraints?.injury_max_severity ?? 0,
+  );
+  const showInjurySafetyExtras = injuryMaxSeverity >= 2;
   const sessions = useSessionsStore((s) => s.sessions);
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
   const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
@@ -432,6 +443,10 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
                 cycleType={microcycleGoal}
               />
 
+              {/* Bandeau coach blessures (règle 2 de INJURY_IA_CHARTER.md).
+                  Rendu uniquement si Agent B a rempli injury_adaptation_explanation. */}
+              <InjuryBanner text={v2.injuryAdaptationExplanation} />
+
               {playerPreviewContext.coachNote ? (
                 <Card variant="surface" style={styles.coachNoteCard}>
                   <View style={styles.coachNoteHeader}>
@@ -626,7 +641,7 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
               })()}
 
               {/* Finish */}
-              <View style={{ marginBottom: 24 }}>
+              <View style={{ marginBottom: 12 }}>
                 <Button
                   label={finishLabel}
                   onPress={finishAction}
@@ -635,6 +650,44 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
                   disabled={isCompleted}
                 />
               </View>
+
+              {/* Bouton "Je préfère me reposer" — règle 6 de INJURY_IA_CHARTER.md.
+                  Affiché uniquement si severity >= 2. Ne démarre PAS la séance :
+                  retourne au Home avec une validation positive du repos. */}
+              {showInjurySafetyExtras ? (
+                <View style={{ marginBottom: 12 }}>
+                  <TouchableOpacity
+                    style={styles.restButton}
+                    onPress={() => {
+                      showToast({
+                        type: "success",
+                        title: "Bonne décision",
+                        message: SAFETY_PHRASES.REST_VALIDATION,
+                      });
+                      nav.navigate("Tabs", { screen: "Home" });
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Je préfère me reposer aujourd'hui"
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="bed-outline" size={16} color={palette.sub} />
+                    <Text style={styles.restButtonText}>Je préfère me reposer aujourd'hui</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+
+              {/* Disclaimer bas de séance — règle 7 de INJURY_IA_CHARTER.md.
+                  Non-dismissable, italique, icône médicale. Severity >= 2 uniquement. */}
+              {showInjurySafetyExtras ? (
+                <View style={[styles.sessionFooterWarning, { marginBottom: 24 }]}>
+                  <Ionicons name="medical-outline" size={14} color={palette.sub} />
+                  <Text style={styles.sessionFooterWarningText}>
+                    {SAFETY_PHRASES.SESSION_FOOTER_WARNING}
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ marginBottom: 12 }} />
+              )}
             </Animated.View>
           </ScrollView>
           <YouTubePlayer
@@ -652,6 +705,40 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
 export default withSessionErrorBoundary(SessionPreviewScreen);
 
 const styles = StyleSheet.create({
+  // MVP blessures Jour 3 — bouton "Je préfère me reposer" (règle 6) +
+  // disclaimer bas de séance (règle 7). Styles discrets, jamais alarmants.
+  restButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.cardSoft,
+    minHeight: 44,
+  },
+  restButtonText: {
+    fontSize: TYPE.caption.fontSize,
+    color: palette.sub,
+    fontWeight: '600',
+  },
+  sessionFooterWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    paddingHorizontal: 6,
+  },
+  sessionFooterWarningText: {
+    flex: 1,
+    fontSize: TYPE.micro.fontSize,
+    lineHeight: 14,
+    color: palette.sub,
+    fontStyle: 'italic',
+  },
+
   modalRoot: { flex: 1, backgroundColor: 'transparent' },
   modalHeaderRow: {
     flexDirection: 'row',

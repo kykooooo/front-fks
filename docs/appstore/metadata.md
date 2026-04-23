@@ -30,3 +30,6 @@ https://ton-site.com/privacy
 
 ## Notes TestFlight
 Application de prépa physique football avec cycles personnalisés. Merci de tester la génération et la cohérence des séances selon lieu.
+
+### Release MVP blessures (Jour 3)
+Cette version ajoute la déclaration de zones sensibles (gênes/douleurs) pour adapter les séances. Données stockées chiffrées sur Firebase (UE). Disclaimer médical affiché au moment de la saisie. Aucune revendication de diagnostic.

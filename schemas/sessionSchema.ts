@@ -93,6 +93,11 @@ export const sessionV2Schema = z.object({
   session_theme: z.string().nullable().optional().catch(null),
   coaching_tips: z.array(z.string()).optional().catch([]),
   recovery_tips: z.array(z.string()).optional().catch([]),
+  // MVP blessures Jour 3 — bandeau coach (200 chars max côté back).
+  // Côté front on reste tolérant : si le back envoie une string > 200, on
+  // tronque via `.catch(null)` qui renverra null plutôt que de casser.
+  // Consommé par `components/InjuryBanner.tsx` (en haut de SessionPreview).
+  injury_adaptation_explanation: z.string().max(200).nullable().optional().catch(null),
   post_session: postSessionSchema.optional().catch(null),
   selection_debug: z.object({
     reasons: z.array(z.string()).optional().catch([]),

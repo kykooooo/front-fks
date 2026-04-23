@@ -35,13 +35,18 @@ export const FATIGUE_SCALE: SegmentedOption[] = [
   { value: 5, label: 'Très fatigué' },
 ];
 
+// Échelle EVA 0-10 (norme médicale), remappée sur 6 segments UI pour
+// préserver la simplicité mobile. Les valeurs sont 0/2/4/6/8/10.
+// Seuils clés :
+//   - value >= 6 : PAIN_THRESHOLDS.smallEffectFrom → petite réduction charge
+//   - value >= 7 : déclenche la règle injury_pain_spike (carte Home CRITIQUE)
 export const PAIN_SCALE: SegmentedOption[] = [
   { value: 0, label: 'Aucune gêne' },
-  { value: 1, label: 'Très légère' },
-  { value: 2, label: 'Présente' },
-  { value: 3, label: 'Gênante' },
-  { value: 4, label: 'Importante' },
-  { value: 5, label: 'Limitante' },
+  { value: 2, label: 'Très légère' },
+  { value: 4, label: 'Présente' },
+  { value: 6, label: 'Gênante' },
+  { value: 8, label: 'Importante' },
+  { value: 10, label: 'Limitante' },
 ];
 
 export const RECOVERY_SCALE: SegmentedOption[] = [

@@ -15,11 +15,14 @@ export const INJURY_AREAS: InjuryArea[] = [
   'autre',
 ];
 
+// Vocabulaire UI (Option A validée Jour 3) : "gêne" plutôt que "blessure".
+// Les clés numériques 0..3 restent la source de vérité côté type `InjurySeverity`
+// (domain/types.ts) et côté Firestore (schemas/firestoreSchemas.ts).
 export const INJURY_SEVERITY_LABELS: Record<0|1|2|3, string> = {
-  0: 'OK',
-  1: 'Gêne',
-  2: 'Modérée',
-  3: 'Forte',
+  0: 'Pas de gêne',
+  1: 'Gêne légère',
+  2: 'Gêne modérée',
+  3: 'Gêne forte',
 };
 
 export const INJURY_TYPES = ['aigu', 'chronique'] as const;

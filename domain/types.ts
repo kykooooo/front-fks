@@ -18,6 +18,16 @@ export type Modality = 'run' | 'circuit' | 'strength' | 'plyo' | 'cod' | 'speed'
 export type RPE1to10 = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 export type Rating1to5 = 1 | 2 | 3 | 4 | 5;
 export type Rating0to5 = 0 | 1 | 2 | 3 | 4 | 5;
+/**
+ * Échelle EVA standard (Échelle Visuelle Analogique) — 0..10.
+ * Utilisée pour `SessionFeedback.pain` (norme médicale + alignée
+ * avec le seuil `pain >= 7` de la règle 5 de INJURY_IA_CHARTER.md).
+ *
+ * Note migration : anciennes sauvegardes 0..5 restent valides numériquement
+ * (un `pain=3` ancien devient "pain faible" sur 0..10, comportement dégradé
+ * mais non catastrophique — aucune règle critique ne se déclenche à tort).
+ */
+export type Rating0to10 = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
 export const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 export function toRPE1to10(n: number): RPE1to10 {
@@ -31,6 +41,10 @@ export function toRating1to5(n: number): Rating1to5 {
 export function toRating0to5(n: number): Rating0to5 {
   const v = Math.round(clamp(n, 0, 5));
   return v as Rating0to5;
+}
+export function toRating0to10(n: number): Rating0to10 {
+  const v = Math.round(clamp(n, 0, 10));
+  return v as Rating0to10;
 }
 
 export type Exercise = {
@@ -46,12 +60,13 @@ export type Exercise = {
 };
 
 export type SessionFocus = 'endurance' | 'threshold' | 'speed' | 'strength' | 'mixed';
+export type SessionStatus = 'planned' | 'in_progress' | 'completed';
 
 export interface SessionFeedback {
   rpe: RPE1to10;       // 1–10
   fatigue: Rating1to5; // 1–5
   sleep: Rating1to5;   // 1–5 (legacy UI) → mappée en recoveryPerceived (info-only)
-  pain: Rating0to5;    // 0–5 (0 = aucune gêne)
+  pain: Rating0to10;   // 0–10 (EVA, 0 = aucune gêne, 7+ = pic déclenche injury_pain_spike)
   durationMin?: number;
   comment?: string;
   createdAt: string;   // ISO
@@ -80,7 +95,9 @@ export type Session = {
   intensity: Intensity;     // intensité globale perçue
   volumeScore: number;      // score volume (heuristique simple)
   exercises: Exercise[];
+  status?: SessionStatus;
   completed?: boolean;
+  startedAt?: string;
 
   // ---- Charge / feedback ----
   durationMin?: number;     // durée effective (minutes)

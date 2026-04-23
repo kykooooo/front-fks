@@ -63,6 +63,9 @@ export type FKS_NextSessionV2 = {
   sessionTheme?: string | null;
   coachingTips?: string[];
   recoveryTips?: string[];
+  // MVP blessures Jour 3 — bandeau coach court affiché en haut de
+  // SessionPreview si activeInjuries non vide (règle 2 de la charte IA).
+  injuryAdaptationExplanation?: string | null;
   postSession?: {
     cooldownMin?: number;
     mobility?: string[];
