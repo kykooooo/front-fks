@@ -10,9 +10,16 @@ import { useExternalStore } from "../../state/stores/useExternalStore";
 import { useFeedbackStore } from "../../state/stores/useFeedbackStore";
 import { useDebugStore } from "../../state/stores/useDebugStore";
 import { useRoutineBadges } from "../useRoutineBadges";
+import { useActiveInjuries } from "../useActiveInjuries";
 import { ADVICE_RULES, type Advice, type AdviceContext } from "../../domain/adviceRules";
 import { frToKey, toDateKey } from "../../utils/dateHelpers";
 import { MICROCYCLE_TOTAL_SESSIONS_DEFAULT } from "../../domain/microcycles";
+
+// MVP blessures Jour 4 — fenêtres temporelles pour les règles.
+const MS_PER_DAY = 86_400_000;
+const INJURY_STALE_DAYS = 7;        // règle `injury_stale` : carte Home "Toujours sensible ?"
+const INJURY_AUTO_DISABLE_DAYS = 14; // règle D : au-delà, injury filtrée en lecture
+const PAIN_WINDOW_DAYS = 14;        // règle 4 charte : fenêtre glissante scores pain
 
 // Catégories de routines mobilité (pour détecter dernière mobilité)
 const MOBILITY_CATEGORIES = ["MOBILITÉ EXPRESS", "PACK 7 JOURS"];
@@ -29,14 +36,19 @@ export function useContextualAdvice(): Advice | null {
   const devNowISO = useDebugStore((s) => s.devNowISO);
   const dayStates = useFeedbackStore((s) => s.dayStates ?? {});
   const completedRoutines = useExternalStore((s) => s.completedRoutines ?? []);
-  // MVP blessures Jour 3 : alimente les règles injury_progress_detected
-  // (règle 4 charte) + injury_pain_spike (règle 5 charte).
-  // Source `injuryMaxSeverity` : `lastAiContext.constraints.injury_max_severity`
-  // rempli par aiContext.ts depuis `profile.activeInjuries`.
-  const injuryMaxSeverity = useSessionsStore(
+  // MVP blessures Jour 3 : fallback injuryMaxSeverity depuis lastAiContext.
+  // Utilisé uniquement si `useActiveInjuries` est encore en loading (premier
+  // render après mount). La source primaire (Firestore temps réel via
+  // useActiveInjuries) prend le relais dès qu'elle est prête.
+  const injuryMaxSeverityFromAiContext = useSessionsStore(
     (s) => s.lastAiContext?.constraints?.injury_max_severity ?? 0,
   );
   const sessionsList = useSessionsStore((s) => s.sessions ?? []);
+
+  // MVP blessures Jour 4 : source Firestore temps réel des zones sensibles.
+  // Alimente les règles `injury_stale` + filtrage auto-désactivation 14j +
+  // `injuryMaxSeverity` à jour sans attendre une nouvelle génération.
+  const { activeInjuries, lastSeenPainSpike, loading: injuriesLoading } = useActiveInjuries();
 
   // Badges routines (pour streak)
   const routineBadges = useRoutineBadges();
@@ -88,22 +100,65 @@ export function useContextualAdvice(): Advice | null {
       daysSinceLastMobility = differenceInDays(now, lastMobilityDate);
     }
 
-    // === Blessure active ===
-    const todayDayState = dayStates[nowISO];
-    const injury = todayDayState?.feedback?.injury;
-    const hasActiveInjury = Boolean(injury && injury.severity > 0);
-    const injuryArea = injury?.area;
+    // === Blessures — source Firestore (Jour 4) ===
+    // Auto-désactivation en lecture : les injuries sans lastConfirm récent
+    // (> 14 jours) sont filtrées avant d'atteindre les règles. On ne modifie
+    // PAS activeInjuries côté Firestore (respect charte règle 3).
+    const nowMs = now.getTime();
+    const filteredActiveInjuries = activeInjuries.filter((i) => {
+      const ref = i.lastConfirm || i.startDate;
+      const refMs = new Date(ref).getTime();
+      if (!Number.isFinite(refMs)) return true; // date corrompue : on garde par prudence
+      const days = (nowMs - refMs) / MS_PER_DAY;
+      return days <= INJURY_AUTO_DISABLE_DAYS;
+    });
 
-    // === MVP Jour 3 : données pour injury_progress_detected + injury_pain_spike ===
-    // Trié desc : session la plus récente en premier.
+    // Injury "stale" (entre 7 et 14 jours sans confirmation) → règle injury_stale.
+    let staleInjury: { area: string; daysSince: number } | null = null;
+    for (const i of filteredActiveInjuries) {
+      const ref = i.lastConfirm || i.startDate;
+      const refMs = new Date(ref).getTime();
+      if (!Number.isFinite(refMs)) continue;
+      const days = Math.floor((nowMs - refMs) / MS_PER_DAY);
+      if (days > INJURY_STALE_DAYS && days <= INJURY_AUTO_DISABLE_DAYS) {
+        staleInjury = { area: i.area, daysSince: days };
+        break;
+      }
+    }
+
+    // injuryMaxSeverity — source primaire : filteredActiveInjuries.
+    // Fallback : lastAiContext (en cas de loading du hook Firestore).
+    const maxFromFiltered = filteredActiveInjuries.reduce(
+      (max, i) => Math.max(max, Number(i.severity ?? 0)),
+      0,
+    );
+    const injuryMaxSeverity = injuriesLoading
+      ? injuryMaxSeverityFromAiContext
+      : Math.max(maxFromFiltered, 0);
+
+    // Compat legacy `hasActiveInjury` / `injuryArea` — priorité au profil,
+    // fallback sur le feedback du jour (pour les joueurs pré-MVP).
+    const todayDayState = dayStates[nowISO];
+    const injuryFallback = todayDayState?.feedback?.injury;
+    const hasActiveInjury =
+      filteredActiveInjuries.length > 0 ||
+      Boolean(injuryFallback && injuryFallback.severity > 0);
+    const injuryArea = filteredActiveInjuries[0]?.area ?? injuryFallback?.area;
+
+    // === MVP Jour 4 : pain scores fenêtre 14j (règle 4 charte rescalée) ===
+    const windowStartMs = nowMs - PAIN_WINDOW_DAYS * MS_PER_DAY;
     const sortedSessions = [...sessionsList]
       .filter((s) => typeof s?.feedback?.pain === "number")
       .sort((a, b) => new Date(b?.dateISO ?? b?.date ?? 0).getTime() - new Date(a?.dateISO ?? a?.date ?? 0).getTime());
-    // 3 derniers scores de pain (ordre décroissant — plus récent d'abord).
-    const recentInjuryPainScores = sortedSessions
-      .slice(0, 3)
+
+    const recentInjuryPainScoresLast14Days = sortedSessions
+      .filter((s) => {
+        const t = new Date(s?.dateISO ?? s?.date ?? 0).getTime();
+        return Number.isFinite(t) && t >= windowStartMs;
+      })
       .map((s) => Number(s.feedback?.pain ?? 0))
       .filter((n) => Number.isFinite(n));
+
     // Dernier pic de douleur (pain >= 7 sur échelle EVA 0-10 unifiée).
     // Règle 5 de INJURY_IA_CHARTER.md.
     const spikeCandidate = sortedSessions.find((s) => Number(s.feedback?.pain ?? 0) >= 7);
@@ -136,8 +191,10 @@ export function useContextualAdvice(): Advice | null {
       hasActiveInjury,
       injuryArea,
       injuryMaxSeverity,
-      recentInjuryPainScores,
+      recentInjuryPainScoresLast14Days,
       lastPainSpike,
+      lastSeenPainSpikeISO: lastSeenPainSpike,
+      staleInjury,
       nowISO,
     };
 
@@ -163,7 +220,10 @@ export function useContextualAdvice(): Advice | null {
     dayStates,
     completedRoutines,
     routineBadges.streak,
-    injuryMaxSeverity,
+    injuryMaxSeverityFromAiContext,
     sessionsList,
+    activeInjuries,
+    lastSeenPainSpike,
+    injuriesLoading,
   ]);
 }

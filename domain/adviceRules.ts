@@ -14,6 +14,7 @@ export type AdviceId =
   | "post_match"
   | "tsb_fatigue"
   | "injury_active"
+  | "injury_stale"
   | "cycle_almost_done"
   | "no_mobility"
   | "routine_streak"
@@ -50,6 +51,12 @@ export type Advice = {
    * Utilisé par `injury_pain_spike` (règle 5 de INJURY_IA_CHARTER.md).
    */
   nonDismissable?: boolean;
+  /**
+   * Si défini, indique au consumer (HomeScreen) d'ouvrir un modal dédié
+   * plutôt que de naviguer simplement. Valeurs supportées actuellement :
+   *   - `"pain_spike"` : ouvre `components/PainSpikeModal.tsx` (3 boutons).
+   */
+  modal?: "pain_spike";
 };
 
 export type AdviceContext = {
@@ -87,16 +94,35 @@ export type AdviceContext = {
    */
   injuryMaxSeverity?: number;
   /**
-   * Scores de douleur (`feedback.pain`) des 3 dernières séances.
-   * Règle 4 de INJURY_IA_CHARTER.md : détecte une baisse si les 3
-   * sont <= 2 ET `injuryMaxSeverity >= 2`.
+   * Scores de douleur (`feedback.pain`) des feedbacks renseignés dans
+   * les 14 derniers jours (règle 4 mise à jour Jour 4 de
+   * INJURY_IA_CHARTER.md). La règle `injury_progress_detected` se
+   * déclenche si `length >= 3` ET pain moyen `<= 2` ET
+   * `injuryMaxSeverity >= 2`. Plus robuste au skip de feedback que
+   * l'ancienne "3 consécutifs".
    */
-  recentInjuryPainScores?: number[];
+  recentInjuryPainScoresLast14Days?: number[];
   /**
-   * Dernier feedback avec une douleur élevée (>= 7 sur l'échelle 0-10
-   * Firestore). Si présent et dans les 24h, déclenche `injury_pain_spike`.
+   * Dernier feedback avec une douleur élevée (>= 7 sur l'échelle EVA
+   * 0-10 unifiée). Si présent, dans les 24h, ET non-acquitté via
+   * `lastSeenPainSpikeISO`, déclenche `injury_pain_spike`.
    */
   lastPainSpike?: { pain: number; dateISO: string } | null;
+  /**
+   * Timestamp ISO du dernier acquittement manuel d'un pic de douleur
+   * (bouton "J'ai consulté" de PainSpikeModal). Si `>= lastPainSpike.dateISO`,
+   * la règle `injury_pain_spike` ne se déclenche pas (évite re-trigger
+   * infini sur le même feedback).
+   */
+  lastSeenPainSpikeISO?: string | null;
+  /**
+   * Injury dont `lastConfirm` date de plus de 7 jours mais moins de 14
+   * jours (Jour 4 règle D). Si présent, déclenche `injury_stale` —
+   * carte Home de confirmation "Ta [zone] est toujours sensible ?".
+   * Au-delà de 14 jours, l'injury est auto-désactivée côté lecture
+   * (filtrée avant d'atteindre ce champ).
+   */
+  staleInjury?: { area: string; daysSince: number } | null;
 
   // Date
   nowISO: string;
@@ -112,7 +138,10 @@ export type AdviceRule = {
 export const ADVICE_RULES: AdviceRule[] = [
   // Priorité 0 (CRITIQUE, passe avant tout) : pic de douleur signalé.
   // Règle 5 de INJURY_IA_CHARTER.md : non-dismissable jusqu'à action.
-  // Trigger : dernier feedback avec `pain >= 7` dans les 24h.
+  // Trigger : dernier feedback avec `pain >= 7` dans les 24h, ET non
+  // acquitté via PainSpikeModal (lastSeenPainSpikeISO < lastPainSpike.dateISO).
+  // Le consumer (HomeScreen) détecte `modal: "pain_spike"` et ouvre
+  // `components/PainSpikeModal.tsx` (Jour 4).
   {
     id: "injury_pain_spike",
     priority: 0,
@@ -123,7 +152,14 @@ export const ADVICE_RULES: AdviceRule[] = [
       if (!Number.isFinite(spikeTime)) return false;
       const nowTime = new Date(ctx.nowISO).getTime();
       const ageMs = nowTime - spikeTime;
-      return ageMs >= 0 && ageMs <= 24 * 60 * 60 * 1000;
+      if (ageMs < 0 || ageMs > 24 * 60 * 60 * 1000) return false;
+
+      // Déjà acquitté manuellement via PainSpikeModal ?
+      if (ctx.lastSeenPainSpikeISO) {
+        const ackTime = new Date(ctx.lastSeenPainSpikeISO).getTime();
+        if (Number.isFinite(ackTime) && ackTime >= spikeTime) return false;
+      }
+      return true;
     },
     build: () => ({
       id: "injury_pain_spike",
@@ -132,10 +168,11 @@ export const ADVICE_RULES: AdviceRule[] = [
       tone: "danger",
       icon: "alert-circle",
       nonDismissable: true,
+      modal: "pain_spike",
       extraActions: [
         { label: "SAMU 15", telNumber: "15" },
         { label: "Urgences 112", telNumber: "112" },
-        { label: "J'ai consulté c'est OK", route: "Profile" },
+        { label: "Modifier ma zone sensible", route: "Profile" },
       ],
     }),
   },
@@ -339,19 +376,23 @@ export const ADVICE_RULES: AdviceRule[] = [
     }),
   },
 
-  // Priorité 12.5 : progression d'une zone sensible détectée.
-  // Règle 4 de INJURY_IA_CHARTER.md : carte suggestion dismissable —
-  // 3 feedbacks consécutifs avec pain <= 2 ET injuryMaxSeverity >= 2.
+  // Priorité 12 : progression d'une zone sensible détectée.
+  // Règle 4 de INJURY_IA_CHARTER.md (rescalée Jour 4) :
+  //   ≥ 3 feedbacks renseignés dans les 14 derniers jours
+  //   ET pain moyen ≤ 2
+  //   ET injuryMaxSeverity >= 2.
+  // Plus robuste au skip de feedback que l'ancienne version "3 consécutifs".
   // L'IA ne modifie JAMAIS activeInjuries automatiquement : la carte propose
-  // au joueur d'ajuster son statut lui-même (bouton "Ajuster" vers Profile).
+  // au joueur d'ajuster son statut (bouton "Ajuster" → Profile).
   {
     id: "injury_progress_detected",
     priority: 12,
     condition: (ctx) => {
       if ((ctx.injuryMaxSeverity ?? 0) < 2) return false;
-      const scores = ctx.recentInjuryPainScores ?? [];
+      const scores = ctx.recentInjuryPainScoresLast14Days ?? [];
       if (scores.length < 3) return false;
-      return scores.slice(0, 3).every((p) => typeof p === "number" && p <= 2);
+      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+      return avg <= 2;
     },
     build: () => ({
       id: "injury_progress_detected",
@@ -362,6 +403,28 @@ export const ADVICE_RULES: AdviceRule[] = [
       actionLabel: "Ajuster",
       actionRoute: "Profile",
     }),
+  },
+
+  // Priorité 11 : zone sensible sans confirmation depuis 7-14 jours.
+  // Règle D du scope Jour 4. Au-delà de 14 jours, l'injury est filtrée
+  // côté hook `useContextualAdvice` (auto-désactivation en lecture), donc
+  // `ctx.staleInjury` ne sera pas défini pour les cas > 14j.
+  {
+    id: "injury_stale",
+    priority: 11,
+    condition: (ctx) => ctx.staleInjury != null,
+    build: (ctx) => {
+      const stale = ctx.staleInjury!;
+      return {
+        id: "injury_stale",
+        title: `Ta ${stale.area} — on fait le point ?`,
+        message: `Signalée il y a ${stale.daysSince} jour${stale.daysSince > 1 ? "s" : ""}. Toujours sensible ou plus besoin de précaution ?`,
+        tone: "info",
+        icon: "time-outline",
+        actionLabel: "Vérifier",
+        actionRoute: "Profile",
+      };
+    },
   },
 
   // Priorité 13: État neutre (fallback)

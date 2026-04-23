@@ -130,6 +130,12 @@ export const userProfileSchema = z.object({
     .nullable()
     .optional()
     .catch(null),
+
+  // MVP blessures Jour 4 — timestamp ISO du dernier acquittement manuel
+  // d'un pic de douleur via PainSpikeModal (bouton "J'ai consulté, la
+  // déclaration reste active"). Empêche la carte injury_pain_spike de
+  // re-déclencher sur le même feedback quand l'utilisateur a déjà répondu.
+  lastSeenPainSpike: z.string().nullable().optional().catch(null),
 }).passthrough(); // allow extra Firestore fields we don't care about
 
 export type UserProfileParsed = z.infer<typeof userProfileSchema>;
