@@ -29,6 +29,14 @@ export function useContextualAdvice(): Advice | null {
   const devNowISO = useDebugStore((s) => s.devNowISO);
   const dayStates = useFeedbackStore((s) => s.dayStates ?? {});
   const completedRoutines = useExternalStore((s) => s.completedRoutines ?? []);
+  // MVP blessures Jour 3 : alimente les règles injury_progress_detected
+  // (règle 4 charte) + injury_pain_spike (règle 5 charte).
+  // Source `injuryMaxSeverity` : `lastAiContext.constraints.injury_max_severity`
+  // rempli par aiContext.ts depuis `profile.activeInjuries`.
+  const injuryMaxSeverity = useSessionsStore(
+    (s) => s.lastAiContext?.constraints?.injury_max_severity ?? 0,
+  );
+  const sessionsList = useSessionsStore((s) => s.sessions ?? []);
 
   // Badges routines (pour streak)
   const routineBadges = useRoutineBadges();
@@ -86,6 +94,26 @@ export function useContextualAdvice(): Advice | null {
     const hasActiveInjury = Boolean(injury && injury.severity > 0);
     const injuryArea = injury?.area;
 
+    // === MVP Jour 3 : données pour injury_progress_detected + injury_pain_spike ===
+    // Trié desc : session la plus récente en premier.
+    const sortedSessions = [...sessionsList]
+      .filter((s) => typeof s?.feedback?.pain === "number")
+      .sort((a, b) => new Date(b?.dateISO ?? b?.date ?? 0).getTime() - new Date(a?.dateISO ?? a?.date ?? 0).getTime());
+    // 3 derniers scores de pain (ordre décroissant — plus récent d'abord).
+    const recentInjuryPainScores = sortedSessions
+      .slice(0, 3)
+      .map((s) => Number(s.feedback?.pain ?? 0))
+      .filter((n) => Number.isFinite(n));
+    // Dernier pic de douleur (pain >= 7 sur échelle EVA 0-10 unifiée).
+    // Règle 5 de INJURY_IA_CHARTER.md.
+    const spikeCandidate = sortedSessions.find((s) => Number(s.feedback?.pain ?? 0) >= 7);
+    const lastPainSpike = spikeCandidate
+      ? {
+          pain: Number(spikeCandidate.feedback?.pain ?? 0),
+          dateISO: String(spikeCandidate.dateISO ?? spikeCandidate.date ?? nowISO),
+        }
+      : null;
+
     // === Cycle remaining ===
     const cycleRemaining = MICROCYCLE_TOTAL_SESSIONS_DEFAULT - microcycleSessionIndex;
 
@@ -107,6 +135,9 @@ export function useContextualAdvice(): Advice | null {
       routineStreak: routineBadges.streak,
       hasActiveInjury,
       injuryArea,
+      injuryMaxSeverity,
+      recentInjuryPainScores,
+      lastPainSpike,
       nowISO,
     };
 
@@ -132,5 +163,7 @@ export function useContextualAdvice(): Advice | null {
     dayStates,
     completedRoutines,
     routineBadges.streak,
+    injuryMaxSeverity,
+    sessionsList,
   ]);
 }

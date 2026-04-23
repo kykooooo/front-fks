@@ -117,6 +117,19 @@ export const userProfileSchema = z.object({
   // Sérialisé par aiContext vers constraints.pains[] via shared/injuryMapping.
   // `.catch([])` neutralise les profils legacy (pas de migration active requise).
   activeInjuries: z.array(activeInjurySchema).catch([]),
+
+  // Consentement RGPD art. 9 (données de santé) — MVP blessures Jour 3.
+  // Donné à l'inscription via les 2 checkboxes de l'étape 4 (médical + RGPD).
+  // `version` permet de forcer un re-consentement si la politique change.
+  // Absent tant que le joueur n'a pas déclaré de zone sensible.
+  healthConsent: z
+    .object({
+      givenAt: z.string().catch(""),
+      version: z.string().catch("1.0"),
+    })
+    .nullable()
+    .optional()
+    .catch(null),
 }).passthrough(); // allow extra Firestore fields we don't care about
 
 export type UserProfileParsed = z.infer<typeof userProfileSchema>;
@@ -201,7 +214,10 @@ const injuryRecordSchema = injuryRecordBaseSchema.nullable().optional().catch(nu
 
 export const dailyFeedbackSchema = z.object({
   fatigue: z.number().min(1).max(5).catch(3),
-  pain: z.number().min(0).max(5).catch(0),
+  // Pain sur échelle EVA 0-10 (unification — était 0-5 en daily mais
+  // sessionFeedback acceptait déjà 0-10 depuis longtemps, d'où le conflit).
+  // Voir INJURY_IA_CHARTER.md règle 5.
+  pain: z.number().min(0).max(10).catch(0),
   recoveryPerceived: z.number().min(1).max(5).optional().catch(undefined),
   injury: injuryRecordSchema,
   timestamp: z.string().catch(""),
