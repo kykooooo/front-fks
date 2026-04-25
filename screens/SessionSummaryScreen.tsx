@@ -1,10 +1,11 @@
-// screens/SessionSummaryScreen.tsx
+﻿// screens/SessionSummaryScreen.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Animated } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { View, Text, StyleSheet, ScrollView, Animated, AccessibilityInfo } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { CommonActions, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
+import { LinearGradient } from "expo-linear-gradient";
 import type { AppStackParamList } from "../navigation/RootNavigator";
-import { theme } from "../constants/theme";
+import { theme, TYPE, RADIUS } from "../constants/theme";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
@@ -13,14 +14,23 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLoadStore } from "../state/stores/useLoadStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { updateTrainingLoad } from "../engine/loadModel";
+import { getTauForLevel } from "../config/trainingDefaults";
 import { useSettingsStore } from "../state/settingsStore";
-import { ImageBanner } from "../components/ui/ImageBanner";
-import { BANNER_IMAGES, BANNER_FALLBACK } from "../constants/bannerImages";
+import { useHaptics } from "../hooks/useHaptics";
+import { PitchDecoration } from "../components/ui/PitchDecoration";
+import { TrainingIllustration } from "../components/ui/TrainingIllustration";
+import { isSessionCompleted } from "../utils/sessionStatus";
 
 type SummaryRoute = RouteProp<AppStackParamList, "SessionSummary">;
 
 const palette = theme.colors;
 const AUTO_FEEDBACK_DELAY_MS = 4000;
+const CELEBRATION_MESSAGES = [
+  "Tu viens de poser une brique. La suite demain.",
+  "Chaque séance te rapproche de ton meilleur niveau.",
+  "Le talent, c'est le travail. Tu es sur la bonne voie.",
+  "Les meilleurs s'entraînent quand personne ne regarde.",
+] as const;
 
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
@@ -35,16 +45,19 @@ const intensityTone = (intensity?: string) => {
 
 export default function SessionSummaryScreen() {
   const nav = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const route = useRoute<SummaryRoute>();
   const { summary, sessionId } = route.params;
   const atl = useLoadStore((s) => s.atl);
   const ctl = useLoadStore((s) => s.ctl);
   const tsb = useLoadStore((s) => s.tsb);
+  const playerLevel = useSessionsStore((s) => s.playerLevel);
   const sessionCompleted = useSessionsStore((s) =>
-    sessionId ? !!s.sessions.find((session) => session.id === sessionId)?.completed : false
+    sessionId ? isSessionCompleted(s.sessions.find((session) => session.id === sessionId)) : false
   );
+  const hasPendingFeedback = !!sessionId && !sessionCompleted;
   const autoFeedbackEnabled = useSettingsStore((s) => s.autoFeedbackEnabled);
-  const canAutoFeedback = !!sessionId && !sessionCompleted && autoFeedbackEnabled;
+  const canAutoFeedback = hasPendingFeedback && autoFeedbackEnabled;
 
   const [countdown, setCountdown] = useState(
     canAutoFeedback ? Math.ceil(AUTO_FEEDBACK_DELAY_MS / 1000) : 0
@@ -53,6 +66,10 @@ export default function SessionSummaryScreen() {
   const autoTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const didNavigateRef = useRef(false);
   const enter = useRef(new Animated.Value(0)).current;
+  const celebrationScale = useRef(new Animated.Value(0.6)).current;
+  const emojiScale = useRef(new Animated.Value(0)).current;
+  const [reduceMotion, setReduceMotion] = useState<boolean | null>(null);
+  const haptics = useHaptics();
 
   const totalItems = summary.totalItems ?? 0;
   const completedItems = summary.completedItems ?? 0;
@@ -70,8 +87,24 @@ export default function SessionSummaryScreen() {
       : undefined;
 
   const durationLabel = durationMin ? `${durationMin} min` : "—";
-  const rpeLabel = rpe ? `RPE ${rpe}` : "—";
   const itemsLabel = totalItems > 0 ? `${completedItems}/${totalItems}` : "—";
+  const summaryAdaptationLabels = useMemo(() => {
+    if (!Array.isArray(summary.adaptationLabels)) return [];
+    return Array.from(
+      new Set(
+        summary.adaptationLabels
+          .map((label) => (typeof label === "string" ? label.trim() : ""))
+          .filter((label) => label.length > 0)
+      )
+    ).slice(0, 4);
+  }, [summary.adaptationLabels]);
+  const summaryMethodBadges = useMemo(
+    () =>
+      [summary.cycleLabel, summary.cycleProgressLabel, summary.cyclePhaseLabel].filter(
+        (value): value is string => typeof value === "string" && value.trim().length > 0
+      ),
+    [summary.cycleLabel, summary.cycleProgressLabel, summary.cyclePhaseLabel]
+  );
 
   const estimatedLoad = useMemo(() => {
     if (typeof summary.srpe === "number" && Number.isFinite(summary.srpe)) {
@@ -85,12 +118,24 @@ export default function SessionSummaryScreen() {
 
   const projected = useMemo(() => {
     if (estimatedLoad == null) return null;
-    return updateTrainingLoad(atl, ctl, estimatedLoad);
-  }, [estimatedLoad, atl, ctl]);
+    const { tauAtl, tauCtl } = getTauForLevel(playerLevel);
+    return updateTrainingLoad(atl, ctl, estimatedLoad, { tauAtl, tauCtl });
+  }, [estimatedLoad, atl, ctl, playerLevel]);
 
   const projectedTsb = projected ? +projected.tsb.toFixed(1) : null;
   const projectedDelta =
     projectedTsb != null ? +(projectedTsb - tsb).toFixed(1) : null;
+  const effortRatio =
+    rpe != null ? clamp(rpe / 10, 0.12, 1) : estimatedLoad != null ? clamp(estimatedLoad / 360, 0.12, 1) : 0.32;
+  const completionWidth = clamp(completionRatio, 0, 1);
+  const effortValue = rpe != null ? `${rpe}/10` : summary.intensity ?? "—";
+  const celebrationMessage = useMemo(() => {
+    const progressKey = (summary.cycleProgressLabel ?? "").toLowerCase();
+    if (progressKey.includes("1/12")) return CELEBRATION_MESSAGES[0];
+    if (rpe != null && rpe >= 8) return CELEBRATION_MESSAGES[3];
+    if (completionPct != null && completionPct >= 100) return CELEBRATION_MESSAGES[1];
+    return CELEBRATION_MESSAGES[(durationMin ?? completedItems ?? 0) % CELEBRATION_MESSAGES.length];
+  }, [summary.cycleProgressLabel, rpe, completionPct, durationMin, completedItems]);
 
   const prefill = useMemo(() => {
     const next: { rpe?: number; durationMin?: number } = {};
@@ -132,18 +177,72 @@ export default function SessionSummaryScreen() {
       // Allow programmatic reset (our goHome / goFeedback)
       if (e.data.action.type === "RESET" || e.data.action.type === "NAVIGATE") return;
       e.preventDefault();
+      if (hasPendingFeedback) {
+        goFeedback();
+        return;
+      }
       goHome();
     });
     return unsubscribe;
-  }, [nav, goHome]);
+  }, [nav, goHome, goFeedback, hasPendingFeedback]);
 
   useEffect(() => {
-    Animated.timing(enter, {
-      toValue: 1,
-      duration: 420,
-      useNativeDriver: true,
-    }).start();
-  }, [enter]);
+    let mounted = true;
+    AccessibilityInfo.isReduceMotionEnabled().then((value) => {
+      if (mounted) setReduceMotion(value);
+    });
+    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", (value) => {
+      setReduceMotion(value);
+    });
+    return () => {
+      mounted = false;
+      sub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion == null) return;
+    if (reduceMotion) {
+      enter.setValue(1);
+      celebrationScale.setValue(1);
+      emojiScale.setValue(1);
+      return;
+    }
+    enter.setValue(0);
+    celebrationScale.setValue(0.6);
+    emojiScale.setValue(0);
+    haptics.success();
+    Animated.parallel([
+      Animated.timing(enter, {
+        toValue: 1,
+        duration: 420,
+        useNativeDriver: true,
+      }),
+      Animated.spring(celebrationScale, {
+        toValue: 1,
+        damping: 11,
+        stiffness: 120,
+        mass: 0.9,
+        useNativeDriver: true,
+      }),
+      Animated.sequence([
+        Animated.spring(emojiScale, {
+          toValue: 1.2,
+          damping: 9,
+          stiffness: 140,
+          mass: 0.7,
+          useNativeDriver: true,
+        }),
+        Animated.spring(emojiScale, {
+          toValue: 1,
+          damping: 10,
+          stiffness: 170,
+          mass: 0.8,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+  }, [reduceMotion, enter, celebrationScale, emojiScale]);
 
   useEffect(() => {
     didNavigateRef.current = false;
@@ -171,7 +270,13 @@ export default function SessionSummaryScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.container,
+          { paddingBottom: Math.max(20, insets.bottom + 16) },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
         <Animated.View
           style={[
             styles.content,
@@ -179,18 +284,77 @@ export default function SessionSummaryScreen() {
           ]}
         >
           <Card variant="surface" style={styles.heroCard}>
-            <ImageBanner
-              source={BANNER_IMAGES.celebration}
-              height={200}
-              fallbackColor={BANNER_FALLBACK.celebration}
-              borderRadius={18}
+            <LinearGradient
+              colors={[theme.colors.plum900, theme.colors.ember950, theme.colors.ink900]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.heroVisual}
             >
-              <Text style={styles.heroKicker}>Séance terminée 🔥</Text>
-              <Text style={styles.heroTitle}>{summary.title}</Text>
-            </ImageBanner>
+              <View style={styles.heroGlowWrap} pointerEvents="none">
+                <View style={[styles.heroGlow, styles.heroGlowTop]} />
+                <View style={[styles.heroGlow, styles.heroGlowBottom]} />
+              </View>
+              <PitchDecoration
+                type="centerCircle"
+                width={190}
+                height={190}
+                color={theme.colors.white}
+                opacity={0.08}
+                style={styles.heroCircle}
+              />
+              <PitchDecoration
+                type="cornerArc"
+                width={110}
+                height={110}
+                color={theme.colors.white}
+                opacity={0.07}
+                style={styles.heroCorner}
+              />
+              <TrainingIllustration
+                variant="summary"
+                width={170}
+                height={170}
+                primaryColor={theme.colors.white18}
+                accentColor={theme.colors.accentAlt}
+                secondaryColor={theme.colors.goldSoft50}
+                opacity={0.95}
+                style={styles.heroIllustration}
+              />
+              <Animated.View
+                style={[
+                  styles.heroCelebrateWrap,
+                  { transform: [{ scale: celebrationScale }] },
+                ]}
+              >
+                <View style={styles.heroCelebrateRow}>
+                  <Text style={styles.heroCelebrateTitle}>
+                    {"S\u00E9ance termin\u00E9e"}
+                  </Text>
+                  <Animated.View
+                    style={[
+                      styles.heroCelebrateIconWrap,
+                      { transform: [{ scale: emojiScale }] },
+                    ]}
+                  >
+                    <Ionicons
+                      name="flame"
+                      size={TYPE.hero.fontSize}
+                      color={theme.colors.accentAlt}
+                    />
+                  </Animated.View>
+                </View>
+                <Text style={styles.heroSessionTitle}>{summary.title}</Text>
+              </Animated.View>
+            </LinearGradient>
             <View style={styles.heroBody}>
+              <Text style={styles.heroCelebrationMessage}>{celebrationMessage}</Text>
               {summary.subtitle ? (
                 <Text style={styles.heroSubtitle}>{summary.subtitle}</Text>
+              ) : null}
+              {summary.sessionTheme ? (
+                <View style={styles.heroThemePill}>
+                  <Text style={styles.heroThemeText}>{summary.sessionTheme}</Text>
+                </View>
               ) : null}
               <View style={styles.heroBadges}>
                 {summary.plannedDateISO ? <Badge label={summary.plannedDateISO} /> : null}
@@ -214,38 +378,72 @@ export default function SessionSummaryScreen() {
             </View>
           </Card>
 
-          <Card variant="soft" style={styles.statsCard}>
-            <SectionHeader title="Stats rapides" />
-            <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{durationLabel}</Text>
-                <Text style={styles.statLabel}>Durée</Text>
+          <View style={styles.metricsGrid}>
+            <Card variant="soft" style={[styles.metricCard, styles.metricCardAccent]}>
+              <View style={[styles.metricIconWrap, styles.metricIconAccent]}>
+                <Ionicons name="time-outline" size={18} color={palette.accent} />
               </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{rpeLabel}</Text>
-                <Text style={styles.statLabel}>RPE estimé</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{itemsLabel}</Text>
-                <Text style={styles.statLabel}>Validés</Text>
-              </View>
-            </View>
-          </Card>
+              <Text style={styles.metricLabel}>Durée</Text>
+              <Text style={styles.metricValue}>{durationLabel}</Text>
+              <Text style={styles.metricMeta}>Temps de travail</Text>
+            </Card>
 
-          <Card variant="surface" style={styles.loadCard}>
-            <SectionHeader title="Effort du jour" />
-            <Text style={styles.loadValue}>
-              {estimatedLoad != null ? `${estimatedLoad} UA` : "—"}
-            </Text>
-            <Text style={styles.loadHint}>
-              Forme {tsb.toFixed(1)} → {projectedTsb ?? "—"}
-              {projectedDelta != null
-                ? ` (${projectedDelta >= 0 ? "+" : ""}${projectedDelta})`
-                : ""}
-            </Text>
-          </Card>
+            <Card variant="soft" style={[styles.metricCard, styles.metricCardWarn]}>
+              <View style={[styles.metricIconWrap, styles.metricIconWarn]}>
+                <Ionicons name="flash-outline" size={18} color={theme.colors.amber500} />
+              </View>
+              <Text style={styles.metricLabel}>Effort</Text>
+              <Text style={styles.metricValue}>{effortValue}</Text>
+              <View style={styles.metricGaugeTrack}>
+                <View
+                  style={[
+                    styles.metricGaugeFill,
+                    styles.metricGaugeWarn,
+                    { width: `${effortRatio * 100}%` },
+                  ]}
+                />
+              </View>
+              <Text style={styles.metricMeta}>
+                {projectedTsb != null
+                  ? `Forme projetée ${projectedTsb}${projectedDelta != null ? ` (${projectedDelta >= 0 ? "+" : ""}${projectedDelta})` : ""}`
+                  : "RPE estimé"}
+              </Text>
+            </Card>
+
+            <Card variant="soft" style={[styles.metricCard, styles.metricCardSuccess]}>
+              <View style={[styles.metricIconWrap, styles.metricIconSuccess]}>
+                <Ionicons name="checkmark-circle-outline" size={18} color={theme.colors.green500} />
+              </View>
+              <Text style={styles.metricLabel}>Validés</Text>
+              <Text style={styles.metricValue}>{itemsLabel}</Text>
+              <View style={styles.metricGaugeTrack}>
+                <View
+                  style={[
+                    styles.metricGaugeFill,
+                    styles.metricGaugeSuccess,
+                    { width: `${completionWidth * 100}%` },
+                  ]}
+                />
+              </View>
+              <Text style={styles.metricMeta}>
+                {completionPct != null ? `${completionPct}% du plan validé` : "Exercices cochés"}
+              </Text>
+            </Card>
+          </View>
+
+          {summary.playerRationale ? (
+            <Card variant="surface" style={styles.contextCard}>
+              <SectionHeader title={summary.playerRationaleTitle ?? "Ce que tu as travaillé"} />
+              <Text style={styles.contextText}>{summary.playerRationale}</Text>
+            </Card>
+          ) : null}
+
+          {summary.coachNote ? (
+            <Card variant="soft" style={styles.contextCard}>
+              <SectionHeader title="Le mot du prépa" />
+              <Text style={styles.contextCoachText}>{summary.coachNote}</Text>
+            </Card>
+          ) : null}
 
           <Card variant="soft" style={styles.badgeCard}>
             <SectionHeader title="Badges" />
@@ -265,7 +463,7 @@ export default function SessionSummaryScreen() {
               <View style={{ gap: 8 }}>
                 {summary.recoveryTips.map((tip: string, i: number) => (
                   <View key={`rec_${i}`} style={styles.recoveryRow}>
-                    <Ionicons name="leaf-outline" size={14} color="#14b8a6" />
+                    <Ionicons name="leaf-outline" size={14} color={theme.colors.teal500} />
                     <Text style={styles.recoveryText}>{tip}</Text>
                   </View>
                 ))}
@@ -293,14 +491,20 @@ export default function SessionSummaryScreen() {
             {sessionCompleted ? (
               <Text style={styles.countdownText}>Feedback déjà enregistré.</Text>
             ) : null}
-            <Button
-              label="Retour"
-              onPress={goHome}
-              fullWidth
-              size="md"
-              variant="ghost"
-              style={styles.backButton}
-            />
+            {hasPendingFeedback ? (
+              <Text style={styles.countdownText}>
+                Le feedback finalise ta séance et débloque proprement la suite.
+              </Text>
+            ) : (
+              <Button
+                label="Retour"
+                onPress={goHome}
+                fullWidth
+                size="md"
+                variant="ghost"
+                style={styles.backButton}
+              />
+            )}
           </View>
         </Animated.View>
       </ScrollView>
@@ -322,32 +526,110 @@ const styles = StyleSheet.create({
   heroCard: {
     padding: 0,
     overflow: "hidden",
+    ...theme.shadow.soft,
+  },
+  heroVisual: {
+    position: "relative",
+    minHeight: 200,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 16,
+    justifyContent: "flex-end",
+    overflow: "hidden",
+  },
+  heroGlowWrap: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  heroGlow: {
+    position: "absolute",
+    borderRadius: RADIUS.pill,
+  },
+  heroGlowTop: {
+    width: 180,
+    height: 180,
+    top: -38,
+    right: -42,
+    backgroundColor: theme.colors.accentSoft28,
+  },
+  heroGlowBottom: {
+    width: 150,
+    height: 150,
+    bottom: -34,
+    left: -24,
+    backgroundColor: theme.colors.goldSoft14,
+  },
+  heroCircle: {
+    position: "absolute",
+    top: 10,
+    right: -28,
+  },
+  heroCorner: {
+    position: "absolute",
+    bottom: 12,
+    left: -10,
+  },
+  heroIllustration: {
+    position: "absolute",
+    right: -18,
+    bottom: -26,
+    transform: [{ rotate: "4deg" }],
   },
   heroBody: {
     padding: 14,
     gap: 10,
   },
-  heroKicker: {
-    color: "#fff",
-    fontSize: 13,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    fontWeight: "700",
-    textShadowColor: "rgba(0,0,0,0.6)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+  heroCelebrateWrap: {
+    gap: 8,
   },
-  heroTitle: {
-    color: "#fff",
-    fontSize: 22,
-    fontWeight: "800",
-    textShadowColor: "rgba(0,0,0,0.6)",
+  heroCelebrateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  heroCelebrateTitle: {
+    color: theme.colors.white,
+    fontSize: TYPE.hero.fontSize,
+    fontWeight: "900",
+    letterSpacing: TYPE.hero.letterSpacing,
+    textShadowColor: theme.colors.black60,
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
+  },
+  heroCelebrateIconWrap: {
+    shadowColor: theme.colors.accentAlt,
+    shadowOpacity: 0.32,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  heroSessionTitle: {
+    color: theme.colors.white90,
+    fontSize: TYPE.subtitle.fontSize,
+    fontWeight: "700",
+    textShadowColor: theme.colors.black60,
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
+  heroThemePill: {
+    alignSelf: "flex-start",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: RADIUS.pill,
+    backgroundColor: palette.accentSoft,
+  },
+  heroThemeText: {
+    color: palette.accent,
+    fontSize: TYPE.caption.fontSize,
+    fontWeight: "700",
+  },
+  heroCelebrationMessage: {
+    color: palette.sub,
+    fontSize: TYPE.body.fontSize,
+    lineHeight: 22,
+    fontStyle: "italic",
+  },
   heroSubtitle: {
     color: palette.sub,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
   },
   heroBadges: {
     flexDirection: "row",
@@ -359,59 +641,130 @@ const styles = StyleSheet.create({
   },
   progressLabel: {
     color: palette.sub,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
+  },
+  metricsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  metricCard: {
+    flex: 1,
+    minWidth: 104,
+    padding: 14,
+    gap: 8,
+    borderRadius: RADIUS.lg,
+  },
+  metricCardAccent: {
+    backgroundColor: theme.colors.accentSoft10,
+    borderColor: theme.colors.accentSoft24,
+  },
+  metricCardWarn: {
+    backgroundColor: theme.colors.amberSoft10,
+    borderColor: theme.colors.amberSoft18,
+  },
+  metricCardSuccess: {
+    backgroundColor: theme.colors.greenSoft12,
+    borderColor: theme.colors.green500Soft15,
+  },
+  metricIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: RADIUS.pill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  metricIconAccent: {
+    backgroundColor: theme.colors.accentSoft24,
+  },
+  metricIconWarn: {
+    backgroundColor: theme.colors.amberSoft18,
+  },
+  metricIconSuccess: {
+    backgroundColor: theme.colors.green500Soft15,
+  },
+  metricLabel: {
+    color: palette.sub,
+    fontSize: TYPE.micro.fontSize,
+    fontWeight: "700",
+    letterSpacing: TYPE.micro.letterSpacing,
+    textTransform: "uppercase",
+  },
+  metricValue: {
+    color: palette.text,
+    fontSize: TYPE.title.fontSize,
+    fontWeight: "800",
+  },
+  metricMeta: {
+    color: palette.sub,
+    fontSize: TYPE.caption.fontSize,
+    lineHeight: 17,
+  },
+  metricGaugeTrack: {
+    height: 6,
+    borderRadius: RADIUS.pill,
+    backgroundColor: palette.borderSoft,
+    overflow: "hidden",
+  },
+  metricGaugeFill: {
+    height: "100%",
+    borderRadius: RADIUS.pill,
+  },
+  metricGaugeWarn: {
+    backgroundColor: theme.colors.amber500,
+  },
+  metricGaugeSuccess: {
+    backgroundColor: theme.colors.green500,
+  },
+  contextCard: {
+    padding: 14,
+    gap: 10,
+    ...theme.shadow.soft,
+  },
+  contextBadgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  contextText: {
+    color: palette.text,
+    fontSize: TYPE.body.fontSize,
+    lineHeight: 20,
+    fontWeight: "600",
+  },
+  contextCoachText: {
+    color: palette.text,
+    fontSize: TYPE.body.fontSize,
+    lineHeight: 20,
+    fontWeight: "700",
+  },
+  contextPillRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  contextPill: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.card,
+  },
+  contextPillText: {
+    color: palette.text,
+    fontSize: TYPE.caption.fontSize,
+    fontWeight: "700",
   },
   progressTrack: {
     height: 6,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.borderSoft,
     overflow: "hidden",
   },
   progressFill: {
     height: "100%",
     backgroundColor: palette.accent,
-  },
-  statsCard: {
-    padding: 14,
-    gap: 10,
-  },
-  statsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: "center",
-    gap: 4,
-  },
-  statDivider: {
-    width: 1,
-    height: 32,
-    backgroundColor: palette.borderSoft,
-    opacity: 0.7,
-  },
-  statValue: {
-    color: palette.text,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  statLabel: {
-    color: palette.sub,
-    fontSize: 11,
-  },
-  loadCard: {
-    padding: 16,
-    gap: 8,
-  },
-  loadValue: {
-    color: palette.text,
-    fontSize: 22,
-    fontWeight: "800",
-  },
-  loadHint: {
-    color: palette.sub,
-    fontSize: 12,
   },
   badgeCard: {
     padding: 12,
@@ -434,7 +787,7 @@ const styles = StyleSheet.create({
   recoveryText: {
     flex: 1,
     color: palette.text,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     lineHeight: 18,
   },
   ctaBlock: {
@@ -443,9 +796,10 @@ const styles = StyleSheet.create({
   },
   countdownText: {
     color: palette.sub,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
   },
   backButton: {
     alignSelf: "stretch",
   },
 });
+

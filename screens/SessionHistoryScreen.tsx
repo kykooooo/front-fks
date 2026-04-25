@@ -5,12 +5,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useNavigation } from "@react-navigation/native";
-import { theme } from "../constants/theme";
+import { theme, TYPE, RADIUS } from "../constants/theme";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { BANNER_IMAGES } from "../constants/bannerImages";
 import { toDateKey } from "../utils/dateHelpers";
 import type { Session } from "../domain/types";
+import { isSessionCompleted } from "../utils/sessionStatus";
 
 const palette = theme.colors;
 
@@ -22,7 +23,7 @@ export default function SessionHistoryScreen() {
     () => {
       const toSessionDay = (session: Session) => toDateKey(session.dateISO ?? session.date);
       return [...sessions]
-        .filter((s) => s.completed)
+        .filter((s) => isSessionCompleted(s))
         .sort((a, b) => {
           const da = toSessionDay(a);
           const db = toSessionDay(b);
@@ -173,7 +174,7 @@ export default function SessionHistoryScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 16, gap: 12 },
-  subtitle: { color: palette.sub, fontSize: 14 },
+  subtitle: { color: palette.sub, fontSize: TYPE.body.fontSize },
   emptyState: {
     alignItems: "center",
     paddingVertical: 48,
@@ -182,25 +183,25 @@ const styles = StyleSheet.create({
   emptyImage: {
     width: 220,
     height: 140,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     opacity: 0.7,
   },
   emptyTitle: {
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
     marginTop: 8,
   },
   emptyText: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     textAlign: "center",
   },
   row: {
     padding: 12,
   },
-  rowTitle: { color: palette.text, fontWeight: "700", fontSize: 14 },
-  rowSub: { color: palette.sub, marginTop: 2, fontSize: 13 },
-  rowHint: { color: palette.accent, marginTop: 4, fontSize: 12, fontWeight: "700" },
-  rowHintMuted: { color: palette.sub, marginTop: 4, fontSize: 12 },
+  rowTitle: { color: palette.text, fontWeight: "700", fontSize: TYPE.body.fontSize },
+  rowSub: { color: palette.sub, marginTop: 2, fontSize: TYPE.caption.fontSize },
+  rowHint: { color: palette.accent, marginTop: 4, fontSize: TYPE.caption.fontSize, fontWeight: "700" },
+  rowHintMuted: { color: palette.sub, marginTop: 4, fontSize: TYPE.caption.fontSize },
 });

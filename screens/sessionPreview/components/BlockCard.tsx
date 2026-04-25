@@ -2,11 +2,13 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
 import { getBlockConfig, getBlockLabel, getTransitionLabel } from "../../../components/session/blockConfig";
 import { getExerciseBenefit } from "../../../engine/exerciseBenefits";
+import { getBeginnerSafetyWarning } from "../../../utils/beginnerSafety";
+import { useSessionsStore } from "../../../state/stores/useSessionsStore";
 import {
   type Block,
   type BlockItem,
@@ -29,7 +31,7 @@ type Props = {
   isCompleted: boolean;
   blockAnim: Animated.Value;
   onToggleItem: (blockIndex: number, itemIndex: number) => void;
-  onGoToExercise: (exerciseId: string | null) => void;
+  onOpenVideo: (exerciseId: string | null) => void;
   getPulse: (key: string) => Animated.Value;
 };
 
@@ -42,9 +44,11 @@ export function BlockCard({
   isCompleted,
   blockAnim,
   onToggleItem,
-  onGoToExercise,
+  onOpenVideo,
   getPulse,
 }: Props) {
+  const playerLevel = useSessionsStore((s) => s.playerLevel);
+  const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
   const cfg = getBlockConfig(block.type);
   const items = block.items ?? [];
   const blockTitle =
@@ -149,6 +153,19 @@ export function BlockCard({
                           {benefit ? (
                             <Text style={styles.itemBenefit}>{benefit}</Text>
                           ) : null}
+                          {(() => {
+                            const warning = getBeginnerSafetyWarning(
+                              exerciseId,
+                              playerLevel,
+                              microcycleSessionIndex,
+                            );
+                            return warning ? (
+                              <View style={styles.itemWarningRow}>
+                                <Ionicons name="warning-outline" size={14} color={palette.warn} />
+                                <Text style={styles.itemWarningText}>{warning}</Text>
+                              </View>
+                            ) : null;
+                          })()}
                           {cleanDisplayNote(item.notes) ? (
                             <Text style={styles.itemNote}>{cleanDisplayNote(item.notes)}</Text>
                           ) : null}
@@ -156,12 +173,12 @@ export function BlockCard({
                       </TouchableOpacity>
                       {exerciseId ? (
                         <TouchableOpacity
-                          onPress={() => onGoToExercise(exerciseId)}
+                          onPress={() => onOpenVideo(exerciseId)}
                           activeOpacity={0.85}
                           style={styles.itemLink}
                         >
-                          <Ionicons name="play-circle-outline" size={14} color={palette.accent} />
-                          <Text style={styles.itemLinkText}>Fiche</Text>
+                          <Ionicons name="logo-youtube" size={14} color={palette.accent} />
+                          <Text style={styles.itemLinkText}>Vidéo</Text>
                         </TouchableOpacity>
                       ) : null}
                     </View>
@@ -169,7 +186,7 @@ export function BlockCard({
                 })}
               </View>
             ) : (
-              <Text style={styles.blockEmpty}>Bloc sans items détaillés.</Text>
+              <Text style={styles.blockEmpty}>Bloc sans exercices détaillés.</Text>
             )}
 
             <View style={styles.vBlockTipRow}>
@@ -195,14 +212,14 @@ const styles = StyleSheet.create({
   vBlockIconWrap: {
     width: 34,
     height: 34,
-    borderRadius: 17,
+    borderRadius: RADIUS.lg,
     alignItems: "center",
     justifyContent: "center",
   },
-  vBlockTitle: { fontSize: 15, fontWeight: "700", color: palette.text },
-  vBlockMeta: { fontSize: 12, color: palette.sub, marginTop: 2 },
+  vBlockTitle: { fontSize: TYPE.body.fontSize, fontWeight: "700", color: palette.text },
+  vBlockMeta: { fontSize: TYPE.caption.fontSize, color: palette.sub, marginTop: 2 },
   vBlockBadges: { flexDirection: "row", gap: 6 },
-  vBlockNotes: { fontSize: 12, color: palette.sub, lineHeight: 18 },
+  vBlockNotes: { fontSize: TYPE.caption.fontSize, color: palette.sub, lineHeight: 18 },
   vBlockItems: { gap: 10 },
   vBlockTipRow: {
     flexDirection: "row",
@@ -212,7 +229,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: palette.borderSoft,
   },
-  vBlockTipText: { flex: 1, fontSize: 12, color: palette.sub, lineHeight: 16 },
+  vBlockTipText: { flex: 1, fontSize: TYPE.caption.fontSize, color: palette.sub, lineHeight: 16 },
   transitionRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 2 },
   transitionLine: { flex: 1, height: 1, backgroundColor: palette.borderSoft },
   transitionChip: {
@@ -221,18 +238,18 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingVertical: 4,
     paddingHorizontal: 10,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.cardSoft,
     borderWidth: 1,
     borderColor: palette.borderSoft,
   },
-  transitionText: { fontSize: 11, color: palette.sub, fontWeight: "600" },
+  transitionText: { fontSize: TYPE.micro.fontSize, color: palette.sub, fontWeight: "600" },
   itemRow: { flexDirection: "row", gap: 8, alignItems: "flex-start" },
   itemMain: { flex: 1, flexDirection: "row", gap: 8, alignItems: "flex-start" },
   checkbox: {
     width: 22,
     height: 22,
-    borderRadius: 6,
+    borderRadius: RADIUS.xs,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     alignItems: "center",
@@ -240,13 +257,25 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   checkboxChecked: { backgroundColor: palette.accent, borderColor: palette.accent },
-  checkboxIcon: { color: palette.bg, fontSize: 12, fontWeight: "800" },
-  itemName: { color: palette.text, fontSize: 14, fontWeight: "600" },
+  checkboxIcon: { color: palette.bg, fontSize: TYPE.caption.fontSize, fontWeight: "800" },
+  itemName: { color: palette.text, fontSize: TYPE.body.fontSize, fontWeight: "600" },
   itemNameChecked: { textDecorationLine: "line-through", color: palette.sub },
-  itemMeta: { color: palette.sub, fontSize: 12, marginTop: 2 },
-  itemContext: { color: palette.text, fontSize: 11, marginTop: 2 },
-  itemBenefit: { color: palette.accent, fontSize: 11, marginTop: 3, fontStyle: "italic" },
-  itemNote: { color: palette.sub, fontSize: 12, marginTop: 2 },
+  itemMeta: { color: palette.sub, fontSize: TYPE.caption.fontSize, marginTop: 2 },
+  itemContext: { color: palette.text, fontSize: TYPE.micro.fontSize, marginTop: 2 },
+  itemBenefit: { color: palette.accent, fontSize: TYPE.micro.fontSize, marginTop: 3, fontStyle: "italic" },
+  itemWarningRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    marginTop: 6,
+    padding: 8,
+    borderRadius: RADIUS.sm,
+    backgroundColor: palette.amberSoft10,
+    borderWidth: 1,
+    borderColor: palette.amberSoft30,
+  },
+  itemWarningText: { flex: 1, color: palette.warn, fontSize: TYPE.caption.fontSize, lineHeight: 17, fontWeight: "600" },
+  itemNote: { color: palette.sub, fontSize: TYPE.caption.fontSize, marginTop: 2 },
   itemLink: {
     flexDirection: "row",
     alignSelf: "flex-start",
@@ -254,11 +283,11 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingVertical: 4,
     paddingHorizontal: 8,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.cardSoft,
   },
-  itemLinkText: { color: palette.accent, fontSize: 11, fontWeight: "700" },
-  blockEmpty: { color: palette.sub, fontSize: 12 },
+  itemLinkText: { color: palette.accent, fontSize: TYPE.micro.fontSize, fontWeight: "700" },
+  blockEmpty: { color: palette.sub, fontSize: TYPE.caption.fontSize },
 });

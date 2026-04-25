@@ -3,7 +3,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { theme } from '../../../constants/theme';
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 
 const COLORS = theme.colors;
 
@@ -24,12 +24,12 @@ export function HeroReadinessCard({ readiness, readinessLabel, todayKey, fadeAni
       <View style={styles.heroHeaderRow}>
         <View style={styles.heroTitleRow}>
           <LinearGradient
-            colors={['#ff7a1a', '#ff9a4a']}
+            colors={[theme.colors.accent, theme.colors.accentAlt]}
             style={styles.heroIcon}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <Ionicons name="heart-outline" size={18} color="#fff" />
+            <Ionicons name="heart-outline" size={18} color={theme.colors.white} />
           </LinearGradient>
           <Text style={styles.heroTitle}>État du joueur</Text>
         </View>
@@ -56,7 +56,7 @@ export function HeroReadinessCard({ readiness, readinessLabel, todayKey, fadeAni
 
 const styles = StyleSheet.create({
   heroCard: {
-    borderRadius: 26,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     borderColor: COLORS.border,
     padding: 18,
@@ -69,7 +69,7 @@ const styles = StyleSheet.create({
     right: -70,
     width: 220,
     height: 220,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: COLORS.accentSoft,
     opacity: 0.9,
   },
@@ -87,25 +87,25 @@ const styles = StyleSheet.create({
   heroIcon: {
     width: 34,
     height: 34,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
   heroTitle: {
-    fontSize: 18,
+    fontSize: TYPE.subtitle.fontSize,
     fontWeight: '700',
     color: COLORS.text,
   },
   heroDateBadge: {
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: COLORS.surfaceSoft,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
   heroDate: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: '600',
     color: COLORS.textMuted,
   },
@@ -117,7 +117,7 @@ const styles = StyleSheet.create({
   heroScoreCircle: {
     width: 110,
     height: 110,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 3,
     borderColor: COLORS.accent,
     alignItems: 'center',
@@ -125,32 +125,32 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surfaceSoft,
   },
   heroScore: {
-    fontSize: 34,
+    fontSize: TYPE.display.sm.fontSize,
     fontWeight: '800',
     color: COLORS.text,
   },
   heroScoreSuffix: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: COLORS.textMuted,
   },
   heroInfo: {
     flex: 1,
   },
   heroTag: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     textTransform: 'uppercase',
     letterSpacing: 1,
     color: COLORS.accent,
     marginBottom: 4,
   },
   heroLabel: {
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: '600',
     color: COLORS.text,
     marginBottom: 2,
   },
   heroSub: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: COLORS.textMuted,
   },
 });

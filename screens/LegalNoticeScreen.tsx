@@ -2,7 +2,7 @@ import React from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Card } from "../components/ui/Card";
-import { theme } from "../constants/theme";
+import { theme, TYPE } from "../constants/theme";
 import { LEGAL_NOTICE } from "../utils/legalContent";
 
 const palette = theme.colors;
@@ -36,10 +36,10 @@ export default function LegalNoticeScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: palette.bg },
   container: { padding: 16, gap: 12, paddingBottom: 32 },
-  title: { fontSize: 22, fontWeight: "800", color: palette.text },
-  subtitle: { fontSize: 12, color: palette.sub, marginTop: 4 },
+  title: { fontSize: TYPE.title.fontSize, fontWeight: "800", color: palette.text },
+  subtitle: { fontSize: TYPE.caption.fontSize, color: palette.sub, marginTop: 4 },
   card: { padding: 14, gap: 8 },
-  sectionTitle: { fontSize: 14, fontWeight: "700", color: palette.text },
+  sectionTitle: { fontSize: TYPE.body.fontSize, fontWeight: "700", color: palette.text },
   sectionBody: { gap: 6 },
-  line: { fontSize: 12, color: palette.sub, lineHeight: 18 },
+  line: { fontSize: TYPE.caption.fontSize, color: palette.sub, lineHeight: 18 },
 });

@@ -3,8 +3,8 @@ import React, { useRef, useEffect } from "react";
 import { View, Text, StyleSheet, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { theme } from "../../../constants/theme";
-import { CATEGORY_CONFIG, type Prebuilt } from "../prebuiltConfig";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
+import { CATEGORY_CONFIG, type Prebuilt, type RoutineCategory } from "../prebuiltConfig";
 import { AnimatedRoutineCard } from "./AnimatedRoutineCard";
 
 const palette = theme.colors;
@@ -37,9 +37,9 @@ export function CategorySection({ category, routines, baseIndex, onRoutinePress 
     ]).start();
   }, [fadeAnim, slideAnim, baseIndex]);
 
-  const config = CATEGORY_CONFIG[category] ?? {
+  const config = CATEGORY_CONFIG[category as RoutineCategory] ?? {
     icon: "sparkles" as keyof typeof Ionicons.glyphMap,
-    gradient: ["#6b7280", "#9ca3af"] as [string, string],
+    gradient: [theme.colors.gray500, theme.colors.gray400] as [string, string],
     tagline: "",
   };
 
@@ -58,7 +58,7 @@ export function CategorySection({ category, routines, baseIndex, onRoutinePress 
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <Ionicons name={config.icon} size={18} color="#fff" />
+            <Ionicons name={config.icon} size={18} color={theme.colors.white} />
           </LinearGradient>
           <View>
             <Text style={styles.categorySectionTitle}>{category}</Text>
@@ -102,30 +102,30 @@ const styles = StyleSheet.create({
   categorySectionIcon: {
     width: 38,
     height: 38,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     justifyContent: "center",
     alignItems: "center",
   },
   categorySectionTitle: {
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   categorySectionTagline: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     marginTop: 2,
   },
   categorySectionBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     backgroundColor: palette.cardSoft,
     borderWidth: 1,
     borderColor: palette.border,
   },
   categorySectionBadgeText: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     fontWeight: "600",
   },

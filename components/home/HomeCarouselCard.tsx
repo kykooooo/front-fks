@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Card } from "../ui/Card";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 
 const palette = theme.colors;
 
@@ -24,16 +24,16 @@ export default function HomeCarouselCard({ title, subtitle, children }: Props) {
 const styles = StyleSheet.create({
   card: {
     padding: 14,
-    borderRadius: 20,
+    borderRadius: RADIUS.xl,
     gap: 10,
   },
   title: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   subtitle: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
   },
   content: {

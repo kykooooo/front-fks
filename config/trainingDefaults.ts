@@ -20,11 +20,42 @@ export const TRAINING_DEFAULTS = {
   TSB_FLOOR_ONBOARDING: -10,  // TSB ne descend pas en dessous pendant l'onboarding
 };
 
-// Constantes de temps exponentielles (jours)
+// ─── Tau dynamiques selon le niveau du joueur ────────────────────────
+// Débutant : fatigue de surface, part vite. Fitness monte/descend vite.
+// Intermédiaire : encaisse mieux, fatigue plus profonde.
+// Confirmé : fatigue insidieuse, fitness très stable.
+export const TAU_BY_LEVEL = {
+  debutant:      { tauAtl: 7,  tauCtl: 21 },
+  intermediaire: { tauAtl: 10, tauCtl: 28 },
+  confirme:      { tauAtl: 14, tauCtl: 35 },
+} as const;
+
+export type TauLevelKey = keyof typeof TAU_BY_LEVEL;
+
+// Mapping des niveaux de ProfileSetupScreen → clé tau
+const LEVEL_TO_TAU_KEY: Record<string, TauLevelKey> = {
+  // Nouveaux labels (v2)
+  "Loisir": "debutant",
+  "Compétition": "intermediaire",
+  "Haut niveau": "confirme",
+  // Legacy compat (v1)
+  Amateur: "debutant",
+  Regional: "debutant",
+  National: "intermediaire",
+  "Semi-pro": "confirme",
+  Pro: "confirme",
+};
+
+/** Retourne les tau EWMA pour un niveau joueur donné (fallback: intermediaire) */
+export function getTauForLevel(level: string | null | undefined): { tauAtl: number; tauCtl: number } {
+  const key = (level ? LEVEL_TO_TAU_KEY[level] : undefined) ?? "intermediaire";
+  return TAU_BY_LEVEL[key];
+}
+
+// Legacy — conservé pour backward compat (ne plus utiliser directement)
 export const TAU = {
-  ATL: 14,  // Fatigue décroît de 50% en ~10 jours (14 × ln(2))
-  CTL: 28,  // Forme décroît de 50% en ~19 jours (28 × ln(2))
-  // Ratio 2:1 adapté aux amateurs (pro: souvent 7/42 = 1:6)
+  ATL: 14,
+  CTL: 28,
 };
 
 // Caps de charge journalière (soft-caps via tanh)

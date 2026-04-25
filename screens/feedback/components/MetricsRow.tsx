@@ -2,7 +2,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../../../constants/theme';
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 
 const COLORS = theme.colors;
 
@@ -66,31 +66,31 @@ export function MetricsRow({
 const styles = StyleSheet.create({
   metricCard: {
     flex: 1,
-    borderRadius: 18,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: COLORS.border,
     padding: 12,
     backgroundColor: COLORS.surfaceSoft,
   },
   metricIconRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  metricTitle: { fontSize: 13, fontWeight: '600', color: COLORS.text },
+  metricTitle: { fontSize: TYPE.caption.fontSize, fontWeight: '600', color: COLORS.text },
   durationInput: {
     marginTop: 8,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     paddingHorizontal: 10,
     paddingVertical: 8,
     color: COLORS.text,
     backgroundColor: COLORS.surface,
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
   },
   durationInputError: {
     borderColor: COLORS.danger,
     borderWidth: 2,
-    backgroundColor: 'rgba(239, 68, 68, 0.05)',
+    backgroundColor: theme.colors.redSoft05,
   },
-  metricValue: { marginTop: 8, fontSize: 18, fontWeight: '700', color: COLORS.text },
-  metricHint: { marginTop: 4, fontSize: 11, color: COLORS.textMuted },
-  metricError: { marginTop: 4, fontSize: 11, color: COLORS.danger },
+  metricValue: { marginTop: 8, fontSize: TYPE.subtitle.fontSize, fontWeight: '700', color: COLORS.text },
+  metricHint: { marginTop: 4, fontSize: TYPE.micro.fontSize, color: COLORS.textMuted },
+  metricError: { marginTop: 4, fontSize: TYPE.micro.fontSize, color: COLORS.danger },
 });

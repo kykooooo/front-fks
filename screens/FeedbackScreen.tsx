@@ -13,8 +13,10 @@ import {
   TouchableOpacity,
   Keyboard,
   Animated,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import type { RouteProp } from '@react-navigation/native';
@@ -29,7 +31,8 @@ import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useHaptics } from '../hooks/useHaptics';
 import { toDateKey } from '../utils/dateHelpers';
 import { DEV_FLAGS } from '../config/devFlags';
-import { theme } from '../constants/theme';
+import { theme, TYPE, RADIUS } from "../constants/theme";
+import { isSessionCompleted } from '../utils/sessionStatus';
 import { Button } from '../components/ui/Button';
 import { LoadingOverlay } from '../components/ui/LoadingOverlay';
 import { ModalContainer } from '../components/modal/ModalContainer';
@@ -54,6 +57,7 @@ const COLORS = theme.colors;
 
 export default function FeedbackScreen() {
   const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const route = useRoute<RouteProp<AppStackParamList, 'Feedback'>>();
   const haptics = useHaptics();
   const { isOnline, queueCount } = useNetworkStatus();
@@ -123,6 +127,7 @@ export default function FeedbackScreen() {
   const [recovery, setRecovery] = useState<number>(day?.feedback?.recoveryPerceived ?? 3);
   const [injury, setInjuryLocal] = useState<any>(day?.feedback?.injury ?? null);
   const [hasPainDetails, setHasPainDetails] = useState<boolean>(!!day?.feedback?.injury);
+  const allowCloseRef = useRef(false);
 
   useEffect(() => {
     if (!durationMin && durationPrefill) setDurationMin(String(durationPrefill));
@@ -148,6 +153,49 @@ export default function FeedbackScreen() {
 
   const sessionIsToday = sessionDateKey ? sessionDateKey === todayKey : false;
   const canSaveToday = DEV_FLAGS.ENABLED || sessionIsToday;
+  const initialPainFromDay = day?.feedback?.pain;
+  const initialPainFromFeedback =
+    typeof targetSession?.feedback?.pain === 'number' ? targetSession.feedback.pain : undefined;
+  const initialRpe =
+    (typeof targetSession?.feedback?.rpe === 'number' ? targetSession.feedback.rpe : targetSession?.rpe)
+    ?? prefillRpe
+    ?? 5;
+  const initialFatigue = (targetSession?.feedback?.fatigue as number) ?? day?.feedback?.fatigue ?? 3;
+  const initialPain =
+    typeof initialPainFromDay === 'number' ? initialPainFromDay : initialPainFromFeedback ?? 0;
+  const initialRecovery =
+    (targetSession?.feedback?.sleep as number) ?? day?.feedback?.recoveryPerceived ?? 3;
+  const initialInjury =
+    (targetSession?.feedback as unknown as Record<string, unknown>)?.injury ?? day?.feedback?.injury ?? null;
+  const initialHasPainDetails = !!initialInjury;
+  const initialDuration = durationPrefill ? String(durationPrefill) : '';
+  const hasPendingSessionFeedback = !!targetSessionId && !isSessionCompleted(targetSession);
+  const isDirty = useMemo(() => {
+    return (
+      rpe !== initialRpe ||
+      durationMin !== initialDuration ||
+      fatigue !== initialFatigue ||
+      pain !== initialPain ||
+      recovery !== initialRecovery ||
+      hasPainDetails !== initialHasPainDetails ||
+      JSON.stringify(injury ?? null) !== JSON.stringify(initialInjury ?? null)
+    );
+  }, [
+    rpe,
+    initialRpe,
+    durationMin,
+    initialDuration,
+    fatigue,
+    initialFatigue,
+    pain,
+    initialPain,
+    recovery,
+    initialRecovery,
+    hasPainDetails,
+    initialHasPainDetails,
+    injury,
+    initialInjury,
+  ]);
 
   // Hooks
   const { readiness, readinessLabel } = useReadinessScore(fatigue, pain, recovery);
@@ -155,7 +203,7 @@ export default function FeedbackScreen() {
 
   const {
     onSave, isSaving, saveDisabled, saveLabel,
-    cyclePromptVisible, onChooseNewProgram, continueAfterFeedback,
+    cyclePromptVisible, onChooseNewProgram, onTestProgress, continueAfterFeedback,
     estimatedLoad, projectedTsb, projectedDelta,
   } = useFeedbackSave({
     targetSessionId, targetSession, sessionDateKey, todayKey, canSaveToday,
@@ -186,6 +234,67 @@ export default function FeedbackScreen() {
     haptics.impactLight();
   }, [haptics]);
 
+  const finishClose = useCallback(() => {
+    allowCloseRef.current = true;
+    if (hasPendingSessionFeedback) {
+      continueAfterFeedback();
+      return;
+    }
+    navigation.goBack();
+  }, [continueAfterFeedback, hasPendingSessionFeedback, navigation]);
+
+  const requestClose = useCallback(() => {
+    if (isSaving) return;
+    if (!isDirty) {
+      finishClose();
+      return;
+    }
+    Alert.alert(
+      'Quitter le feedback ?',
+      'Tes changements non enregistres seront perdus.',
+      [
+        { text: 'Rester', style: 'cancel' },
+        {
+          text: 'Quitter',
+          style: 'destructive',
+          onPress: finishClose,
+        },
+      ]
+    );
+  }, [finishClose, isDirty, isSaving]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e: any) => {
+      if (allowCloseRef.current) {
+        allowCloseRef.current = false;
+        return;
+      }
+      if (isSaving) {
+        e.preventDefault();
+        return;
+      }
+      if (!isDirty && !hasPendingSessionFeedback) return;
+      e.preventDefault();
+      if (!isDirty) {
+        finishClose();
+        return;
+      }
+      Alert.alert(
+        'Quitter le feedback ?',
+        'Tes changements non enregistres seront perdus.',
+        [
+          { text: 'Rester', style: 'cancel' },
+          {
+            text: 'Quitter',
+            style: 'destructive',
+            onPress: finishClose,
+          },
+        ]
+      );
+    });
+    return unsubscribe;
+  }, [finishClose, hasPendingSessionFeedback, isDirty, isSaving, navigation]);
+
   // Helper pour animation stagger
   const staggerStyle = (index: number) => ({
     opacity: cardAnims[index],
@@ -198,11 +307,11 @@ export default function FeedbackScreen() {
     <View style={styles.modalRoot}>
       <ModalContainer
         visible
-        onClose={() => navigation.goBack()}
+        onClose={requestClose}
         animationType="slide"
         blurIntensity={40}
-        allowBackdropDismiss
-        allowSwipeDismiss
+        allowBackdropDismiss={!isSaving}
+        allowSwipeDismiss={!isSaving}
       >
         <SafeAreaView style={styles.safeArea} edges={['top', 'right', 'left', 'bottom']}>
           <StatusBar
@@ -211,7 +320,7 @@ export default function FeedbackScreen() {
           />
           <View style={styles.modalHeaderRow}>
             <Text style={styles.modalHeaderTitle}>Feedback</Text>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.modalClose} accessibilityRole="button" accessibilityLabel="Fermer le feedback">
+            <TouchableOpacity onPress={requestClose} style={styles.modalClose} accessibilityRole="button" accessibilityLabel="Fermer le feedback">
               <Ionicons name="close" size={22} color={COLORS.text} />
             </TouchableOpacity>
           </View>
@@ -225,7 +334,10 @@ export default function FeedbackScreen() {
               <ScrollView
                 style={styles.scroll}
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={[styles.container, { flexGrow: 1 }]}
+                contentContainerStyle={[
+                  styles.container,
+                  { flexGrow: 1, paddingBottom: Math.max(24, insets.bottom + 20) },
+                ]}
                 keyboardShouldPersistTaps="handled"
               >
                 {(!isOnline || queueCount > 0) && (
@@ -314,11 +426,17 @@ export default function FeedbackScreen() {
             {cyclePromptVisible && (
               <CyclePrompt
                 onChooseNewProgram={onChooseNewProgram}
+                onTestProgress={onTestProgress}
                 onLater={continueAfterFeedback}
               />
             )}
 
-            <View style={styles.bottomBar}>
+            <View
+              style={[
+                styles.bottomBar,
+                { paddingBottom: Math.max(16, insets.bottom + 12) },
+              ]}
+            >
               <Button
                 label={saveLabel}
                 onPress={onSave}
@@ -352,7 +470,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 6,
   },
-  modalHeaderTitle: { fontSize: 16, fontWeight: '800', color: COLORS.text },
+  modalHeaderTitle: { fontSize: TYPE.body.fontSize, fontWeight: '800', color: COLORS.text },
   modalClose: { paddingHorizontal: 12, paddingVertical: 10, minWidth: 44, minHeight: 44, alignItems: "center" as const, justifyContent: "center" as const },
   safeArea: { flex: 1, backgroundColor: COLORS.background },
   root: { flex: 1, backgroundColor: COLORS.background },
@@ -364,12 +482,12 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.border,
     backgroundColor: COLORS.surfaceSoft,
   },
-  syncBannerText: { flex: 1, fontSize: 12, color: COLORS.textMuted },
+  syncBannerText: { flex: 1, fontSize: TYPE.caption.fontSize, color: COLORS.textMuted },
   metricsRow: { flexDirection: 'row', gap: 12 },
   bottomBar: {
     paddingHorizontal: 16,
@@ -380,21 +498,21 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   saveBtn: {
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.accent,
   },
-  saveText: { color: COLORS.background, fontWeight: '700', fontSize: 15 },
+  saveText: { color: COLORS.background, fontWeight: '700', fontSize: TYPE.body.fontSize },
   debug: {
     marginTop: 8,
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.border,
     padding: 10,
     backgroundColor: COLORS.surfaceSoft,
   },
-  debugTitle: { fontWeight: '700', marginBottom: 4, color: COLORS.textMuted, fontSize: 12 },
-  debugText: { color: COLORS.textMuted, fontSize: 11 },
+  debugTitle: { fontWeight: '700', marginBottom: 4, color: COLORS.textMuted, fontSize: TYPE.caption.fontSize },
+  debugText: { color: COLORS.textMuted, fontSize: TYPE.micro.fontSize },
 });

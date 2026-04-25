@@ -2,7 +2,7 @@ import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Card } from "../ui/Card";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 
 const palette = theme.colors;
 
@@ -38,7 +38,7 @@ function HomeTestsNudgeInner({ title, sub, onPress }: Props) {
 
 const styles = StyleSheet.create({
   testsNudgeCard: {
-    borderRadius: 20,
+    borderRadius: RADIUS.xl,
     padding: 14,
     gap: 10,
   },
@@ -48,7 +48,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   testsNudgeKicker: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     letterSpacing: 1.2,
     textTransform: "uppercase",
     color: palette.sub,
@@ -56,20 +56,20 @@ const styles = StyleSheet.create({
   },
   testsNudgeTitle: {
     marginTop: 4,
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "900",
     color: palette.text,
   },
   testsNudgeSub: {
     marginTop: 2,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     lineHeight: 17,
   },
   testsNudgeIcon: {
     width: 36,
     height: 36,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: palette.accentSoft,
@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
   testsNudgeButton: {
     flex: 1,
     paddingVertical: 11,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
@@ -92,12 +92,12 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   testsNudgeButtonText: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   testsNudgeButtonArrow: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.accent,
   },
 });

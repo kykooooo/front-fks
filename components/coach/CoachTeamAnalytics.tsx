@@ -4,7 +4,7 @@
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 import type { EnrichedPlayer } from "../../hooks/coach/useCoachPlayersData";
 import { toDateKey } from "../../utils/dateHelpers";
 
@@ -16,10 +16,10 @@ type Props = {
 
 // TSB ranges for categorization
 const TSB_RANGES = {
-  overloaded: { min: -Infinity, max: -15, color: "#ef4444", label: "Surcharge" },
-  fatigued: { min: -15, max: -5, color: "#f59e0b", label: "Fatigué" },
-  optimal: { min: -5, max: 10, color: "#22c55e", label: "En forme" },
-  fresh: { min: 10, max: Infinity, color: "#3b82f6", label: "Frais" },
+  overloaded: { min: -Infinity, max: -15, color: theme.colors.red500, label: "Surcharge" },
+  fatigued: { min: -15, max: -5, color: theme.colors.amber500, label: "Fatigué" },
+  optimal: { min: -5, max: 10, color: theme.colors.green500, label: "En forme" },
+  fresh: { min: 10, max: Infinity, color: theme.colors.blue500, label: "Frais" },
 };
 
 const toSafeDate = (value?: string | null) => {
@@ -100,7 +100,7 @@ export function CoachTeamAnalytics({ players }: Props) {
   const tsbTone =
     stats.avgTsb <= -15 ? "danger" : stats.avgTsb <= -5 ? "warn" : "good";
   const tsbColor =
-    tsbTone === "danger" ? "#ef4444" : tsbTone === "warn" ? "#f59e0b" : "#22c55e";
+    tsbTone === "danger" ? theme.colors.red500 : tsbTone === "warn" ? theme.colors.amber500 : theme.colors.green500;
 
   return (
     <View style={styles.container}>
@@ -116,15 +116,15 @@ export function CoachTeamAnalytics({ players }: Props) {
             <Text style={styles.avgLabel}>TSB moyen</Text>
           </View>
           <View style={styles.avgCard}>
-            <View style={[styles.avgIconWrap, { backgroundColor: "rgba(139, 92, 246, 0.15)" }]}>
-              <Ionicons name="flash" size={18} color="#8b5cf6" />
+            <View style={[styles.avgIconWrap, { backgroundColor: theme.colors.violetSoft15 }]}>
+              <Ionicons name="flash" size={18} color={theme.colors.violet500} />
             </View>
             <Text style={styles.avgValue}>{Math.round(stats.avgAtl)}</Text>
             <Text style={styles.avgLabel}>ATL moyen</Text>
           </View>
           <View style={styles.avgCard}>
-            <View style={[styles.avgIconWrap, { backgroundColor: "rgba(20, 184, 166, 0.15)" }]}>
-              <Ionicons name="trending-up" size={18} color="#14b8a6" />
+            <View style={[styles.avgIconWrap, { backgroundColor: theme.colors.tealSoft15 }]}>
+              <Ionicons name="trending-up" size={18} color={theme.colors.teal500} />
             </View>
             <Text style={styles.avgValue}>{Math.round(stats.avgCtl)}</Text>
             <Text style={styles.avgLabel}>CTL moyen</Text>
@@ -175,8 +175,8 @@ export function CoachTeamAnalytics({ players }: Props) {
         <Text style={styles.sectionTitle}>Activité</Text>
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
-            <View style={[styles.statIcon, { backgroundColor: "rgba(34, 197, 94, 0.15)" }]}>
-              <Ionicons name="checkmark-circle" size={16} color="#22c55e" />
+            <View style={[styles.statIcon, { backgroundColor: theme.colors.green500Soft15 }]}>
+              <Ionicons name="checkmark-circle" size={16} color={theme.colors.green500} />
             </View>
             <View>
               <Text style={styles.statValue}>{stats.activePlayers}</Text>
@@ -184,8 +184,8 @@ export function CoachTeamAnalytics({ players }: Props) {
             </View>
           </View>
           <View style={styles.statItem}>
-            <View style={[styles.statIcon, { backgroundColor: "rgba(245, 158, 11, 0.15)" }]}>
-              <Ionicons name="moon" size={16} color="#f59e0b" />
+            <View style={[styles.statIcon, { backgroundColor: theme.colors.amberSoft15 }]}>
+              <Ionicons name="moon" size={16} color={theme.colors.amber500} />
             </View>
             <View>
               <Text style={styles.statValue}>{stats.inactivePlayers}</Text>
@@ -193,8 +193,8 @@ export function CoachTeamAnalytics({ players }: Props) {
             </View>
           </View>
           <View style={styles.statItem}>
-            <View style={[styles.statIcon, { backgroundColor: "rgba(139, 92, 246, 0.15)" }]}>
-              <Ionicons name="trophy" size={16} color="#8b5cf6" />
+            <View style={[styles.statIcon, { backgroundColor: theme.colors.violetSoft15 }]}>
+              <Ionicons name="trophy" size={16} color={theme.colors.violet500} />
             </View>
             <View>
               <Text style={styles.statValue}>{stats.withCycle}</Text>
@@ -218,7 +218,7 @@ export function CoachTeamAnalytics({ players }: Props) {
                 return (
                   <View style={styles.playerHighlightCard}>
                     <Text style={styles.playerHighlightName}>{p.firstName}</Text>
-                    <Text style={[styles.playerHighlightValue, { color: "#ef4444" }]}>
+                    <Text style={[styles.playerHighlightValue, { color: theme.colors.red500 }]}>
                       TSB {Math.round(p.tsb)}
                     </Text>
                   </View>
@@ -236,7 +236,7 @@ export function CoachTeamAnalytics({ players }: Props) {
                 return (
                   <View style={styles.playerHighlightCard}>
                     <Text style={styles.playerHighlightName}>{p.firstName}</Text>
-                    <Text style={[styles.playerHighlightValue, { color: "#22c55e" }]}>
+                    <Text style={[styles.playerHighlightValue, { color: theme.colors.green500 }]}>
                       TSB {Math.round(p.tsb)}
                     </Text>
                   </View>
@@ -253,7 +253,7 @@ export function CoachTeamAnalytics({ players }: Props) {
 const styles = StyleSheet.create({
   container: {
     backgroundColor: palette.card,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: palette.border,
     overflow: "hidden",
@@ -263,13 +263,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     backgroundColor: palette.card,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: palette.border,
   },
   emptyText: {
     color: palette.sub,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
   },
   section: {
     padding: 14,
@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
     borderBottomColor: palette.borderSoft,
   },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     color: palette.sub,
     textTransform: "uppercase",
@@ -293,30 +293,30 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     backgroundColor: palette.cardSoft,
   },
   avgIconWrap: {
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     alignItems: "center",
     justifyContent: "center",
   },
   avgValue: {
-    fontSize: 20,
+    fontSize: TYPE.title.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   avgLabel: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     fontWeight: "600",
   },
   distributionBar: {
     flexDirection: "row",
     height: 12,
-    borderRadius: 6,
+    borderRadius: RADIUS.xs,
     overflow: "hidden",
     backgroundColor: palette.borderSoft,
   },
@@ -337,10 +337,10 @@ const styles = StyleSheet.create({
   legendDot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
+    borderRadius: RADIUS.xs,
   },
   legendText: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
   },
   statsRow: {
@@ -353,23 +353,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     padding: 10,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     backgroundColor: palette.cardSoft,
   },
   statIcon: {
     width: 32,
     height: 32,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     alignItems: "center",
     justifyContent: "center",
   },
   statValue: {
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   statLabel: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
   },
   playersRow: {
@@ -381,23 +381,23 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   playerHighlightLabel: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     fontWeight: "600",
   },
   playerHighlightCard: {
     padding: 10,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     backgroundColor: palette.cardSoft,
     gap: 2,
   },
   playerHighlightName: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   playerHighlightValue: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "600",
   },
 });

@@ -3,6 +3,7 @@ import { subDays } from "date-fns";
 import { toDateKey } from "../../utils/dateHelpers";
 import type { Session } from "../../domain/types";
 import type { ExternalLoad } from "../../state/stores/types";
+import { isSessionCompleted } from "../../utils/sessionStatus";
 
 export function useActivityStreak(
   sessions: Session[],
@@ -12,7 +13,7 @@ export function useActivityStreak(
   return useMemo(() => {
     const activity = new Set<string>();
     sessions
-      .filter((s) => s.completed)
+      .filter((s) => isSessionCompleted(s))
       .forEach((s) => activity.add(toDateKey(s.dateISO ?? s.date)));
     externalLoads.forEach((e) => activity.add(toDateKey(e.dateISO)));
 

@@ -3,6 +3,7 @@
 import type {
   Phase,
   Session,
+  SessionStatus,
   WeeklyIndicators,
   TrainingLogItem,
   SessionFeedback,
@@ -40,6 +41,10 @@ export type PersistPlannedPayload = {
   intensity: "easy" | "moderate" | "hard";
   plannedLoad: number;
   exercises: Session["exercises"];
+  status?: SessionStatus;
+  createdAt?: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
   ai?: import("../../repositories/sessionsRepo").AiNextSession;
 };
 
@@ -104,13 +109,20 @@ export type SessionsState = {
   activePathwayIndex: number;
   lastAiSessionV2: { v2: FKS_NextSessionV2; date: string; sessionId: string } | null;
   lastAiContext: FKS_AiContext | null;
+  playerLevel: string | null;
 
   // actions
   pushSession: (s: Session) => void;
+  setPlayerLevel: (level: string | null) => void;
   setPhase: (p: Phase) => void;
   updateWeekly: (updater: (w: WeeklyIndicators) => WeeklyIndicators) => void;
   getSessionById: (id: string) => Session | undefined;
   latestSessionId: () => string | undefined;
+  setSessionStatus: (
+    sessionId: string,
+    status: SessionStatus,
+    meta?: { startedAt?: string | null; completedAt?: string | null }
+  ) => void;
   setMicrocycleGoal: (goal: string | null) => void;
   setMicrocycleSessionIndex: (idx: number) => void;
   setActivePathway: (pathwayId: string | null, index?: number) => void;
@@ -175,6 +187,11 @@ export type SyncState = {
   startFirestoreWatch: () => void;
   persistCompletedSession: (s: Session) => Promise<void>;
   persistPlannedSession: (payload: PersistPlannedPayload) => Promise<void>;
+  persistSessionStatus: (
+    sessionId: string,
+    status: SessionStatus,
+    meta?: { startedAt?: string | null; completedAt?: string | null }
+  ) => Promise<void>;
   resetForUser: (uid: string | null) => Promise<void> | void;
   togglePlannedFksDay: (dayKey: string) => void;
   clearPlannedFksDays: () => void;

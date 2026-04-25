@@ -4,12 +4,13 @@ import { View, Text, StyleSheet, TouchableOpacity, Animated } from "react-native
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useHaptics } from "../../../hooks/useHaptics";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import {
   CATEGORY_CONFIG,
   INTENSITY_COLOR, INTENSITY_ICON, INTENSITY_LABEL,
   LOCATION_ICON, LOCATION_LABEL,
   type Prebuilt,
+  type RoutineCategory,
 } from "../prebuiltConfig";
 
 const palette = theme.colors;
@@ -48,7 +49,7 @@ export function AnimatedRoutineCard({ routine, index, onPress }: Props) {
     onPress();
   };
 
-  const config = CATEGORY_CONFIG[routine.category];
+  const config = CATEGORY_CONFIG[routine.category as RoutineCategory];
   const intensityColor = INTENSITY_COLOR[routine.intensity] ?? palette.accent;
   const intensityIcon = INTENSITY_ICON[routine.intensity] ?? "flash-outline";
   const locationIcon = LOCATION_ICON[routine.location ?? "home"] ?? "home-outline";
@@ -67,12 +68,12 @@ export function AnimatedRoutineCard({ routine, index, onPress }: Props) {
       >
         <View style={styles.routineCardContent}>
           <LinearGradient
-            colors={config?.gradient ?? ["#6b7280", "#9ca3af"]}
+            colors={config?.gradient ?? [theme.colors.gray500, theme.colors.gray400]}
             style={styles.routineCardIcon}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <Ionicons name={config?.icon ?? "sparkles"} size={20} color="#fff" />
+            <Ionicons name={config?.icon ?? "sparkles"} size={20} color={theme.colors.white} />
           </LinearGradient>
 
           <View style={styles.routineCardBody}>
@@ -93,7 +94,7 @@ export function AnimatedRoutineCard({ routine, index, onPress }: Props) {
 
               <View style={styles.routineTag}>
                 <Ionicons name="time-outline" size={10} color={palette.sub} />
-                <Text style={styles.routineTagText}>{routine.duration}</Text>
+                <Text style={styles.routineTagText}>{routine.durationMin} min</Text>
               </View>
 
               {routine.location && (
@@ -116,7 +117,7 @@ export function AnimatedRoutineCard({ routine, index, onPress }: Props) {
 
 const styles = StyleSheet.create({
   routineCard: {
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.card,
@@ -130,7 +131,7 @@ const styles = StyleSheet.create({
   routineCardIcon: {
     width: 44,
     height: 44,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -139,12 +140,12 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   routineCardTitle: {
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   routineCardObjective: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     lineHeight: 16,
   },
@@ -160,13 +161,13 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: RADIUS.xs,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.bgSoft,
   },
   routineTagText: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     fontWeight: "500",
   },

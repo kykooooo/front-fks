@@ -7,26 +7,27 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useRoutineBadges } from "../hooks/useRoutineBadges";
 import { Ionicons } from "@expo/vector-icons";
 import { useHaptics } from "../hooks/useHaptics";
-import { theme } from "../constants/theme";
+import { theme, TYPE, RADIUS } from "../constants/theme";
 import { Card } from "../components/ui/Card";
 
 import {
   CATEGORY_CONFIG,
   CATEGORY_ORDER,
   intensityRank,
-  parseDurationMin,
   type Prebuilt,
+  type RoutineCategory,
 } from "./prebuilt/prebuiltConfig";
 import { PREBUILT_SESSIONS } from "./prebuilt/prebuiltSessions";
 import { AnimatedCategoryCard } from "./prebuilt/components/AnimatedCategoryCard";
 import { CategorySection } from "./prebuilt/components/CategorySection";
 import { BadgesCard } from "./prebuilt/components/BadgesCard";
+import { isSessionCompleted } from "../utils/sessionStatus";
 
 const palette = theme.colors;
 
 export default function PrebuiltSessionsScreen() {
   const sessions = useSessionsStore((s) => s.sessions);
-  const pending = sessions.filter((s) => !s.completed);
+  const pending = sessions.filter((s) => !isSessionCompleted(s));
   const nav = useNavigation<any>();
   const [selectedCategory, setSelectedCategory] = useState<string>("Tous");
   const [animationKey, setAnimationKey] = useState(0);
@@ -50,16 +51,16 @@ export default function PrebuiltSessionsScreen() {
         const sorted = [...list].sort((a, b) => {
           const rankDiff = intensityRank[a.intensity] - intensityRank[b.intensity];
           if (rankDiff !== 0) return rankDiff;
-          const durA = parseDurationMin(a.duration) ?? 0;
-          const durB = parseDurationMin(b.duration) ?? 0;
+          const durA = a.durationMin ?? 0;
+          const durB = b.durationMin ?? 0;
           if (durA !== durB) return durA - durB;
           return a.title.localeCompare(b.title);
         });
         return [category, sorted] as const;
       })
       .sort((a, b) => {
-        const idxA = CATEGORY_ORDER.indexOf(a[0]);
-        const idxB = CATEGORY_ORDER.indexOf(b[0]);
+        const idxA = CATEGORY_ORDER.indexOf(a[0] as RoutineCategory);
+        const idxB = CATEGORY_ORDER.indexOf(b[0] as RoutineCategory);
         if (idxA === -1 && idxB === -1) return a[0].localeCompare(b[0]);
         if (idxA === -1) return 1;
         if (idxB === -1) return -1;
@@ -71,9 +72,9 @@ export default function PrebuiltSessionsScreen() {
     const fromSessions = grouped.map(([category, list]) => ({
       category,
       count: list.length,
-      config: CATEGORY_CONFIG[category] ?? {
+      config: CATEGORY_CONFIG[category as RoutineCategory] ?? {
         icon: "sparkles" as keyof typeof Ionicons.glyphMap,
-        gradient: ["#6b7280", "#9ca3af"] as [string, string],
+        gradient: [theme.colors.gray500, theme.colors.gray400] as [string, string],
         tagline: "",
       },
     }));
@@ -83,7 +84,7 @@ export default function PrebuiltSessionsScreen() {
         count: PREBUILT_SESSIONS.length,
         config: {
           icon: "apps" as keyof typeof Ionicons.glyphMap,
-          gradient: ["#ff7a1a", "#ff9a4a"] as [string, string],
+          gradient: [theme.colors.accent, theme.colors.accentAlt] as [string, string],
           tagline: "Toutes les routines",
         },
       },
@@ -125,7 +126,7 @@ export default function PrebuiltSessionsScreen() {
           <Card variant="soft" style={styles.introCard}>
             <View style={styles.introHeader}>
               <View style={styles.introIconCircle}>
-                <Ionicons name="bulb" size={20} color="#f59e0b" />
+                <Ionicons name="bulb" size={20} color={theme.colors.amber500} />
               </View>
               <View style={styles.introTextContainer}>
                 <Text style={styles.introTitle}>Compléments intelligents</Text>
@@ -146,7 +147,7 @@ export default function PrebuiltSessionsScreen() {
             </Text>
           </View>
           <View style={styles.statChip}>
-            <Ionicons name="layers" size={14} color="#14b8a6" />
+            <Ionicons name="layers" size={14} color={theme.colors.teal500} />
             <Text style={styles.statText}>
               <Text style={styles.statHighlight}>{grouped.length}</Text> catégories
             </Text>
@@ -216,12 +217,12 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   headerTitle: {
-    fontSize: 26,
+    fontSize: TYPE.hero.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   headerSubtitle: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     color: palette.sub,
   },
   statsRow: {
@@ -235,12 +236,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     backgroundColor: palette.cardSoft,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     borderWidth: 1,
     borderColor: palette.border,
   },
   statText: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
   },
   statHighlight: {
@@ -259,8 +260,8 @@ const styles = StyleSheet.create({
   introIconCircle: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    backgroundColor: "rgba(245,158,11,0.15)",
+    borderRadius: RADIUS.md,
+    backgroundColor: theme.colors.amberSoft15,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -268,12 +269,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   introTitle: {
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   introDescription: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     marginTop: 4,
     lineHeight: 18,
@@ -282,7 +283,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   filtersSectionTitle: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "600",
     color: palette.sub,
     textTransform: "uppercase",
@@ -302,13 +303,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
     backgroundColor: palette.cardSoft,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.border,
   },
   tipText: {
     flex: 1,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     lineHeight: 16,
   },

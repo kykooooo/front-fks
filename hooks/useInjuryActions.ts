@@ -1,7 +1,12 @@
 // hooks/useInjuryActions.ts
 //
 // Centralise les mutations sur `users/{uid}.activeInjuries` + `lastSeenPainSpike`.
-// Exporte 4 actions :
+// Exporte 5 actions :
+//   - `upsertInjury(injury)`         : ajoute ou met à jour une zone sensible.
+//                                      Remplace l'entrée existante de même
+//                                      `area`, refresh `lastConfirm`, préserve
+//                                      `startDate`, persiste `healthConsent`
+//                                      (consentement RGPD art. 9).
 //   - `markInjuryResolved(area)`     : retire une injury de activeInjuries.
 //   - `downgradeInjury(area)`        : passe l'injury en severity 1 + reset
 //                                      lastConfirm. Utilisé quand le joueur
@@ -25,8 +30,22 @@ import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db } from "../services/firebase";
 import { useActiveInjuries } from "./useActiveInjuries";
 import type { ActiveInjuryParsed } from "../schemas/firestoreSchemas";
+import type { InjuryRecord } from "../domain/types";
+
+/** Version du contrat de consentement RGPD santé (cf. INJURY_IA_CHARTER + PRIVACY_POLICY). */
+export const HEALTH_CONSENT_VERSION = "1.0";
 
 type UseInjuryActions = {
+  /**
+   * Ajoute ou met à jour une zone sensible dans `activeInjuries`.
+   * - Si une entrée avec la même `area` existe : remplace en préservant
+   *   `startDate` (source de vérité = la 1re déclaration), refresh
+   *   `lastConfirm = now`.
+   * - Si pas d'entrée : ajoute avec `startDate = now`, `lastConfirm = now`.
+   * Écrit aussi `healthConsent: { givenAt, version: HEALTH_CONSENT_VERSION }`
+   * dans le profil — obligation RGPD art. 9 (données de santé).
+   */
+  upsertInjury: (injury: InjuryRecord) => Promise<void>;
   /**
    * Retire l'injury de `activeInjuries` (zone sensible résolue).
    * Réponse "Oui, pas de gêne" à la question honnête.
@@ -74,6 +93,48 @@ export function useInjuryActions(): UseInjuryActions {
     [],
   );
 
+  const upsertInjury = useCallback(
+    async (injury: InjuryRecord) => {
+      const uid = auth.currentUser?.uid;
+      if (!uid) throw new Error("Non connecté");
+      const nowISO = new Date().toISOString();
+
+      // Cherche une entrée existante pour la même zone (unicité par area).
+      const existing = activeInjuries.find((i) => i.area === injury.area);
+
+      // Construit l'entrée persistée :
+      //   - startDate : 1re déclaration (source de vérité), préservée.
+      //   - lastConfirm : toujours refresh au moment de l'upsert.
+      const persisted: ActiveInjuryParsed = {
+        area: injury.area,
+        severity: injury.severity,
+        type: injury.type,
+        restrictions: injury.restrictions ?? {},
+        startDate: existing?.startDate || injury.startDate || nowISO,
+        lastConfirm: nowISO,
+        note: injury.note ?? null,
+      };
+
+      const nextList = existing
+        ? activeInjuries.map((i) => (i.area === injury.area ? persisted : i))
+        : [...activeInjuries, persisted];
+
+      await setDoc(
+        doc(db, "users", uid),
+        {
+          activeInjuries: nextList,
+          // RGPD art. 9 — on persiste le consentement à chaque upsert
+          // (équivalent à "ré-acquitté" si re-modification). Le front
+          // a validé les 2 checkboxes médical + RGPD avant d'arriver ici.
+          healthConsent: { givenAt: nowISO, version: HEALTH_CONSENT_VERSION },
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+    },
+    [activeInjuries],
+  );
+
   const markInjuryResolved = useCallback(
     async (area: string) => {
       const next = activeInjuries.filter((i) => i.area !== area);
@@ -116,6 +177,7 @@ export function useInjuryActions(): UseInjuryActions {
   }, []);
 
   return {
+    upsertInjury,
     markInjuryResolved,
     downgradeInjury,
     confirmInjuryStill,

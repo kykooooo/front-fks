@@ -3,7 +3,7 @@ import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
 import { Button } from "../../../components/ui/Button";
 import {
@@ -65,7 +65,7 @@ export function BatteryCard({
         </View>
         <View style={styles.batteryProgressTrack}>
           <LinearGradient
-            colors={["#ff7a1a", "#ff9a4a"]}
+            colors={[theme.colors.accent, theme.colors.accentAlt]}
             style={[styles.batteryProgressFill, { width: `${progressRatio * 100}%` }]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
@@ -91,7 +91,7 @@ export function BatteryCard({
                   ]}
                 >
                   {done ? (
-                    <Ionicons name="checkmark" size={12} color="#fff" />
+                    <Ionicons name="checkmark" size={12} color={theme.colors.white} />
                   ) : (
                     <Text style={styles.batteryIndexText}>{idx + 1}</Text>
                   )}
@@ -115,12 +115,12 @@ export function BatteryCard({
             activeOpacity={0.9}
           >
             <LinearGradient
-              colors={["#ff7a1a", "#ff9a4a"]}
+              colors={[theme.colors.accent, theme.colors.accentAlt]}
               style={styles.batteryStartGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
             >
-              <Ionicons name={hasAnyInput ? "play" : "flash"} size={18} color="#fff" />
+              <Ionicons name={hasAnyInput ? "play" : "flash"} size={18} color={theme.colors.white} />
               <Text style={styles.batteryStartText}>
                 {hasAnyInput ? "Reprendre" : "Lancer la batterie"}
               </Text>
@@ -143,18 +143,18 @@ export function BatteryCard({
 
 const styles = StyleSheet.create({
   batteryCard: {
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     padding: 14,
     gap: 12,
   },
   sectionTitle: {
     color: palette.text,
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
   },
   sectionSub: {
     color: palette.sub,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     marginTop: 2,
   },
   batteryHeader: {
@@ -171,20 +171,20 @@ const styles = StyleSheet.create({
   batteryBadge: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.cardSoft,
   },
   batteryBadgeText: {
     color: palette.sub,
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
   batteryProgressTrack: {
     height: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.borderSoft,
     overflow: "hidden",
   },
@@ -203,7 +203,7 @@ const styles = StyleSheet.create({
   batteryIndex: {
     width: 24,
     height: 24,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     alignItems: "center",
@@ -212,36 +212,36 @@ const styles = StyleSheet.create({
   },
   batteryIndexText: {
     color: palette.sub,
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "700",
   },
   batteryLabel: {
     color: palette.text,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
   },
   batteryMeta: {
     color: palette.sub,
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     marginTop: 2,
   },
   batteryValue: {
     color: palette.text,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
   },
   batteryPending: {
     color: palette.sub,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
   },
   batteryActions: {
     marginTop: 4,
     gap: 8,
   },
   batteryStartButton: {
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     overflow: "hidden",
-    shadowColor: "#ff7a1a",
+    shadowColor: theme.colors.accent,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -256,8 +256,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   batteryStartText: {
-    color: "#fff",
-    fontSize: 15,
+    color: theme.colors.white,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
   },
 });

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import { ModalContainer } from "../../../components/modal/ModalContainer";
 import { EXERCISE_BY_ID, type ExerciseDef } from "../../../engine/exerciseBank";
 import { EXERCISE_INSTRUCTIONS } from "../../../engine/exerciseInstructions";
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     width: 44,
     height: 5,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.borderSoft,
     marginTop: 10,
     marginBottom: 10,
@@ -266,16 +266,16 @@ const styles = StyleSheet.create({
   modalModalityIcon: {
     width: 28,
     height: 28,
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
   },
-  modalTitle: { flex: 1, fontSize: 16, fontWeight: "800", color: palette.text },
-  modalSub: { marginTop: 4, fontSize: 12, color: palette.sub, lineHeight: 16 },
+  modalTitle: { flex: 1, fontSize: TYPE.body.fontSize, fontWeight: "800", color: palette.text },
+  modalSub: { marginTop: 4, fontSize: TYPE.caption.fontSize, color: palette.sub, lineHeight: 16 },
   modalCloseButton: {
     width: 34,
     height: 34,
-    borderRadius: 17,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
@@ -284,13 +284,13 @@ const styles = StyleSheet.create({
   },
   modalContent: { paddingHorizontal: 14, paddingBottom: 18, gap: 12 },
   modalRowTitle: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "800",
     color: palette.text,
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
-  modalRowText: { fontSize: 13, color: palette.sub, lineHeight: 18 },
+  modalRowText: { fontSize: TYPE.caption.fontSize, color: palette.sub, lineHeight: 18 },
   modalActions: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   modalActionButton: {
     flexDirection: "row",
@@ -298,23 +298,23 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
   },
-  modalActionText: { fontSize: 12, fontWeight: "800", color: palette.sub },
+  modalActionText: { fontSize: TYPE.caption.fontSize, fontWeight: "800", color: palette.sub },
   modalActionTextActive: { color: palette.accent },
   modalChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   modalChip: {
     paddingVertical: 6,
     paddingHorizontal: 10,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
   },
-  modalChipText: { fontSize: 12, color: palette.sub, fontWeight: "700" },
+  modalChipText: { fontSize: TYPE.caption.fontSize, color: palette.sub, fontWeight: "700" },
   modalChipAlt: { borderColor: palette.accent, backgroundColor: palette.accentSoft },
-  modalChipTextAlt: { fontSize: 12, color: palette.accent, fontWeight: "800" },
+  modalChipTextAlt: { fontSize: TYPE.caption.fontSize, color: palette.accent, fontWeight: "800" },
 });

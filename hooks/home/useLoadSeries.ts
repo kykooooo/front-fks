@@ -1,13 +1,17 @@
 import { useMemo } from "react";
 import { subDays } from "date-fns";
-import { TRAINING_DEFAULTS } from "../../config/trainingDefaults";
+import { TRAINING_DEFAULTS, getTauForLevel } from "../../config/trainingDefaults";
 import { updateTrainingLoad } from "../../engine/loadModel";
 import { toDateKey } from "../../utils/dateHelpers";
+import { useSessionsStore } from "../../state/stores/useSessionsStore";
 
 type DailyApplied = Record<string, number> | undefined | null;
 
 export function useLoadSeries(dailyApplied: DailyApplied, devNowISO?: string) {
+  const playerLevel = useSessionsStore((s) => s.playerLevel);
+
   return useMemo(() => {
+    const { tauAtl, tauCtl } = getTauForLevel(playerLevel);
     const today = devNowISO ? new Date(devNowISO) : new Date();
     const daysBack = 7;
     const warmup = 21;
@@ -22,7 +26,7 @@ export function useLoadSeries(dailyApplied: DailyApplied, devNowISO?: string) {
     orderedDays.forEach((d, idx) => {
       const key = toDateKey(d);
       const load = Number(dailyApplied?.[key] ?? 0) || 0;
-      const next = updateTrainingLoad(atlSeed, ctlSeed, load, { dtDays: 1 });
+      const next = updateTrainingLoad(atlSeed, ctlSeed, load, { dtDays: 1, tauAtl, tauCtl });
       atlSeed = next.atl;
       ctlSeed = next.ctl;
       if (idx >= warmup) {
@@ -31,5 +35,5 @@ export function useLoadSeries(dailyApplied: DailyApplied, devNowISO?: string) {
     });
 
     return { tsbArr };
-  }, [dailyApplied, devNowISO]);
+  }, [dailyApplied, devNowISO, playerLevel]);
 }

@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Animated } from "react-native
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useHaptics } from "../../../hooks/useHaptics";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import type { CategoryConfig } from "../prebuiltConfig";
 
 const palette = theme.colors;
@@ -69,7 +69,7 @@ export function AnimatedCategoryCard({
           <Ionicons
             name={config.icon}
             size={14}
-            color={isActive ? "#fff" : palette.sub}
+            color={isActive ? theme.colors.white : palette.sub}
           />
         </LinearGradient>
         <Text style={[styles.categoryChipText, isActive && styles.categoryChipTextActive]}>
@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     paddingRight: 10,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.cardSoft,
@@ -105,12 +105,12 @@ const styles = StyleSheet.create({
   categoryChipIcon: {
     width: 26,
     height: 26,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     justifyContent: "center",
     alignItems: "center",
   },
   categoryChipText: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     fontWeight: "600",
   },
@@ -120,7 +120,7 @@ const styles = StyleSheet.create({
   categoryChipBadge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 6,
+    borderRadius: RADIUS.xs,
     backgroundColor: palette.bgSoft,
     borderWidth: 1,
     borderColor: palette.borderSoft,
@@ -129,10 +129,10 @@ const styles = StyleSheet.create({
   },
   categoryChipBadgeActive: {
     borderColor: palette.accent,
-    backgroundColor: "rgba(255,122,26,0.1)",
+    backgroundColor: theme.colors.accentSoft10,
   },
   categoryChipBadgeText: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     fontWeight: "700",
   },

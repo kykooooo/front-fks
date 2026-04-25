@@ -5,7 +5,7 @@ import React, { useMemo } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { addDays, format, startOfWeek, isSameDay } from "date-fns";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 import { toDateKey } from "../../utils/dateHelpers";
 
 const palette = theme.colors;
@@ -31,10 +31,10 @@ const DOW_LABELS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 type DayStatus = "match" | "club" | "fks_done" | "fks_planned" | "rest";
 
 const STATUS_CONFIG: Record<DayStatus, { icon: string; color: string; bg: string }> = {
-  match: { icon: "football", color: "#ef4444", bg: "rgba(239, 68, 68, 0.15)" },
-  club: { icon: "people", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.15)" },
-  fks_done: { icon: "checkmark-circle", color: "#22c55e", bg: "rgba(34, 197, 94, 0.15)" },
-  fks_planned: { icon: "time", color: "#3b82f6", bg: "rgba(59, 130, 246, 0.15)" },
+  match: { icon: "football", color: theme.colors.red500, bg: theme.colors.redSoft15 },
+  club: { icon: "people", color: theme.colors.amber500, bg: theme.colors.amberSoft15 },
+  fks_done: { icon: "checkmark-circle", color: theme.colors.green500, bg: theme.colors.green500Soft15 },
+  fks_planned: { icon: "time", color: theme.colors.blue500, bg: theme.colors.blue500Soft15 },
   rest: { icon: "remove", color: palette.sub, bg: "transparent" },
 };
 
@@ -173,7 +173,7 @@ export function CoachTeamCalendar({ players, onPlayerPress, currentDate }: Props
 const styles = StyleSheet.create({
   container: {
     backgroundColor: palette.card,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: palette.border,
     overflow: "hidden",
@@ -185,7 +185,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     color: palette.sub,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
   },
   headerRow: {
     flexDirection: "row",
@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   headerLabel: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "700",
     color: palette.sub,
     textTransform: "uppercase",
@@ -213,24 +213,24 @@ const styles = StyleSheet.create({
     minWidth: 36,
   },
   todayCell: {
-    backgroundColor: "rgba(37, 99, 235, 0.08)",
+    backgroundColor: theme.colors.blueSoft08,
   },
   dayLabel: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "600",
     color: palette.sub,
   },
   todayLabel: {
-    color: "#2563eb",
+    color: theme.colors.blue600,
   },
   dayNum: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     color: palette.text,
     marginTop: 2,
   },
   todayNum: {
-    color: "#2563eb",
+    color: theme.colors.blue600,
   },
   playersScroll: {
     maxHeight: 300,
@@ -241,14 +241,14 @@ const styles = StyleSheet.create({
     borderBottomColor: palette.borderSoft,
   },
   playerName: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "600",
     color: palette.text,
   },
   statusDot: {
     width: 24,
     height: 24,
-    borderRadius: 6,
+    borderRadius: RADIUS.xs,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -269,12 +269,12 @@ const styles = StyleSheet.create({
   legendDot: {
     width: 18,
     height: 18,
-    borderRadius: 4,
+    borderRadius: RADIUS.xs,
     alignItems: "center",
     justifyContent: "center",
   },
   legendText: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
   },
 });

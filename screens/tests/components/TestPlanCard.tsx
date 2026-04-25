@@ -2,7 +2,7 @@
 import React from "react";
 import { View, Text, StyleSheet, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
 import { PLAYLIST_PLAN, type PlaylistId } from "../testConfig";
 
@@ -52,13 +52,13 @@ export function TestPlanCard({ selectedPlaylist, cardAnim }: Props) {
 
 const styles = StyleSheet.create({
   planCard: {
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     padding: 14,
     gap: 6,
   },
   sectionTitle: {
     color: palette.text,
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
   },
   planHeader: {
@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
   stepIndexCircle: {
     width: 24,
     height: 24,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.accent,
     backgroundColor: palette.accentSoft,
@@ -84,11 +84,11 @@ const styles = StyleSheet.create({
   stepIndex: {
     color: palette.accent,
     fontWeight: "700",
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
   },
   stepText: {
     color: palette.text,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     flex: 1,
     lineHeight: 20,
   },

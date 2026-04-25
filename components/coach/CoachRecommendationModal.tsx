@@ -13,7 +13,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 import { MICROCYCLES, MicrocycleId, isMicrocycleId } from "../../domain/microcycles";
 import {
   RECOMMENDATION_TYPES,
@@ -124,7 +124,7 @@ export function CoachRecommendationModal({
                   <Ionicons
                     name={t.icon as any}
                     size={16}
-                    color={type === t.id ? "#fff" : palette.text}
+                    color={type === t.id ? theme.colors.white : palette.text}
                   />
                   <Text
                     style={[
@@ -214,10 +214,10 @@ export function CoachRecommendationModal({
               ]}
             >
               {sending ? (
-                <ActivityIndicator color="#fff" size="small" />
+                <ActivityIndicator color={theme.colors.white} size="small" />
               ) : (
                 <>
-                  <Ionicons name="send" size={16} color="#fff" />
+                  <Ionicons name="send" size={16} color={theme.colors.white} />
                   <Text style={styles.sendText}>Envoyer</Text>
                 </>
               )}
@@ -232,7 +232,7 @@ export function CoachRecommendationModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: theme.colors.black50,
     justifyContent: "flex-end",
   },
   container: {
@@ -252,12 +252,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: TYPE.subtitle.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   headerSub: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     marginTop: 2,
   },
@@ -268,14 +268,14 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   label: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     color: palette.text,
     marginBottom: 8,
     marginTop: 12,
   },
   labelSmall: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "600",
     color: palette.sub,
     marginBottom: 6,
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.card,
@@ -302,12 +302,12 @@ const styles = StyleSheet.create({
     borderColor: palette.accent,
   },
   typeChipText: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "600",
     color: palette.text,
   },
   typeChipTextActive: {
-    color: "#fff",
+    color: theme.colors.white,
   },
   cyclesGrid: {
     flexDirection: "row",
@@ -317,7 +317,7 @@ const styles = StyleSheet.create({
   cycleChip: {
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.card,
@@ -327,31 +327,31 @@ const styles = StyleSheet.create({
     borderColor: palette.accent,
   },
   cycleChipText: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "600",
     color: palette.text,
   },
   cycleChipTextActive: {
-    color: "#fff",
+    color: theme.colors.white,
   },
   textInput: {
     borderWidth: 1,
     borderColor: palette.border,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     padding: 12,
     color: palette.text,
     backgroundColor: palette.card,
     minHeight: 100,
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
   },
   templateChip: {
     padding: 10,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     backgroundColor: palette.cardSoft,
     marginBottom: 6,
   },
   templateText: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     lineHeight: 16,
   },
@@ -367,12 +367,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.border,
   },
   cancelText: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
@@ -383,15 +383,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     backgroundColor: palette.accent,
   },
   sendButtonDisabled: {
     opacity: 0.5,
   },
   sendText: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
-    color: "#fff",
+    color: theme.colors.white,
   },
 });

@@ -1,70 +1,101 @@
 // screens/prebuilt/prebuiltConfig.ts
 import { Ionicons } from "@expo/vector-icons";
 
+// ─── Types ────────────────────────────────────────────────────────
+
+/** Exercice structuré dans une routine */
+export type RoutineExercise = {
+  name: string;              // Nom FR cohérent avec exerciseBank
+  sets?: number;
+  reps?: number | string;    // 8, "8-10", "30s", "max"
+  rest_s?: number;
+  tempo?: string;            // "3-1-1-0"
+  notes?: string;            // Consigne coaching courte
+};
+
+/** Bloc regroupant des exercices liés */
+export type RoutineBlock = {
+  title: string;             // "Activation bas du corps"
+  exercises: RoutineExercise[];
+};
+
+export type RoutineCategory =
+  | "AVANT L'EFFORT"
+  | "APRÈS L'EFFORT"
+  | "JOUR DE MATCH"
+  | "MOBILITÉ"
+  | "PRÉVENTION"
+  | "CIRCUITS";
+
+export type Prebuilt = {
+  id: string;                               // "avant-reveil-express" (unique, stable)
+  category: RoutineCategory;
+  title: string;
+  intensity: "easy" | "moderate" | "hard";
+  durationMin: number;                      // nombre exact en minutes
+  objective: string;
+  blocks: RoutineBlock[];                   // exercices structurés
+  focus?: "run" | "strength" | "speed" | "circuit" | "plyo" | "mobility";
+  location?: "gym" | "pitch" | "home";
+  equipment?: string[];
+  tags?: string[];
+  level?: string;
+  coaching?: string[];                      // conseils coaching (ex-expectations)
+  impactsTsb: boolean;                      // true = compte dans la charge
+  rpeTarget?: number;                       // obligatoire si impactsTsb
+};
+
+// ─── Catégories ───────────────────────────────────────────────────
+
 export type CategoryConfig = {
   icon: keyof typeof Ionicons.glyphMap;
   gradient: [string, string];
   tagline: string;
 };
 
-export const CATEGORY_CONFIG: Record<string, CategoryConfig> = {
-  ACTIVATION: {
+export const CATEGORY_CONFIG: Record<RoutineCategory, CategoryConfig> = {
+  "AVANT L'EFFORT": {
     icon: "flash",
     gradient: ["#f59e0b", "#fbbf24"],
-    tagline: "Réveille ton corps avant l'effort",
+    tagline: "Prépare ton corps avant l'effort",
   },
-  RÉCUPÉRATION: {
+  "APRÈS L'EFFORT": {
     icon: "leaf",
     gradient: ["#10b981", "#34d399"],
     tagline: "Récupère mieux, progresse plus vite",
   },
-  "MOBILITÉ EXPRESS": {
+  "JOUR DE MATCH": {
+    icon: "football",
+    gradient: ["#3b82f6", "#60a5fa"],
+    tagline: "Le bon geste au bon moment",
+  },
+  "MOBILITÉ": {
     icon: "body",
     gradient: ["#8b5cf6", "#a78bfa"],
-    tagline: "Gagne en amplitude en quelques minutes",
+    tagline: "Gagne en amplitude, évite les raideurs",
   },
-  PRÉVENTION: {
+  "PRÉVENTION": {
     icon: "shield-checkmark",
     gradient: ["#ef4444", "#f87171"],
     tagline: "Protège-toi des blessures classiques",
   },
-  "MATCH DAY": {
-    icon: "football",
-    gradient: ["#3b82f6", "#60a5fa"],
-    tagline: "Routines spéciales jour de match",
-  },
-  "PACK 7 JOURS": {
-    icon: "calendar",
-    gradient: ["#14b8a6", "#2dd4bf"],
-    tagline: "Programme mobilité complet sur 7 jours",
-  },
-  DÉFIS: {
-    icon: "trophy",
-    gradient: ["#ff7a1a", "#ff9a4a"],
-    tagline: "Teste tes limites et progresse",
-  },
-  CIRCUITS: {
-    icon: "repeat",
+  "CIRCUITS": {
+    icon: "barbell",
     gradient: ["#e11d48", "#fb7185"],
-    tagline: "Enchaîne les tours, repousse tes limites",
+    tagline: "Vrais entraînements complémentaires",
   },
 };
 
-export type Prebuilt = {
-  category: string;
-  title: string;
-  intensity: "easy" | "moderate" | "hard";
-  duration: string;
-  objective: string;
-  detail: string[];
-  focus?: "run" | "strength" | "speed" | "circuit" | "plyo" | "mobility";
-  location?: "gym" | "pitch" | "home";
-  equipment?: string[];
-  tags?: string[];
-  level?: string;
-  expectations?: string[];
-  rpe_target?: number;
-};
+export const CATEGORY_ORDER: RoutineCategory[] = [
+  "AVANT L'EFFORT",
+  "APRÈS L'EFFORT",
+  "JOUR DE MATCH",
+  "MOBILITÉ",
+  "PRÉVENTION",
+  "CIRCUITS",
+];
+
+// ─── Helpers ──────────────────────────────────────────────────────
 
 export const INTENSITY_LABEL: Record<string, string> = {
   easy: "Facile",
@@ -96,30 +127,8 @@ export const LOCATION_LABEL: Record<string, string> = {
   home: "Maison",
 };
 
-export const CATEGORY_ORDER = [
-  "ACTIVATION",
-  "RÉCUPÉRATION",
-  "MOBILITÉ EXPRESS",
-  "PRÉVENTION",
-  "MATCH DAY",
-  "PACK 7 JOURS",
-  "DÉFIS",
-  "CIRCUITS",
-];
-
 export const intensityRank: Record<Prebuilt["intensity"], number> = {
   hard: 0,
   moderate: 1,
   easy: 2,
-};
-
-export const parseDurationMin = (raw?: string) => {
-  if (!raw) return undefined;
-  const matches = raw.match(/\d+/g);
-  if (!matches || matches.length === 0) return undefined;
-  const values = matches.map((m) => Number(m)).filter((n) => Number.isFinite(n));
-  if (!values.length) return undefined;
-  if (values.length === 1) return values[0];
-  const avg = values.reduce((a, b) => a + b, 0) / values.length;
-  return Math.round(avg);
 };

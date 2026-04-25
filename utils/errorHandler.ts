@@ -2,6 +2,7 @@
 // Système centralisé de gestion des erreurs avec messages clairs pour l'utilisateur
 
 import { Alert, type AlertButton } from 'react-native';
+import { showToast } from './toast';
 
 /** Narrow an unknown caught value into something with common error fields */
 type ErrorLike = {
@@ -189,9 +190,8 @@ export function showError(error: unknown, context?: string) {
   // Message utilisateur
   const title = getErrorTitle(appError.type);
   const message = appError.userMessage;
-  const buttons: AlertButton[] = [{ text: 'OK', style: 'cancel' }];
 
-  Alert.alert(title, message, buttons);
+  showToast({ type: 'error', title, message });
 }
 
 /**

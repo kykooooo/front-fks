@@ -1,7 +1,7 @@
 // screens/videoLibrary/components/FiltersPanel.tsx
 import React from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
 import { FilterChip } from "./FilterChip";
 import {
@@ -121,15 +121,15 @@ export function FiltersPanel({
 const styles = StyleSheet.create({
   filtersCard: { padding: 12, gap: 12 },
   filterGroup: { gap: 8 },
-  filterLabel: { fontSize: 12, fontWeight: "700", color: palette.text },
+  filterLabel: { fontSize: TYPE.caption.fontSize, fontWeight: "700", color: palette.text },
   filterRow: { gap: 8 },
   filtersFooter: { flexDirection: "row", justifyContent: "flex-end" },
   resetButton: {
     paddingVertical: 6,
     paddingHorizontal: 10,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
   },
-  resetButtonText: { fontSize: 11, fontWeight: "600", color: palette.sub },
+  resetButtonText: { fontSize: TYPE.micro.fontSize, fontWeight: "600", color: palette.sub },
 });

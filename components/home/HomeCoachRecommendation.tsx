@@ -6,7 +6,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useHaptics } from "../../hooks/useHaptics";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 import { MICROCYCLES, isMicrocycleId } from "../../domain/microcycles";
 import type { CoachRecommendation, RecommendationType } from "../../domain/coachRecommendations";
 import { dismissRecommendation, markRecommendationAsRead } from "../../repositories/coachRecommendationsRepo";
@@ -27,30 +27,30 @@ const TYPE_CONFIG: Record<
 > = {
   cycle_suggestion: {
     icon: "trophy",
-    color: "#8b5cf6",
-    bg: "rgba(139, 92, 246, 0.08)",
-    iconBg: "rgba(139, 92, 246, 0.15)",
+    color: theme.colors.violet500,
+    bg: theme.colors.violetSoft08,
+    iconBg: theme.colors.violetSoft15,
     title: "Suggestion de cycle",
   },
   rest_advice: {
     icon: "bed",
-    color: "#f59e0b",
-    bg: "rgba(245, 158, 11, 0.08)",
-    iconBg: "rgba(245, 158, 11, 0.15)",
+    color: theme.colors.amber500,
+    bg: theme.colors.amberSoft08,
+    iconBg: theme.colors.amberSoft15,
     title: "Conseil récupération",
   },
   intensity_adjust: {
     icon: "speedometer",
-    color: "#3b82f6",
-    bg: "rgba(59, 130, 246, 0.08)",
-    iconBg: "rgba(59, 130, 246, 0.15)",
+    color: theme.colors.blue500,
+    bg: theme.colors.blue500Soft08,
+    iconBg: theme.colors.blue500Soft15,
     title: "Ajustement intensité",
   },
   custom: {
     icon: "chatbubble",
-    color: "#2563eb",
-    bg: "rgba(37, 99, 235, 0.08)",
-    iconBg: "rgba(37, 99, 235, 0.15)",
+    color: theme.colors.blue600,
+    bg: theme.colors.blueSoft08,
+    iconBg: theme.colors.blueSoft15,
     title: "Message du coach",
   },
 };
@@ -148,7 +148,7 @@ function HomeCoachRecommendationInner({ recommendation, onDismiss }: Props) {
           style={[styles.actionButton, { backgroundColor: config.color }]}
         >
           <Text style={styles.actionText}>Voir le cycle</Text>
-          <Ionicons name="arrow-forward" size={16} color="#fff" />
+          <Ionicons name="arrow-forward" size={16} color={theme.colors.white} />
         </TouchableOpacity>
       )}
     </View>
@@ -157,11 +157,11 @@ function HomeCoachRecommendationInner({ recommendation, onDismiss }: Props) {
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     borderLeftWidth: 4,
     padding: 16,
     gap: 14,
-    shadowColor: "#000",
+    shadowColor: theme.colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
@@ -182,10 +182,10 @@ const styles = StyleSheet.create({
     gap: 5,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
   },
   coachName: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
   unreadDot: {
     width: 6,
     height: 6,
-    borderRadius: 3,
+    borderRadius: RADIUS.xs,
     marginLeft: 2,
   },
   dismissButton: {
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
   iconWrap: {
     width: 48,
     height: 48,
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -216,12 +216,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   title: {
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   message: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     color: palette.sub,
     lineHeight: 20,
   },
@@ -232,11 +232,11 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     marginTop: 4,
   },
   cycleTagText: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
   },
   actionButton: {
@@ -245,12 +245,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
   },
   actionText: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
-    color: "#fff",
+    color: theme.colors.white,
   },
 });
 

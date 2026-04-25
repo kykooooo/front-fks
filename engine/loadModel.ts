@@ -11,9 +11,9 @@
 import { TAU } from "../config/trainingDefaults";
 import { safeNum } from "./safeNum";
 
-// Constantes de temps (importées depuis config)
-const ATL_TAU = TAU.ATL;  // 14 jours - fatigue décroît plus vite
-const CTL_TAU = TAU.CTL;  // 28 jours - forme persiste plus longtemps
+// Fallback (legacy) — utilisé uniquement si aucun tau n'est passé
+const DEFAULT_TAU_ATL = TAU.ATL;  // 14
+const DEFAULT_TAU_CTL = TAU.CTL;  // 28
 
 /**
  * Met à jour ATL/CTL/TSB après une charge d'entraînement.
@@ -22,28 +22,27 @@ const CTL_TAU = TAU.CTL;  // 28 jours - forme persiste plus longtemps
  *   k = 1 - exp(-dt / τ)
  *   next = current + k × (delta - current)
  *
- * Où :
- *   - dt = nombre de jours depuis la dernière mise à jour
- *   - τ (tau) = constante de temps (14 pour ATL, 28 pour CTL)
- *   - delta = charge du jour
- *
  * @param atl - ATL actuel
  * @param ctl - CTL actuel
  * @param delta - Charge journalière à appliquer
  * @param opts.dtDays - Nombre de jours (défaut: 1)
+ * @param opts.tauAtl - Constante tau ATL (défaut: 14)
+ * @param opts.tauCtl - Constante tau CTL (défaut: 28)
  */
 export function updateTrainingLoad(
   atl: number,
   ctl: number,
   delta: number,
-  opts?: { dtDays?: number }
+  opts?: { dtDays?: number; tauAtl?: number; tauCtl?: number }
 ) {
   const safeAtl = safeNum(atl, 0, "updateTrainingLoad.atl");
   const safeCtl = safeNum(ctl, 0, "updateTrainingLoad.ctl");
   const safeDelta = safeNum(delta, 0, "updateTrainingLoad.delta");
   const dt = Math.max(1, Math.floor(safeNum(opts?.dtDays, 1, "updateTrainingLoad.dtDays")));
-  const kATL = 1 - Math.exp(-dt / ATL_TAU);
-  const kCTL = 1 - Math.exp(-dt / CTL_TAU);
+  const tauAtl = opts?.tauAtl ?? DEFAULT_TAU_ATL;
+  const tauCtl = opts?.tauCtl ?? DEFAULT_TAU_CTL;
+  const kATL = 1 - Math.exp(-dt / tauAtl);
+  const kCTL = 1 - Math.exp(-dt / tauCtl);
 
   const nextATL = safeAtl + kATL * (safeDelta - safeAtl);
   const nextCTL = safeCtl + kCTL * (safeDelta - safeCtl);
@@ -51,14 +50,27 @@ export function updateTrainingLoad(
   return { atl: nextATL, ctl: nextCTL, tsb };
 }
 
-export function decayLoadOverDays(atl: number, ctl: number, days: number) {
+/**
+ * Décroissance exponentielle pure sur N jours de repos.
+ *
+ * @param opts.tauAtl - Constante tau ATL (défaut: 14)
+ * @param opts.tauCtl - Constante tau CTL (défaut: 28)
+ */
+export function decayLoadOverDays(
+  atl: number,
+  ctl: number,
+  days: number,
+  opts?: { tauAtl?: number; tauCtl?: number }
+) {
   const safeAtl = safeNum(atl, 0, "decayLoad.atl");
   const safeCtl = safeNum(ctl, 0, "decayLoad.ctl");
   const d = Math.max(0, Math.floor(safeNum(days, 0, "decayLoad.days")));
   if (d === 0) return { atl: safeAtl, ctl: safeCtl, tsb: safeCtl - safeAtl };
 
-  const decayATL = Math.exp(-d / ATL_TAU);
-  const decayCTL = Math.exp(-d / CTL_TAU);
+  const tauAtl = opts?.tauAtl ?? DEFAULT_TAU_ATL;
+  const tauCtl = opts?.tauCtl ?? DEFAULT_TAU_CTL;
+  const decayATL = Math.exp(-d / tauAtl);
+  const decayCTL = Math.exp(-d / tauCtl);
 
   const nextATL = safeAtl * decayATL;
   const nextCTL = safeCtl * decayCTL;

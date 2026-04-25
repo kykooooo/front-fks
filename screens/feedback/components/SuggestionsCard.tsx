@@ -2,7 +2,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../../../constants/theme';
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import type { FeedbackSuggestion } from '../hooks/useSuggestions';
 
 const COLORS = theme.colors;
@@ -59,7 +59,7 @@ export function SuggestionsCard({
 
 const styles = StyleSheet.create({
   suggestCard: {
-    borderRadius: 18,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: COLORS.border,
     padding: 14,
@@ -68,29 +68,29 @@ const styles = StyleSheet.create({
   },
   suggestHeader: { gap: 4 },
   suggestTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  suggestTitle: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
-  suggestSubtitle: { color: COLORS.textMuted, fontSize: 12 },
+  suggestTitle: { color: COLORS.text, fontSize: TYPE.body.fontSize, fontWeight: '700' },
+  suggestSubtitle: { color: COLORS.textMuted, fontSize: TYPE.caption.fontSize },
   suggestRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   suggestChip: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: COLORS.border,
     backgroundColor: COLORS.surfaceSoft,
   },
-  suggestChipText: { color: COLORS.text, fontSize: 12, fontWeight: '600' },
+  suggestChipText: { color: COLORS.text, fontSize: TYPE.caption.fontSize, fontWeight: '600' },
   suggestApply: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     paddingVertical: 10,
     paddingHorizontal: 14,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: COLORS.accent,
     backgroundColor: COLORS.accentSoft,
     alignSelf: 'flex-start',
   },
-  suggestApplyText: { color: COLORS.accent, fontSize: 13, fontWeight: '700' },
+  suggestApplyText: { color: COLORS.accent, fontSize: TYPE.caption.fontSize, fontWeight: '700' },
 });

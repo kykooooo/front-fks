@@ -13,7 +13,7 @@ import {
 import { RouteProp, useRoute } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../constants/theme";
+import { theme, TYPE, RADIUS } from "../constants/theme";
 import { showToast } from "../utils/toast";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { Badge } from "../components/ui/Badge";
@@ -522,17 +522,17 @@ const styles = StyleSheet.create({
   listContainer: { padding: 14, paddingBottom: 32, gap: 14 },
   screenHeader: { gap: 2 },
   screenKicker: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     letterSpacing: 1.6,
     color: palette.sub,
     textTransform: "uppercase",
     fontWeight: "800",
   },
-  screenTitle: { fontSize: 24, fontWeight: "800", color: palette.text, marginTop: 2 },
+  screenTitle: { fontSize: TYPE.title.fontSize, fontWeight: "800", color: palette.text, marginTop: 2 },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
@@ -540,11 +540,11 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     gap: 10,
   },
-  searchInput: { flex: 1, paddingVertical: 10, color: palette.text, fontSize: 13 },
+  searchInput: { flex: 1, paddingVertical: 10, color: palette.text, fontSize: TYPE.caption.fontSize },
   clearButton: {
     width: 26,
     height: 26,
-    borderRadius: 13,
+    borderRadius: RADIUS.md,
     backgroundColor: palette.borderSoft,
     alignItems: "center",
     justifyContent: "center",
@@ -560,7 +560,7 @@ const styles = StyleSheet.create({
   backButton: {
     width: 34,
     height: 34,
-    borderRadius: 17,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
@@ -570,7 +570,7 @@ const styles = StyleSheet.create({
   resultsModalityIcon: {
     width: 28,
     height: 28,
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -581,7 +581,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 8,
     paddingHorizontal: 10,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
@@ -590,16 +590,16 @@ const styles = StyleSheet.create({
     borderColor: palette.accent,
     backgroundColor: palette.accentSoft,
   },
-  topActionText: { fontSize: 12, fontWeight: "700", color: palette.sub },
+  topActionText: { fontSize: TYPE.caption.fontSize, fontWeight: "700", color: palette.sub },
   topActionTextActive: { color: palette.accent },
   emptyCard: {
     padding: 16,
     gap: 6,
     backgroundColor: palette.cardSoft,
-    borderRadius: theme.radius.lg,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: palette.border,
   },
-  emptyTitle: { fontSize: 15, fontWeight: "700", color: palette.text },
-  emptyText: { fontSize: 12, color: palette.sub, lineHeight: 18 },
+  emptyTitle: { fontSize: TYPE.body.fontSize, fontWeight: "700", color: palette.text },
+  emptyText: { fontSize: TYPE.caption.fontSize, color: palette.sub, lineHeight: 18 },
 });

@@ -3,7 +3,7 @@ import React from "react";
 import { View, Text, StyleSheet, TextInput, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
 import { Button } from "../../../components/ui/Button";
 import { getGroupConfig, FIELD_BY_KEY, type FieldKey, type StepId, type TestEntry } from "../testConfig";
@@ -65,7 +65,7 @@ export function EntryFormCard({
         </View>
         <View style={styles.entryProgressTrack}>
           <LinearGradient
-            colors={["#ff7a1a", "#ff9a4a"]}
+            colors={[theme.colors.accent, theme.colors.accentAlt]}
             style={[styles.entryProgressFill, { width: `${progressRatio * 100}%` }]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
@@ -84,7 +84,7 @@ export function EntryFormCard({
                 <Ionicons
                   name={getGroupConfig(currentField.group).icon}
                   size={16}
-                  color="#fff"
+                  color={theme.colors.white}
                 />
               </LinearGradient>
               <Text style={styles.entryLabel}>{stepLabel}</Text>
@@ -152,13 +152,13 @@ export function EntryFormCard({
 
 const styles = StyleSheet.create({
   entryCard: {
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     padding: 14,
     gap: 12,
   },
   sectionTitle: {
     color: palette.text,
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
   },
   entryHeader: {
@@ -174,19 +174,19 @@ const styles = StyleSheet.create({
   entryStepBadge: {
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.accentSoft,
     borderWidth: 1,
     borderColor: palette.accent,
   },
   entryStep: {
     color: palette.accent,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
   },
   entryProgressTrack: {
     height: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.borderSoft,
     overflow: "hidden",
   },
@@ -206,18 +206,18 @@ const styles = StyleSheet.create({
   entryFieldIcon: {
     width: 32,
     height: 32,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     alignItems: "center",
     justifyContent: "center",
   },
   entryLabel: {
     color: palette.text,
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "800",
   },
   entryProtocol: {
     color: palette.sub,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     lineHeight: 17,
   },
   entryInputRow: {
@@ -231,14 +231,14 @@ const styles = StyleSheet.create({
   entryUnitPill: {
     paddingHorizontal: 10,
     paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.cardSoft,
   },
   entryUnitText: {
     color: palette.sub,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "600",
   },
   entryActions: {
@@ -250,13 +250,13 @@ const styles = StyleSheet.create({
   },
   input: {
     backgroundColor: palette.cardSoft,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     borderWidth: 1,
     borderColor: palette.border,
     paddingHorizontal: 10,
     paddingVertical: 10,
     color: palette.text,
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
   },
   inputMultiline: {
     minHeight: 80,

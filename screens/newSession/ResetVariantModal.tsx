@@ -3,6 +3,8 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-nati
 import { palette } from "./theme";
 import type { ResetVariant } from "./types";
 import type { ResetExplain } from "./resetExplain";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
+
 
 type Props = {
   variants: ResetVariant[];
@@ -74,7 +76,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "rgba(5,5,9,0.8)",
+    backgroundColor: theme.colors.panel80,
     zIndex: 20,
     alignItems: "center",
     justifyContent: "center",
@@ -82,7 +84,7 @@ const styles = StyleSheet.create({
   },
   resetModal: {
     width: "100%",
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.card,
@@ -94,36 +96,36 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   resetTitle: {
-    fontSize: 18,
+    fontSize: TYPE.subtitle.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   resetSubtitle: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     marginBottom: 4,
   },
   resetCard: {
     padding: 12,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.cardSoft,
     marginTop: 6,
   },
   resetCardTitle: {
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   resetCardSubtitle: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     marginTop: 2,
   },
   explainBlock: {
     padding: 10,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.cardSoft,
@@ -131,16 +133,16 @@ const styles = StyleSheet.create({
   },
   explainTitle: {
     color: palette.text,
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "800",
   },
   explainSubtitle: {
     color: palette.sub,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
   },
   explainLabel: {
     color: palette.text,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
   },
   explainGroup: {
@@ -153,12 +155,12 @@ const styles = StyleSheet.create({
   },
   bullet: {
     color: palette.accent,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     marginTop: 1,
   },
   bulletText: {
     flex: 1,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.text,
   },
   resetCancel: {
@@ -169,6 +171,6 @@ const styles = StyleSheet.create({
   },
   resetCancelText: {
     color: palette.sub,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
   },
 });

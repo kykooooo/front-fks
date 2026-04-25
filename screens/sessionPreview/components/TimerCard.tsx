@@ -1,7 +1,7 @@
 // screens/sessionPreview/components/TimerCard.tsx
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
 import { Button } from "../../../components/ui/Button";
@@ -45,7 +45,7 @@ export function TimerCard({
       <SectionHeader title="Chronos" />
       <View style={styles.timerRow}>
         <View style={styles.timerBlock}>
-          <Text style={styles.timerLabel}>Séance</Text>
+          <Text style={styles.timerLabel}>Seance</Text>
           <Text style={styles.timerValue}>{formatTime(sessionSec)}</Text>
         </View>
         <View style={styles.timerBlock}>
@@ -56,7 +56,7 @@ export function TimerCard({
 
       <View style={styles.timerActions}>
         <Button
-          label={sessionRunning ? "Pause" : "Démarrer"}
+          label={sessionRunning ? "Pause" : "Demarrer"}
           onPress={onToggleSession}
           size="sm"
           variant={sessionRunning ? "secondary" : "primary"}
@@ -64,7 +64,7 @@ export function TimerCard({
           disabled={isCompleted}
         />
         <Button
-          label="Réinit"
+          label="Reinit."
           onPress={onResetSession}
           size="sm"
           variant="ghost"
@@ -108,8 +108,8 @@ const styles = StyleSheet.create({
   timerCard: { padding: 12, gap: 10 },
   timerRow: { flexDirection: "row", gap: 10 },
   timerBlock: { flex: 1 },
-  timerLabel: { color: palette.sub, fontSize: 12 },
-  timerValue: { color: palette.text, fontSize: 22, fontWeight: "800" },
+  timerLabel: { color: palette.sub, fontSize: TYPE.caption.fontSize },
+  timerValue: { color: palette.text, fontSize: TYPE.title.fontSize, fontWeight: "800" },
   timerActions: { flexDirection: "row", gap: 8 },
   timerButton: { flex: 1 },
   restRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
@@ -117,7 +117,7 @@ const styles = StyleSheet.create({
   restChip: {
     paddingVertical: 5,
     paddingHorizontal: 10,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
@@ -126,6 +126,6 @@ const styles = StyleSheet.create({
     backgroundColor: palette.accentSoft,
     borderColor: palette.accent,
   },
-  restChipText: { color: palette.text, fontWeight: "600", fontSize: 12 },
-  restChipGhostText: { color: palette.accent, fontWeight: "700", fontSize: 12 },
+  restChipText: { color: palette.text, fontWeight: "600", fontSize: TYPE.caption.fontSize },
+  restChipGhostText: { color: palette.accent, fontWeight: "700", fontSize: TYPE.caption.fontSize },
 });

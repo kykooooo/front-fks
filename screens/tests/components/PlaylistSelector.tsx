@@ -2,7 +2,7 @@
 import React from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
 import { PLAYLISTS, type PlaylistId } from "../testConfig";
 
@@ -86,7 +86,7 @@ export function PlaylistSelector({
 
 const styles = StyleSheet.create({
   playlistCard: {
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     padding: 14,
     gap: 10,
   },
@@ -103,25 +103,25 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: palette.text,
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
   },
   sectionSub: {
     color: palette.sub,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     marginTop: 2,
   },
   playlistBadge: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
   },
   playlistBadgeText: {
     color: palette.sub,
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
@@ -132,7 +132,7 @@ const styles = StyleSheet.create({
   playlistChip: {
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.cardSoft,
@@ -143,7 +143,7 @@ const styles = StyleSheet.create({
   },
   playlistChipText: {
     color: palette.sub,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "600",
   },
   playlistChipTextActive: {

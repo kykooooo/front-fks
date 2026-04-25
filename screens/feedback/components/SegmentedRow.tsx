@@ -1,7 +1,7 @@
 // screens/feedback/components/SegmentedRow.tsx
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { theme } from '../../../constants/theme';
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import type { SegmentedOption } from '../feedbackScales';
 
 const COLORS = theme.colors;
@@ -56,7 +56,7 @@ const styles = StyleSheet.create({
   segmentChip: {
     flexGrow: 1,
     minWidth: 30,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     borderWidth: 1,
     borderColor: COLORS.border,
     backgroundColor: COLORS.surface,
@@ -68,7 +68,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.accentSoft,
   },
   segmentValue: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: '600',
     color: COLORS.textMuted,
   },
@@ -77,7 +77,7 @@ const styles = StyleSheet.create({
   },
   segmentHint: {
     marginTop: 6,
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: COLORS.textMuted,
   },
 });

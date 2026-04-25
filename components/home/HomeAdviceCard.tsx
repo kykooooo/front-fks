@@ -6,7 +6,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useHaptics } from "../../hooks/useHaptics";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 import type { Advice, AdviceTone } from "../../domain/adviceRules";
 
 const palette = theme.colors;
@@ -20,31 +20,31 @@ const toneStyles: Record<
   { bg: string; border: string; accent: string; iconBg: string; label: string }
 > = {
   info: {
-    bg: "rgba(37, 99, 235, 0.08)",
-    border: "#3b82f6",
-    accent: "#2563eb",
-    iconBg: "rgba(37, 99, 235, 0.15)",
+    bg: theme.colors.blueSoft08,
+    border: theme.colors.blue500,
+    accent: theme.colors.blue600,
+    iconBg: theme.colors.blueSoft15,
     label: "Info",
   },
   warn: {
-    bg: "rgba(245, 158, 11, 0.10)",
-    border: "#f59e0b",
-    accent: "#d97706",
-    iconBg: "rgba(245, 158, 11, 0.18)",
+    bg: theme.colors.amberSoft10,
+    border: theme.colors.amber500,
+    accent: theme.colors.orange600,
+    iconBg: theme.colors.amberSoft18,
     label: "Attention",
   },
   danger: {
-    bg: "rgba(239, 68, 68, 0.10)",
-    border: "#ef4444",
-    accent: "#dc2626",
-    iconBg: "rgba(239, 68, 68, 0.18)",
+    bg: theme.colors.redSoft10,
+    border: theme.colors.red500,
+    accent: theme.colors.red600,
+    iconBg: theme.colors.redSoft18,
     label: "Important",
   },
   success: {
-    bg: "rgba(22, 163, 74, 0.08)",
-    border: "#22c55e",
-    accent: "#16a34a",
-    iconBg: "rgba(22, 163, 74, 0.15)",
+    bg: theme.colors.greenSoft08,
+    border: theme.colors.green500,
+    accent: theme.colors.green600,
+    iconBg: theme.colors.greenSoft15,
     label: "Top",
   },
 };
@@ -106,7 +106,7 @@ function HomeAdviceCardInner({ advice }: Props) {
           style={[styles.actionButton, { backgroundColor: colors.accent }]}
         >
           <Text style={styles.actionText}>{advice.actionLabel}</Text>
-          <Ionicons name="arrow-forward" size={16} color="#fff" />
+          <Ionicons name="arrow-forward" size={16} color={theme.colors.white} />
         </TouchableOpacity>
       )}
     </View>
@@ -115,12 +115,12 @@ function HomeAdviceCardInner({ advice }: Props) {
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     borderLeftWidth: 4,
     padding: 16,
     gap: 14,
     // Ombre subtile
-    shadowColor: "#000",
+    shadowColor: theme.colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
@@ -135,10 +135,10 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: RADIUS.xs,
   },
   badgeText: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
   iconWrap: {
     width: 48,
     height: 48,
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -160,12 +160,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   title: {
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   message: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     color: palette.sub,
     lineHeight: 20,
   },
@@ -175,12 +175,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
   },
   actionText: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
-    color: "#fff",
+    color: theme.colors.white,
   },
   tipWrap: {
     flexDirection: "row",
@@ -188,11 +188,11 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
   },
   tipText: {
     flex: 1,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "600",
     lineHeight: 17,
     fontStyle: "italic",

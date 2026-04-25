@@ -3,12 +3,14 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { todayISO } from "../../utils/virtualClock";
 import type { SessionsState } from "./types";
-import type { Phase, Session } from "../../domain/types";
+import type { Phase, Session, SessionStatus } from "../../domain/types";
 import type { FKS_AiContext } from "../../services/aiContext";
 import type { FKS_NextSessionV2 } from "../../screens/newSession/types";
 import { useDebugStore } from "./useDebugStore";
 import { createMigratedStorage } from "./storage";
 import { onStoreHydrated } from "../orchestrators/rehydrate";
+
+export const MAX_STORED_SESSIONS = 200;
 
 const baseSessionsState = () => ({
   sessions: [] as Session[],
@@ -22,6 +24,7 @@ const baseSessionsState = () => ({
   activePathwayIndex: 0,
   lastAiSessionV2: null as SessionsState["lastAiSessionV2"],
   lastAiContext: null as FKS_AiContext | null,
+  playerLevel: null as string | null,
 });
 
 export const useSessionsStore = create<SessionsState>()(
@@ -34,7 +37,7 @@ export const useSessionsStore = create<SessionsState>()(
           const devNowISO = useDebugStore.getState().devNowISO;
           const baseISO = s.dateISO ?? s.date ?? todayISO();
           return {
-            sessions: [{ ...s, dateISO: devNowISO ?? baseISO }, ...state.sessions].slice(0, 50),
+            sessions: [{ ...s, dateISO: devNowISO ?? baseISO }, ...state.sessions].slice(0, MAX_STORED_SESSIONS),
           };
         }),
 
@@ -51,6 +54,34 @@ export const useSessionsStore = create<SessionsState>()(
         return sorted[0]?.id;
       },
 
+      setSessionStatus: (sessionId, status, meta) =>
+        set((state) => ({
+          sessions: state.sessions.map((session) => {
+            if (session.id !== sessionId) return session;
+
+            const nextStatus = status as SessionStatus;
+            const startedAt =
+              meta && "startedAt" in meta
+                ? meta.startedAt ?? undefined
+                : session.startedAt;
+            const completedAt =
+              meta && "completedAt" in meta
+                ? meta.completedAt ?? undefined
+                : session.completedAt;
+
+            return {
+              ...session,
+              status: nextStatus,
+              completed: nextStatus === "completed",
+              startedAt,
+              completedAt,
+              ...(nextStatus === "completed" && !completedAt
+                ? { completedAt: new Date().toISOString() }
+                : {}),
+            };
+          }),
+        })),
+
       setMicrocycleGoal: (goal) =>
         set((state) => {
           const normalize = (v: string | null | undefined) => String(v ?? "").trim().toLowerCase();
@@ -65,6 +96,8 @@ export const useSessionsStore = create<SessionsState>()(
             microcycleAppliedSessionIds: changed ? [] : state.microcycleAppliedSessionIds,
           };
         }),
+
+      setPlayerLevel: (level: string | null) => set({ playerLevel: level }),
 
       setMicrocycleSessionIndex: (idx) =>
         set({ microcycleSessionIndex: Math.max(0, Math.trunc(idx)) }),

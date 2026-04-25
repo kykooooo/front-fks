@@ -11,7 +11,7 @@ import {
   type TextStyle,
   Platform,
 } from "react-native";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 import { useHaptics } from "../../hooks/useHaptics";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "outline";
@@ -77,7 +77,7 @@ export function Button({
   });
   const labelColor =
     variant === "primary"
-      ? "#fff"
+      ? theme.colors.white
       : variant === "secondary"
         ? theme.colors.text
         : theme.colors.accent;
@@ -105,7 +105,7 @@ export function Button({
         accessibilityHint={accessibilityHint}
         android_ripple={
           Platform.OS === "android"
-            ? { color: "rgba(0,0,0,0.08)", borderless: false }
+            ? { color: theme.colors.black08, borderless: false }
             : undefined
         }
         style={[
@@ -130,7 +130,7 @@ export function Button({
 
 const styles = StyleSheet.create({
   base: {
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     flexDirection: "row",
     alignItems: "center",
@@ -181,17 +181,17 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   labelSm: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     letterSpacing: 0.2,
   },
   labelMd: {
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     letterSpacing: 0.3,
   },
   labelLg: {
-    fontSize: 17,
+    fontSize: TYPE.subtitle.fontSize,
     fontWeight: "800",
     letterSpacing: 0.3,
   },
@@ -200,6 +200,6 @@ const styles = StyleSheet.create({
   },
   pressOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#000",
+    backgroundColor: theme.colors.black,
   },
 });

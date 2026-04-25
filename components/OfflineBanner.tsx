@@ -5,7 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Platform, StatusBar, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
-import { theme } from "../constants/theme";
+import { theme, TYPE } from "../constants/theme";
 import { zIndex as Z } from "../theme/zIndex";
 
 const palette = theme.colors;
@@ -48,7 +48,7 @@ export function OfflineBanner() {
       pointerEvents={isOffline ? "auto" : "none"}
     >
       <View style={[styles.content, { paddingTop: INSET_TOP }]}>
-        <Ionicons name="cloud-offline-outline" size={16} color="#fff" />
+        <Ionicons name="cloud-offline-outline" size={16} color={theme.colors.white} />
         <Text style={styles.text}>
           Hors-ligne — synchronisation au retour
         </Text>
@@ -75,8 +75,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   text: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
-    color: "#fff",
+    color: theme.colors.white,
   },
 });

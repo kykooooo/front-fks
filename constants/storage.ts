@@ -13,4 +13,7 @@ export const STORAGE_KEYS = {
 
   // Training store per-user snapshots
   TRAINING_SNAPSHOT: (uid: string) => `training-store-snapshot-${uid}`,
+
+  // Baseline tests welcome prompt (1 fois par user)
+  BASELINE_PROMPT_SEEN: (uid: string) => `fks_baseline_prompt_seen:${uid}`,
 } as const;

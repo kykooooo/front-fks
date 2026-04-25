@@ -35,14 +35,14 @@ export function ImageBanner({
   source,
   height = 250,
   gradientColor,
-  fallbackColor = "#111114",
+  fallbackColor = theme.colors.card,
   children,
   borderRadius = 0,
   style,
 }: Props) {
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
-  const bgColor = gradientColor ?? theme.colors.bg;
+  const bgColor = gradientColor ?? theme.colors.background;
 
   return (
     <View
@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
   },
   tint: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.25)",
+    backgroundColor: theme.colors.black25,
   },
   content: {
     position: "absolute",

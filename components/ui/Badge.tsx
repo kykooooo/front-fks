@@ -1,7 +1,7 @@
 // components/ui/Badge.tsx
 import React from "react";
 import { View, Text, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 
 type BadgeTone = "default" | "ok" | "warn" | "danger";
 
@@ -13,22 +13,22 @@ type BadgeProps = {
 
 const toneMap: Record<BadgeTone, { bg: string; border: string; text: string }> = {
   default: {
-    bg: "rgba(15,23,42,0.06)",
+    bg: theme.colors.slateSoft06,
     border: theme.colors.borderSoft,
     text: theme.colors.text,
   },
   ok: {
-    bg: "rgba(22,163,74,0.12)",
+    bg: theme.colors.greenSoft12,
     border: theme.colors.success,
     text: theme.colors.success,
   },
   warn: {
-    bg: "rgba(245,158,11,0.14)",
+    bg: theme.colors.amberSoft14,
     border: theme.colors.warn,
     text: theme.colors.warn,
   },
   danger: {
-    bg: "rgba(239,68,68,0.12)",
+    bg: theme.colors.redSoft12,
     border: theme.colors.danger,
     text: theme.colors.danger,
   },
@@ -47,11 +47,11 @@ const styles = StyleSheet.create({
   base: {
     paddingVertical: 4,
     paddingHorizontal: 10,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
   },
   text: {
     fontWeight: "600",
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
   },
 });

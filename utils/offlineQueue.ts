@@ -27,6 +27,36 @@ export async function enqueueAction(
 ): Promise<void> {
   try {
     const queue = await getQueue();
+    const dedupeKey =
+      type === 'feedback' && typeof data.sessionId === 'string'
+        ? `feedback:${data.sessionId}`
+        : type === 'session' &&
+            data.session != null &&
+            typeof data.session === 'object' &&
+            'id' in data.session &&
+            typeof (data.session as { id?: unknown }).id === 'string'
+          ? `session:${(data.session as { id: string }).id}`
+          : null;
+
+    const nextQueue = dedupeKey
+      ? queue.filter((action) => {
+          if (action.type === 'feedback' && dedupeKey.startsWith('feedback:')) {
+            return `feedback:${String(action.data.sessionId ?? '')}` !== dedupeKey;
+          }
+          if (action.type === 'session' && dedupeKey.startsWith('session:')) {
+            const queuedSession = action.data.session;
+            const queuedId =
+              queuedSession != null &&
+              typeof queuedSession === 'object' &&
+              'id' in queuedSession
+                ? String((queuedSession as { id?: unknown }).id ?? '')
+                : '';
+            return `session:${queuedId}` !== dedupeKey;
+          }
+          return true;
+        })
+      : queue;
+
     const action: QueuedAction = {
       id: `${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       type,
@@ -36,8 +66,8 @@ export async function enqueueAction(
       maxRetries,
     };
 
-    queue.push(action);
-    await saveQueue(queue);
+    nextQueue.push(action);
+    await saveQueue(nextQueue);
 
     if (__DEV__) {
       console.log('[OfflineQueue] Action enqueued:', action.type, action.id);
@@ -205,8 +235,8 @@ export function notifySyncResult(result: { success: number; failed: number; pend
   if (result.success > 0) {
     const message =
       result.success === 1
-        ? '1 feedback synchronisé avec succès.'
-        : `${result.success} feedbacks synchronisés avec succès.`;
+        ? '1 élément synchronisé avec succès.'
+        : `${result.success} éléments synchronisés avec succès.`;
 
     showToast({ type: 'success', title: 'Synchronisation réussie', message });
   }

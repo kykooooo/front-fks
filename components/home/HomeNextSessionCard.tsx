@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Card } from "../ui/Card";
 import { Badge } from "../ui/Badge";
 import { SectionHeader } from "../ui/SectionHeader";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 
 const palette = theme.colors;
 
@@ -33,11 +33,17 @@ function HomeNextSessionCardInner({
   if (__DEV__) console.log("[RENDER] HomeNextSessionCard");
   const primaryTextColor = primaryDisabled ? palette.sub : palette.accent;
   const secondaryTextColor = secondaryDisabled ? palette.sub : palette.text;
+
   return (
     <View style={styles.section}>
       <SectionHeader
         title="Prochaine séance"
-        right={<Badge label={hasPending ? "Prête" : "À créer"} tone={hasPending ? "ok" : "default"} />}
+        right={
+          <Badge
+            label={hasPending ? "Prête" : "À créer"}
+            tone={hasPending ? "ok" : "default"}
+          />
+        }
       />
 
       <Card variant="soft" style={styles.nextCard}>
@@ -48,7 +54,7 @@ function HomeNextSessionCardInner({
             <Text style={styles.nextMainText}>{upcomingLabel}</Text>
             {hasPending ? (
               <Text style={styles.nextSubText}>
-                Séance en attente. Dis-nous comment ça s'est passé pour débloquer la suivante.
+                Ta séance est prête. Ouvre-la pour la lancer ou la reprendre.
               </Text>
             ) : null}
           </View>
@@ -63,7 +69,9 @@ function HomeNextSessionCardInner({
             activeOpacity={0.9}
             disabled={primaryDisabled}
           >
-            <Text style={[styles.nextPrimaryText, { color: primaryTextColor }]}>{primaryLabel}</Text>
+            <Text style={[styles.nextPrimaryText, { color: primaryTextColor }]}>
+              {primaryLabel}
+            </Text>
             <Text style={[styles.nextPrimaryArrow, { color: primaryTextColor }]}>→</Text>
           </TouchableOpacity>
 
@@ -73,13 +81,19 @@ function HomeNextSessionCardInner({
             activeOpacity={0.9}
             disabled={secondaryDisabled}
           >
-            <Text style={[styles.nextSecondaryText, { color: secondaryTextColor }]}>{secondaryLabel}</Text>
+            <Text style={[styles.nextSecondaryText, { color: secondaryTextColor }]}>
+              {secondaryLabel}
+            </Text>
           </TouchableOpacity>
         </View>
 
         {hasPending && onFeedback ? (
-          <TouchableOpacity onPress={onFeedback} style={styles.nextFeedbackChip} activeOpacity={0.9}>
-            <Text style={styles.nextFeedbackText}>Comment ça s'est passé ?</Text>
+          <TouchableOpacity
+            onPress={onFeedback}
+            style={styles.nextFeedbackChip}
+            activeOpacity={0.9}
+          >
+            <Text style={styles.nextFeedbackText}>J'ai fini, donner mon feedback</Text>
           </TouchableOpacity>
         ) : null}
       </Card>
@@ -90,7 +104,7 @@ function HomeNextSessionCardInner({
 const styles = StyleSheet.create({
   section: { gap: 10 },
   nextCard: {
-    borderRadius: 20,
+    borderRadius: RADIUS.xl,
     padding: 14,
     gap: 12,
     overflow: "hidden",
@@ -109,8 +123,8 @@ const styles = StyleSheet.create({
     right: -60,
     width: 160,
     height: 160,
-    borderRadius: 999,
-    backgroundColor: "rgba(20,20,20,0.04)",
+    borderRadius: RADIUS.pill,
+    backgroundColor: theme.colors.neutralSoft04,
   },
   nextTopRow: {
     flexDirection: "row",
@@ -118,13 +132,13 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   nextMainText: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   nextSubText: {
     marginTop: 4,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
   },
   nextDivider: {
@@ -138,7 +152,7 @@ const styles = StyleSheet.create({
   nextPrimary: {
     flex: 1,
     paddingVertical: 11,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.accent,
     backgroundColor: "transparent",
@@ -153,16 +167,16 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   nextPrimaryText: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "800",
   },
   nextPrimaryArrow: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
   },
   nextSecondary: {
     width: 140,
     paddingVertical: 11,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
@@ -173,20 +187,20 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   nextSecondaryText: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
   },
   nextFeedbackChip: {
     alignSelf: "flex-start",
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
   },
   nextFeedbackText: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     fontWeight: "700",
   },

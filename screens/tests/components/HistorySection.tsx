@@ -2,7 +2,7 @@
 import React from "react";
 import { View, Text, StyleSheet, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
 import { formatEntryTimestamp, getUnitForField } from "../testHelpers";
 import {
@@ -79,17 +79,17 @@ export function HistorySection({ entriesForPlaylist, selectedPlaylist, cardAnim 
 
 const styles = StyleSheet.create({
   historyCard: {
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     padding: 14,
   },
   sectionTitle: {
     color: palette.text,
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
   },
   sectionSub: {
     color: palette.sub,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     marginTop: 2,
   },
   historyHeader: {
@@ -104,20 +104,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 6,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(31, 36, 48, 0.6)",
+    borderBottomColor: theme.colors.slate60,
   },
   historyDate: {
     color: palette.text,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "600",
   },
   historyTime: {
     color: palette.sub,
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
   },
   historyValues: {
     color: palette.text,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     textAlign: "right",
   },
 });

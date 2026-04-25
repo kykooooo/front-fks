@@ -11,6 +11,22 @@
         "simulator": true
       }
     },
+    "testers": {
+      "distribution": "internal",
+      "autoIncrement": true,
+      "environment": "production",
+      "channel": "testers",
+      "ios": {
+        "resourceClass": "m-medium",
+        "image": "latest"
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "NO_FLIPPER": "1"
+      }
+    },
     "testflight": {
       "distribution": "store",
       "autoIncrement": true,
@@ -46,7 +62,8 @@
   "submit": {
     "testflight": {
       "ios": {
-        "appleTeamId": "2Z868K5P3V"
+        "appleTeamId": "2Z868K5P3V",
+        "ascAppId": "6746264443"
       }
     },
     "production": {

@@ -15,6 +15,7 @@ import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useExternalStore } from "../state/stores/useExternalStore";
 import { useSyncStore } from "../state/stores/useSyncStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
+import { useSettingsStore } from "../state/settingsStore";
 import type { Session } from "../domain/types";
 import { buildAIPromptContext } from "../services/aiContext";
 import { DEV_FLAGS } from "../config/devFlags";
@@ -43,6 +44,10 @@ import { trackEvent } from "../services/analytics";
 import { buildResetExplain } from "./newSession/resetExplain";
 import { useContextualAdvice } from "../hooks/home/useContextualAdvice";
 import { toDateKey } from "../utils/dateHelpers";
+import { openSessionEntry } from "../utils/sessionEntry";
+import { theme, TYPE, RADIUS } from "../constants/theme";
+import { isSessionCompleted } from "../utils/sessionStatus";
+import { shouldSurfaceAsPendingSession } from "../utils/sessionFallback";
 
 /** Catalogue matériel (ids alignés avec le profil) */
 const EQUIPMENT_CATALOG = [
@@ -117,6 +122,7 @@ export default function NewSessionScreen() {
   const setLastAiSessionV2 = useSessionsStore(
     (s) => s.setLastAiSessionV2 ?? (() => {})
   );
+  const lastAiSessionV2 = useSessionsStore((s) => s.lastAiSessionV2);
   const tsb = useLoadStore((s) => s.tsb);
   const clubTrainingDays = useExternalStore((s) => s.clubTrainingDays ?? []);
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
@@ -167,6 +173,25 @@ export default function NewSessionScreen() {
     });
   }, [cycleId]);
 
+  // Pré-remplir environment + equipment depuis le dernier setup mémorisé (1× au mount).
+  const lastGenerationSetup = useSettingsStore((s) => s.lastGenerationSetup);
+  const updateSettings = useSettingsStore((s) => s.updateSettings);
+  const restoredSetupRef = useRef(false);
+  useEffect(() => {
+    if (restoredSetupRef.current) return;
+    if (!lastGenerationSetup) return;
+    const envFiltered = lastGenerationSetup.environment.filter((loc) =>
+      (allowedLocations as readonly string[]).includes(loc),
+    );
+    if (envFiltered.length > 0) {
+      setEnvironment(envFiltered as EnvironmentSelection);
+    }
+    if (lastGenerationSetup.equipment.length > 0) {
+      setSelectedEquipment(lastGenerationSetup.equipment);
+    }
+    restoredSetupRef.current = true;
+  }, [lastGenerationSetup, allowedLocations]);
+
   useEffect(() => {
     setSetupDone(false);
     setCachePrompt(null);
@@ -177,7 +202,8 @@ export default function NewSessionScreen() {
       const nowDate = devNowISO ? new Date(devNowISO) : new Date();
       const oldestAllowedKey = toDateKey(subDays(nowDate, 2));
       const withDate = sessions
-        .filter((s) => !s.completed)
+        .filter((s) => !isSessionCompleted(s))
+        .filter((s) => shouldSurfaceAsPendingSession(s))
         .filter((s) => {
           const day = toDateKey(s.dateISO ?? s.date);
           if (!day) return true;
@@ -381,6 +407,14 @@ export default function NewSessionScreen() {
         locations: environment,
       });
 
+      // Mémoriser le setup pour la prochaine génération (évite 3 taps répétés).
+      updateSettings({
+        lastGenerationSetup: {
+          environment: [...environment],
+          equipment: [...selectedEquipment],
+        },
+      });
+
       setGenerating(true);
 
       // On reconstruit le contexte à chaque génération pour refléter microcycle/index/goal à jour.
@@ -488,7 +522,7 @@ export default function NewSessionScreen() {
         const todayISO = toDateKey(now);
         const { session, aiV2 } = buildFallbackSession(todayISO, phase as any);
         pushSession({ ...session, aiV2 } as any);
-        showToast({ type: "warn", title: "Séance de secours", message: "Une séance cardio+mobilité de secours a été préparée pour toi." });
+        showToast({ type: "warn", title: "Pas de connexion", message: "On t'a préparé une séance cardio+mobilité en attendant. Reconnecte-toi pour une séance personnalisée." });
         nav.navigate("SessionPreview", {
           v2: aiV2 as any,
           plannedDateISO: todayISO,
@@ -505,6 +539,11 @@ export default function NewSessionScreen() {
   const goFeedback = () => {
     if (!current) return;
     nav.navigate("Feedback", { sessionId: current.id });
+  };
+
+  const openCurrentSession = () => {
+    if (!current) return;
+    void openSessionEntry(nav as any, current, lastAiSessionV2?.v2 ?? null);
   };
 
   const useCachedSession = async () => {
@@ -732,6 +771,7 @@ export default function NewSessionScreen() {
 	          current={current}
           nextAllowedISO={nextAllowedISO}
           alreadyAppliedToday={alreadyAppliedToday}
+          onOpenSession={openCurrentSession}
           onFeedback={goFeedback}
           onAdvanceDay={() => advanceDays(1)}
           onRestTwoDays={() => restUntil(2)}
@@ -746,7 +786,7 @@ export default function NewSessionScreen() {
             style={{ flexDirection: "row", justifyContent: "space-between" }}
           >
             <Text style={styles.cardTitle}>Debug backend (optionnel)</Text>
-            <Text style={{ color: palette.accentSoft, fontSize: 12 }}>
+            <Text style={{ color: palette.accentSoft, fontSize: TYPE.caption.fontSize }}>
               {showDebug ? "Masquer" : "Afficher"}
             </Text>
           </TouchableOpacity>
@@ -784,13 +824,13 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: TYPE.title.fontSize,
     fontWeight: "800",
     color: palette.text,
     letterSpacing: 0.4,
   },
   headerSubtitle: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     marginTop: 4,
   },
@@ -798,17 +838,17 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: palette.border,
-    borderRadius: 18,
+    borderRadius: RADIUS.lg,
     backgroundColor: palette.card,
     marginBottom: 12,
   },
   cardTitle: {
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   cardSubtitle: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     marginTop: 4,
     color: palette.sub,
   },
@@ -826,12 +866,12 @@ const styles = StyleSheet.create({
   },
   cycleMiniText: {
     flex: 1,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.text,
   },
   debugText: {
     marginTop: 8,
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
   },
 });

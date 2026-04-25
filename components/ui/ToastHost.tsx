@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, StyleSheet, Text, View, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { onToast, type ToastPayload } from "../../utils/toast";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 import { zIndex as Z } from "../../theme/zIndex";
 
 // Safe area top padding - accounts for notch on iOS devices
@@ -97,7 +97,7 @@ const styles = StyleSheet.create({
   card: {
     minWidth: "86%",
     backgroundColor: theme.colors.card,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: theme.colors.borderSoft,
     paddingVertical: 10,
@@ -105,20 +105,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    shadowColor: "#000",
+    shadowColor: theme.colors.black,
     shadowOpacity: 0.12,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
   },
   title: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   message: {
     marginTop: 2,
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
   },
 });

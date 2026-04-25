@@ -1,6 +1,6 @@
 import React, { useRef, useState } from "react";
 import { View, StyleSheet, Dimensions, FlatList, NativeScrollEvent, NativeSyntheticEvent } from "react-native";
-import { theme } from "../../constants/theme";
+import { theme, RADIUS } from "../../constants/theme";
 
 const palette = theme.colors;
 const { width: screenWidth } = Dimensions.get("window");
@@ -80,7 +80,7 @@ const styles = StyleSheet.create({
   dot: {
     width: 6,
     height: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.borderSoft,
   },
   dotActive: {

@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 import { getFootballLabel } from "../../config/trainingDefaults";
 
 const palette = theme.colors;
@@ -45,7 +45,7 @@ function HomeStatusBarInner({ phaseLabel, tsbValue, tsbTone, matchSoon }: Props)
 const styles = StyleSheet.create({
   wrap: {
     height: 56,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     paddingHorizontal: 12,
     paddingVertical: 8,
     backgroundColor: palette.card,
@@ -59,13 +59,13 @@ const styles = StyleSheet.create({
   pill: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.cardSoft,
     borderWidth: 1,
     borderColor: palette.borderSoft,
   },
   pillText: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "800",
     color: palette.text,
     letterSpacing: 0.4,
@@ -75,14 +75,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   centerLabel: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     letterSpacing: 1,
     textTransform: "uppercase",
   },
   centerValue: {
     marginTop: 2,
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "800",
   },
   right: {
@@ -90,7 +90,7 @@ const styles = StyleSheet.create({
     minWidth: 90,
   },
   rightSub: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
   },
   warning: {
@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   warningText: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "700",
     color: palette.warn,
   },

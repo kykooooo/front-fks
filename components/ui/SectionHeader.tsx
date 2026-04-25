@@ -1,7 +1,7 @@
 // components/ui/SectionHeader.tsx
 import React from "react";
 import { View, Text, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 
 type SectionHeaderProps = {
   title: string;
@@ -35,11 +35,11 @@ const styles = StyleSheet.create({
   mark: {
     width: 3,
     height: 14,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     backgroundColor: theme.colors.accent,
   },
   title: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "800",
     letterSpacing: 1.2,
     textTransform: "uppercase",

@@ -4,16 +4,17 @@ import { todayISO } from "../../utils/virtualClock";
 import { toDateKey } from "../../utils/dateHelpers";
 import { diffDays } from "../../engine/dailyAggregation";
 import { updateTrainingLoad, decayLoadOverDays } from "../../engine/loadModel";
-import { TRAINING_DEFAULTS, LOAD_CAPS } from "../../config/trainingDefaults";
+import { TRAINING_DEFAULTS, LOAD_CAPS, getTauForLevel } from "../../config/trainingDefaults";
 import { computeDailyTotals, computeInterveningOffDays, type ExternalLoadLike } from "../computeDailyApplied";
 import { safeNum } from "../../engine/safeNum";
-import type { Rating0to5 } from "../../domain/types";
+import type { Rating0to10 } from "../../domain/types";
 
 import { useLoadStore } from "../stores/useLoadStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { useExternalStore } from "../stores/useExternalStore";
 import { useFeedbackStore } from "../stores/useFeedbackStore";
 import { useDebugStore } from "../stores/useDebugStore";
+import { isSessionCompleted } from "../../utils/sessionStatus";
 
 export function rebuildLoad(opts?: { decayToNow?: boolean }): void {
   const sessionsState = useSessionsStore.getState();
@@ -22,8 +23,9 @@ export function rebuildLoad(opts?: { decayToNow?: boolean }): void {
   const debugState = useDebugStore.getState();
   const loadState = useLoadStore.getState();
 
-  const sessions = (sessionsState.sessions ?? []).filter((s) => s?.completed);
+  const sessions = (sessionsState.sessions ?? []).filter((s) => isSessionCompleted(s));
   const externals = externalState.externalLoads ?? [];
+  const { tauAtl, tauCtl } = getTauForLevel(sessionsState.playerLevel);
 
   const daySet = new Set<string>();
   sessions.forEach((s) => {
@@ -48,7 +50,7 @@ export function rebuildLoad(opts?: { decayToNow?: boolean }): void {
     if (lastKey) {
       const gap = computeInterveningOffDays(lastKey, dayKey);
       if (gap > 0) {
-        const dec = decayLoadOverDays(atl, ctl, gap);
+        const dec = decayLoadOverDays(atl, ctl, gap, { tauAtl, tauCtl });
         atl = dec.atl;
         ctl = dec.ctl;
         tsb = dec.tsb;
@@ -69,7 +71,7 @@ export function rebuildLoad(opts?: { decayToNow?: boolean }): void {
         : (() => {
             const pains = daySessions
               .map((s) => s.feedback?.pain)
-              .filter((x): x is Rating0to5 => typeof x === "number" && Number.isFinite(x));
+              .filter((x): x is Rating0to10 => typeof x === "number" && Number.isFinite(x));
             if (!pains.length) return 0;
             return pains.reduce((sum: number, val) => sum + val, 0) / pains.length;
           })();
@@ -87,7 +89,7 @@ export function rebuildLoad(opts?: { decayToNow?: boolean }): void {
 
     const totalToday = totals.totalToday;
     const deltaLoad = Math.max(0, totalToday);
-    const next = deltaLoad > 0 ? updateTrainingLoad(atl, ctl, deltaLoad, { dtDays: 1 }) : { atl, ctl, tsb };
+    const next = deltaLoad > 0 ? updateTrainingLoad(atl, ctl, deltaLoad, { dtDays: 1, tauAtl, tauCtl }) : { atl, ctl, tsb };
 
     const inOnboarding = completedCount < TRAINING_DEFAULTS.ONBOARDING_SESSIONS;
     const tsbAfter = inOnboarding ? Math.max(next.tsb, TRAINING_DEFAULTS.TSB_FLOOR_ONBOARDING) : next.tsb;
@@ -106,7 +108,7 @@ export function rebuildLoad(opts?: { decayToNow?: boolean }): void {
   if (lastKey) {
     const gap = Math.max(0, diffDays(lastKey, nowKey));
     if (opts?.decayToNow !== false && gap > 0) {
-      const dec = decayLoadOverDays(atl, ctl, gap);
+      const dec = decayLoadOverDays(atl, ctl, gap, { tauAtl, tauCtl });
       atl = dec.atl;
       ctl = dec.ctl;
       tsb = dec.tsb;

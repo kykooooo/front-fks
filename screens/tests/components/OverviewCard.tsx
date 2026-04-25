@@ -3,7 +3,7 @@ import React from "react";
 import { View, Text, StyleSheet, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
 import { formatEntryTimestamp, getUnitForField, isBetterDelta } from "../testHelpers";
 import { getGroupConfig, FIELD_BY_KEY, type TestEntry, type FieldKey, type FieldConfig } from "../testConfig";
@@ -66,7 +66,7 @@ export function OverviewCard({ lastEntry, lastTwo, groupedFields, cardAnim }: Pr
       <Card variant="surface" style={styles.overviewCard}>
         <View style={styles.overviewHeaderRow}>
           <View style={styles.overviewTitleRow}>
-            <Ionicons name="trophy-outline" size={16} color="#f59e0b" />
+            <Ionicons name="trophy-outline" size={16} color={theme.colors.amber500} />
             <View>
               <Text style={styles.sectionTitle}>Dernière performance</Text>
               <Text style={styles.sectionSub}>
@@ -96,7 +96,7 @@ export function OverviewCard({ lastEntry, lastTwo, groupedFields, cardAnim }: Pr
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                   >
-                    <Ionicons name={cfg.icon} size={14} color="#fff" />
+                    <Ionicons name={cfg.icon} size={14} color={theme.colors.white} />
                   </LinearGradient>
                   <Text style={styles.groupTitle}>{group.title}</Text>
                 </View>
@@ -141,16 +141,16 @@ export function OverviewCard({ lastEntry, lastTwo, groupedFields, cardAnim }: Pr
 const styles = StyleSheet.create({
   sectionTitle: {
     color: palette.text,
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
   },
   sectionSub: {
     color: palette.sub,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     marginTop: 2,
   },
   overviewCard: {
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     padding: 14,
     gap: 10,
   },
@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
   overviewPill: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.cardSoft,
     borderWidth: 1,
     borderColor: palette.border,
@@ -177,13 +177,13 @@ const styles = StyleSheet.create({
   },
   overviewPillLabel: {
     color: palette.sub,
-    fontSize: 9,
+    fontSize: TYPE.micro.fontSize,
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
   overviewPillDate: {
     color: palette.text,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
   },
   overviewGroup: {
@@ -198,13 +198,13 @@ const styles = StyleSheet.create({
   groupIcon: {
     width: 26,
     height: 26,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     alignItems: "center",
     justifyContent: "center",
   },
   groupTitle: {
     color: palette.text,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
   },
   overviewMetricRow: {
@@ -215,17 +215,17 @@ const styles = StyleSheet.create({
   },
   overviewMetricLabel: {
     color: palette.sub,
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
   },
   overviewMetricValue: {
     color: palette.text,
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     marginTop: 2,
   },
   overviewNotesBlock: {
     marginTop: 6,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     padding: 10,
     backgroundColor: palette.cardSoft,
     borderWidth: 1,
@@ -234,24 +234,24 @@ const styles = StyleSheet.create({
   },
   overviewNotesText: {
     color: palette.sub,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     lineHeight: 17,
   },
   deltaChip: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.cardSoft,
     alignItems: "flex-end",
   },
   deltaText: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "600",
   },
   deltaSub: {
-    fontSize: 9,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
   },
 });

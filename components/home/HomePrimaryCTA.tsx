@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 
 const palette = theme.colors;
 
@@ -41,7 +41,7 @@ function HomePrimaryCTAInner({
     outputRange: [1, 1.015],
   });
   const bg =
-    tone === "warn" ? "rgba(245,158,11,0.16)" : tone === "disabled" ? palette.cardSoft : palette.accent;
+    tone === "warn" ? theme.colors.amberSoft16 : tone === "disabled" ? palette.cardSoft : palette.accent;
   const border =
     tone === "warn" ? palette.warn : tone === "disabled" ? palette.borderSoft : palette.accent;
   const textColor =
@@ -69,7 +69,7 @@ function HomePrimaryCTAInner({
 
 const styles = StyleSheet.create({
   wrap: {
-    borderRadius: 22,
+    borderRadius: RADIUS.xl,
     paddingVertical: 16,
     paddingHorizontal: 16,
     borderWidth: 1,
@@ -78,18 +78,18 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   label: {
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "900",
   },
   sub: {
     marginTop: 4,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
   },
   iconWrap: {
     width: 36,
     height: 36,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",

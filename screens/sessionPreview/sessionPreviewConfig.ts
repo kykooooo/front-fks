@@ -157,17 +157,31 @@ export const getExerciseId = (it: BlockItem) => {
 
 export const formatItemMeta = (item: BlockItem) => {
   const parts: string[] = [];
-  if (item?.sets != null && item.sets > 0) parts.push(`${item.sets}x`);
-  if (item?.reps != null && item.reps > 0) parts.push(`${item.reps} reps`);
-  if (Array.isArray(item?.workRestSec) && item.workRestSec.length >= 2) {
-    const [w, r] = item.workRestSec;
-    parts.push(`${w ?? '?'}s/${r ?? '?'}s`);
-  } else if (item?.workS || item?.restS) {
-    if (item.workS) parts.push(`${item.workS}s`);
-    if (item.restS) parts.push(`/${item.restS}s`);
-  } else if (item?.workRest && item.workRest.trim().length > 0) {
-    parts.push(item.workRest.trim());
+  const hasWork = item?.workS != null && item.workS > 0;
+  const hasRest = item?.restS != null && item.restS > 0;
+  const isCircuitFormat = hasWork && (item?.reps == null || item.reps <= 1);
+
+  if (isCircuitFormat) {
+    // Format circuit/EMOM : "4 tours · 40s effort / 20s repos"
+    if (item?.sets != null && item.sets > 0) parts.push(`${item.sets} tours`);
+    parts.push(`${item.workS}s effort`);
+    if (hasRest) parts.push(`${item.restS}s repos`);
+  } else {
+    // Format classique : "4x · 8 reps"
+    if (item?.sets != null && item.sets > 0) parts.push(`${item.sets}x`);
+    if (item?.reps != null && item.reps > 0) parts.push(`${item.reps} reps`);
+
+    if (Array.isArray(item?.workRestSec) && item.workRestSec.length >= 2) {
+      const [w, r] = item.workRestSec;
+      parts.push(`${w ?? '?'}s/${r ?? '?'}s`);
+    } else if (hasWork || hasRest) {
+      if (hasWork) parts.push(`${item.workS}s effort`);
+      if (hasRest) parts.push(`${item.restS}s repos`);
+    } else if (item?.workRest && item.workRest.trim().length > 0) {
+      parts.push(item.workRest.trim());
+    }
   }
+
   if (item?.durationPerSetSec) parts.push(`${item.durationPerSetSec}s / série`);
   if (item?.durationMin) parts.push(`${item.durationMin} min`);
   return parts.join(' \u00b7 ');

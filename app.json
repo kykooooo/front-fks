@@ -21,6 +21,7 @@
       }
     },
     "android": {
+      "package": "com.fks.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -32,6 +33,13 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "expo-apple-authentication",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.1045688248623-c60323f37nmrhlh4574kmstv4t8v46gd"
+        }
+      ],
       ["@sentry/react-native/expo", { "url": "https://sentry.io/" }]
     ],
     "extra": {

@@ -1,7 +1,7 @@
 // components/ui/Card.tsx
 import React from "react";
 import { View, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
-import { theme } from "../../constants/theme";
+import { theme, RADIUS } from "../../constants/theme";
 
 type CardVariant = "surface" | "soft" | "outline";
 
@@ -24,7 +24,7 @@ export function Card({ children, variant = "surface", style }: CardProps) {
 
 const styles = StyleSheet.create({
   base: {
-    borderRadius: theme.radius.lg,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
   },
   surface: {

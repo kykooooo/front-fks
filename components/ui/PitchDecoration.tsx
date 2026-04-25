@@ -30,7 +30,7 @@ function PitchDecorationInner({
 }: Props) {
   if (width <= 0 || height <= 0) return null;
 
-  const stroke = color ?? "#ffffff";
+  const stroke = color ?? theme.colors.white;
 
   const content = (() => {
     switch (type) {

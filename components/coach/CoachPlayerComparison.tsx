@@ -4,7 +4,7 @@
 import React, { useState, useMemo } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 import { MICROCYCLES, isMicrocycleId, MICROCYCLE_TOTAL_SESSIONS_DEFAULT } from "../../domain/microcycles";
 import type { EnrichedPlayer } from "../../hooks/coach/useCoachPlayersData";
 
@@ -27,10 +27,10 @@ const SORT_OPTIONS: { key: SortKey; label: string; icon: string }[] = [
 ];
 
 function getTsbColor(tsb: number): string {
-  if (tsb <= -15) return "#ef4444";
-  if (tsb <= -5) return "#f59e0b";
-  if (tsb <= 10) return "#22c55e";
-  return "#3b82f6";
+  if (tsb <= -15) return theme.colors.red500;
+  if (tsb <= -5) return theme.colors.amber500;
+  if (tsb <= 10) return theme.colors.green500;
+  return theme.colors.blue500;
 }
 
 function getActivityDays(lastSessionDate: string | null | undefined): number {
@@ -111,7 +111,7 @@ export function CoachPlayerComparison({ players, onPlayerPress }: Props) {
               <Ionicons
                 name={opt.icon as any}
                 size={14}
-                color={isActive ? "#fff" : palette.sub}
+                color={isActive ? theme.colors.white : palette.sub}
               />
               <Text style={[styles.sortChipText, isActive && styles.sortChipTextActive]}>
                 {opt.label}
@@ -120,7 +120,7 @@ export function CoachPlayerComparison({ players, onPlayerPress }: Props) {
                 <Ionicons
                   name={sortAsc ? "arrow-up" : "arrow-down"}
                   size={12}
-                  color="#fff"
+                  color={theme.colors.white}
                 />
               )}
             </TouchableOpacity>
@@ -177,7 +177,7 @@ export function CoachPlayerComparison({ players, onPlayerPress }: Props) {
                   <Text
                     style={[
                       styles.statValue,
-                      { color: activityDays > 5 ? "#f59e0b" : palette.text },
+                      { color: activityDays > 5 ? theme.colors.amber500 : palette.text },
                     ]}
                   >
                     {activityDays < 999 ? `${activityDays}j` : "—"}
@@ -208,7 +208,7 @@ export function CoachPlayerComparison({ players, onPlayerPress }: Props) {
 const styles = StyleSheet.create({
   container: {
     backgroundColor: palette.card,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: palette.border,
     overflow: "hidden",
@@ -218,13 +218,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     backgroundColor: palette.card,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: palette.border,
   },
   emptyText: {
     color: palette.sub,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
   },
   sortRow: {
     flexDirection: "row",
@@ -239,19 +239,19 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     backgroundColor: palette.cardSoft,
   },
   sortChipActive: {
     backgroundColor: palette.accent,
   },
   sortChipText: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "600",
     color: palette.sub,
   },
   sortChipTextActive: {
-    color: "#fff",
+    color: theme.colors.white,
   },
   playersScroll: {
     maxHeight: 400,
@@ -268,13 +268,13 @@ const styles = StyleSheet.create({
     left: 12,
     width: 20,
     height: 20,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     backgroundColor: palette.cardSoft,
     alignItems: "center",
     justifyContent: "center",
   },
   rankText: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "700",
     color: palette.sub,
   },
@@ -282,12 +282,12 @@ const styles = StyleSheet.create({
     marginLeft: 28,
   },
   playerName: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   playerMeta: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     marginTop: 2,
   },
@@ -300,24 +300,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   statValue: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   statLabel: {
-    fontSize: 9,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     marginTop: 1,
   },
   progressTrack: {
     height: 4,
-    borderRadius: 2,
+    borderRadius: RADIUS.xs,
     backgroundColor: palette.borderSoft,
     overflow: "hidden",
   },
   progressFill: {
     height: "100%",
     backgroundColor: palette.accent,
-    borderRadius: 2,
+    borderRadius: RADIUS.xs,
   },
 });

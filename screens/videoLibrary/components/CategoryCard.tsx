@@ -2,7 +2,7 @@
 import React, { useRef, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import { Badge } from "../../../components/ui/Badge";
 import { MODALITY_CONFIG } from "../videoLibraryConfig";
 import type { BankModality } from "../../../engine/exerciseBank";
@@ -66,7 +66,7 @@ export function CategoryCard({ modality, label, description, count, onPress, ani
 const styles = StyleSheet.create({
   categoryCard: {
     padding: 14,
-    borderRadius: theme.radius.lg,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     backgroundColor: palette.card,
     gap: 10,
@@ -76,11 +76,11 @@ const styles = StyleSheet.create({
   categoryIcon: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: RADIUS.xl,
     alignItems: "center",
     justifyContent: "center",
   },
   categoryContent: { gap: 2 },
-  categoryLabel: { fontSize: 14, fontWeight: "700", color: palette.text },
-  categoryDescription: { fontSize: 11, color: palette.sub },
+  categoryLabel: { fontSize: TYPE.body.fontSize, fontWeight: "700", color: palette.text },
+  categoryDescription: { fontSize: TYPE.micro.fontSize, color: palette.sub },
 });

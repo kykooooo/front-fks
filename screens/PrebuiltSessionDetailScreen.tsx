@@ -16,108 +16,56 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useHaptics } from "../hooks/useHaptics";
 import type { AppStackParamList } from "../navigation/RootNavigator";
-import { theme } from "../constants/theme";
+import { theme, TYPE, RADIUS } from "../constants/theme";
 import { Card } from "../components/ui/Card";
 import { useExternalStore } from "../state/stores/useExternalStore";
+import type { Prebuilt, RoutineCategory } from "./prebuilt/prebuiltConfig";
+// Linking retiré — on utilise le YouTubePlayer intégré
+import {
+  CATEGORY_CONFIG,
+  INTENSITY_LABEL,
+  INTENSITY_ICON,
+  INTENSITY_COLOR,
+  LOCATION_ICON,
+  LOCATION_LABEL,
+} from "./prebuilt/prebuiltConfig";
+import { getExerciseVideoRef, type ExerciseVideoRef } from "../engine/exerciseVideos";
+import { YouTubePlayer } from "../components/ui/YouTubePlayer";
+
+const YT_SHORTS_FILTER = "EgQQARgB";
+/** Cherche une vidéo pour un exercice de routine (par nom) */
+const getRoutineVideoUrl = (exerciseName: string): string => {
+  // Essayer par ID si le nom correspond à un exercice de la banque
+  const ref = getExerciseVideoRef(exerciseName);
+  if (ref.kind === "vetted") return ref.url;
+  // Fallback : recherche YouTube Shorts avec le nom
+  const query = `${exerciseName} exercise technique football`;
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=${YT_SHORTS_FILTER}`;
+};
 
 const palette = theme.colors;
 
-type Prebuilt = {
-  category: string;
-  title: string;
-  intensity: "easy" | "moderate" | "hard";
-  duration: string;
-  objective: string;
-  detail: string[];
-  focus?: "run" | "strength" | "speed" | "circuit" | "plyo" | "mobility";
-  location?: "gym" | "pitch" | "home";
-  equipment?: string[];
-  tags?: string[];
-  level?: string;
-  expectations?: string[];
-  rpe_target?: number;
+// Tint color par catégorie (pour checkboxes, accents)
+const CATEGORY_TINT: Record<string, string> = {
+  "AVANT L'EFFORT": palette.amber500,
+  "APRÈS L'EFFORT": palette.emerald500,
+  "JOUR DE MATCH": palette.blue500,
+  "MOBILITÉ": palette.violet500,
+  "PRÉVENTION": palette.red500,
+  "CIRCUITS": palette.rose400 ?? palette.red500,
 };
 
-// Configuration visuelle des catégories
-type CategoryConfig = {
+type VisualConfig = {
   icon: keyof typeof Ionicons.glyphMap;
   gradient: [string, string];
   tint: string;
 };
 
-const CATEGORY_CONFIG: Record<string, CategoryConfig> = {
-  ACTIVATION: {
-    icon: "flash",
-    gradient: ["#f59e0b", "#fbbf24"],
-    tint: "#f59e0b",
-  },
-  RÉCUPÉRATION: {
-    icon: "leaf",
-    gradient: ["#10b981", "#34d399"],
-    tint: "#10b981",
-  },
-  "MOBILITÉ EXPRESS": {
-    icon: "body",
-    gradient: ["#8b5cf6", "#a78bfa"],
-    tint: "#8b5cf6",
-  },
-  PRÉVENTION: {
-    icon: "shield-checkmark",
-    gradient: ["#ef4444", "#f87171"],
-    tint: "#ef4444",
-  },
-  "MATCH DAY": {
-    icon: "football",
-    gradient: ["#3b82f6", "#60a5fa"],
-    tint: "#3b82f6",
-  },
-  "PACK 7 JOURS": {
-    icon: "calendar",
-    gradient: ["#14b8a6", "#2dd4bf"],
-    tint: "#14b8a6",
-  },
-  DÉFIS: {
-    icon: "trophy",
-    gradient: ["#ff7a1a", "#ff9a4a"],
-    tint: "#ff7a1a",
-  },
-};
-
-const getCategoryConfig = (category: string): CategoryConfig =>
-  CATEGORY_CONFIG[category] ?? {
-    icon: "sparkles",
-    gradient: ["#6b7280", "#9ca3af"],
-    tint: "#6b7280",
-  };
-
-const INTENSITY_LABEL: Record<string, string> = {
-  easy: "Facile",
-  moderate: "Modéré",
-  hard: "Intense",
-};
-
-const INTENSITY_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
-  easy: "sunny-outline",
-  moderate: "flame-outline",
-  hard: "flash",
-};
-
-const INTENSITY_COLOR: Record<string, string> = {
-  easy: "#10b981",
-  moderate: "#f59e0b",
-  hard: "#ef4444",
-};
-
-const LOCATION_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
-  gym: "barbell-outline",
-  pitch: "football-outline",
-  home: "home-outline",
-};
-
-const LOCATION_LABEL: Record<string, string> = {
-  gym: "Salle",
-  pitch: "Terrain",
-  home: "Maison",
+const getCategoryConfig = (category: string): VisualConfig => {
+  const cfg = CATEGORY_CONFIG[category as RoutineCategory];
+  return cfg
+    ? { ...cfg, tint: CATEGORY_TINT[category] ?? palette.accent }
+    : { icon: "sparkles", gradient: [palette.gray500, palette.gray400], tint: palette.gray500 };
 };
 
 const FOCUS_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -138,18 +86,6 @@ const FOCUS_LABEL: Record<string, string> = {
   mobility: "Mobilité",
 };
 
-
-// Parse duration string like "8-10 min" to average minutes
-const parseDurationMin = (raw?: string): number | undefined => {
-  if (!raw) return undefined;
-  const matches = raw.match(/\d+/g);
-  if (!matches || matches.length === 0) return undefined;
-  const values = matches.map((m) => Number(m)).filter((n) => Number.isFinite(n));
-  if (!values.length) return undefined;
-  if (values.length === 1) return values[0];
-  return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
-};
-
 export default function PrebuiltSessionDetailScreen() {
   const route = useRoute<RouteProp<AppStackParamList, "PrebuiltSessionDetail">>();
   const navigation = useNavigation<any>();
@@ -157,14 +93,16 @@ export default function PrebuiltSessionDetailScreen() {
   const session = route.params.session as unknown as Prebuilt;
   const addCompletedRoutine = useExternalStore((s) => s.addCompletedRoutine);
 
-  const expectations = Array.isArray(session.expectations)
-    ? session.expectations.filter((line) => !!line && line.trim().length > 0)
+  const coachingTips = Array.isArray(session.coaching)
+    ? session.coaching.filter((line) => !!line && line.trim().length > 0)
     : [];
 
   const [timeSec, setTimeSec] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoLabel, setVideoLabel] = useState("");
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -197,10 +135,25 @@ export default function PrebuiltSessionDetailScreen() {
     });
   }, [fadeAnim, slideAnim, cardAnims]);
 
-  const detailLines = useMemo(
-    () => (session.detail ?? []).filter((line) => !!line && line.trim().length > 0),
-    [session.detail]
-  );
+  // Flatten blocks → exercices pour la checklist
+  const allExercises = useMemo(() => {
+    const blocks = session.blocks ?? [];
+    const flat: { blockTitle: string; name: string; detail: string; globalIdx: number }[] = [];
+    let idx = 0;
+    for (const block of blocks) {
+      for (const ex of block.exercises) {
+        const parts: string[] = [];
+        if (ex.sets && ex.reps) parts.push(`${ex.sets}×${ex.reps}`);
+        else if (ex.reps) parts.push(`${ex.reps}`);
+        if (ex.rest_s) parts.push(`repos ${ex.rest_s}s`);
+        if (ex.tempo) parts.push(`tempo ${ex.tempo}`);
+        const detail = parts.join(" · ");
+        flat.push({ blockTitle: block.title, name: ex.name, detail, globalIdx: idx });
+        idx++;
+      }
+    }
+    return flat;
+  }, [session.blocks]);
 
   const categoryConfig = getCategoryConfig(session.category);
   const intensityColor = INTENSITY_COLOR[session.intensity] ?? palette.accent;
@@ -208,15 +161,28 @@ export default function PrebuiltSessionDetailScreen() {
   const intensityLabel = INTENSITY_LABEL[session.intensity] ?? session.intensity;
 
   const handleFinish = useCallback(() => {
-    // Enregistrer la routine complétée (pour badges, sans impact sur charge)
     addCompletedRoutine({
       category: session.category,
       title: session.title,
-      durationMin: parseDurationMin(session.duration),
+      durationMin: session.durationMin,
     });
+    // Si la routine impacte le TSB, enregistrer comme charge externe
+    if (session.impactsTsb && session.rpeTarget) {
+      try {
+        const { applyExternalLoad } = require("../state/orchestrators/applyExternalLoad");
+        applyExternalLoad({
+          id: `routine-${Date.now()}`,
+          source: "other" as const,
+          dateISO: new Date().toISOString(),
+          rpe: session.rpeTarget,
+          durationMin: session.durationMin,
+          notes: `Routine: ${session.title}`,
+        });
+      } catch (_) { /* silently fail */ }
+    }
     haptics.success();
     navigation.goBack();
-  }, [navigation, addCompletedRoutine, session]);
+  }, [navigation, addCompletedRoutine, session, haptics]);
 
   const toggleStepComplete = useCallback((index: number) => {
     haptics.impactLight();
@@ -263,8 +229,8 @@ export default function PrebuiltSessionDetailScreen() {
     setTimeSec(0);
   };
 
-  const progressRatio = detailLines.length > 0
-    ? completedSteps.size / detailLines.length
+  const progressRatio = allExercises.length > 0
+    ? completedSteps.size / allExercises.length
     : 0;
 
   return (
@@ -295,17 +261,17 @@ export default function PrebuiltSessionDetailScreen() {
                 {/* Header row */}
                 <View style={styles.heroHeaderRow}>
                   <View style={styles.categoryPill}>
-                    <Ionicons name={categoryConfig.icon} size={12} color="#fff" />
+                    <Ionicons name={categoryConfig.icon} size={12} color={theme.colors.white} />
                     <Text style={styles.categoryText}>{session.category}</Text>
                   </View>
                   <View style={styles.heroBadgesRow}>
                     <View style={styles.heroBadge}>
-                      <Ionicons name={intensityIcon} size={10} color="#fff" />
+                      <Ionicons name={intensityIcon} size={10} color={theme.colors.white} />
                       <Text style={styles.heroBadgeText}>{intensityLabel}</Text>
                     </View>
                     <View style={styles.heroBadge}>
-                      <Ionicons name="time-outline" size={10} color="#fff" />
-                      <Text style={styles.heroBadgeText}>{session.duration}</Text>
+                      <Ionicons name="time-outline" size={10} color={theme.colors.white} />
+                      <Text style={styles.heroBadgeText}>{session.durationMin} min</Text>
                     </View>
                   </View>
                 </View>
@@ -323,7 +289,7 @@ export default function PrebuiltSessionDetailScreen() {
                       <Ionicons
                         name={LOCATION_ICON[session.location] ?? "location-outline"}
                         size={14}
-                        color="rgba(255,255,255,0.8)"
+                        color={theme.colors.white80}
                       />
                       <Text style={styles.heroStatText}>
                         {LOCATION_LABEL[session.location]}
@@ -335,7 +301,7 @@ export default function PrebuiltSessionDetailScreen() {
                       <Ionicons
                         name={FOCUS_ICON[session.focus] ?? "fitness-outline"}
                         size={14}
-                        color="rgba(255,255,255,0.8)"
+                        color={theme.colors.white80}
                       />
                       <Text style={styles.heroStatText}>
                         {FOCUS_LABEL[session.focus]}
@@ -344,7 +310,7 @@ export default function PrebuiltSessionDetailScreen() {
                   )}
                   {session.level && (
                     <View style={styles.heroStat}>
-                      <Ionicons name="person-outline" size={14} color="rgba(255,255,255,0.8)" />
+                      <Ionicons name="person-outline" size={14} color={theme.colors.white80} />
                       <Text style={styles.heroStatText}>{session.level}</Text>
                     </View>
                   )}
@@ -371,7 +337,7 @@ export default function PrebuiltSessionDetailScreen() {
               <Card variant="soft" style={styles.equipmentCard}>
                 <View style={styles.equipmentHeader}>
                   <View style={styles.equipmentIconCircle}>
-                    <Ionicons name="bag-outline" size={16} color="#8b5cf6" />
+                    <Ionicons name="bag-outline" size={16} color={theme.colors.violet500} />
                   </View>
                   <View>
                     <Text style={styles.cardTitle}>Matériel requis</Text>
@@ -381,7 +347,7 @@ export default function PrebuiltSessionDetailScreen() {
                 <View style={styles.equipmentList}>
                   {session.equipment.map((item) => (
                     <View key={item} style={styles.equipmentItem}>
-                      <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+                      <Ionicons name="checkmark-circle" size={14} color={theme.colors.emerald500} />
                       <Text style={styles.equipmentText}>{item}</Text>
                     </View>
                   ))}
@@ -413,12 +379,12 @@ export default function PrebuiltSessionDetailScreen() {
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                   >
-                    <Ionicons name="list" size={18} color="#fff" />
+                    <Ionicons name="list" size={18} color={theme.colors.white} />
                   </LinearGradient>
                   <View>
                     <Text style={styles.cardTitle}>Plan détaillé</Text>
                     <Text style={styles.cardSubtitle}>
-                      {completedSteps.size}/{detailLines.length} étapes complétées
+                      {completedSteps.size}/{allExercises.length} exercices complétés
                     </Text>
                   </View>
                 </View>
@@ -440,47 +406,81 @@ export default function PrebuiltSessionDetailScreen() {
               </View>
 
               <View style={styles.stepsContainer}>
-                {detailLines.map((line, index) => {
-                  const isCompleted = completedSteps.has(index);
-                  return (
-                    <TouchableOpacity
-                      key={`step-${index}`}
-                      style={styles.stepRow}
-                      onPress={() => toggleStepComplete(index)}
-                      activeOpacity={0.8}
-                    >
-                      <View
-                        style={[
-                          styles.stepCheckbox,
-                          isCompleted && {
-                            backgroundColor: categoryConfig.tint,
-                            borderColor: categoryConfig.tint,
-                          },
-                        ]}
-                      >
-                        {isCompleted ? (
-                          <Ionicons name="checkmark" size={14} color="#fff" />
-                        ) : (
-                          <Text style={styles.stepIndexText}>{index + 1}</Text>
-                        )}
-                      </View>
-                      <Text
-                        style={[
-                          styles.stepText,
-                          isCompleted && styles.stepTextCompleted,
-                        ]}
-                      >
-                        {line}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                {(session.blocks ?? []).map((block, bIdx) => (
+                  <View key={`block-${bIdx}`} style={styles.blockSection}>
+                    <Text style={styles.blockTitle}>{block.title}</Text>
+                    {block.exercises.map((ex, eIdx) => {
+                      const globalIdx = allExercises.findIndex(
+                        (a) => a.blockTitle === block.title && a.name === ex.name && a.globalIdx >= 0
+                      );
+                      const idx = globalIdx >= 0 ? globalIdx : bIdx * 100 + eIdx;
+                      const isCompleted = completedSteps.has(idx);
+                      const parts: string[] = [];
+                      if (ex.sets && ex.reps) parts.push(`${ex.sets}×${ex.reps}`);
+                      else if (ex.reps) parts.push(`${ex.reps}`);
+                      if (ex.rest_s) parts.push(`repos ${ex.rest_s}s`);
+                      if (ex.tempo) parts.push(`tempo ${ex.tempo}`);
+                      return (
+                        <View key={`ex-${bIdx}-${eIdx}`} style={styles.stepRow}>
+                          <TouchableOpacity
+                            style={{ flexDirection: "row", alignItems: "flex-start", flex: 1, gap: 12 }}
+                            onPress={() => toggleStepComplete(idx)}
+                            activeOpacity={0.8}
+                          >
+                            <View
+                              style={[
+                                styles.stepCheckbox,
+                                isCompleted && {
+                                  backgroundColor: categoryConfig.tint,
+                                  borderColor: categoryConfig.tint,
+                                },
+                              ]}
+                            >
+                              {isCompleted ? (
+                                <Ionicons name="checkmark" size={14} color={theme.colors.white} />
+                              ) : (
+                                <Text style={styles.stepIndexText}>{eIdx + 1}</Text>
+                              )}
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text
+                                style={[
+                                  styles.stepText,
+                                  isCompleted && styles.stepTextCompleted,
+                                ]}
+                              >
+                                {ex.name}
+                              </Text>
+                              {parts.length > 0 && (
+                                <Text style={styles.stepDetail}>{parts.join(" · ")}</Text>
+                              )}
+                              {ex.notes && (
+                                <Text style={styles.stepNotes}>{ex.notes}</Text>
+                              )}
+                            </View>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.videoButton}
+                            activeOpacity={0.7}
+                            onPress={() => {
+                              setVideoLabel(ex.name);
+                              setVideoUrl(getRoutineVideoUrl(ex.name));
+                            }}
+                          >
+                            <Ionicons name="logo-youtube" size={14} color={palette.accent} />
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))}
               </View>
+
             </Card>
           </Animated.View>
 
           {/* Attentes / Consignes */}
-          {expectations.length > 0 && (
+          {coachingTips.length > 0 && (
             <Animated.View
               style={{
                 opacity: cardAnims[2],
@@ -497,16 +497,16 @@ export default function PrebuiltSessionDetailScreen() {
               <Card variant="soft" style={styles.expectCard}>
                 <View style={styles.expectHeader}>
                   <View style={styles.expectIconCircle}>
-                    <Ionicons name="bulb" size={16} color="#f59e0b" />
+                    <Ionicons name="bulb" size={16} color={theme.colors.amber500} />
                   </View>
                   <View>
-                    <Text style={styles.cardTitle}>Points clés</Text>
-                    <Text style={styles.cardSubtitle}>Pour bien exécuter</Text>
+                    <Text style={styles.cardTitle}>Coaching</Text>
+                    <Text style={styles.cardSubtitle}>Conseils du prépa</Text>
                   </View>
                 </View>
                 <View style={styles.expectList}>
-                  {expectations.map((line, idx) => (
-                    <View key={`expect-${idx}`} style={styles.expectRow}>
+                  {coachingTips.map((line, idx) => (
+                    <View key={`coach-${idx}`} style={styles.expectRow}>
                       <Ionicons name="arrow-forward-circle" size={16} color={categoryConfig.tint} />
                       <Text style={styles.expectText}>{line}</Text>
                     </View>
@@ -533,7 +533,7 @@ export default function PrebuiltSessionDetailScreen() {
             <Card variant="surface" style={styles.timerCard}>
               <View style={styles.timerHeader}>
                 <View style={styles.timerIconCircle}>
-                  <Ionicons name="stopwatch" size={18} color="#06b6d4" />
+                  <Ionicons name="stopwatch" size={18} color={theme.colors.cyan500} />
                 </View>
                 <Text style={styles.cardTitle}>Chronomètre</Text>
               </View>
@@ -547,7 +547,7 @@ export default function PrebuiltSessionDetailScreen() {
                   onPress={toggleTimer}
                 >
                   <LinearGradient
-                    colors={isRunning ? ["#ef4444", "#f87171"] : ["#10b981", "#34d399"]}
+                    colors={isRunning ? [theme.colors.red500, theme.colors.rose300] : [theme.colors.emerald500, theme.colors.emerald400]}
                     style={styles.timerStartGradient}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
@@ -555,7 +555,7 @@ export default function PrebuiltSessionDetailScreen() {
                     <Ionicons
                       name={isRunning ? "pause" : "play"}
                       size={18}
-                      color="#fff"
+                      color={theme.colors.white}
                     />
                     <Text style={styles.timerStartText}>
                       {isRunning ? "Pause" : "Démarrer"}
@@ -618,11 +618,17 @@ export default function PrebuiltSessionDetailScreen() {
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
             >
-              <Ionicons name="checkmark-circle" size={20} color="#fff" />
+              <Ionicons name="checkmark-circle" size={20} color={theme.colors.white} />
               <Text style={styles.mainButtonText}>Finir la routine</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
+        <YouTubePlayer
+          visible={videoUrl !== null}
+          url={videoUrl}
+          label={videoLabel}
+          onClose={() => setVideoUrl(null)}
+        />
       </View>
     </SafeAreaView>
   );
@@ -646,9 +652,9 @@ const styles = StyleSheet.create({
 
   // HERO
   heroCard: {
-    borderRadius: 20,
+    borderRadius: RADIUS.xl,
     overflow: "hidden",
-    shadowColor: "#000",
+    shadowColor: theme.colors.black,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
@@ -671,13 +677,13 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: RADIUS.pill,
+    backgroundColor: theme.colors.white20,
   },
   categoryText: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "700",
-    color: "#fff",
+    color: theme.colors.white,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
@@ -691,25 +697,25 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: RADIUS.pill,
+    backgroundColor: theme.colors.white20,
   },
   heroBadgeText: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "600",
-    color: "#fff",
+    color: theme.colors.white,
   },
   heroTitleBlock: {
     gap: 6,
   },
   heroTitle: {
-    color: "#fff",
-    fontSize: 22,
+    color: theme.colors.white,
+    fontSize: TYPE.title.fontSize,
     fontWeight: "800",
   },
   heroObjective: {
-    color: "rgba(255,255,255,0.85)",
-    fontSize: 14,
+    color: theme.colors.white85,
+    fontSize: TYPE.body.fontSize,
     lineHeight: 20,
   },
   heroStatsRow: {
@@ -723,19 +729,19 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   heroStatText: {
-    fontSize: 12,
-    color: "rgba(255,255,255,0.9)",
+    fontSize: TYPE.caption.fontSize,
+    color: theme.colors.white90,
     fontWeight: "500",
   },
 
   // Cards common
   cardTitle: {
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   cardSubtitle: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     marginTop: 2,
   },
@@ -753,8 +759,8 @@ const styles = StyleSheet.create({
   equipmentIconCircle: {
     width: 36,
     height: 36,
-    borderRadius: 10,
-    backgroundColor: "rgba(139,92,246,0.15)",
+    borderRadius: RADIUS.sm,
+    backgroundColor: theme.colors.violetSoft15,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -769,13 +775,13 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     backgroundColor: palette.bgSoft,
     borderWidth: 1,
     borderColor: palette.border,
   },
   equipmentText: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.text,
     fontWeight: "500",
   },
@@ -799,35 +805,64 @@ const styles = StyleSheet.create({
   planIconCircle: {
     width: 40,
     height: 40,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
   },
   planBadge: {
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.accentSoft,
     borderWidth: 1,
     borderColor: palette.accent,
   },
   planBadgeText: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "700",
     color: palette.accent,
   },
   progressTrack: {
     height: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.borderSoft,
     overflow: "hidden",
   },
   progressFill: {
     height: "100%",
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
   },
   stepsContainer: {
-    gap: 8,
+    gap: 14,
+  },
+  blockSection: {
+    gap: 6,
+  },
+  blockTitle: {
+    fontSize: TYPE.caption.fontSize,
+    fontWeight: "700",
+    color: palette.accent,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  stepDetail: {
+    fontSize: TYPE.micro.fontSize,
+    color: palette.sub,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  stepNotes: {
+    fontSize: TYPE.micro.fontSize,
+    color: palette.sub,
+    fontStyle: "italic",
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  videoButton: {
+    padding: 8,
+    marginLeft: 4,
+    alignSelf: "flex-start",
   },
   stepRow: {
     flexDirection: "row",
@@ -835,7 +870,7 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 8,
     paddingHorizontal: 10,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     backgroundColor: palette.bgSoft,
     borderWidth: 1,
     borderColor: palette.border,
@@ -843,7 +878,7 @@ const styles = StyleSheet.create({
   stepCheckbox: {
     width: 26,
     height: 26,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     borderWidth: 1.5,
     borderColor: palette.border,
     backgroundColor: palette.card,
@@ -851,13 +886,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   stepIndexText: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     color: palette.sub,
   },
   stepText: {
     flex: 1,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.text,
     lineHeight: 20,
   },
@@ -879,8 +914,8 @@ const styles = StyleSheet.create({
   expectIconCircle: {
     width: 36,
     height: 36,
-    borderRadius: 10,
-    backgroundColor: "rgba(245,158,11,0.15)",
+    borderRadius: RADIUS.sm,
+    backgroundColor: theme.colors.amberSoft15,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -895,7 +930,7 @@ const styles = StyleSheet.create({
   expectText: {
     flex: 1,
     color: palette.sub,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     lineHeight: 18,
   },
 
@@ -913,13 +948,13 @@ const styles = StyleSheet.create({
   timerIconCircle: {
     width: 36,
     height: 36,
-    borderRadius: 10,
-    backgroundColor: "rgba(6,182,212,0.15)",
+    borderRadius: RADIUS.sm,
+    backgroundColor: theme.colors.cyanSoft15,
     alignItems: "center",
     justifyContent: "center",
   },
   timerValue: {
-    fontSize: 48,
+    fontSize: TYPE.display.md.fontSize,
     fontWeight: "800",
     letterSpacing: 2,
     color: palette.text,
@@ -932,9 +967,9 @@ const styles = StyleSheet.create({
   },
   timerStartButton: {
     flex: 2,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     overflow: "hidden",
-    shadowColor: "#10b981",
+    shadowColor: theme.colors.emerald500,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -948,8 +983,8 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   timerStartText: {
-    color: "#fff",
-    fontSize: 15,
+    color: theme.colors.white,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
   },
   timerResetButton: {
@@ -959,14 +994,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 6,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.cardSoft,
   },
   timerResetText: {
     color: palette.sub,
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "600",
   },
 
@@ -975,7 +1010,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   tagsSectionTitle: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "600",
     color: palette.sub,
     textTransform: "uppercase",
@@ -989,13 +1024,13 @@ const styles = StyleSheet.create({
   tagPill: {
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.bgSoft,
   },
   tagPillText: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     fontWeight: "500",
   },
@@ -1010,9 +1045,9 @@ const styles = StyleSheet.create({
     backgroundColor: palette.bg,
   },
   mainButton: {
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     overflow: "hidden",
-    shadowColor: "#ff7a1a",
+    shadowColor: theme.colors.accent,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 10,
@@ -1026,8 +1061,8 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   mainButtonText: {
-    color: "#fff",
+    color: theme.colors.white,
     fontWeight: "700",
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
   },
 });

@@ -3,7 +3,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { theme } from '../../../constants/theme';
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import { getRpeColor, RPE_LABELS } from '../feedbackScales';
 
 const COLORS = theme.colors;
@@ -25,7 +25,7 @@ export function RPEBlock({ rpe, onRpeChange }: Props) {
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <Ionicons name="pulse-outline" size={18} color="#fff" />
+            <Ionicons name="pulse-outline" size={18} color={theme.colors.white} />
           </LinearGradient>
           <View>
             <Text style={styles.metricTitle}>RPE séance</Text>
@@ -46,7 +46,7 @@ export function RPEBlock({ rpe, onRpeChange }: Props) {
 
       <View style={styles.rpeBarTrack}>
         <LinearGradient
-          colors={['#16a34a', '#84cc16', '#f59e0b', '#f97316', '#ef4444']}
+          colors={[theme.colors.green600, theme.colors.lime500, theme.colors.amber500, theme.colors.orange500, theme.colors.red500]}
           style={[styles.rpeBarFill, { width: `${rpe * 10}%` }]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
@@ -85,7 +85,7 @@ export function RPEBlock({ rpe, onRpeChange }: Props) {
 const styles = StyleSheet.create({
   rpeCard: {
     flex: 1,
-    borderRadius: 18,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: COLORS.border,
     padding: 16,
@@ -101,37 +101,37 @@ const styles = StyleSheet.create({
   rpeIconCircle: {
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  metricTitle: { fontSize: 13, fontWeight: '600', color: COLORS.text },
-  rpeSubtitle: { fontSize: 11, color: COLORS.textMuted, marginTop: 1 },
-  rpeBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1 },
-  rpeBadgeText: { fontSize: 11, fontWeight: '700' },
+  metricTitle: { fontSize: TYPE.caption.fontSize, fontWeight: '600', color: COLORS.text },
+  rpeSubtitle: { fontSize: TYPE.micro.fontSize, color: COLORS.textMuted, marginTop: 1 },
+  rpeBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: RADIUS.pill, borderWidth: 1 },
+  rpeBadgeText: { fontSize: TYPE.micro.fontSize, fontWeight: '700' },
   rpeValueRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 12 },
-  rpeValue: { fontSize: 42, fontWeight: '800' },
-  rpeValueSuffix: { fontSize: 16, color: COLORS.textMuted, marginLeft: 4 },
+  rpeValue: { fontSize: TYPE.display.md.fontSize, fontWeight: '800' },
+  rpeValueSuffix: { fontSize: TYPE.body.fontSize, color: COLORS.textMuted, marginLeft: 4 },
   rpeBarTrack: {
     height: 8,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: COLORS.border,
     overflow: 'hidden',
     marginBottom: 14,
   },
-  rpeBarFill: { height: '100%', borderRadius: 999 },
+  rpeBarFill: { height: '100%', borderRadius: RADIUS.pill },
   rpeSelector: { flexDirection: 'row', justifyContent: 'space-between', gap: 4 },
   rpeDot: {
     flex: 1,
     minHeight: 44,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.border,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.surface,
   },
-  rpeDotText: { color: COLORS.textMuted, fontSize: 14, fontWeight: '700' },
-  rpeDotTextSelected: { color: '#fff', fontWeight: '700' },
+  rpeDotText: { color: COLORS.textMuted, fontSize: TYPE.body.fontSize, fontWeight: '700' },
+  rpeDotTextSelected: { color: theme.colors.white, fontWeight: '700' },
 });

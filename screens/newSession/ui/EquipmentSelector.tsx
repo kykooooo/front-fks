@@ -4,6 +4,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { palette } from "../theme";
 import { showToast } from "../../../utils/toast";
 import type { EnvironmentSelection } from "../types";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
+
 
 type CatalogItem = { id: string; label: string; source: "gym" | "pitch" | "home" | "both" };
 
@@ -89,18 +91,18 @@ export function EquipmentSelector({
       return;
     }
 
-    // No gym: check pitch and home requirements
-    if (hasPitch && !pitchSmallGearEnabled && hasHome && !hasHomeEquipment) {
-      showToast({ type: "warn", title: "Matériel requis", message: "Active le matériel terrain ou sélectionne un équipement maison." });
-      return;
-    }
-    if (hasPitch && !pitchSmallGearEnabled && !hasHome) {
-      showToast({ type: "warn", title: "Matériel requis", message: "Active le petit matériel terrain." });
-      return;
-    }
-    if (hasHome && !hasHomeEquipment && !hasPitch) {
-      showToast({ type: "warn", title: "Matériel requis", message: "Sélectionne au moins un équipement maison." });
-      return;
+    // No gym: info toast if fully bodyweight, but let through
+    const fullyBodyweight =
+      (hasPitch && !pitchSmallGearEnabled && !hasHome) ||
+      (hasHome && !hasHomeEquipment && !hasPitch) ||
+      (hasPitch && !pitchSmallGearEnabled && hasHome && !hasHomeEquipment);
+
+    if (fullyBodyweight) {
+      showToast({
+        type: "info",
+        title: "100% poids du corps",
+        message: "Ta séance sera sans matériel — c'est déjà super efficace !",
+      });
     }
     onValidateContext();
   };
@@ -136,10 +138,10 @@ export function EquipmentSelector({
 
       {/* Gym Section */}
       {isGym && (
-        <View style={[styles.locationSection, { borderLeftColor: "#8b5cf6" }]}>
+        <View style={[styles.locationSection, { borderLeftColor: theme.colors.violet500 }]}>
           <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIconWrap, { backgroundColor: "rgba(139, 92, 246, 0.12)" }]}>
-              <Ionicons name="barbell" size={18} color="#8b5cf6" />
+            <View style={[styles.sectionIconWrap, { backgroundColor: theme.colors.violetSoft12 }]}>
+              <Ionicons name="barbell" size={18} color={theme.colors.violet500} />
             </View>
             <View style={styles.sectionHeaderText}>
               <Text style={styles.sectionTitle}>Salle de sport</Text>
@@ -148,10 +150,10 @@ export function EquipmentSelector({
           </View>
 
           {/* Standard equipment - always included */}
-          <View style={[styles.standardEquipmentBadge, { backgroundColor: "rgba(139, 92, 246, 0.08)" }]}>
+          <View style={[styles.standardEquipmentBadge, { backgroundColor: theme.colors.violetSoft08 }]}>
             <View style={styles.standardEquipmentHeader}>
-              <Ionicons name="checkmark-circle" size={16} color="#8b5cf6" />
-              <Text style={[styles.standardEquipmentTitle, { color: "#8b5cf6" }]}>Inclus</Text>
+              <Ionicons name="checkmark-circle" size={16} color={theme.colors.violet500} />
+              <Text style={[styles.standardEquipmentTitle, { color: theme.colors.violet500 }]}>Inclus</Text>
             </View>
             <Text style={styles.standardEquipmentList}>
               Haltères • Barres • Bancs • Machines guidées • Poids libres
@@ -176,18 +178,18 @@ export function EquipmentSelector({
                   >
                     <View style={[
                       styles.equipmentIconWrap,
-                      { backgroundColor: enabled ? "rgba(139, 92, 246, 0.15)" : palette.cardSoft }
+                      { backgroundColor: enabled ? theme.colors.violetSoft15 : palette.cardSoft }
                     ]}>
                       <Ionicons
                         name={item.icon as any}
                         size={20}
-                        color={enabled ? "#8b5cf6" : palette.sub}
+                        color={enabled ? theme.colors.violet500 : palette.sub}
                       />
                     </View>
                     <View style={styles.equipmentInfo}>
                       <Text style={[
                         styles.equipmentLabel,
-                        enabled && { color: "#8b5cf6" }
+                        enabled && { color: theme.colors.violet500 }
                       ]}>
                         {item.label}
                       </Text>
@@ -196,7 +198,7 @@ export function EquipmentSelector({
                       </Text>
                     </View>
                     {enabled && (
-                      <Ionicons name="checkmark-circle" size={20} color="#8b5cf6" />
+                      <Ionicons name="checkmark-circle" size={20} color={theme.colors.violet500} />
                     )}
                   </TouchableOpacity>
                 );
@@ -208,10 +210,10 @@ export function EquipmentSelector({
 
       {/* Pitch Section */}
       {isPitch && (
-        <View style={[styles.locationSection, { borderLeftColor: "#22c55e" }]}>
+        <View style={[styles.locationSection, { borderLeftColor: theme.colors.green500 }]}>
           <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIconWrap, { backgroundColor: "rgba(34, 197, 94, 0.12)" }]}>
-              <Ionicons name="football" size={18} color="#22c55e" />
+            <View style={[styles.sectionIconWrap, { backgroundColor: theme.colors.green500Soft12 }]}>
+              <Ionicons name="football" size={18} color={theme.colors.green500} />
             </View>
             <View style={styles.sectionHeaderText}>
               <Text style={styles.sectionTitle}>Terrain</Text>
@@ -221,21 +223,21 @@ export function EquipmentSelector({
 
           <View style={styles.quickToggle}>
             <View style={styles.quickToggleInfo}>
-              <Ionicons name="checkmark-done" size={18} color="#22c55e" />
+              <Ionicons name="checkmark-done" size={18} color={theme.colors.green500} />
               <Text style={styles.quickToggleLabel}>Petit matériel dispo</Text>
             </View>
             <Switch
               value={pitchSmallGearEnabled}
               onValueChange={(next) => onTogglePitchSmallGear?.(next)}
-              trackColor={{ false: palette.borderSoft, true: "rgba(34, 197, 94, 0.4)" }}
-              thumbColor={pitchSmallGearEnabled ? "#22c55e" : palette.textMuted}
+              trackColor={{ false: palette.borderSoft, true: theme.colors.green500Soft40 }}
+              thumbColor={pitchSmallGearEnabled ? theme.colors.green500 : palette.textMuted}
             />
           </View>
 
           {pitchSmallGearEnabled && (
-            <View style={[styles.activeBadge, { backgroundColor: "rgba(34, 197, 94, 0.1)" }]}>
-              <Ionicons name="checkmark-circle" size={14} color="#22c55e" />
-              <Text style={[styles.activeBadgeText, { color: "#22c55e" }]}>
+            <View style={[styles.activeBadge, { backgroundColor: theme.colors.green500Soft10 }]}>
+              <Ionicons name="checkmark-circle" size={14} color={theme.colors.green500} />
+              <Text style={[styles.activeBadgeText, { color: theme.colors.green500 }]}>
                 Cônes, plots, échelle, mini-haies, bandes
               </Text>
             </View>
@@ -245,10 +247,10 @@ export function EquipmentSelector({
 
       {/* Home Section */}
       {isHome && (
-        <View style={[styles.locationSection, { borderLeftColor: "#f59e0b" }]}>
+        <View style={[styles.locationSection, { borderLeftColor: theme.colors.amber500 }]}>
           <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIconWrap, { backgroundColor: "rgba(245, 158, 11, 0.12)" }]}>
-              <Ionicons name="home" size={18} color="#f59e0b" />
+            <View style={[styles.sectionIconWrap, { backgroundColor: theme.colors.amberSoft12 }]}>
+              <Ionicons name="home" size={18} color={theme.colors.amber500} />
             </View>
             <View style={styles.sectionHeaderText}>
               <Text style={styles.sectionTitle}>Maison</Text>
@@ -271,18 +273,18 @@ export function EquipmentSelector({
                 >
                   <View style={[
                     styles.equipmentIconWrap,
-                    { backgroundColor: enabled ? "rgba(245, 158, 11, 0.15)" : palette.cardSoft }
+                    { backgroundColor: enabled ? theme.colors.amberSoft15 : palette.cardSoft }
                   ]}>
                     <Ionicons
                       name={item.icon as any}
                       size={20}
-                      color={enabled ? "#f59e0b" : palette.sub}
+                      color={enabled ? theme.colors.amber500 : palette.sub}
                     />
                   </View>
                   <View style={styles.equipmentInfo}>
                     <Text style={[
                       styles.equipmentLabel,
-                      enabled && { color: "#f59e0b" }
+                      enabled && { color: theme.colors.amber500 }
                     ]}>
                       {item.label}
                     </Text>
@@ -291,7 +293,7 @@ export function EquipmentSelector({
                     </Text>
                   </View>
                   {enabled && (
-                    <Ionicons name="checkmark-circle" size={20} color="#f59e0b" />
+                    <Ionicons name="checkmark-circle" size={20} color={theme.colors.amber500} />
                   )}
                 </TouchableOpacity>
               );
@@ -338,7 +340,7 @@ export function EquipmentSelector({
         <Ionicons
           name={setupDone ? "checkmark-circle" : "arrow-forward"}
           size={20}
-          color="#fff"
+          color={theme.colors.white}
         />
         <Text style={styles.validateButtonText}>
           {setupDone ? "Contexte validé" : "Valider le contexte"}
@@ -356,7 +358,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 24,
     gap: 8,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     borderStyle: "dashed",
@@ -365,19 +367,19 @@ const styles = StyleSheet.create({
   emptyIcon: {
     width: 56,
     height: 56,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     backgroundColor: palette.card,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 4,
   },
   emptyTitle: {
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   emptySubtitle: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     textAlign: "center",
   },
@@ -389,8 +391,8 @@ const styles = StyleSheet.create({
   headerIcon: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    backgroundColor: "rgba(37, 99, 235, 0.12)",
+    borderRadius: RADIUS.md,
+    backgroundColor: theme.colors.blueSoft12,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -398,18 +400,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    fontSize: 17,
+    fontSize: TYPE.subtitle.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     marginTop: 2,
   },
   locationSection: {
     padding: 16,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     borderLeftWidth: 4,
@@ -424,7 +426,7 @@ const styles = StyleSheet.create({
   sectionIconWrap: {
     width: 40,
     height: 40,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -432,12 +434,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sectionTitle: {
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   sectionSubtitle: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     marginTop: 2,
   },
@@ -447,7 +449,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 10,
     paddingHorizontal: 14,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     backgroundColor: palette.cardSoft,
   },
   quickToggleInfo: {
@@ -456,7 +458,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   quickToggleLabel: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "600",
     color: palette.text,
   },
@@ -466,10 +468,10 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
   },
   activeBadgeText: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "600",
   },
   equipmentGrid: {
@@ -477,7 +479,7 @@ const styles = StyleSheet.create({
   },
   standardEquipmentBadge: {
     padding: 12,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     gap: 6,
   },
   standardEquipmentHeader: {
@@ -486,11 +488,11 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   standardEquipmentTitle: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
   },
   standardEquipmentList: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     lineHeight: 18,
   },
@@ -498,34 +500,34 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   specialEquipmentLabel: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "600",
     color: palette.sub,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   equipmentCardEnabledGym: {
-    borderColor: "#8b5cf6",
-    backgroundColor: "rgba(139, 92, 246, 0.06)",
+    borderColor: theme.colors.violet500,
+    backgroundColor: theme.colors.violetSoft06,
   },
   equipmentCard: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     backgroundColor: palette.cardSoft,
     borderWidth: 1,
     borderColor: palette.borderSoft,
   },
   equipmentCardEnabled: {
-    borderColor: "#f59e0b",
-    backgroundColor: "rgba(245, 158, 11, 0.06)",
+    borderColor: theme.colors.amber500,
+    backgroundColor: theme.colors.amberSoft06,
   },
   equipmentIconWrap: {
     width: 40,
     height: 40,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -533,12 +535,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   equipmentLabel: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "600",
     color: palette.text,
   },
   equipmentDescription: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     marginTop: 2,
   },
@@ -546,7 +548,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   chipsTitle: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "600",
     color: palette.sub,
     textTransform: "uppercase",
@@ -563,17 +565,17 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: 20,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
   },
   chipSelected: {
     borderColor: palette.accent,
-    backgroundColor: "rgba(37, 99, 235, 0.08)",
+    backgroundColor: theme.colors.blueSoft08,
   },
   chipText: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "600",
     color: palette.sub,
   },
@@ -586,15 +588,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 10,
     paddingVertical: 16,
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     backgroundColor: palette.accent,
   },
   validateButtonDone: {
-    backgroundColor: "#22c55e",
+    backgroundColor: theme.colors.green500,
   },
   validateButtonText: {
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
-    color: "#fff",
+    color: theme.colors.white,
   },
 });

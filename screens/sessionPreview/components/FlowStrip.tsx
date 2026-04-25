@@ -2,7 +2,7 @@
 import React from "react";
 import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import { SectionHeader } from "../../../components/ui/SectionHeader";
 import { getBlockConfig, getBlockLabel } from "../../../components/session/blockConfig";
 import type { Block } from "../sessionPreviewConfig";
@@ -66,9 +66,9 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
   },
-  flowCapsuleText: { fontSize: 12, fontWeight: "700" },
+  flowCapsuleText: { fontSize: TYPE.caption.fontSize, fontWeight: "700" },
   flowConnector: { paddingHorizontal: 2 },
 });

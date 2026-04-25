@@ -9,7 +9,7 @@ import {
 import { BlurView } from "expo-blur";
 import Animated from "react-native-reanimated";
 import { useModalAnimation, type ModalAnimationType } from "./useModalAnimation";
-import { theme } from "../../constants/theme";
+import { theme, RADIUS } from "../../constants/theme";
 import { zIndex as Z } from "../../theme/zIndex";
 import { GestureDetector } from "react-native-gesture-handler";
 import { useSwipeToDismiss } from "./useSwipeToDismiss";
@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.15)",
+    backgroundColor: theme.colors.black15,
   },
   content: {
     flex: 1,
@@ -102,7 +102,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     paddingBottom: 12,
     minHeight: 120,
-    shadowColor: "#000",
+    shadowColor: theme.colors.black,
     shadowOpacity: 0.18,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: -4 },
@@ -112,7 +112,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     width: 48,
     height: 5,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     marginTop: 10,
     marginBottom: 6,
     backgroundColor: theme.colors.borderSoft,

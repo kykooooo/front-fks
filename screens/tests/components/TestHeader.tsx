@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, Animated, TouchableOpacity } from "react-native
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import { formatEntryTimestamp } from "../testHelpers";
 import type { TestEntry } from "../testConfig";
 
@@ -34,12 +34,12 @@ export function TestHeader({ lastEntry, fadeAnim, slideAnim }: Props) {
       </TouchableOpacity>
       <View style={styles.headerLeft}>
         <LinearGradient
-          colors={["#ff7a1a", "#ff9a4a"]}
+          colors={[theme.colors.accent, theme.colors.accentAlt]}
           style={styles.headerIcon}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
-          <Ionicons name="speedometer-outline" size={24} color="#fff" />
+          <Ionicons name="speedometer-outline" size={24} color={theme.colors.white} />
         </LinearGradient>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Tests terrain</Text>
@@ -64,7 +64,7 @@ const styles = StyleSheet.create({
   backButton: {
     width: 36,
     height: 36,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     backgroundColor: palette.card,
     borderWidth: 1,
     borderColor: palette.border,
@@ -86,10 +86,10 @@ const styles = StyleSheet.create({
   headerIcon: {
     width: 48,
     height: 48,
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#ff7a1a",
+    shadowColor: theme.colors.accent,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -97,18 +97,18 @@ const styles = StyleSheet.create({
   },
   title: {
     color: palette.text,
-    fontSize: 20,
+    fontSize: TYPE.title.fontSize,
     fontWeight: "800",
   },
   subtitle: {
     color: palette.sub,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     marginTop: 2,
   },
   lastBadge: {
     paddingHorizontal: 10,
     paddingVertical: 8,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.card,
@@ -116,13 +116,13 @@ const styles = StyleSheet.create({
   },
   lastBadgeLabel: {
     color: palette.sub,
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   lastBadgeDate: {
     color: palette.text,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     marginTop: 2,
   },

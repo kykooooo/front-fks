@@ -101,14 +101,6 @@ export async function processV2(params: {
     guardrailsApplied.push("Réduction charge (jour/veille club)");
     if (intensityPlanned === "hard") intensityPlanned = "moderate";
   }
-  if (tsb < -10) {
-    guardFactor *= 0.8;
-    guardrailsApplied.push("TSB < -10 → easy/modéré et volume -20%");
-    intensityPlanned = "easy";
-  } else if (tsb < 0 && intensityPlanned === "hard") {
-    intensityPlanned = "moderate";
-    guardrailsApplied.push("TSB négatif → hard abaissé en moderate");
-  }
 
   plannedLoadSafe = Math.max(1, Math.round(plannedLoadSafe * guardFactor));
   sessionWithAi.intensity = intensityPlanned as any;
@@ -119,6 +111,7 @@ export async function processV2(params: {
     id: sessionFromV2.id,
     dateISO: plannedDateISO,
     createdAt,
+    status: sessionFromV2.status ?? "planned",
     generationLabel: `${plannedDateISO} ${createdAt.slice(11, 19)}`,
     phase: phaseForPayload,
     focus: normalizeFocus(sessionFromV2.focus),

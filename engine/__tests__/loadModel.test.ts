@@ -5,6 +5,7 @@
 // Nécessite : npm install  (jest-expo + @types/jest dans package.json)
 
 import { updateTrainingLoad, decayLoadOverDays } from '../loadModel';
+import { getTauForLevel, TAU_BY_LEVEL } from '../../config/trainingDefaults';
 
 describe('updateTrainingLoad', () => {
   test('1. Charge zéro = décroissance pure (ATL et CTL baissent vers 0)', () => {
@@ -55,5 +56,86 @@ describe('decayLoadOverDays', () => {
     const { atl, ctl } = decayLoadOverDays(50, 50, 90);
     expect(atl).toBeLessThan(5);
     expect(ctl).toBeLessThan(5);
+  });
+});
+
+// ─── Tau dynamiques ────────────────────────────────────────────────
+
+describe('getTauForLevel', () => {
+  test('Mapping niveau → tau correct', () => {
+    expect(getTauForLevel("Amateur")).toEqual(TAU_BY_LEVEL.debutant);
+    expect(getTauForLevel("Regional")).toEqual(TAU_BY_LEVEL.debutant);
+    expect(getTauForLevel("National")).toEqual(TAU_BY_LEVEL.intermediaire);
+    expect(getTauForLevel("Semi-pro")).toEqual(TAU_BY_LEVEL.confirme);
+    expect(getTauForLevel("Pro")).toEqual(TAU_BY_LEVEL.confirme);
+  });
+
+  test('Fallback sur intermediaire si niveau inconnu ou null', () => {
+    expect(getTauForLevel(null)).toEqual(TAU_BY_LEVEL.intermediaire);
+    expect(getTauForLevel(undefined)).toEqual(TAU_BY_LEVEL.intermediaire);
+    expect(getTauForLevel("blabla")).toEqual(TAU_BY_LEVEL.intermediaire);
+    expect(getTauForLevel("")).toEqual(TAU_BY_LEVEL.intermediaire);
+  });
+});
+
+describe('Tau dynamiques — decay', () => {
+  // TSB -25 : ATL=45, CTL=20
+  const ATL_START = 45;
+  const CTL_START = 20;
+
+  test('Débutant (tau 7/21) récupère plus vite que confirmé (tau 14/35) après 7 jours', () => {
+    const deb = decayLoadOverDays(ATL_START, CTL_START, 7, TAU_BY_LEVEL.debutant);
+    const conf = decayLoadOverDays(ATL_START, CTL_START, 7, TAU_BY_LEVEL.confirme);
+    // Débutant : ATL decay plus → TSB remonte plus
+    expect(deb.tsb).toBeGreaterThan(conf.tsb);
+    // Débutant devrait être positif ou quasi (~frais)
+    expect(deb.tsb).toBeGreaterThan(-5);
+    // Confirmé encore négatif
+    expect(conf.tsb).toBeLessThan(0);
+  });
+
+  test('Débutant à TSB -25 revient à "En forme" (TSB > -5) en ~7 jours de repos', () => {
+    const deb = decayLoadOverDays(ATL_START, CTL_START, 7, TAU_BY_LEVEL.debutant);
+    expect(deb.tsb).toBeGreaterThan(-5);
+  });
+
+  test('Confirmé à TSB -25 est encore négatif après 7 jours de repos', () => {
+    const conf = decayLoadOverDays(ATL_START, CTL_START, 7, TAU_BY_LEVEL.confirme);
+    expect(conf.tsb).toBeLessThan(-5);
+  });
+});
+
+describe('Tau dynamiques — update', () => {
+  test('Débutant (tau 7) : ATL monte plus vite que confirmé (tau 14) avec même charge', () => {
+    const deb = updateTrainingLoad(12, 15, 155, { dtDays: 1, ...TAU_BY_LEVEL.debutant });
+    const conf = updateTrainingLoad(12, 15, 155, { dtDays: 1, ...TAU_BY_LEVEL.confirme });
+    // Débutant absorbe plus de fatigue (k plus grand)
+    expect(deb.atl).toBeGreaterThan(conf.atl);
+  });
+
+  test('Débutant 3 séances/semaine ne descend pas en dessous de TSB -25', () => {
+    const { tauAtl, tauCtl } = TAU_BY_LEVEL.debutant;
+    let atl = 12, ctl = 15;
+    // 3 séances en 7 jours (jours 0, 2, 4), load ~155 chacune
+    for (const gap of [0, 2, 2]) {
+      if (gap > 0) {
+        const dec = decayLoadOverDays(atl, ctl, gap, { tauAtl, tauCtl });
+        atl = dec.atl;
+        ctl = dec.ctl;
+      }
+      const next = updateTrainingLoad(atl, ctl, 155, { dtDays: 1, tauAtl, tauCtl });
+      atl = next.atl;
+      ctl = next.ctl;
+    }
+    const tsb = ctl - atl;
+    expect(tsb).toBeGreaterThan(-25);
+    expect(tsb).toBeLessThan(0); // Fatigué mais pas cramé
+  });
+
+  test('Sans tau passé → fallback 14/28 (backward compat)', () => {
+    const withFallback = updateTrainingLoad(12, 15, 100, { dtDays: 1 });
+    const withExplicit = updateTrainingLoad(12, 15, 100, { dtDays: 1, tauAtl: 14, tauCtl: 28 });
+    expect(withFallback.atl).toBeCloseTo(withExplicit.atl, 10);
+    expect(withFallback.ctl).toBeCloseTo(withExplicit.ctl, 10);
   });
 });

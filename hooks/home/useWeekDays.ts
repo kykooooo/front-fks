@@ -4,6 +4,7 @@ import { fr } from "date-fns/locale";
 import { frToKey, isSameDay, toDateKey } from "../../utils/dateHelpers";
 import type { Session } from "../../domain/types";
 import type { ExternalLoad } from "../../state/stores/types";
+import { isSessionCompleted } from "../../utils/sessionStatus";
 
 type Params = {
   devNowISO?: string;
@@ -48,7 +49,7 @@ export function useWeekDays({
 
       const hasFks = sessions.some((s) => {
         const dateStr = toDateKey(s.dateISO ?? s.date);
-        return dateStr === key && s.completed;
+        return dateStr === key && isSessionCompleted(s);
       });
 
       const hasExt = externalLoads.some((e) => {

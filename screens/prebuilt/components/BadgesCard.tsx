@@ -3,7 +3,7 @@ import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 
 const palette = theme.colors;
 
@@ -23,43 +23,43 @@ export function BadgesCard({ badges }: Props) {
     <View style={styles.badgesCard}>
       <View style={styles.badgesHeader}>
         <View style={styles.badgesIconCircle}>
-          <Ionicons name="medal" size={18} color="#f59e0b" />
+          <Ionicons name="medal" size={18} color={theme.colors.amber500} />
         </View>
         <Text style={styles.badgesTitle}>Tes stats routines</Text>
       </View>
       <View style={styles.badgesGrid}>
         <View style={styles.badgeItem}>
           <LinearGradient
-            colors={["#10b981", "#34d399"]}
+            colors={[theme.colors.emerald500, theme.colors.emerald400]}
             style={styles.badgeIconBg}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <Ionicons name="calendar" size={16} color="#fff" />
+            <Ionicons name="calendar" size={16} color={theme.colors.white} />
           </LinearGradient>
           <Text style={styles.badgeValue}>{badges.thisMonth}</Text>
           <Text style={styles.badgeLabel}>ce mois</Text>
         </View>
         <View style={styles.badgeItem}>
           <LinearGradient
-            colors={["#f59e0b", "#fbbf24"]}
+            colors={[theme.colors.amber500, theme.colors.amber400]}
             style={styles.badgeIconBg}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <Ionicons name="flame" size={16} color="#fff" />
+            <Ionicons name="flame" size={16} color={theme.colors.white} />
           </LinearGradient>
           <Text style={styles.badgeValue}>{badges.streak}</Text>
           <Text style={styles.badgeLabel}>jours streak</Text>
         </View>
         <View style={styles.badgeItem}>
           <LinearGradient
-            colors={["#8b5cf6", "#a78bfa"]}
+            colors={[theme.colors.violet500, theme.colors.violet400]}
             style={styles.badgeIconBg}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <Ionicons name="trophy" size={16} color="#fff" />
+            <Ionicons name="trophy" size={16} color={theme.colors.white} />
           </LinearGradient>
           <Text style={styles.badgeValue}>{badges.total}</Text>
           <Text style={styles.badgeLabel}>total</Text>
@@ -67,7 +67,7 @@ export function BadgesCard({ badges }: Props) {
       </View>
       {badges.favoriteCategory && (
         <View style={styles.favCategoryRow}>
-          <Ionicons name="heart" size={12} color="#ef4444" />
+          <Ionicons name="heart" size={12} color={theme.colors.red500} />
           <Text style={styles.favCategoryText}>
             Ta catégorie préférée : <Text style={styles.favCategoryName}>{badges.favoriteCategory}</Text>
           </Text>
@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
   badgesCard: {
     padding: 16,
     backgroundColor: palette.card,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: palette.border,
     gap: 14,
@@ -94,13 +94,13 @@ const styles = StyleSheet.create({
   badgesIconCircle: {
     width: 36,
     height: 36,
-    borderRadius: 10,
-    backgroundColor: "rgba(245,158,11,0.15)",
+    borderRadius: RADIUS.sm,
+    backgroundColor: theme.colors.amberSoft15,
     justifyContent: "center",
     alignItems: "center",
   },
   badgesTitle: {
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
@@ -115,17 +115,17 @@ const styles = StyleSheet.create({
   badgeIconBg: {
     width: 40,
     height: 40,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     justifyContent: "center",
     alignItems: "center",
   },
   badgeValue: {
-    fontSize: 22,
+    fontSize: TYPE.title.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   badgeLabel: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     fontWeight: "500",
   },
@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
     borderTopColor: palette.borderSoft,
   },
   favCategoryText: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
   },
   favCategoryName: {

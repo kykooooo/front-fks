@@ -16,11 +16,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
-import { theme } from "../constants/theme";
+import { theme, TYPE, RADIUS } from "../constants/theme";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { MICROCYCLES, isMicrocycleId, MICROCYCLE_TOTAL_SESSIONS_DEFAULT } from "../domain/microcycles";
 import { useHaptics } from "../hooks/useHaptics";
+import { openSessionEntry } from "../utils/sessionEntry";
+import { isSessionCompleted } from "../utils/sessionStatus";
+import { shouldSurfaceAsPendingSession } from "../utils/sessionFallback";
 
 const palette = theme.colors;
 const TESTS_STORAGE_KEY = "fks_tests_v1";
@@ -39,7 +42,7 @@ const HUB_OPTIONS: HubOption[] = [
   {
     id: "create",
     icon: "flash",
-    iconBg: ["#ff7a1a", "#ff9a4a"],
+    iconBg: [theme.colors.accent, theme.colors.accentAlt],
     title: "Créer une séance",
     subtitle: "Séance adaptée à ton contexte",
     route: "GenerateSession",
@@ -48,7 +51,7 @@ const HUB_OPTIONS: HubOption[] = [
   {
     id: "prebuilt",
     icon: "sparkles-outline",
-    iconBg: ["#14b8a6", "#2dd4bf"],
+    iconBg: [theme.colors.teal500, theme.colors.teal400],
     title: "Routines & extras",
     subtitle: "Mobilité, activation, récupération",
     route: "PrebuiltSessions",
@@ -56,7 +59,7 @@ const HUB_OPTIONS: HubOption[] = [
   {
     id: "history",
     icon: "time-outline",
-    iconBg: ["#06b6d4", "#22d3ee"],
+    iconBg: [theme.colors.cyan500, theme.colors.cyan400],
     title: "Historique",
     subtitle: "Consulte tes séances passées",
     route: "SessionHistory",
@@ -64,7 +67,7 @@ const HUB_OPTIONS: HubOption[] = [
   {
     id: "tests",
     icon: "speedometer-outline",
-    iconBg: ["#16a34a", "#4ade80"],
+    iconBg: [theme.colors.green600, theme.colors.green400],
     title: "Tests terrain",
     subtitle: "Mesure sprints, sauts, circuits",
     route: "Tests",
@@ -130,7 +133,7 @@ function HubCard({
           >
             <View style={styles.primaryCardContent}>
               <View style={styles.primaryIconCircle}>
-                <Ionicons name={option.icon} size={28} color="#fff" />
+                <Ionicons name={option.icon} size={28} color={theme.colors.white} />
               </View>
               <View style={styles.primaryTextContainer}>
                 <Text style={styles.primaryTitle}>{option.title}</Text>
@@ -138,7 +141,7 @@ function HubCard({
               </View>
             </View>
             <View style={styles.primaryArrow}>
-              <Ionicons name="arrow-forward" size={22} color="#fff" />
+              <Ionicons name="arrow-forward" size={22} color={theme.colors.white} />
             </View>
           </LinearGradient>
         </TouchableOpacity>
@@ -166,7 +169,7 @@ function HubCard({
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
-              <Ionicons name={option.icon} size={20} color="#fff" />
+              <Ionicons name={option.icon} size={20} color={theme.colors.white} />
             </LinearGradient>
             <View style={styles.cardTextContainer}>
               <Text style={styles.cardTitle}>{option.title}</Text>
@@ -182,11 +185,14 @@ function HubCard({
 
 export default function SessionHubScreen() {
   const nav = useNavigation<any>();
-  const pending = useSessionsStore((s) => s.sessions.find((x) => !x.completed));
+  const pending = useSessionsStore((s) =>
+    s.sessions.find((x) => !isSessionCompleted(x) && shouldSurfaceAsPendingSession(x))
+  );
+  const lastAiSessionV2 = useSessionsStore((s) => s.lastAiSessionV2);
   const pendingId = typeof pending?.id === "string" ? pending.id : null;
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
   const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
-  const completedSessions = useSessionsStore((s) => s.sessions.filter((x) => x.completed).length);
+  const completedSessions = useSessionsStore((s) => s.sessions.filter((x) => isSessionCompleted(x)).length);
   const [testsEmpty, setTestsEmpty] = useState<boolean | null>(null);
 
   const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
@@ -247,7 +253,7 @@ export default function SessionHubScreen() {
             </Text>
           </View>
           <View style={styles.statChip}>
-            <Ionicons name="checkmark-circle" size={14} color="#16a34a" />
+            <Ionicons name="checkmark-circle" size={14} color={theme.colors.green600} />
             <Text style={styles.statText}>
               <Text style={styles.statHighlight}>{completedSessions}</Text> terminées
             </Text>
@@ -270,11 +276,14 @@ export default function SessionHubScreen() {
             </View>
             <TouchableOpacity
               style={styles.alertButton}
-              onPress={() => pendingId && nav.navigate("Feedback", { sessionId: pendingId })}
+              onPress={() => {
+                if (!pending) return;
+                void openSessionEntry(nav, pending, lastAiSessionV2?.v2 ?? null);
+              }}
               disabled={!pendingId}
               activeOpacity={0.8}
             >
-              <Text style={styles.alertButtonText}>Donner mon feedback</Text>
+              <Text style={styles.alertButtonText}>Ouvrir ma séance</Text>
               <Ionicons name="arrow-forward" size={16} color={palette.accent} />
             </TouchableOpacity>
           </Card>
@@ -284,8 +293,8 @@ export default function SessionHubScreen() {
         {testsEmpty === true && !pending ? (
           <Card variant="soft" style={styles.alertCard}>
             <View style={styles.alertHeader}>
-              <View style={[styles.alertIconCircle, { backgroundColor: "rgba(6,182,212,0.15)" }]}>
-                <Ionicons name="analytics-outline" size={18} color="#06b6d4" />
+              <View style={[styles.alertIconCircle, { backgroundColor: theme.colors.cyanSoft15 }]}>
+                <Ionicons name="analytics-outline" size={18} color={theme.colors.cyan500} />
               </View>
               <View style={styles.alertTextContainer}>
                 <Text style={styles.alertTitle}>Tests terrain</Text>
@@ -295,14 +304,14 @@ export default function SessionHubScreen() {
               </View>
             </View>
             <TouchableOpacity
-              style={[styles.alertButton, { borderColor: "#06b6d4" }]}
+              style={[styles.alertButton, { borderColor: theme.colors.cyan500 }]}
               onPress={() => nav.navigate("Tests")}
               activeOpacity={0.8}
             >
-              <Text style={[styles.alertButtonText, { color: "#06b6d4" }]}>
+              <Text style={[styles.alertButtonText, { color: theme.colors.cyan500 }]}>
                 Passer les tests
               </Text>
-              <Ionicons name="arrow-forward" size={16} color="#06b6d4" />
+              <Ionicons name="arrow-forward" size={16} color={theme.colors.cyan500} />
             </TouchableOpacity>
           </Card>
         ) : null}
@@ -344,12 +353,12 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   headerTitle: {
-    fontSize: 26,
+    fontSize: TYPE.hero.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   headerSubtitle: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     color: palette.sub,
   },
   statsRow: {
@@ -363,12 +372,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     backgroundColor: palette.cardSoft,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     borderWidth: 1,
     borderColor: palette.border,
   },
   statText: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
   },
   statHighlight: {
@@ -387,8 +396,8 @@ const styles = StyleSheet.create({
   alertIconCircle: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    backgroundColor: "rgba(255,122,26,0.15)",
+    borderRadius: RADIUS.md,
+    backgroundColor: theme.colors.accentSoft15,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -396,12 +405,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   alertTitle: {
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   alertSubtitle: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     marginTop: 2,
   },
@@ -411,12 +420,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     borderWidth: 1,
     borderColor: palette.accent,
   },
   alertButtonText: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "600",
     color: palette.accent,
   },
@@ -424,14 +433,14 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   primaryCardContainer: {
-    shadowColor: "#ff7a1a",
+    shadowColor: theme.colors.accent,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 12,
     elevation: 6,
   },
   primaryCard: {
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     overflow: "hidden",
   },
   primaryCardGradient: {
@@ -449,8 +458,8 @@ const styles = StyleSheet.create({
   primaryIconCircle: {
     width: 52,
     height: 52,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: RADIUS.md,
+    backgroundColor: theme.colors.white20,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -458,29 +467,29 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   primaryTitle: {
-    fontSize: 18,
+    fontSize: TYPE.subtitle.fontSize,
     fontWeight: "800",
-    color: "#fff",
+    color: theme.colors.white,
   },
   primarySubtitle: {
-    fontSize: 13,
-    color: "rgba(255,255,255,0.8)",
+    fontSize: TYPE.caption.fontSize,
+    color: theme.colors.white80,
     marginTop: 2,
   },
   primaryArrow: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: RADIUS.md,
+    backgroundColor: theme.colors.white20,
     justifyContent: "center",
     alignItems: "center",
   },
   cardPressable: {
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
   },
   card: {
     padding: 14,
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -494,7 +503,7 @@ const styles = StyleSheet.create({
   cardIcon: {
     width: 42,
     height: 42,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -502,12 +511,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cardTitle: {
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   cardSubtitle: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     marginTop: 2,
   },
@@ -518,13 +527,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
     backgroundColor: palette.cardSoft,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.border,
   },
   tipText: {
     flex: 1,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     lineHeight: 16,
   },

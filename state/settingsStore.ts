@@ -2,6 +2,11 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+export type LastGenerationSetup = {
+  environment: string[];
+  equipment: string[];
+};
+
 export type SettingsState = {
   notificationsEnabled: boolean;
   sessionReminders: boolean;
@@ -16,6 +21,7 @@ export type SettingsState = {
   weekStart: "mon" | "sun";
   themeMode: "light" | "dark";
   weeklyGoal: number;
+  lastGenerationSetup: LastGenerationSetup | null;
 };
 
 export const DEFAULT_SETTINGS: SettingsState = {
@@ -32,6 +38,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   weekStart: "mon",
   themeMode: "light",
   weeklyGoal: 2,
+  lastGenerationSetup: null,
 };
 
 type SettingsStore = SettingsState & {

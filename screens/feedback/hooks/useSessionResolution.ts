@@ -2,6 +2,8 @@
 import { useMemo } from 'react';
 import { toDateKey } from '../../../utils/dateHelpers';
 import type { Session } from '../../../domain/types';
+import { isSessionCompleted } from '../../../utils/sessionStatus';
+import { shouldSurfaceAsPendingSession } from '../../../utils/sessionFallback';
 
 function getSessionDateKey(s: Session): { key: string; ts: number } {
   const iso = s.dateISO || s.date || '';
@@ -22,7 +24,9 @@ export function useSessionResolution(
     if (!Array.isArray(sessions) || sessions.length === 0) return undefined;
 
     const today = todayKey;
-    const open = sessions.filter((s) => !s.completed);
+    const open = sessions.filter(
+      (s) => !isSessionCompleted(s) && shouldSurfaceAsPendingSession(s)
+    );
     const openCurrent = open
       .map((s) => ({ s, meta: getSessionDateKey(s) }))
       .filter(({ meta }) => meta.ts > 0 && meta.key <= today)

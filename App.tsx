@@ -18,10 +18,22 @@ import { applyFeedback } from "./state/orchestrators/applyFeedback";
 import { navigationRef } from "./navigation/navigationRef";
 import { useNotificationHandler } from "./hooks/useNotificationHandler";
 import type { AppStackParamList } from "./navigation/RootNavigator";
+import type { Session } from "./domain/types";
+import { useSyncStore } from "./state/stores/useSyncStore";
+import { isSessionCompleted } from "./utils/sessionStatus";
+import { useSessionsStore } from "./state/stores/useSessionsStore";
+
+import { configureGoogleSignIn } from "./services/socialAuth";
 
 // Configurer les gestionnaires d'erreurs globales une seule fois
 setupGlobalErrorHandlers();
 initSentry();
+
+// Configurer Google Sign-In (le Web Client ID est dans les env vars)
+const googleWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+if (googleWebClientId) {
+  configureGoogleSignIn(googleWebClientId);
+}
 
 const linking: LinkingOptions<AppStackParamList> = {
   prefixes: ["fks://"],
@@ -61,7 +73,22 @@ export default function App() {
     setupAutoSync({
       feedback: async (data) => {
         const ok = await applyFeedback(data.sessionId, data.feedback);
-        if (!ok) throw new Error("Feedback sync failed");
+        if (ok) return;
+
+        const session = useSessionsStore
+          .getState()
+          .sessions.find((item) => item.id === data.sessionId);
+        if (session && isSessionCompleted(session)) {
+          await useSyncStore.getState().persistCompletedSession(session);
+          return;
+        }
+
+        throw new Error("Feedback sync failed");
+      },
+      session: async (data) => {
+        const session = data.session as Session | undefined;
+        if (!session?.id) throw new Error("Session sync payload is missing session data");
+        await useSyncStore.getState().persistCompletedSession(session);
       },
     });
     return () => teardownAutoSync();

@@ -4,7 +4,7 @@ import { todayISO, addDaysISO } from "../../utils/virtualClock";
 import { toDateKey } from "../../utils/dateHelpers";
 import { updateTrainingLoad, decayLoadOverDays } from "../../engine/loadModel";
 import { DEV_FLAGS } from "../../config/devFlags";
-import { TRAINING_DEFAULTS, LOAD_CAPS } from "../../config/trainingDefaults";
+import { TRAINING_DEFAULTS, LOAD_CAPS, getTauForLevel } from "../../config/trainingDefaults";
 import { MICROCYCLE_TOTAL_SESSIONS_DEFAULT } from "../../domain/microcycles";
 import { computeDailyTotals, computeInterveningOffDays, pruneDailyAppliedWindow, type ExternalLoadLike } from "../computeDailyApplied";
 import type { Session, SessionFeedback, TrainingLogItem } from "../../domain/types";
@@ -20,8 +20,10 @@ function hasCircuitOrCore(exercises: Session["exercises"]): boolean {
 import type { DebugEvent } from "../stores/types";
 
 import { safeNum } from "../../engine/safeNum";
-import { retryWithBackoff } from "../../utils/errorHandler";
+import { classifyError, retryWithBackoff } from "../../utils/errorHandler";
 import { showToast } from "../../utils/toast";
+import { isSessionCompleted } from "../../utils/sessionStatus";
+import { enqueueAction } from "../../utils/offlineQueue";
 
 import { useLoadStore } from "../stores/useLoadStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
@@ -38,12 +40,13 @@ export function applyFeedback(
   const loadState = useLoadStore.getState();
   const externalState = useExternalStore.getState();
   const debugState = useDebugStore.getState();
+  const { tauAtl, tauCtl } = getTauForLevel(sessionsState.playerLevel);
 
   const idx = sessionsState.sessions.findIndex((s) => s.id === sessionId);
   if (idx === -1) return null;
 
   const session = sessionsState.sessions[idx];
-  if (!session || session.completed) return null;
+  if (!session || isSessionCompleted(session)) return null;
 
   const sessionDateISO =
     typeof session?.dateISO === "string"
@@ -66,7 +69,9 @@ export function applyFeedback(
   const updatedSession = {
     ...session,
     dateISO: usedISO,
+    status: "completed" as const,
     completed: true,
+    completedAt: new Date().toISOString(),
     feedback,
     rpe: feedback.rpe,
     ...(durationMin ? { durationMin } : {}),
@@ -81,13 +86,13 @@ export function applyFeedback(
 
   const gap = computeInterveningOffDays(loadState.lastLoadDayKey, dayKey);
   if (gap > 0) {
-    const decayed = decayLoadOverDays(atlBase, ctlBase, gap);
+    const decayed = decayLoadOverDays(atlBase, ctlBase, gap, { tauAtl, tauCtl });
     atlBase = decayed.atl;
     ctlBase = decayed.ctl;
     tsbBase = decayed.tsb;
   }
 
-  const completedBefore = sessionsState.sessions.filter((s) => s.completed).length;
+  const completedBefore = sessionsState.sessions.filter((s) => isSessionCompleted(s)).length;
   if (completedBefore === 0) {
     atlBase = TRAINING_DEFAULTS.ATL0;
     ctlBase = TRAINING_DEFAULTS.CTL0;
@@ -113,7 +118,7 @@ export function applyFeedback(
 
   const nextLoad =
     deltaLoad > 0
-      ? updateTrainingLoad(atlBase, ctlBase, deltaLoad, { dtDays: 1 })
+      ? updateTrainingLoad(atlBase, ctlBase, deltaLoad, { dtDays: 1, tauAtl, tauCtl })
       : { atl: atlBase, ctl: ctlBase, tsb: tsbBase };
 
   const inOnboarding = completedBefore < TRAINING_DEFAULTS.ONBOARDING_SESSIONS;
@@ -207,14 +212,20 @@ export function applyFeedback(
   retryWithBackoff(
     () => useSyncStore.getState().persistCompletedSession(updatedSession),
     { maxRetries: 3, baseDelayMs: 500, context: "persistCompletedSession" }
-  ).catch((err) => {
+  ).catch(async (err) => {
     if (__DEV__) {
       console.error("[applyFeedback] Firestore persist failed after retries:", err);
     }
+    const appError = classifyError(err);
+    await enqueueAction(
+      "session",
+      { session: updatedSession },
+      appError.retryable ? 5 : 2
+    );
     showToast({
-      type: "error",
-      title: "Synchronisation échouée",
-      message: "Ton feedback est enregistré localement mais n'a pas pu être synchronisé. Il sera retenté automatiquement.",
+      type: appError.retryable ? "warn" : "error",
+      title: "Synchronisation en attente",
+      message: "Ton feedback est enregistré localement et la synchronisation de la séance sera retentée automatiquement.",
     });
   });
 

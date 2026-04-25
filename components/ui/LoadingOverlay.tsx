@@ -4,7 +4,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated, Modal, Easing } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../../constants/theme';
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 
 interface LoadingOverlayProps {
   visible: boolean;
@@ -48,7 +48,7 @@ function BouncingDots() {
 
 const dotStyles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 20 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.accent },
+  dot: { width: 8, height: 8, borderRadius: RADIUS.xs, backgroundColor: theme.colors.accent },
 });
 
 // ─── Rotating Glow Ring ───
@@ -83,7 +83,7 @@ const ringStyles = StyleSheet.create({
     position: 'absolute',
     width: 88,
     height: 88,
-    borderRadius: 44,
+    borderRadius: RADIUS.pill,
     borderWidth: 3,
     borderColor: theme.colors.accentSoft,
   },
@@ -93,7 +93,7 @@ const ringStyles = StyleSheet.create({
     left: -3,
     width: 88,
     height: 88,
-    borderRadius: 44,
+    borderRadius: RADIUS.pill,
     borderWidth: 3,
     borderColor: 'transparent',
     borderTopColor: theme.colors.accent,
@@ -222,7 +222,7 @@ export function LoadingOverlay({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(5,7,12,0.88)',
+    backgroundColor: theme.colors.panel88Alt,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -232,8 +232,8 @@ const styles = StyleSheet.create({
     left: -80,
     width: 260,
     height: 260,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,122,26,0.12)',
+    borderRadius: RADIUS.pill,
+    backgroundColor: theme.colors.accentSoft12,
   },
   glowBottom: {
     position: 'absolute',
@@ -241,14 +241,14 @@ const styles = StyleSheet.create({
     right: -100,
     width: 300,
     height: 300,
-    borderRadius: 999,
-    backgroundColor: 'rgba(14,165,233,0.08)',
+    borderRadius: RADIUS.pill,
+    backgroundColor: theme.colors.infoBrightSoft08,
   },
   container: {
-    backgroundColor: 'rgba(17,20,28,0.92)',
-    borderRadius: 24,
+    backgroundColor: theme.colors.panel92Alt,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: theme.colors.white10,
     padding: 32,
     paddingTop: 40,
     alignItems: 'center',
@@ -270,21 +270,21 @@ const styles = StyleSheet.create({
   iconCircle: {
     width: 64,
     height: 64,
-    borderRadius: 20,
+    borderRadius: RADIUS.xl,
     backgroundColor: theme.colors.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
   message: {
-    fontSize: 17,
+    fontSize: TYPE.subtitle.fontSize,
     fontWeight: '700',
-    color: '#f8fafc',
+    color: theme.colors.slate50,
     textAlign: 'center',
     letterSpacing: 0.2,
   },
   submessage: {
-    fontSize: 13,
-    color: '#9fb0c8',
+    fontSize: TYPE.caption.fontSize,
+    color: theme.colors.steel300,
     textAlign: 'center',
     lineHeight: 19,
   },
@@ -296,8 +296,8 @@ const styles = StyleSheet.create({
   stepDot: {
     width: 6,
     height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: RADIUS.xs,
+    backgroundColor: theme.colors.white20,
   },
   stepDotActive: {
     width: 18,
@@ -306,13 +306,13 @@ const styles = StyleSheet.create({
   progressTrack: {
     width: '100%',
     height: 3,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: RADIUS.xs,
+    backgroundColor: theme.colors.white08,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    borderRadius: 2,
+    borderRadius: RADIUS.xs,
     backgroundColor: theme.colors.accent,
   },
 });

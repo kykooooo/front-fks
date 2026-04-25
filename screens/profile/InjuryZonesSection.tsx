@@ -45,7 +45,15 @@ import { showToast } from "../../utils/toast";
 import type { ActiveInjuryParsed } from "../../schemas/firestoreSchemas";
 
 type Props = {
-  onOpenInjuryForm: () => void;
+  /**
+   * Appelée quand l'utilisateur veut ajouter ou modifier une zone sensible.
+   *   - `onOpenInjuryForm()` (sans param) → ouvre le formulaire en mode
+   *     "ajout" (draft vide).
+   *   - `onOpenInjuryForm(area)` → ouvre le formulaire en mode "modification"
+   *     et précharge l'entrée existante pour cette zone (cf. ProfileScreen
+   *     `openInjuryForm` qui lit `activeInjuries.find(i => i.area === area)`).
+   */
+  onOpenInjuryForm: (area?: string) => void;
   onOpenPrivacyPolicy?: () => void;
 };
 
@@ -142,7 +150,7 @@ export function InjuryZonesSection({ onOpenInjuryForm, onOpenPrivacyPolicy }: Pr
           <Text style={styles.muted}>Aucune zone sensible déclarée.</Text>
           <Pressable
             style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
-            onPress={onOpenInjuryForm}
+            onPress={() => onOpenInjuryForm()}
             accessibilityRole="button"
             accessibilityLabel="Déclarer une zone sensible"
           >
@@ -156,13 +164,15 @@ export function InjuryZonesSection({ onOpenInjuryForm, onOpenPrivacyPolicy }: Pr
             <InjuryCard
               key={inj.area}
               injury={inj}
-              onEdit={onOpenInjuryForm}
+              // Passe `inj.area` pour que le parent (ProfileScreen) précharge
+              // la zone existante dans le formulaire (mode "modification").
+              onEdit={() => onOpenInjuryForm(inj.area)}
               onResolve={() => openResolveConfirm(inj.area)}
             />
           ))}
           <Pressable
             style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
-            onPress={onOpenInjuryForm}
+            onPress={() => onOpenInjuryForm()}
             accessibilityRole="button"
             accessibilityLabel="Ajouter une autre zone sensible"
           >

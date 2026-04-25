@@ -1,5 +1,5 @@
 // screens/ExternalLoadScreen.tsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,14 +11,15 @@ import {
   Keyboard,
   ScrollView,
   StyleSheet,
+  Alert,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { applyExternalLoad } from "../state/orchestrators/applyExternalLoad";
 import { EXTERNAL_WEIGHTS } from "../config/trainingDefaults";
-import { theme } from "../constants/theme";
+import { theme, TYPE, RADIUS } from "../constants/theme";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
@@ -40,7 +41,6 @@ const modalityWeight: Record<Modality, number> = {
 
 const palette = theme.colors;
 
-
 // mapping conforme au type du store: "match" | "club" | "other"
 const sourceMap: Record<Modality, ExternalSource> = {
   Match: "match",
@@ -51,9 +51,12 @@ const sourceMap: Record<Modality, ExternalSource> = {
 
 export default function ExternalLoadScreen() {
   const nav = useNavigation();
+  const insets = useSafeAreaInsets();
   const addExternalLoad = applyExternalLoad;
+  const initialDateRef = useRef(new Date());
+  const allowCloseRef = useRef(false);
 
-  const [date, setDate] = useState<Date>(new Date());
+  const [date, setDate] = useState<Date>(initialDateRef.current);
   const [showPicker, setShowPicker] = useState(false);
 
   const [modality, setModality] = useState<Modality>("Match");
@@ -68,6 +71,65 @@ export default function ExternalLoadScreen() {
     const w = modalityWeight[modality] ?? 1;
     return Math.max(0, parsedDuration * parsedRpe * w);
   }, [parsedDuration, parsedRpe, modality]);
+
+  const isDirty = useMemo(() => (
+    date.getTime() !== initialDateRef.current.getTime() ||
+    modality !== "Match" ||
+    durationMin !== "75" ||
+    rpe !== "7" ||
+    note.trim().length > 0
+  ), [date, modality, durationMin, rpe, note]);
+
+  const finishClose = useCallback(() => {
+    allowCloseRef.current = true;
+    // @ts-ignore
+    nav.goBack();
+  }, [nav]);
+
+  const requestClose = useCallback(() => {
+    Keyboard.dismiss();
+    setShowPicker(false);
+    if (!isDirty) {
+      finishClose();
+      return;
+    }
+    Alert.alert(
+      "Quitter la saisie ?",
+      "Les informations non enregistrees seront perdues.",
+      [
+        { text: "Rester", style: "cancel" },
+        {
+          text: "Quitter",
+          style: "destructive",
+          onPress: finishClose,
+        },
+      ]
+    );
+  }, [finishClose, isDirty]);
+
+  useEffect(() => {
+    const unsubscribe = (nav as any).addListener?.("beforeRemove", (e: any) => {
+      if (allowCloseRef.current) {
+        allowCloseRef.current = false;
+        return;
+      }
+      if (!isDirty) return;
+      e.preventDefault();
+      Alert.alert(
+        "Quitter la saisie ?",
+        "Les informations non enregistrees seront perdues.",
+        [
+          { text: "Rester", style: "cancel" },
+          {
+            text: "Quitter",
+            style: "destructive",
+            onPress: finishClose,
+          },
+        ]
+      );
+    });
+    return unsubscribe;
+  }, [finishClose, isDirty, nav]);
 
   const onOpenDate = () => {
     Keyboard.dismiss();            // ✅ ferme le clavier avant d’ouvrir le picker
@@ -104,13 +166,13 @@ export default function ExternalLoadScreen() {
     <View style={styles.modalRoot}>
       <ModalContainer
         visible
-        onClose={() => nav.goBack()}
+        onClose={requestClose}
         animationType="slide"
         blurIntensity={40}
         allowBackdropDismiss
         allowSwipeDismiss
       >
-        <SafeAreaView style={{ flex: 1 }} edges={["bottom"]}>
+        <SafeAreaView style={{ flex: 1 }} edges={["top", "right", "left", "bottom"]}>
         <KeyboardAvoidingView
           style={styles.root}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -118,13 +180,16 @@ export default function ExternalLoadScreen() {
         >
           <View style={styles.modalHeaderRow}>
             <Text style={styles.modalHeaderTitle}>Charge externe</Text>
-            <Pressable onPress={() => nav.goBack()} style={styles.modalClose}>
+            <Pressable onPress={requestClose} style={styles.modalClose}>
               <Ionicons name="close" size={22} color={palette.text} />
             </Pressable>
           </View>
           <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
             <ScrollView
-              contentContainerStyle={styles.container}
+              contentContainerStyle={[
+                styles.container,
+                { paddingBottom: Math.max(20, insets.bottom + 16) },
+              ]}
               keyboardShouldPersistTaps="handled"
             >
               <SectionHeader title="Ajouter une charge externe" />
@@ -263,7 +328,7 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
   },
   modalHeaderTitle: {
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
@@ -272,12 +337,12 @@ const styles = StyleSheet.create({
   container: { padding: 16, gap: 16 },
   section: { gap: 8 },
   label: { color: palette.sub, fontWeight: "600" },
-  helperMuted: { color: palette.sub, fontSize: 12 },
+  helperMuted: { color: palette.sub, fontSize: TYPE.caption.fontSize },
   rowWrap: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   chip: {
     paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
@@ -291,7 +356,7 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderColor: palette.border,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     padding: 12,
     color: palette.text,
     backgroundColor: palette.cardSoft,
@@ -300,7 +365,7 @@ const styles = StyleSheet.create({
   inputButton: {
     borderWidth: 1,
     borderColor: palette.border,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     padding: 12,
     backgroundColor: palette.cardSoft,
   },
@@ -308,6 +373,6 @@ const styles = StyleSheet.create({
   previewCard: { padding: 12, gap: 4 },
   previewTitle: { color: palette.text, fontWeight: "700" },
   previewText: { color: palette.sub },
-  previewValue: { color: palette.text, fontSize: 16 },
+  previewValue: { color: palette.text, fontSize: TYPE.body.fontSize },
   previewValueStrong: { fontWeight: "800", color: palette.text },
 });

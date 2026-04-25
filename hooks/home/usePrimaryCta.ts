@@ -1,10 +1,16 @@
 import { useCallback, useMemo } from "react";
 import { Alert } from "react-native";
 import { showToast } from "../../utils/toast";
-import { MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../../domain/microcycles";
+import {
+  MICROCYCLE_TOTAL_SESSIONS_DEFAULT,
+  isMicrocycleId,
+} from "../../domain/microcycles";
 import { DEV_FLAGS } from "../../config/devFlags";
 import { toDateKey } from "../../utils/dateHelpers";
+import { openSessionEntry } from "../../utils/sessionEntry";
 import type { Session } from "../../domain/types";
+import { isSessionCompleted } from "../../utils/sessionStatus";
+import { shouldSurfaceAsPendingSession } from "../../utils/sessionFallback";
 
 type Nav = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -31,30 +37,28 @@ export function usePrimaryCta({
   tsb,
   devNowISO,
 }: Params) {
-  const pendingSession = useMemo(
-    () => {
-      const toSessionTime = (session: Session) => {
-        const key = toDateKey(session?.dateISO ?? session?.date);
-        if (!key) return Number.POSITIVE_INFINITY;
-        const time = new Date(`${key}T12:00:00`).getTime();
-        return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY;
-      };
+  const pendingSession = useMemo(() => {
+    const toSessionTime = (session: Session) => {
+      const key = toDateKey(session?.dateISO ?? session?.date);
+      if (!key) return Number.POSITIVE_INFINITY;
+      const time = new Date(`${key}T12:00:00`).getTime();
+      return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY;
+    };
 
-      return [...sessions]
-        .filter((s) => !s.completed)
-        .sort((a, b) => {
-          const da = toSessionTime(a);
-          const db = toSessionTime(b);
-          if (da === db) {
-            const ca = new Date(a?.createdAt ?? 0).getTime();
-            const cb = new Date(b?.createdAt ?? 0).getTime();
-            return ca - cb;
-          }
-          return da - db;
-        })[0];
-    },
-    [sessions]
-  );
+    return [...sessions]
+      .filter((session) => !isSessionCompleted(session))
+      .filter((session) => shouldSurfaceAsPendingSession(session))
+      .sort((a, b) => {
+        const da = toSessionTime(a);
+        const db = toSessionTime(b);
+        if (da === db) {
+          const ca = new Date(a?.createdAt ?? 0).getTime();
+          const cb = new Date(b?.createdAt ?? 0).getTime();
+          return ca - cb;
+        }
+        return da - db;
+      })[0];
+  }, [sessions]);
 
   const todayKey = useMemo(() => {
     const now = devNowISO ? new Date(devNowISO) : new Date();
@@ -68,15 +72,15 @@ export function usePrimaryCta({
       const title = v2.title || "Séance FKS";
       const focusVal = v2.focusPrimary ?? v2.focus_primary;
       const focus = focusVal ? ` · ${focusVal}` : "";
-      const intens = v2.intensity ? ` · ${v2.intensity}` : "";
-      const durVal = v2.durationMin ?? v2.duration_min;
-      const dur =
-        typeof durVal === "number" ? ` · ${Math.round(durVal)} min` : "";
-      return `${title}${focus}${intens}${dur}`;
+      const intensity = v2.intensity ? ` · ${v2.intensity}` : "";
+      const durationVal = v2.durationMin ?? v2.duration_min;
+      const duration =
+        typeof durationVal === "number" ? ` · ${Math.round(durationVal)} min` : "";
+      return `${title}${focus}${intensity}${duration}`;
     }
     const focus = pendingSession.focus ?? pendingSession.modality ?? "-";
-    const intens = pendingSession.intensity ?? "-";
-    return `Séance prévue · ${intens} · ${focus}`;
+    const intensity = pendingSession.intensity ?? "-";
+    return `Séance prévue · ${intensity} · ${focus}`;
   }, [pendingSession]);
 
   const pendingDateKey = toDateKey(
@@ -86,32 +90,15 @@ export function usePrimaryCta({
 
   const startPendingSession = useCallback(() => {
     if (!pendingSession) return;
-    const v2 =
-      pendingSession.aiV2 ??
-      pendingSession.ai ??
-      lastAiSessionV2?.v2;
-    const plannedDateISO = toDateKey(
-      pendingSession.dateISO ?? pendingSession.date
-    );
-    if (v2) {
-      nav.navigate("SessionLive", {
-        v2,
-        plannedDateISO,
-        sessionId: pendingSession.id,
-      });
-      return;
-    }
-    nav.navigate("SessionPreview", {
-      v2: lastAiSessionV2?.v2,
-      plannedDateISO,
-      sessionId: pendingSession.id,
-    });
+    void openSessionEntry(nav as any, pendingSession, lastAiSessionV2?.v2 ?? null);
   }, [nav, pendingSession, lastAiSessionV2]);
 
   const onPressNew = useCallback(() => {
     const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
     const microIdx = Math.max(0, Math.trunc(microcycleSessionIndex ?? 0));
-    const cycleCompleted = Boolean(cycleId) && microIdx >= MICROCYCLE_TOTAL_SESSIONS_DEFAULT;
+    const cycleCompleted =
+      Boolean(cycleId) && microIdx >= MICROCYCLE_TOTAL_SESSIONS_DEFAULT;
+
     if (!cycleId || cycleCompleted) {
       nav.navigate("CycleModal", { mode: "select", origin: "home" });
       return;
@@ -120,36 +107,24 @@ export function usePrimaryCta({
     if (pendingSession && !DEV_FLAGS.ENABLED) {
       const date = toDateKey(pendingSession.dateISO ?? pendingSession.date);
       Alert.alert(
-        "Dis-nous comment ça s'est passé",
+        "Ta séance est déjà prête",
         date
-          ? `Dis-nous comment s'est passée la séance du ${date} avant d'en lancer une nouvelle.`
-          : "Dis-nous comment s'est passée ta dernière séance avant d'en lancer une nouvelle.",
+          ? `Ouvre la séance du ${date} pour la faire ou la reprendre avant d'en lancer une nouvelle.`
+          : "Ouvre ta séance en cours avant d'en lancer une nouvelle.",
         [
           {
-            text: "C'est parti",
-            onPress: () =>
-              nav.navigate(
-                "Feedback",
-                { sessionId: pendingSession.id }
-              ),
+            text: "Ouvrir ma séance",
+            onPress: () => {
+              void openSessionEntry(
+                nav as any,
+                pendingSession,
+                lastAiSessionV2?.v2 ?? null
+              );
+            },
           },
           {
-            text: "Voir la séance",
-            onPress: () => {
-              const v2 =
-                pendingSession.aiV2 ??
-                pendingSession.ai ??
-                lastAiSessionV2?.v2;
-              const plannedDateISO =
-                toDateKey(pendingSession.dateISO ?? pendingSession.date);
-              if (v2) {
-                nav.navigate("SessionPreview", {
-                  v2,
-                  plannedDateISO,
-                  sessionId: pendingSession.id,
-                });
-              }
-            },
+            text: "J'ai fini, feedback",
+            onPress: () => nav.navigate("Feedback", { sessionId: pendingSession.id }),
           },
           { text: "Annuler", style: "cancel" },
         ]
@@ -158,13 +133,17 @@ export function usePrimaryCta({
     }
 
     if (hasAppliedToday) {
-      if (DEV_FLAGS.ENABLED) {
-        // mode dev : on autorise plusieurs séances par jour
-      } else {
-        showToast({ type: "info", title: "C'est fait pour aujourd'hui", message: "Tu as déjà fait ta séance. Reviens demain ou ajoute une activité externe." });
+      if (!DEV_FLAGS.ENABLED) {
+        showToast({
+          type: "info",
+          title: "C'est fait pour aujourd'hui",
+          message:
+            "Tu as déjà fait ta séance. Reviens demain ou ajoute une activité externe.",
+        });
         return;
       }
     }
+
     nav.navigate("NewSession");
   }, [
     nav,
@@ -189,24 +168,27 @@ export function usePrimaryCta({
         onPress: goToRecovery,
       };
     }
+
     if (isPendingToday) {
       return {
-        label: "C'est parti !",
+        label: "Ouvrir ma séance",
         sub: upcomingSessionLabel,
         tone: "primary" as const,
         disabled: false,
         onPress: startPendingSession,
       };
     }
+
     if (pendingSession) {
       return {
-        label: "Ma séance est prête",
+        label: "Ouvrir ma séance",
         sub: upcomingSessionLabel,
         tone: "primary" as const,
         disabled: false,
         onPress: startPendingSession,
       };
     }
+
     if (hasAppliedToday && !DEV_FLAGS.ENABLED) {
       return {
         label: "Journée off",
@@ -216,6 +198,7 @@ export function usePrimaryCta({
         onPress: undefined,
       };
     }
+
     return {
       label: "Préparer ma séance",
       sub: "On te prépare un programme adapté en 2 min.",
@@ -234,5 +217,11 @@ export function usePrimaryCta({
     goToRecovery,
   ]);
 
-  return { primaryCta, upcomingSessionLabel, pendingSession, startPendingSession, onPressNew };
+  return {
+    primaryCta,
+    upcomingSessionLabel,
+    pendingSession,
+    startPendingSession,
+    onPressNew,
+  };
 }

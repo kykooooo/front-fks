@@ -11,7 +11,7 @@ import { useNavigation } from "@react-navigation/native";
 import { addDays, format, parseISO, startOfWeek, subDays } from "date-fns";
 import { fr } from "date-fns/locale";
 
-import { theme } from "../constants/theme";
+import { theme, TYPE, RADIUS } from "../constants/theme";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -548,10 +548,10 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: palette.bg },
   container: { padding: 16, gap: 16 },
   section: { gap: 8 },
-  sectionLink: { fontSize: 11, color: palette.accent, fontWeight: "600" },
+  sectionLink: { fontSize: TYPE.micro.fontSize, color: palette.accent, fontWeight: "600" },
 
   heroCard: {
-    borderRadius: 22,
+    borderRadius: RADIUS.xl,
     padding: 16,
     overflow: "hidden",
     gap: 6,
@@ -562,23 +562,23 @@ const styles = StyleSheet.create({
     right: -60,
     width: 220,
     height: 220,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.accentSoft,
     opacity: 0.8,
   },
   heroKicker: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     letterSpacing: 1.4,
     textTransform: "uppercase",
     color: palette.sub,
   },
   heroTitle: {
-    fontSize: 20,
+    fontSize: TYPE.title.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   heroSubtitle: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
   },
   heroStatsRow: {
@@ -588,14 +588,14 @@ const styles = StyleSheet.create({
   },
   heroStat: { flex: 1, alignItems: "center" },
   heroStatLabel: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     textTransform: "uppercase",
     letterSpacing: 0.8,
     color: palette.sub,
   },
   heroStatValue: {
     marginTop: 4,
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
@@ -605,12 +605,12 @@ const styles = StyleSheet.create({
     backgroundColor: palette.borderSoft,
   },
 
-  planCard: { borderRadius: 18, padding: 12, gap: 10 },
+  planCard: { borderRadius: RADIUS.lg, padding: 12, gap: 10 },
   planDaysRow: { flexDirection: "row", justifyContent: "space-between" },
   planDay: {
     width: 36,
     height: 50,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.bgSoft,
@@ -626,7 +626,7 @@ const styles = StyleSheet.create({
     borderColor: palette.accent,
   },
   planDayLabel: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "600",
     color: palette.sub,
   },
@@ -637,7 +637,7 @@ const styles = StyleSheet.create({
   planDayDot: {
     width: 6,
     height: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
   },
   planDayDotOutline: {
     backgroundColor: "transparent",
@@ -645,15 +645,15 @@ const styles = StyleSheet.create({
   },
   planActionsRow: { flexDirection: "row", gap: 8 },
   planAction: { flex: 1 },
-  planHint: { fontSize: 11, color: palette.sub },
+  planHint: { fontSize: TYPE.micro.fontSize, color: palette.sub },
 
   legendRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
-  legendDot: { width: 6, height: 6, borderRadius: 999 },
+  legendDot: { width: 6, height: 6, borderRadius: RADIUS.pill },
   legendDotOutline: { backgroundColor: "transparent", borderWidth: 1 },
-  legendText: { fontSize: 10, color: palette.sub },
+  legendText: { fontSize: TYPE.micro.fontSize, color: palette.sub },
 
-  challengeCard: { borderRadius: 18, padding: 12 },
+  challengeCard: { borderRadius: RADIUS.lg, padding: 12 },
   challengeList: { gap: 10 },
   challengeItem: { gap: 6 },
   challengeTopRow: {
@@ -662,15 +662,15 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 10,
   },
-  challengeItemTitle: { fontSize: 12, fontWeight: "700", color: palette.text },
+  challengeItemTitle: { fontSize: TYPE.caption.fontSize, fontWeight: "700", color: palette.text },
   challengeItemSubtitle: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     marginTop: 2,
   },
   challengeTrack: {
     height: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.bgSoft,
@@ -678,20 +678,20 @@ const styles = StyleSheet.create({
   },
   challengeFill: {
     height: "100%",
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.accent,
   },
 
-  reminderCard: { borderRadius: 18, padding: 12, gap: 10 },
+  reminderCard: { borderRadius: RADIUS.lg, padding: 12, gap: 10 },
   reminderRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  reminderTitle: { fontSize: 13, fontWeight: "700", color: palette.text },
-  reminderSubtitle: { fontSize: 11, color: palette.sub, marginTop: 4 },
-  reminderDetail: { fontSize: 11, color: palette.text, marginTop: 6 },
+  reminderTitle: { fontSize: TYPE.caption.fontSize, fontWeight: "700", color: palette.text },
+  reminderSubtitle: { fontSize: TYPE.micro.fontSize, color: palette.sub, marginTop: 4 },
+  reminderDetail: { fontSize: TYPE.micro.fontSize, color: palette.text, marginTop: 6 },
   reminderOptions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   reminderOption: {
     paddingVertical: 6,
     paddingHorizontal: 10,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
@@ -700,17 +700,17 @@ const styles = StyleSheet.create({
     borderColor: palette.accent,
     backgroundColor: palette.accentSoft,
   },
-  reminderOptionText: { fontSize: 11, color: palette.sub, fontWeight: "600" },
+  reminderOptionText: { fontSize: TYPE.micro.fontSize, color: palette.sub, fontWeight: "600" },
   reminderOptionTextActive: { color: palette.accent },
-  reminderHint: { fontSize: 11, color: palette.sub },
+  reminderHint: { fontSize: TYPE.micro.fontSize, color: palette.sub },
   reminderCta: {
     alignSelf: "flex-start",
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
   },
-  reminderCtaText: { fontSize: 11, fontWeight: "700", color: palette.text },
+  reminderCtaText: { fontSize: TYPE.micro.fontSize, fontWeight: "700", color: palette.text },
 });

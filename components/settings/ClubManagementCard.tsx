@@ -6,7 +6,7 @@ import { View, Text, StyleSheet, TextInput, Alert, ActivityIndicator } from "rea
 import { doc, getDoc, onSnapshot, updateDoc } from "firebase/firestore";
 import { Ionicons } from "@expo/vector-icons";
 import { db, auth } from "../../services/firebase";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
@@ -237,8 +237,8 @@ const styles = StyleSheet.create({
   clubIconWrap: {
     width: 44,
     height: 44,
-    borderRadius: 12,
-    backgroundColor: "rgba(37, 99, 235, 0.12)",
+    borderRadius: RADIUS.md,
+    backgroundColor: theme.colors.blueSoft12,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -246,17 +246,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   clubName: {
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   clubCode: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     marginTop: 2,
   },
   clubDescription: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     lineHeight: 16,
   },
@@ -266,12 +266,12 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   noClubTitle: {
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   noClubDescription: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     lineHeight: 16,
   },
@@ -283,10 +283,10 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 1,
     borderColor: palette.border,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "600",
     color: palette.text,
     backgroundColor: palette.card,

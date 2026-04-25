@@ -20,6 +20,7 @@ export type NotifPrefs = {
   streakReminder: boolean; // Rappel streak en danger
   matchEve: boolean; // Rappel veille de match
   weeklyRecap: boolean; // Recap hebdo
+  retestReminder: boolean; // Rappel re-test 30j après fin de cycle
   reminderHour: number; // Heure du rappel (0-23)
   reminderMinute: number; // Minute du rappel (0-59)
 };
@@ -30,6 +31,7 @@ const DEFAULT_PREFS: NotifPrefs = {
   streakReminder: true,
   matchEve: true,
   weeklyRecap: true,
+  retestReminder: true,
   reminderHour: 18,
   reminderMinute: 0,
 };
@@ -212,8 +214,45 @@ export async function scheduleAllNotifications(): Promise<void> {
   const prefs = await getNotifPrefs();
   if (!prefs.enabled) return;
 
-  await scheduleSessionReminder(prefs.reminderHour, prefs.reminderMinute);
-  await scheduleWeeklyRecap();
+  if (prefs.sessionReminder) {
+    await scheduleSessionReminder(prefs.reminderHour, prefs.reminderMinute);
+  }
+  if (prefs.streakReminder) {
+    // Le streak sera calculé à la prochaine ouverture de l'app (useActivityStreak)
+    // On planifie avec un streak de 3 comme minimum pour déclencher
+    await scheduleStreakReminder(3);
+  }
+  if (prefs.weeklyRecap) {
+    await scheduleWeeklyRecap();
+  }
+}
+
+/**
+ * Programme un rappel re-test 30 jours après la fin d'un cycle.
+ * Invite le joueur à refaire ses tests pour voir les gains du cycle qu'il vient de finir.
+ * Appelé depuis useFeedbackSave quand shouldPromptCycleEnd passe à true.
+ */
+export async function scheduleRetestReminder(
+  cycleLabel: string,
+  daysDelay = 30,
+): Promise<string | null> {
+  const prefs = await getNotifPrefs();
+  if (!prefs.enabled || !prefs.retestReminder) return null;
+
+  const seconds = Math.max(60, Math.floor(daysDelay * 86400));
+
+  return await Notifications.scheduleNotificationAsync({
+    content: {
+      title: "Mesure tes progrès 🏆",
+      body: `Ça fait ${daysDelay} jours que t'as terminé ton cycle ${cycleLabel}. C'est le moment de retester ton 30m, ton CMJ ou ton Yo-Yo — tu vas voir tes gains.`,
+      data: { type: "retest_reminder", cycleLabel },
+      sound: true,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds,
+    },
+  });
 }
 
 // ──────────────────────── Notification immédiate ────────────────────────

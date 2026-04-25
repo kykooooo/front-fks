@@ -26,7 +26,7 @@ import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
-import { theme } from "../constants/theme";
+import { theme, TYPE, RADIUS } from "../constants/theme";
 import { auth, db } from "../services/firebase";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import {
@@ -80,10 +80,10 @@ const clampInt = (value: any) => {
 
 /* ═══ Couleurs par pathway (dégradés subtils, pas kitsch) ═══ */
 const PATHWAY_GRADIENTS: Record<string, [string, string]> = {
-  debut: ["#1a2a1a", "#0f170f"],
-  performance: ["#2a1a0f", "#170f0a"],
-  saison_active: ["#0f1a2a", "#0a0f17"],
-  reprise: ["#1a1a2a", "#0f0f17"],
+  debut: [theme.colors.forest900, theme.colors.forest950],
+  performance: [theme.colors.ember900, theme.colors.ember950],
+  saison_active: [theme.colors.navy900, theme.colors.navy950],
+  reprise: [theme.colors.plum900, theme.colors.ink880],
 };
 
 const PATHWAY_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -95,14 +95,14 @@ const PATHWAY_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
 
 /* ═══ Couleurs par cycle ═══ */
 const CYCLE_ACCENT: Partial<Record<MicrocycleId, string>> = {
-  fondation: "#22c55e",
-  force: "#f59e0b",
-  endurance: "#3b82f6",
-  explosivite: "#a855f7",
-  explosif: "#ef4444",
-  rsa: "#ec4899",
-  saison: "#06b6d4",
-  offseason: "#84cc16",
+  fondation: theme.colors.green500,
+  force: theme.colors.amber500,
+  endurance: theme.colors.blue500,
+  explosivite: theme.colors.purple500,
+  explosif: theme.colors.red500,
+  rsa: theme.colors.pink500,
+  saison: theme.colors.cyan500,
+  offseason: theme.colors.lime500,
 };
 
 /* ═══════════════════════════════════════════ */
@@ -325,7 +325,7 @@ export default function CycleModalScreen() {
 
       <View style={s.pathwayGrid}>
         {CYCLE_PATHWAYS.map((pw) => {
-          const gradientColors = PATHWAY_GRADIENTS[pw.id] ?? ["#1a1a1a", "#0f0f0f"];
+          const gradientColors = PATHWAY_GRADIENTS[pw.id] ?? [theme.colors.neutral850, theme.colors.ink870];
           const icon = PATHWAY_ICONS[pw.id] ?? (pw.icon as any);
           return (
             <TouchableOpacity
@@ -511,7 +511,7 @@ export default function CycleModalScreen() {
         <View style={[s.confirmCard, { borderColor: cycleAccent + "30" }]}>
           <LinearGradient
             colors={[cycleAccent + "10", "transparent"]}
-            style={[StyleSheet.absoluteFill, { borderRadius: 20 }]}
+            style={[StyleSheet.absoluteFill, { borderRadius: RADIUS.xl }]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           />
@@ -626,7 +626,7 @@ export default function CycleModalScreen() {
         <View style={[s.confirmCard, { borderColor: cycleAccent + "30" }]}>
           <LinearGradient
             colors={[cycleAccent + "10", "transparent"]}
-            style={[StyleSheet.absoluteFill, { borderRadius: 20 }]}
+            style={[StyleSheet.absoluteFill, { borderRadius: RADIUS.xl }]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           />
@@ -829,7 +829,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 6,
   },
-  modalHeaderTitle: { fontSize: 16, fontWeight: "800", color: palette.text },
+  modalHeaderTitle: { fontSize: TYPE.body.fontSize, fontWeight: "800", color: palette.text },
   closeButton: { paddingHorizontal: 12, paddingVertical: 8 },
   scrollContent: { padding: 16, paddingBottom: 40 },
 
@@ -837,24 +837,24 @@ const s = StyleSheet.create({
   stepContainer: { gap: 16 },
   stepHeader: { gap: 6, marginBottom: 4 },
   stepKicker: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "700",
     color: palette.accent,
     letterSpacing: 1.5,
     textTransform: "uppercase",
   },
-  stepTitle: { fontSize: 26, fontWeight: "900", color: palette.text, lineHeight: 32 },
-  stepSubtitle: { fontSize: 14, color: palette.sub, lineHeight: 20 },
+  stepTitle: { fontSize: TYPE.hero.fontSize, fontWeight: "900", color: palette.text, lineHeight: 32 },
+  stepSubtitle: { fontSize: TYPE.body.fontSize, color: palette.sub, lineHeight: 20 },
 
   backRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 4 },
-  backText: { fontSize: 14, color: palette.sub, fontWeight: "600" },
+  backText: { fontSize: TYPE.body.fontSize, color: palette.sub, fontWeight: "600" },
 
   // ─── Step 1 — Pathways ───
   pathwayGrid: { gap: 12 },
-  pathwayCard: { borderRadius: 20, overflow: "hidden" },
+  pathwayCard: { borderRadius: RADIUS.xl, overflow: "hidden" },
   pathwayGradient: {
     padding: 20,
-    borderRadius: 20,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     position: "relative",
@@ -862,22 +862,22 @@ const s = StyleSheet.create({
   pathwayIconWrap: {
     width: 48,
     height: 48,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,122,26,0.12)",
+    borderRadius: RADIUS.md,
+    backgroundColor: theme.colors.accentSoft12,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 12,
   },
-  pathwayLabel: { fontSize: 18, fontWeight: "800", color: palette.text, marginBottom: 4 },
-  pathwayDesc: { fontSize: 13, color: palette.sub, lineHeight: 18 },
+  pathwayLabel: { fontSize: TYPE.subtitle.fontSize, fontWeight: "800", color: palette.text, marginBottom: 4 },
+  pathwayDesc: { fontSize: TYPE.caption.fontSize, color: palette.sub, lineHeight: 18 },
   pathwayArrow: {
     position: "absolute",
     top: 20,
     right: 20,
     width: 32,
     height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,122,26,0.12)",
+    borderRadius: RADIUS.lg,
+    backgroundColor: theme.colors.accentSoft12,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -889,11 +889,11 @@ const s = StyleSheet.create({
     gap: 4,
     paddingVertical: 12,
   },
-  skipText: { fontSize: 14, fontWeight: "600", color: palette.accent },
+  skipText: { fontSize: TYPE.body.fontSize, fontWeight: "600", color: palette.accent },
 
   // ─── Step 2 — Hero card ───
   heroCard: {
-    borderRadius: 20,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     padding: 20,
     gap: 10,
@@ -904,18 +904,18 @@ const s = StyleSheet.create({
   heroIconWrap: {
     width: 52,
     height: 52,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
-  heroTitle: { fontSize: 22, fontWeight: "900", color: palette.text },
-  heroSubtitle: { fontSize: 14, color: palette.sub, lineHeight: 20 },
+  heroTitle: { fontSize: TYPE.title.fontSize, fontWeight: "900", color: palette.text },
+  heroSubtitle: { fontSize: TYPE.body.fontSize, color: palette.sub, lineHeight: 20 },
   heroTipRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
-  heroTipText: { flex: 1, fontSize: 12, color: palette.accent, fontStyle: "italic", lineHeight: 17 },
+  heroTipText: { flex: 1, fontSize: TYPE.caption.fontSize, color: palette.accent, fontStyle: "italic", lineHeight: 17 },
   heroHighlights: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-  highlightPill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99 },
-  highlightText: { fontSize: 12, fontWeight: "700" },
+  highlightPill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: RADIUS.pill },
+  highlightText: { fontSize: TYPE.caption.fontSize, fontWeight: "700" },
   heroCta: {
     flexDirection: "row",
     alignItems: "center",
@@ -923,11 +923,11 @@ const s = StyleSheet.create({
     gap: 6,
     paddingTop: 6,
   },
-  heroCtaText: { fontSize: 14, fontWeight: "700" },
+  heroCtaText: { fontSize: TYPE.body.fontSize, fontWeight: "700" },
 
   // ─── Step 2 — Alternatives ───
   altSectionTitle: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     color: palette.sub,
     textTransform: "uppercase",
@@ -939,7 +939,7 @@ const s = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     padding: 14,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     backgroundColor: palette.card,
     borderWidth: 1,
     borderColor: palette.border,
@@ -947,18 +947,18 @@ const s = StyleSheet.create({
   altIcon: {
     width: 40,
     height: 40,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
   },
   altLabelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  altStepNum: { fontSize: 11, fontWeight: "800", color: palette.accent },
-  altLabel: { fontSize: 15, fontWeight: "700", color: palette.text },
-  altSub: { fontSize: 12, color: palette.sub, marginTop: 2 },
+  altStepNum: { fontSize: TYPE.micro.fontSize, fontWeight: "800", color: palette.accent },
+  altLabel: { fontSize: TYPE.body.fontSize, fontWeight: "700", color: palette.text },
+  altSub: { fontSize: TYPE.caption.fontSize, color: palette.sub, marginTop: 2 },
 
   // ─── Step 3 — Confirm ───
   confirmCard: {
-    borderRadius: 20,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     padding: 24,
     gap: 14,
@@ -969,12 +969,12 @@ const s = StyleSheet.create({
   confirmIconWrap: {
     width: 64,
     height: 64,
-    borderRadius: 20,
+    borderRadius: RADIUS.xl,
     alignItems: "center",
     justifyContent: "center",
   },
-  confirmTitle: { fontSize: 22, fontWeight: "900", color: palette.text, textAlign: "center" },
-  confirmSub: { fontSize: 13, color: palette.sub, textAlign: "center", lineHeight: 19 },
+  confirmTitle: { fontSize: TYPE.title.fontSize, fontWeight: "900", color: palette.text, textAlign: "center" },
+  confirmSub: { fontSize: TYPE.caption.fontSize, color: palette.sub, textAlign: "center", lineHeight: 19 },
   confirmStats: {
     flexDirection: "row",
     alignItems: "center",
@@ -982,36 +982,36 @@ const s = StyleSheet.create({
     paddingVertical: 8,
   },
   confirmStat: { flex: 1, alignItems: "center" },
-  confirmStatValue: { fontSize: 14, fontWeight: "700", color: palette.text, textAlign: "center" },
-  confirmStatLabel: { fontSize: 11, color: palette.sub, marginTop: 2 },
+  confirmStatValue: { fontSize: TYPE.body.fontSize, fontWeight: "700", color: palette.text, textAlign: "center" },
+  confirmStatLabel: { fontSize: TYPE.micro.fontSize, color: palette.sub, marginTop: 2 },
   confirmStatDivider: { width: 1, height: 30, backgroundColor: palette.borderSoft },
   confirmHighlights: { gap: 8, width: "100%" },
   confirmHighlightRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  confirmHighlightText: { fontSize: 13, color: palette.text, fontWeight: "600" },
+  confirmHighlightText: { fontSize: TYPE.caption.fontSize, color: palette.text, fontWeight: "600" },
   confirmPathwayRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  confirmPathwayText: { fontSize: 12, color: palette.accent, fontWeight: "600" },
+  confirmPathwayText: { fontSize: TYPE.caption.fontSize, color: palette.accent, fontWeight: "600" },
   confirmActions: { gap: 10 },
 
   // ─── Active cycle ───
-  progressLabel: { fontSize: 16, fontWeight: "700", color: palette.text, textAlign: "center" },
+  progressLabel: { fontSize: TYPE.body.fontSize, fontWeight: "700", color: palette.text, textAlign: "center" },
   progressTrack: {
     height: 10,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.borderSoft,
     overflow: "hidden",
     width: "100%",
   },
-  progressFill: { height: "100%", borderRadius: 999 },
+  progressFill: { height: "100%", borderRadius: RADIUS.pill },
   timelineCard: { padding: 12, gap: 10 },
   timelineRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  timelineDot: { width: 10, height: 10, borderRadius: 999 },
-  timelineTitle: { flex: 1, color: palette.text, fontWeight: "700", fontSize: 13 },
+  timelineDot: { width: 10, height: 10, borderRadius: RADIUS.pill },
+  timelineTitle: { flex: 1, color: palette.text, fontWeight: "700", fontSize: TYPE.caption.fontSize },
 
   // ─── Completed ───
   completedBadge: {
     width: 64,
     height: 64,
-    borderRadius: 20,
+    borderRadius: RADIUS.xl,
     backgroundColor: palette.accentSoft,
     alignItems: "center",
     justifyContent: "center",
@@ -1019,28 +1019,28 @@ const s = StyleSheet.create({
     marginBottom: 8,
   },
   nextHint: { flexDirection: "row", alignItems: "flex-start", gap: 8, paddingHorizontal: 4 },
-  nextHintText: { flex: 1, fontSize: 13, color: palette.sub, lineHeight: 18 },
+  nextHintText: { flex: 1, fontSize: TYPE.caption.fontSize, color: palette.sub, lineHeight: 18 },
 
   // ─── Abandon ───
   abandonCard: { padding: 14, gap: 10 },
-  abandonTitle: { color: palette.text, fontSize: 16, fontWeight: "900" },
-  abandonSub: { color: palette.sub, fontSize: 12, lineHeight: 17 },
+  abandonTitle: { color: palette.text, fontSize: TYPE.body.fontSize, fontWeight: "900" },
+  abandonSub: { color: palette.sub, fontSize: TYPE.caption.fontSize, lineHeight: 17 },
   reasonGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 },
   reasonChip: {
     paddingVertical: 8,
     paddingHorizontal: 10,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.cardSoft,
   },
   reasonChipSelected: { borderColor: palette.accent, backgroundColor: palette.accentSoft },
-  reasonChipText: { color: palette.text, fontSize: 12, fontWeight: "600" },
+  reasonChipText: { color: palette.text, fontSize: TYPE.caption.fontSize, fontWeight: "600" },
   reasonChipTextSelected: { color: palette.text, fontWeight: "800" },
   input: {
     borderWidth: 1,
     borderColor: palette.border,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     paddingHorizontal: 12,
     paddingVertical: 10,
     color: palette.text,
@@ -1049,30 +1049,30 @@ const s = StyleSheet.create({
   abandonActions: { gap: 10, marginTop: 6 },
   dangerButton: {
     width: "100%",
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     paddingVertical: 12,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
     borderColor: palette.danger,
-    backgroundColor: "rgba(239,68,68,0.12)",
+    backgroundColor: theme.colors.redSoft12,
   },
-  dangerButtonText: { color: palette.danger, fontSize: 14, fontWeight: "800" },
+  dangerButtonText: { color: palette.danger, fontSize: TYPE.body.fontSize, fontWeight: "800" },
   confirmBox: {
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.danger,
-    backgroundColor: "rgba(239,68,68,0.06)",
+    backgroundColor: theme.colors.redSoft06,
     padding: 12,
     gap: 10,
   },
-  confirmBoxText: { color: palette.danger, fontSize: 13 },
+  confirmBoxText: { color: palette.danger, fontSize: TYPE.caption.fontSize },
   confirmBoxActions: { flexDirection: "row", gap: 10 },
 
   // ─── Tests ───
   testsCard: { padding: 14, gap: 10 },
   testsHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
-  testsTitle: { fontSize: 15, fontWeight: "700", color: palette.text },
-  testsText: { fontSize: 13, color: palette.sub, lineHeight: 18 },
+  testsTitle: { fontSize: TYPE.body.fontSize, fontWeight: "700", color: palette.text },
+  testsText: { fontSize: TYPE.caption.fontSize, color: palette.sub, lineHeight: 18 },
   testsActions: { gap: 8 },
 });

@@ -5,6 +5,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { processQueue, getQueueCount, notifySyncResult } from '../utils/offlineQueue';
 import { applyFeedback } from '../state/orchestrators/applyFeedback';
+import type { Session } from '../domain/types';
+import { useSyncStore } from '../state/stores/useSyncStore';
+import { useSessionsStore } from '../state/stores/useSessionsStore';
+import { isSessionCompleted } from '../utils/sessionStatus';
 
 export function useNetworkStatus() {
   const [isOnline, setIsOnline] = useState(true);
@@ -50,11 +54,25 @@ export function useNetworkStatus() {
         const feedback = data.feedback as Parameters<typeof addFeedback>[1];
         // Appeler directement addFeedback du store
         const success = await addFeedback(sessionId, feedback);
-        if (!success) {
-          throw new Error('Failed to add feedback');
+        if (success) return;
+
+        const session = useSessionsStore
+          .getState()
+          .sessions.find((item) => item.id === sessionId);
+        if (session && isSessionCompleted(session)) {
+          await useSyncStore.getState().persistCompletedSession(session);
+          return;
         }
+
+        throw new Error('Failed to add feedback');
       },
-      // On peut ajouter d'autres handlers pour session, profile, etc.
+      session: async (data) => {
+        const session = data.session as Session | undefined;
+        if (!session?.id) {
+          throw new Error('Failed to sync session: missing session payload');
+        }
+        await useSyncStore.getState().persistCompletedSession(session);
+      },
     });
 
     setQueueCount(result.pending);

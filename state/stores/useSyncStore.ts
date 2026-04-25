@@ -13,12 +13,15 @@ import {
   watchPlannedSessions,
 } from "../../repositories/sessionsRepo";
 import type { CompletedSession } from "../../repositories/sessionsRepo";
-import { savePlannedSessionToFirestore } from "../../services/plannedSessionsRepo";
+import {
+  savePlannedSessionToFirestore,
+  updatePlannedSessionStatusInFirestore,
+} from "../../services/plannedSessionsRepo";
 import { isClubDay } from "../../utils/dateHelpers";
 import { normalizeSessionsFromFirestore } from "./syncHelpers";
 import { addDaysISO } from "../../utils/virtualClock";
 
-import { useSessionsStore } from "./useSessionsStore";
+import { useSessionsStore, MAX_STORED_SESSIONS } from "./useSessionsStore";
 import { useExternalStore } from "./useExternalStore";
 import { useLoadStore } from "./useLoadStore";
 import { useDebugStore } from "./useDebugStore";
@@ -29,6 +32,7 @@ import type { Session } from "../../domain/types";
 import { createMigratedStorage } from "./storage";
 import { onStoreHydrated } from "../orchestrators/rehydrate";
 import { userProfileSchema, logValidationIssues } from "../../schemas/firestoreSchemas";
+import { getSessionStatus } from "../../utils/sessionStatus";
 
 let _watchGuard = false;
 let _active = true;
@@ -134,6 +138,10 @@ export const useSyncStore = create<SyncState>()(
           focus: rest.focus,
           intensity: intensityPlanned,
           plannedLoad: plannedLoadSafe,
+          status: rest.status ?? "planned",
+          ...(rest.createdAt ? { createdAt: rest.createdAt } : {}),
+          ...("startedAt" in rest ? { startedAt: rest.startedAt ?? null } : {}),
+          ...("completedAt" in rest ? { completedAt: rest.completedAt ?? null } : {}),
           exercises: rest.exercises,
         };
 
@@ -144,17 +152,38 @@ export const useSyncStore = create<SyncState>()(
         await savePlannedSessionToFirestore({ ...firestorePlanned, userId: uid });
       },
 
+      persistSessionStatus: async (sessionId, status, meta) => {
+        const uid = auth.currentUser?.uid;
+        if (!uid || !sessionId) return;
+
+        await updatePlannedSessionStatusInFirestore(sessionId, status, meta);
+      },
+
       persistCompletedSession: async (s) => {
         const uid = auth.currentUser?.uid;
         if (!uid || !s.id) return;
 
+        const aiPayload = s.aiV2 ?? s.ai;
+
         const completedPayload: Record<string, unknown> = {
           date: s.dateISO,
+          dateISO: s.dateISO,
           phase: s.phase,
           focus: s.focus,
           intensity: s.intensity,
+          plannedLoad: s.plannedLoad ?? s.volumeScore,
           exercises: s.exercises,
-          rpe: s.rpe,
+          status: "completed",
+          completed: true,
+          ...(typeof s.durationMin === "number" && Number.isFinite(s.durationMin)
+            ? { durationMin: s.durationMin }
+            : {}),
+          ...(aiPayload != null ? { ai: aiPayload } : {}),
+          ...(s.startedAt ? { startedAt: s.startedAt } : {}),
+          ...(s.completedAt ? { completedAt: s.completedAt } : {}),
+          ...(typeof s.rpe === "number" && Number.isFinite(s.rpe)
+            ? { rpe: s.rpe }
+            : {}),
         };
 
         if (s.feedback) {
@@ -168,6 +197,9 @@ export const useSyncStore = create<SyncState>()(
         }
 
         await saveSession(uid, s.id, completedPayload as Omit<CompletedSession, "userId" | "id" | "createdAt">);
+        await updatePlannedSessionStatusInFirestore(s.id, "completed", {
+          completedAt: s.completedAt ?? new Date().toISOString(),
+        });
 
         const sessionsState = useSessionsStore.getState();
         const microcycleGoal = typeof sessionsState.microcycleGoal === "string"
@@ -259,6 +291,12 @@ export const useSyncStore = create<SyncState>()(
               };
 
               useExternalStore.setState({ clubTrainingDays: days, matchDays, matchDay, autoExternalConfig });
+
+              // Distribuer le level du joueur pour les tau dynamiques
+              const playerLevel = typeof data.level === "string" ? data.level : null;
+              if (playerLevel !== useSessionsStore.getState().playerLevel) {
+                useSessionsStore.getState().setPlayerLevel(playerLevel);
+              }
             },
             (err: unknown) => {
               const code = err != null && typeof err === "object" && "code" in err ? (err as { code: string }).code : undefined;
@@ -276,7 +314,10 @@ export const useSyncStore = create<SyncState>()(
             useSessionsStore.setState((state) => {
               const local = state.sessions ?? [];
               const missingLocal = local.filter((s) => !normalizedIds.has(s.id));
-              return { sessions: [...missingLocal, ...normalized] };
+              const merged = [...missingLocal, ...normalized]
+                .sort((a, b) => (b.dateISO ?? "").localeCompare(a.dateISO ?? ""))
+                .slice(0, MAX_STORED_SESSIONS);
+              return { sessions: merged };
             });
             // Rebuild load from history after sessions change
             // Deferred import to avoid circular deps at module level
@@ -294,34 +335,67 @@ export const useSyncStore = create<SyncState>()(
                 const dayKey = toDateKey((p.date ?? "").toString());
                 return dayKey >= today;
               })
-              .map((p): Session => ({
-                id: p.id,
-                date: p.date,
-                dateISO: p.date,
-                focus: p.focus as Session["focus"],
-                phase: p.phase,
-                intensity: p.intensity,
-                volumeScore: p.plannedLoad ?? 0,
-                exercises: (p.exercises ?? []) as Session["exercises"],
-                completed: false,
-                aiV2: p.ai as Record<string, unknown> | undefined,
-              }));
+              .map((p): Session | null => {
+                const status = getSessionStatus({
+                  status: p.status,
+                  completed: false,
+                  startedAt:
+                    typeof p.startedAt === "string" ? p.startedAt : undefined,
+                });
+                if (status === "completed") return null;
+
+                return {
+                  id: p.id,
+                  date: p.date,
+                  dateISO: p.date,
+                  focus: p.focus as Session["focus"],
+                  phase: p.phase,
+                  intensity: p.intensity,
+                  volumeScore: p.plannedLoad ?? 0,
+                  exercises: (p.exercises ?? []) as Session["exercises"],
+                  status,
+                  completed: false,
+                  startedAt:
+                    typeof p.startedAt === "string" ? p.startedAt : undefined,
+                  completedAt:
+                    typeof p.completedAt === "string" ? p.completedAt : undefined,
+                  aiV2: p.ai as Record<string, unknown> | undefined,
+                };
+              })
+              .filter(Boolean) as Session[];
 
             const incomingIds = new Set(incoming.map((p) => p.id));
 
             useSessionsStore.setState((state) => {
               const local = state.sessions ?? [];
+              const plannedWithLocalProgress = incoming.map((plannedSession) => {
+                const localSession = local.find((session) => session.id === plannedSession.id);
+                if (!localSession) return plannedSession;
+
+                const localStatus = getSessionStatus(localSession);
+                const remoteStatus = getSessionStatus(plannedSession);
+                if (localStatus === "in_progress" && remoteStatus === "planned") {
+                  return {
+                    ...plannedSession,
+                    status: "in_progress" as const,
+                    completed: false,
+                    startedAt: localSession.startedAt,
+                    aiV2: plannedSession.aiV2 ?? localSession.aiV2 ?? localSession.ai,
+                  };
+                }
+                return plannedSession;
+              });
               const completedLocalIds = new Set(
-                local.filter((s) => s.completed).map((s) => s.id)
+                local.filter((s) => getSessionStatus(s) === "completed").map((s) => s.id)
               );
               const completedDayKeys = new Set(
                 local
-                  .filter((s) => s.completed)
+                  .filter((s) => getSessionStatus(s) === "completed")
                   .map((s) => toDateKey((s.dateISO ?? s.date ?? "").toString()))
                   .filter(Boolean)
               );
 
-              const planned = incoming
+              const planned = plannedWithLocalProgress
                 .filter((p) => !completedLocalIds.has(p.id))
                 .filter((p) => {
                   const dayKey = toDateKey((p.dateISO ?? "").toString());

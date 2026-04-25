@@ -3,7 +3,8 @@
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { theme } from '../constants/theme';
+import * as Sentry from '@sentry/react-native';
+import { theme, TYPE, RADIUS } from "../constants/theme";
 
 interface Props {
   children: ReactNode;
@@ -44,6 +45,10 @@ export class ErrorBoundary extends Component<Props, State> {
       console.error('[ErrorBoundary] Caught error:', error);
       console.error('[ErrorBoundary] Error info:', errorInfo);
     }
+
+    Sentry.captureException(error, {
+      extra: { componentStack: errorInfo.componentStack },
+    });
 
     // Appeler le callback personnalisé si fourni
     this.props.onError?.(error, errorInfo);
@@ -148,18 +153,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   icon: {
-    fontSize: 64,
+    fontSize: TYPE.display.lg.fontSize,
     marginBottom: 20,
   },
   title: {
-    fontSize: 24,
+    fontSize: TYPE.title.fontSize,
     fontWeight: '700',
     color: theme.colors.text,
     textAlign: 'center',
     marginBottom: 12,
   },
   message: {
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     color: theme.colors.sub,
     textAlign: 'center',
     lineHeight: 24,
@@ -167,20 +172,20 @@ const styles = StyleSheet.create({
   },
   detailsContainer: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     padding: 16,
     maxHeight: 200,
     width: '100%',
     marginBottom: 24,
   },
   detailsTitle: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: '600',
     color: theme.colors.text,
     marginBottom: 8,
   },
   detailsText: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: theme.colors.sub,
     fontFamily: 'monospace',
   },
@@ -192,18 +197,18 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.accent,
     paddingVertical: 14,
     paddingHorizontal: 32,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     width: '100%',
     alignItems: 'center',
     marginBottom: 16,
   },
   primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
+    color: theme.colors.white,
+    fontSize: TYPE.body.fontSize,
     fontWeight: '600',
   },
   hint: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: theme.colors.sub,
     textAlign: 'center',
     fontStyle: 'italic',

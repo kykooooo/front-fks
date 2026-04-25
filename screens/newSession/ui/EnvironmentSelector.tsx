@@ -4,6 +4,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { palette } from "../theme";
 import type { EnvironmentSelection } from "../types";
 import { MICROCYCLES, isMicrocycleId, type MicrocycleId } from "../../../domain/microcycles";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
+
 
 type Props = {
   environment: EnvironmentSelection;
@@ -27,8 +29,8 @@ const LOCATIONS: LocationConfig[] = [
     id: "gym",
     label: "Salle",
     icon: "barbell",
-    color: "#8b5cf6",
-    bgColor: "rgba(139, 92, 246, 0.12)",
+    color: theme.colors.violet500,
+    bgColor: theme.colors.violetSoft12,
     defaultDescription: "Machines, charges lourdes, haltères",
     features: ["Force max", "Machines guidées", "Charges progressives"],
   },
@@ -36,8 +38,8 @@ const LOCATIONS: LocationConfig[] = [
     id: "pitch",
     label: "Terrain",
     icon: "football",
-    color: "#22c55e",
-    bgColor: "rgba(34, 197, 94, 0.12)",
+    color: theme.colors.green500,
+    bgColor: theme.colors.green500Soft12,
     defaultDescription: "Gazon, synthé, stabilisé",
     features: ["Sprints", "Appuis", "Travail spécifique"],
   },
@@ -45,8 +47,8 @@ const LOCATIONS: LocationConfig[] = [
     id: "home",
     label: "Maison",
     icon: "home",
-    color: "#f59e0b",
-    bgColor: "rgba(245, 158, 11, 0.12)",
+    color: theme.colors.amber500,
+    bgColor: theme.colors.amberSoft12,
     defaultDescription: "Salon, jardin, peu de matériel",
     features: ["Poids de corps", "Core", "Mobilité"],
   },
@@ -201,8 +203,8 @@ const styles = StyleSheet.create({
   headerIcon: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    backgroundColor: "rgba(37, 99, 235, 0.12)",
+    borderRadius: RADIUS.md,
+    backgroundColor: theme.colors.blueSoft12,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -210,12 +212,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    fontSize: 17,
+    fontSize: TYPE.subtitle.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     marginTop: 2,
   },
@@ -224,7 +226,7 @@ const styles = StyleSheet.create({
   },
   locationCard: {
     padding: 16,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     borderWidth: 2,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
@@ -241,7 +243,7 @@ const styles = StyleSheet.create({
   locationIconWrap: {
     width: 44,
     height: 44,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -252,14 +254,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   locationLabel: {
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   selectedBadge: {
     width: 18,
     height: 18,
-    borderRadius: 9,
+    borderRadius: RADIUS.sm,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -270,10 +272,10 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
   },
   focusText: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
   },
   featuresWrap: {
@@ -288,10 +290,10 @@ const styles = StyleSheet.create({
   featureDot: {
     width: 5,
     height: 5,
-    borderRadius: 3,
+    borderRadius: RADIUS.xs,
   },
   featureText: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
   },
   selectionSummary: {
@@ -300,11 +302,11 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 10,
     paddingHorizontal: 14,
-    borderRadius: 10,
-    backgroundColor: "rgba(37, 99, 235, 0.08)",
+    borderRadius: RADIUS.sm,
+    backgroundColor: theme.colors.blueSoft08,
   },
   selectionText: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "600",
     color: palette.accent,
   },

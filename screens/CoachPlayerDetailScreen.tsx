@@ -6,7 +6,7 @@ import { collection, doc, limit, onSnapshot, orderBy, query } from "firebase/fir
 import { Ionicons } from "@expo/vector-icons";
 import type { AppStackParamList } from "../navigation/RootNavigator";
 import { db } from "../services/firebase";
-import { theme } from "../constants/theme";
+import { theme, TYPE, RADIUS } from "../constants/theme";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { SectionHeader } from "../components/ui/SectionHeader";
@@ -158,7 +158,7 @@ export default function CoachPlayerDetailScreen() {
             onPress={() => setShowRecommendationModal(true)}
             style={styles.recommendButton}
           >
-            <Ionicons name="chatbubble-outline" size={16} color="#fff" />
+            <Ionicons name="chatbubble-outline" size={16} color={theme.colors.white} />
             <Text style={styles.recommendButtonText}>Envoyer une recommandation</Text>
           </TouchableOpacity>
         </Card>
@@ -236,54 +236,54 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: palette.bg },
   container: { padding: 16, paddingBottom: 28, gap: 14 },
   heroCard: { padding: 16, gap: 10 },
-  heroTitle: { fontSize: 20, fontWeight: "900", color: palette.text },
+  heroTitle: { fontSize: TYPE.title.fontSize, fontWeight: "900", color: palette.text },
   badgesRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  error: { color: palette.danger, fontSize: 13 },
+  error: { color: palette.danger, fontSize: TYPE.caption.fontSize },
   section: { gap: 10 },
   sectionCard: { padding: 14, gap: 10 },
-  empty: { color: palette.sub, fontSize: 13 },
+  empty: { color: palette.sub, fontSize: TYPE.caption.fontSize },
   cycleCard: { padding: 14, gap: 8 },
   cycleHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
-  cycleTitle: { color: palette.text, fontSize: 15, fontWeight: "800", flex: 1 },
-  cycleSub: { color: palette.sub, fontSize: 12 },
+  cycleTitle: { color: palette.text, fontSize: TYPE.body.fontSize, fontWeight: "800", flex: 1 },
+  cycleSub: { color: palette.sub, fontSize: TYPE.caption.fontSize },
   cycleProgressTrack: {
     height: 8,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.borderSoft,
     overflow: "hidden",
   },
   cycleProgressFill: {
     height: "100%",
     backgroundColor: palette.accent,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
   },
-  cycleMeta: { color: palette.sub, fontSize: 12 },
+  cycleMeta: { color: palette.sub, fontSize: TYPE.caption.fontSize },
   itemRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     paddingVertical: 10,
     paddingHorizontal: 10,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
   },
-  itemTitle: { color: palette.text, fontWeight: "800", fontSize: 13 },
-  itemSub: { color: palette.sub, fontSize: 12, marginTop: 2 },
+  itemTitle: { color: palette.text, fontWeight: "800", fontSize: TYPE.caption.fontSize },
+  itemSub: { color: palette.sub, fontSize: TYPE.caption.fontSize, marginTop: 2 },
   recommendButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     backgroundColor: palette.accent,
     marginTop: 4,
   },
   recommendButtonText: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
-    color: "#fff",
+    color: theme.colors.white,
   },
 });

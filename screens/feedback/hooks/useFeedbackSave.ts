@@ -1,6 +1,7 @@
 // screens/feedback/hooks/useFeedbackSave.ts
 // Logique de sauvegarde du feedback post-séance (cycle, pathway, offline)
 import { useState, useRef, useCallback, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CommonActions } from '@react-navigation/native';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { useLoadStore } from '../../../state/stores/useLoadStore';
@@ -8,16 +9,20 @@ import { useSessionsStore } from '../../../state/stores/useSessionsStore';
 import { useFeedbackStore } from '../../../state/stores/useFeedbackStore';
 import { applyFeedback } from '../../../state/orchestrators/applyFeedback';
 import type { InjuryRecord, Modality, SessionFeedback } from '../../../domain/types';
-import { DEFAULT_MODALITY_WEIGHTS, toRPE1to10, toRating1to5, toRating0to5 } from '../../../domain/types';
+import { DEFAULT_MODALITY_WEIGHTS, toRPE1to10, toRating1to5, toRating0to10 } from '../../../domain/types';
 import { FEEDBACK_LIMITS } from '../../../constants/feedback';
 import { updateTrainingLoad } from '../../../engine/loadModel';
+import { getTauForLevel, getFootballLabel } from '../../../config/trainingDefaults';
 import { showErrorWithRetry, classifyError, ErrorType, retryWithBackoff } from '../../../utils/errorHandler';
 import { showToast } from '../../../utils/toast';
 import { enqueueAction } from '../../../utils/offlineQueue';
 import { trackEvent } from '../../../services/analytics';
-import { MICROCYCLES, getPathwayById } from '../../../domain/microcycles';
+import { scheduleRetestReminder } from '../../../services/notifications';
+import { MICROCYCLES, getPathwayById, MICROCYCLE_TOTAL_SESSIONS_DEFAULT } from '../../../domain/microcycles';
 import { auth, db } from '../../../services/firebase';
 import { clamp } from '../feedbackScales';
+import { isSessionCompleted } from '../../../utils/sessionStatus';
+import { LIVE_SESSION_KEY } from '../../../utils/sessionEntry';
 
 type SaveParams = {
   targetSessionId: string | undefined;
@@ -46,6 +51,7 @@ export function useFeedbackSave(params: SaveParams) {
   const atl = useLoadStore((s) => s.atl);
   const ctl = useLoadStore((s) => s.ctl);
   const tsb = useLoadStore((s) => s.tsb);
+  const playerLevel = useSessionsStore((s) => s.playerLevel);
   const addFeedback = applyFeedback;
   const setDailyFeedback = useFeedbackStore((s) => s.setDailyFeedback);
   const setInjury = useFeedbackStore((s) => s.setInjury);
@@ -87,13 +93,20 @@ export function useFeedbackSave(params: SaveParams) {
     navigation.navigate('CycleModal', { mode: 'select', origin: 'feedback' });
   }, [clearAutoContinue, navigation]);
 
+  const onTestProgress = useCallback(() => {
+    clearAutoContinue();
+    setCyclePromptVisible(false);
+    navigation.navigate('Tests');
+  }, [clearAutoContinue, navigation]);
+
   const modality = (targetSession?.modality ??
     targetSession?.exercises?.[0]?.modality) as Modality | undefined;
   const modalityWeight = modality ? DEFAULT_MODALITY_WEIGHTS[modality] ?? 1 : 1;
   const estimatedLoad =
     durationClamped != null ? Math.round(rpe * durationClamped * modalityWeight) : null;
+  const { tauAtl, tauCtl } = getTauForLevel(playerLevel);
   const projected =
-    estimatedLoad != null ? updateTrainingLoad(atl, ctl, estimatedLoad) : null;
+    estimatedLoad != null ? updateTrainingLoad(atl, ctl, estimatedLoad, { tauAtl, tauCtl }) : null;
   const projectedTsb = projected ? +projected.tsb.toFixed(1) : null;
   const projectedDelta =
     projectedTsb != null ? +(projectedTsb - tsb).toFixed(1) : null;
@@ -104,7 +117,7 @@ export function useFeedbackSave(params: SaveParams) {
       showToast({ type: 'error', title: 'Séance introuvable', message: "La séance n'est pas chargée ou aucun ID n'a été trouvé." });
       return;
     }
-    if (targetSession.completed) {
+    if (isSessionCompleted(targetSession)) {
       showToast({ type: 'warn', title: 'Déjà complétée', message: 'Tu as déjà donné ton retour pour cette séance.' });
       return;
     }
@@ -115,9 +128,6 @@ export function useFeedbackSave(params: SaveParams) {
 
     setIsSaving(true);
     try {
-      const atlBefore = atl;
-      const ctlBefore = ctl;
-      const tsbBefore = tsb;
       const dayKeyForSession = sessionDateKey ?? todayKey;
 
       const activeGoal =
@@ -145,8 +155,9 @@ export function useFeedbackSave(params: SaveParams) {
       const dailyPayload: any = {
         fatigue: clamp(fatigue, FEEDBACK_LIMITS.fatigueMin, FEEDBACK_LIMITS.fatigueMax),
       };
-      const pain0to5 = clamp(pain, FEEDBACK_LIMITS.painMin ?? 0, FEEDBACK_LIMITS.painMax ?? 5);
-      dailyPayload.pain = pain0to5;
+      // Pain sur échelle EVA 0-10 (unification — voir INJURY_IA_CHARTER.md règle 5).
+      const painEVA = clamp(pain, FEEDBACK_LIMITS.painMin ?? 0, FEEDBACK_LIMITS.painMax ?? 10);
+      dailyPayload.pain = painEVA;
       if (typeof recovery === 'number') {
         dailyPayload.recoveryPerceived = clamp(
           recovery,
@@ -159,7 +170,7 @@ export function useFeedbackSave(params: SaveParams) {
         rpe: toRPE1to10(rpe),
         fatigue: toRating1to5(fatigue),
         sleep: toRating1to5(recovery),
-        pain: toRating0to5(pain0to5),
+        pain: toRating0to10(painEVA),
         createdAt: new Date().toISOString(),
       };
       if (durationClamped != null) fb.durationMin = durationClamped;
@@ -169,11 +180,36 @@ export function useFeedbackSave(params: SaveParams) {
         showToast({ type: 'error', title: 'Feedback non appliqué', message: "La séance est introuvable ou déjà complétée." });
         return;
       }
+      try {
+        const raw = await AsyncStorage.getItem(LIVE_SESSION_KEY);
+        if (raw) {
+          const saved = JSON.parse(raw) as { sessionId?: string };
+          if (!saved.sessionId || saved.sessionId === targetSessionId) {
+            await AsyncStorage.removeItem(LIVE_SESSION_KEY);
+          }
+        }
+      } catch (err) {
+        if (__DEV__) {
+          console.error('[FeedbackSave] Failed to clear live session cache after completion:', err);
+        }
+      }
       setDailyFeedback(dayKeyForSession, dailyPayload);
       setInjury(dayKeyForSession, hasPainDetails ? injury : null);
 
       const afterLoad = useLoadStore.getState();
-      const fmt = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(1)}`;
+      const afterSessions = useSessionsStore.getState();
+      const footballLabel = getFootballLabel(afterLoad.tsb);
+      const completedIdx = Math.max(
+        1,
+        Math.min(MICROCYCLE_TOTAL_SESSIONS_DEFAULT, afterSessions.microcycleSessionIndex ?? 1),
+      );
+      const cycleLabel = activeGoal
+        ? MICROCYCLES[activeGoal as keyof typeof MICROCYCLES]?.label ?? null
+        : null;
+      const sessionPrefix = activeGoal
+        ? `Séance ${completedIdx}/${MICROCYCLE_TOTAL_SESSIONS_DEFAULT}`
+        : 'Séance';
+      const cyclePart = cycleLabel ? `Cycle ${cycleLabel} · ` : '';
       trackEvent('feedback_submitted', {
         cycleId: activeGoal ?? 'none',
         rpe: fb.rpe,
@@ -183,12 +219,20 @@ export function useFeedbackSave(params: SaveParams) {
       });
       showToast({
         type: 'success',
-        title: 'Feedback enregistré',
-        message: `ATL ${afterLoad.atl.toFixed(1)} (${fmt(afterLoad.atl - atlBefore)}) · CTL ${afterLoad.ctl.toFixed(1)} (${fmt(afterLoad.ctl - ctlBefore)}) · TSB ${afterLoad.tsb.toFixed(1)} (${fmt(afterLoad.tsb - tsbBefore)})`,
+        title: `${sessionPrefix} validée ${footballLabel.emoji}`,
+        message: `${cyclePart}Tu es ${footballLabel.label.toLowerCase()}. ${footballLabel.message}`,
       });
       haptics.success();
 
       if (shouldPromptCycleEnd) {
+        // Programme un rappel re-test 30j après la fin du cycle — incite le joueur
+        // à revenir mesurer ses gains (boucle rétention test → cycle → test).
+        if (cycleLabel) {
+          scheduleRetestReminder(cycleLabel).catch(() => {
+            // silent : pas critique si la notif échoue
+          });
+        }
+
         const pathway = activePathwayId ? getPathwayById(activePathwayId) : null;
         const nextIndex = (activePathwayIndex ?? 0) + 1;
         const hasNextInPathway = pathway && nextIndex < pathway.sequence.length;
@@ -270,18 +314,32 @@ export function useFeedbackSave(params: SaveParams) {
       haptics.warning();
 
       if (appError.type === ErrorType.NETWORK) {
-        const pain0to5 = clamp(pain, FEEDBACK_LIMITS.painMin ?? 0, FEEDBACK_LIMITS.painMax ?? 5);
+        const painEVA = clamp(pain, FEEDBACK_LIMITS.painMin ?? 0, FEEDBACK_LIMITS.painMax ?? 10);
         const fb: SessionFeedback = {
           rpe: toRPE1to10(rpe),
           fatigue: toRating1to5(fatigue),
           sleep: toRating1to5(recovery),
-          pain: toRating0to5(pain0to5),
+          pain: toRating0to10(painEVA),
           createdAt: new Date().toISOString(),
         };
         if (durationClamped != null) fb.durationMin = durationClamped;
-        await enqueueAction('feedback', { sessionId: targetSessionId, feedback: fb });
-        showToast({ type: 'info', title: 'Enregistré hors-ligne', message: 'Ton feedback sera synchronisé dès que tu seras reconnecté.' });
-        navigation.goBack();
+        const latestSession = useSessionsStore
+          .getState()
+          .sessions.find((session) => session.id === targetSessionId);
+
+        if (isSessionCompleted(latestSession)) {
+          await enqueueAction('session', { session: latestSession });
+          showToast({
+            type: 'info',
+            title: 'Synchronisation en attente',
+            message: 'Ta séance est validée. La synchronisation cloud repartira dès que tu seras reconnecté.',
+          });
+          continueAfterFeedback();
+        } else {
+          await enqueueAction('feedback', { sessionId: targetSessionId, feedback: fb });
+          showToast({ type: 'info', title: 'Enregistré hors-ligne', message: 'Ton feedback sera synchronisé dès que tu seras reconnecté.' });
+          navigation.goBack();
+        }
       } else {
         showErrorWithRetry(e, 'Enregistrement du feedback', onSave);
       }
@@ -296,10 +354,10 @@ export function useFeedbackSave(params: SaveParams) {
     activePathwayId, activePathwayIndex,
   ]);
 
-  const saveDisabled = isSaving || !targetSession || targetSession?.completed || !canSaveToday;
+  const saveDisabled = isSaving || !targetSession || isSessionCompleted(targetSession) || !canSaveToday;
   const saveLabel = isSaving
     ? 'Enregistrement…'
-    : targetSession?.completed
+    : isSessionCompleted(targetSession)
       ? 'Déjà complétée'
       : !canSaveToday
         ? "Séance pas datée d'aujourd'hui"
@@ -312,6 +370,7 @@ export function useFeedbackSave(params: SaveParams) {
     saveLabel,
     cyclePromptVisible,
     onChooseNewProgram,
+    onTestProgress,
     continueAfterFeedback,
     estimatedLoad,
     projectedTsb,

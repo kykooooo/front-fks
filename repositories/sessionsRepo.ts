@@ -3,6 +3,7 @@ import {
     addDoc,
     collection,
     doc,
+    limit,
     onSnapshot,
     orderBy,
     query,
@@ -12,8 +13,9 @@ import {
     where,
   } from 'firebase/firestore';
   import { db } from '../services/firebase';
-  import type { Phase } from '../domain/types';
+  import type { Phase, SessionStatus } from '../domain/types';
   import { completedSessionSchema, plannedSessionSchema, logValidationIssues } from '../schemas/firestoreSchemas';
+  import { sanitizeFirestorePayload } from '../utils/firestorePayload';
   
   /** ——— Exercices "simples" (ton type peut remplacer celui-ci si tu en as déjà un) ——— */
   export type Exercise = {
@@ -86,12 +88,17 @@ import {
     intensity: 'easy' | 'moderate' | 'hard';
     plannedLoad: number;
     exercises: Exercise[];
+    status?: SessionStatus;
+    startedAt?: Timestamp | string | null;
+    completedAt?: Timestamp | string | null;
+    updatedAt?: Timestamp | string | null;
     /** Blueprint IA complet */
     ai?: AiNextSession;
     createdAt?: Timestamp;
   };
   
 export type CompletedSession = PlannedSession & {
+  status?: SessionStatus;
   completedAt?: Timestamp;
   rpe?: number;
   feedback?: {
@@ -130,11 +137,11 @@ export type CompletedSession = PlannedSession & {
     const ref = doc(db, 'users', userId, 'sessions', sessionId);
     await setDoc(
       ref,
-      {
+      sanitizeFirestorePayload({
         ...data,
         userId,
         completedAt: (data as any).completedAt ?? serverTimestamp(),
-      },
+      }),
       { merge: true }
     );
   }
@@ -145,7 +152,7 @@ export function watchSessions(
   cb: (sessions: (CompletedSession & { id: string })[]) => void
 ) {
   const col = collection(db, 'users', userId, 'sessions');
-  const q = query(col, orderBy('date', 'desc'));
+  const q = query(col, orderBy('date', 'desc'), limit(200));
   return onSnapshot(
     q,
     (snap) => {

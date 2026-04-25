@@ -12,11 +12,12 @@ import {
 } from "react-native";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
+import * as Updates from "expo-updates";
 import Constants from "expo-constants";
 import { useNavigation } from "@react-navigation/native";
 import { signOut } from "firebase/auth";
 import { auth } from "../services/firebase";
-import { theme } from "../constants/theme";
+import { theme, TYPE, RADIUS } from "../constants/theme";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -149,7 +150,7 @@ export default function SettingsScreen() {
   const handleResetLoad = useCallback(() => {
     Alert.alert(
       "Réinitialiser la charge",
-      "Remet ATL/CTL/TSB à zéro et efface les charges externes locales.",
+      "Remet ta charge d'entraînement à zéro et efface les charges externes locales.",
       [
         { text: "Annuler", style: "cancel" },
         {
@@ -217,16 +218,21 @@ export default function SettingsScreen() {
     }
   }, [clearModeForUid, resetTrainingStore]);
 
-  const triggerReload = useCallback(() => {
+  const triggerReload = useCallback(async () => {
     if (Platform.OS === "web" && typeof window !== "undefined") {
       window.location.reload();
       return;
     }
-    if (DevSettings?.reload) {
-      DevSettings.reload();
-      return;
+    try {
+      await Updates.reloadAsync();
+    } catch {
+      // reloadAsync peut échouer en dev ou si expo-updates n'est pas configuré
+      if (DevSettings?.reload) {
+        DevSettings.reload();
+        return;
+      }
+      showToast({ type: "info", title: "Redémarrage requis", message: "Ferme et rouvre l'app pour appliquer le thème." });
     }
-    showToast({ type: "info", title: "Redémarrage requis", message: "Ferme et rouvre l'app pour appliquer le thème." });
   }, []);
 
   const handleThemeChange = useCallback(
@@ -653,7 +659,7 @@ export default function SettingsScreen() {
               />
               <SettingRow
                 title="Reset charge"
-                subtitle="ATL/CTL/TSB + charges externes"
+                subtitle="Charge d'entraînement + charges externes"
                 right={
                   <Button
                     label="Reset"
@@ -719,7 +725,7 @@ const styles = StyleSheet.create({
     right: -60,
     width: 200,
     height: 200,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.accentSoft,
     opacity: 0.9,
   },
@@ -727,16 +733,16 @@ const styles = StyleSheet.create({
   avatar: {
     width: 48,
     height: 48,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: palette.bgSoft,
     borderWidth: 1,
     borderColor: palette.borderSoft,
   },
-  avatarText: { color: palette.text, fontSize: 18, fontWeight: "800" },
-  heroTitle: { color: palette.text, fontSize: 18, fontWeight: "800" },
-  heroSubtitle: { color: palette.sub, fontSize: 12, marginTop: 2 },
+  avatarText: { color: palette.text, fontSize: TYPE.subtitle.fontSize, fontWeight: "800" },
+  heroTitle: { color: palette.text, fontSize: TYPE.subtitle.fontSize, fontWeight: "800" },
+  heroSubtitle: { color: palette.sub, fontSize: TYPE.caption.fontSize, marginTop: 2 },
   heroQuick: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
 
   settingRow: {
@@ -746,8 +752,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   settingText: { flex: 1 },
-  settingTitle: { color: palette.text, fontSize: 13, fontWeight: "600" },
-  settingSubtitle: { color: palette.sub, fontSize: 11, marginTop: 2 },
+  settingTitle: { color: palette.text, fontSize: TYPE.caption.fontSize, fontWeight: "600" },
+  settingSubtitle: { color: palette.sub, fontSize: TYPE.micro.fontSize, marginTop: 2 },
   settingRight: { alignItems: "flex-end" },
   rowDivider: {
     height: 1,
@@ -763,7 +769,7 @@ const styles = StyleSheet.create({
   segmentChip: {
     paddingVertical: 6,
     paddingHorizontal: 10,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
@@ -772,9 +778,9 @@ const styles = StyleSheet.create({
     borderColor: palette.accent,
     backgroundColor: palette.accentSoft,
   },
-  segmentText: { color: palette.sub, fontSize: 11, fontWeight: "600" },
+  segmentText: { color: palette.sub, fontSize: TYPE.micro.fontSize, fontWeight: "600" },
   segmentTextActive: { color: palette.accent },
 
   footer: { alignItems: "center", paddingBottom: 12 },
-  footerText: { color: palette.sub, fontSize: 11 },
+  footerText: { color: palette.sub, fontSize: TYPE.micro.fontSize },
 });

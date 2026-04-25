@@ -18,6 +18,7 @@ import {
 } from "../engine/dailyAggregation";
 import { safeNum } from "../engine/safeNum";
 import { toDateKey } from "../utils/dateHelpers";
+import { isSessionCompleted } from "../utils/sessionStatus";
 
 /**
  * External load minimal shape (store can keep extra fields: id, notes, etc.)
@@ -161,7 +162,7 @@ export function computeDailyTotals(params: {
 
   // ✅ Sessions: completed-only, dayKey match
   const completedToday = (sessions ?? []).filter(
-    (s) => s.completed && toDateKey(s.dateISO) === dayKey
+    (s) => isSessionCompleted(s) && toDateKey(s.dateISO) === dayKey
   );
 
   const sessionMap = sumDailyWeightedLoad(completedToday);

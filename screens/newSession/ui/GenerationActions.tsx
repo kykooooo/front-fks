@@ -4,6 +4,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { palette } from "../theme";
 import type { Advice } from "../../../domain/adviceRules";
 import { toDateKey } from "../../../utils/dateHelpers";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
+
 
 type Props = {
   disabled: boolean;
@@ -19,10 +21,10 @@ type Props = {
 };
 
 const TONE_CONFIG: Record<string, { bg: string; border: string; text: string; icon: string }> = {
-  info: { bg: "rgba(37, 99, 235, 0.08)", border: "#3b82f6", text: "#2563eb", icon: "#3b82f6" },
-  warn: { bg: "rgba(245, 158, 11, 0.10)", border: "#f59e0b", text: "#d97706", icon: "#f59e0b" },
-  danger: { bg: "rgba(239, 68, 68, 0.10)", border: "#ef4444", text: "#dc2626", icon: "#ef4444" },
-  success: { bg: "rgba(22, 163, 74, 0.08)", border: "#22c55e", text: "#16a34a", icon: "#22c55e" },
+  info: { bg: theme.colors.blueSoft08, border: theme.colors.blue500, text: theme.colors.blue600, icon: theme.colors.blue500 },
+  warn: { bg: theme.colors.amberSoft10, border: theme.colors.amber500, text: theme.colors.orange600, icon: theme.colors.amber500 },
+  danger: { bg: theme.colors.redSoft10, border: theme.colors.red500, text: theme.colors.red600, icon: theme.colors.red500 },
+  success: { bg: theme.colors.greenSoft08, border: theme.colors.green500, text: theme.colors.green600, icon: theme.colors.green500 },
 };
 
 export function GenerationActions({
@@ -109,17 +111,17 @@ const styles = {
     padding: 16,
     borderWidth: 1,
     borderColor: palette.border,
-    borderRadius: 18,
+    borderRadius: RADIUS.lg,
     backgroundColor: palette.card,
     marginBottom: 12,
   },
   cardTitle: {
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700" as const,
     color: palette.text,
   },
   cardSubtitle: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     marginTop: 4,
     color: palette.sub,
   },
@@ -131,7 +133,7 @@ const styles = {
   cta: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.border,
     alignItems: "center" as const,
@@ -145,7 +147,7 @@ const styles = {
     color: palette.bg,
     fontWeight: "800" as const,
     textTransform: "uppercase" as const,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
   },
   ctaSecondaryGreen: {
     backgroundColor: palette.cardSoft,
@@ -154,7 +156,7 @@ const styles = {
   ctaSecondaryGreenText: {
     color: palette.text,
     fontWeight: "700" as const,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
   },
   ctaSecondaryOrange: {
     backgroundColor: palette.accentSoft,
@@ -163,11 +165,11 @@ const styles = {
   ctaSecondaryOrangeText: {
     color: palette.accent,
     fontWeight: "700" as const,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
   },
   helper: {
     marginTop: 8,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
   },
   adviceBanner: {
@@ -176,13 +178,13 @@ const styles = {
     gap: 10,
     marginTop: 14,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderLeftWidth: 3,
   },
   adviceIconWrap: {
     width: 32,
     height: 32,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     alignItems: "center" as const,
     justifyContent: "center" as const,
   },
@@ -191,11 +193,11 @@ const styles = {
     gap: 2,
   },
   adviceTitle: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700" as const,
   },
   adviceMessage: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     lineHeight: 16,
   },

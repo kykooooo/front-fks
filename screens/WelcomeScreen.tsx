@@ -18,7 +18,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useHaptics } from "../hooks/useHaptics";
-import { theme } from "../constants/theme";
+import { theme, TYPE, RADIUS } from "../constants/theme";
 
 const palette = theme.colors;
 
@@ -61,7 +61,7 @@ function Slide({ item, width, height }: { item: SlideData; width: number; height
       />
       <View style={styles.tint} />
       <LinearGradient
-        colors={["transparent", "rgba(0,0,0,0.7)", "rgba(0,0,0,0.92)"]}
+        colors={["transparent", theme.colors.black70, theme.colors.black92]}
         locations={[0.3, 0.6, 1]}
         style={styles.gradient}
       />
@@ -171,14 +171,14 @@ export default function WelcomeScreen({ onComplete }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: theme.colors.black,
   },
   slide: {
     position: "relative" as const,
   },
   tint: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.15)",
+    backgroundColor: theme.colors.black15,
   },
   gradient: {
     position: "absolute",
@@ -194,20 +194,20 @@ const styles = StyleSheet.create({
     right: 24,
   },
   title: {
-    fontSize: 34,
+    fontSize: TYPE.display.sm.fontSize,
     fontWeight: "900",
-    color: "#fff",
+    color: theme.colors.white,
     lineHeight: 42,
-    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowColor: theme.colors.black60,
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 6,
   },
   subtitle: {
-    fontSize: 16,
-    color: "rgba(255,255,255,0.85)",
+    fontSize: TYPE.body.fontSize,
+    color: theme.colors.white85,
     marginTop: 12,
     lineHeight: 22,
-    textShadowColor: "rgba(0,0,0,0.5)",
+    textShadowColor: theme.colors.black50,
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
@@ -230,14 +230,14 @@ const styles = StyleSheet.create({
   dot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
+    borderRadius: RADIUS.xs,
   },
   dotActive: {
-    backgroundColor: "#fff",
+    backgroundColor: theme.colors.white,
     width: 24,
   },
   dotInactive: {
-    backgroundColor: "rgba(255,255,255,0.35)",
+    backgroundColor: theme.colors.white35,
   },
   ctaRow: {
     width: "100%",
@@ -246,7 +246,7 @@ const styles = StyleSheet.create({
   ctaPrimary: {
     width: "100%",
     backgroundColor: palette.accent,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     paddingVertical: 17,
     alignItems: "center",
     ...theme.shadow.accent,
@@ -256,17 +256,17 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   ctaPrimaryText: {
-    fontSize: 17,
+    fontSize: TYPE.subtitle.fontSize,
     fontWeight: "700",
-    color: "#fff",
+    color: theme.colors.white,
     letterSpacing: 0.3,
   },
   loginLink: {
     paddingVertical: 10,
   },
   loginLinkText: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "600",
-    color: "rgba(255,255,255,0.7)",
+    color: theme.colors.white70,
   },
 });

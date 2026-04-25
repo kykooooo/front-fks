@@ -1,7 +1,7 @@
 // screens/videoLibrary/components/FilterChip.tsx
 import React from "react";
 import { Text, StyleSheet, TouchableOpacity } from "react-native";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 
 const palette = theme.colors;
 
@@ -27,12 +27,12 @@ const styles = StyleSheet.create({
   chip: {
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
   },
   chipActive: { backgroundColor: palette.accentSoft, borderColor: palette.accent },
-  chipText: { fontSize: 12, color: palette.sub, fontWeight: "600" },
+  chipText: { fontSize: TYPE.caption.fontSize, color: palette.sub, fontWeight: "600" },
   chipTextActive: { color: palette.accent },
 });

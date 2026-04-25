@@ -1,4 +1,4 @@
-// screens/ProfileSetupScreen.tsx
+// Profile setup screen
 // Setup profil multi-étapes — image de foot en fond, même DA que le reste de l'app
 
 import React, { useEffect, useRef, useState } from "react";
@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   Keyboard,
+  Alert,
   StyleSheet,
   ScrollView,
   Platform,
@@ -19,7 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { getAuth } from "firebase/auth";
+import { getAuth, signOut } from "firebase/auth";
 import { useHaptics } from "../hooks/useHaptics";
 import { db } from "../services/firebase";
 import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
@@ -27,35 +28,53 @@ import { LoadingOverlay } from "../components/ui/LoadingOverlay";
 import { findClubByInviteCode, normalizeInviteCode, setClubMembership } from "../repositories/clubsRepo";
 import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
+import { useAuthFlowStore } from "../state/authFlowStore";
 import { showToast } from "../utils/toast";
 import { runShake } from "../utils/animations";
 import { useAppModeStore } from "../state/appModeStore";
-import { theme } from "../constants/theme";
-import { AuthBackground, AUTH_IMAGES } from "../components/auth/AuthBackground";
+import { theme, TYPE, RADIUS } from "../constants/theme";
+import { AuthBackground } from "../components/auth/AuthBackground";
+import { navigationRef } from "../navigation/navigationRef";
+import InjuryForm from "../components/InjuryForm";
+import type { InjuryRecord } from "../domain/types";
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 4;
+const HEALTH_CONSENT_VERSION = "1.0";
 const palette = theme.colors;
+const authColors = {
+  text: theme.colors.zinc50,
+  sub: theme.colors.zinc400,
+  muted: theme.colors.white45,
+  border: theme.colors.white10,
+  borderSoft: theme.colors.white12,
+};
 
 /* ─── Steps config ─── */
 const STEPS: { label: string; icon: keyof typeof Ionicons.glyphMap; subtitle: string }[] = [
-  { label: "Identite", icon: "person-outline", subtitle: "Dis-nous qui tu es" },
-  { label: "Objectif", icon: "flag-outline", subtitle: "Quel est ton but ?" },
-  { label: "Club", icon: "people-outline", subtitle: "Tes entraînements & matchs" },
-  { label: "Salle", icon: "barbell-outline", subtitle: "Ton acces salle" },
-  { label: "Materiel", icon: "home-outline", subtitle: "Ton equipement hors salle" },
+  { label: "Profil", icon: "person-outline", subtitle: "Qui tu es" },
+  { label: "Planning", icon: "calendar-outline", subtitle: "Ton rythme de jeu" },
+  { label: "Matériel", icon: "barbell-outline", subtitle: "Avec quoi tu t'entraînes" },
+  { label: "Bien-être", icon: "medical-outline", subtitle: "Ton corps aujourd'hui" },
 ];
 
 /* ─── Constants ─── */
 const positions = ["Gardien", "Defenseur", "Milieu", "Attaquant"] as const;
-const levels = ["Amateur", "Regional", "National", "Semi-pro", "Pro"] as const;
+const levels = ["Loisir", "Compétition", "Haut niveau"] as const;
 const dominantFeet = ["Pied droit", "Pied gauche", "Ambidextre"] as const;
 const objectives = [
-  "Etre en forme toute la saison",
-  "Gagner en vitesse / explosivite",
+  "Être en forme toute la saison",
+  "Gagner en vitesse / explosivité",
   "Mieux encaisser les entraînements et les matchs",
-  "Reprendre apres une blessure",
+  "Reprendre après une blessure",
 ] as const;
 const fksSessionsOptions = ["1", "2", "3", "4"] as const;
+
+const STEP_CONTEXT = [
+  { badge: "Base", detail: "Ton role, ton poste et tes reperes terrain." },
+  { badge: "Planning", detail: "Ton objectif et ton rythme club / matchs." },
+  { badge: "Setup", detail: "Ou et avec quoi tu t'entraines." },
+  { badge: "Sante", detail: "Zones a menager pour cette periode." },
+] as const;
 
 const gymEquipmentOptions = [
   { id: "barbell", label: "Barre + poids libres" },
@@ -91,6 +110,76 @@ const homeEquipmentOptions = [
   { id: "home_foam_roller", label: "Foam roller (chez toi)" },
   { id: "home_yoga_mat", label: "Tapis de sol (chez toi)" },
 ];
+
+const groupOptions = <T extends { id: string }>(options: readonly T[], ids: string[]) =>
+  ids
+    .map((id) => options.find((option) => option.id === id))
+    .filter((option): option is T => Boolean(option));
+
+const gymEquipmentGroups = [
+  {
+    title: "Charges libres",
+    options: groupOptions(gymEquipmentOptions, [
+      "barbell",
+      "dumbbells_light",
+      "dumbbells_medium",
+      "dumbbells_heavy",
+      "kettlebell",
+    ]),
+  },
+  {
+    title: "Postes lourds",
+    options: groupOptions(gymEquipmentOptions, [
+      "squat_rack",
+      "bench",
+      "pullup_bar",
+      "smith_machine",
+    ]),
+  },
+  {
+    title: "Machines",
+    options: groupOptions(gymEquipmentOptions, ["leg_press", "cable_machine"]),
+  },
+  {
+    title: "Petit matos",
+    options: groupOptions(gymEquipmentOptions, [
+      "box_plyo",
+      "bosu",
+      "foam_roller",
+      "yoga_mat",
+    ]),
+  },
+] as const;
+
+const homeEquipmentGroups = [
+  {
+    title: "Lieux",
+    options: groupOptions(homeEquipmentOptions, ["field", "street_area", "indoor_small"]),
+  },
+  {
+    title: "Balisage",
+    options: groupOptions(homeEquipmentOptions, [
+      "cones",
+      "flat_markers",
+      "speed_ladder",
+      "mini_hurdles",
+    ]),
+  },
+  {
+    title: "Renfo",
+    options: groupOptions(homeEquipmentOptions, [
+      "minibands",
+      "long_bands",
+      "home_dumbbells",
+      "home_kettlebell",
+      "sandbag",
+    ]),
+  },
+  {
+    title: "Recup",
+    options: groupOptions(homeEquipmentOptions, ["home_foam_roller", "home_yoga_mat"]),
+  },
+] as const;
 
 const daysOfWeek = [
   { id: "mon", label: "Lun" }, { id: "tue", label: "Mar" }, { id: "wed", label: "Mer" },
@@ -133,8 +222,17 @@ export default function ProfileSetupScreen() {
   const [homeEquipment, setHomeEquipment] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Étape 4 — Bien-être (MVP blessures Jour 3).
+  // `hasInjury === ""` : choix pas encore fait (bloque la validation).
+  // `hasInjury === "no"` : aucune zone sensible → pas de consentement nécessaire.
+  // `hasInjury === "yes"` : zone sensible → InjuryForm + 2 checkboxes obligatoires.
+  const [hasInjury, setHasInjury] = useState<"no" | "yes" | "">("");
+  const [injury, setInjury] = useState<InjuryRecord | null>(null);
+  const [healthConsentOk, setHealthConsentOk] = useState(false);
+
   const currentMode = useAppModeStore((s) => s.mode);
   const setModeForUid = useAppModeStore((s) => s.setModeForUid);
+  const markProfileCompleted = useAuthFlowStore((s) => s.markProfileCompleted);
   const [selectedMode, setSelectedMode] = useState<"player" | "coach" | "">(currentMode ?? "");
 
   const shake = useRef(new Animated.Value(0)).current;
@@ -224,34 +322,49 @@ export default function ProfileSetupScreen() {
   const validateStep = (): boolean => {
     switch (step) {
       case 0:
-        if (selectedMode !== "player" && selectedMode !== "coach") { fail("Champs manquants", "Choisis ton role (joueur ou coach)."); return false; }
-        if (!firstName.trim()) { fail("Champs manquants", "Merci d'indiquer ton prenom."); return false; }
+        if (selectedMode !== "player" && selectedMode !== "coach") { fail("Champs manquants", "Choisis ton rôle (joueur ou coach)."); return false; }
+        if (!firstName.trim()) { fail("Champs manquants", "Merci d'indiquer ton prénom."); return false; }
         if (!positions.includes(position as any)) { fail("Champs manquants", "Choisis ton poste."); return false; }
         if (!levels.includes(level as any)) { fail("Champs manquants", "Indique ton niveau."); return false; }
         if (!dominantFeet.includes(dominantFoot as any)) { fail("Champs manquants", "Choisis ton pied fort."); return false; }
         return true;
-      case 1:
+      case 1: {
         if (!objectives.includes(mainObjective as any)) { fail("Champs manquants", "Choisis ton objectif principal."); return false; }
-        if (!fksSessionsOptions.includes(targetFksSessionsPerWeek as any)) { fail("Champs manquants", "Indique tes seances FKS / semaine."); return false; }
-        return true;
-      case 2: {
+        if (!fksSessionsOptions.includes(targetFksSessionsPerWeek as any)) { fail("Champs manquants", "Indique tes séances FKS / semaine."); return false; }
         const trainings = Number(clubTrainingsPerWeek);
         const matches = Number(matchesPerWeek);
-        if (!Number.isFinite(trainings) || trainings < 0) { fail("Valeur invalide", "Entrainements/semaine doit etre positif."); return false; }
-        if (!Number.isFinite(matches) || matches < 0) { fail("Valeur invalide", "Matchs/semaine doit etre positif."); return false; }
-        if (!hasClubTrainings) { fail("Champs manquants", "Indique si tu as des entrainements club."); return false; }
-        if (hasClubTrainings === "oui" && clubTrainingDays.length === 0) { fail("Champs manquants", "Precise les jours club."); return false; }
-        if (matches > 0 && matchDays.length === 0) { fail("Champs manquants", "Precise les jours de match."); return false; }
+        if (hasClubTrainings === "oui") {
+          if (!Number.isFinite(trainings) || trainings < 0) { fail("Valeur invalide", "Entraînements/semaine doit être positif."); return false; }
+          if (clubTrainingDays.length === 0) { fail("Champs manquants", "Précise les jours club."); return false; }
+        }
+        if (Number.isFinite(matches) && matches > 0 && matchDays.length === 0) { fail("Champs manquants", "Précise les jours de match."); return false; }
         return true;
       }
-      case 3:
-        if (!hasGymAccess) { fail("Champs manquants", "Indique si tu as acces a une salle."); return false; }
-        if (hasGymAccess !== "non" && gymEquipment.length === 0) { fail("Champs manquants", "Selectionne au moins un materiel en salle."); return false; }
+      case 2:
+        // Matériel : pas de validation stricte — le joueur peut n'avoir rien
         return true;
-      case 4:
-        if (!hasHomeEquipment) { fail("Champs manquants", "Indique si tu as du materiel hors salle."); return false; }
-        if (hasHomeEquipment === "oui" && homeEquipment.length === 0) { fail("Champs manquants", "Selectionne au moins un materiel."); return false; }
+      case 3: {
+        // Bien-être — obligatoire : choix "non" ou "oui" + si "oui", zone + niveau + 2 checkboxes
+        if (hasInjury !== "no" && hasInjury !== "yes") {
+          fail("Champ manquant", "Dis-nous si tu as une zone sensible ou non.");
+          return false;
+        }
+        if (hasInjury === "yes") {
+          if (!injury) {
+            fail("Zone sensible à préciser", "Indique la zone concernée avant de continuer.");
+            return false;
+          }
+          if ((injury.severity ?? 0) < 1) {
+            fail("Niveau de gêne à préciser", "Choisis un niveau de gêne (légère, modérée, forte).");
+            return false;
+          }
+          if (!healthConsentOk) {
+            fail("Consentement requis", "Merci de cocher les deux cases pour continuer.");
+            return false;
+          }
+        }
         return true;
+      }
       default:
         return true;
     }
@@ -294,6 +407,20 @@ export default function ProfileSetupScreen() {
         await setClubMembership({ clubId: club.id, uid: user.uid, role: "player" });
       }
 
+      // Bien-être (étape 4) — sérialisation conditionnelle.
+      // Si le joueur a déclaré une zone sensible, on enregistre activeInjuries
+      // (tableau, prêt pour multi-zones futur) + healthConsent RGPD.
+      // Sinon, activeInjuries est explicitement vidé pour neutraliser un état
+      // résiduel (réinscription après "marquer résolue" d'un profil précédent).
+      const nowISO = new Date().toISOString();
+      const injuryPayload =
+        hasInjury === "yes" && injury
+          ? {
+              activeInjuries: [injury],
+              healthConsent: { givenAt: nowISO, version: HEALTH_CONSENT_VERSION },
+            }
+          : { activeInjuries: [] };
+
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
         firstName: firstName.trim(),
@@ -308,12 +435,28 @@ export default function ProfileSetupScreen() {
         gymEquipment,
         hasHomeEquipment: hasHomeEquipment === "oui",
         homeEquipment,
+        ...injuryPayload,
         profileCompleted: true,
         updatedAt: serverTimestamp(),
       }, { merge: true });
 
+      markProfileCompleted(user.uid);
+      setTimeout(() => {
+        if (!navigationRef.isReady()) return;
+        navigationRef.resetRoot({
+          index: 0,
+          routes: [
+            {
+              name: "Tabs",
+              params: {
+                screen: selectedMode === "coach" ? "Coach" : "Home",
+              },
+            },
+          ],
+        });
+      }, 0);
       haptics.success();
-      showToast({ type: "success", title: "Profil enregistre", message: "Configuration terminee !" });
+      showToast({ type: "success", title: "Profil enregistré", message: "Configuration terminée !" });
     } catch (error) {
       if (__DEV__) console.error("Erreur sauvegarde profil:", error);
       runShake(shake);
@@ -348,45 +491,104 @@ export default function ProfileSetupScreen() {
     </TouchableOpacity>
   );
 
+  const Tile = ({
+    label: lbl,
+    selected,
+    onPress,
+    compact = false,
+  }: {
+    label: string;
+    selected: boolean;
+    onPress: () => void;
+    compact?: boolean;
+  }) => (
+    <TouchableOpacity
+      style={[styles.tile, compact && styles.tileCompact, selected && styles.tileSelected]}
+      onPress={() => { hapticSelect(); onPress(); }}
+      activeOpacity={0.7}
+    >
+      <Text style={[styles.tileText, selected && styles.tileTextSelected]}>{lbl}</Text>
+      {selected ? <Ionicons name="checkmark-circle" size={18} color={palette.accent} /> : null}
+    </TouchableOpacity>
+  );
+
+  const stepSummary = (() => {
+    switch (step) {
+      case 0:
+        return [
+          selectedMode === "player" ? "Joueur" : selectedMode === "coach" ? "Coach" : "",
+          position || "",
+          level || "",
+          dominantFoot || "",
+        ].filter(Boolean);
+      case 1:
+        return [
+          mainObjective ? "Objectif choisi" : "",
+          targetFksSessionsPerWeek ? `${targetFksSessionsPerWeek} séances / sem` : "",
+          hasClubTrainings === "oui" ? `Club ${clubTrainingDays.length}j` : "Sans club",
+          matchesPerWeek && Number(matchesPerWeek) > 0 ? `${matchesPerWeek} match(s)` : "",
+        ].filter(Boolean);
+      case 2:
+        return [
+          hasGymAccess === "oui" ? "Salle" : hasGymAccess === "occasionnel" ? "Salle parfois" : "Sans salle",
+          gymEquipment.length ? `${gymEquipment.length} matos salle` : "",
+          hasHomeEquipment === "oui" ? `${homeEquipment.length} matos perso` : "Poids du corps",
+        ].filter(Boolean);
+      case 3:
+        return [
+          hasInjury === "no" ? "Aucune zone sensible" : "",
+          hasInjury === "yes" && injury?.area ? `Zone : ${injury.area}` : "",
+          hasInjury === "yes" && injury?.severity
+            ? `Gêne ${injury.severity === 1 ? "légère" : injury.severity === 2 ? "modérée" : "forte"}`
+            : "",
+        ].filter(Boolean);
+      default:
+        return [];
+    }
+  })();
+
   /* ─── Step content ─── */
   const renderStep = () => {
     switch (step) {
       case 0:
         return (
           <>
+            <View style={styles.introCard}>
+              <Text style={styles.introTitle}>On pose ton profil de jeu</Text>
+              <Text style={styles.introText}>
+                Quelques infos simples pour que FKS te place dans le bon couloir des le debut.
+              </Text>
+            </View>
+
             <Text style={styles.fieldLabel}>Tu es...</Text>
-            <Choice label="Joueur" selected={selectedMode === "player"} onPress={() => setSelectedMode("player")} />
-            <Choice label="Coach" selected={selectedMode === "coach"} onPress={() => setSelectedMode("coach")} />
+            <View style={styles.tileGrid}>
+              <Tile label="Joueur" selected={selectedMode === "player"} onPress={() => setSelectedMode("player")} compact />
+              <Tile label="Coach" selected={selectedMode === "coach"} onPress={() => setSelectedMode("coach")} compact />
+            </View>
 
             <Text style={styles.fieldLabel}>Prenom</Text>
             <TextInput
               style={styles.input}
               placeholder="Ex: Kylian"
-              placeholderTextColor={palette.muted}
+              placeholderTextColor={authColors.muted}
               value={firstName}
               onChangeText={setFirstName}
               autoCapitalize="words"
             />
 
-            <Text style={styles.fieldLabel}>Code club (invitation)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ex: FKSFC-2026"
-              placeholderTextColor={palette.muted}
-              value={clubInviteCode}
-              onChangeText={setClubInviteCode}
-              autoCapitalize="characters"
-            />
-
             <Text style={styles.fieldLabel}>Poste</Text>
-            {positions.map((p) => (
-              <Choice key={p} label={p} selected={position === p} onPress={() => setPosition(p)} />
-            ))}
+            <View style={styles.tileGrid}>
+              {positions.map((p) => (
+                <Tile key={p} label={p} selected={position === p} onPress={() => setPosition(p)} compact />
+              ))}
+            </View>
 
             <Text style={styles.fieldLabel}>Niveau</Text>
-            {levels.map((l) => (
-              <Choice key={l} label={l} selected={level === l} onPress={() => setLevel(l)} />
-            ))}
+            <View style={styles.tileGrid}>
+              {levels.map((l) => (
+                <Tile key={l} label={l} selected={level === l} onPress={() => setLevel(l)} compact />
+              ))}
+            </View>
 
             <Text style={styles.fieldLabel}>Pied fort</Text>
             <View style={styles.chipRow}>
@@ -400,39 +602,18 @@ export default function ProfileSetupScreen() {
       case 1:
         return (
           <>
-            <View style={styles.cycleCard}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cycleLabel}>
-                  {cycleLabel ? `${cycleLabel} · ${cycleProgress}/${MICROCYCLE_TOTAL_SESSIONS_DEFAULT}` : "Aucun cycle actif"}
-                </Text>
-                <Text style={styles.cycleHint}>Gere ton cycle depuis l'accueil ou le profil.</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.cycleButton}
-                onPress={() => navigation.navigate("CycleModal", { mode: cycleLabel ? "manage" : "select", origin: "profile" })}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.cycleButtonText}>{cycleLabel ? "Gerer" : "Choisir"}</Text>
-              </TouchableOpacity>
-            </View>
-
             <Text style={styles.fieldLabel}>Objectif principal avec FKS</Text>
             {objectives.map((o) => (
               <Choice key={o} label={o} selected={mainObjective === o} onPress={() => setMainObjective(o)} />
             ))}
 
-            <Text style={styles.fieldLabel}>Seances FKS / semaine (hors club)</Text>
+            <Text style={styles.fieldLabel}>Séances FKS / semaine (hors club)</Text>
             <View style={styles.chipRow}>
               {fksSessionsOptions.map((o) => (
                 <Chip key={o} label={o} selected={targetFksSessionsPerWeek === o} onPress={() => setTargetFksSessionsPerWeek(o)} />
               ))}
             </View>
-          </>
-        );
 
-      case 2:
-        return (
-          <>
             <Text style={styles.fieldLabel}>As-tu des entrainements club ?</Text>
             <View style={styles.chipRow}>
               <Chip label="Oui" selected={hasClubTrainings === "oui"} onPress={() => setHasClubTrainings("oui")} />
@@ -451,21 +632,11 @@ export default function ProfileSetupScreen() {
               </>
             )}
 
-            {hasClubTrainings === "oui" ? (
-              <>
-                <Text style={styles.fieldLabel}>Entrainements club / semaine</Text>
-                <TextInput style={styles.input} keyboardType="number-pad" placeholder="ex: 3"
-                  placeholderTextColor={palette.muted} value={clubTrainingsPerWeek} onChangeText={setClubTrainingsPerWeek} />
-              </>
-            ) : hasClubTrainings === "non" ? (
-              <Text style={styles.hintText}>Aucun entrainement club pris en compte.</Text>
-            ) : null}
-
             <Text style={styles.fieldLabel}>Matchs / semaine</Text>
             <TextInput style={styles.input} keyboardType="number-pad" placeholder="ex: 1"
-              placeholderTextColor={palette.muted} value={matchesPerWeek} onChangeText={setMatchesPerWeek} />
+              placeholderTextColor={authColors.muted} value={matchesPerWeek} onChangeText={setMatchesPerWeek} />
 
-            {Number(matchesPerWeek) > 0 ? (
+            {Number(matchesPerWeek) > 0 && (
               <>
                 <Text style={styles.fieldLabel}>Jours de match</Text>
                 <View style={styles.chipRowWrap}>
@@ -475,53 +646,119 @@ export default function ProfileSetupScreen() {
                   ))}
                 </View>
               </>
-            ) : (
-              <Text style={styles.hintText}>Aucun match selectionne.</Text>
             )}
-
           </>
         );
 
-      case 3:
+      case 2:
         return (
           <>
-            <Text style={styles.fieldLabel}>Acces a une salle de musculation ?</Text>
+            <Text style={styles.fieldLabel}>Accès à une salle ?</Text>
             <View style={styles.chipRow}>
-              <Chip label="Oui regulierement" selected={hasGymAccess === "oui"} onPress={() => setHasGymAccess("oui")} />
-              <Chip label="De temps en temps" selected={hasGymAccess === "occasionnel"} onPress={() => setHasGymAccess("occasionnel")} />
+              <Chip label="Oui" selected={hasGymAccess === "oui"} onPress={() => setHasGymAccess("oui")} />
+              <Chip label="Parfois" selected={hasGymAccess === "occasionnel"} onPress={() => setHasGymAccess("occasionnel")} />
               <Chip label="Non" selected={hasGymAccess === "non"} onPress={() => setHasGymAccess("non")} />
             </View>
 
             {hasGymAccess !== "" && hasGymAccess !== "non" && (
               <>
-                <Text style={styles.fieldLabel}>Materiel disponible en salle</Text>
-                {gymEquipmentOptions.map((o) => (
-                  <Choice key={o.id} label={o.label} selected={gymEquipment.includes(o.id)}
-                    onPress={() => toggleInList(o.id, gymEquipment, setGymEquipment)} />
+                <Text style={styles.fieldLabel}>Matériel en salle</Text>
+                <Text style={styles.hintText}>Coche ce que tu utilises vraiment.</Text>
+                {gymEquipmentGroups.map((group) => (
+                  <View key={group.title} style={styles.optionGroup}>
+                    <View style={styles.groupHeader}>
+                      <Text style={styles.groupTitle}>{group.title}</Text>
+                      <View style={[styles.groupBadge, group.options.some((o) => gymEquipment.includes(o.id)) && styles.groupBadgeActive]}>
+                        <Text style={[styles.groupBadgeText, group.options.some((o) => gymEquipment.includes(o.id)) && styles.groupBadgeTextActive]}>
+                          {group.options.filter((o) => gymEquipment.includes(o.id)).length}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.tileGrid}>
+                      {group.options.map((o) => (
+                        <Tile key={o.id} label={o.label} selected={gymEquipment.includes(o.id)}
+                          onPress={() => toggleInList(o.id, gymEquipment, setGymEquipment)} />
+                      ))}
+                    </View>
+                  </View>
                 ))}
               </>
             )}
-          </>
-        );
 
-      case 4:
-        return (
-          <>
-            <Text style={styles.fieldLabel}>As-tu du materiel chez toi / sur le terrain ?</Text>
+            <Text style={[styles.fieldLabel, { marginTop: 16 }]}>Matériel terrain / maison ?</Text>
             <View style={styles.chipRow}>
               <Chip label="Oui" selected={hasHomeEquipment === "oui"} onPress={() => setHasHomeEquipment("oui")} />
-              <Chip label="Non" selected={hasHomeEquipment === "non"} onPress={() => setHasHomeEquipment("non")} />
+              <Chip label="Non, rien" selected={hasHomeEquipment === "non"} onPress={() => setHasHomeEquipment("non")} />
             </View>
 
             {hasHomeEquipment === "oui" && (
               <>
-                <Text style={styles.fieldLabel}>Materiel hors salle</Text>
-                {homeEquipmentOptions.map((o) => (
-                  <Choice key={o.id} label={o.label} selected={homeEquipment.includes(o.id)}
-                    onPress={() => toggleInList(o.id, homeEquipment, setHomeEquipment)} />
+                <Text style={styles.hintText}>Coche ce qui est vraiment dispo pour toi.</Text>
+                {homeEquipmentGroups.map((group) => (
+                  <View key={group.title} style={styles.optionGroup}>
+                    <View style={styles.groupHeader}>
+                      <Text style={styles.groupTitle}>{group.title}</Text>
+                      <View style={[styles.groupBadge, group.options.some((o) => homeEquipment.includes(o.id)) && styles.groupBadgeActive]}>
+                        <Text style={[styles.groupBadgeText, group.options.some((o) => homeEquipment.includes(o.id)) && styles.groupBadgeTextActive]}>
+                          {group.options.filter((o) => homeEquipment.includes(o.id)).length}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.tileGrid}>
+                      {group.options.map((o) => (
+                        <Tile key={o.id} label={o.label} selected={homeEquipment.includes(o.id)}
+                          onPress={() => toggleInList(o.id, homeEquipment, setHomeEquipment)} />
+                      ))}
+                    </View>
+                  </View>
                 ))}
               </>
             )}
+
+            {hasGymAccess === "non" && hasHomeEquipment === "non" && (
+              <Text style={styles.hintText}>Pas de souci — tes séances seront 100% poids du corps. C'est déjà super efficace !</Text>
+            )}
+          </>
+        );
+
+      case 3:
+        // Étape 4 — Bien-être (MVP blessures Jour 3).
+        // Vocabulaire Option A : "zone sensible" / "gêne" (jamais "blessure" dans l'UI).
+        return (
+          <>
+            <View style={styles.introCard}>
+              <Text style={styles.introTitle}>Une zone sensible ?</Text>
+              <Text style={styles.introText}>On adapte les séances à ton corps.</Text>
+            </View>
+
+            <Text style={styles.fieldLabel}>Où tu en es aujourd'hui</Text>
+            <View style={styles.tileGrid}>
+              <Tile
+                label="Non, tout va bien"
+                selected={hasInjury === "no"}
+                onPress={() => {
+                  setHasInjury("no");
+                  setInjury(null);
+                }}
+              />
+              <Tile
+                label="Oui, je signale une zone sensible"
+                selected={hasInjury === "yes"}
+                onPress={() => setHasInjury("yes")}
+              />
+            </View>
+
+            {hasInjury === "yes" ? (
+              <View style={{ marginTop: 12 }}>
+                <InjuryForm
+                  value={injury}
+                  onChange={setInjury}
+                  requireLegalConsent
+                  onConsentChange={setHealthConsentOk}
+                  onOpenPrivacyPolicy={() => navigation.navigate("PrivacyPolicy")}
+                />
+              </View>
+            ) : null}
           </>
         );
 
@@ -532,27 +769,84 @@ export default function ProfileSetupScreen() {
 
   const isLastStep = step === TOTAL_STEPS - 1;
   const progressPercent = ((step + 1) / TOTAL_STEPS) * 100;
+  const nextButtonLabel = isLastStep
+    ? (loading ? "Enregistrement..." : "Entrer dans FKS")
+    : `Vers ${STEPS[step + 1].label}`;
+  const stepContext = STEP_CONTEXT[step];
+  const handleSignOut = () => {
+    Alert.alert(
+      "Quitter le setup ?",
+      "Tu pourras te reconnecter plus tard avec ce compte ou en choisir un autre.",
+      [
+        { text: "Rester", style: "cancel" },
+        {
+          text: "Se deconnecter",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await signOut(getAuth());
+            } catch {
+              showToast({
+                type: "error",
+                title: "Deconnexion impossible",
+                message: "Impossible de fermer la session pour le moment.",
+              });
+            }
+          },
+        },
+      ]
+    );
+  };
 
   return (
-    <AuthBackground image={AUTH_IMAGES.setup}>
-      <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
+    <AuthBackground>
+      <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
             <View style={{ flex: 1 }}>
 
               {/* ─── Progress section ─── */}
               <View style={styles.progressSection}>
+                <View style={styles.progressTopRow}>
+                  <Text style={styles.progressExitHint}>Pas le bon compte ?</Text>
+                  <TouchableOpacity
+                    style={styles.exitButton}
+                    onPress={handleSignOut}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="log-out-outline" size={16} color={authColors.sub} />
+                    <Text style={styles.exitButtonText}>Se deconnecter</Text>
+                  </TouchableOpacity>
+                </View>
                 <View style={styles.progressLabelRow}>
                   <Text style={styles.progressStep}>Etape {step + 1}/{TOTAL_STEPS}</Text>
                   <Text style={styles.progressName}>{STEPS[step].label}</Text>
                 </View>
                 <View style={styles.progressBarBg}>
                   <LinearGradient
-                    colors={[palette.accent, "#ff9a4a"]}
+                    colors={[palette.accent, theme.colors.accentAlt]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={[styles.progressBarFill, { width: `${progressPercent}%` }]}
                   />
+                </View>
+                <View style={styles.progressMetaRow}>
+                  <View style={styles.progressMetaPill}>
+                    <Text style={styles.progressMetaText}>{stepContext.badge}</Text>
+                  </View>
+                  <Text style={styles.progressMetaHint}>{stepContext.detail}</Text>
+                </View>
+                <View style={styles.progressDots}>
+                  {STEPS.map((item, index) => (
+                    <View
+                      key={`${item.label}-${index}`}
+                      style={[
+                        styles.progressDot,
+                        index < step && styles.progressDotDone,
+                        index === step && styles.progressDotActive,
+                      ]}
+                    />
+                  ))}
                 </View>
               </View>
 
@@ -568,12 +862,12 @@ export default function ProfileSetupScreen() {
                   {/* Step header */}
                   <View style={styles.stepHeader}>
                     <LinearGradient
-                      colors={[palette.accent, "#ff9a4a"]}
+                      colors={[palette.accent, theme.colors.accentAlt]}
                       style={styles.stepIconCircle}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                     >
-                      <Ionicons name={STEPS[step].icon} size={28} color="#fff" />
+                      <Ionicons name={STEPS[step].icon} size={28} color={theme.colors.white} />
                     </LinearGradient>
                     <View>
                       <Text style={styles.stepTitle}>{STEPS[step].label}</Text>
@@ -586,6 +880,19 @@ export default function ProfileSetupScreen() {
                     {renderStep()}
                   </View>
 
+                  {stepSummary.length > 0 ? (
+                    <View style={styles.summaryCard}>
+                      <Text style={styles.summaryTitle}>Recap rapide</Text>
+                      <View style={styles.summaryRow}>
+                        {stepSummary.map((item) => (
+                          <View key={item} style={styles.summaryPill}>
+                            <Text style={styles.summaryPillText}>{item}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  ) : null}
+
                 </Animated.View>
               </ScrollView>
 
@@ -593,7 +900,7 @@ export default function ProfileSetupScreen() {
               <View style={styles.footer}>
                 {step > 0 ? (
                   <TouchableOpacity style={styles.backButton} onPress={goBack} activeOpacity={0.7}>
-                    <Ionicons name="chevron-back" size={20} color={palette.sub} />
+                    <Ionicons name="chevron-back" size={20} color={authColors.sub} />
                     <Text style={styles.backText}>Retour</Text>
                   </TouchableOpacity>
                 ) : (
@@ -607,18 +914,18 @@ export default function ProfileSetupScreen() {
                   activeOpacity={0.85}
                 >
                   <LinearGradient
-                    colors={[palette.accent, "#ff9a4a"]}
+                    colors={[palette.accent, theme.colors.accentAlt]}
                     style={styles.nextButtonGradient}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                   >
                     <Text style={styles.nextButtonText}>
-                      {isLastStep ? (loading ? "Enregistrement..." : "Terminer") : "Suivant"}
+                      {nextButtonLabel}
                     </Text>
                     <Ionicons
                       name={isLastStep ? "checkmark-circle" : "arrow-forward"}
                       size={20}
-                      color="#fff"
+                      color={theme.colors.white}
                     />
                   </LinearGradient>
                 </TouchableOpacity>
@@ -651,18 +958,43 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     gap: 10,
   },
+  progressTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  progressExitHint: {
+    fontSize: TYPE.caption.fontSize,
+    color: authColors.sub,
+  },
+  exitButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: RADIUS.pill,
+    backgroundColor: theme.colors.white05,
+    borderWidth: 1,
+    borderColor: theme.colors.white08,
+  },
+  exitButtonText: {
+    fontSize: TYPE.caption.fontSize,
+    fontWeight: "700",
+    color: authColors.sub,
+  },
   progressLabelRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
   progressStep: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "600",
-    color: palette.sub,
+    color: authColors.sub,
   },
   progressName: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     color: palette.accent,
     textTransform: "uppercase",
@@ -670,13 +1002,56 @@ const styles = StyleSheet.create({
   },
   progressBarBg: {
     height: 6,
-    borderRadius: 3,
-    backgroundColor: palette.borderSoft,
+    borderRadius: RADIUS.xs,
+    backgroundColor: authColors.borderSoft,
     overflow: "hidden",
   },
   progressBarFill: {
     height: "100%",
-    borderRadius: 3,
+    borderRadius: RADIUS.xs,
+  },
+  progressMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  progressMetaPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: RADIUS.pill,
+    backgroundColor: theme.colors.white06,
+    borderWidth: 1,
+    borderColor: theme.colors.white07,
+  },
+  progressMetaText: {
+    fontSize: TYPE.micro.fontSize,
+    fontWeight: "700",
+    color: palette.accent,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  progressMetaHint: {
+    flex: 1,
+    fontSize: TYPE.caption.fontSize,
+    lineHeight: 17,
+    color: authColors.sub,
+  },
+  progressDots: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  progressDot: {
+    flex: 1,
+    height: 4,
+    borderRadius: RADIUS.pill,
+    backgroundColor: theme.colors.white10,
+  },
+  progressDotDone: {
+    backgroundColor: theme.colors.accentSoft45,
+  },
+  progressDotActive: {
+    backgroundColor: palette.accent,
   },
 
   /* Scroll */
@@ -696,38 +1071,73 @@ const styles = StyleSheet.create({
   stepIconCircle: {
     width: 56,
     height: 56,
-    borderRadius: 18,
+    borderRadius: RADIUS.lg,
     justifyContent: "center",
     alignItems: "center",
     ...theme.shadow.accent,
   },
   stepTitle: {
-    fontSize: 24,
+    fontSize: TYPE.title.fontSize,
     fontWeight: "800",
-    color: palette.text,
+    color: authColors.text,
   },
   stepSubtitle: {
-    fontSize: 14,
-    color: palette.sub,
+    fontSize: TYPE.body.fontSize,
+    color: authColors.sub,
     marginTop: 2,
   },
 
   /* Card — semi-transparent pour voir l'image de fond */
   card: {
-    borderRadius: theme.radius.xxl,
+    borderRadius: RADIUS.xl,
     padding: 20,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: theme.colors.panel92,
     borderWidth: 1,
-    borderColor: palette.borderSoft,
+    borderColor: theme.colors.white07,
     overflow: "hidden",
-    gap: 4,
+    gap: 6,
+    ...theme.shadow.soft,
+  },
+  summaryCard: {
+    marginTop: 12,
+    padding: 14,
+    borderRadius: RADIUS.lg,
+    backgroundColor: theme.colors.white04,
+    borderWidth: 1,
+    borderColor: theme.colors.white06,
+  },
+  summaryTitle: {
+    fontSize: TYPE.caption.fontSize,
+    fontWeight: "700",
+    color: authColors.sub,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 10,
+  },
+  summaryPill: {
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: RADIUS.pill,
+    backgroundColor: theme.colors.white05,
+    borderWidth: 1,
+    borderColor: theme.colors.white07,
+  },
+  summaryPillText: {
+    fontSize: TYPE.caption.fontSize,
+    fontWeight: "600",
+    color: authColors.text,
   },
 
   /* Fields */
   fieldLabel: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
-    color: palette.sub,
+    color: authColors.sub,
     marginTop: 14,
     marginBottom: 8,
     textTransform: "uppercase",
@@ -735,13 +1145,13 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: palette.borderSoft,
-    borderRadius: theme.radius.md,
+    borderColor: theme.colors.white08,
+    borderRadius: RADIUS.md,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    fontSize: 15,
-    color: palette.text,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    fontSize: TYPE.body.fontSize,
+    color: authColors.text,
+    backgroundColor: theme.colors.black72,
   },
 
   /* Choice */
@@ -749,8 +1159,8 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 18,
     borderWidth: 1,
-    borderColor: palette.borderSoft,
-    borderRadius: theme.radius.md,
+    borderColor: authColors.border,
+    borderRadius: RADIUS.md,
     marginBottom: 8,
     backgroundColor: "transparent",
     flexDirection: "row",
@@ -762,8 +1172,8 @@ const styles = StyleSheet.create({
     backgroundColor: palette.accentSoft,
   },
   choiceText: {
-    color: palette.text,
-    fontSize: 15,
+    color: authColors.text,
+    fontSize: TYPE.body.fontSize,
     flex: 1,
   },
   choiceTextSelected: {
@@ -786,9 +1196,9 @@ const styles = StyleSheet.create({
   chip: {
     paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: theme.radius.md,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: palette.borderSoft,
+    borderColor: authColors.border,
     backgroundColor: "transparent",
   },
   chipSelected: {
@@ -796,14 +1206,114 @@ const styles = StyleSheet.create({
     backgroundColor: palette.accentSoft,
   },
   chipText: {
-    color: palette.sub,
+    color: authColors.sub,
     fontWeight: "600",
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
   },
   chipTextSelected: {
     color: palette.accent,
     fontWeight: "700",
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
+  },
+
+  introCard: {
+    padding: 14,
+    borderRadius: RADIUS.lg,
+    backgroundColor: theme.colors.white04,
+    borderWidth: 1,
+    borderColor: theme.colors.white06,
+    marginBottom: 6,
+  },
+  introTitle: {
+    fontSize: TYPE.body.fontSize,
+    fontWeight: "700",
+    color: authColors.text,
+  },
+  introText: {
+    marginTop: 4,
+    fontSize: TYPE.caption.fontSize,
+    lineHeight: 18,
+    color: authColors.sub,
+  },
+  tileGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  tile: {
+    minHeight: 70,
+    width: "48%",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: authColors.border,
+    backgroundColor: theme.colors.white03,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  tileCompact: {
+    minHeight: 58,
+  },
+  tileSelected: {
+    borderColor: palette.accent,
+    backgroundColor: palette.accentSoft,
+  },
+  tileText: {
+    flex: 1,
+    color: authColors.text,
+    fontSize: TYPE.body.fontSize,
+    lineHeight: 19,
+    fontWeight: "600",
+  },
+  tileTextSelected: {
+    color: palette.accent,
+  },
+  optionGroup: {
+    gap: 10,
+    marginTop: 12,
+    padding: 14,
+    borderRadius: RADIUS.lg,
+    backgroundColor: theme.colors.white03,
+    borderWidth: 1,
+    borderColor: theme.colors.white05,
+  },
+  groupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  groupTitle: {
+    fontSize: TYPE.caption.fontSize,
+    fontWeight: "700",
+    color: authColors.sub,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  groupBadge: {
+    minWidth: 26,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: RADIUS.pill,
+    alignItems: "center",
+    backgroundColor: theme.colors.white05,
+    borderWidth: 1,
+    borderColor: theme.colors.white06,
+  },
+  groupBadgeActive: {
+    backgroundColor: palette.accentSoft,
+    borderColor: theme.colors.accentSoft28,
+  },
+  groupBadgeText: {
+    fontSize: TYPE.caption.fontSize,
+    fontWeight: "700",
+    color: authColors.sub,
+  },
+  groupBadgeTextActive: {
+    color: palette.accent,
   },
 
   /* Cycle card */
@@ -813,41 +1323,41 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 8,
     padding: 14,
-    borderRadius: theme.radius.md,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    borderRadius: RADIUS.md,
+    backgroundColor: theme.colors.white04,
     borderWidth: 1,
-    borderColor: palette.borderSoft,
+    borderColor: authColors.border,
   },
   cycleLabel: {
-    color: palette.text,
-    fontSize: 14,
+    color: authColors.text,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
   },
   cycleHint: {
-    color: palette.sub,
-    fontSize: 12,
+    color: authColors.sub,
+    fontSize: TYPE.caption.fontSize,
     lineHeight: 16,
     marginTop: 2,
   },
   cycleButton: {
     paddingVertical: 8,
     paddingHorizontal: 16,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     borderWidth: 1,
     borderColor: palette.accent,
     backgroundColor: "transparent",
   },
   cycleButtonText: {
     color: palette.accent,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
   },
 
   hintText: {
-    color: palette.sub,
-    fontSize: 13,
+    color: authColors.sub,
+    fontSize: TYPE.caption.fontSize,
     marginTop: 8,
-    fontStyle: "italic",
+    lineHeight: 18,
   },
 
   /* Footer */
@@ -858,8 +1368,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderTopWidth: 1,
-    borderTopColor: palette.borderSoft,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    borderTopColor: theme.colors.white06,
+    backgroundColor: theme.colors.panel88,
   },
   backButton: {
     flex: 1,
@@ -869,13 +1379,13 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   backText: {
-    fontSize: 14,
-    color: palette.sub,
+    fontSize: TYPE.body.fontSize,
+    color: authColors.sub,
     fontWeight: "600",
   },
   nextButton: {
     flex: 2,
-    borderRadius: theme.radius.lg,
+    borderRadius: RADIUS.lg,
     overflow: "hidden",
     ...theme.shadow.accent,
   },
@@ -888,8 +1398,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   nextButtonText: {
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
-    color: "#fff",
+    color: theme.colors.white,
   },
 });

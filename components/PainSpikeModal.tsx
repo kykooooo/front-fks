@@ -38,7 +38,7 @@
 //     onAcknowledge={acknowledgePainSpike} // depuis useInjuryActions()
 //   />
 
-import React, { useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -74,6 +74,12 @@ type Props = {
 };
 
 export function PainSpikeModal({ visible, onClose, onModifyInjury, onAcknowledge }: Props) {
+  // `submitting` désactive les 3 boutons pendant l'appel `acknowledgePainSpike`
+  // (évite double-clic / spam). Reset quel que soit le résultat (succès ou
+  // échec). Le modal reste ouvert en cas d'échec — c'est le parent qui gère
+  // le toast d'erreur (cf. HomeScreen.handlePainSpikeAcknowledge).
+  const [submitting, setSubmitting] = useState(false);
+
   const callEmergency = useCallback(() => {
     Linking.openURL("tel:15").catch(() => {
       // Silent fallback (tablette / simulateur) : le joueur voit le n° dans
@@ -82,17 +88,30 @@ export function PainSpikeModal({ visible, onClose, onModifyInjury, onAcknowledge
   }, []);
 
   const handleAcknowledge = useCallback(async () => {
+    if (submitting) return;
+    setSubmitting(true);
     try {
       await onAcknowledge();
-    } finally {
+      // Succès : on ferme.
       onClose();
+    } catch {
+      // Échec : on GARDE le modal ouvert pour que le joueur retente.
+      // Le parent (HomeScreen) a déjà toasté l'erreur — on ne duplique pas.
+    } finally {
+      setSubmitting(false);
     }
-  }, [onAcknowledge, onClose]);
+  }, [submitting, onAcknowledge, onClose]);
 
   const handleModify = useCallback(() => {
+    if (submitting) return;
     onModifyInjury();
     onClose();
-  }, [onModifyInjury, onClose]);
+  }, [submitting, onModifyInjury, onClose]);
+
+  const handleEmergency = useCallback(() => {
+    if (submitting) return;
+    callEmergency();
+  }, [submitting, callEmergency]);
 
   return (
     <Modal
@@ -116,8 +135,14 @@ export function PainSpikeModal({ visible, onClose, onModifyInjury, onAcknowledge
 
             <View style={styles.actions}>
               <Pressable
-                style={({ pressed }) => [styles.button, styles.buttonPrimary, pressed && styles.buttonPressed]}
-                onPress={callEmergency}
+                style={({ pressed }) => [
+                  styles.button,
+                  styles.buttonPrimary,
+                  pressed && styles.buttonPressed,
+                  submitting && styles.buttonDisabled,
+                ]}
+                onPress={handleEmergency}
+                disabled={submitting}
                 accessibilityRole="button"
                 accessibilityLabel="Appeler le SAMU au 15"
               >
@@ -126,8 +151,14 @@ export function PainSpikeModal({ visible, onClose, onModifyInjury, onAcknowledge
               </Pressable>
 
               <Pressable
-                style={({ pressed }) => [styles.button, styles.buttonSecondary, pressed && styles.buttonPressed]}
+                style={({ pressed }) => [
+                  styles.button,
+                  styles.buttonSecondary,
+                  pressed && styles.buttonPressed,
+                  submitting && styles.buttonDisabled,
+                ]}
                 onPress={handleModify}
+                disabled={submitting}
                 accessibilityRole="button"
                 accessibilityLabel="Modifier ma zone sensible"
               >
@@ -136,13 +167,21 @@ export function PainSpikeModal({ visible, onClose, onModifyInjury, onAcknowledge
               </Pressable>
 
               <Pressable
-                style={({ pressed }) => [styles.button, styles.buttonTertiary, pressed && styles.buttonPressed]}
+                style={({ pressed }) => [
+                  styles.button,
+                  styles.buttonTertiary,
+                  pressed && styles.buttonPressed,
+                  submitting && styles.buttonDisabled,
+                ]}
                 onPress={handleAcknowledge}
+                disabled={submitting}
                 accessibilityRole="button"
                 accessibilityLabel="J'ai consulté, la déclaration reste active"
               >
                 <Ionicons name="checkmark-circle-outline" size={18} color={theme.colors.sub} />
-                <Text style={styles.buttonTertiaryText}>J'ai consulté, ma déclaration reste active</Text>
+                <Text style={styles.buttonTertiaryText}>
+                  {submitting ? "Enregistrement…" : "J'ai consulté, ma déclaration reste active"}
+                </Text>
               </Pressable>
             </View>
           </ScrollView>
@@ -233,5 +272,8 @@ const styles = StyleSheet.create({
   },
   buttonPressed: {
     opacity: 0.85,
+  },
+  buttonDisabled: {
+    opacity: 0.5,
   },
 });

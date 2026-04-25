@@ -1,9 +1,9 @@
 // utils/globalErrorHandler.ts
 // Gestionnaire global pour les erreurs non capturées (async, promises, etc.)
 
+import * as Sentry from '@sentry/react-native';
 import { classifyError } from './errorHandler';
 import { showToast } from './toast';
-// Sentry temporarily disabled for Expo SDK 54 compatibility
 
 const toastError = (title: string, message?: string) => {
   showToast({
@@ -31,6 +31,10 @@ export function setupGlobalErrorHandlers() {
         stack: error.stack,
       });
     }
+
+    Sentry.captureException(error, {
+      extra: { fatal: isFatal, type: appError.type },
+    });
 
     if (isFatal) {
       // Erreur fatale : l'app va probablement crasher
@@ -70,6 +74,10 @@ export function safeAsync<T extends (...args: any[]) => Promise<any>>(
         console.error('[safeAsync] Error in async function:', error);
       }
 
+      Sentry.captureException(error, {
+        extra: { context: 'safeAsync' },
+      });
+
       if (onError) {
         onError(error);
       } else {
@@ -104,5 +112,8 @@ export function logError(
   if (__DEV__) {
     console.error('[ErrorLog]', errorLog);
   }
-  // TODO: Re-enable Sentry when compatible with Expo SDK 54
+
+  Sentry.captureException(error, {
+    extra: { context, ...metadata },
+  });
 }

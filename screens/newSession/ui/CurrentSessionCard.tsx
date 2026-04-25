@@ -3,11 +3,13 @@ import { View, Text, TouchableOpacity, FlatList } from "react-native";
 import { palette } from "../theme";
 import type { Exercise, Session } from "../../../domain/types";
 import { toDateKey } from "../../../utils/dateHelpers";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 
 type Props = {
   current: Session;
   nextAllowedISO?: string | null;
   alreadyAppliedToday: boolean;
+  onOpenSession: () => void;
   onFeedback: () => void;
   onAdvanceDay: () => void;
   onRestTwoDays: () => void;
@@ -17,15 +19,16 @@ export function CurrentSessionCard({
   current,
   nextAllowedISO,
   alreadyAppliedToday,
+  onOpenSession,
   onFeedback,
   onAdvanceDay,
   onRestTwoDays,
 }: Props) {
   return (
     <View style={styles.card}>
-      <Text style={styles.cardTitle}>Séance déjà générée</Text>
+      <Text style={styles.cardTitle}>Séance prête</Text>
       <Text style={styles.cardSubtitle}>
-        Complète-la et donne ton feedback avant de générer la suivante.
+        Ouvre-la pour la lancer ou la reprendre. Le feedback vient après la fin.
       </Text>
 
       <Text style={styles.meta}>
@@ -34,7 +37,7 @@ export function CurrentSessionCard({
 
       <FlatList<Exercise>
         data={Array.isArray(current.exercises) ? current.exercises : []}
-        keyExtractor={(e) => e.id}
+        keyExtractor={(exercise) => exercise.id}
         style={styles.list}
         scrollEnabled={false}
         renderItem={({ item }) => (
@@ -54,10 +57,14 @@ export function CurrentSessionCard({
       />
 
       <View style={styles.buttonRow}>
-        <TouchableOpacity style={[styles.cta, styles.ctaPrimary]} onPress={onFeedback}>
-          <Text style={styles.ctaPrimaryText}>Donner mon feedback</Text>
+        <TouchableOpacity style={[styles.cta, styles.ctaPrimary]} onPress={onOpenSession}>
+          <Text style={styles.ctaPrimaryText}>Ouvrir ma séance</Text>
         </TouchableOpacity>
       </View>
+
+      <TouchableOpacity onPress={onFeedback} style={styles.feedbackChip} activeOpacity={0.85}>
+        <Text style={styles.feedbackChipText}>J'ai fini, donner mon feedback</Text>
+      </TouchableOpacity>
 
       <View style={[styles.buttonRow, { marginTop: 10 }]}>
         <TouchableOpacity style={[styles.cta, styles.ctaSecondaryGreen]} onPress={onAdvanceDay}>
@@ -76,7 +83,7 @@ export function CurrentSessionCard({
 
       {alreadyAppliedToday ? (
         <Text style={[styles.helper, { marginTop: 4 }]}>
-          Info : tu as déjà validé une séance aujourd’hui — cette séance est probablement datée demain.
+          Info : tu as déjà validé une séance aujourd'hui — celle-ci est probablement datée demain.
         </Text>
       ) : null}
     </View>
@@ -88,22 +95,22 @@ const styles = {
     padding: 16,
     borderWidth: 1,
     borderColor: palette.border,
-    borderRadius: 18,
+    borderRadius: RADIUS.lg,
     backgroundColor: palette.card,
     marginBottom: 12,
   },
   cardTitle: {
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700" as const,
     color: palette.text,
   },
   cardSubtitle: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     marginTop: 4,
     color: palette.sub,
   },
   meta: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     marginTop: 8,
   },
@@ -114,17 +121,17 @@ const styles = {
     borderBottomColor: palette.borderSoft,
   },
   exerciseName: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "600" as const,
     color: palette.text,
   },
   exerciseDetail: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     marginTop: 2,
   },
   exerciseNotes: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     marginTop: 2,
   },
@@ -136,7 +143,7 @@ const styles = {
   cta: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.border,
     alignItems: "center" as const,
@@ -150,7 +157,22 @@ const styles = {
     color: palette.bg,
     fontWeight: "800" as const,
     textTransform: "uppercase" as const,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
+  },
+  feedbackChip: {
+    alignSelf: "flex-start" as const,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.cardSoft,
+  },
+  feedbackChipText: {
+    color: palette.sub,
+    fontWeight: "700" as const,
+    fontSize: TYPE.caption.fontSize,
   },
   ctaSecondaryGreen: {
     backgroundColor: palette.cardSoft,
@@ -159,7 +181,7 @@ const styles = {
   ctaSecondaryGreenText: {
     color: palette.text,
     fontWeight: "700" as const,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
   },
   ctaSecondaryOrange: {
     backgroundColor: palette.accentSoft,
@@ -168,11 +190,11 @@ const styles = {
   ctaSecondaryOrangeText: {
     color: palette.accent,
     fontWeight: "700" as const,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
   },
   helper: {
     marginTop: 8,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
   },
 };

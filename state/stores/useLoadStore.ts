@@ -1,7 +1,7 @@
 // state/stores/useLoadStore.ts
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { TRAINING_DEFAULTS } from "../../config/trainingDefaults";
+import { TRAINING_DEFAULTS, getTauForLevel } from "../../config/trainingDefaults";
 import { todayISO } from "../../utils/virtualClock";
 import { toDateKey } from "../../utils/dateHelpers";
 import { addDaysISO } from "../../utils/virtualClock";
@@ -12,6 +12,7 @@ const computeResilience = (ctl: number) => clamp01(ctl / 100);
 import { useDebugStore } from "./useDebugStore";
 import { useExternalStore } from "./useExternalStore";
 import type { LoadState } from "./types";
+import { useSessionsStore } from "./useSessionsStore";
 import { createMigratedStorage } from "./storage";
 import { onStoreHydrated } from "../orchestrators/rehydrate";
 
@@ -75,7 +76,8 @@ export const useLoadStore = create<LoadState>()(
         if (!Number.isFinite(n) || n <= 0) return;
         const { atl, ctl, lastLoadDayKey } = get();
         const devNowISO = useDebugStore.getState().devNowISO;
-        const decayed = decayLoadOverDays(atl, ctl, n);
+        const { tauAtl, tauCtl } = getTauForLevel(useSessionsStore.getState().playerLevel);
+        const decayed = decayLoadOverDays(atl, ctl, n, { tauAtl, tauCtl });
         const newDevISO = devNowISO ? addDaysISO(devNowISO, n) : devNowISO;
 
         const baseKey = lastLoadDayKey ?? toDateKey(devNowISO ?? todayISO());

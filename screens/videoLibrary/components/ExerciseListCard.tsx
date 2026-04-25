@@ -2,7 +2,7 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
 import { getExerciseVideoRef } from "../../../engine/exerciseVideos";
@@ -109,8 +109,8 @@ const styles = StyleSheet.create({
   exercisePressArea: { paddingVertical: 12, paddingHorizontal: 12, gap: 4 },
   exerciseTitleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 },
   exerciseNameRow: { flexDirection: "row", alignItems: "center", gap: 6, flex: 1 },
-  exerciseName: { fontSize: 14, fontWeight: "700", color: palette.text, flex: 1 },
-  exerciseMeta: { fontSize: 12, color: palette.sub },
+  exerciseName: { fontSize: TYPE.body.fontSize, fontWeight: "700", color: palette.text, flex: 1 },
+  exerciseMeta: { fontSize: TYPE.caption.fontSize, color: palette.sub },
   exerciseFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -124,15 +124,15 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingVertical: 3,
     paddingHorizontal: 8,
-    borderRadius: theme.radius.pill,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.accentSoft,
   },
-  videoPillText: { fontSize: 10, fontWeight: "700", color: palette.accent },
+  videoPillText: { fontSize: TYPE.micro.fontSize, fontWeight: "700", color: palette.accent },
   footerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   iconButton: {
     width: 34,
     height: 34,
-    borderRadius: 17,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.cardSoft,

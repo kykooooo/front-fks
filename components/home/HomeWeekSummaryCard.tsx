@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 import { useHaptics } from "../../hooks/useHaptics";
 
 const palette = theme.colors;
@@ -42,37 +42,37 @@ const BADGES: Record<string, ActivityBadge> = {
     icon: "football-outline",
     label: "Match",
     color: palette.danger,
-    bg: "rgba(239,68,68,0.12)",
+    bg: theme.colors.redSoft12,
   },
   club: {
     icon: "people-outline",
     label: "Club",
     color: palette.accent,
-    bg: "rgba(255,122,26,0.12)",
+    bg: theme.colors.accentSoft12,
   },
   fks: {
     icon: "barbell-outline",
     label: "Séance FKS",
     color: palette.success,
-    bg: "rgba(22,163,74,0.12)",
+    bg: theme.colors.greenSoft12,
   },
   planned: {
     icon: "calendar-outline",
     label: "Planifiée",
     color: palette.accent,
-    bg: "rgba(255,122,26,0.10)",
+    bg: theme.colors.accentSoft10,
   },
   ext: {
     icon: "fitness-outline",
     label: "Autre activité",
     color: palette.info,
-    bg: "rgba(37,99,235,0.12)",
+    bg: theme.colors.blueSoft12,
   },
   rest: {
     icon: "moon-outline",
     label: "Repos",
     color: palette.sub,
-    bg: "rgba(161,161,170,0.10)",
+    bg: theme.colors.graySoft10,
   },
 };
 
@@ -243,7 +243,7 @@ function HomeWeekSummaryCardInner({
 const styles = StyleSheet.create({
   // ─── Card ───
   card: {
-    borderRadius: 20,
+    borderRadius: RADIUS.xl,
     padding: 14,
     backgroundColor: palette.cardSoft,
     borderWidth: 1,
@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   headerLabel: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
   legendDot: {
     width: 6,
     height: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
   },
   legendDotOutline: {
     borderWidth: 1.5,
@@ -283,7 +283,7 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   legendText: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     fontWeight: "600",
   },
@@ -296,7 +296,7 @@ const styles = StyleSheet.create({
   dayCell: {
     flex: 1,
     aspectRatio: 0.72,
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.bgSoft,
@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   dayLabel: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     fontWeight: "700",
     textTransform: "uppercase",
@@ -341,7 +341,7 @@ const styles = StyleSheet.create({
   dayDot: {
     width: 8,
     height: 8,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
   },
   dayDotSpacer: {
     width: 8,
@@ -352,7 +352,7 @@ const styles = StyleSheet.create({
   detailPanel: {
     marginTop: 12,
     padding: 12,
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     backgroundColor: palette.card,
     borderWidth: 1,
     borderColor: palette.border,
@@ -366,11 +366,11 @@ const styles = StyleSheet.create({
   detailDayPill: {
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     backgroundColor: palette.accentSoft,
   },
   detailDayText: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "700",
     color: palette.accent,
     textTransform: "uppercase",
@@ -387,10 +387,10 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 7,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
   },
   badgeText: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
   },
 
@@ -407,19 +407,19 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   routineText: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     fontWeight: "600",
   },
   routineCta: {
     paddingHorizontal: 14,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.accent,
   },
   routineCtaText: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     color: palette.accent,
   },

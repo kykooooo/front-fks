@@ -3,6 +3,8 @@
 
 import type { Session } from '../domain/types';
 import { toDateKey } from './dateHelpers';
+import { isSessionCompleted as resolveSessionCompleted } from './sessionStatus';
+import { shouldSurfaceAsPendingSession } from './sessionFallback';
 
 /**
  * Obtenir la date d'une session de manière cohérente
@@ -24,7 +26,7 @@ export function getSessionDayKey(session: Session | any): string {
  * Vérifier si une session a été complétée
  */
 export function isSessionCompleted(session: Session | any): boolean {
-  return Boolean(session?.completed || session?.feedback);
+  return resolveSessionCompleted(session);
 }
 
 /**
@@ -52,7 +54,7 @@ export function getCompletedSessions(sessions: Session[]): Session[] {
  * Filtrer les sessions non complétées
  */
 export function getPendingSessions(sessions: Session[]): Session[] {
-  return sessions.filter(s => !isSessionCompleted(s));
+  return sessions.filter((s) => shouldSurfaceAsPendingSession(s));
 }
 
 /**

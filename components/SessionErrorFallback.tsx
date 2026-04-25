@@ -6,7 +6,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 import type { AppStackParamList } from '../navigation/RootNavigator';
-import { theme } from '../constants/theme';
+import { theme, TYPE, RADIUS } from "../constants/theme";
 
 interface Props {
   error: Error;
@@ -73,18 +73,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   icon: {
-    fontSize: 64,
+    fontSize: TYPE.display.lg.fontSize,
     marginBottom: 20,
   },
   title: {
-    fontSize: 22,
+    fontSize: TYPE.title.fontSize,
     fontWeight: '700',
     color: theme.colors.text,
     textAlign: 'center',
     marginBottom: 12,
   },
   message: {
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     color: theme.colors.sub,
     textAlign: 'center',
     lineHeight: 22,
@@ -92,13 +92,13 @@ const styles = StyleSheet.create({
   },
   errorBox: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     padding: 12,
     width: '100%',
     marginBottom: 20,
   },
   errorText: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: theme.colors.sub,
     fontFamily: 'monospace',
   },
@@ -110,13 +110,13 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.accent,
     paddingVertical: 14,
     paddingHorizontal: 32,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     width: '100%',
     alignItems: 'center',
   },
   primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
+    color: theme.colors.white,
+    fontSize: TYPE.body.fontSize,
     fontWeight: '600',
   },
   secondaryButton: {
@@ -125,13 +125,13 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
     paddingVertical: 14,
     paddingHorizontal: 32,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     width: '100%',
     alignItems: 'center',
   },
   secondaryButtonText: {
     color: theme.colors.text,
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: '600',
   },
 });

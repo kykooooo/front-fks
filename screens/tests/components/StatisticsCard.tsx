@@ -2,7 +2,7 @@
 import React from "react";
 import { View, Text, StyleSheet, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
 import { formatStatValue } from "../testHelpers";
 import type { FieldKey } from "../testConfig";
@@ -44,7 +44,7 @@ export function StatisticsCard({ stats, entriesCount, cardAnim }: Props) {
       <Card variant="surface" style={styles.summaryCard}>
         <View style={styles.summaryHeader}>
           <View style={styles.summaryTitleRow}>
-            <Ionicons name="stats-chart-outline" size={16} color="#06b6d4" />
+            <Ionicons name="stats-chart-outline" size={16} color={theme.colors.cyan500} />
             <View>
               <Text style={styles.sectionTitle}>Statistiques</Text>
               <Text style={styles.sectionSub}>
@@ -87,18 +87,18 @@ export function StatisticsCard({ stats, entriesCount, cardAnim }: Props) {
 
 const styles = StyleSheet.create({
   summaryCard: {
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     padding: 14,
     gap: 12,
   },
   sectionTitle: {
     color: palette.text,
-    fontSize: 15,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
   },
   sectionSub: {
     color: palette.sub,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     marginTop: 2,
   },
   summaryHeader: {
@@ -116,14 +116,14 @@ const styles = StyleSheet.create({
   summaryBadge: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.cardSoft,
   },
   summaryBadgeText: {
     color: palette.sub,
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
@@ -135,7 +135,7 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     color: palette.text,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
   },
   summaryValues: {
@@ -146,7 +146,7 @@ const styles = StyleSheet.create({
   summaryPill: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.cardSoft,
@@ -158,13 +158,13 @@ const styles = StyleSheet.create({
   },
   summaryPillLabel: {
     color: palette.sub,
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   summaryPillValue: {
     color: palette.text,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     marginTop: 2,
   },

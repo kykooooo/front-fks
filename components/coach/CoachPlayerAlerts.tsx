@@ -4,7 +4,7 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 
 const palette = theme.colors;
 
@@ -27,20 +27,20 @@ type Props = {
 const ALERT_CONFIG: Record<AlertType, { icon: string; color: string; bg: string; label: string }> = {
   overload: {
     icon: "warning",
-    color: "#ef4444",
-    bg: "rgba(239, 68, 68, 0.10)",
+    color: theme.colors.red500,
+    bg: theme.colors.redSoft10,
     label: "Surcharge",
   },
   inactive: {
     icon: "moon",
-    color: "#f59e0b",
-    bg: "rgba(245, 158, 11, 0.10)",
+    color: theme.colors.amber500,
+    bg: theme.colors.amberSoft10,
     label: "Inactif",
   },
   injury: {
     icon: "medkit",
-    color: "#dc2626",
-    bg: "rgba(220, 38, 38, 0.10)",
+    color: theme.colors.red600,
+    bg: theme.colors.red600Soft10,
     label: "Blessure",
   },
 };
@@ -50,7 +50,7 @@ export function CoachPlayerAlerts({ alerts, onPlayerPress, onDismiss }: Props) {
     return (
       <View style={styles.emptyContainer}>
         <View style={styles.emptyIcon}>
-          <Ionicons name="checkmark-circle" size={24} color="#22c55e" />
+          <Ionicons name="checkmark-circle" size={24} color={theme.colors.green500} />
         </View>
         <Text style={styles.emptyTitle}>Aucune alerte</Text>
         <Text style={styles.emptyText}>
@@ -109,7 +109,7 @@ export function CoachPlayerAlerts({ alerts, onPlayerPress, onDismiss }: Props) {
 const styles = StyleSheet.create({
   container: {
     backgroundColor: palette.card,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: palette.border,
     overflow: "hidden",
@@ -119,26 +119,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
     backgroundColor: palette.card,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: palette.border,
   },
   emptyIcon: {
     width: 48,
     height: 48,
-    borderRadius: 24,
-    backgroundColor: "rgba(34, 197, 94, 0.12)",
+    borderRadius: RADIUS.xl,
+    backgroundColor: theme.colors.green500Soft12,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 4,
   },
   emptyTitle: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   emptyText: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     textAlign: "center",
   },
@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
     borderBottomColor: palette.borderSoft,
   },
   headerTitle: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
@@ -167,8 +167,8 @@ const styles = StyleSheet.create({
   alertIcon: {
     width: 36,
     height: 36,
-    borderRadius: 10,
-    backgroundColor: "rgba(255, 255, 255, 0.5)",
+    borderRadius: RADIUS.sm,
+    backgroundColor: theme.colors.white50,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -182,23 +182,23 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   alertName: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     color: palette.text,
   },
   alertBadge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: RADIUS.xs,
   },
   alertBadgeText: {
-    fontSize: 9,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "700",
-    color: "#fff",
+    color: theme.colors.white,
     textTransform: "uppercase",
   },
   alertMessage: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     lineHeight: 16,
   },

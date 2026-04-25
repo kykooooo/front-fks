@@ -4,7 +4,7 @@ import { todayISO } from "../../utils/virtualClock";
 import { toDateKey } from "../../utils/dateHelpers";
 import { updateTrainingLoad, decayLoadOverDays } from "../../engine/loadModel";
 import { DEV_FLAGS } from "../../config/devFlags";
-import { LOAD_CAPS } from "../../config/trainingDefaults";
+import { LOAD_CAPS, getTauForLevel } from "../../config/trainingDefaults";
 import { computeDailyTotals, computeInterveningOffDays, pruneDailyAppliedWindow, type ExternalLoadLike } from "../computeDailyApplied";
 import { dayKeyToDow } from "../../utils/dateHelpers";
 import type { ExternalLoad, DebugEvent } from "../stores/types";
@@ -14,6 +14,7 @@ import { useSessionsStore } from "../stores/useSessionsStore";
 import { useExternalStore } from "../stores/useExternalStore";
 import { useFeedbackStore } from "../stores/useFeedbackStore";
 import { useDebugStore } from "../stores/useDebugStore";
+import { isSessionCompleted } from "../../utils/sessionStatus";
 
 export function applyExternalLoad(load: ExternalLoad): void {
   const loadState = useLoadStore.getState();
@@ -21,6 +22,8 @@ export function applyExternalLoad(load: ExternalLoad): void {
   const externalState = useExternalStore.getState();
   const feedbackState = useFeedbackStore.getState();
   const debugState = useDebugStore.getState();
+
+  const { tauAtl, tauCtl } = getTauForLevel(sessionsState.playerLevel);
 
   const effectiveISO =
     load.dateISO ?? (DEV_FLAGS.ENABLED && DEV_FLAGS.VIRTUAL_CLOCK ? (debugState.devNowISO ?? todayISO()) : todayISO());
@@ -30,7 +33,7 @@ export function applyExternalLoad(load: ExternalLoad): void {
   let { atl, ctl, tsb } = loadState;
   const gap = computeInterveningOffDays(loadState.lastLoadDayKey, dayKey);
   if (gap > 0) {
-    const decayed = decayLoadOverDays(atl, ctl, gap);
+    const decayed = decayLoadOverDays(atl, ctl, gap, { tauAtl, tauCtl });
     atl = decayed.atl;
     ctl = decayed.ctl;
     tsb = decayed.tsb;
@@ -40,7 +43,7 @@ export function applyExternalLoad(load: ExternalLoad): void {
   const nextExternals = [normalizedLoad, ...(externalState.externalLoads ?? [])].slice(0, 100);
 
   const completedToday = (sessionsState.sessions ?? []).filter(
-    (s) => s.completed && toDateKey(s.dateISO ?? "") === dayKey
+    (s) => isSessionCompleted(s) && toDateKey(s.dateISO ?? "") === dayKey
   );
   const rpes = completedToday.map((s) => Number(s.rpe)).filter((x) => Number.isFinite(x) && x > 0);
   const adjustedRpeForCap = rpes.length ? rpes.reduce((a, b) => a + b, 0) / rpes.length : 6;
@@ -64,7 +67,7 @@ export function applyExternalLoad(load: ExternalLoad): void {
 
   const nextLoad =
     deltaLoad > 0
-      ? updateTrainingLoad(atl, ctl, deltaLoad, { dtDays: 1 })
+      ? updateTrainingLoad(atl, ctl, deltaLoad, { dtDays: 1, tauAtl, tauCtl })
       : { atl, ctl, tsb };
 
   // Write to external store

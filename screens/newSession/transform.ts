@@ -178,6 +178,7 @@ export function v2ToLocalSession(
   const id = `planned_${plannedDateISO}_${Math.random()
     .toString(36)
     .slice(2, 8)}`;
+  const createdAt = new Date().toISOString();
   const srpeVal = v2?.estimatedLoad?.srpe;
   const volumeScore =
     typeof srpeVal === "number" &&
@@ -192,6 +193,8 @@ export function v2ToLocalSession(
     focus: v2.focusPrimary ?? baseModality,
     intensity: baseIntensity,
     dateISO: `${plannedDateISO}T00:00:00.000Z`,
+    createdAt,
+    status: "planned",
     completed: false,
     volumeScore,
     exercises: exos,

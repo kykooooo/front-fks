@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, LayoutChangeEvent } from "react-native";
 import Svg, { Line, Path, Circle } from "react-native-svg";
-import { theme } from "../../constants/theme";
+import { theme, TYPE, RADIUS } from "../../constants/theme";
 import { Card } from "../ui/Card";
 import { getFootballLabel } from "../../config/trainingDefaults";
 
@@ -76,12 +76,12 @@ function HomeReadinessHeroInner({
       <View style={styles.chartWrap} onLayout={handleLayout}>
         <Svg width={chartWidth} height={chartHeight}>
           {/* Optimal zone band (-5 to +5) */}
-          <Line x1={padLeft} y1={toY(5)} x2={chartWidth - padRight} y2={toY(5)} stroke="rgba(34, 197, 94, 0.2)" strokeWidth={1} strokeDasharray="4,4" />
-          <Line x1={padLeft} y1={toY(-5)} x2={chartWidth - padRight} y2={toY(-5)} stroke="rgba(34, 197, 94, 0.2)" strokeWidth={1} strokeDasharray="4,4" />
+          <Line x1={padLeft} y1={toY(5)} x2={chartWidth - padRight} y2={toY(5)} stroke={theme.colors.greenSoft20} strokeWidth={1} strokeDasharray="4,4" />
+          <Line x1={padLeft} y1={toY(-5)} x2={chartWidth - padRight} y2={toY(-5)} stroke={theme.colors.greenSoft20} strokeWidth={1} strokeDasharray="4,4" />
           {/* Zero line */}
           <Line x1={padLeft} y1={toY(0)} x2={chartWidth - padRight} y2={toY(0)} stroke={palette.borderSoft} strokeWidth={1} />
           {/* Overreaching threshold */}
-          <Line x1={padLeft} y1={toY(-10)} x2={chartWidth - padRight} y2={toY(-10)} stroke="rgba(245, 158, 11, 0.3)" strokeWidth={1} />
+          <Line x1={padLeft} y1={toY(-10)} x2={chartWidth - padRight} y2={toY(-10)} stroke={theme.colors.amberSoft30} strokeWidth={1} />
           {/* TSB curve */}
           {path ? <Path d={path} stroke={lineColor} strokeWidth={2.6} fill="none" /> : null}
           {points.map((p, idx) => (
@@ -89,7 +89,7 @@ function HomeReadinessHeroInner({
           ))}
         </Svg>
         <Text style={[styles.refLabel, { top: toY(0) - 8 }]}>0</Text>
-        <Text style={[styles.refLabel, { top: toY(-10) - 8, color: "#f59e0b" }]}>-10</Text>
+        <Text style={[styles.refLabel, { top: toY(-10) - 8, color: theme.colors.amber500 }]}>-10</Text>
       </View>
 
       <View style={styles.chartLabelRow}>
@@ -102,7 +102,7 @@ function HomeReadinessHeroInner({
 const styles = StyleSheet.create({
   card: {
     padding: 16,
-    borderRadius: 26,
+    borderRadius: RADIUS.xl,
     gap: 10,
     overflow: "hidden",
   },
@@ -112,7 +112,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   kicker: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     letterSpacing: 1.4,
     color: palette.sub,
     textTransform: "uppercase",
@@ -120,13 +120,13 @@ const styles = StyleSheet.create({
   },
   title: {
     marginTop: 4,
-    fontSize: 20,
+    fontSize: TYPE.title.fontSize,
     fontWeight: "900",
     color: palette.text,
   },
   sub: {
     marginTop: 4,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
   },
   valuePill: {
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
   statusDot: {
     width: 16,
     height: 16,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
   },
   chartWrap: {
     marginTop: 6,
@@ -145,14 +145,14 @@ const styles = StyleSheet.create({
   refLabel: {
     position: "absolute",
     left: 0,
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
   },
   chartLabelRow: {
     paddingTop: 2,
   },
   chartLabel: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     fontWeight: "600",
   },
