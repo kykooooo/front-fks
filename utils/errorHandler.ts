@@ -100,7 +100,27 @@ function classifyErrorLike(error: ErrorLike): AppError {
     return {
       type: ErrorType.SERVER,
       message: msg,
-      userMessage: 'Le serveur rencontre un problème technique. Réessaie dans quelques minutes.',
+      userMessage: error.userMessage || 'Le serveur rencontre un problème technique. Réessaie dans quelques minutes.',
+      technicalDetails: `Status ${status}: ${error.statusText ?? ''}`,
+      retryable: true,
+    };
+  }
+
+  if (status === 401 || status === 403) {
+    return {
+      type: ErrorType.AUTH,
+      message: msg,
+      userMessage: error.userMessage || 'Ta session a expiré. Reconnecte-toi puis réessaie.',
+      technicalDetails: `Status ${status}: ${error.statusText ?? ''}`,
+      retryable: false,
+    };
+  }
+
+  if (status === 429) {
+    return {
+      type: ErrorType.SERVER,
+      message: msg,
+      userMessage: error.userMessage || 'Trop de demandes rapprochées. Attends un peu puis réessaie.',
       technicalDetails: `Status ${status}: ${error.statusText ?? ''}`,
       retryable: true,
     };
@@ -228,6 +248,45 @@ export class BackendError extends Error {
   }
 }
 
+function extractBackendUserMessage(status: number, body: string): string | undefined {
+  let payload: Record<string, unknown> | null = null;
+  try {
+    const parsed = JSON.parse(body);
+    payload = parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
+  } catch {
+    payload = null;
+  }
+
+  const rawMessage = typeof payload?.message === 'string' ? payload.message : '';
+  const rawError = typeof payload?.error === 'string' ? payload.error : '';
+  const code = rawMessage || rawError;
+
+  if (status === 401) {
+    if (code === 'firebase_auth_required' || code === 'invalid_id_token' || code === 'unauthorized') {
+      return 'Connexion au coach IA refusée. Ferme et relance l’app, puis reconnecte-toi si besoin.';
+    }
+    return 'Ta session a expiré. Reconnecte-toi puis réessaie.';
+  }
+
+  if (status === 403) {
+    return 'Tu n’as pas les droits pour cette action. Reconnecte-toi puis réessaie.';
+  }
+
+  if (status === 429) {
+    return 'Trop de générations rapprochées. Attends un peu puis réessaie.';
+  }
+
+  if (status >= 500) {
+    return 'Le serveur rencontre un problème. Réessaie dans quelques minutes.';
+  }
+
+  if (rawMessage && !rawMessage.includes('_')) {
+    return rawMessage;
+  }
+
+  return undefined;
+}
+
 /**
  * Wrapper pour les appels fetch avec gestion d'erreur améliorée
  */
@@ -249,13 +308,12 @@ export async function safeFetch(
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => 'No response body');
+      const userMessage = extractBackendUserMessage(response.status, errorBody);
       throw new BackendError(
         response.status,
         response.statusText,
         errorBody,
-        response.status >= 500
-          ? 'Le serveur rencontre un problème. Réessaie dans quelques minutes.'
-          : undefined
+        userMessage
       );
     }
 

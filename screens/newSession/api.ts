@@ -1,6 +1,6 @@
 import { getAuth } from "firebase/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { BACKEND_URL } from "../../config/backend";
+import { BACKEND_API_KEY, BACKEND_URL } from "../../config/backend";
 import { BACKEND_EXERCISE_IDS } from "../../engine/backendExerciseIds";
 import { EXERCISE_BY_ID } from "../../engine/exerciseBank";
 import type { FKS_NextSessionV2 } from "./types";
@@ -184,14 +184,18 @@ export async function fetchV2(
   const userId = currentUser.uid;
   const idToken = await currentUser.getIdToken();
   const url = `${BACKEND_URL}/api/fks/generate`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${idToken}`,
+  };
+  if (BACKEND_API_KEY) {
+    headers["x-fks-api-key"] = BACKEND_API_KEY;
+  }
 
   // Timeout long : Render free-tier cold start (~30-50s) + génération IA (~15s)
   const fetchOptions = {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${idToken}`,
-    },
+    headers,
     body: JSON.stringify({ userId, context }),
   };
 
