@@ -1,5 +1,5 @@
 // screens/HomeScreen.tsx
-import React, { useMemo, useLayoutEffect, useEffect, useCallback } from "react";
+import React, { useMemo, useLayoutEffect, useEffect, useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { signOut } from "firebase/auth";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -21,9 +21,10 @@ import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useExternalStore } from "../state/stores/useExternalStore";
 import { useSyncStore } from "../state/stores/useSyncStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
+import { recomputeLoadIfStale } from "../state/orchestrators/recomputeLoadIfStale";
 import { auth } from "../services/firebase";
 import { DEV_FLAGS } from "../config/devFlags";
-import { theme } from "../constants/theme";
+import { theme, TYPE, RADIUS } from "../constants/theme";
 import { useSettingsStore } from "../state/settingsStore";
 import { useAppModeStore } from "../state/appModeStore";
 import HomeStatusBar from "../components/home/HomeStatusBar";
@@ -31,8 +32,10 @@ import HomeReadinessHero from "../components/home/HomeReadinessHero";
 import HomePrimaryCTA from "../components/home/HomePrimaryCTA";
 import HomeNextSessionCard from "../components/home/HomeNextSessionCard";
 import HomeWeekSummaryCard from "../components/home/HomeWeekSummaryCard";
-import HomeTestsNudge from "../components/home/HomeTestsNudge";
-import HomeCarouselCard from "../components/home/HomeCarouselCard";
+import HomeProgressHero from "../components/home/HomeProgressHero";
+import { BaselineTestsWelcomeModal } from "../components/home/BaselineTestsWelcomeModal";
+import { useTestsStorage } from "./tests/hooks/useTestsStorage";
+import { useBaselinePromptSeen } from "../utils/useBaselinePromptSeen";
 import { useLoadSeries } from "../hooks/home/useLoadSeries";
 import { useMatchSoon } from "../hooks/home/useMatchSoon";
 import { useWeekDays } from "../hooks/home/useWeekDays";
@@ -40,8 +43,10 @@ import { useWeekSummary } from "../hooks/home/useWeekSummary";
 import { useActivityStreak } from "../hooks/home/useActivityStreak";
 import { usePrimaryCta } from "../hooks/home/usePrimaryCta";
 import { useContextualAdvice } from "../hooks/home/useContextualAdvice";
+import { useInjuryActions } from "../hooks/useInjuryActions";
 import HomeAdviceCard from "../components/home/HomeAdviceCard";
 import { HomeCoachRecommendation } from "../components/home/HomeCoachRecommendation";
+import { PainSpikeModal } from "../components/PainSpikeModal";
 import { useCoachRecommendations } from "../hooks/useCoachRecommendations";
 import { isSameDay, toDateKey } from "../utils/dateHelpers";
 import { showToast } from "../utils/toast";
@@ -73,6 +78,19 @@ export default function HomeScreen() {
   const heroAnim = React.useRef(new Animated.Value(0)).current;
   const ctaAnim = React.useRef(new Animated.Value(0)).current;
   const cardsAnim = React.useRef(new Animated.Value(0)).current;
+
+  // Baseline tests welcome modal : affichée 1× au premier Home si aucun test enregistré.
+  const currentUid = auth.currentUser?.uid ?? null;
+  const { entries: testEntries } = useTestsStorage();
+  const { status: baselineStatus, markSeen: markBaselineSeen } = useBaselinePromptSeen(currentUid);
+  const showBaselineModal = baselineStatus === "not_seen" && testEntries.length === 0;
+  const onBaselineStart = useCallback(() => {
+    markBaselineSeen();
+    nav.navigate("Tests");
+  }, [markBaselineSeen, nav]);
+  const onBaselineLater = useCallback(() => {
+    markBaselineSeen();
+  }, [markBaselineSeen]);
 
   const handleLogout = async () => {
     try {
@@ -163,6 +181,17 @@ export default function HomeScreen() {
     startFirestoreWatch();
   }, [startFirestoreWatch, storeHydrated]);
 
+  // Recalcule ATL/CTL/TSB jusqu'à aujourd'hui à chaque focus du Home.
+  // Indispensable si l'app n'a pas été force-quit et que le jour a changé :
+  // sans ça, un joueur reste affiché "fatigué" même après 30 jours de repos.
+  // Idempotent : no-op si la métrique est déjà sur le bon dayKey.
+  useFocusEffect(
+    useCallback(() => {
+      if (!storeHydrated) return;
+      recomputeLoadIfStale();
+    }, [storeHydrated])
+  );
+
   const weekStart = useSettingsStore((s) => s.weekStart);
   const weeklyGoal = useSettingsStore((s) => s.weeklyGoal ?? 2);
   const themeMode = useSettingsStore((s) => s.themeMode);
@@ -209,6 +238,38 @@ export default function HomeScreen() {
   }, [nav, pendingSession]);
 
   const advice = useContextualAdvice();
+
+  // MVP blessures — PainSpikeModal (règle 5 charte).
+  // S'ouvre quand la règle advice `injury_pain_spike` se déclenche.
+  // Le `acknowledgePainSpike()` persiste `lastSeenPainSpike` pour
+  // empêcher la carte de re-déclencher sur le même feedback.
+  const { acknowledgePainSpike } = useInjuryActions();
+  const [painSpikeVisible, setPainSpikeVisible] = useState(false);
+
+  useEffect(() => {
+    if (advice?.modal === "pain_spike" || advice?.id === "injury_pain_spike") {
+      setPainSpikeVisible(true);
+    }
+  }, [advice?.id, advice?.modal]);
+
+  const handlePainSpikeAcknowledge = useCallback(async () => {
+    try {
+      await acknowledgePainSpike();
+    } catch (err) {
+      if (__DEV__) console.error("[HomeScreen] acknowledgePainSpike failed:", err);
+      showToast({
+        type: "error",
+        title: "Pas enregistré",
+        message: "Impossible de synchroniser ton acquittement. Réessaie dans un instant.",
+      });
+      throw err; // relancé pour que PainSpikeModal ne ferme PAS silencieusement
+    }
+  }, [acknowledgePainSpike]);
+
+  const handlePainSpikeModifyInjury = useCallback(() => {
+    // Navigue vers l'onglet Profile avec ouverture auto du modal InjuryForm.
+    nav.navigate("Profile", { openInjuryForm: true });
+  }, [nav]);
 
   // Recommandations du coach
   const { recommendations: coachRecommendations } = useCoachRecommendations();
@@ -268,21 +329,13 @@ export default function HomeScreen() {
           <View style={styles.heroShell}>
             <Image
               source={heroImage}
-              style={styles.heroPhotoBackdrop}
+              style={styles.heroPhoto}
               resizeMode="cover"
-              blurRadius={10}
               fadeDuration={0}
             />
-            <Image
-              source={heroImage}
-              style={styles.heroPhotoFigure}
-              resizeMode="contain"
-              fadeDuration={0}
-            />
-            <View style={styles.heroTint} />
             <LinearGradient
-              colors={["rgba(5,8,10,0.08)", "rgba(5,8,10,0.58)", "rgba(5,8,10,0.9)"]}
-              locations={[0.08, 0.6, 1]}
+              colors={["transparent", theme.colors.black55, theme.colors.black88]}
+              locations={[0.15, 0.55, 1]}
               style={styles.heroGradient}
             />
 
@@ -390,7 +443,8 @@ export default function HomeScreen() {
                 gap: 10,
               }}
             >
-              {coachRecommendations.slice(0, 2).map((rec) => (
+              {/* UX pré-démo : 1 reco max au-dessus de la fold (moins de cartes concurrentes) */}
+              {coachRecommendations.slice(0, 1).map((rec) => (
                 <HomeCoachRecommendation key={rec.id} recommendation={rec} />
               ))}
             </Animated.View>
@@ -410,27 +464,7 @@ export default function HomeScreen() {
             }}
           >
             <View style={styles.cardsStack}>
-              <View style={styles.gridRow}>
-                <View style={styles.gridItem}>
-                  <HomeCarouselCard title="Progression" subtitle="Régularité & forme">
-                    <View style={styles.progressRow}>
-                      <Ionicons name="flame" size={18} color={palette.accent} />
-                      <Text style={styles.progressText}>{activityStreak} jours d’affilée</Text>
-                    </View>
-                    <TouchableOpacity onPress={() => nav.navigate("Progression")} style={styles.link}>
-                      <Text style={styles.linkText}>Voir ma progression</Text>
-                      <Text style={styles.linkArrow}>→</Text>
-                    </TouchableOpacity>
-                  </HomeCarouselCard>
-                </View>
-                <View style={styles.gridItem}>
-                  <HomeTestsNudge
-                    title="Évalue ton niveau"
-                    sub="Des tests courts pour mieux cibler tes séances."
-                    onPress={() => nav.navigate("Tests")}
-                  />
-                </View>
-              </View>
+              <HomeProgressHero onPress={() => nav.navigate("Tests")} />
 
               <HomeNextSessionCard
                 hasPending={Boolean(pendingSession)}
@@ -472,6 +506,20 @@ export default function HomeScreen() {
           <View style={styles.bottomSpacer} />
         </View>
       </ScrollView>
+
+      <BaselineTestsWelcomeModal
+        visible={showBaselineModal}
+        onStart={onBaselineStart}
+        onLater={onBaselineLater}
+      />
+
+      {/* MVP blessures — modal critique règle 5 charte (pain >= 7). */}
+      <PainSpikeModal
+        visible={painSpikeVisible}
+        onClose={() => setPainSpikeVisible(false)}
+        onModifyInjury={handlePainSpikeModifyInjury}
+        onAcknowledge={handlePainSpikeAcknowledge}
+      />
     </SafeAreaView>
   );
 }
@@ -496,7 +544,7 @@ const styles = StyleSheet.create({
   logoutText: {
     fontWeight: "500",
     color: palette.sub,
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
   },
   stickyHeader: {
     paddingHorizontal: 16,
@@ -508,37 +556,21 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   heroShell: {
-    borderRadius: 24,
+    borderRadius: RADIUS.xl,
     overflow: "hidden",
-    height: 232,
+    aspectRatio: 4 / 3,
     position: "relative" as const,
     backgroundColor: BANNER_FALLBACK.explosif,
   },
-  heroPhotoBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.5,
-    transform: [{ scale: 1.08 }],
-  },
-  heroPhotoFigure: {
-    position: "absolute",
-    right: -18,
-    top: -8,
-    bottom: 0,
-    width: "62%",
-  },
-  heroTint: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(4,8,10,0.18)",
-    borderRadius: 24,
+  heroPhoto: {
+    position: "absolute" as const,
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: "100%",
   },
   heroGradient: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: "72%",
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    ...StyleSheet.absoluteFillObject,
   },
   heroBannerContent: {
     position: "absolute",
@@ -556,39 +588,39 @@ const styles = StyleSheet.create({
   heroBadge: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.16)",
+    borderRadius: RADIUS.pill,
+    backgroundColor: theme.colors.white16,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.22)",
+    borderColor: theme.colors.white22,
   },
   heroBadgeText: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "800",
     letterSpacing: 1.2,
     textTransform: "uppercase",
-    color: "#ffffff",
+    color: theme.colors.white,
   },
   heroDate: {
-    fontSize: 12,
-    color: "rgba(255,255,255,0.7)",
+    fontSize: TYPE.caption.fontSize,
+    color: theme.colors.white70,
     textTransform: "uppercase",
     letterSpacing: 1,
-    textShadowColor: "rgba(0,0,0,0.5)",
+    textShadowColor: theme.colors.black50,
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
   helloTitle: {
-    fontSize: 22,
+    fontSize: TYPE.title.fontSize,
     fontWeight: "800",
-    color: "#fff",
-    textShadowColor: "rgba(0,0,0,0.5)",
+    color: theme.colors.white,
+    textShadowColor: theme.colors.black50,
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
   helloSub: {
-    fontSize: 12,
-    color: "rgba(255,255,255,0.8)",
-    textShadowColor: "rgba(0,0,0,0.4)",
+    fontSize: TYPE.caption.fontSize,
+    color: theme.colors.white80,
+    textShadowColor: theme.colors.black40,
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
@@ -602,40 +634,40 @@ const styles = StyleSheet.create({
     minWidth: 96,
     paddingVertical: 8,
     paddingHorizontal: 10,
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    backgroundColor: "rgba(255,255,255,0.14)",
+    borderColor: theme.colors.white18,
+    backgroundColor: theme.colors.white14,
   },
   quickChipWarn: {
-    borderColor: "rgba(245,158,11,0.5)",
-    backgroundColor: "rgba(245,158,11,0.16)",
+    borderColor: theme.colors.amberSoft50,
+    backgroundColor: theme.colors.amberSoft16,
   },
   quickLabel: {
-    fontSize: 10,
-    color: "rgba(255,255,255,0.62)",
+    fontSize: TYPE.micro.fontSize,
+    color: theme.colors.white62,
     letterSpacing: 1,
     textTransform: "uppercase",
   },
   quickValue: {
     marginTop: 3,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "800",
-    color: "#ffffff",
+    color: theme.colors.white,
   },
   sectionHeaderRow: {
     marginTop: 4,
     gap: 4,
   },
   sectionTitle: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "800",
     letterSpacing: 1.2,
     textTransform: "uppercase",
     color: palette.text,
   },
   sectionSub: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
   },
   cardsStack: {
@@ -657,7 +689,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   progressText: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.text,
     fontWeight: "700",
   },
@@ -669,25 +701,25 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   linkText: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     color: palette.accent,
   },
   linkArrow: {
-    fontSize: 14,
+    fontSize: TYPE.body.fontSize,
     color: palette.accent,
   },
   devChip: {
     alignSelf: "flex-start",
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.cardSoft,
     borderWidth: 1,
     borderColor: palette.borderSoft,
   },
   devChipText: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
   },
   bottomSpacer: {

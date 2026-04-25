@@ -1,10 +1,11 @@
 // screens/ProfileScreen.tsx
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Animated,
+  Modal, Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect, type RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -14,11 +15,13 @@ import { useSessionsStore } from '../state/stores/useSessionsStore';
 import { useLoadStore } from '../state/stores/useLoadStore';
 import { useExternalStore } from '../state/stores/useExternalStore';
 import { useDebugStore } from '../state/stores/useDebugStore';
+import { useSyncStore } from '../state/stores/useSyncStore';
+import { recomputeLoadIfStale } from '../state/orchestrators/recomputeLoadIfStale';
 import { auth } from '../services/firebase';
 import { computeStreakStats } from '../utils/streakStats';
 import { lastNDates } from '../utils/dateHelpers';
 import { toDateKey } from '../utils/dateHelpers';
-import { theme } from '../constants/theme';
+import { theme, TYPE, RADIUS } from "../constants/theme";
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { SectionHeader } from '../components/ui/SectionHeader';
@@ -32,25 +35,34 @@ import {
 } from '../domain/microcycles';
 import { recommendMicrocycle } from '../domain/recommendMicrocycle';
 import { getFootballLabel } from '../config/trainingDefaults';
+import { isSessionCompleted } from '../utils/sessionStatus';
+import { InjuryZonesSection } from './profile/InjuryZonesSection';
+import InjuryForm from '../components/InjuryForm';
+import { useInjuryActions } from '../hooks/useInjuryActions';
+import { showToast } from '../utils/toast';
+import type { InjuryRecord } from '../domain/types';
+import type { TabParamList } from '../navigation/types';
 
 const palette = theme.colors;
 const TESTS_STORAGE_KEY = 'fks_tests_v1';
 const TESTS_RECENCY_DAYS = 30;
-const SECTION_COUNT = 9;
+// MVP blessures Jour 4 : +1 section "Zones sensibles" insérée entre
+// Tests (index 7) et Dernières séances (qui devient index 9).
+const SECTION_COUNT = 10;
 
 /* ─── Badge config ─── */
 const BADGE_ICONS: Record<string, { icon: string; tint: string }> = {
   weekly: { icon: 'trophy-outline', tint: palette.accent },
-  streak: { icon: 'flame-outline', tint: '#ef4444' },
+  streak: { icon: 'flame-outline', tint: theme.colors.red500 },
   load:   { icon: 'fitness-outline', tint: palette.info },
-  vma:    { icon: 'speedometer-outline', tint: '#8b5cf6' },
+  vma:    { icon: 'speedometer-outline', tint: theme.colors.violet500 },
 };
 
 const TIER_COLORS: Record<string, { bg: string; border: string }> = {
   none:   { bg: palette.cardSoft, border: palette.borderSoft },
-  bronze: { bg: 'rgba(205,127,50,0.12)', border: 'rgba(205,127,50,0.4)' },
-  silver: { bg: 'rgba(192,192,192,0.12)', border: 'rgba(192,192,192,0.4)' },
-  gold:   { bg: 'rgba(255,193,37,0.14)', border: 'rgba(255,193,37,0.5)' },
+  bronze: { bg: theme.colors.bronzeSoft12, border: theme.colors.bronzeSoft40 },
+  silver: { bg: theme.colors.silverSoft12, border: theme.colors.silverSoft40 },
+  gold:   { bg: theme.colors.goldSoft14, border: theme.colors.goldSoft50 },
 };
 
 /* ─── Calendar ─── */
@@ -62,8 +74,8 @@ const CAL_DAYS = [
 
 /* ─── Focus tints ─── */
 const FOCUS_TINTS: Record<string, string> = {
-  run: '#2563eb', strength: '#ef4444', circuit: '#ff7a1a', speed: '#8b5cf6',
-  plyo: '#8b5cf6', mobility: '#14b8a6', core: '#06b6d4', force: '#ef4444',
+  run: theme.colors.blue600, strength: theme.colors.red500, circuit: theme.colors.accent, speed: theme.colors.violet500,
+  plyo: theme.colors.violet500, mobility: theme.colors.teal500, core: theme.colors.cyan500, force: theme.colors.red500,
 };
 
 /* ─── Helpers ─── */
@@ -96,6 +108,7 @@ const formatDayLabel = (value?: string | null) => {
 /* ══════════════════════════════════════════ */
 export default function ProfileScreen() {
   const nav = useNavigation<any>();
+  const route = useRoute<RouteProp<TabParamList, "Profile">>();
 
   /* ─── Store ─── */
   const sessions = useSessionsStore((s) => s.sessions);
@@ -105,6 +118,18 @@ export default function ProfileScreen() {
   const ctl = useLoadStore((s) => s.ctl);
   const tsbHistory = useLoadStore((s) => s.tsbHistory ?? []);
   const dailyApplied = useLoadStore((s) => s.dailyApplied ?? {});
+  const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
+
+  // Recalcule ATL/CTL/TSB jusqu'à aujourd'hui à chaque focus.
+  // ProfileScreen affiche tsb, atl, ctl + graphique TSB historique : sans ce
+  // recompute, un user qui revient sur Profil sans repasser par Home verrait
+  // une métrique vieille de plusieurs jours.
+  useFocusEffect(
+    useCallback(() => {
+      if (!storeHydrated) return;
+      recomputeLoadIfStale();
+    }, [storeHydrated])
+  );
   const clubDays = useExternalStore((s) => s.clubTrainingDays ?? []);
   const matchDays = useExternalStore((s) => s.matchDays ?? []);
   const devNowISO = useDebugStore((s) => s.devNowISO);
@@ -118,6 +143,89 @@ export default function ProfileScreen() {
   const [testsCount, setTestsCount] = useState(0);
   const [lastTestTs, setLastTestTs] = useState<number | null>(null);
   const [lastTestPlaylist, setLastTestPlaylist] = useState<MicrocycleId | null>(null);
+
+  /* ─── Zones sensibles (MVP blessures Jour 4) ─── */
+  const { upsertInjury, activeInjuries } = useInjuryActions();
+  const [injuryFormVisible, setInjuryFormVisible] = useState(false);
+  const [injuryDraft, setInjuryDraft] = useState<InjuryRecord | null>(null);
+  const [healthConsentOk, setHealthConsentOk] = useState(false);
+  const [injurySubmitting, setInjurySubmitting] = useState(false);
+
+  // Ouvre le formulaire d'ajout/modif d'une zone sensible.
+  // Si `editArea` est fourni, on précharge l'entrée existante (modification),
+  // sinon on démarre vide (ajout). Reset systématique du consentement
+  // (obligation RGPD art. 9 : ré-acquitté à chaque ajout/modif).
+  const openInjuryForm = useCallback(
+    (editArea?: string) => {
+      const existing = editArea
+        ? activeInjuries.find((i) => i.area === editArea)
+        : null;
+      const draft = existing
+        ? ({
+            area: existing.area as InjuryRecord["area"],
+            severity: existing.severity as InjuryRecord["severity"],
+            type: existing.type,
+            restrictions: existing.restrictions ?? {},
+            startDate: existing.startDate,
+            lastConfirm: existing.lastConfirm,
+            ...(existing.note ? { note: existing.note } : {}),
+          } satisfies InjuryRecord)
+        : null;
+      setInjuryDraft(draft);
+      setHealthConsentOk(false);
+      setInjuryFormVisible(true);
+    },
+    [activeInjuries],
+  );
+
+  const closeInjuryForm = useCallback(() => {
+    if (injurySubmitting) return;
+    setInjuryFormVisible(false);
+    setInjuryDraft(null);
+    setHealthConsentOk(false);
+  }, [injurySubmitting]);
+
+  // Ouverture auto depuis la nav param (PainSpikeModal → "Modifier ma zone sensible").
+  // Une seule fois par réception du param pour éviter les réouvertures en boucle.
+  const openInjuryFormParam = route.params?.openInjuryForm;
+  useEffect(() => {
+    if (!openInjuryFormParam) return;
+    openInjuryForm();
+    // Consommer le param pour que les refocus de l'écran ne réouvrent pas le modal.
+    nav.setParams?.({ openInjuryForm: undefined });
+  }, [openInjuryFormParam, openInjuryForm, nav]);
+
+  const canSubmitInjury =
+    !!injuryDraft &&
+    !!injuryDraft.area &&
+    injuryDraft.severity >= 1 &&
+    healthConsentOk &&
+    !injurySubmitting;
+
+  const handleSubmitInjury = useCallback(async () => {
+    if (!canSubmitInjury || !injuryDraft) return;
+    setInjurySubmitting(true);
+    try {
+      await upsertInjury(injuryDraft);
+      showToast({
+        type: "success",
+        title: "Zone sensible enregistrée",
+        message: "On adapte tes prochaines séances.",
+      });
+      setInjuryFormVisible(false);
+      setInjuryDraft(null);
+      setHealthConsentOk(false);
+    } catch (err) {
+      if (__DEV__) console.error("[ProfileScreen] upsertInjury failed:", err);
+      showToast({
+        type: "error",
+        title: "Enregistrement impossible",
+        message: "Vérifie ta connexion et réessaie.",
+      });
+    } finally {
+      setInjurySubmitting(false);
+    }
+  }, [canSubmitInjury, injuryDraft, upsertInjury]);
 
   useEffect(() => {
     let alive = true;
@@ -169,17 +277,17 @@ export default function ProfileScreen() {
   const recommendation = useMemo(() => recommendMicrocycle({ mainObjective, lastTestPlaylist }), [mainObjective, lastTestPlaylist]);
   const recommendedId = recommendation.id;
 
-  const completedCount = useMemo(() => sessions.filter((s: any) => s.completed).length, [sessions]);
+  const completedCount = useMemo(() => sessions.filter((s: any) => isSessionCompleted(s)).length, [sessions]);
 
   const lastSessionDate = useMemo(() => {
-    const done = [...sessions].filter((s: any) => s.completed)
+    const done = [...sessions].filter((s: any) => isSessionCompleted(s))
       .sort((a, b) => toDateKey(b.dateISO ?? b.date).localeCompare(toDateKey(a.dateISO ?? a.date)));
     if (!done.length) return '—';
     return formatDayLabel(done[0].dateISO ?? done[0].date);
   }, [sessions]);
 
   const recentSessions = useMemo(() => {
-    return [...sessions].filter((s: any) => s.completed)
+    return [...sessions].filter((s: any) => isSessionCompleted(s))
       .sort((a, b) => toDateKey(b.dateISO ?? b.date).localeCompare(toDateKey(a.dateISO ?? a.date)))
       .slice(0, 3)
       .map((session: any) => {
@@ -247,7 +355,7 @@ export default function ProfileScreen() {
   const last7Set = useMemo(() => new Set(last7Keys), [last7Keys]);
   const last7Completed = useMemo(
     () => sessions.filter((s: any) => {
-      if (!s?.completed) return false;
+      if (!isSessionCompleted(s)) return false;
       return last7Set.has(toDateKey(s.dateISO ?? s.date));
     }).length,
     [sessions, last7Set],
@@ -383,9 +491,9 @@ export default function ProfileScreen() {
                           isFuture && styles.pathwayDotFuture,
                         ]}>
                           {isDone ? (
-                            <Ionicons name="checkmark" size={12} color="#fff" />
+                            <Ionicons name="checkmark" size={12} color={theme.colors.white} />
                           ) : isCurrent ? (
-                            <Ionicons name={step.icon as any} size={12} color="#fff" />
+                            <Ionicons name={step.icon as any} size={12} color={theme.colors.white} />
                           ) : (
                             <Text style={styles.pathwayDotText}>{idx + 1}</Text>
                           )}
@@ -500,9 +608,9 @@ export default function ProfileScreen() {
           <SectionHeader title="Ta régularité" right={<Badge label={tsbTrend} tone={trendTone} />} />
           <Card variant="soft" style={styles.momentumCard}>
             {([
-              { label: 'Semaines FKS', value: streaks.weeksFks, unit: 'sem', icon: 'flame-outline' as const, tint: '#ef4444' },
+              { label: 'Semaines FKS', value: streaks.weeksFks, unit: 'sem', icon: 'flame-outline' as const, tint: theme.colors.red500 },
               { label: 'Club / match', value: streaks.weeksClubMatch, unit: 'sem', icon: 'shield-outline' as const, tint: palette.info },
-              { label: 'Tests ce mois', value: streaks.monthlyVmaCount, unit: 'séances', icon: 'speedometer-outline' as const, tint: '#8b5cf6' },
+              { label: 'Tests ce mois', value: streaks.monthlyVmaCount, unit: 'séances', icon: 'speedometer-outline' as const, tint: theme.colors.violet500 },
             ]).map((item, idx) => (
               <React.Fragment key={item.label}>
                 <View style={styles.momentumRow}>
@@ -539,7 +647,7 @@ export default function ProfileScreen() {
               {Array.from({ length: 7 }).map((_, idx) => {
                 const val = tsbHistory[idx] ?? tsb;
                 const h = Math.max(8, Math.min(60, Math.abs(val) * 2));
-                const c = val >= 5 ? palette.success : val >= 0 ? '#34d399' : val >= -8 ? palette.warn : palette.danger;
+                const c = val >= 5 ? palette.success : val >= 0 ? theme.colors.emerald400 : val >= -8 ? palette.warn : palette.danger;
                 const isToday = idx === 0;
                 return (
                   <View key={idx} style={styles.barCol}>
@@ -564,7 +672,7 @@ export default function ProfileScreen() {
               {loadHistory.map((val, idx) => {
                 const h = Math.max(6, Math.round((val / loadScaleMax) * 60));
                 const ratio = loadMax > 0 ? val / loadMax : 0;
-                const c = ratio > 0.8 ? palette.accent : ratio > 0.5 ? palette.info : '#60a5fa';
+                const c = ratio > 0.8 ? palette.accent : ratio > 0.5 ? palette.info : theme.colors.blue400;
                 const isToday = idx === 0;
                 return (
                   <View key={`l${idx}`} style={styles.barCol}>
@@ -616,8 +724,8 @@ export default function ProfileScreen() {
                 return (
                   <View key={d.id} style={styles.calItem}>
                     <View style={[styles.calCircle, isClub && styles.calClub, isMatch && styles.calMatch]}>
-                      {isClub && !isMatch ? <Ionicons name="fitness-outline" size={14} color="#fff" /> : null}
-                      {isMatch ? <Ionicons name="football-outline" size={14} color="#fff" /> : null}
+                      {isClub && !isMatch ? <Ionicons name="fitness-outline" size={14} color={theme.colors.white} /> : null}
+                      {isMatch ? <Ionicons name="football-outline" size={14} color={theme.colors.white} /> : null}
                       {!active ? <Text style={styles.calCircleText}>{d.short}</Text> : null}
                     </View>
                     <Text style={[styles.calDayLbl, active && styles.calDayLblActive]}>{d.short}</Text>
@@ -638,8 +746,20 @@ export default function ProfileScreen() {
           </Card>
         </Animated.View>
 
-        {/* ─── RECENT + ACTIONS ─── */}
+        {/* ─── ZONES SENSIBLES (MVP blessures Jour 4) ─── */}
         <Animated.View style={[styles.section, aStyle(8)]}>
+          <InjuryZonesSection
+            // Passe la fonction `openInjuryForm(editArea?: string) => void`
+            // directement : la section appelle soit `onOpenInjuryForm()` (ajout)
+            // soit `onOpenInjuryForm(inj.area)` (modif) selon le bouton cliqué.
+            // `openInjuryForm` se charge alors de précharger l'entrée existante.
+            onOpenInjuryForm={openInjuryForm}
+            onOpenPrivacyPolicy={() => nav.navigate('PrivacyPolicy')}
+          />
+        </Animated.View>
+
+        {/* ─── RECENT + ACTIONS ─── */}
+        <Animated.View style={[styles.section, aStyle(9)]}>
           <SectionHeader title="Dernières séances" />
           <Card variant="soft" style={styles.recentCard}>
             {recentSessions.length === 0 ? (
@@ -701,9 +821,168 @@ export default function ProfileScreen() {
         </Animated.View>
 
       </ScrollView>
+
+      {/* Modal d'ajout / modification d'une zone sensible (MVP blessures Jour 4).
+          Monté ici (hors ScrollView) pour occuper l'écran en overlay. */}
+      <Modal
+        visible={injuryFormVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={closeInjuryForm}
+      >
+        <SafeAreaView style={injuryStyles.backdrop} edges={['top', 'right', 'left', 'bottom']}>
+          <View style={injuryStyles.card}>
+            <View style={injuryStyles.header}>
+              <Text style={injuryStyles.title}>
+                {injuryDraft ? 'Ajuster ta zone sensible' : 'Déclarer une zone sensible'}
+              </Text>
+              <Pressable
+                onPress={closeInjuryForm}
+                accessibilityRole="button"
+                accessibilityLabel="Fermer le formulaire"
+                hitSlop={10}
+              >
+                <Ionicons name="close" size={22} color={palette.sub} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              style={injuryStyles.scroll}
+              contentContainerStyle={injuryStyles.scrollContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              <InjuryForm
+                value={injuryDraft}
+                onChange={setInjuryDraft}
+                requireLegalConsent
+                onConsentChange={setHealthConsentOk}
+                onOpenPrivacyPolicy={() => nav.navigate('PrivacyPolicy')}
+              />
+            </ScrollView>
+
+            <View style={injuryStyles.footer}>
+              <Pressable
+                style={({ pressed }) => [
+                  injuryStyles.cancelButton,
+                  pressed && injuryStyles.buttonPressed,
+                  injurySubmitting && injuryStyles.buttonDisabled,
+                ]}
+                onPress={closeInjuryForm}
+                disabled={injurySubmitting}
+                accessibilityRole="button"
+                accessibilityLabel="Annuler"
+              >
+                <Text style={injuryStyles.cancelText}>Annuler</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  injuryStyles.saveButton,
+                  pressed && injuryStyles.buttonPressed,
+                  !canSubmitInjury && injuryStyles.buttonDisabled,
+                ]}
+                onPress={handleSubmitInjury}
+                disabled={!canSubmitInjury}
+                accessibilityRole="button"
+                accessibilityLabel="Enregistrer"
+              >
+                <Text style={injuryStyles.saveText}>
+                  {injurySubmitting ? 'Enregistrement…' : 'Enregistrer'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
+
+/* ══════════ STYLES modal InjuryForm ══════════ */
+const injuryStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    padding: 16,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 520,
+    maxHeight: '92%',
+    borderRadius: RADIUS.xl,
+    backgroundColor: palette.bg,
+    borderWidth: 1,
+    borderColor: palette.border,
+    overflow: 'hidden',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: palette.border,
+  },
+  title: {
+    flex: 1,
+    fontSize: TYPE.title.fontSize,
+    fontWeight: '800',
+    color: palette.text,
+  },
+  scroll: {
+    flexGrow: 0,
+  },
+  scrollContent: {
+    padding: 16,
+    gap: 12,
+  },
+  footer: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: palette.border,
+    backgroundColor: palette.cardSoft,
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: palette.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  cancelText: {
+    color: palette.sub,
+    fontWeight: '700',
+    fontSize: TYPE.body.fontSize,
+  },
+  saveButton: {
+    flex: 2,
+    paddingVertical: 12,
+    borderRadius: RADIUS.md,
+    backgroundColor: palette.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  saveText: {
+    color: palette.white,
+    fontWeight: '800',
+    fontSize: TYPE.body.fontSize,
+  },
+  buttonPressed: {
+    opacity: 0.85,
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+});
 
 /* ══════════ STYLES ══════════ */
 const styles = StyleSheet.create({
@@ -715,7 +994,7 @@ const styles = StyleSheet.create({
   heroShell: {
     position: 'relative',
     overflow: 'hidden',
-    borderRadius: 24,
+    borderRadius: RADIUS.xl,
     padding: 16,
     backgroundColor: palette.card,
     borderWidth: 1,
@@ -728,7 +1007,7 @@ const styles = StyleSheet.create({
     right: -40,
     width: 180,
     height: 180,
-    borderRadius: 180,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.accentSoft,
     opacity: 0.9,
   },
@@ -738,7 +1017,7 @@ const styles = StyleSheet.create({
     left: -60,
     width: 220,
     height: 220,
-    borderRadius: 220,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.cardSoft,
     opacity: 0.9,
   },
@@ -748,7 +1027,7 @@ const styles = StyleSheet.create({
     right: 16,
     width: 60,
     height: 60,
-    borderRadius: 60,
+    borderRadius: RADIUS.pill,
     borderWidth: 2,
     borderColor: palette.borderSoft,
     opacity: 0.6,
@@ -761,20 +1040,20 @@ const styles = StyleSheet.create({
   heroBadge: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     backgroundColor: palette.cardSoft,
     borderWidth: 1,
     borderColor: palette.borderSoft,
   },
   heroBadgeText: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: '800',
     letterSpacing: 1.2,
     textTransform: 'uppercase',
     color: palette.text,
   },
   heroDate: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     textTransform: 'uppercase',
     letterSpacing: 1,
@@ -785,30 +1064,30 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   avatarRing: {
-    width: 68, height: 68, borderRadius: 999, borderWidth: 3,
+    width: 68, height: 68, borderRadius: RADIUS.pill, borderWidth: 3,
     alignItems: 'center', justifyContent: 'center',
   },
   avatar: {
-    width: 58, height: 58, borderRadius: 999, backgroundColor: palette.bgSoft,
+    width: 58, height: 58, borderRadius: RADIUS.pill, backgroundColor: palette.bgSoft,
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { fontSize: 22, fontWeight: '800', color: palette.text },
+  avatarText: { fontSize: TYPE.title.fontSize, fontWeight: '800', color: palette.text },
   heroInfo: { flex: 1, gap: 2 },
-  heroName: { fontSize: 22, fontWeight: '800', color: palette.text },
-  heroRole: { fontSize: 13, color: palette.sub },
+  heroName: { fontSize: TYPE.title.fontSize, fontWeight: '800', color: palette.text },
+  heroRole: { fontSize: TYPE.caption.fontSize, color: palette.sub },
   heroDetailRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   heroDetailChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingVertical: 4, paddingHorizontal: 8, borderRadius: 999,
+    paddingVertical: 4, paddingHorizontal: 8, borderRadius: RADIUS.pill,
     backgroundColor: palette.bgSoft,
   },
-  heroDetailText: { fontSize: 11, fontWeight: '600', color: palette.sub },
+  heroDetailText: { fontSize: TYPE.micro.fontSize, fontWeight: '600', color: palette.sub },
   objectivePill: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12,
+    paddingVertical: 8, paddingHorizontal: 12, borderRadius: RADIUS.md,
     backgroundColor: palette.cardSoft, borderWidth: 1, borderColor: palette.borderSoft,
   },
-  objectiveText: { flex: 1, fontSize: 13, fontWeight: '600', color: palette.text },
+  objectiveText: { flex: 1, fontSize: TYPE.caption.fontSize, fontWeight: '600', color: palette.text },
   quickRow: {
     flexDirection: 'row',
     gap: 10,
@@ -819,60 +1098,60 @@ const styles = StyleSheet.create({
     minWidth: 90,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.bgSoft,
   },
   quickLabel: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     letterSpacing: 1,
     textTransform: 'uppercase',
   },
   quickValue: {
     marginTop: 4,
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: '800',
     color: palette.text,
   },
 
   /* Stats */
   statsRow: { flexDirection: 'row', gap: 10 },
-  statCard: { flex: 1, borderRadius: 14, padding: 0, overflow: 'hidden', flexDirection: 'row' },
+  statCard: { flex: 1, borderRadius: RADIUS.md, padding: 0, overflow: 'hidden', flexDirection: 'row' },
   statAccent: { width: 4 },
   statContent: { flex: 1, padding: 12, alignItems: 'center', gap: 4 },
-  statValue: { fontSize: 20, fontWeight: '800', color: palette.text },
-  statLabel: { fontSize: 10, color: palette.sub, textAlign: 'center' },
+  statValue: { fontSize: TYPE.title.fontSize, fontWeight: '800', color: palette.text },
+  statLabel: { fontSize: TYPE.micro.fontSize, color: palette.sub, textAlign: 'center' },
 
   /* Cycle */
-  cycleCard: { borderRadius: 18, padding: 14, gap: 8 },
-  cycleTitle: { fontSize: 16, fontWeight: '800', color: palette.text },
-  cycleSub: { fontSize: 12, color: palette.sub },
+  cycleCard: { borderRadius: RADIUS.lg, padding: 14, gap: 8 },
+  cycleTitle: { fontSize: TYPE.body.fontSize, fontWeight: '800', color: palette.text },
+  cycleSub: { fontSize: TYPE.caption.fontSize, color: palette.sub },
   dotsRow: { flexDirection: 'row', gap: 6, marginTop: 8, justifyContent: 'center' },
   dot: {
-    width: 20, height: 20, borderRadius: 999,
+    width: 20, height: 20, borderRadius: RADIUS.pill,
     backgroundColor: palette.borderSoft, borderWidth: 1, borderColor: palette.border,
   },
   dotDone: { backgroundColor: palette.accent, borderColor: palette.accent },
   dotCurrent: { borderColor: palette.accent, borderWidth: 2, backgroundColor: palette.accentSoft },
   cycleActions: { gap: 8, marginTop: 8 },
   cycleReco: {
-    marginTop: 4, padding: 10, borderRadius: 12,
+    marginTop: 4, padding: 10, borderRadius: RADIUS.md,
     borderWidth: 1, borderColor: palette.borderSoft, backgroundColor: palette.cardSoft, gap: 4,
   },
-  cycleRecoLbl: { fontSize: 10, color: palette.sub, letterSpacing: 1.2, fontWeight: '800' },
-  cycleRecoVal: { fontSize: 14, fontWeight: '800', color: palette.text },
-  cycleRecoSub: { fontSize: 12, color: palette.sub },
+  cycleRecoLbl: { fontSize: TYPE.micro.fontSize, color: palette.sub, letterSpacing: 1.2, fontWeight: '800' },
+  cycleRecoVal: { fontSize: TYPE.body.fontSize, fontWeight: '800', color: palette.text },
+  cycleRecoSub: { fontSize: TYPE.caption.fontSize, color: palette.sub },
   /* Pathway */
-  pathwayCard: { borderRadius: 18, padding: 16, gap: 10 },
+  pathwayCard: { borderRadius: RADIUS.lg, padding: 16, gap: 10 },
   pathwayStepper: {
     flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center',
     paddingVertical: 4,
   },
   pathwayStep: { alignItems: 'center', gap: 6, width: 64 },
   pathwayDot: {
-    width: 28, height: 28, borderRadius: 999,
+    width: 28, height: 28, borderRadius: RADIUS.pill,
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: palette.borderSoft,
     borderWidth: 2, borderColor: palette.borderSoft,
@@ -880,84 +1159,84 @@ const styles = StyleSheet.create({
   pathwayDotDone: { backgroundColor: palette.success, borderColor: palette.success },
   pathwayDotCurrent: { backgroundColor: palette.accent, borderColor: palette.accent },
   pathwayDotFuture: { backgroundColor: palette.cardSoft, borderColor: palette.borderSoft },
-  pathwayDotText: { fontSize: 11, fontWeight: '700', color: palette.muted },
+  pathwayDotText: { fontSize: TYPE.micro.fontSize, fontWeight: '700', color: palette.muted },
   pathwayLine: {
     height: 2, flex: 1, backgroundColor: palette.borderSoft,
     marginTop: 13, marginHorizontal: -4,
   },
   pathwayLineDone: { backgroundColor: palette.success },
   pathwayLineCurrent: { backgroundColor: palette.accent },
-  pathwayStepLabel: { fontSize: 10, fontWeight: '600', color: palette.text, textAlign: 'center' },
+  pathwayStepLabel: { fontSize: TYPE.micro.fontSize, fontWeight: '600', color: palette.text, textAlign: 'center' },
   pathwayStepLabelCurrent: { fontWeight: '800', color: palette.accent },
   pathwayStepLabelFuture: { color: palette.muted },
-  pathwayProgress: { fontSize: 11, fontWeight: '600', color: palette.sub, textAlign: 'center' },
+  pathwayProgress: { fontSize: TYPE.micro.fontSize, fontWeight: '600', color: palette.sub, textAlign: 'center' },
 
-  testsCard: { marginTop: 8, borderRadius: 16, padding: 14, gap: 10 },
+  testsCard: { marginTop: 8, borderRadius: RADIUS.lg, padding: 14, gap: 10 },
   testsRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
-  testsTitle: { fontSize: 14, fontWeight: '700', color: palette.text },
-  testsSub: { fontSize: 12, color: palette.sub, marginTop: 2 },
+  testsTitle: { fontSize: TYPE.body.fontSize, fontWeight: '700', color: palette.text },
+  testsSub: { fontSize: TYPE.caption.fontSize, color: palette.sub, marginTop: 2 },
 
   /* Momentum */
-  momentumCard: { borderRadius: 16, padding: 14 },
+  momentumCard: { borderRadius: RADIUS.lg, padding: 14 },
   momentumRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
-  momentumIcon: { width: 32, height: 32, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
-  momentumLbl: { flex: 1, fontSize: 13, fontWeight: '600', color: palette.text },
+  momentumIcon: { width: 32, height: 32, borderRadius: RADIUS.pill, alignItems: 'center', justifyContent: 'center' },
+  momentumLbl: { flex: 1, fontSize: TYPE.caption.fontSize, fontWeight: '600', color: palette.text },
   momentumDiv: { height: 1, backgroundColor: palette.borderSoft },
 
   /* Charge */
-  chargeCard: { borderRadius: 16, padding: 14 },
+  chargeCard: { borderRadius: RADIUS.lg, padding: 14 },
   chargeStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 6 },
-  chargeStatusDot: { width: 14, height: 14, borderRadius: 999 },
-  chargeStatusLabel: { fontSize: 16, fontWeight: '800' },
-  chargeStatusMsg: { fontSize: 12, color: palette.sub, marginTop: 2 },
+  chargeStatusDot: { width: 14, height: 14, borderRadius: RADIUS.pill },
+  chargeStatusLabel: { fontSize: TYPE.body.fontSize, fontWeight: '800' },
+  chargeStatusMsg: { fontSize: TYPE.caption.fontSize, color: palette.sub, marginTop: 2 },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
-  chartTitle: { marginTop: 12, fontSize: 12, fontWeight: '700', color: palette.text },
+  chartTitle: { marginTop: 12, fontSize: TYPE.caption.fontSize, fontWeight: '700', color: palette.text },
   chartRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginTop: 8, height: 80 },
   chartHeaderRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   chartMetaRow: { flexDirection: 'row', gap: 6 },
   chartSep: { height: 1, backgroundColor: palette.borderSoft, marginTop: 12 },
   barCol: { flex: 1, alignItems: 'center' },
-  barVal: { fontSize: 9, color: palette.sub, marginBottom: 2 },
-  bar: { width: 22, borderRadius: 8 },
-  barLbl: { fontSize: 9, color: palette.sub, marginTop: 3 },
+  barVal: { fontSize: TYPE.micro.fontSize, color: palette.sub, marginBottom: 2 },
+  bar: { width: 22, borderRadius: RADIUS.sm },
+  barLbl: { fontSize: TYPE.micro.fontSize, color: palette.sub, marginTop: 3 },
 
   /* Badges */
   badgeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  badgeCell: { flexBasis: '47%', flexGrow: 1, borderRadius: 16, padding: 12, alignItems: 'center', gap: 6 },
-  badgeIconCircle: { width: 44, height: 44, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
-  badgeCellTitle: { fontSize: 12, fontWeight: '700', color: palette.text, textAlign: 'center' },
-  badgeCellTrack: { width: '100%', height: 4, borderRadius: 999, backgroundColor: palette.borderSoft, overflow: 'hidden', marginTop: 4 },
+  badgeCell: { flexBasis: '47%', flexGrow: 1, borderRadius: RADIUS.lg, padding: 12, alignItems: 'center', gap: 6 },
+  badgeIconCircle: { width: 44, height: 44, borderRadius: RADIUS.pill, alignItems: 'center', justifyContent: 'center' },
+  badgeCellTitle: { fontSize: TYPE.caption.fontSize, fontWeight: '700', color: palette.text, textAlign: 'center' },
+  badgeCellTrack: { width: '100%', height: 4, borderRadius: RADIUS.pill, backgroundColor: palette.borderSoft, overflow: 'hidden', marginTop: 4 },
   badgeCellFill: { height: '100%' },
 
   /* Calendar */
-  calCard: { borderRadius: 16, padding: 14, gap: 10 },
+  calCard: { borderRadius: RADIUS.lg, padding: 14, gap: 10 },
   calRow: { flexDirection: 'row', justifyContent: 'space-between' },
   calItem: { alignItems: 'center', gap: 6 },
   calCircle: {
-    width: 36, height: 36, borderRadius: 999, backgroundColor: palette.bgSoft,
+    width: 36, height: 36, borderRadius: RADIUS.pill, backgroundColor: palette.bgSoft,
     borderWidth: 1, borderColor: palette.borderSoft, alignItems: 'center', justifyContent: 'center',
   },
   calClub: { backgroundColor: palette.accent, borderColor: palette.accent },
   calMatch: { backgroundColor: palette.success, borderColor: palette.success },
-  calCircleText: { fontSize: 12, fontWeight: '600', color: palette.sub },
-  calDayLbl: { fontSize: 10, fontWeight: '600', color: palette.sub },
+  calCircleText: { fontSize: TYPE.caption.fontSize, fontWeight: '600', color: palette.sub },
+  calDayLbl: { fontSize: TYPE.micro.fontSize, fontWeight: '600', color: palette.sub },
   calDayLblActive: { color: palette.text, fontWeight: '700' },
   calLegend: { flexDirection: 'row', gap: 16, justifyContent: 'center' },
   calLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  calLegendDot: { width: 8, height: 8, borderRadius: 999 },
-  calLegendText: { fontSize: 11, color: palette.sub },
+  calLegendDot: { width: 8, height: 8, borderRadius: RADIUS.pill },
+  calLegendText: { fontSize: TYPE.micro.fontSize, color: palette.sub },
 
   /* Timeline */
-  recentCard: { borderRadius: 16, padding: 14 },
-  recentEmpty: { fontSize: 12, color: palette.sub },
+  recentCard: { borderRadius: RADIUS.lg, padding: 14 },
+  recentEmpty: { fontSize: TYPE.caption.fontSize, color: palette.sub },
   tlItem: { flexDirection: 'row', gap: 12, minHeight: 54 },
   tlTrack: { width: 16, alignItems: 'center' },
-  tlDot: { width: 10, height: 10, borderRadius: 999, marginTop: 4 },
+  tlDot: { width: 10, height: 10, borderRadius: RADIUS.pill, marginTop: 4 },
   tlLine: { flex: 1, width: 2, backgroundColor: palette.borderSoft, marginTop: 4 },
   tlContent: { flex: 1, paddingBottom: 14, gap: 4 },
   tlHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  tlTitle: { fontSize: 14, fontWeight: '700', color: palette.text, flex: 1 },
-  tlRpe: { fontSize: 12, fontWeight: '700' },
+  tlTitle: { fontSize: TYPE.body.fontSize, fontWeight: '700', color: palette.text, flex: 1 },
+  tlRpe: { fontSize: TYPE.caption.fontSize, fontWeight: '700' },
   tlTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
 
   /* Actions */

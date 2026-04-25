@@ -7,6 +7,7 @@ import type { FKS_NextSessionV2 } from "./types";
 import { safeFetch, BackendError } from "../../utils/errorHandler";
 import { sessionV2Schema } from "../../schemas/sessionSchema";
 import { snakeToCamel } from "../../utils/caseTransform";
+import { sanitizeCoachText, sanitizeCoachTextList } from "../../utils/sanitizeCoachText";
 
 // TODO: Backend optimization — envoyer uniquement les IDs d'exercices au lieu des objets
 // complets (~20 KB économisés par requête). Nécessite que le backend maintienne sa propre
@@ -233,5 +234,36 @@ export async function fetchV2(
   }
 
   const v2 = snakeToCamel<FKS_NextSessionV2>(parsed.data);
-  return { v2, debug: data };
+  // Défense en profondeur : si une phrase toxique (culpabilisation, diagnostic médical,
+  // message technique) a échappé au nettoyage backend, on la neutralise avant affichage.
+  // Voir INJURY_IA_CHARTER.md côté back et utils/sanitizeCoachText.ts côté front.
+  const sanitizedV2 = sanitizeSessionText(v2);
+  return { v2: sanitizedV2, debug: data };
+}
+
+function sanitizeSessionText(v2: FKS_NextSessionV2): FKS_NextSessionV2 {
+  const cleaned: FKS_NextSessionV2 = {
+    ...v2,
+    title: sanitizeCoachText(v2.title),
+    subtitle: sanitizeCoachText(v2.subtitle ?? null),
+    sessionTheme: sanitizeCoachText(v2.sessionTheme ?? null),
+    coachingTips: sanitizeCoachTextList(v2.coachingTips),
+    recoveryTips: sanitizeCoachTextList(v2.recoveryTips),
+    injuryAdaptationExplanation: sanitizeCoachText(v2.injuryAdaptationExplanation ?? null),
+    blocks: Array.isArray(v2.blocks)
+      ? v2.blocks.map((block: any) => ({
+          ...block,
+          goal: sanitizeCoachText(block?.goal ?? null),
+          items: Array.isArray(block?.items)
+            ? block.items.map((item: any) => ({
+                ...item,
+                description: sanitizeCoachText(item?.description ?? null),
+                footballContext: sanitizeCoachText(item?.footballContext ?? null),
+                notes: sanitizeCoachText(item?.notes ?? null),
+              }))
+            : block?.items,
+        }))
+      : v2.blocks,
+  } as FKS_NextSessionV2;
+  return cleaned;
 }

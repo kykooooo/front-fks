@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -7,7 +7,7 @@ import {
   LayoutChangeEvent,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import {
   format,
   startOfMonth,
@@ -21,16 +21,19 @@ import Svg, { Line, Path, Circle } from "react-native-svg";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 
-import { theme } from "../constants/theme";
+import { theme, TYPE, RADIUS } from "../constants/theme";
 import { useLoadStore } from "../state/stores/useLoadStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useExternalStore } from "../state/stores/useExternalStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
+import { useSyncStore } from "../state/stores/useSyncStore";
+import { recomputeLoadIfStale } from "../state/orchestrators/recomputeLoadIfStale";
 import { Card } from "../components/ui/Card";
-import { TRAINING_DEFAULTS, getFootballLabel } from "../config/trainingDefaults";
+import { TRAINING_DEFAULTS, getFootballLabel, getTauForLevel } from "../config/trainingDefaults";
 import { updateTrainingLoad } from "../engine/loadModel";
 import { STORAGE_KEYS } from "../constants/storage";
 import { toDateKey } from "../utils/dateHelpers";
+import { isSessionCompleted } from "../utils/sessionStatus";
 
 const palette = theme.colors;
 
@@ -64,7 +67,7 @@ function computeMilestones(
       icon: "flash",
       label: "Première séance",
       value: totalSessions >= 1 ? "Fait !" : "0 / 1",
-      color: "#ff7a1a",
+      color: theme.colors.accent,
       reached: totalSessions >= 1,
     },
     {
@@ -72,7 +75,7 @@ function computeMilestones(
       icon: "trophy",
       label: "10 séances",
       value: totalSessions >= 10 ? "Débloqué" : `${totalSessions} / 10`,
-      color: "#8b5cf6",
+      color: theme.colors.violet500,
       reached: totalSessions >= 10,
     },
     {
@@ -80,7 +83,7 @@ function computeMilestones(
       icon: "medal",
       label: "50 séances",
       value: totalSessions >= 50 ? "Débloqué" : `${totalSessions} / 50`,
-      color: "#f59e0b",
+      color: theme.colors.amber500,
       reached: totalSessions >= 50,
     },
     {
@@ -88,7 +91,7 @@ function computeMilestones(
       icon: "flame",
       label: "7 jours d'affilée",
       value: maxStreak >= 7 ? "Débloqué" : `${maxStreak} / 7`,
-      color: "#ef4444",
+      color: theme.colors.red500,
       reached: maxStreak >= 7,
     },
     {
@@ -96,7 +99,7 @@ function computeMilestones(
       icon: "ribbon",
       label: "Cycle terminé",
       value: totalCycles >= 1 ? "Fait !" : "0 / 1",
-      color: "#16a34a",
+      color: theme.colors.green600,
       reached: totalCycles >= 1,
     },
     {
@@ -104,7 +107,7 @@ function computeMilestones(
       icon: "calendar",
       label: "30 jours d'activité",
       value: totalDays >= 30 ? "Débloqué" : `${totalDays} / 30`,
-      color: "#06b6d4",
+      color: theme.colors.cyan500,
       reached: totalDays >= 30,
     },
   ];
@@ -188,7 +191,20 @@ export default function ProgressScreen() {
   const sessions = useSessionsStore((s) => s.sessions ?? []);
   const externalLoads = useExternalStore((s) => s.externalLoads ?? []);
   const dailyApplied = useLoadStore((s) => s.dailyApplied ?? {});
+  const playerLevel = useSessionsStore((s) => s.playerLevel);
+  const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
   const [testEntries, setTestEntries] = useState<TestEntry[]>([]);
+
+  // Recalcule ATL/CTL/TSB jusqu'à aujourd'hui à chaque focus.
+  // ProgressScreen affiche un graphique 30j et le TSB courant : sans ce
+  // recompute, un user qui revient sur Progress sans repasser par Home
+  // verrait une métrique vieille de plusieurs jours.
+  useFocusEffect(
+    useCallback(() => {
+      if (!storeHydrated) return;
+      recomputeLoadIfStale();
+    }, [storeHydrated])
+  );
 
   useLayoutEffect(() => {
     navigation.setOptions?.({
@@ -218,6 +234,7 @@ export default function ProgressScreen() {
 
   // ─── Load series (30 days) ───
   const loadSeries = useMemo<LoadPoint[]>(() => {
+    const { tauAtl, tauCtl } = getTauForLevel(playerLevel);
     const daysBack = 30;
     const warmup = 45;
     const totalDays = daysBack + warmup;
@@ -232,7 +249,7 @@ export default function ProgressScreen() {
     orderedDays.forEach((d, idx) => {
       const key = toDateKey(d);
       const load = Number(dailyApplied[key] ?? 0) || 0;
-      const next = updateTrainingLoad(atlSeed, ctlSeed, load, { dtDays: 1 });
+      const next = updateTrainingLoad(atlSeed, ctlSeed, load, { dtDays: 1, tauAtl, tauCtl });
       atlSeed = next.atl;
       ctlSeed = next.ctl;
       if (idx >= warmup) {
@@ -247,7 +264,7 @@ export default function ProgressScreen() {
     });
 
     return series;
-  }, [dailyApplied, devNowISO]);
+  }, [dailyApplied, devNowISO, playerLevel]);
 
   const tsbSeries = useMemo(() => loadSeries.map((d) => d.tsb), [loadSeries]);
 
@@ -259,7 +276,7 @@ export default function ProgressScreen() {
     return toDateKey(prev).slice(0, 7);
   })();
 
-  const completedSessions = sessions.filter((s: any) => s?.completed);
+  const completedSessions = sessions.filter((s: any) => isSessionCompleted(s));
   const activitySet = new Set<string>();
   completedSessions.forEach((s: any) =>
     activitySet.add(toDateKey(s?.dateISO ?? s?.date))
@@ -462,7 +479,7 @@ export default function ProgressScreen() {
                 y1={toY(5)}
                 x2={chartWidth - padRight}
                 y2={toY(5)}
-                stroke="rgba(34, 197, 94, 0.2)"
+                stroke={theme.colors.greenSoft20}
                 strokeWidth={1}
                 strokeDasharray="4,4"
               />
@@ -471,7 +488,7 @@ export default function ProgressScreen() {
                 y1={toY(-5)}
                 x2={chartWidth - padRight}
                 y2={toY(-5)}
-                stroke="rgba(34, 197, 94, 0.2)"
+                stroke={theme.colors.greenSoft20}
                 strokeWidth={1}
                 strokeDasharray="4,4"
               />
@@ -490,7 +507,7 @@ export default function ProgressScreen() {
                 y1={toY(-10)}
                 x2={chartWidth - padRight}
                 y2={toY(-10)}
-                stroke="rgba(245, 158, 11, 0.3)"
+                stroke={theme.colors.amberSoft30}
                 strokeWidth={1}
               />
               {/* Courbe */}
@@ -514,7 +531,7 @@ export default function ProgressScreen() {
             </Svg>
             <Text style={[styles.refLabel, { top: toY(0) - 8 }]}>0</Text>
             <Text
-              style={[styles.refLabel, { top: toY(-10) - 8, color: "#f59e0b" }]}
+              style={[styles.refLabel, { top: toY(-10) - 8, color: theme.colors.amber500 }]}
             >
               -10
             </Text>
@@ -612,20 +629,20 @@ export default function ProgressScreen() {
                       styles.testDiffBadge,
                       {
                         backgroundColor: tc.improved
-                          ? "rgba(22,163,74,0.12)"
-                          : "rgba(239,68,68,0.12)",
+                          ? theme.colors.greenSoft12
+                          : theme.colors.redSoft12,
                       },
                     ]}
                   >
                     <Ionicons
                       name={tc.improved ? "trending-up" : "trending-down"}
                       size={12}
-                      color={tc.improved ? "#16a34a" : "#ef4444"}
+                      color={tc.improved ? theme.colors.green600 : theme.colors.red500}
                     />
                     <Text
                       style={[
                         styles.testDiffText,
-                        { color: tc.improved ? "#16a34a" : "#ef4444" },
+                        { color: tc.improved ? theme.colors.green600 : theme.colors.red500 },
                       ]}
                     >
                       {diffStr}
@@ -706,7 +723,7 @@ export default function ProgressScreen() {
               </Text>
             </View>
             <View style={styles.statItem}>
-              <Ionicons name="flame-outline" size={16} color="#ef4444" />
+              <Ionicons name="flame-outline" size={16} color={theme.colors.red500} />
               <Text style={styles.statLabel}>Record streak</Text>
               <Text style={styles.statValue}>{maxStreakThisMonth} j</Text>
             </View>
@@ -722,21 +739,21 @@ export default function ProgressScreen() {
                   {
                     backgroundColor:
                       sessionsDelta >= 0
-                        ? "rgba(22,163,74,0.12)"
-                        : "rgba(239,68,68,0.12)",
+                        ? theme.colors.greenSoft12
+                        : theme.colors.redSoft12,
                   },
                 ]}
               >
                 <Ionicons
                   name={sessionsDelta >= 0 ? "trending-up" : "trending-down"}
                   size={12}
-                  color={sessionsDelta >= 0 ? "#16a34a" : "#ef4444"}
+                  color={sessionsDelta >= 0 ? theme.colors.green600 : theme.colors.red500}
                 />
                 <Text
                   style={{
-                    fontSize: 12,
+                    fontSize: TYPE.caption.fontSize,
                     fontWeight: "700",
-                    color: sessionsDelta >= 0 ? "#16a34a" : "#ef4444",
+                    color: sessionsDelta >= 0 ? theme.colors.green600 : theme.colors.red500,
                   }}
                 >
                   {sessionsDelta >= 0 ? "+" : ""}
@@ -749,21 +766,21 @@ export default function ProgressScreen() {
                   {
                     backgroundColor:
                       loadDelta >= 0
-                        ? "rgba(22,163,74,0.12)"
-                        : "rgba(239,68,68,0.12)",
+                        ? theme.colors.greenSoft12
+                        : theme.colors.redSoft12,
                   },
                 ]}
               >
                 <Ionicons
                   name={loadDelta >= 0 ? "trending-up" : "trending-down"}
                   size={12}
-                  color={loadDelta >= 0 ? "#16a34a" : "#ef4444"}
+                  color={loadDelta >= 0 ? theme.colors.green600 : theme.colors.red500}
                 />
                 <Text
                   style={{
-                    fontSize: 12,
+                    fontSize: TYPE.caption.fontSize,
                     fontWeight: "700",
-                    color: loadDelta >= 0 ? "#16a34a" : "#ef4444",
+                    color: loadDelta >= 0 ? theme.colors.green600 : theme.colors.red500,
                   }}
                 >
                   {loadDelta >= 0 ? "+" : ""}
@@ -794,7 +811,7 @@ const styles = StyleSheet.create({
   // ─── Hero ───
   heroCard: {
     padding: 16,
-    borderRadius: 24,
+    borderRadius: RADIUS.xl,
     gap: 8,
   },
   heroHeader: {
@@ -804,7 +821,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   kicker: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     letterSpacing: 1.4,
     color: palette.sub,
     textTransform: "uppercase",
@@ -812,19 +829,19 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     marginTop: 4,
-    fontSize: 24,
+    fontSize: TYPE.title.fontSize,
     fontWeight: "900",
   },
   heroMessage: {
     marginTop: 4,
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     lineHeight: 18,
   },
   statusDot: {
     width: 16,
     height: 16,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
     marginTop: 6,
   },
   chartWrap: {
@@ -834,11 +851,11 @@ const styles = StyleSheet.create({
   refLabel: {
     position: "absolute",
     left: 0,
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
   },
   chartCaption: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
     fontWeight: "600",
   },
@@ -846,7 +863,7 @@ const styles = StyleSheet.create({
   // ─── Milestones ───
   milestonesCard: {
     padding: 16,
-    borderRadius: 24,
+    borderRadius: RADIUS.xl,
     gap: 14,
   },
   milestonesGrid: {
@@ -860,7 +877,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 12,
     paddingHorizontal: 4,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     backgroundColor: palette.cardSoft,
     borderWidth: 1,
     borderColor: palette.borderSoft,
@@ -871,18 +888,18 @@ const styles = StyleSheet.create({
   milestoneIcon: {
     width: 40,
     height: 40,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
   },
   milestoneLabel: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "600",
     color: palette.text,
     textAlign: "center",
   },
   milestoneValue: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "700",
     color: palette.sub,
   },
@@ -890,7 +907,7 @@ const styles = StyleSheet.create({
   // ─── Tests ───
   testsCard: {
     padding: 16,
-    borderRadius: 24,
+    borderRadius: RADIUS.xl,
     gap: 12,
   },
   testsTitleRow: {
@@ -899,7 +916,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   testsSub: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     marginTop: -4,
   },
@@ -915,18 +932,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   testLabel: {
-    fontSize: 13,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "600",
     color: palette.text,
   },
   testBefore: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     minWidth: 48,
     textAlign: "right",
   },
   testAfter: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     fontWeight: "700",
     color: palette.text,
     minWidth: 48,
@@ -938,18 +955,18 @@ const styles = StyleSheet.create({
     gap: 3,
     paddingHorizontal: 6,
     paddingVertical: 3,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
     marginLeft: 4,
   },
   testDiffText: {
-    fontSize: 10,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "700",
   },
 
   // ─── Calendar ───
   calendarCard: {
     padding: 16,
-    borderRadius: 24,
+    borderRadius: RADIUS.xl,
     gap: 10,
   },
   calendarHeader: {
@@ -959,7 +976,7 @@ const styles = StyleSheet.create({
   calendarDow: {
     width: 32,
     textAlign: "center",
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
   },
   calendarGrid: {
@@ -974,7 +991,7 @@ const styles = StyleSheet.create({
   calendarDot: {
     width: 32,
     height: 32,
-    borderRadius: 16,
+    borderRadius: RADIUS.lg,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "transparent",
@@ -987,7 +1004,7 @@ const styles = StyleSheet.create({
     borderColor: palette.text,
   },
   calendarText: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
   },
   calendarTextActive: {
@@ -1002,18 +1019,18 @@ const styles = StyleSheet.create({
   legendDot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
+    borderRadius: RADIUS.xs,
   },
   legendText: {
     marginLeft: 6,
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
   },
 
   // ─── Stats ───
   statsCard: {
     padding: 16,
-    borderRadius: 24,
+    borderRadius: RADIUS.xl,
     gap: 14,
   },
   statsGrid: {
@@ -1024,31 +1041,31 @@ const styles = StyleSheet.create({
   statItem: {
     width: "46%",
     padding: 12,
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     backgroundColor: palette.cardSoft,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     gap: 4,
   },
   statLabel: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     color: palette.sub,
   },
   statValue: {
-    fontSize: 18,
+    fontSize: TYPE.subtitle.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   compareRow: {
     padding: 12,
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
     gap: 8,
   },
   compareLabel: {
-    fontSize: 11,
+    fontSize: TYPE.micro.fontSize,
     fontWeight: "600",
     color: palette.sub,
     textTransform: "uppercase",
@@ -1065,16 +1082,16 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
   },
 
   sectionTitle: {
-    fontSize: 16,
+    fontSize: TYPE.body.fontSize,
     fontWeight: "800",
     color: palette.text,
   },
   sectionSub: {
-    fontSize: 12,
+    fontSize: TYPE.caption.fontSize,
     color: palette.sub,
     marginTop: 2,
   },

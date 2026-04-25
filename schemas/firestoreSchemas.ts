@@ -81,6 +81,11 @@ export const userProfileSchema = z.object({
   position: z.string().nullable().optional().catch(null),
   dominantFoot: z.string().nullable().optional().catch(null),
   mainObjective: z.string().nullable().optional().catch(null),
+  // Âge du joueur (15-99). Consommé par aiContext -> backend pour adapter
+  // volume/RPE/pédagogie (un 16 ans loisir ≠ un 23 ans N3). Optionnel
+  // pour rester compatible avec les profils legacy sans âge renseigné.
+  age: z.number().int().min(15).max(99).nullable().optional().catch(null),
+  birthYear: z.number().int().min(1900).max(2100).nullable().optional().catch(null),
 
   // Training schedule
   clubTrainingDays: z.array(dowString).catch([]),

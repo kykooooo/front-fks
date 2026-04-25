@@ -574,23 +574,31 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
                 />
               ) : null}
 
-              {/* Pourquoi cette séance (rationale IA) */}
-              {v2.analytics?.rationale ? (
-                <Card variant="soft" style={styles.coachCard}>
-                  <View style={styles.rationaleHeader}>
-                    <Ionicons name="sparkles" size={16} color={theme.colors.accent} />
-                    <Text style={styles.rationaleTitle}>Pourquoi cette séance</Text>
-                  </View>
-                  <Text style={styles.body}>{v2.analytics.rationale}</Text>
-                </Card>
-              ) : null}
+              {/* Pourquoi cette séance — tronqué aux 2 premières phrases pour rester lisible
+                  en 3 secondes. Les détails techniques (token/format/score) ne fuient pas. */}
+              {v2.analytics?.rationale ? (() => {
+                const raw = String(v2.analytics.rationale).trim();
+                // Coupe à 2 phrases max ou 200 chars (whichever first) pour éviter
+                // les rationales debug-style multi-paragraphes type "token X | format Y | ..."
+                const sentences = raw.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ");
+                const compact = sentences.length > 200 ? `${sentences.slice(0, 197)}…` : sentences;
+                return (
+                  <Card variant="soft" style={styles.coachCard}>
+                    <View style={styles.rationaleHeader}>
+                      <Ionicons name="sparkles" size={16} color={theme.colors.accent} />
+                      <Text style={styles.rationaleTitle}>Pourquoi cette séance</Text>
+                    </View>
+                    <Text style={styles.body}>{compact}</Text>
+                  </Card>
+                );
+              })() : null}
 
-              {/* Coaching */}
+              {/* Coaching — limité à 3 tips max pour éviter la liste à puces interminable */}
               {v2.coachingTips && v2.coachingTips.length > 0 ? (
                 <Card variant="soft" style={styles.coachCard}>
                   <SectionHeader title="Coaching" />
                   <View style={{ gap: 6 }}>
-                    {v2.coachingTips.map((tip: string, i: number) => (
+                    {v2.coachingTips.slice(0, 3).map((tip: string, i: number) => (
                       <Text key={`tip_${i}`} style={styles.bullet}>{'\u2022'} {tip}</Text>
                     ))}
                   </View>

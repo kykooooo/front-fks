@@ -6,6 +6,7 @@ import { useLoadStore } from "../state/stores/useLoadStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
 import { useFeedbackStore } from "../state/stores/useFeedbackStore";
+import { recomputeLoadIfStale } from "../state/orchestrators/recomputeLoadIfStale";
 import { toDateKey } from "../utils/dateHelpers";
 import type { Session, Exercise } from "../domain/types";
 import { userProfileSchema, logValidationIssues } from "../schemas/firestoreSchemas";
@@ -60,6 +61,8 @@ export interface FKS_AiContext {
     level: string | null;
     position: string | null;
     dominant_foot: string | null;
+    /** Âge en années si renseigné — sert à adapter volume/RPE/pédagogie côté backend. */
+    age?: number | null;
     club_trainings_per_week: number;
     matches_per_week: number;
     target_fks_sessions_per_week: number | null;
@@ -76,7 +79,26 @@ export interface FKS_AiContext {
   nowISO?: string;
   devNowISO?: string | null;
   phase: FKS_PhaseId;
-  microcycle?: { session_index: number };
+  /**
+   * microcycle — expose aussi des booléens explicites match_today/match_tomorrow
+   * pour sécuriser la détection J-1 côté backend même si `profile.match_days`
+   * est vide (edge case : user n'a pas saisi ses matchs en profil).
+   */
+  microcycle?: {
+    session_index: number;
+    match_today?: boolean;
+    match_tomorrow?: boolean;
+    match_yesterday?: boolean;
+    match_in_two_days?: boolean;
+    club_today?: boolean;
+    club_tomorrow?: boolean;
+    /**
+     * Date ISO (YYYY-MM-DD) du prochain match connu — calculée frontend depuis
+     * `profile.match_days` + `nowISO`. Source déterministe consommée par le backend
+     * pour sécuriser la détection J-1 même si les jours récurrents sont vides.
+     */
+    next_match_date?: string | null;
+  };
   constraints?: {
     equipment?: string[];
     pains?: string[];
@@ -240,6 +262,23 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
   const position = data.position ?? null;
   const dominantFoot = data.dominantFoot ?? null;
   const mainObjective = data.mainObjective ?? null;
+  // Âge : utilise `age` direct ou dérive de `birthYear` si dispo.
+  const nowYear = new Date().getFullYear();
+  const ageFromBirth =
+    typeof data.birthYear === "number" && Number.isFinite(data.birthYear)
+      ? Math.max(0, nowYear - data.birthYear)
+      : null;
+  const resolvedAgeRaw =
+    typeof data.age === "number" && Number.isFinite(data.age) ? data.age : ageFromBirth;
+  const age =
+    typeof resolvedAgeRaw === "number" && resolvedAgeRaw >= 15 && resolvedAgeRaw <= 99
+      ? Math.round(resolvedAgeRaw)
+      : null;
+  // CRITIQUE : recompute ATL/CTL/TSB si les métriques sont en retard de jour.
+  // Sans ça, un joueur qui n'a pas force-quit l'app pendant 30 jours envoie un
+  // TSB figé sur la valeur d'il y a 30 jours → backend pense "fatigué" alors
+  // que sportivement il devrait être frais. Idempotent : no-op si déjà à jour.
+  recomputeLoadIfStale();
   const loadState = useLoadStore.getState();
   const sessionsState = useSessionsStore.getState();
   const ignoreFatigueCap = Boolean(loadState.ignoreFatigueCap);
@@ -396,6 +435,39 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
           .join(" | ")
       : undefined;
 
+  // Compute match flags frontend-side (source of truth backend = OR des deux sources)
+  // pour que la sécurité J-1 reste active même si profile.match_days est vide.
+  const DOW = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+  const todayDateObj = new Date(nowISO);
+  const dayAt = (offsetDays: number) => {
+    const d = new Date(todayDateObj.getTime() + offsetDays * 86400000);
+    return DOW[d.getDay()];
+  };
+  const matchDaysSet = new Set((matchDays ?? []).map((d) => String(d).toLowerCase()));
+  const clubDaysSet = new Set((clubTrainingDays ?? []).map((d) => String(d).toLowerCase()));
+  const mcMatchToday = matchDaysSet.has(dayAt(0) ?? "");
+  const mcMatchTomorrow = matchDaysSet.has(dayAt(1) ?? "");
+  const mcMatchYesterday = matchDaysSet.has(dayAt(-1) ?? "");
+  const mcMatchInTwoDays = matchDaysSet.has(dayAt(2) ?? "");
+  const mcClubToday = clubDaysSet.has(dayAt(0) ?? "");
+  const mcClubTomorrow = clubDaysSet.has(dayAt(1) ?? "");
+
+  // Calcul du prochain match (ISO YYYY-MM-DD) dans les 7 prochains jours si un
+  // match hebdomadaire est déclaré. Null sinon. Source explicite consommée par
+  // le backend (fksOrchestrator) en parallèle des booléens match_today/tomorrow.
+  const computeNextMatchDate = (): string | null => {
+    if (matchDaysSet.size === 0) return null;
+    for (let offset = 0; offset <= 7; offset++) {
+      const dow = dayAt(offset);
+      if (dow && matchDaysSet.has(dow)) {
+        const d = new Date(todayDateObj.getTime() + offset * 86400000);
+        return d.toISOString().slice(0, 10);
+      }
+    }
+    return null;
+  };
+  const nextMatchDate = computeNextMatchDate();
+
   const context: FKS_AiContext = {
     version: "fks_context_v1",
     profile: {
@@ -403,6 +475,7 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
       level,
       position,
       dominant_foot: dominantFoot,
+      ...(age !== null ? { age } : {}),
       club_trainings_per_week: clubTrainingsPerWeek,
       matches_per_week: matchesPerWeek,
       target_fks_sessions_per_week: targetFksSessionsPerWeek,
@@ -426,7 +499,16 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
       ...(ignoreFatigueCap ? { ignore_fatigue_cap: true } : {}),
     },
     phase,
-    microcycle: { session_index: microcycleSessionIndex },
+    microcycle: {
+      session_index: microcycleSessionIndex,
+      match_today: mcMatchToday,
+      match_tomorrow: mcMatchTomorrow,
+      match_yesterday: mcMatchYesterday,
+      match_in_two_days: mcMatchInTwoDays,
+      club_today: mcClubToday,
+      club_tomorrow: mcClubTomorrow,
+      next_match_date: nextMatchDate,
+    },
     metrics: {
       atl,
       ctl,
