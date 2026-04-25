@@ -1,6 +1,7 @@
 import { getAuth } from "firebase/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { BACKEND_API_KEY, BACKEND_URL } from "../../config/backend";
+import { BACKEND_URL } from "../../config/backend";
+import { firebaseWebConfig } from "../../config/firebaseConfig";
 import { BACKEND_EXERCISE_IDS } from "../../engine/backendExerciseIds";
 import { EXERCISE_BY_ID } from "../../engine/exerciseBank";
 import type { FKS_NextSessionV2 } from "./types";
@@ -188,8 +189,8 @@ export async function fetchV2(
     "Content-Type": "application/json",
     Authorization: `Bearer ${idToken}`,
   };
-  if (BACKEND_API_KEY) {
-    headers["x-fks-api-key"] = BACKEND_API_KEY;
+  if (firebaseWebConfig.apiKey) {
+    headers["x-fks-firebase-api-key"] = firebaseWebConfig.apiKey;
   }
 
   // Timeout long : Render free-tier cold start (~30-50s) + génération IA (~15s)
