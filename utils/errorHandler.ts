@@ -280,8 +280,12 @@ function extractBackendUserMessage(status: number, body: string): string | undef
     return 'Le serveur rencontre un problème. Réessaie dans quelques minutes.';
   }
 
-  if (rawMessage && !rawMessage.includes('_')) {
+  if (rawMessage) {
     return rawMessage;
+  }
+
+  if (rawError === 'invalid_request') {
+    return 'Le serveur a refusé la génération. Vérifie ton cycle actif, ton lieu et ton matériel, puis réessaie.';
   }
 
   return undefined;

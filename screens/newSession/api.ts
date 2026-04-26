@@ -207,6 +207,8 @@ export async function fetchV2(
     // Si timeout (cold start probable), retry une fois
     if (firstError.code === "ETIMEDOUT") {
       r = await safeFetch(url, fetchOptions, 90000);
+    } else if (firstError instanceof BackendError && firstError.status >= 500) {
+      r = await safeFetch(url, fetchOptions, 90000);
     } else {
       throw firstError;
     }
