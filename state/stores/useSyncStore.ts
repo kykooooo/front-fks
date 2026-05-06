@@ -16,6 +16,7 @@ import type { CompletedSession } from "../../repositories/sessionsRepo";
 import { savePlannedSessionToFirestore } from "../../services/plannedSessionsRepo";
 import { isClubDay } from "../../utils/dateHelpers";
 import { normalizeSessionsFromFirestore } from "./syncHelpers";
+import { buildCompletedSessionFirestorePayload } from "./persistHelpers";
 import { addDaysISO } from "../../utils/virtualClock";
 
 import { useSessionsStore } from "./useSessionsStore";
@@ -148,24 +149,7 @@ export const useSyncStore = create<SyncState>()(
         const uid = auth.currentUser?.uid;
         if (!uid || !s.id) return;
 
-        const completedPayload: Record<string, unknown> = {
-          date: s.dateISO,
-          phase: s.phase,
-          focus: s.focus,
-          intensity: s.intensity,
-          exercises: s.exercises,
-          rpe: s.rpe,
-        };
-
-        if (s.feedback) {
-          const fb: Record<string, unknown> = {
-            fatigue: s.feedback.fatigue,
-            sleep: s.feedback.sleep,
-            pain: s.feedback.pain,
-          };
-          if (s.ai != null) fb.ai = s.ai;
-          completedPayload.feedback = fb;
-        }
+        const completedPayload = buildCompletedSessionFirestorePayload(s);
 
         await saveSession(uid, s.id, completedPayload as Omit<CompletedSession, "userId" | "id" | "createdAt">);
 
