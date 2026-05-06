@@ -97,9 +97,27 @@ export type CompletedSession = PlannedSession & {
   feedback?: {
     fatigue?: number; // 1–5
     sleep?: number;   // 1–5
-    pain?: number;    // 0–10
+    pain?: number;    // 0–10 (echelle Firestore — l'app ecrit en 0-5, voir aiContextHelpers.normalizeFeedbackPainForBackend)
     notes?: string;
+    // Champs additionnels persistes pour reactiver computeFeedbackAdjustments cote backend.
+    rpe?: number;
+    recoveryPerceived?: number;
+    durationMin?: number;
+    createdAt?: string;
+    comment?: string;
   };
+  // Snapshot ATL/CTL/TSB pris au moment du feedback. Permet a detectFatigueTrend cote
+  // backend (../fks/src/fksUtils.ts:62-75) d'avoir des points exploitables.
+  metrics?: {
+    atl?: number;
+    ctl?: number;
+    tsb?: number;
+  };
+  // Blueprint IA v2 (output backend persiste). Sert a relire `aiV2.rpeTarget` cote
+  // computeFeedbackAdjustments (../fks/src/fksOrchestrator.ts:307-310).
+  aiV2?: Record<string, unknown>;
+  dateISO?: string;
+  title?: string | null;
 };
   
   /** ——— users/{uid}/plannedSessions ——— */

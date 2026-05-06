@@ -86,6 +86,11 @@ export type Session = {
   durationMin?: number;     // durée effective (minutes)
   modality?: Modality;      // modalité dominante
   feedback?: SessionFeedback;
+  metrics?: {
+    atl?: number;
+    ctl?: number;
+    tsb?: number;
+  };
 
   /** @deprecated Utiliser feedback.rpe */
   rpe?: number;             // encore là pour compat (agrégation existante)

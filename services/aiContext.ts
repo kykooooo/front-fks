@@ -7,47 +7,40 @@ import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
 import { useFeedbackStore } from "../state/stores/useFeedbackStore";
 import { toDateKey } from "../utils/dateHelpers";
-import type { Session, Exercise } from "../domain/types";
+import type { Session } from "../domain/types";
 import { userProfileSchema, logValidationIssues } from "../schemas/firestoreSchemas";
+import {
+  RECENT_FKS_COPY_LIMIT,
+  RECENT_FKS_SESSION_LIMIT,
+  buildRecentByFocus,
+  buildRecentFksSessionsPayload,
+} from "./aiContextHelpers";
 
-// Phases FKS
-export type FKS_PhaseId = "playlist" | "construction" | "progression" | "performance" | "deload";
+// Reexport public API (le code applicatif importe depuis "./aiContext").
+export type {
+  FKS_PhaseId,
+  FKS_SessionFocus,
+  FKS_IntensityLevel,
+  FKS_RecentSessionSummary,
+} from "./aiContextHelpers";
+export {
+  RECENT_FKS_SESSION_LIMIT,
+  RECENT_FKS_COPY_LIMIT,
+  normalizeFeedbackPainForBackend,
+  readSessionMetrics,
+  readSessionRpeTarget,
+  buildRecentFeedbackPayload,
+  buildRecentFksSessionSummary,
+  buildRecentFksSessionsPayload,
+  toFksIntensity,
+  toFksFocus,
+  focusFromExercises,
+  inferStrengthRegion,
+} from "./aiContextHelpers";
 
-// Focus et intensité (on les garde déjà ici pour l’IA)
-export type FKS_SessionFocus =
-  | "run"
-  | "strength"
-  | "speed"
-  | "circuit"
-  | "plyo"
-  | "mobility";
+import type { FKS_PhaseId, FKS_RecentSessionSummary } from "./aiContextHelpers";
 
-export type FKS_IntensityLevel = "easy" | "moderate" | "hard";
-
-// Résumé d’une séance FKS pour l’IA (on le définit maintenant,
-// mais on le remplira plus tard, quand tu auras des séances)
-export interface FKS_RecentSessionSummary {
-  date: string; // "2025-11-25"
-  date_relative: string; // "hier", "il y a 3 jours" (optionnel, on peut mettre "" au début)
-  label: string; // "Séance FKS circuit full body"
-
-  phase: FKS_PhaseId;
-  focus_primary: FKS_SessionFocus;
-  focus_secondary?: FKS_SessionFocus | null;
-  strength_region?: "upper" | "lower" | "both" | string;
-
-  intensity: FKS_IntensityLevel;
-  rpe: number;
-  duration_min: number;
-
-  // On garde le reste pour la suite, mais tu peux commencer minimal
-  pain_level_after?: number;
-  soreness_zones_after?: string[];
-  perceived_difficulty?: "trop_facile" | "ok" | "très_dur";
-  completed_as_planned?: boolean;
-}
-
-// Contexte global envoyé à l’IA
+// Contexte global envoyé à l'IA
 export interface FKS_AiContext {
   version: "fks_context_v1";
   profile: {
@@ -88,88 +81,6 @@ export interface FKS_AiContext {
   equipment_available: string[];
 }
 
-// Normalise l’intensité appli (store) → enum IA
-function toFksIntensity(x: string | null | undefined): FKS_IntensityLevel {
-  const k = String(x || "").toLowerCase();
-  if (k.includes("hard") || k.includes("max")) return "hard";
-  if (k.includes("mod")) return "moderate";
-  return "easy";
-}
-
-// Normalise la modalité principale → focus IA
-function toFksFocus(modality: string | null | undefined): FKS_SessionFocus {
-  const k = String(modality || "").toLowerCase();
-  if (["strength", "force", "muscu"].some((t) => k.includes(t))) return "strength";
-  if (["speed", "vma", "sprint"].some((t) => k.includes(t))) return "speed";
-  if (["circuit", "core", "wod"].some((t) => k.includes(t))) return "circuit";
-  if (["plyo"].some((t) => k.includes(t))) return "plyo";
-  if (["mobility", "mobilite", "stretch"].some((t) => k.includes(t))) return "mobility";
-  return "run";
-}
-
-function focusFromExercises(session: Pick<Session, 'exercises' | 'focus' | 'modality'>): { primary: FKS_SessionFocus; secondary: FKS_SessionFocus | null } {
-  const exos: Exercise[] = Array.isArray(session?.exercises) ? session.exercises : [];
-  if (!exos.length) {
-    const f = toFksFocus(session?.focus ?? session?.modality);
-    return { primary: f, secondary: null };
-  }
-
-  const tally = new Map<FKS_SessionFocus, number>();
-  exos.forEach((e) => {
-    const mod = toFksFocus(e?.modality);
-    const weight =
-      typeof e?.durationSec === "number" && Number.isFinite(e.durationSec)
-        ? e.durationSec / 60
-        : typeof e?.sets === "number" && Number.isFinite(e.sets)
-          ? e.sets
-          : 1;
-    tally.set(mod, (tally.get(mod) ?? 0) + weight);
-  });
-
-  const sorted = Array.from(tally.entries()).sort((a, b) => b[1] - a[1]);
-  const primary = sorted[0]?.[0] ?? toFksFocus(session?.focus ?? session?.modality);
-  const secondary = sorted[1]?.[0] ?? null;
-  return { primary, secondary };
-}
-
-function inferStrengthRegion(exercises: Pick<Exercise, 'name' | 'id'>[]): "upper" | "lower" | "both" | null {
-  const lowerKeys = ["squat", "hinge", "deadlift", "rdl", "split", "lunge", "hip", "glute", "ham", "posterior", "quad", "calf", "copenhagen"];
-  const upperKeys = ["press", "row", "pull", "push", "bench", "shoulder", "overhead", "landmine", "curl", "triceps", "biceps"];
-  let hasLower = false;
-  let hasUpper = false;
-  exercises.forEach((e) => {
-    const name = `${e?.name ?? e?.id ?? ""}`.toLowerCase();
-    if (lowerKeys.some((k) => name.includes(k))) hasLower = true;
-    if (upperKeys.some((k) => name.includes(k))) hasUpper = true;
-  });
-  if (hasLower && hasUpper) return "both";
-  if (hasLower) return "lower";
-  if (hasUpper) return "upper";
-  return null;
-}
-
-function buildRecentByFocus(sessions: Session[], limit = 3): Record<string, string[]> {
-  const res: Record<string, string[]> = {};
-  const sorted = [...sessions].sort(
-    (a, b) =>
-      new Date(b?.dateISO ?? b?.date ?? 0).getTime() -
-      new Date(a?.dateISO ?? a?.date ?? 0).getTime()
-  );
-  sorted.forEach((s) => {
-    const exos: Exercise[] = Array.isArray(s?.exercises) ? s.exercises : [];
-    const focus = toFksFocus(s?.focus ?? s?.modality);
-    if (!exos.length) return;
-    res[focus] = res[focus] ?? [];
-    for (const e of exos) {
-      const name = (e?.name ?? e?.id ?? "").toString().trim();
-      if (!name || res[focus].includes(name)) continue;
-      res[focus].push(name);
-      if (res[focus].length >= limit) break;
-    }
-  });
-  return res;
-}
-
 // Helper : fusionner le matos de salle + maison en une seule liste
 function buildEquipmentFromProfile(profile: Record<string, unknown>): string[] {
   const result: string[] = [];
@@ -182,7 +93,7 @@ function buildEquipmentFromProfile(profile: Record<string, unknown>): string[] {
   }
 
   // Exemple : si accès salle, tu peux ajouter un flag générique
-  // (optionnel pour l’instant)
+  // (optionnel pour l'instant)
   if (profile.hasGymAccess && profile.hasGymAccess !== "none") {
     result.push("gym_access");
   }
@@ -191,7 +102,7 @@ function buildEquipmentFromProfile(profile: Record<string, unknown>): string[] {
   return Array.from(new Set(result));
 }
 
-// ⚙️ Fonction principale : construis le contexte pour l’IA
+// ⚙️ Fonction principale : construit le contexte pour l'IA
 export async function buildAIPromptContext(): Promise<FKS_AiContext> {
   const auth = getAuth();
   const user = auth.currentUser;
@@ -275,59 +186,16 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
     return dbTime - da;
   });
 
-  const recent_fks_sessions: FKS_RecentSessionSummary[] = sessions.slice(0, 5).map((s) => {
-    const dateISO: string =
-      typeof s?.dateISO === "string"
-        ? toDateKey(s.dateISO)
-        : typeof s?.date === "string"
-          ? toDateKey(s.date)
-          : "";
-
-    const intensity = toFksIntensity(s?.intensity);
-    const exos: Exercise[] = Array.isArray(s?.exercises) ? s.exercises : [];
-    const { primary: focus, secondary } = focusFromExercises(s);
-    const strengthRegion = focus === "strength" ? inferStrengthRegion(exos) : null;
-    const phaseRecent: FKS_PhaseId =
-      typeof s?.phase === "string"
-        ? ((s.phase.toLowerCase() as FKS_PhaseId) ?? phase)
-        : phase;
-
-    const rpeVal =
-      typeof s?.feedback?.rpe === "number"
-        ? s.feedback.rpe
-        : typeof s?.rpe === "number"
-          ? s.rpe
-          : 0;
-
-    const duration =
-      typeof s?.durationMin === "number"
-        ? s.durationMin
-        : Number.isFinite(s?.volumeScore)
-          ? Math.max(15, Math.round(Number(s.volumeScore)))
-          : 45;
-
-    const label = s?.title
-      ? String(s.title)
-      : `Séance ${focus}`;
-
-    return {
-      date: dateISO,
-      date_relative: "",
-      label,
-      phase: phaseRecent,
-      focus_primary: focus,
-      focus_secondary: secondary,
-      ...(strengthRegion ? { strength_region: strengthRegion } : {}),
-      intensity,
-      rpe: rpeVal,
-      duration_min: duration,
-    };
-  });
+  const recent_fks_sessions: FKS_RecentSessionSummary[] = buildRecentFksSessionsPayload(
+    sessions,
+    phase,
+    RECENT_FKS_SESSION_LIMIT
+  );
 
   const recent_fks_badges = Array.from(
     new Set(
       recent_fks_sessions
-        .slice(0, 5)
+        .slice(0, RECENT_FKS_COPY_LIMIT)
         .flatMap((s) => {
           const focusBadge = s.focus_primary ? [`focus:${s.focus_primary}`] : [];
           const combo =
@@ -343,8 +211,8 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
     )
   );
 
-  // Condensé narratif des 3 dernières séances pour varier l’IA
-  const summarySessions = recent_fks_sessions.slice(0, 5);
+  // Condensé narratif des 3 dernières séances pour varier l'IA
+  const summarySessions = recent_fks_sessions.slice(0, RECENT_FKS_COPY_LIMIT);
   const recent_fks_summary_text =
     summarySessions.length > 0
       ? summarySessions
@@ -391,7 +259,7 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
       ctl,
       tsb,
     },
-    recent_fks_sessions: recent_fks_sessions.slice(0, 5),
+    recent_fks_sessions,
     recent_fks_summary_text,
     recent_fks_badges,
     recent_by_focus: buildRecentByFocus(sessions, 3),

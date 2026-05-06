@@ -63,7 +63,7 @@ export function applyFeedback(
     typeof feedback.durationMin === "number" && Number.isFinite(feedback.durationMin)
       ? Math.max(1, Math.round(feedback.durationMin))
       : session.durationMin;
-  const updatedSession = {
+  let updatedSession = {
     ...session,
     dateISO: usedISO,
     completed: true,
@@ -121,6 +121,16 @@ export function applyFeedback(
 
   const atlDelta = +(nextLoad.atl - atlBase).toFixed(2);
   const ctlDelta = +(nextLoad.ctl - ctlBase).toFixed(2);
+
+  updatedSession = {
+    ...updatedSession,
+    metrics: {
+      atl: nextLoad.atl,
+      ctl: nextLoad.ctl,
+      tsb: tsbAfter,
+    },
+  };
+  nextSessions[idx] = updatedSession;
 
   const nextDailyApplied = pruneDailyAppliedWindow({ ...loadState.dailyApplied, [dayKey]: totalToday }, 90, dayKey);
   const nextTsbHistory = [tsbAfter, ...(loadState.tsbHistory ?? [])].slice(0, 7);

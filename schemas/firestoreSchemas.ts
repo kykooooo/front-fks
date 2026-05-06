@@ -89,6 +89,23 @@ const sessionFeedbackSchema = z.object({
   sleep: z.number().min(1).max(5).catch(3),
   pain: z.number().min(0).max(10).catch(0),
   notes: z.string().nullable().optional().catch(null),
+  // Champs additionnels persistes pour reactiver computeFeedbackAdjustments cote backend.
+  // Tous optionnels — les vieilles sessions n'en avaient pas et ne doivent pas casser.
+  rpe: z.number().min(1).max(10).optional().catch(undefined),
+  recoveryPerceived: z.number().min(1).max(5).optional().catch(undefined),
+  durationMin: z.number().min(0).optional().catch(undefined),
+  createdAt: z.string().optional().catch(undefined),
+  comment: z.string().optional().catch(undefined),
+}).nullable().optional().catch(null);
+
+// Snapshot ATL/CTL/TSB pris au moment du feedback. Necessaire pour
+// detectFatigueTrend cote backend (../fks/src/fksUtils.ts:62-75) — sans ce
+// snapshot, la regression lineaire TSB reste null et le cap easy preventif
+// "tendance worsening + TSB bas" ne se declenche jamais.
+const sessionMetricsSchema = z.object({
+  atl: z.number().optional().catch(undefined),
+  ctl: z.number().optional().catch(undefined),
+  tsb: z.number().optional().catch(undefined),
 }).nullable().optional().catch(null);
 
 const PHASE_VALUES = ["Playlist", "Construction", "Progression", "Performance", "Deload"] as const;
@@ -119,6 +136,11 @@ export const completedSessionSchema = z.object({
   rpe: z.number().min(1).max(10).nullable().optional().catch(null),
   feedback: sessionFeedbackSchema,
   ai: z.record(z.string(), z.unknown()).nullable().optional().catch(null),
+  // Blueprint IA complet (output backend), garde rpeTarget pour readSessionRpeTarget.
+  aiV2: z.record(z.string(), z.unknown()).nullable().optional().catch(null),
+  // Snapshot charge au moment du feedback (cf. sessionMetricsSchema ci-dessus).
+  metrics: sessionMetricsSchema,
+  title: z.string().nullable().optional().catch(null),
   completed: z.boolean().optional().catch(undefined),
 }).passthrough();
 
