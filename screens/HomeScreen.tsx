@@ -25,7 +25,6 @@ import { auth } from "../services/firebase";
 import { DEV_FLAGS } from "../config/devFlags";
 import { theme } from "../constants/theme";
 import { useSettingsStore } from "../state/settingsStore";
-import { useAppModeStore } from "../state/appModeStore";
 import HomeStatusBar from "../components/home/HomeStatusBar";
 import HomeReadinessHero from "../components/home/HomeReadinessHero";
 import HomePrimaryCTA from "../components/home/HomePrimaryCTA";
@@ -41,8 +40,6 @@ import { useActivityStreak } from "../hooks/home/useActivityStreak";
 import { usePrimaryCta } from "../hooks/home/usePrimaryCta";
 import { useContextualAdvice } from "../hooks/home/useContextualAdvice";
 import HomeAdviceCard from "../components/home/HomeAdviceCard";
-import { HomeCoachRecommendation } from "../components/home/HomeCoachRecommendation";
-import { useCoachRecommendations } from "../hooks/useCoachRecommendations";
 import { isSameDay, toDateKey } from "../utils/dateHelpers";
 import { showToast } from "../utils/toast";
 import { BANNER_FALLBACK } from "../constants/bannerImages";
@@ -68,7 +65,6 @@ export default function HomeScreen() {
   };
   const nav = useNavigation<RootNav>();
   const resetTrainingStore = useSyncStore((s) => s.resetForUser);
-  const clearModeForUid = useAppModeStore((s) => s.clearForUid);
 
   const heroAnim = React.useRef(new Animated.Value(0)).current;
   const ctaAnim = React.useRef(new Animated.Value(0)).current;
@@ -76,12 +72,8 @@ export default function HomeScreen() {
 
   const handleLogout = async () => {
     try {
-      const uid = auth.currentUser?.uid ?? null;
       await signOut(auth);
       resetTrainingStore(null);
-      if (uid) {
-        await clearModeForUid(uid);
-      }
     } catch {
       showToast({ type: "error", title: "Déconnexion", message: "Échec de la déconnexion. Réessaie." });
     }
@@ -211,7 +203,6 @@ export default function HomeScreen() {
   const advice = useContextualAdvice();
 
   // Recommandations du coach
-  const { recommendations: coachRecommendations } = useCoachRecommendations();
 
   const onRunHarness = () => {
     runTestHarness?.(7);
@@ -371,28 +362,6 @@ export default function HomeScreen() {
               }}
             >
               <HomeAdviceCard advice={advice} />
-            </Animated.View>
-          )}
-
-          {/* Recommandations du coach */}
-          {coachRecommendations.length > 0 && (
-            <Animated.View
-              style={{
-                opacity: ctaAnim,
-                transform: [
-                  {
-                    translateY: ctaAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [18, 0],
-                    }),
-                  },
-                ],
-                gap: 10,
-              }}
-            >
-              {coachRecommendations.slice(0, 2).map((rec) => (
-                <HomeCoachRecommendation key={rec.id} recommendation={rec} />
-              ))}
             </Animated.View>
           )}
 

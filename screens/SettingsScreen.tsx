@@ -29,7 +29,6 @@ import { useExternalStore } from "../state/stores/useExternalStore";
 import { useSyncStore } from "../state/stores/useSyncStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
 import { useSettingsStore, type SettingsState } from "../state/settingsStore";
-import { useAppModeStore, type AppMode } from "../state/appModeStore";
 import { DEV_FLAGS } from "../config/devFlags";
 import { ClubManagementCard } from "../components/settings/ClubManagementCard";
 import { showToast } from "../utils/toast";
@@ -114,9 +113,6 @@ export default function SettingsScreen() {
   const settings = useSettingsStore((s) => s);
   const updateSettings = useSettingsStore((s) => s.updateSettings);
   const resetSettings = useSettingsStore((s) => s.resetSettings);
-  const mode = useAppModeStore((s) => s.mode);
-  const setModeForUid = useAppModeStore((s) => s.setModeForUid);
-  const clearModeForUid = useAppModeStore((s) => s.clearForUid);
 
   const initials = useMemo(() => {
     const name =
@@ -206,16 +202,12 @@ export default function SettingsScreen() {
 
   const handleLogout = useCallback(async () => {
     try {
-      const uid = auth.currentUser?.uid ?? null;
       await signOut(auth);
       resetTrainingStore(null);
-      if (uid) {
-        await clearModeForUid(uid);
-      }
     } catch {
       showToast({ type: "error", title: "Déconnexion", message: "Échec de la déconnexion. Réessaie." });
     }
-  }, [clearModeForUid, resetTrainingStore]);
+  }, [resetTrainingStore]);
 
   const triggerReload = useCallback(() => {
     if (Platform.OS === "web" && typeof window !== "undefined") {
@@ -246,17 +238,6 @@ export default function SettingsScreen() {
       );
     },
     [settings.themeMode, updateSettings, triggerReload]
-  );
-
-  const handleModeChange = useCallback(
-    async (next: string) => {
-      const uid = auth.currentUser?.uid;
-      if (!uid) return;
-      if (next !== "player" && next !== "coach") return;
-      await setModeForUid(uid, next as AppMode);
-      nav.reset({ index: 0, routes: [{ name: "Tabs" }] });
-    },
-    [nav, setModeForUid]
   );
 
   const handleNotificationsToggle = useCallback(
@@ -331,20 +312,6 @@ export default function SettingsScreen() {
               title="Identité"
               subtitle={auth.currentUser?.email ?? "Compte FKS"}
               right={<Badge label={auth.currentUser?.displayName ? "Vérifié" : "Standard"} />}
-            />
-            <SettingRow
-              title="Mode"
-              subtitle="Basculer entre joueur et coach"
-              right={
-                <SegmentedControl
-                  value={mode ?? "player"}
-                  options={[
-                    { value: "player", label: "Joueur" },
-                    { value: "coach", label: "Coach" },
-                  ]}
-                  onChange={handleModeChange}
-                />
-              }
             />
             <SettingRow
               title="Profil joueur"
