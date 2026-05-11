@@ -29,7 +29,6 @@ import PrivacyPolicyScreen from "../screens/PrivacyPolicyScreen";
 import RoutineScreen from "../screens/RoutineScreen";
 import CoachDashboardScreen from "../screens/CoachDashboardScreen";
 import CoachPlayerDetailScreen from "../screens/CoachPlayerDetailScreen";
-import ChatScreen from "../screens/ChatScreen";
 import CycleModalScreen from "../screens/CycleModalScreen";
 import ProgressScreen from "../screens/ProgressScreen";
 import { theme } from "../constants/theme";
@@ -55,7 +54,6 @@ type TabParamList = {
   Home: undefined;
   NewSession: undefined;
   VideoLibrary: { highlightId?: string; startInFavorites?: boolean } | undefined;
-  Chat: undefined;
   Profile: undefined;
   Coach: undefined;
 };
@@ -109,8 +107,8 @@ const AppStack = createNativeStackNavigator<AppStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 const WELCOME_KEY = "fks_welcome_done";
-const PLAYER_TAB_ORDER: Array<keyof TabParamList> = ["Home", "NewSession", "Chat", "VideoLibrary", "Profile"];
-const COACH_TAB_ORDER: Array<keyof TabParamList> = ["Coach", "Chat", "Profile"];
+const PLAYER_TAB_ORDER: Array<keyof TabParamList> = ["Home", "NewSession", "VideoLibrary", "Profile"];
+const COACH_TAB_ORDER: Array<keyof TabParamList> = ["Coach", "Profile"];
 
 function MainTabs() {
   const mode = useAppModeStore((s) => s.mode);
@@ -130,7 +128,6 @@ function MainTabs() {
           if (route.name === "Home") return <Ionicons name="home" size={size} color={color} />;
           if (route.name === "NewSession") return <Ionicons name="flash" size={size} color={color} />;
           if (route.name === "VideoLibrary") return <Ionicons name="play-circle" size={size} color={color} />;
-          if (route.name === "Chat") return <Ionicons name="chatbubble-ellipses" size={size} color={color} />;
           if (route.name === "Profile") return <Ionicons name="person" size={size} color={color} />;
           if (route.name === "Coach") return <Ionicons name="people" size={size} color={color} />;
           return null;
@@ -143,13 +140,6 @@ function MainTabs() {
             {() => (
               <SwipeTabsWrapper currentTab="Coach" tabOrder={tabOrder}>
                 <CoachDashboardScreen />
-              </SwipeTabsWrapper>
-            )}
-          </Tab.Screen>
-          <Tab.Screen name="Chat" options={{ title: "Assistant" }}>
-            {() => (
-              <SwipeTabsWrapper currentTab="Chat" tabOrder={tabOrder}>
-                <ChatScreen />
               </SwipeTabsWrapper>
             )}
           </Tab.Screen>
@@ -174,13 +164,6 @@ function MainTabs() {
             {() => (
               <SwipeTabsWrapper currentTab="NewSession" tabOrder={tabOrder}>
                 <SessionHubScreen />
-              </SwipeTabsWrapper>
-            )}
-          </Tab.Screen>
-          <Tab.Screen name="Chat" options={{ title: "Assistant" }}>
-            {() => (
-              <SwipeTabsWrapper currentTab="Chat" tabOrder={tabOrder}>
-                <ChatScreen />
               </SwipeTabsWrapper>
             )}
           </Tab.Screen>
