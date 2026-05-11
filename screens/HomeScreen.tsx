@@ -30,8 +30,6 @@ import HomeReadinessHero from "../components/home/HomeReadinessHero";
 import HomePrimaryCTA from "../components/home/HomePrimaryCTA";
 import HomeNextSessionCard from "../components/home/HomeNextSessionCard";
 import HomeWeekSummaryCard from "../components/home/HomeWeekSummaryCard";
-import HomeTestsNudge from "../components/home/HomeTestsNudge";
-import HomeCarouselCard from "../components/home/HomeCarouselCard";
 import { useLoadSeries } from "../hooks/home/useLoadSeries";
 import { useMatchSoon } from "../hooks/home/useMatchSoon";
 import { useWeekDays } from "../hooks/home/useWeekDays";
@@ -238,6 +236,18 @@ export default function HomeScreen() {
     }
   }, [nowISO]);
 
+  // État pédagogique du joueur (basé sur TSB) — affiché en clair, pas en chiffres
+  const readinessLabel =
+    tsb >= 5 ? "Tu es frais et prêt à pousser"
+    : tsb >= -5 ? "Tu es en forme stable"
+    : tsb >= -15 ? "Tu commences à être chargé"
+    : "Tu as besoin de récupérer";
+  const readinessEmoji =
+    tsb >= 5 ? "💪"
+    : tsb >= -5 ? "✅"
+    : tsb >= -15 ? "⚠️"
+    : "🛌";
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
@@ -256,75 +266,47 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.mainContent}>
-          <View style={styles.heroShell}>
+          {/* ─── 1. Greeting hero compact ─── */}
+          <Animated.View
+            style={[
+              styles.heroShellCompact,
+              {
+                opacity: heroAnim,
+                transform: [
+                  {
+                    translateY: heroAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [18, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
             <Image
               source={heroImage}
               style={styles.heroPhotoBackdrop}
               resizeMode="cover"
-              blurRadius={10}
+              blurRadius={14}
               fadeDuration={0}
             />
-            <Image
-              source={heroImage}
-              style={styles.heroPhotoFigure}
-              resizeMode="contain"
-              fadeDuration={0}
-            />
-            <View style={styles.heroTint} />
+            <View style={styles.heroTintStrong} />
             <LinearGradient
-              colors={["rgba(5,8,10,0.08)", "rgba(5,8,10,0.58)", "rgba(5,8,10,0.9)"]}
-              locations={[0.08, 0.6, 1]}
-              style={styles.heroGradient}
+              colors={["rgba(5,8,10,0.32)", "rgba(5,8,10,0.78)", "rgba(5,8,10,0.95)"]}
+              locations={[0.1, 0.55, 1]}
+              style={styles.heroGradientCompact}
             />
-
-            {/* Contenu par-dessus */}
-            <View style={styles.heroBannerContent}>
-              <View style={styles.heroTopRow}>
-                <View style={styles.heroBadge}>
-                  <Text style={styles.heroBadgeText}>FKS</Text>
-                </View>
-                <Text style={styles.heroDate}>{todayLabel}</Text>
-              </View>
+            <View style={styles.heroBannerContentCompact}>
+              <Text style={styles.heroDate}>{todayLabel}</Text>
               <Text style={styles.helloTitle}>Salut, {athleteName}</Text>
-              <Text style={styles.helloSub}>
-                Ton état du jour et ta prochaine séance.
-              </Text>
-              <View style={styles.quickRow}>
-                <View style={styles.quickChip}>
-                  <Text style={styles.quickLabel}>Semaine</Text>
-                  <Text style={styles.quickValue}>{weekSummary.fksCount}/{weeklyGoal}</Text>
-                </View>
-                <View style={styles.quickChip}>
-                  <Text style={styles.quickLabel}>Série</Text>
-                  <Text style={styles.quickValue}>{activityStreak}j</Text>
-                </View>
-                <View style={[styles.quickChip, matchSoon ? styles.quickChipWarn : null]}>
-                  <Text style={styles.quickLabel}>Match</Text>
-                  <Text style={styles.quickValue}>{matchSoon ? "Proche" : "—"}</Text>
-                </View>
+              <View style={styles.readinessRow}>
+                <Text style={styles.readinessEmoji}>{readinessEmoji}</Text>
+                <Text style={styles.readinessText}>{readinessLabel}</Text>
               </View>
             </View>
-          </View>
-
-          <Animated.View
-            style={{
-              opacity: heroAnim,
-              transform: [
-                {
-                  translateY: heroAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [18, 0],
-                  }),
-                },
-              ],
-            }}
-          >
-            <HomeReadinessHero
-              tsb={tsb}
-              tsbHistory={loadSeries.tsbArr}
-            />
           </Animated.View>
 
+          {/* ─── 2. CTA principal — IMMÉDIATEMENT visible ─── */}
           <Animated.View
             style={{
               opacity: ctaAnim,
@@ -347,6 +329,7 @@ export default function HomeScreen() {
             />
           </Animated.View>
 
+          {/* ─── 3. Conseil contextuel (si pertinent) ─── */}
           {advice && (
             <Animated.View
               style={{
@@ -370,65 +353,78 @@ export default function HomeScreen() {
               opacity: cardsAnim,
               transform: [
                 {
-                    translateY: cardsAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [18, 0],
-                    }),
-                  },
-                ],
+                  translateY: cardsAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [18, 0],
+                  }),
+                },
+              ],
             }}
           >
             <View style={styles.cardsStack}>
-              <View style={styles.gridRow}>
-                <View style={styles.gridItem}>
-                  <HomeCarouselCard title="Progression" subtitle="Régularité & forme">
-                    <View style={styles.progressRow}>
-                      <Ionicons name="flame" size={18} color={palette.accent} />
-                      <Text style={styles.progressText}>{activityStreak} jours d’affilée</Text>
-                    </View>
-                    <TouchableOpacity onPress={() => nav.navigate("Progression")} style={styles.link}>
-                      <Text style={styles.linkText}>Voir ma progression</Text>
-                      <Text style={styles.linkArrow}>→</Text>
-                    </TouchableOpacity>
-                  </HomeCarouselCard>
-                </View>
-                <View style={styles.gridItem}>
-                  <HomeTestsNudge
-                    title="Évalue ton niveau"
-                    sub="Des tests courts pour mieux cibler tes séances."
-                    onPress={() => nav.navigate("Tests")}
-                  />
-                </View>
-              </View>
-
+              {/* ─── 4. Détail prochaine séance ─── */}
               <HomeNextSessionCard
                 hasPending={Boolean(pendingSession)}
                 upcomingLabel={upcomingSessionLabel}
                 primaryLabel={pendingSession ? "Voir la séance" : primaryCta.label}
                 onPrimary={pendingSession ? startPendingSession : onPressNew}
-                  primaryDisabled={!pendingSession && Boolean(primaryCta.disabled)}
-                  secondaryLabel="Historique"
-                  onSecondary={goToHistory}
-                  onFeedback={pendingSession ? goToFeedback : undefined}
+                primaryDisabled={!pendingSession && Boolean(primaryCta.disabled)}
+                secondaryLabel="Historique"
+                onSecondary={goToHistory}
+                onFeedback={pendingSession ? goToFeedback : undefined}
               />
 
+              {/* ─── 5. Forme & tendance (TSB sparkline) — compact ─── */}
+              <HomeReadinessHero
+                tsb={tsb}
+                tsbHistory={loadSeries.tsbArr}
+              />
+
+              {/* ─── 6. Ta semaine ─── */}
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionTitle}>Ta semaine</Text>
                 <Text style={styles.sectionSub}>{weekSummary.message}</Text>
               </View>
-
               <HomeWeekSummaryCard
                 title="Semaine en cours"
                 summaryLabel={`${weekSummary.fksCount}/${weeklyGoal}`}
                 message={weekSummary.message}
-                  weekDays={weekDays}
-                  plannedThisWeek={plannedThisWeek}
-                  weeklyGoal={weeklyGoal}
-                  activityStreak={activityStreak}
-                  onManageRoutine={goToRoutine}
-                />
+                weekDays={weekDays}
+                plannedThisWeek={plannedThisWeek}
+                weeklyGoal={weeklyGoal}
+                activityStreak={activityStreak}
+                onManageRoutine={goToRoutine}
+              />
+
+              {/* ─── 7. Quick actions secondaires ─── */}
+              <View style={styles.quickActionsRow}>
+                <TouchableOpacity
+                  style={styles.quickAction}
+                  onPress={() => nav.navigate("Progression")}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="trending-up" size={22} color={palette.accent} />
+                  <Text style={styles.quickActionLabel}>Progression</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.quickAction}
+                  onPress={() => nav.navigate("Tests")}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="speedometer" size={22} color={palette.accent} />
+                  <Text style={styles.quickActionLabel}>Tests</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.quickAction}
+                  onPress={goToHistory}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="time" size={22} color={palette.accent} />
+                  <Text style={styles.quickActionLabel}>Historique</Text>
+                </TouchableOpacity>
               </View>
-            </Animated.View>
+            </View>
+          </Animated.View>
 
           {DEV_FLAGS.ENABLED && (
             <TouchableOpacity onPress={onRunHarness} style={styles.devChip}>
@@ -561,36 +557,74 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
-  quickRow: {
+  // ─── Hero compact (192px au lieu de 232px) ─────────────────────
+  heroShellCompact: {
+    borderRadius: 20,
+    overflow: "hidden",
+    height: 152,
+    position: "relative" as const,
+    backgroundColor: BANNER_FALLBACK.explosif,
+  },
+  heroTintStrong: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(4,8,10,0.42)",
+    borderRadius: 20,
+  },
+  heroGradientCompact: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: "100%",
+    borderRadius: 20,
+  },
+  heroBannerContentCompact: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    gap: 6,
+  },
+  readinessRow: {
     flexDirection: "row",
-    gap: 10,
-    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 4,
   },
-  quickChip: {
-    flexGrow: 1,
-    minWidth: 96,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 14,
+  readinessEmoji: {
+    fontSize: 18,
+  },
+  readinessText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "rgba(255,255,255,0.95)",
+    textShadowColor: "rgba(0,0,0,0.45)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+    flexShrink: 1,
+  },
+  // ─── Quick actions secondaires (en bas) ─────────────────────────
+  quickActionsRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 4,
+  },
+  quickAction: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    borderRadius: 16,
+    backgroundColor: palette.cardSoft,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    backgroundColor: "rgba(255,255,255,0.14)",
+    borderColor: palette.borderSoft,
+    gap: 6,
   },
-  quickChipWarn: {
-    borderColor: "rgba(245,158,11,0.5)",
-    backgroundColor: "rgba(245,158,11,0.16)",
-  },
-  quickLabel: {
-    fontSize: 10,
-    color: "rgba(255,255,255,0.62)",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  quickValue: {
-    marginTop: 3,
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#ffffff",
+  quickActionLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: palette.text,
   },
   sectionHeaderRow: {
     marginTop: 4,
