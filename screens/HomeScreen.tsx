@@ -29,7 +29,6 @@ import HomeStatusBar from "../components/home/HomeStatusBar";
 import HomeReadinessHero from "../components/home/HomeReadinessHero";
 import HomePrimaryCTA from "../components/home/HomePrimaryCTA";
 import HomeNextSessionCard from "../components/home/HomeNextSessionCard";
-import HomeTestsNudge from "../components/home/HomeTestsNudge";
 import HomeCarouselCard from "../components/home/HomeCarouselCard";
 import { useLoadSeries } from "../hooks/home/useLoadSeries";
 import { useMatchSoon } from "../hooks/home/useMatchSoon";
@@ -372,27 +371,16 @@ export default function HomeScreen() {
             }}
           >
             <View style={styles.cardsStack}>
-              <View style={styles.gridRow}>
-                <View style={styles.gridItem}>
-                  <HomeCarouselCard title="Progression" subtitle="Régularité & forme">
-                    <View style={styles.progressRow}>
-                      <Ionicons name="flame" size={18} color={palette.accent} />
-                      <Text style={styles.progressText}>{activityStreak} jours d’affilée</Text>
-                    </View>
-                    <TouchableOpacity onPress={() => nav.navigate("Progression")} style={styles.link}>
-                      <Text style={styles.linkText}>Voir ma progression</Text>
-                      <Text style={styles.linkArrow}>→</Text>
-                    </TouchableOpacity>
-                  </HomeCarouselCard>
+              <HomeCarouselCard title="Progression" subtitle="Régularité & forme">
+                <View style={styles.progressRow}>
+                  <Ionicons name="flame" size={18} color={palette.accent} />
+                  <Text style={styles.progressText}>{activityStreak} jours d’affilée</Text>
                 </View>
-                <View style={styles.gridItem}>
-                  <HomeTestsNudge
-                    title="Évalue ton niveau"
-                    sub="Des tests courts pour mieux cibler tes séances."
-                    onPress={() => nav.navigate("Tests")}
-                  />
-                </View>
-              </View>
+                <TouchableOpacity onPress={() => nav.navigate("Progression")} style={styles.link}>
+                  <Text style={styles.linkText}>Voir ma progression</Text>
+                  <Text style={styles.linkArrow}>→</Text>
+                </TouchableOpacity>
+              </HomeCarouselCard>
 
               <HomeNextSessionCard
                 hasPending={Boolean(pendingSession)}
@@ -571,16 +559,6 @@ const styles = StyleSheet.create({
   },
   cardsStack: {
     gap: 16,
-  },
-  gridRow: {
-    flexDirection: "row",
-    gap: 12,
-    flexWrap: "wrap",
-  },
-  gridItem: {
-    flexGrow: 1,
-    flexBasis: "48%",
-    minWidth: 160,
   },
   progressRow: {
     flexDirection: "row",
