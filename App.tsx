@@ -31,7 +31,6 @@ const linking: LinkingOptions<AppStackParamList> = {
         screens: {
           Home: "home",
           NewSession: "new-session",
-          VideoLibrary: "videos",
           Profile: "profile",
         },
       },

@@ -50,7 +50,6 @@ import type { FKS_NextSessionV2 } from "../screens/newSession/types";
 type TabParamList = {
   Home: undefined;
   NewSession: undefined;
-  VideoLibrary: { highlightId?: string; startInFavorites?: boolean } | undefined;
   Profile: undefined;
 };
 
@@ -102,7 +101,7 @@ const AppStack = createNativeStackNavigator<AppStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 const WELCOME_KEY = "fks_welcome_done";
-const PLAYER_TAB_ORDER: Array<keyof TabParamList> = ["Home", "NewSession", "VideoLibrary", "Profile"];
+const PLAYER_TAB_ORDER: Array<keyof TabParamList> = ["Home", "NewSession", "Profile"];
 
 function MainTabs() {
   const tabOrder = PLAYER_TAB_ORDER;
@@ -120,7 +119,6 @@ function MainTabs() {
         tabBarIcon: ({ color, size }) => {
           if (route.name === "Home") return <Ionicons name="home" size={size} color={color} />;
           if (route.name === "NewSession") return <Ionicons name="flash" size={size} color={color} />;
-          if (route.name === "VideoLibrary") return <Ionicons name="play-circle" size={size} color={color} />;
           if (route.name === "Profile") return <Ionicons name="person" size={size} color={color} />;
           return null;
         },
@@ -137,13 +135,6 @@ function MainTabs() {
         {() => (
           <SwipeTabsWrapper currentTab="NewSession" tabOrder={tabOrder}>
             <SessionHubScreen />
-          </SwipeTabsWrapper>
-        )}
-      </Tab.Screen>
-      <Tab.Screen name="VideoLibrary" options={{ title: "Vidéos" }}>
-        {() => (
-          <SwipeTabsWrapper currentTab="VideoLibrary" tabOrder={tabOrder}>
-            <VideoLibraryScreen />
           </SwipeTabsWrapper>
         )}
       </Tab.Screen>

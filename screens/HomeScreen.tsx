@@ -29,7 +29,6 @@ import HomeStatusBar from "../components/home/HomeStatusBar";
 import HomeReadinessHero from "../components/home/HomeReadinessHero";
 import HomePrimaryCTA from "../components/home/HomePrimaryCTA";
 import HomeNextSessionCard from "../components/home/HomeNextSessionCard";
-import HomeWeekSummaryCard from "../components/home/HomeWeekSummaryCard";
 import HomeTestsNudge from "../components/home/HomeTestsNudge";
 import HomeCarouselCard from "../components/home/HomeCarouselCard";
 import { useLoadSeries } from "../hooks/home/useLoadSeries";
@@ -195,7 +194,6 @@ export default function HomeScreen() {
 
   // Stable callbacks for memoized children
   const goToHistory = useCallback(() => nav.navigate("SessionHistory"), [nav]);
-  const goToRoutine = useCallback(() => nav.navigate("Routine"), [nav]);
   const goToFeedback = useCallback(() => {
     if (pendingSession) nav.navigate("Feedback", { sessionId: (pendingSession as any).id });
   }, [nav, pendingSession]);
@@ -219,11 +217,6 @@ export default function HomeScreen() {
   const athleteName = auth.currentUser?.displayName ?? "joueur";
 
   const activityStreak = useActivityStreak(sessions, externalLoads, nowISO);
-
-  const plannedThisWeek = useMemo(
-    () => weekDays.filter((d) => d.hasPlanned).length,
-    [weekDays]
-  );
 
   const todayLabel = useMemo(() => {
     const base = nowISO ? new Date(nowISO) : new Date();
@@ -411,22 +404,6 @@ export default function HomeScreen() {
                   onSecondary={goToHistory}
                   onFeedback={pendingSession ? goToFeedback : undefined}
               />
-
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionTitle}>Ta semaine</Text>
-                <Text style={styles.sectionSub}>{weekSummary.message}</Text>
-              </View>
-
-              <HomeWeekSummaryCard
-                title="Semaine en cours"
-                summaryLabel={`${weekSummary.fksCount}/${weeklyGoal}`}
-                message={weekSummary.message}
-                  weekDays={weekDays}
-                  plannedThisWeek={plannedThisWeek}
-                  weeklyGoal={weeklyGoal}
-                  activityStreak={activityStreak}
-                  onManageRoutine={goToRoutine}
-                />
               </View>
             </Animated.View>
 
@@ -591,21 +568,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "800",
     color: "#ffffff",
-  },
-  sectionHeaderRow: {
-    marginTop: 4,
-    gap: 4,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: "800",
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-    color: palette.text,
-  },
-  sectionSub: {
-    fontSize: 12,
-    color: palette.sub,
   },
   cardsStack: {
     gap: 16,
