@@ -11,7 +11,7 @@ import {
   AccessibilityInfo,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context"; // eslint-disable-line @typescript-eslint/no-unused-vars
 import { useNavigation } from "@react-navigation/native";
 import { signOut } from "firebase/auth";
 import { Ionicons } from "@expo/vector-icons";
@@ -43,6 +43,11 @@ import HomeAdviceCard from "../components/home/HomeAdviceCard";
 import { isSameDay, toDateKey } from "../utils/dateHelpers";
 import { showToast } from "../utils/toast";
 import { BANNER_FALLBACK } from "../constants/bannerImages";
+import { MICROCYCLES, isMicrocycleId } from "../domain/microcycles";
+
+// ─── Nike-style accent (orange premium énergique) ─────────────────────────
+const NIKE_ACCENT = "#FF6B1A";
+const NIKE_ACCENT_PRESSED = "#E5560A";
 
 const palette = theme.colors;
 const HERO_DARK = require("../assets/images/hero-dark.jpg");
@@ -238,116 +243,75 @@ export default function HomeScreen() {
     }
   }, [nowISO]);
 
+  // ─── Cycle label pour le hero (FORCE, EXPLOSIF, etc.) ─────────────────
+  const cycleLabel = useMemo(() => {
+    if (microcycleGoal && isMicrocycleId(microcycleGoal)) {
+      return MICROCYCLES[microcycleGoal].label.toUpperCase();
+    }
+    return "FKS";
+  }, [microcycleGoal]);
+
+  const sessionIndexDisplay = Math.min(12, Math.max(0, (microcycleSessionIndex ?? 0)) + 1);
+
+  // ─── Etat physiologique en clair (Nike-style : bold + emoji discret) ────
+  const readinessShort =
+    tsb >= 5 ? "FRAIS · PRÊT À POUSSER"
+    : tsb >= -5 ? "EN FORME"
+    : tsb >= -15 ? "CHARGÉ"
+    : "RÉCUPÉRATION";
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.nikeRoot}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.screenContainer}
+        contentContainerStyle={styles.nikeContainer}
         showsVerticalScrollIndicator={false}
-        stickyHeaderIndices={[0]}
       >
-        <View style={styles.stickyHeader}>
-          <HomeStatusBar
-            phaseLabel={phase ?? "Playlist"}
-            tsbValue={tsb}
-            tsbTone={tsbTone}
-            matchSoon={matchSoon}
-          />
-        </View>
-
-        <View style={styles.mainContent}>
-          <View style={styles.heroShell}>
-            <Image
-              source={heroImage}
-              style={styles.heroPhotoBackdrop}
-              resizeMode="cover"
-              blurRadius={10}
-              fadeDuration={0}
-            />
-            <Image
-              source={heroImage}
-              style={styles.heroPhotoFigure}
-              resizeMode="contain"
-              fadeDuration={0}
-            />
-            <View style={styles.heroTint} />
-            <LinearGradient
-              colors={["rgba(5,8,10,0.08)", "rgba(5,8,10,0.58)", "rgba(5,8,10,0.9)"]}
-              locations={[0.08, 0.6, 1]}
-              style={styles.heroGradient}
-            />
-
-            {/* Contenu par-dessus */}
-            <View style={styles.heroBannerContent}>
-              <View style={styles.heroTopRow}>
-                <View style={styles.heroBadge}>
-                  <Text style={styles.heroBadgeText}>FKS</Text>
-                </View>
-                <Text style={styles.heroDate}>{todayLabel}</Text>
-              </View>
-              <Text style={styles.helloTitle}>Salut, {athleteName}</Text>
-              <Text style={styles.helloSub}>
-                Ton état du jour et ta prochaine séance.
-              </Text>
-              <View style={styles.quickRow}>
-                <View style={styles.quickChip}>
-                  <Text style={styles.quickLabel}>Semaine</Text>
-                  <Text style={styles.quickValue}>{weekSummary.fksCount}/{weeklyGoal}</Text>
-                </View>
-                <View style={styles.quickChip}>
-                  <Text style={styles.quickLabel}>Série</Text>
-                  <Text style={styles.quickValue}>{activityStreak}j</Text>
-                </View>
-                <View style={[styles.quickChip, matchSoon ? styles.quickChipWarn : null]}>
-                  <Text style={styles.quickLabel}>Match</Text>
-                  <Text style={styles.quickValue}>{matchSoon ? "Proche" : "—"}</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-
-          <Animated.View
-            style={{
+        {/* ─── 1. HERO PLEIN LARGEUR — photo + CTA orange massif ─── */}
+        <Animated.View
+          style={[
+            styles.heroNike,
+            {
               opacity: heroAnim,
-              transform: [
-                {
-                  translateY: heroAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [18, 0],
-                  }),
-                },
-              ],
-            }}
-          >
-            <HomeReadinessHero
-              tsb={tsb}
-              tsbHistory={loadSeries.tsbArr}
-            />
-          </Animated.View>
+            },
+          ]}
+        >
+          <Image
+            source={heroImage}
+            style={styles.heroNikeBackdrop}
+            resizeMode="cover"
+            fadeDuration={0}
+          />
+          <View style={styles.heroNikeTint} />
+          <LinearGradient
+            colors={["rgba(0,0,0,0.4)", "rgba(0,0,0,0.65)", "rgba(0,0,0,0.95)"]}
+            locations={[0, 0.5, 1]}
+            style={styles.heroNikeGradient}
+          />
 
-          <Animated.View
-            style={{
-              opacity: ctaAnim,
-              transform: [
-                {
-                  translateY: ctaAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [18, 0],
-                  }),
-                },
-              ],
-            }}
-          >
-            <HomePrimaryCTA
-              label={primaryCta.label}
-              subLabel={primaryCta.sub}
-              tone={primaryCta.tone}
-              disabled={primaryCta.disabled}
-              onPress={primaryCta.onPress}
-            />
-          </Animated.View>
+          {/* Top : date + match alert si pertinent */}
+          <SafeAreaView style={styles.heroTopBarNike} edges={["top"]}>
+            <Text style={styles.heroDateNike}>
+              {todayLabel.toUpperCase()} · SALUT {athleteName.toUpperCase()}
+            </Text>
+            {matchSoon && (
+              <View style={styles.matchAlertNike}>
+                <Text style={styles.matchAlertNikeText}>MATCH J-1</Text>
+              </View>
+            )}
+            <TouchableOpacity onPress={handleLogout} style={styles.logoutNike}>
+              <Ionicons name="log-out-outline" size={18} color="rgba(255,255,255,0.7)" />
+            </TouchableOpacity>
+          </SafeAreaView>
 
-          {advice && (
+          {/* Bottom : label + titre cycle + sous-titre + CTA orange */}
+          <View style={styles.heroBottomNike}>
+            <Text style={styles.heroLabelNike}>AUJOURD'HUI</Text>
+            <Text style={styles.heroTitleNike}>{cycleLabel}</Text>
+            <Text style={styles.heroSubtitleNike}>
+              {primaryCta.sub || `Séance ${sessionIndexDisplay}/12 · ${readinessShort}`}
+            </Text>
+
             <Animated.View
               style={{
                 opacity: ctaAnim,
@@ -355,80 +319,98 @@ export default function HomeScreen() {
                   {
                     translateY: ctaAnim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [18, 0],
+                      outputRange: [12, 0],
                     }),
                   },
                 ],
               }}
             >
-              <HomeAdviceCard advice={advice} />
+              <TouchableOpacity
+                style={[
+                  styles.ctaNike,
+                  primaryCta.disabled && styles.ctaNikeDisabled,
+                ]}
+                onPress={primaryCta.onPress}
+                disabled={primaryCta.disabled}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="play" size={20} color="#fff" />
+                <Text style={styles.ctaNikeText}>
+                  {primaryCta.label.toUpperCase()}
+                </Text>
+              </TouchableOpacity>
             </Animated.View>
-          )}
+          </View>
+        </Animated.View>
 
-          <Animated.View
-            style={{
+        {/* ─── 2. Sections scroll — fond noir, accents minimaux ─── */}
+        <Animated.View
+          style={[
+            styles.sectionsNike,
+            {
               opacity: cardsAnim,
               transform: [
                 {
-                    translateY: cardsAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [18, 0],
-                    }),
-                  },
-                ],
-            }}
-          >
-            <View style={styles.cardsStack}>
-              <View style={styles.gridRow}>
-                <View style={styles.gridItem}>
-                  <HomeCarouselCard title="Progression" subtitle="Régularité & forme">
-                    <View style={styles.progressRow}>
-                      <Ionicons name="flame" size={18} color={palette.accent} />
-                      <Text style={styles.progressText}>{activityStreak} jours d’affilée</Text>
-                    </View>
-                    <TouchableOpacity onPress={() => nav.navigate("Progression")} style={styles.link}>
-                      <Text style={styles.linkText}>Voir ma progression</Text>
-                      <Text style={styles.linkArrow}>→</Text>
-                    </TouchableOpacity>
-                  </HomeCarouselCard>
-                </View>
-                <View style={styles.gridItem}>
-                  <HomeTestsNudge
-                    title="Évalue ton niveau"
-                    sub="Des tests courts pour mieux cibler tes séances."
-                    onPress={() => nav.navigate("Tests")}
-                  />
-                </View>
-              </View>
+                  translateY: cardsAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [18, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          {/* Conseil contextuel si pertinent */}
+          {advice && <HomeAdviceCard advice={advice} />}
 
-              <HomeNextSessionCard
-                hasPending={Boolean(pendingSession)}
-                upcomingLabel={upcomingSessionLabel}
-                primaryLabel={pendingSession ? "Voir la séance" : primaryCta.label}
-                onPrimary={pendingSession ? startPendingSession : onPressNew}
-                  primaryDisabled={!pendingSession && Boolean(primaryCta.disabled)}
-                  secondaryLabel="Historique"
-                  onSecondary={goToHistory}
-                  onFeedback={pendingSession ? goToFeedback : undefined}
-              />
+          {/* Forme & tendance */}
+          <View>
+            <Text style={styles.sectionHeadNike}>TA FORME</Text>
+            <HomeReadinessHero tsb={tsb} tsbHistory={loadSeries.tsbArr} />
+          </View>
 
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionTitle}>Ta semaine</Text>
-                <Text style={styles.sectionSub}>{weekSummary.message}</Text>
-              </View>
+          {/* Cette semaine */}
+          <View>
+            <Text style={styles.sectionHeadNike}>CETTE SEMAINE</Text>
+            <HomeWeekSummaryCard
+              title="Semaine en cours"
+              summaryLabel={`${weekSummary.fksCount}/${weeklyGoal}`}
+              message={weekSummary.message}
+              weekDays={weekDays}
+              plannedThisWeek={plannedThisWeek}
+              weeklyGoal={weeklyGoal}
+              activityStreak={activityStreak}
+              onManageRoutine={goToRoutine}
+            />
+          </View>
 
-              <HomeWeekSummaryCard
-                title="Semaine en cours"
-                summaryLabel={`${weekSummary.fksCount}/${weeklyGoal}`}
-                message={weekSummary.message}
-                  weekDays={weekDays}
-                  plannedThisWeek={plannedThisWeek}
-                  weeklyGoal={weeklyGoal}
-                  activityStreak={activityStreak}
-                  onManageRoutine={goToRoutine}
-                />
-              </View>
-            </Animated.View>
+          {/* Quick actions row */}
+          <View style={styles.quickRowNike}>
+            <TouchableOpacity
+              style={styles.quickActionNike}
+              onPress={() => nav.navigate("Progression")}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trending-up" size={20} color={NIKE_ACCENT} />
+              <Text style={styles.quickActionNikeLabel}>PROGRESSION</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickActionNike}
+              onPress={() => nav.navigate("Tests")}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="speedometer" size={20} color={NIKE_ACCENT} />
+              <Text style={styles.quickActionNikeLabel}>TESTS</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickActionNike}
+              onPress={goToHistory}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="time" size={20} color={NIKE_ACCENT} />
+              <Text style={styles.quickActionNikeLabel}>HISTORIQUE</Text>
+            </TouchableOpacity>
+          </View>
 
           {DEV_FLAGS.ENABLED && (
             <TouchableOpacity onPress={onRunHarness} style={styles.devChip}>
@@ -437,15 +419,170 @@ export default function HomeScreen() {
               </Text>
             </TouchableOpacity>
           )}
+        </Animated.View>
 
-          <View style={styles.bottomSpacer} />
-        </View>
+        <View style={styles.bottomSpacer} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  // ─── Nike-style root + container ────────────────────────────────────────
+  nikeRoot: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  nikeContainer: {
+    paddingBottom: 32,
+    backgroundColor: "#000",
+  },
+  // ─── Hero plein écran ───────────────────────────────────────────────────
+  heroNike: {
+    width: "100%",
+    height: 560,
+    position: "relative" as const,
+    backgroundColor: "#111",
+  },
+  heroNikeBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  heroNikeTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.25)",
+  },
+  heroNikeGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  heroTopBarNike: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  heroDateNike: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1.5,
+    color: "rgba(255,255,255,0.75)",
+  },
+  matchAlertNike: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 4,
+    backgroundColor: NIKE_ACCENT,
+  },
+  matchAlertNikeText: {
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+    color: "#fff",
+  },
+  logoutNike: {
+    padding: 6,
+  },
+  heroBottomNike: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 24,
+    paddingBottom: 28,
+    gap: 8,
+  },
+  heroLabelNike: {
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 2,
+    color: NIKE_ACCENT,
+  },
+  heroTitleNike: {
+    fontSize: 56,
+    lineHeight: 60,
+    fontWeight: "900",
+    color: "#fff",
+    letterSpacing: -1,
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 8,
+  },
+  heroSubtitleNike: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "rgba(255,255,255,0.85)",
+    marginBottom: 12,
+    letterSpacing: 0.3,
+  },
+  // ─── CTA orange massif Nike ─────────────────────────────────────────────
+  ctaNike: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    backgroundColor: NIKE_ACCENT,
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+    borderRadius: 999,
+    shadowColor: NIKE_ACCENT,
+    shadowOpacity: 0.4,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
+  ctaNikeDisabled: {
+    backgroundColor: "rgba(255,107,26,0.4)",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  ctaNikeText: {
+    fontSize: 15,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+    color: "#fff",
+  },
+  // ─── Sections sous le hero ──────────────────────────────────────────────
+  sectionsNike: {
+    paddingHorizontal: 20,
+    paddingTop: 28,
+    gap: 24,
+  },
+  sectionHeadNike: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 2,
+    color: "rgba(255,255,255,0.5)",
+    marginBottom: 10,
+  },
+  quickRowNike: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 4,
+  },
+  quickActionNike: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    gap: 8,
+  },
+  quickActionNikeLabel: {
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+    color: "rgba(255,255,255,0.85)",
+  },
+  // ─── Legacy styles (gardés pour rétro-compat, non utilisés) ─────────────
   screenContainer: {
     paddingTop: 10,
     paddingBottom: 24,
