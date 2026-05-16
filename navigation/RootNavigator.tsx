@@ -27,9 +27,6 @@ import SettingsScreen from "../screens/SettingsScreen";
 import LegalNoticeScreen from "../screens/LegalNoticeScreen";
 import PrivacyPolicyScreen from "../screens/PrivacyPolicyScreen";
 import RoutineScreen from "../screens/RoutineScreen";
-import CoachDashboardScreen from "../screens/CoachDashboardScreen";
-import CoachPlayerDetailScreen from "../screens/CoachPlayerDetailScreen";
-import ChatScreen from "../screens/ChatScreen";
 import CycleModalScreen from "../screens/CycleModalScreen";
 import ProgressScreen from "../screens/ProgressScreen";
 import { theme } from "../constants/theme";
@@ -38,7 +35,6 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useSyncStore } from "../state/stores/useSyncStore";
 import { SwipeTabsWrapper } from "../components/SwipeTabsWrapper";
-import { useAppModeStore } from "../state/appModeStore";
 import { setAnalyticsUserId } from "../services/analytics";
 import { setSentryUser } from "../services/monitoring";
 
@@ -54,10 +50,7 @@ import type { FKS_NextSessionV2 } from "../screens/newSession/types";
 type TabParamList = {
   Home: undefined;
   NewSession: undefined;
-  VideoLibrary: { highlightId?: string; startInFavorites?: boolean } | undefined;
-  Chat: undefined;
   Profile: undefined;
-  Coach: undefined;
 };
 
 export type AppStackParamList = {
@@ -96,7 +89,6 @@ export type AppStackParamList = {
   LegalNotice: undefined;
   PrivacyPolicy: undefined;
   CycleModal: { mode?: "select" | "manage"; origin?: "home" | "profile" | "newSession" | "feedback" } | undefined;
-  CoachPlayerDetail: { userId: string; userName?: string } | undefined;
 };
 
 export type AuthStackParamList = {
@@ -109,12 +101,10 @@ const AppStack = createNativeStackNavigator<AppStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 const WELCOME_KEY = "fks_welcome_done";
-const PLAYER_TAB_ORDER: Array<keyof TabParamList> = ["Home", "NewSession", "Chat", "VideoLibrary", "Profile"];
-const COACH_TAB_ORDER: Array<keyof TabParamList> = ["Coach", "Chat", "Profile"];
+const PLAYER_TAB_ORDER: Array<keyof TabParamList> = ["Home", "NewSession", "Profile"];
 
 function MainTabs() {
-  const mode = useAppModeStore((s) => s.mode);
-  const tabOrder = mode === "coach" ? COACH_TAB_ORDER : PLAYER_TAB_ORDER;
+  const tabOrder = PLAYER_TAB_ORDER;
 
   return (
     <Tab.Navigator
@@ -129,77 +119,32 @@ function MainTabs() {
         tabBarIcon: ({ color, size }) => {
           if (route.name === "Home") return <Ionicons name="home" size={size} color={color} />;
           if (route.name === "NewSession") return <Ionicons name="flash" size={size} color={color} />;
-          if (route.name === "VideoLibrary") return <Ionicons name="play-circle" size={size} color={color} />;
-          if (route.name === "Chat") return <Ionicons name="chatbubble-ellipses" size={size} color={color} />;
           if (route.name === "Profile") return <Ionicons name="person" size={size} color={color} />;
-          if (route.name === "Coach") return <Ionicons name="people" size={size} color={color} />;
           return null;
         },
       })}
     >
-      {mode === "coach" ? (
-        <>
-          <Tab.Screen name="Coach" options={{ title: "Coach" }}>
-            {() => (
-              <SwipeTabsWrapper currentTab="Coach" tabOrder={tabOrder}>
-                <CoachDashboardScreen />
-              </SwipeTabsWrapper>
-            )}
-          </Tab.Screen>
-          <Tab.Screen name="Chat" options={{ title: "Assistant" }}>
-            {() => (
-              <SwipeTabsWrapper currentTab="Chat" tabOrder={tabOrder}>
-                <ChatScreen />
-              </SwipeTabsWrapper>
-            )}
-          </Tab.Screen>
-          <Tab.Screen name="Profile" options={{ title: "Profil" }}>
-            {() => (
-              <SwipeTabsWrapper currentTab="Profile" tabOrder={tabOrder}>
-                <ProfileScreen />
-              </SwipeTabsWrapper>
-            )}
-          </Tab.Screen>
-        </>
-      ) : (
-        <>
-          <Tab.Screen name="Home" options={{ title: "Accueil" }}>
-            {() => (
-              <SwipeTabsWrapper currentTab="Home" tabOrder={tabOrder}>
-                <HomeScreen />
-              </SwipeTabsWrapper>
-            )}
-          </Tab.Screen>
-          <Tab.Screen name="NewSession" options={{ title: "Séance" }}>
-            {() => (
-              <SwipeTabsWrapper currentTab="NewSession" tabOrder={tabOrder}>
-                <SessionHubScreen />
-              </SwipeTabsWrapper>
-            )}
-          </Tab.Screen>
-          <Tab.Screen name="Chat" options={{ title: "Assistant" }}>
-            {() => (
-              <SwipeTabsWrapper currentTab="Chat" tabOrder={tabOrder}>
-                <ChatScreen />
-              </SwipeTabsWrapper>
-            )}
-          </Tab.Screen>
-          <Tab.Screen name="VideoLibrary" options={{ title: "Vidéos" }}>
-            {() => (
-              <SwipeTabsWrapper currentTab="VideoLibrary" tabOrder={tabOrder}>
-                <VideoLibraryScreen />
-              </SwipeTabsWrapper>
-            )}
-          </Tab.Screen>
-          <Tab.Screen name="Profile" options={{ title: "Profil" }}>
-            {() => (
-              <SwipeTabsWrapper currentTab="Profile" tabOrder={tabOrder}>
-                <ProfileScreen />
-              </SwipeTabsWrapper>
-            )}
-          </Tab.Screen>
-        </>
-      )}
+      <Tab.Screen name="Home" options={{ title: "Accueil" }}>
+        {() => (
+          <SwipeTabsWrapper currentTab="Home" tabOrder={tabOrder}>
+            <HomeScreen />
+          </SwipeTabsWrapper>
+        )}
+      </Tab.Screen>
+      <Tab.Screen name="NewSession" options={{ title: "Séance" }}>
+        {() => (
+          <SwipeTabsWrapper currentTab="NewSession" tabOrder={tabOrder}>
+            <SessionHubScreen />
+          </SwipeTabsWrapper>
+        )}
+      </Tab.Screen>
+      <Tab.Screen name="Profile" options={{ title: "Profil" }}>
+        {() => (
+          <SwipeTabsWrapper currentTab="Profile" tabOrder={tabOrder}>
+            <ProfileScreen />
+          </SwipeTabsWrapper>
+        )}
+      </Tab.Screen>
     </Tab.Navigator>
   );
 }
@@ -220,11 +165,6 @@ function AppNavigator() {
       }}
     >
       <AppStack.Screen name="Tabs" component={MainTabs} options={{ gestureEnabled: false }} />
-      <AppStack.Screen
-        name="CoachPlayerDetail"
-        component={CoachPlayerDetailScreen}
-        options={{ headerShown: true, title: "Joueur" }}
-      />
       <AppStack.Screen
         name="Feedback"
         component={FeedbackScreen}
@@ -320,10 +260,6 @@ export default function RootNavigator() {
   const startFirestoreWatch = useSyncStore((s) => s.startFirestoreWatch);
   const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
   const resetTrainingStore = useSyncStore((s) => s.resetForUser);
-  const mode = useAppModeStore((s) => s.mode);
-  const modeLoading = useAppModeStore((s) => s.loading);
-  const loadModeForUid = useAppModeStore((s) => s.loadForUid);
-
   // 0) DEV: force welcome screen (déconnecte + reset flag)
   useEffect(() => {
     if (!DEV_FLAGS.FORCE_WELCOME) return;
@@ -354,11 +290,6 @@ export default function RootNavigator() {
   useEffect(() => {
     resetTrainingStore(user?.uid ?? null);
   }, [resetTrainingStore, user?.uid]);
-
-  // Mode (coach/joueur) par utilisateur
-  useEffect(() => {
-    loadModeForUid(user?.uid ?? null);
-  }, [loadModeForUid, user?.uid]);
 
   // 1bis) Welcome local flag
   useEffect(() => {
@@ -414,8 +345,8 @@ export default function RootNavigator() {
     );
   }
 
-  // 6) Connecté → on attend profil + mode
-  if (initializing || modeLoading) return <Splash />;
+  // 6) Connecté → on attend profil
+  if (initializing) return <Splash />;
 
   // 6) Connecté mais profil non complété → écran profil
   if (profileCompleted === false) {

@@ -25,13 +25,10 @@ import { auth } from "../services/firebase";
 import { DEV_FLAGS } from "../config/devFlags";
 import { theme } from "../constants/theme";
 import { useSettingsStore } from "../state/settingsStore";
-import { useAppModeStore } from "../state/appModeStore";
 import HomeStatusBar from "../components/home/HomeStatusBar";
 import HomeReadinessHero from "../components/home/HomeReadinessHero";
 import HomePrimaryCTA from "../components/home/HomePrimaryCTA";
 import HomeNextSessionCard from "../components/home/HomeNextSessionCard";
-import HomeWeekSummaryCard from "../components/home/HomeWeekSummaryCard";
-import HomeTestsNudge from "../components/home/HomeTestsNudge";
 import HomeCarouselCard from "../components/home/HomeCarouselCard";
 import { useLoadSeries } from "../hooks/home/useLoadSeries";
 import { useMatchSoon } from "../hooks/home/useMatchSoon";
@@ -41,8 +38,6 @@ import { useActivityStreak } from "../hooks/home/useActivityStreak";
 import { usePrimaryCta } from "../hooks/home/usePrimaryCta";
 import { useContextualAdvice } from "../hooks/home/useContextualAdvice";
 import HomeAdviceCard from "../components/home/HomeAdviceCard";
-import { HomeCoachRecommendation } from "../components/home/HomeCoachRecommendation";
-import { useCoachRecommendations } from "../hooks/useCoachRecommendations";
 import { isSameDay, toDateKey } from "../utils/dateHelpers";
 import { showToast } from "../utils/toast";
 import { BANNER_FALLBACK } from "../constants/bannerImages";
@@ -68,7 +63,6 @@ export default function HomeScreen() {
   };
   const nav = useNavigation<RootNav>();
   const resetTrainingStore = useSyncStore((s) => s.resetForUser);
-  const clearModeForUid = useAppModeStore((s) => s.clearForUid);
 
   const heroAnim = React.useRef(new Animated.Value(0)).current;
   const ctaAnim = React.useRef(new Animated.Value(0)).current;
@@ -76,12 +70,8 @@ export default function HomeScreen() {
 
   const handleLogout = async () => {
     try {
-      const uid = auth.currentUser?.uid ?? null;
       await signOut(auth);
       resetTrainingStore(null);
-      if (uid) {
-        await clearModeForUid(uid);
-      }
     } catch {
       showToast({ type: "error", title: "Déconnexion", message: "Échec de la déconnexion. Réessaie." });
     }
@@ -203,7 +193,6 @@ export default function HomeScreen() {
 
   // Stable callbacks for memoized children
   const goToHistory = useCallback(() => nav.navigate("SessionHistory"), [nav]);
-  const goToRoutine = useCallback(() => nav.navigate("Routine"), [nav]);
   const goToFeedback = useCallback(() => {
     if (pendingSession) nav.navigate("Feedback", { sessionId: (pendingSession as any).id });
   }, [nav, pendingSession]);
@@ -211,7 +200,6 @@ export default function HomeScreen() {
   const advice = useContextualAdvice();
 
   // Recommandations du coach
-  const { recommendations: coachRecommendations } = useCoachRecommendations();
 
   const onRunHarness = () => {
     runTestHarness?.(7);
@@ -228,11 +216,6 @@ export default function HomeScreen() {
   const athleteName = auth.currentUser?.displayName ?? "joueur";
 
   const activityStreak = useActivityStreak(sessions, externalLoads, nowISO);
-
-  const plannedThisWeek = useMemo(
-    () => weekDays.filter((d) => d.hasPlanned).length,
-    [weekDays]
-  );
 
   const todayLabel = useMemo(() => {
     const base = nowISO ? new Date(nowISO) : new Date();
@@ -374,28 +357,6 @@ export default function HomeScreen() {
             </Animated.View>
           )}
 
-          {/* Recommandations du coach */}
-          {coachRecommendations.length > 0 && (
-            <Animated.View
-              style={{
-                opacity: ctaAnim,
-                transform: [
-                  {
-                    translateY: ctaAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [18, 0],
-                    }),
-                  },
-                ],
-                gap: 10,
-              }}
-            >
-              {coachRecommendations.slice(0, 2).map((rec) => (
-                <HomeCoachRecommendation key={rec.id} recommendation={rec} />
-              ))}
-            </Animated.View>
-          )}
-
           <Animated.View
             style={{
               opacity: cardsAnim,
@@ -410,27 +371,16 @@ export default function HomeScreen() {
             }}
           >
             <View style={styles.cardsStack}>
-              <View style={styles.gridRow}>
-                <View style={styles.gridItem}>
-                  <HomeCarouselCard title="Progression" subtitle="Régularité & forme">
-                    <View style={styles.progressRow}>
-                      <Ionicons name="flame" size={18} color={palette.accent} />
-                      <Text style={styles.progressText}>{activityStreak} jours d’affilée</Text>
-                    </View>
-                    <TouchableOpacity onPress={() => nav.navigate("Progression")} style={styles.link}>
-                      <Text style={styles.linkText}>Voir ma progression</Text>
-                      <Text style={styles.linkArrow}>→</Text>
-                    </TouchableOpacity>
-                  </HomeCarouselCard>
+              <HomeCarouselCard title="Progression" subtitle="Régularité & forme">
+                <View style={styles.progressRow}>
+                  <Ionicons name="flame" size={18} color={palette.accent} />
+                  <Text style={styles.progressText}>{activityStreak} jours d’affilée</Text>
                 </View>
-                <View style={styles.gridItem}>
-                  <HomeTestsNudge
-                    title="Évalue ton niveau"
-                    sub="Des tests courts pour mieux cibler tes séances."
-                    onPress={() => nav.navigate("Tests")}
-                  />
-                </View>
-              </View>
+                <TouchableOpacity onPress={() => nav.navigate("Progression")} style={styles.link}>
+                  <Text style={styles.linkText}>Voir ma progression</Text>
+                  <Text style={styles.linkArrow}>→</Text>
+                </TouchableOpacity>
+              </HomeCarouselCard>
 
               <HomeNextSessionCard
                 hasPending={Boolean(pendingSession)}
@@ -442,22 +392,6 @@ export default function HomeScreen() {
                   onSecondary={goToHistory}
                   onFeedback={pendingSession ? goToFeedback : undefined}
               />
-
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionTitle}>Ta semaine</Text>
-                <Text style={styles.sectionSub}>{weekSummary.message}</Text>
-              </View>
-
-              <HomeWeekSummaryCard
-                title="Semaine en cours"
-                summaryLabel={`${weekSummary.fksCount}/${weeklyGoal}`}
-                message={weekSummary.message}
-                  weekDays={weekDays}
-                  plannedThisWeek={plannedThisWeek}
-                  weeklyGoal={weeklyGoal}
-                  activityStreak={activityStreak}
-                  onManageRoutine={goToRoutine}
-                />
               </View>
             </Animated.View>
 
@@ -623,33 +557,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#ffffff",
   },
-  sectionHeaderRow: {
-    marginTop: 4,
-    gap: 4,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: "800",
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-    color: palette.text,
-  },
-  sectionSub: {
-    fontSize: 12,
-    color: palette.sub,
-  },
   cardsStack: {
     gap: 16,
-  },
-  gridRow: {
-    flexDirection: "row",
-    gap: 12,
-    flexWrap: "wrap",
-  },
-  gridItem: {
-    flexGrow: 1,
-    flexBasis: "48%",
-    minWidth: 160,
   },
   progressRow: {
     flexDirection: "row",

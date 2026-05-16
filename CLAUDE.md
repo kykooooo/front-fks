@@ -3,6 +3,31 @@
 ## Vision
 Application mobile de preparation physique personnalisee pour footballeurs, pilotee par IA.
 
+## 🎯 Etat actuel du projet (2026-05)
+
+### Equipe
+- **Kyllian Le Bris** — fondateur, non-dev (06 13 54 78 14)
+- **Marvin** — co-fondateur, closer phone (07 49 55 98 28)
+- Email pro : `kyllian@fks-app.com` (Google Workspace + domaine `fks-app.com`)
+
+### Pivot B2C joueur
+- **Mode Coach retire** : 100% focus joueur, plus de Dashboard coach / coach players data
+- **Chat IA retire** : feature consultative non prioritaire, retiree pour simplifier
+- **Home epure** : suppression du calendrier hebdo + tab `VideoLibrary` + nudge Tests
+  - `VideoLibraryScreen` reste accessible via route stack `ExerciseDetail` (depuis SessionPreview/Live)
+- **Tab bar** : 3 onglets (Accueil / Seance / Profil)
+
+### Campagne prospection clubs amateurs (en cours)
+- Cible : 45 contacts (clubs R1/R2 Hauts-de-France + Ile-de-France + Normandie)
+- Format : email perso par club via Gmail MCP, signe co-fondateurs
+- Numero contact campagne : Marvin (07 49 55 98 28)
+- Tracker : 18/45 envoyes (J0+J3), reste 22 drafts auto + 5 manuels (emails persos)
+- Format actuel : version longue (B), co-signe "Kyllian Le Bris & Marvin / Co-fondateurs FKS"
+
+### MCP actifs (Claude Desktop)
+- `gmail` (`@gongrzhe/server-gmail-autoauth-mcp`) : drafts + send (cible kyllian@fks-app.com)
+- `github`, `firebase`, `filesystem`, `memory`, `exa`, `puppeteer`, `sequential-thinking`
+
 ## ✅ Mises a jour recentes (resume)
 - **Zero ballon** : aucune seance ne doit inclure medball/swiss/fitball/football.
 - **Materiel** : ne plus proposer ces equipements cote app (meme si envoyes, le backend les filtre).
@@ -47,7 +72,7 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
 - **Langage** : Node.js (Express)
 - **Base de donnees** : Firestore
 - **Coeur metier** : Generation de seances d'entrainement via systeme de tokens/formats/cycles
-- **IA** : OpenAI (generation de seances + assistant chat)
+- **IA** : OpenAI (generation de seances, pipeline 2-agents pour Force)
 
 ### Frontend
 - **Framework** : React Native (Expo SDK 54, React 19, RN 0.81)
@@ -139,7 +164,6 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
   /state
     trainingStore.ts         # Store Zustand principal (sessions, charges, ATL/CTL/TSB, Firestore sync)
     settingsStore.ts         # Preferences utilisateur (theme, haptics, weekStart, weeklyGoal)
-    appModeStore.ts          # Mode coach/joueur
 
   /services
     firebase.ts              # Instance auth + db
@@ -163,8 +187,7 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
     SessionLiveScreen.tsx     # Seance en cours (timer, blocs)
     SessionSummaryScreen.tsx  # Resume post-seance
     SessionHistoryScreen.tsx  # Historique (stagger animation)
-    VideoLibraryScreen.tsx    # Catalogue exercices + videos
-    ChatScreen.tsx            # Assistant IA
+    VideoLibraryScreen.tsx    # Catalogue exercices + videos (acces via ExerciseDetail stack, plus dans tab bar)
     NewSessionScreen.tsx      # Generation de seance
     ProgressScreen.tsx        # Milestones, hero football-friendly, comparaison tests
     TestsScreen.tsx           # Tests terrain
@@ -230,18 +253,15 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
 ## Parcours Utilisateur (Frontend)
 
 ### Onboarding
-Welcome -> Login/Register -> Setup profil (poste, niveau, pied fort, objectif, charge club/match, materiel, code club) -> Choix mode (joueur/coach) -> Onboarding slides
+Welcome -> Login/Register -> Setup profil (poste, niveau, pied fort, objectif, charge club/match, materiel, code club) -> Onboarding slides
 
-### Mode Joueur
-- **Home** : StatusBar (phase + TSB + match) -> ReadinessHero (ATL/CTL/TSB + sparkline) -> CTA intelligent -> Carousel (semaine, tests, progression)
+### App (100% mode joueur, mode coach retire)
+- **Home** : StatusBar (phase + TSB + match) -> Hero photo (chips Semaine/Serie/Match) -> ReadinessHero (ATL/CTL/TSB + sparkline) -> CTA intelligent -> Carte Progression -> Card Prochaine seance
 - **Cycles** : 1 seul cycle actif, choix/gestion via modal, recommandation basee sur objectif + tests
 - **Generation** : choix environnement + materiel -> backend genere -> preview -> live -> feedback (RPE, fatigue, douleur)
-- **Tests terrain** : batterie de tests par playlist, conseilles avant demarrage cycle
-- **Bibliotheque** : catalogue exercices + videos validees + alternatives + favoris
-- **Chat** : assistant IA contextuel (rate limit 10 msg/jour, 500 chars max)
-
-### Mode Coach
-Dashboard coach : liste joueurs, details joueur (profil + seances)
+- **Tests terrain** : batterie de tests par playlist, accessibles via navigation stack (plus mise en avant Home)
+- **Bibliotheque exercices** : catalogue accessible a la demande via les details d'exo (route `ExerciseDetail`), plus dans la tab bar
+- **Tabs** : Accueil / Seance / Profil (3 onglets)
 
 ## Systeme de Modals
 
@@ -295,7 +315,7 @@ Hook `useHaptics()` centralise :
 - Auth flow : Welcome -> Login/Register (route initiale dynamique selon CTA welcome)
 - Profile setup obligatoire avant acces app
 - Onboarding affiche une seule fois (AsyncStorage flag)
-- Mode coach/joueur choisi au premier lancement
+- App 100% mode joueur (pas de choix de mode)
 - Modals en `transparentModal` pour le blur/swipe custom
 
 ## Regles a TOUJOURS Respecter
@@ -312,4 +332,14 @@ Hook `useHaptics()` centralise :
 10. **Hooks metier du Home dans hooks/home/** (garder HomeScreen leger)
 
 ## Note pour Claude
-Je ne suis pas developpeur, j'ai cree cette app avec GPT. Quand tu m'expliques du code, utilise un francais simple et des analogies foot si possible.
+Je suis Kyllian, non-developpeur, j'ai cree cette app avec GPT puis Claude Code. Mon co-fondateur s'appelle Marvin (gere la partie call/closing).
+
+Quand tu m'expliques du code, utilise un francais simple et des analogies foot si possible.
+
+**Phase actuelle** : pre-lancement, prospection clubs amateurs en cours via Gmail MCP. Focus = trouver les premiers clubs/joueurs pilotes pour iterer sur les retours terrain. Pas de feature gratuite, valider l'usage avant.
+
+**Conventions importantes** :
+- Toasts via `showToast()` (jamais `Alert.alert`)
+- Haptics via `useHaptics()` uniquement
+- Helpers de date dans `utils/dateHelpers.ts`
+- Hooks Home dans `hooks/home/` (garder HomeScreen leger)

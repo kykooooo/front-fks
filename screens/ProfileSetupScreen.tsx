@@ -29,7 +29,6 @@ import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { showToast } from "../utils/toast";
 import { runShake } from "../utils/animations";
-import { useAppModeStore } from "../state/appModeStore";
 import { theme } from "../constants/theme";
 import { AuthBackground, AUTH_IMAGES } from "../components/auth/AuthBackground";
 
@@ -133,9 +132,6 @@ export default function ProfileSetupScreen() {
   const [homeEquipment, setHomeEquipment] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const currentMode = useAppModeStore((s) => s.mode);
-  const setModeForUid = useAppModeStore((s) => s.setModeForUid);
-  const [selectedMode, setSelectedMode] = useState<"player" | "coach" | "">(currentMode ?? "");
 
   const shake = useRef(new Animated.Value(0)).current;
   const stepFade = useRef(new Animated.Value(1)).current;
@@ -224,7 +220,6 @@ export default function ProfileSetupScreen() {
   const validateStep = (): boolean => {
     switch (step) {
       case 0:
-        if (selectedMode !== "player" && selectedMode !== "coach") { fail("Champs manquants", "Choisis ton role (joueur ou coach)."); return false; }
         if (!firstName.trim()) { fail("Champs manquants", "Merci d'indiquer ton prenom."); return false; }
         if (!positions.includes(position as any)) { fail("Champs manquants", "Choisis ton poste."); return false; }
         if (!levels.includes(level as any)) { fail("Champs manquants", "Indique ton niveau."); return false; }
@@ -281,10 +276,6 @@ export default function ProfileSetupScreen() {
       const auth = getAuth();
       const user = auth.currentUser;
       if (!user) { fail("Connexion requise", "Connecte-toi pour enregistrer ton profil."); return; }
-
-      if (selectedMode === "player" || selectedMode === "coach") {
-        await setModeForUid(user.uid, selectedMode);
-      }
 
       let resolvedClubId: string | null = clubId?.trim() ? clubId.trim() : null;
       if (normalizedInvite) {
@@ -354,10 +345,6 @@ export default function ProfileSetupScreen() {
       case 0:
         return (
           <>
-            <Text style={styles.fieldLabel}>Tu es...</Text>
-            <Choice label="Joueur" selected={selectedMode === "player"} onPress={() => setSelectedMode("player")} />
-            <Choice label="Coach" selected={selectedMode === "coach"} onPress={() => setSelectedMode("coach")} />
-
             <Text style={styles.fieldLabel}>Prenom</Text>
             <TextInput
               style={styles.input}
