@@ -35,7 +35,7 @@ export const useSessionsStore = create<SessionsState>()(
           const devNowISO = useDebugStore.getState().devNowISO;
           const baseISO = s.dateISO ?? s.date ?? todayISO();
           return {
-            sessions: [{ ...s, dateISO: devNowISO ?? baseISO }, ...state.sessions].slice(0, 50),
+            sessions: [{ ...s, dateISO: devNowISO ?? baseISO }, ...state.sessions].slice(0, 200),
           };
         }),
 
