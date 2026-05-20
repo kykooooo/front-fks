@@ -3,10 +3,7 @@ export type MicrocycleId =
   | "force"
   | "endurance"
   | "explosivite"
-  | "explosif"
-  | "rsa"
-  | "saison"
-  | "offseason";
+  | "saison";
 
 export const MICROCYCLE_TOTAL_SESSIONS_DEFAULT = 12;
 
@@ -14,11 +11,29 @@ export const isMicrocycleId = (value: any): value is MicrocycleId =>
   value === "fondation" ||
   value === "force" ||
   value === "explosivite" ||
-  value === "explosif" ||
-  value === "rsa" ||
   value === "endurance" ||
-  value === "saison" ||
-  value === "offseason";
+  value === "saison";
+
+/**
+ * Normalise un identifiant de cycle vers sa forme canonique (5 cycles).
+ * Remappe les anciens cycles supprimés et alias legacy :
+ *  - "explosif" / "reactivite" -> "explosivite"
+ *  - "rsa" -> "endurance"
+ *  - "offseason" -> "fondation"
+ * Retourne null si la valeur est vide ou non reconnue.
+ */
+export const canonicalizeMicrocycleGoal = (value: any): MicrocycleId | null => {
+  const v = String(value ?? "").trim().toLowerCase();
+  if (!v) return null;
+  const remap: Record<string, MicrocycleId> = {
+    explosif: "explosivite",
+    reactivite: "explosivite",
+    rsa: "endurance",
+    offseason: "fondation",
+  };
+  const mapped = remap[v] ?? v;
+  return isMicrocycleId(mapped) ? mapped : null;
+};
 
 export type TrainingLocation = "gym" | "pitch" | "home";
 
@@ -69,75 +84,41 @@ export const MICROCYCLES: Record<MicrocycleId, MicrocycleDef> = {
       home: "Renforcement au poids du corps",
     },
     footballTip: "Plus de force = duels gagn\u00e9s, frappes plus puissantes, moins de blessures.",
-    suggestedNext: ["explosivite", "explosif", "endurance"],
+    suggestedNext: ["explosivite", "endurance"],
   },
   endurance: {
     id: "endurance",
     label: "Tenir 90 minutes",
     subtitle: "Ne plus mourir en 2e mi-temps",
     description:
-      "Arr\u00eate de subir en fin de match. Tu construis le cardio pour presser, replacer et encha\u00eener les efforts pendant 90 minutes.",
+      "Arr\u00eate de subir en fin de match. Tu construis le cardio pour presser, replacer et encha\u00eener les sprints pendant 90 minutes \u2014 sans flancher au sprint de la 85e.",
     icon: "pulse-outline",
-    highlights: ["Fin de match", "R\u00e9cup rapide", "Endurance"],
+    highlights: ["Fin de match", "Sprints r\u00e9p\u00e9t\u00e9s", "R\u00e9cup rapide"],
     allowedLocations: ["pitch", "gym", "home"],
     locationDescriptions: {
-      pitch: "Courses + intervalles sur terrain",
+      pitch: "Courses + intervalles + sprints r\u00e9p\u00e9t\u00e9s",
       gym: "Tapis, v\u00e9lo ou rameur + intervalles",
       home: "Circuits cardio courts",
     },
-    footballTip: "C'est ce qui te permet de presser \u00e0 la 85e comme \u00e0 la 5e.",
-    suggestedNext: ["rsa", "explosivite", "saison"],
+    footballTip: "C'est ce qui te permet de presser \u00e0 la 85e comme \u00e0 la 5e, et d'encha\u00eener les sprints sans tomber dans le rouge.",
+    suggestedNext: ["explosivite", "saison"],
   },
   explosivite: {
     id: "explosivite",
-    label: "Premiers m\u00e8tres",
-    subtitle: "Prends de vitesse ton adversaire",
+    label: "Vitesse & d\u00e9tente",
+    subtitle: "Explose au sol et dans les airs",
     description:
-      "Travaille ta vitesse de d\u00e9marrage et tes changements de direction. Les 3 premiers m\u00e8tres font la diff\u00e9rence sur un appel ou un pressing.",
+      "Travaille ta vitesse de d\u00e9marrage, tes changements de direction et ta d\u00e9tente. Les 3 premiers m\u00e8tres et la hauteur de saut font la diff\u00e9rence sur un appel, un pressing ou un duel a\u00e9rien.",
     icon: "flash-outline",
-    highlights: ["D\u00e9marrages", "Appuis", "Vitesse"],
+    highlights: ["D\u00e9marrages", "D\u00e9tente", "Puissance"],
     allowedLocations: ["pitch", "gym", "home"],
     locationDescriptions: {
-      pitch: "Sprints courts + changements de direction",
-      gym: "Travail de vitesse + coordination",
-      home: "Coordination + r\u00e9activit\u00e9",
+      pitch: "Sprints courts + sauts + changements de direction",
+      gym: "Vitesse + charges explosives + sauts",
+      home: "Coordination + sauts + r\u00e9activit\u00e9",
     },
-    footballTip: "Les premiers m\u00e8tres font la diff\u00e9rence sur un appel de balle ou un pressing.",
-    suggestedNext: ["explosif", "rsa", "saison"],
-  },
-  explosif: {
-    id: "explosif",
-    label: "Puissance & d\u00e9tente",
-    subtitle: "Domine dans les airs \u2022 acc\u00e9l\u00e8re plus vite",
-    description:
-      "D\u00e9veloppe ta d\u00e9tente et ta puissance pour dominer dans les duels a\u00e9riens, les d\u00e9marrages et les changements de rythme.",
-    icon: "rocket-outline",
-    highlights: ["D\u00e9tente", "Acc\u00e9l\u00e9ration", "Puissance"],
-    allowedLocations: ["pitch", "gym", "home"],
-    locationDescriptions: {
-      pitch: "Sprint + sauts + puissance",
-      gym: "Charges explosives + sauts",
-      home: "Sauts + puissance l\u00e9g\u00e8re",
-    },
-    footballTip: "La puissance, c'est ce qui fait la diff\u00e9rence dans les duels a\u00e9riens et les d\u00e9marrages.",
-    suggestedNext: ["rsa", "saison", "endurance"],
-  },
-  rsa: {
-    id: "rsa",
-    label: "Encha\u00eener les sprints",
-    subtitle: "Sprint, r\u00e9cup, sprint \u2022 sans flancher",
-    description:
-      "Apprends \u00e0 encha\u00eener les efforts intenses avec tr\u00e8s peu de r\u00e9cup. Id\u00e9al pour les matchs \u00e0 haute intensit\u00e9.",
-    icon: "repeat-outline",
-    highlights: ["Sprints r\u00e9p\u00e9t\u00e9s", "R\u00e9cup express", "Intensit\u00e9 match"],
-    allowedLocations: ["pitch", "gym", "home"],
-    locationDescriptions: {
-      pitch: "Sprints r\u00e9p\u00e9t\u00e9s + navettes",
-      gym: "Intervalles courts haute intensit\u00e9",
-      home: "Circuits courts explosifs",
-    },
-    footballTip: "Un milieu fait en moyenne 30 sprints par match. Ce programme, c'est pour les encha\u00eener sans flancher.",
-    suggestedNext: ["saison", "endurance"],
+    footballTip: "Les premiers m\u00e8tres font la diff sur un appel, la d\u00e9tente sur un coup de t\u00eate. Ce cycle muscle les deux.",
+    suggestedNext: ["endurance", "saison"],
   },
   saison: {
     id: "saison",
@@ -154,24 +135,7 @@ export const MICROCYCLES: Record<MicrocycleId, MicrocycleDef> = {
       home: "Pr\u00e9vention + r\u00e9cup",
     },
     footballTip: "En pleine saison, l'objectif c'est rester frais pour les matchs, pas se d\u00e9foncer \u00e0 l'entra\u00eenement.",
-    suggestedNext: ["force", "endurance", "offseason"],
-  },
-  offseason: {
-    id: "offseason",
-    label: "Coupure intelligente",
-    subtitle: "Recharge les batteries \u2022 repars plus fort",
-    description:
-      "Apr\u00e8s la saison, r\u00e9cup\u00e8re bien pour repartir plus fort. L\u00e9ger, progressif, sans pression.",
-    icon: "calendar-outline",
-    highlights: ["R\u00e9cup\u00e9ration", "Repos actif", "Recharge"],
-    allowedLocations: ["pitch", "gym", "home"],
-    locationDescriptions: {
-      pitch: "Retour progressif terrain",
-      gym: "Entretien l\u00e9ger",
-      home: "R\u00e9cup active + souplesse",
-    },
-    footballTip: "Les pros prennent 2-3 semaines de coupure. Toi aussi, recharge les batteries avant de repartir.",
-    suggestedNext: ["fondation", "force"],
+    suggestedNext: ["force", "endurance"],
   },
 };
 
@@ -207,7 +171,7 @@ export const CYCLE_PATHWAYS: CyclePathway[] = [
     description:
       "Deviens plus fort dans les duels, plus rapide sur les premiers m\u00e8tres, et tiens le rythme tout le match.",
     icon: "rocket-outline",
-    sequence: ["force", "explosif", "rsa", "saison"],
+    sequence: ["force", "explosivite", "endurance", "saison"],
     forWhom:
       "T'as d\u00e9j\u00e0 une bonne base physique et tu veux faire la diff\u00e9rence sur le terrain.",
   },
@@ -227,7 +191,7 @@ export const CYCLE_PATHWAYS: CyclePathway[] = [
     description:
       "Reprends en douceur apr\u00e8s l'inter-saison ou une blessure, sans griller les \u00e9tapes.",
     icon: "refresh-outline",
-    sequence: ["offseason", "fondation", "force", "endurance"],
+    sequence: ["fondation", "force", "endurance", "saison"],
     forWhom:
       "Tu reviens d'une pause (inter-saison, blessure, arr\u00eat long) et tu veux repartir sans risque.",
   },

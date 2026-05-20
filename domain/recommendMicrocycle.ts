@@ -22,10 +22,7 @@ export function recommendMicrocycle(input: {
     force: 0,
     explosivite: 0,
     endurance: 0,
-    explosif: 0,
-    rsa: 0,
     saison: 0,
-    offseason: 0,
   };
 
   const reasons: string[] = [];

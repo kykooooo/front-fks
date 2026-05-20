@@ -23,11 +23,8 @@ export type PlaylistId =
   | "fondation"
   | "force"
   | "explosivite"
-  | "explosif"
-  | "rsa"
   | "endurance"
-  | "saison"
-  | "offseason";
+  | "saison";
 
 export type TestEntry = {
   ts: number;
@@ -203,12 +200,9 @@ export const FIELD_BY_KEY = FIELD_DEFS.reduce<Record<FieldKey, FieldConfig>>((ac
 export const PLAYLISTS: Record<PlaylistId, { label: string; subtitle: string }> = {
   fondation: { label: "Fondation", subtitle: "Base physique / S&C + endurance" },
   force: { label: "Force", subtitle: "Force max + charges lourdes" },
-  explosivite: { label: "Explosivité (vitesse & technique)", subtitle: "Vitesse + technique (light)" },
-  explosif: { label: "Explosif (puissance)", subtitle: "Sprint + power + plyo" },
-  rsa: { label: "RSA", subtitle: "Repeated sprint ability" },
-  endurance: { label: "Endurance", subtitle: "VMA courte + capacite a repeter" },
+  explosivite: { label: "Explosivité", subtitle: "Vitesse + détente + puissance" },
+  endurance: { label: "Endurance", subtitle: "Tenir 90 min + sprints répétés" },
   saison: { label: "Saison / Maintien", subtitle: "Maintenir la forme sans se cramer" },
-  offseason: { label: "Off‑Season / Transition", subtitle: "Récup active + maintien léger" },
 };
 
 export const PLAYLIST_FIELDS: Record<PlaylistId, FieldKey[]> = {
@@ -231,11 +225,8 @@ export const PLAYLIST_FIELDS: Record<PlaylistId, FieldKey[]> = {
     "trapbar3rmKg",
     "splitKg",
   ],
-  explosif: ["cmjCm", "broadJumpCm", "sprint10s", "sprint20s", "trapbar3rmKg"],
-  rsa: ["sprint10s", "sprint20s", "sprint30s", "yoYoIR1_m"],
   endurance: ["yoYoIR1_m", "endurance6min_m", "run1km_s"],
   saison: ["yoYoIR1_m", "endurance6min_m", "sprint10s", "cmjCm"],
-  offseason: ["endurance6min_m", "sprint10s", "cmjCm"],
 };
 
 export const PLAYLIST_PLAN: Record<PlaylistId, string[]> = {
@@ -260,19 +251,6 @@ export const PLAYLIST_PLAN: Record<PlaylistId, string[]> = {
     "Pause 6-8 min",
     "Force/power : trap bar 3RM (ou charge lourde 3-5 reps)",
   ],
-  explosif: [
-    "Echauffement nerveux + gammes",
-    "Sauts : CMJ + broad jump",
-    "Sprint : 10-20 m",
-    "Pause 6-8 min",
-    "Power : trap bar 3RM / jump shrug",
-  ],
-  rsa: [
-    "Echauffement progressif 8-10 min",
-    "Sprints répétés courts (10-30 m)",
-    "Récup courte entre efforts",
-    "Finir par 6 min ou Yo-Yo IR1",
-  ],
   endurance: [
     "Echauffement progressif 10-12 min",
     "Test principal : Yo-Yo IR1 ou 6 min",
@@ -286,24 +264,14 @@ export const PLAYLIST_PLAN: Record<PlaylistId, string[]> = {
     "Test vitesse : 10 m",
     "Test puissance : CMJ",
   ],
-  offseason: [
-    "Echauffement léger 6-8 min",
-    "Test endurance : 6 min",
-    "Pause 4-5 min",
-    "Test vitesse : 10 m",
-    "Test puissance : CMJ",
-  ],
 };
 
 export const isPlaylistId = (value: any): value is PlaylistId =>
   value === "fondation" ||
   value === "force" ||
   value === "explosivite" ||
-  value === "explosif" ||
-  value === "rsa" ||
   value === "endurance" ||
-  value === "saison" ||
-  value === "offseason";
+  value === "saison";
 
 export const SHORT_LABELS: Partial<Record<FieldKey, string>> = {
   broadJumpCm: "BJ",
