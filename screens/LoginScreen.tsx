@@ -26,7 +26,6 @@ import {
   sendPasswordResetEmail,
 } from "firebase/auth";
 import { auth } from "../services/firebase";
-import { showError } from "../utils/errorHandler";
 import { trackEvent } from "../services/analytics";
 import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
@@ -93,7 +92,6 @@ export default function LoginScreen({ navigation }: Props) {
         title: "Connexion échouée",
         message: getLoginErrorMessage(e?.code),
       });
-      showError(e, "Connexion");
     } finally {
       setLoading(false);
     }
@@ -117,7 +115,7 @@ export default function LoginScreen({ navigation }: Props) {
         message: "Vérifie ta boîte mail pour réinitialiser ton mot de passe.",
       });
     } catch (e: any) {
-      showError(e, "Réinitialisation mot de passe");
+      if (__DEV__) console.warn("[reset password]", e?.code ?? e);
       showToast({
         type: "error",
         title: "Erreur",

@@ -21,10 +21,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { AuthStackParamList } from "../navigation/RootNavigator";
 import { Ionicons } from "@expo/vector-icons";
-import { createUserWithEmailAndPassword, signOut, updateProfile } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db } from "../services/firebase";
-import { showError } from "../utils/errorHandler";
 import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
 import { runShake } from "../utils/animations";
@@ -103,14 +102,12 @@ export default function RegisterScreen({ navigation }: Props) {
         },
         { merge: true }
       );
-      // Déconnecter pour que l'utilisateur passe par Login
-      await signOut(auth);
+      // Pas de signOut : l'utilisateur reste connecté, le RootNavigator bascule
+      // automatiquement vers le setup profil (profileCompleted: false). Zéro re-login.
       haptics.success();
-      showToast({ type: "success", title: "Compte créé", message: "Connecte-toi pour continuer." });
-      // Le signOut déclenche le re-render vers AuthStack automatiquement
-      // navigation.navigate("Login") n'est plus nécessaire
+      showToast({ type: "success", title: "Compte créé", message: "On configure ton profil." });
     } catch (e: any) {
-      showError(e, "Inscription");
+      if (__DEV__) console.warn("[register]", e?.code ?? e);
       runShake(shake);
       haptics.error();
       showToast({
