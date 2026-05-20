@@ -766,9 +766,9 @@ export default function NewSessionScreen() {
           "Sélection des exercices adaptés...",
           "Construction des blocs d'entraînement...",
           "Personnalisation selon tes contraintes...",
-          "Encore quelques secondes, on peaufine ta séance...",
+          "Vérification et finalisation...",
         ]}
-        estimatedDurationMs={35000}
+        estimatedDurationMs={25000}
       />
     </SafeAreaView>
   );
