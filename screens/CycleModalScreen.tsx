@@ -99,10 +99,7 @@ const CYCLE_ACCENT: Partial<Record<MicrocycleId, string>> = {
   force: "#f59e0b",
   endurance: "#3b82f6",
   explosivite: "#a855f7",
-  explosif: "#ef4444",
-  rsa: "#ec4899",
   saison: "#06b6d4",
-  offseason: "#84cc16",
 };
 
 /* ═══════════════════════════════════════════ */

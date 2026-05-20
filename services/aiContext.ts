@@ -8,6 +8,7 @@ import { useDebugStore } from "../state/stores/useDebugStore";
 import { useFeedbackStore } from "../state/stores/useFeedbackStore";
 import { toDateKey } from "../utils/dateHelpers";
 import type { Session } from "../domain/types";
+import { canonicalizeMicrocycleGoal } from "../domain/microcycles";
 import { userProfileSchema, logValidationIssues } from "../schemas/firestoreSchemas";
 import {
   RECENT_FKS_COPY_LIMIT,
@@ -135,7 +136,9 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
       : "";
   const dataGoal = (data.microcycleGoal ?? "").trim();
   const resolvedGoal = storeGoal || dataGoal;
-  const microcycleGoal = resolvedGoal || "fondation";
+  // Remap des anciens cycles (explosif/rsa/offseason) avant envoi backend : on ne transmet
+  // jamais un cycle supprimé, même si Firestore contient une valeur legacy non encore migrée.
+  const microcycleGoal = canonicalizeMicrocycleGoal(resolvedGoal) ?? "fondation";
   const microcycleSessionIndex =
     typeof sessionsState.microcycleSessionIndex === "number" && Number.isFinite(sessionsState.microcycleSessionIndex)
       ? sessionsState.microcycleSessionIndex

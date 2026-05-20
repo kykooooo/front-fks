@@ -75,9 +75,7 @@ export function cycleToBannerKey(cycle?: string | null): BannerKey {
   if (c.includes("force")) return "force";
   if (c.includes("fondation") || c.includes("foundation")) return "foundation";
   if (c.includes("endurance") || c.includes("engine")) return "engine";
-  if (c.includes("rsa")) return "engine";
   if (c.includes("explosi") || c.includes("vitesse") || c.includes("puissance")) return "explosif";
   if (c.includes("saison") || c.includes("maintien")) return "engine";
-  if (c.includes("offseason") || c.includes("transition")) return "foundation";
   return "home";
 }

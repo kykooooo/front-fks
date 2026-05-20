@@ -4,6 +4,7 @@ import { persist } from "zustand/middleware";
 import { todayISO } from "../../utils/virtualClock";
 import type { SessionsState } from "./types";
 import type { Phase, Session } from "../../domain/types";
+import { canonicalizeMicrocycleGoal } from "../../domain/microcycles";
 import type { FKS_AiContext } from "../../services/aiContext";
 import type { FKS_NextSessionV2 } from "../../screens/newSession/types";
 import { useDebugStore } from "./useDebugStore";
@@ -53,12 +54,11 @@ export const useSessionsStore = create<SessionsState>()(
 
       setMicrocycleGoal: (goal) =>
         set((state) => {
-          const normalize = (v: string | null | undefined) => String(v ?? "").trim().toLowerCase();
-          const normalized = normalize(goal);
-          // Canonical form: always lowercase, remap legacy "reactivite" → "explosif"
-          const mapped = normalized === "reactivite" ? "explosif" : normalized || null;
-          const prevNorm = normalize(state.microcycleGoal);
-          const changed = (mapped ?? "") !== prevNorm;
+          // Forme canonique (5 cycles) : remap des anciens cycles + alias legacy
+          // reactivite/explosif → explosivite, rsa → endurance, offseason → fondation
+          const mapped = canonicalizeMicrocycleGoal(goal);
+          const prev = canonicalizeMicrocycleGoal(state.microcycleGoal);
+          const changed = (mapped ?? "") !== (prev ?? "");
           return {
             microcycleGoal: mapped,
             microcycleSessionIndex: changed ? 0 : state.microcycleSessionIndex,
@@ -85,7 +85,7 @@ export const useSessionsStore = create<SessionsState>()(
     }),
     {
       name: "fks-sessions-v1",
-      version: 1,
+      version: 2,
       storage: createMigratedStorage(),
       partialize: (s) => ({
         sessions: s.sessions,
@@ -101,7 +101,14 @@ export const useSessionsStore = create<SessionsState>()(
         lastAiContext: s.lastAiContext,
       }),
       onRehydrateStorage: () => () => { onStoreHydrated(); },
-      migrate: (persisted) => persisted as SessionsState,
+      migrate: (persisted: any) => {
+        const state = (persisted ?? {}) as SessionsState;
+        // v2 : migration des anciens cycles (explosif/rsa/offseason) vers les 5 cycles canoniques
+        if (state && typeof state === "object") {
+          state.microcycleGoal = canonicalizeMicrocycleGoal((state as any).microcycleGoal);
+        }
+        return state;
+      },
     }
   )
 );

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { STORAGE_KEYS } from "../../../constants/storage";
 import { type TestEntry, isPlaylistId } from "../testConfig";
+import { canonicalizeMicrocycleGoal } from "../../../domain/microcycles";
 
 const STORAGE_KEY = STORAGE_KEYS.TESTS_V1;
 
@@ -20,14 +21,12 @@ export function useTestsStorage() {
                 .map((entry) => {
                   const rawTs = Number((entry as any)?.ts);
                   if (!Number.isFinite(rawTs) || rawTs <= 0) return null;
-                  const playlist =
-                    (entry as any)?.playlist === "reactivite"
-                      ? "explosif"
-                      : (entry as any)?.playlist;
+                  // Remap des anciens cycles (reactivite/explosif → explosivite, rsa → endurance, offseason → fondation)
+                  const playlist = canonicalizeMicrocycleGoal((entry as any)?.playlist);
                   return {
                     ...entry,
                     ts: rawTs,
-                    playlist: isPlaylistId(playlist) ? playlist : undefined,
+                    playlist: playlist && isPlaylistId(playlist) ? playlist : undefined,
                   } as TestEntry;
                 })
                 .filter((entry): entry is TestEntry => entry !== null)

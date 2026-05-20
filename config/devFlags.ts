@@ -4,4 +4,5 @@ export const DEV_FLAGS = {
   VIRTUAL_CLOCK: false,               // horloge réelle pour laisser décayer ATL/CTL même en dev
   DISABLE_DELOAD: true,
   PHASE_LOCK_MIN: 5,
+  FORCE_WELCOME: false,               // dev: force l'ecran Welcome au demarrage (reset flag + signout)
 };
