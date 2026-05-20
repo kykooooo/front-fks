@@ -26,6 +26,7 @@ import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { LoadingOverlay } from "../components/ui/LoadingOverlay";
 import { findClubByInviteCode, normalizeInviteCode, setClubMembership } from "../repositories/clubsRepo";
 import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
+import { recommendMicrocycle } from "../domain/recommendMicrocycle";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { showToast } from "../utils/toast";
 import { runShake } from "../utils/animations";
@@ -106,6 +107,7 @@ export default function ProfileSetupScreen() {
   const navigation = useNavigation<any>();
   const haptics = useHaptics();
   const activeCycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  const setMicrocycleGoal = useSessionsStore((s) => s.setMicrocycleGoal);
   const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
   const scrollRef = useRef<ScrollView>(null);
 
@@ -235,6 +237,7 @@ export default function ProfileSetupScreen() {
         if (!Number.isFinite(trainings) || trainings < 0) { fail("Valeur invalide", "Entrainements/semaine doit etre positif."); return false; }
         if (!Number.isFinite(matches) || matches < 0) { fail("Valeur invalide", "Matchs/semaine doit etre positif."); return false; }
         if (!hasClubTrainings) { fail("Champs manquants", "Indique si tu as des entrainements club."); return false; }
+        if (hasClubTrainings === "oui" && (!clubTrainingsPerWeek.trim() || trainings < 1)) { fail("Champs manquants", "Indique combien d'entrainements club par semaine."); return false; }
         if (hasClubTrainings === "oui" && clubTrainingDays.length === 0) { fail("Champs manquants", "Precise les jours club."); return false; }
         if (matches > 0 && matchDays.length === 0) { fail("Champs manquants", "Precise les jours de match."); return false; }
         return true;
@@ -271,6 +274,12 @@ export default function ProfileSetupScreen() {
     const matches = Number(matchesPerWeek);
     const normalizedInvite = normalizeInviteCode(clubInviteCode);
 
+    // Auto-assign : si aucun cycle actif, on applique la reco basée sur l'objectif
+    // pour que le joueur atterrisse sur l'accueil avec un cycle prêt (zéro étape morte).
+    const autoCycleId = isMicrocycleId(activeCycleGoal)
+      ? null
+      : recommendMicrocycle({ mainObjective, lastTestPlaylist: null }).id;
+
     try {
       setLoading(true);
       const auth = getAuth();
@@ -300,8 +309,21 @@ export default function ProfileSetupScreen() {
         hasHomeEquipment: hasHomeEquipment === "oui",
         homeEquipment,
         profileCompleted: true,
+        ...(autoCycleId
+          ? {
+              microcycleGoal: autoCycleId,
+              goal: autoCycleId,
+              programGoal: autoCycleId,
+              microcycleStatus: "active",
+              microcycleTotalSessions: MICROCYCLE_TOTAL_SESSIONS_DEFAULT,
+              microcycleSessionIndex: 0,
+              microcycleStartedAt: serverTimestamp(),
+            }
+          : {}),
         updatedAt: serverTimestamp(),
       }, { merge: true });
+
+      if (autoCycleId) setMicrocycleGoal(autoCycleId);
 
       haptics.success();
       showToast({ type: "success", title: "Profil enregistre", message: "Configuration terminee !" });
@@ -355,7 +377,7 @@ export default function ProfileSetupScreen() {
               autoCapitalize="words"
             />
 
-            <Text style={styles.fieldLabel}>Code club (invitation)</Text>
+            <Text style={styles.fieldLabel}>Code club (optionnel)</Text>
             <TextInput
               style={styles.input}
               placeholder="Ex: FKSFC-2026"
