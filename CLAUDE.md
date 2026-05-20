@@ -121,15 +121,14 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
 - **TSB** (Training Stress Balance) = equilibre forme/fatigue
 - Calcul via EMA (Exponential Moving Average) dans `engine/loadModel.ts`
 
-### Cycles Disponibles (avec lieux recommandes)
-- **Fondation** : Maison / Terrain / Salle - base physique generale
-- **Force** : Maison (light) / Salle (ideal) - renfo bas/haut
-- **Endurance / Engine** : Maison (cardio leger) / Terrain / Salle - aerobie, tempo, intervalles
-- **Explosivite (vitesse & technique)** : Terrain (ideal) / Salle - vitesse, appuis
-- **Explosif (puissance)** : Terrain / Salle (ideal) - sprint + power + plyo
-- **RSA (Repeated Sprint Ability)** : Terrain (ideal) / Salle - repeter les sprints
+### Cycles Disponibles (5 cycles, avec lieux recommandes)
+- **Fondation** : Maison / Terrain / Salle - base physique generale + prevention + reprise apres coupure (absorbe l'ancien Off-Season)
+- **Force** : Maison (light) / Salle (ideal) - renfo bas/haut, duels, frappes
+- **Endurance** : Maison (cardio leger) / Terrain / Salle - tenir 90 min + sprints repetes (absorbe l'ancien RSA) [backend : playlist `engine`]
+- **Explosivite** : Terrain (ideal) / Salle - vitesse, demarrages, detente, puissance (absorbe l'ancien Explosif)
 - **Saison / Maintien** : Partout - rester frais sans fatigue
-- **Off-Season / Transition** : Partout - recup active, maintien leger
+
+> **Reduit de 8 a 5 (mai 2026).** Fusions : Explosif -> Explosivite, RSA -> Endurance, Off-Season -> Fondation. Migration auto cote app via `canonicalizeMicrocycleGoal` (`domain/microcycles.ts`). Le backend (`C:\Users\Gamer\fks`) supporte encore les anciens noms = filet pour les builds deja installes (code mort explosif/rsa/offseason a nettoyer un jour sur branche dediee).
 
 ## Structure du Projet
 
