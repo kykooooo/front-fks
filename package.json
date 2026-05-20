@@ -14,7 +14,7 @@
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
-    "test": "jest",
+    "test": "jest --forceExit",
     "clean": "rm -rf node_modules .expo .expo-shared yarn.lock && yarn",
     "build:testers:android": "eas build --profile testers --platform android",
     "build:testers:ios": "eas build --profile testers --platform ios",
@@ -22,6 +22,9 @@
   },
   "jest": {
     "preset": "jest-expo",
+    "setupFiles": [
+      "<rootDir>/jest.setup.js"
+    ],
     "testMatch": [
       "**/__tests__/**/*.test.ts",
       "**/__tests__/**/*.test.tsx"
