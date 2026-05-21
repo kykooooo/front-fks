@@ -46,12 +46,14 @@
   "submit": {
     "testflight": {
       "ios": {
-        "appleTeamId": "2Z868K5P3V"
+        "appleTeamId": "2Z868K5P3V",
+        "ascAppId": "6746264443"
       }
     },
     "production": {
       "ios": {
-        "appleTeamId": "2Z868K5P3V"
+        "appleTeamId": "2Z868K5P3V",
+        "ascAppId": "6746264443"
       }
     }
   }
