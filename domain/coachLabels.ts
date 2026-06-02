@@ -47,7 +47,10 @@ export function guardrailToCoachLabel(raw: unknown): string | null {
     const cat = catMatch ? catMatch[1].toUpperCase() : null;
     if (low.includes("youth_safety_recovery")) return "Récupération adaptée (sécurité jeune)";
     if (low.includes("youth_movement_substitute")) return "Séance jeune adaptée (école de mouvement)";
+    if (low.includes("youth_speed_substitute")) return "Séance jeune adaptée (coordination / vitesse contrôlée)";
+    if (low.includes("youth_bodyweight_substitute")) return "Séance jeune adaptée (renfo poids de corps)";
     if (low.includes("youth_prevention_speed_substitute")) return "Séance jeune adaptée (prévention / appuis)";
+    if (low.includes("youth_prevention_substitute")) return "Séance jeune adaptée (prévention / appuis)";
     if (low.includes("forbidden_family_filtered")) return "Exercices à risque retirés (catégorie d'âge)";
     if (low.includes("duration_cap")) return cat ? `Catégorie ${cat} : durée plafonnée` : "Catégorie d'âge : durée plafonnée";
     if (low.includes("intensity_cap")) return cat ? `Catégorie ${cat} : intensité plafonnée` : "Catégorie d'âge : intensité plafonnée";
