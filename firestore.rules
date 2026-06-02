@@ -19,6 +19,13 @@ service cloud.firestore {
         get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data.role == "coach";
     }
 
+    // Membre du club = possède un doc members/{uid} (joueur OU coach).
+    // Tout joueur ayant rejoint via code en a un (setClubMembership).
+    function isClubMember(clubId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+    }
+
     function clubIdForUser(userId) {
       return get(/databases/$(database)/documents/users/$(userId)).data.clubId;
     }
@@ -59,6 +66,15 @@ service cloud.firestore {
         );
         // Un membre peut se retirer lui-même, ou le owner du club peut retirer n'importe qui
         allow delete: if isOwner(memberId) || isClubOwner(clubId);
+      }
+
+      // Contexte de semaine : lecture réservée aux MEMBRES du club (joueur ou
+      // coach) + owner. Un utilisateur connecté hors du club ne peut pas lire.
+      // Écriture réservée au coach (le joueur n'écrit jamais). Delete = owner.
+      match /weekContexts/{weekKey} {
+        allow read: if isClubMember(clubId) || isClubOwner(clubId);
+        allow create, update: if isCoach(clubId);
+        allow delete: if isClubOwner(clubId);
       }
     }
   }

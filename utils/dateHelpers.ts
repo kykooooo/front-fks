@@ -71,4 +71,23 @@ const lastNDates = (dayKey: string, n: number): string[] => {
   return arr;
 };
 
-export { toDateKey, isSameDay, frToKey, dayKeyToDow, isClubDay, lastNDates };
+/**
+ * Clé de semaine STABLE = date-key "YYYY-MM-DD" du LUNDI de la semaine.
+ * Sert d'identifiant pour `clubs/{clubId}/weekContexts/{weekKey}`.
+ * Le coach et le joueur calculent la même clé pour la semaine courante.
+ */
+const weekKeyOf = (value?: string | Date | null): string => {
+  const base =
+    value instanceof Date
+      ? new Date(value)
+      : value
+        ? new Date(`${toDateKey(value)}T12:00:00`)
+        : new Date();
+  if (Number.isNaN(base.getTime())) return toDateKey(new Date());
+  const dow = base.getDay(); // 0 = dimanche … 6 = samedi (local)
+  const diffToMonday = (dow + 6) % 7; // lundi = 0
+  base.setDate(base.getDate() - diffToMonday);
+  return toDateKey(base);
+};
+
+export { toDateKey, isSameDay, frToKey, dayKeyToDow, isClubDay, lastNDates, weekKeyOf };

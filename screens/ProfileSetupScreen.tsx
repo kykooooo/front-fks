@@ -26,6 +26,7 @@ import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { LoadingOverlay } from "../components/ui/LoadingOverlay";
 import { findClubByInviteCode, normalizeInviteCode, setClubMembership } from "../repositories/clubsRepo";
 import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
+import { AGE_CATEGORIES } from "../domain/types";
 import { recommendMicrocycle } from "../domain/recommendMicrocycle";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { showToast } from "../utils/toast";
@@ -119,6 +120,7 @@ export default function ProfileSetupScreen() {
   const [clubId, setClubId] = useState("");
   const [clubInviteCode, setClubInviteCode] = useState("");
   const [position, setPosition] = useState("");
+  const [ageCategory, setAgeCategory] = useState("");
   const [level, setLevel] = useState("");
   const [dominantFoot, setDominantFoot] = useState("");
   const [mainObjective, setMainObjective] = useState("");
@@ -153,6 +155,7 @@ export default function ProfileSetupScreen() {
       if (typeof d.firstName === "string") setFirstName(d.firstName);
       if (typeof d.clubId === "string") setClubId(d.clubId);
       if (typeof d.position === "string") setPosition(d.position);
+      if (typeof d.ageCategory === "string") setAgeCategory(d.ageCategory);
       if (typeof d.level === "string") setLevel(d.level);
       if (typeof d.dominantFoot === "string") setDominantFoot(d.dominantFoot);
       if (typeof d.mainObjective === "string") setMainObjective(d.mainObjective);
@@ -224,6 +227,7 @@ export default function ProfileSetupScreen() {
       case 0:
         if (!firstName.trim()) { fail("Champs manquants", "Merci d'indiquer ton prenom."); return false; }
         if (!positions.includes(position as any)) { fail("Champs manquants", "Choisis ton poste."); return false; }
+        if (!AGE_CATEGORIES.includes(ageCategory as any)) { fail("Champs manquants", "Choisis ta categorie."); return false; }
         if (!levels.includes(level as any)) { fail("Champs manquants", "Indique ton niveau."); return false; }
         if (!dominantFeet.includes(dominantFoot as any)) { fail("Champs manquants", "Choisis ton pied fort."); return false; }
         return true;
@@ -298,7 +302,7 @@ export default function ProfileSetupScreen() {
         uid: user.uid,
         firstName: firstName.trim(),
         clubId: resolvedClubId,
-        position, level, dominantFoot, mainObjective,
+        position, ageCategory, level, dominantFoot, mainObjective,
         targetFksSessionsPerWeek: targetFksSessions,
         clubTrainingsPerWeek: trainings,
         matchesPerWeek: matches,
@@ -392,6 +396,13 @@ export default function ProfileSetupScreen() {
               <Choice key={p} label={p} selected={position === p} onPress={() => setPosition(p)} />
             ))}
 
+            <Text style={styles.fieldLabel}>Categorie</Text>
+            <View style={styles.chipRow}>
+              {AGE_CATEGORIES.map((c) => (
+                <Chip key={c} label={c} selected={ageCategory === c} onPress={() => setAgeCategory(c)} />
+              ))}
+            </View>
+
             <Text style={styles.fieldLabel}>Niveau</Text>
             {levels.map((l) => (
               <Choice key={l} label={l} selected={level === l} onPress={() => setLevel(l)} />
@@ -403,6 +414,15 @@ export default function ProfileSetupScreen() {
                 <Chip key={f} label={f} selected={dominantFoot === f} onPress={() => setDominantFoot(f)} />
               ))}
             </View>
+
+            <TouchableOpacity
+              style={styles.coachLink}
+              onPress={() => { haptics.impactLight(); navigation.navigate("CoachOnboarding"); }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="people-outline" size={16} color={palette.accent} />
+              <Text style={styles.coachLinkText}>Tu fais partie du staff ? Crée ton club coach</Text>
+            </TouchableOpacity>
           </>
         );
 
@@ -857,6 +877,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 8,
     fontStyle: "italic",
+  },
+
+  /* Lien coach */
+  coachLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 18,
+    paddingVertical: 10,
+  },
+  coachLinkText: {
+    color: palette.accent,
+    fontSize: 13,
+    fontWeight: "700",
   },
 
   /* Footer */

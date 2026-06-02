@@ -41,6 +41,20 @@ export type PersistPlannedPayload = {
   plannedLoad: number;
   exercises: Session["exercises"];
   ai?: import("../../repositories/sessionsRepo").AiNextSession;
+  /** Blueprint IA complet envoyé par l'orchestrator (clé `aiV2`). Persisté sous `ai`. */
+  aiV2?: Record<string, unknown>;
+  /** Tokens backend propres (club:/age:/tier:…) — persistés tels quels. */
+  guardrailsApplied?: string[];
+  /** Tokens client stables (client:*) calculés en amont (orchestrator). */
+  clientGuardrailsApplied?: string[];
+  /** true = garde-fous client déjà appliqués → persistPlannedSession ne recompute pas. */
+  clientGuardrailsComputed?: boolean;
+  // Top-level utiles (fallbacks Coach Visibility / affichage). Pas de données médicales.
+  title?: string | null;
+  durationMin?: number | null;
+  rpeTarget?: number | null;
+  location?: string | null;
+  badges?: string[];
 };
 
 export type DebugEvent = {
