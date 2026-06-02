@@ -16,9 +16,11 @@ import {
   normalizeAgeCategory,
   normalizeClubTrainingIntensity,
   normalizeClubWeekGoal,
+  normalizeTeamGender,
   type AgeCategory,
   type ClubTrainingIntensity,
   type ClubWeekGoal,
+  type ClubTeamGender,
 } from "../domain/types";
 import { pickCoachSessionToDisplay, collectAdaptationTokens } from "../domain/coachLabels";
 import { toDateKey } from "../utils/dateHelpers";
@@ -245,6 +247,17 @@ export type ClubWeekContext = {
   weekGoal: ClubWeekGoal;
   note?: string | null;
 };
+
+/** Type d'équipe (genre) — attribut club stable, posé par le coach. Pas de donnée individuelle. */
+export async function setClubTeamGender(clubId: string, gender: ClubTeamGender): Promise<void> {
+  await setDoc(doc(db, "clubs", clubId), { teamGender: gender, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+/** Lit le type d'équipe du club (null si absent/invalide). */
+export async function getClubTeamGender(clubId: string): Promise<ClubTeamGender | null> {
+  const snap = await getDoc(doc(db, "clubs", clubId));
+  return snap.exists() ? normalizeTeamGender((snap.data() as any)?.teamGender) : null;
+}
 
 /** Sauvegarde (merge) le contexte de la semaine. Coach uniquement (cf. règles Firestore). */
 export async function saveClubWeekContext(opts: {

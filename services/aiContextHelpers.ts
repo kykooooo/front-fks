@@ -8,7 +8,7 @@
 // Le fichier `aiContext.ts` reexporte tout ce dont les autres ecrans ont besoin.
 
 import { toDateKey } from "../utils/dateHelpers";
-import type { Session, Exercise, ClubTrainingIntensity, ClubWeekGoal } from "../domain/types";
+import type { Session, Exercise, ClubTrainingIntensity, ClubWeekGoal, ClubTeamGender } from "../domain/types";
 import { normalizeClubTrainingIntensity, normalizeClubWeekGoal } from "../domain/types";
 
 // ---- Contexte club (semaine) ----------------------------------------------
@@ -18,6 +18,8 @@ export type ClubContextPayload = {
   week_goal?: ClubWeekGoal;
   note?: string;
   week_key?: string;
+  /** Genre d'équipe (attribut équipe, jamais individuel). Oriente le focus neuromusculaire. */
+  team_gender?: ClubTeamGender;
 };
 
 /**

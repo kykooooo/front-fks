@@ -41,6 +41,9 @@ export function guardrailToCoachLabel(raw: unknown): string | null {
   if (low === "client:load_high_forced_easy") return "Joueur chargé : séance allégée";
   if (low === "client:load_negative_intensity_reduced") return "Joueur chargé : intensité réduite";
 
+  // 2ter) Focus équipe (neuromusculaire) — libellé NEUTRE, jamais "féminin"/médical.
+  if (low === "team:female_neuromuscular_focus") return "Contrôle appuis et alignement";
+
   // 3) Catégorie d'âge.
   if (low.startsWith("age:")) {
     const catMatch = t.match(/age:(U13|U15|U17|U18)/i);
@@ -49,6 +52,7 @@ export function guardrailToCoachLabel(raw: unknown): string | null {
     if (low.includes("youth_movement_substitute")) return "Séance jeune adaptée (école de mouvement)";
     if (low.includes("youth_speed_substitute")) return "Séance jeune adaptée (coordination / vitesse contrôlée)";
     if (low.includes("youth_bodyweight_substitute")) return "Séance jeune adaptée (renfo poids de corps)";
+    if (low.includes("youth_deceleration_substitute")) return "Focus freinage / réception contrôlée";
     if (low.includes("youth_prevention_speed_substitute")) return "Séance jeune adaptée (prévention / appuis)";
     if (low.includes("youth_prevention_substitute")) return "Séance jeune adaptée (prévention / appuis)";
     if (low.includes("forbidden_family_filtered")) return "Exercices à risque retirés (catégorie d'âge)";

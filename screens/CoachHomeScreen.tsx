@@ -28,14 +28,18 @@ import {
   fetchPlayerSessionOverview,
   getClubWeekContext,
   saveClubWeekContext,
+  setClubTeamGender,
   type ClubPlayer,
   type CoachPlayerOverview,
 } from "../repositories/clubsRepo";
 import {
   CLUB_TRAINING_INTENSITIES,
   CLUB_WEEK_GOALS,
+  CLUB_TEAM_GENDERS,
+  normalizeTeamGender,
   type ClubTrainingIntensity,
   type ClubWeekGoal,
+  type ClubTeamGender,
 } from "../domain/types";
 import { sortCoachPlayersForDashboard } from "../domain/coachLabels";
 import { weekKeyOf, toDateKey } from "../utils/dateHelpers";
@@ -60,6 +64,12 @@ const GOAL_LABELS: Record<ClubWeekGoal, string> = {
   comeback: "Reprise",
 };
 
+const TEAM_GENDER_LABELS: Record<ClubTeamGender, string> = {
+  female: "Féminine",
+  male: "Masculine",
+  mixed: "Mixte",
+};
+
 export default function CoachHomeScreen() {
   const haptics = useHaptics();
   const navigation = useNavigation<any>();
@@ -80,6 +90,7 @@ export default function CoachHomeScreen() {
   const [weekGoal, setWeekGoal] = useState<ClubWeekGoal | null>(null);
   const [note, setNote] = useState("");
   const [savingContext, setSavingContext] = useState(false);
+  const [teamGender, setTeamGender] = useState<ClubTeamGender | null>(null);
 
   // Recharge les overviews joueurs (voyants). Best-effort + ISOLATION par joueur :
   // une erreur sur un joueur → "Détails indispo" pour lui seul, jamais toute la page.
@@ -124,6 +135,7 @@ export default function CoachHomeScreen() {
         const data = clubSnap.data() as any;
         setClubName(typeof data?.name === "string" ? data.name : "Mon club");
         setInviteCode(typeof data?.inviteCode === "string" ? data.inviteCode : null);
+        setTeamGender(normalizeTeamGender(data?.teamGender));
       }
 
       const list = await fetchClubPlayers(resolvedClubId);
@@ -151,6 +163,18 @@ export default function CoachHomeScreen() {
       setLoading(false);
     }
   }, [uid, weekKey, loadPlayerOverviews]);
+
+  const handleSetTeamGender = useCallback(async (g: ClubTeamGender) => {
+    if (!clubId) return;
+    setTeamGender(g);
+    try {
+      await setClubTeamGender(clubId, g);
+      haptics.success();
+    } catch (e) {
+      if (__DEV__) console.error("[CoachHome] setTeamGender failed:", e);
+      showToast({ type: "error", title: "Erreur", message: "Impossible d'enregistrer le type d'équipe." });
+    }
+  }, [clubId, haptics]);
 
   const handleSaveContext = useCallback(async () => {
     if (!uid || !clubId || !intensity || !weekGoal) {
@@ -250,6 +274,20 @@ export default function CoachHomeScreen() {
         <Text style={styles.contextHint}>
           Tu donnes le terrain, FKS construit la prépa. Indique comment s'est passée la semaine club.
         </Text>
+
+        <Text style={styles.fieldLabel}>Type d'équipe</Text>
+        <View style={styles.chipRow}>
+          {CLUB_TEAM_GENDERS.map((v) => (
+            <TouchableOpacity
+              key={v}
+              style={[styles.chip, teamGender === v && styles.chipActive]}
+              onPress={() => handleSetTeamGender(v)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.chipText, teamGender === v && styles.chipTextActive]}>{TEAM_GENDER_LABELS[v]}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
         <Text style={styles.fieldLabel}>Intensité club</Text>
         <View style={styles.chipRow}>

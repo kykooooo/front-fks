@@ -51,6 +51,19 @@ describe("guardrailToCoachLabel — sécurité / confidentialité", () => {
   });
 });
 
+describe("labels U15 féminin — neutres, non médicaux", () => {
+  test("freinage/réception + contrôle appuis", () => {
+    expect(guardrailToCoachLabel("age:U15_youth_deceleration_substitute")).toBe("Focus freinage / réception contrôlée");
+    expect(guardrailToCoachLabel("team:female_neuromuscular_focus")).toBe("Contrôle appuis et alignement");
+  });
+  test("aucun terme féminin / médical / cycle dans les labels", () => {
+    for (const tok of ["age:U15_youth_deceleration_substitute", "team:female_neuromuscular_focus"]) {
+      const label = (guardrailToCoachLabel(tok) ?? "").toLowerCase();
+      expect(label).not.toMatch(/fémin|femin|menstru|règles|cycle|lca|blessure|girl|fille/);
+    }
+  });
+});
+
 describe("tokens client stables + héritage FR", () => {
   test("tokens client:* traduits sans fuite TSB", () => {
     expect(guardrailToCoachLabel("client:club_proximity_reduction")).toBe("Entraînement club proche : charge réduite");
