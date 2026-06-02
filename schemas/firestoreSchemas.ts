@@ -4,6 +4,7 @@
 // fall back to safe defaults, and the caller logs which fields failed.
 
 import { z } from "zod";
+import { AGE_CATEGORIES } from "../domain/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -45,6 +46,9 @@ export const userProfileSchema = z.object({
   position: z.string().nullable().optional().catch(null),
   dominantFoot: z.string().nullable().optional().catch(null),
   mainObjective: z.string().nullable().optional().catch(null),
+  // Catégorie d'âge (FKS Club) — optionnelle pour compat anciens profils.
+  // Valeur invalide → null (jamais de crash, jamais de catégorie inventée).
+  ageCategory: z.enum(AGE_CATEGORIES).nullable().optional().catch(null),
 
   // Training schedule
   clubTrainingDays: z.array(dowString).catch([]),

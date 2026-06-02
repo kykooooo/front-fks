@@ -4,6 +4,7 @@ import { deepClean, normalizeFocus, toPlannedIntensity } from "./helpers";
 import type { FKS_NextSessionV2, PlannedPhase } from "./types";
 import { v2ToLocalSession } from "./transform";
 import { toDateKey } from "../../utils/dateHelpers";
+import { computePlannedClientGuardrails } from "../../state/stores/persistHelpers";
 
 export async function processV2(params: {
   v2: FKS_NextSessionV2;
@@ -78,12 +79,13 @@ export async function processV2(params: {
     ? (sessionFromV2.phase as PlannedPhase)
     : "Playlist";
 
+  // Tokens backend (camelCase) — conservés tels quels (pas de FR ajouté ici).
   const guardrailsApplied: string[] = Array.isArray(v2.guardrailsApplied)
     ? [...v2.guardrailsApplied]
     : [];
 
   let intensityPlanned = toPlannedIntensity(sessionFromV2.intensity);
-  let plannedLoadSafe = Math.max(
+  const baseLoad = Math.max(
     1,
     Math.round(
       Number.isFinite(sessionFromV2.volumeScore as any)
@@ -94,23 +96,19 @@ export async function processV2(params: {
 
   const clubToday = isClubDay(plannedDateISO);
   const clubTomorrow = isClubDay(plannedTomorrowISO);
-  let guardFactor = 1;
 
-  if (clubToday || clubTomorrow) {
-    guardFactor *= 0.75;
-    guardrailsApplied.push("Réduction charge (jour/veille club)");
-    if (intensityPlanned === "hard") intensityPlanned = "moderate";
-  }
-  if (tsb < -10) {
-    guardFactor *= 0.8;
-    guardrailsApplied.push("TSB < -10 → easy/modéré et volume -20%");
-    intensityPlanned = "easy";
-  } else if (tsb < 0 && intensityPlanned === "hard") {
-    intensityPlanned = "moderate";
-    guardrailsApplied.push("TSB négatif → hard abaissé en moderate");
-  }
+  // SOURCE UNIQUE des garde-fous client : appliqués ici (session locale + payload),
+  // jamais réappliqués au moment de la persistance (flag clientGuardrailsComputed).
+  // Tokens stables `client:*` — aucune chaîne FR/TSB persistée.
+  const clientGuard = computePlannedClientGuardrails({
+    clubToday,
+    clubTomorrow,
+    tsb,
+    intensity: intensityPlanned,
+  });
+  intensityPlanned = clientGuard.intensity as typeof intensityPlanned;
+  const plannedLoadSafe = Math.max(1, Math.round(baseLoad * clientGuard.guardFactor));
 
-  plannedLoadSafe = Math.max(1, Math.round(plannedLoadSafe * guardFactor));
   sessionWithAi.intensity = intensityPlanned as any;
   sessionWithAi.volumeScore = plannedLoadSafe;
 
@@ -132,7 +130,9 @@ export async function processV2(params: {
     badges: Array.isArray(v2.badges) ? v2.badges : [],
     coachingTips: Array.isArray(v2.coachingTips) ? v2.coachingTips : [],
     safetyNotes: v2.safetyNotes ?? null,
-    guardrailsApplied,
+    guardrailsApplied, // tokens backend propres (club:/age:/tier:…)
+    clientGuardrailsApplied: clientGuard.clientTokens, // tokens client stables
+    clientGuardrailsComputed: true, // garde-fous client DÉJÀ appliqués → persist ne recompute pas
     postSession: v2.postSession ?? null,
     aiV2: v2,
     exercises: exercisesPlanned.map((e: Exercise) => ({

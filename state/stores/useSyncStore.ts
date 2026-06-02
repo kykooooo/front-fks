@@ -16,7 +16,11 @@ import type { CompletedSession } from "../../repositories/sessionsRepo";
 import { savePlannedSessionToFirestore } from "../../services/plannedSessionsRepo";
 import { isClubDay } from "../../utils/dateHelpers";
 import { normalizeSessionsFromFirestore } from "./syncHelpers";
-import { buildCompletedSessionFirestorePayload } from "./persistHelpers";
+import {
+  buildCompletedSessionFirestorePayload,
+  resolvePlannedPersistGuardrails,
+  buildPlannedSessionFirestorePayload,
+} from "./persistHelpers";
 import { addDaysISO } from "../../utils/virtualClock";
 
 import { useSessionsStore } from "./useSessionsStore";
@@ -96,7 +100,6 @@ export const useSyncStore = create<SyncState>()(
 
         const rest: PersistPlannedPayload = { ...payload };
         const sessionId = rest.id ?? null;
-        const aiPayload = rest.ai;
 
         const tsb = useLoadStore.getState().tsb ?? 0;
         const clubDays = useExternalStore.getState().clubTrainingDays ?? [];
@@ -106,40 +109,20 @@ export const useSyncStore = create<SyncState>()(
         const clubToday = isClubDay(plannedDateKey, clubDays);
         const clubTomorrow = isClubDay(tomorrowKey, clubDays);
 
-        let intensityPlanned = rest.intensity;
-        let plannedLoadSafe = rest.plannedLoad;
-        let guardFactor = 1;
-        const guardrailsApplied: string[] = [];
-
-        if (clubToday || clubTomorrow) {
-          guardFactor *= 0.75;
-          guardrailsApplied.push("Réduction club (jour/veille)");
-          if (intensityPlanned === "hard") intensityPlanned = "moderate";
-        }
-
-        if (typeof tsb === "number" && tsb < -10) {
-          guardFactor *= 0.8;
-          guardrailsApplied.push("TSB < -10 → easy/modéré et volume -20%");
-          intensityPlanned = "easy";
-        } else if (typeof tsb === "number" && tsb < 0 && intensityPlanned === "hard") {
-          intensityPlanned = "moderate";
-          guardrailsApplied.push("TSB négatif → hard abaissé en moderate");
-        }
-
-        plannedLoadSafe = Math.max(1, Math.round(plannedLoadSafe * guardFactor));
-
-        const firestorePlanned: Record<string, unknown> = {
-          ...(sessionId ? { id: sessionId } : {}),
-          date: rest.dateISO,
-          phase: rest.phase,
-          focus: rest.focus,
-          intensity: intensityPlanned,
-          plannedLoad: plannedLoadSafe,
-          exercises: rest.exercises,
-        };
-
-        if (aiPayload != null) firestorePlanned.ai = aiPayload;
-        if (guardrailsApplied.length > 0) firestorePlanned.guardrailsApplied = guardrailsApplied;
+        // SOURCE UNIQUE : si l'amont (orchestrator) a déjà appliqué les garde-fous
+        // client, on ne recompute PAS (sinon double réduction du plannedLoad).
+        // Sinon (payload legacy/externe), on sécurise UNE seule fois ici.
+        const resolved = resolvePlannedPersistGuardrails({
+          precomputed: rest.clientGuardrailsComputed === true,
+          intensity: rest.intensity,
+          plannedLoad: rest.plannedLoad,
+          clientGuardrailsApplied: rest.clientGuardrailsApplied,
+          clubToday,
+          clubTomorrow,
+          tsb,
+        });
+        // Assemble le doc : blueprint IA (ai ?? aiV2) + tokens propres + top-level minimal.
+        const firestorePlanned = buildPlannedSessionFirestorePayload(rest, resolved);
 
         if (!sessionId) return;
         await savePlannedSessionToFirestore({ ...firestorePlanned, userId: uid });

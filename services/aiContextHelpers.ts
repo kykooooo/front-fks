@@ -8,7 +8,39 @@
 // Le fichier `aiContext.ts` reexporte tout ce dont les autres ecrans ont besoin.
 
 import { toDateKey } from "../utils/dateHelpers";
-import type { Session, Exercise } from "../domain/types";
+import type { Session, Exercise, ClubTrainingIntensity, ClubWeekGoal } from "../domain/types";
+import { normalizeClubTrainingIntensity, normalizeClubWeekGoal } from "../domain/types";
+
+// ---- Contexte club (semaine) ----------------------------------------------
+
+export type ClubContextPayload = {
+  training_intensity?: ClubTrainingIntensity;
+  week_goal?: ClubWeekGoal;
+  note?: string;
+  week_key?: string;
+};
+
+/**
+ * Construit le `club_context` envoyé au backend depuis le doc weekContext brut.
+ * Pur (aucune dépendance Firebase). Retourne null si rien d'exploitable —
+ * on n'invente jamais de valeur et on ne casse jamais la génération.
+ */
+export function buildClubContextPayload(
+  raw: Record<string, unknown> | null | undefined,
+  weekKey?: string | null,
+): ClubContextPayload | null {
+  if (!raw || typeof raw !== "object") return null;
+  const ti = normalizeClubTrainingIntensity((raw as any).trainingIntensity);
+  const wg = normalizeClubWeekGoal((raw as any).weekGoal);
+  if (!ti && !wg) return null;
+  const noteRaw = typeof (raw as any).note === "string" ? (raw as any).note.trim() : "";
+  return {
+    ...(ti ? { training_intensity: ti } : {}),
+    ...(wg ? { week_goal: wg } : {}),
+    ...(noteRaw ? { note: noteRaw.slice(0, 200) } : {}),
+    ...(weekKey ? { week_key: weekKey } : {}),
+  };
+}
 
 // ---- Types publics ---------------------------------------------------------
 

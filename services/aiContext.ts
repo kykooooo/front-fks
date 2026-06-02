@@ -7,14 +7,18 @@ import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
 import { useFeedbackStore } from "../state/stores/useFeedbackStore";
 import { toDateKey } from "../utils/dateHelpers";
-import type { Session } from "../domain/types";
+import type { Session, AgeCategory } from "../domain/types";
+import { normalizeAgeCategory } from "../domain/types";
 import { canonicalizeMicrocycleGoal } from "../domain/microcycles";
 import { userProfileSchema, logValidationIssues } from "../schemas/firestoreSchemas";
+import { weekKeyOf } from "../utils/dateHelpers";
 import {
   RECENT_FKS_COPY_LIMIT,
   RECENT_FKS_SESSION_LIMIT,
   buildRecentByFocus,
   buildRecentFksSessionsPayload,
+  buildClubContextPayload,
+  type ClubContextPayload,
 } from "./aiContextHelpers";
 
 // Reexport public API (le code applicatif importe depuis "./aiContext").
@@ -49,6 +53,7 @@ export interface FKS_AiContext {
     level: string | null;
     position: string | null;
     dominant_foot: string | null;
+    age_category: AgeCategory | null;
     club_trainings_per_week: number;
     matches_per_week: number;
     target_fks_sessions_per_week: number | null;
@@ -80,6 +85,7 @@ export interface FKS_AiContext {
   recent_fks_badges?: string[];
   recent_by_focus?: Record<string, string[]>;
   equipment_available: string[];
+  club_context?: ClubContextPayload | null;
 }
 
 // Helper : fusionner le matos de salle + maison en une seule liste
@@ -171,6 +177,23 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
     ((feedbackState.dayStates?.[todayKey]?.feedback as Record<string, unknown> | undefined)?.painZones as string[] | undefined) ??
     [];
 
+  // Contexte de semaine club (FKS Club) : si le joueur a un clubId, on lit le
+  // weekContext de la semaine courante. Lecture best-effort : toute erreur est
+  // loggée en dev mais ne bloque jamais la génération (fallback silencieux).
+  let clubContext: ClubContextPayload | null = null;
+  const clubId = typeof (rawProfile as any)?.clubId === "string" ? (rawProfile as any).clubId.trim() : "";
+  if (clubId) {
+    try {
+      const weekKey = weekKeyOf(nowISO);
+      const wcSnap = await getDoc(doc(db, "clubs", clubId, "weekContexts", weekKey));
+      if (wcSnap.exists()) {
+        clubContext = buildClubContextPayload(wcSnap.data() as Record<string, unknown>, weekKey);
+      }
+    } catch (err) {
+      if (__DEV__) console.warn("[aiContext] lecture weekContext club échouée:", err);
+    }
+  }
+
   // 2) Récup état charge / phase depuis ton store FKS
   const phase: FKS_PhaseId =
     (sessionsState.phase as FKS_PhaseId) ?? "playlist";
@@ -235,6 +258,7 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
       level,
       position,
       dominant_foot: dominantFoot,
+      age_category: normalizeAgeCategory(data.ageCategory),
       club_trainings_per_week: clubTrainingsPerWeek,
       matches_per_week: matchesPerWeek,
       target_fks_sessions_per_week: targetFksSessionsPerWeek,
@@ -267,6 +291,7 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
     recent_fks_badges,
     recent_by_focus: buildRecentByFocus(sessions, 3),
     equipment_available,
+    ...(clubContext ? { club_context: clubContext } : {}),
   };
 
   // debug: stocke le contexte pour inspection

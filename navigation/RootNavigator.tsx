@@ -29,6 +29,10 @@ import PrivacyPolicyScreen from "../screens/PrivacyPolicyScreen";
 import RoutineScreen from "../screens/RoutineScreen";
 import CycleModalScreen from "../screens/CycleModalScreen";
 import ProgressScreen from "../screens/ProgressScreen";
+import CoachHomeScreen from "../screens/CoachHomeScreen";
+import CoachOnboardingScreen from "../screens/CoachOnboardingScreen";
+import CoachPlayerDetailScreen from "../screens/CoachPlayerDetailScreen";
+import type { ClubPlayer } from "../repositories/clubsRepo";
 import { theme } from "../constants/theme";
 import { DEV_FLAGS } from "../config/devFlags";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -83,6 +87,7 @@ export type AppStackParamList = {
   PrebuiltSessions: undefined;
   PrebuiltSessionDetail: { session: FKS_NextSessionV2 };
   ProfileSetup: undefined;
+  CoachOnboarding: undefined;
   Tests: { initialPlaylist?: string } | undefined;
   ExerciseDetail: { highlightId: string };
   Progression: undefined;
@@ -97,8 +102,16 @@ export type AuthStackParamList = {
   Register: undefined;
 };
 
+export type CoachStackParamList = {
+  CoachHome: undefined;
+  CoachPlayerDetail: { player: ClubPlayer };
+  LegalNotice: undefined;
+  PrivacyPolicy: undefined;
+};
+
 const AppStack = createNativeStackNavigator<AppStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
+const CoachStack = createNativeStackNavigator<CoachStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 const WELCOME_KEY = "fks_welcome_done";
 const PLAYER_TAB_ORDER: Array<keyof TabParamList> = ["Home", "NewSession", "Profile"];
@@ -208,6 +221,27 @@ function AppNavigator() {
   );
 }
 
+function CoachNavigator() {
+  return (
+    <CoachStack.Navigator
+      screenOptions={{
+        headerShown: false,
+        headerStyle: { backgroundColor: theme.colors.background },
+        headerTintColor: theme.colors.text,
+        animation: "slide_from_right",
+        gestureEnabled: true,
+        gestureDirection: "horizontal",
+        headerBackTitle: "Retour",
+      }}
+    >
+      <CoachStack.Screen name="CoachHome" component={CoachHomeScreen} />
+      <CoachStack.Screen name="CoachPlayerDetail" component={CoachPlayerDetailScreen} options={{ headerShown: true, title: "Joueur" }} />
+      <CoachStack.Screen name="LegalNotice" component={LegalNoticeScreen} options={{ headerShown: true, title: "Mentions légales" }} />
+      <CoachStack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={{ headerShown: true, title: "Confidentialité" }} />
+    </CoachStack.Navigator>
+  );
+}
+
 function AuthNavigator({
   initialRouteName = "Login",
   onWelcomeComplete,
@@ -256,6 +290,7 @@ export default function RootNavigator() {
   const [user, setUser] = useState<User | null>(null);
   const [initializing, setInitializing] = useState(true);
   const [profileCompleted, setProfileCompleted] = useState<boolean | null>(null);
+  const [role, setRole] = useState<string | null>(null);
   const [welcomeDone, setWelcomeDone] = useState<boolean | null>(null);
   const startFirestoreWatch = useSyncStore((s) => s.startFirestoreWatch);
   const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
@@ -275,6 +310,7 @@ export default function RootNavigator() {
       setUser(u);
       if (!u) {
         setProfileCompleted(null);
+        setRole(null);
         setInitializing(false);
       } else {
         // Nouveau user (login/register) → attendre le profile listener Firestore
@@ -310,8 +346,9 @@ export default function RootNavigator() {
     const unsubProfile = onSnapshot(
       ref,
       (snap) => {
-        const ok = !!snap.data()?.profileCompleted;
-        setProfileCompleted(ok);
+        const data = snap.data();
+        setProfileCompleted(!!data?.profileCompleted);
+        setRole(typeof data?.role === "string" ? data.role : null);
         setInitializing(false);
       },
       (err) => {
@@ -319,6 +356,7 @@ export default function RootNavigator() {
           console.warn("Erreur lors du check profil:", err);
         }
         setProfileCompleted(false);
+        setRole(null);
         setInitializing(false);
       }
     );
@@ -348,15 +386,30 @@ export default function RootNavigator() {
   // 6) Connecté → on attend profil
   if (initializing) return <Splash />;
 
-  // 6) Connecté mais profil non complété → écran profil
+  // 6bis) Coach → espace coach (pas de questionnaire joueur, pas de tab bar joueur)
+  if (role === "coach") {
+    return (
+      <SafeAreaProvider>
+        <CoachNavigator />
+      </SafeAreaProvider>
+    );
+  }
+
+  // 6) Connecté mais profil non complété → écran profil (joueur)
+  //    Le stack inclut CoachOnboarding pour qu'un staff puisse créer son club.
   if (profileCompleted === false) {
     return (
       <SafeAreaProvider>
-        <AppStack.Navigator>
+        <AppStack.Navigator screenOptions={{ headerShown: false }}>
           <AppStack.Screen
             name="ProfileSetup"
             component={ProfileSetupScreen}
             options={{ headerShown: false }}
+          />
+          <AppStack.Screen
+            name="CoachOnboarding"
+            component={CoachOnboardingScreen}
+            options={{ headerShown: false, animation: "slide_from_right" }}
           />
           <AppStack.Screen
             name="CycleModal"
@@ -373,7 +426,7 @@ export default function RootNavigator() {
     );
   }
 
-  // 6) Profil complet → app (mode déjà choisi dans le questionnaire profil)
+  // 6) Profil complet → app joueur (mode déjà choisi dans le questionnaire profil)
   return (
     <SafeAreaProvider>
       <AppNavigator />

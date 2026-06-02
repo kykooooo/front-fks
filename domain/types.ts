@@ -15,6 +15,42 @@ export type Intensity =
 // (Si tu utilises domain/exerciseTypes.ts, veille à ce que les valeurs matchent.)
 export type Modality = 'run' | 'circuit' | 'strength' | 'plyo' | 'cod' | 'speed' | 'core' | 'mobility';
 
+// ===============================
+// Catégorie d'âge (FKS Club)
+// ===============================
+// Brique structurante : pilote (à terme) les caps de durée / familles d'exos autorisées.
+// On stocke UNE catégorie, pas de date de naissance (minimisation des données).
+export const AGE_CATEGORIES = ['U13', 'U15', 'U17', 'U18', 'Senior'] as const;
+export type AgeCategory = (typeof AGE_CATEGORIES)[number];
+
+/** Renvoie la catégorie si valide, sinon null. N'invente jamais de valeur. */
+export function normalizeAgeCategory(value: unknown): AgeCategory | null {
+  if (typeof value !== 'string') return null;
+  const v = value.trim();
+  return (AGE_CATEGORIES as readonly string[]).includes(v) ? (v as AgeCategory) : null;
+}
+
+// ===============================
+// Contexte de semaine club (FKS Club — "le coach donne le terrain")
+// ===============================
+export const CLUB_TRAINING_INTENSITIES = ['light', 'normal', 'heavy', 'very_heavy'] as const;
+export type ClubTrainingIntensity = (typeof CLUB_TRAINING_INTENSITIES)[number];
+
+export const CLUB_WEEK_GOALS = ['freshness', 'prevention', 'speed', 'strength', 'comeback'] as const;
+export type ClubWeekGoal = (typeof CLUB_WEEK_GOALS)[number];
+
+export function normalizeClubTrainingIntensity(value: unknown): ClubTrainingIntensity | null {
+  if (typeof value !== 'string') return null;
+  const v = value.trim();
+  return (CLUB_TRAINING_INTENSITIES as readonly string[]).includes(v) ? (v as ClubTrainingIntensity) : null;
+}
+
+export function normalizeClubWeekGoal(value: unknown): ClubWeekGoal | null {
+  if (typeof value !== 'string') return null;
+  const v = value.trim();
+  return (CLUB_WEEK_GOALS as readonly string[]).includes(v) ? (v as ClubWeekGoal) : null;
+}
+
 export type RPE1to10 = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 export type Rating1to5 = 1 | 2 | 3 | 4 | 5;
 export type Rating0to5 = 0 | 1 | 2 | 3 | 4 | 5;
