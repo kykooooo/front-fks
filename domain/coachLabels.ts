@@ -41,6 +41,9 @@ export function guardrailToCoachLabel(raw: unknown): string | null {
   if (low === "client:load_high_forced_easy") return "Joueur chargé : séance allégée";
   if (low === "client:load_negative_intensity_reduced") return "Joueur chargé : intensité réduite";
 
+  // 2ter) Focus équipe (neuromusculaire) — libellé NEUTRE, jamais "féminin"/médical.
+  if (low === "team:female_neuromuscular_focus") return "Contrôle appuis et alignement";
+
   // 3) Catégorie d'âge.
   if (low.startsWith("age:")) {
     const catMatch = t.match(/age:(U13|U15|U17|U18)/i);
@@ -49,6 +52,7 @@ export function guardrailToCoachLabel(raw: unknown): string | null {
     if (low.includes("youth_movement_substitute")) return "Séance jeune adaptée (école de mouvement)";
     if (low.includes("youth_speed_substitute")) return "Séance jeune adaptée (coordination / vitesse contrôlée)";
     if (low.includes("youth_bodyweight_substitute")) return "Séance jeune adaptée (renfo poids de corps)";
+    if (low.includes("youth_deceleration_substitute")) return "Focus freinage / réception contrôlée";
     if (low.includes("youth_prevention_speed_substitute")) return "Séance jeune adaptée (prévention / appuis)";
     if (low.includes("youth_prevention_substitute")) return "Séance jeune adaptée (prévention / appuis)";
     if (low.includes("forbidden_family_filtered")) return "Exercices à risque retirés (catégorie d'âge)";
@@ -148,6 +152,21 @@ export function readableFocus(focus: unknown): string {
       return "Gainage";
     default:
       return focus ? String(focus) : "—";
+  }
+}
+
+/**
+ * Libellé du groupe selon le type d'équipe (pour titres / résumés coach).
+ * female → "Joueuses", male → "Joueurs", mixed/absent/inconnu → "Effectif".
+ */
+export function getTeamPlayerLabel(teamGender: unknown): "Joueuses" | "Joueurs" | "Effectif" {
+  switch (teamGender) {
+    case "female":
+      return "Joueuses";
+    case "male":
+      return "Joueurs";
+    default:
+      return "Effectif";
   }
 }
 
@@ -285,6 +304,41 @@ export function sortCoachPlayersForDashboard<P extends { uid: string; firstName?
     if (nameCmp !== 0) return nameCmp;
     return a.player.uid < b.player.uid ? -1 : a.player.uid > b.player.uid ? 1 : 0;
   });
+}
+
+/**
+ * Première phrase d'adaptation lisible d'un joueur (pour la ligne du dashboard).
+ * Null si la séance est standard ou non traduisible. Mêmes garde-fous que
+ * toCoachAdaptationLabels (jamais de détail médical / TSB).
+ */
+export function topCoachAdaptationLabel(tokens: unknown): string | null {
+  const labels = toCoachAdaptationLabels(tokens);
+  return labels.length > 0 ? labels[0] : null;
+}
+
+// ─── Résumé du groupe pour le coach (compteurs scannables) ──────────────────
+// "Voir la situation du groupe en 30 secondes." Pas de graph : 3-4 compteurs.
+// Les joueurs dont l'overview n'est pas encore chargé (status null) ne sont
+// jamais comptés → pas de faux "À relancer" pendant le fetch.
+export type CoachGroupSummary = {
+  loaded: number; // joueurs avec un statut réellement chargé
+  planned: number; // séance prévue
+  done: number; // séance faite
+  toRelance: number; // à relancer
+  adapted: number; // séances adaptées par FKS
+};
+
+export function summarizeCoachGroup<P>(rows: CoachDashboardRow<P>[]): CoachGroupSummary {
+  const summary: CoachGroupSummary = { loaded: 0, planned: 0, done: 0, toRelance: 0, adapted: 0 };
+  for (const { status } of rows) {
+    if (!status) continue;
+    summary.loaded += 1;
+    if (status.sessionStatusLabel === "Prévue") summary.planned += 1;
+    else if (status.sessionStatusLabel === "Faite") summary.done += 1;
+    else if (status.sessionStatusLabel === "À relancer") summary.toRelance += 1;
+    if (status.adaptationLabel === "Adaptée") summary.adapted += 1;
+  }
+  return summary;
 }
 
 export function pickCoachSessionToDisplay<T extends DisplayableSession>(

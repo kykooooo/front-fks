@@ -16,9 +16,11 @@ import {
   normalizeAgeCategory,
   normalizeClubTrainingIntensity,
   normalizeClubWeekGoal,
+  normalizeTeamGender,
   type AgeCategory,
   type ClubTrainingIntensity,
   type ClubWeekGoal,
+  type ClubTeamGender,
 } from "../domain/types";
 import { pickCoachSessionToDisplay, collectAdaptationTokens } from "../domain/coachLabels";
 import { toDateKey } from "../utils/dateHelpers";
@@ -244,7 +246,20 @@ export type ClubWeekContext = {
   trainingIntensity: ClubTrainingIntensity;
   weekGoal: ClubWeekGoal;
   note?: string | null;
+  /** Match prévu ce week-end (info coach). null = non renseigné. */
+  matchThisWeekend?: boolean | null;
 };
+
+/** Type d'équipe (genre) — attribut club stable, posé par le coach. Pas de donnée individuelle. */
+export async function setClubTeamGender(clubId: string, gender: ClubTeamGender): Promise<void> {
+  await setDoc(doc(db, "clubs", clubId), { teamGender: gender, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+/** Lit le type d'équipe du club (null si absent/invalide). */
+export async function getClubTeamGender(clubId: string): Promise<ClubTeamGender | null> {
+  const snap = await getDoc(doc(db, "clubs", clubId));
+  return snap.exists() ? normalizeTeamGender((snap.data() as any)?.teamGender) : null;
+}
 
 /** Sauvegarde (merge) le contexte de la semaine. Coach uniquement (cf. règles Firestore). */
 export async function saveClubWeekContext(opts: {
@@ -254,6 +269,7 @@ export async function saveClubWeekContext(opts: {
   trainingIntensity: ClubTrainingIntensity;
   weekGoal: ClubWeekGoal;
   note?: string | null;
+  matchThisWeekend?: boolean | null;
 }): Promise<void> {
   const ref = doc(db, "clubs", opts.clubId, "weekContexts", opts.weekKey);
   const note = typeof opts.note === "string" ? opts.note.trim().slice(0, 200) : "";
@@ -266,6 +282,7 @@ export async function saveClubWeekContext(opts: {
       trainingIntensity: opts.trainingIntensity,
       weekGoal: opts.weekGoal,
       note: note || null,
+      matchThisWeekend: typeof opts.matchThisWeekend === "boolean" ? opts.matchThisWeekend : null,
       updatedAt: serverTimestamp(),
     },
     { merge: true }
@@ -418,5 +435,6 @@ export async function getClubWeekContext(clubId: string, weekKey: string): Promi
     trainingIntensity: trainingIntensity ?? "normal",
     weekGoal: weekGoal ?? "freshness",
     note: typeof data?.note === "string" ? data.note : null,
+    matchThisWeekend: typeof data?.matchThisWeekend === "boolean" ? data.matchThisWeekend : null,
   };
 }

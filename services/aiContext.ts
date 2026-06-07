@@ -8,7 +8,7 @@ import { useDebugStore } from "../state/stores/useDebugStore";
 import { useFeedbackStore } from "../state/stores/useFeedbackStore";
 import { toDateKey } from "../utils/dateHelpers";
 import type { Session, AgeCategory } from "../domain/types";
-import { normalizeAgeCategory } from "../domain/types";
+import { normalizeAgeCategory, normalizeTeamGender } from "../domain/types";
 import { canonicalizeMicrocycleGoal } from "../domain/microcycles";
 import { userProfileSchema, logValidationIssues } from "../schemas/firestoreSchemas";
 import { weekKeyOf } from "../utils/dateHelpers";
@@ -185,12 +185,23 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
   if (clubId) {
     try {
       const weekKey = weekKeyOf(nowISO);
-      const wcSnap = await getDoc(doc(db, "clubs", clubId, "weekContexts", weekKey));
-      if (wcSnap.exists()) {
-        clubContext = buildClubContextPayload(wcSnap.data() as Record<string, unknown>, weekKey);
+      // weekContext (intensité/objectif) + teamGender (attribut équipe, club doc).
+      const [wcSnap, clubSnap] = await Promise.all([
+        getDoc(doc(db, "clubs", clubId, "weekContexts", weekKey)),
+        getDoc(doc(db, "clubs", clubId)),
+      ]);
+      const base = wcSnap.exists()
+        ? buildClubContextPayload(wcSnap.data() as Record<string, unknown>, weekKey)
+        : null;
+      const teamGender = clubSnap.exists() ? normalizeTeamGender((clubSnap.data() as any)?.teamGender) : null;
+      if (base || teamGender) {
+        clubContext = {
+          ...(base ?? {}),
+          ...(teamGender ? { team_gender: teamGender } : {}),
+        };
       }
     } catch (err) {
-      if (__DEV__) console.warn("[aiContext] lecture weekContext club échouée:", err);
+      if (__DEV__) console.warn("[aiContext] lecture contexte club échouée:", err);
     }
   }
 

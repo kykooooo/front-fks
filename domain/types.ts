@@ -51,6 +51,17 @@ export function normalizeClubWeekGoal(value: unknown): ClubWeekGoal | null {
   return (CLUB_WEEK_GOALS as readonly string[]).includes(v) ? (v as ClubWeekGoal) : null;
 }
 
+// Genre de l'ÉQUIPE (attribut d'équipe posé par le coach). Oriente le focus
+// neuromusculaire (contrôle moteur). PAS une donnée individuelle, AUCUN cycle/menstruel.
+export const CLUB_TEAM_GENDERS = ['female', 'male', 'mixed'] as const;
+export type ClubTeamGender = (typeof CLUB_TEAM_GENDERS)[number];
+
+export function normalizeTeamGender(value: unknown): ClubTeamGender | null {
+  if (typeof value !== 'string') return null;
+  const v = value.trim().toLowerCase();
+  return (CLUB_TEAM_GENDERS as readonly string[]).includes(v) ? (v as ClubTeamGender) : null;
+}
+
 export type RPE1to10 = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 export type Rating1to5 = 1 | 2 | 3 | 4 | 5;
 export type Rating0to5 = 0 | 1 | 2 | 3 | 4 | 5;

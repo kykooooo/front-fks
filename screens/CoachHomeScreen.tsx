@@ -2,7 +2,7 @@
 // Espace coach minimal : nom du club, code d'invitation à partager, liste des joueurs.
 // Lecture seule : le coach observe, il ne modifie ni les profils ni les séances.
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -28,16 +28,23 @@ import {
   fetchPlayerSessionOverview,
   getClubWeekContext,
   saveClubWeekContext,
+  setClubTeamGender,
   type ClubPlayer,
   type CoachPlayerOverview,
 } from "../repositories/clubsRepo";
 import {
-  CLUB_TRAINING_INTENSITIES,
-  CLUB_WEEK_GOALS,
+  CLUB_TEAM_GENDERS,
+  normalizeTeamGender,
   type ClubTrainingIntensity,
   type ClubWeekGoal,
+  type ClubTeamGender,
 } from "../domain/types";
-import { sortCoachPlayersForDashboard } from "../domain/coachLabels";
+import {
+  sortCoachPlayersForDashboard,
+  summarizeCoachGroup,
+  topCoachAdaptationLabel,
+  getTeamPlayerLabel,
+} from "../domain/coachLabels";
 import { weekKeyOf, toDateKey } from "../utils/dateHelpers";
 import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
@@ -52,12 +59,26 @@ const INTENSITY_LABELS: Record<ClubTrainingIntensity, string> = {
   very_heavy: "Très intense",
 };
 
+// Cadre coach = 3 niveaux clairs (légère / normale / intense). `very_heavy`
+// reste un état valide (rétrocompat) mais n'est pas proposé au coach.
+const OFFERED_INTENSITIES: ClubTrainingIntensity[] = ["light", "normal", "heavy"];
+
 const GOAL_LABELS: Record<ClubWeekGoal, string> = {
   freshness: "Fraîcheur",
-  prevention: "Prévention",
-  speed: "Vitesse",
-  strength: "Force",
+  prevention: "Appuis & freinage",
+  speed: "Vitesse contrôlée",
+  strength: "Renfo terrain",
   comeback: "Reprise",
+};
+
+// Les 4 objectifs FKS proposés au coach (langage terrain). `comeback` reste
+// accepté en lecture (vieux docs) mais n'est plus offert dans le cadre.
+const OFFERED_WEEK_GOALS: ClubWeekGoal[] = ["freshness", "prevention", "speed", "strength"];
+
+const TEAM_GENDER_LABELS: Record<ClubTeamGender, string> = {
+  female: "Féminine",
+  male: "Masculine",
+  mixed: "Mixte",
 };
 
 export default function CoachHomeScreen() {
@@ -79,7 +100,9 @@ export default function CoachHomeScreen() {
   const [intensity, setIntensity] = useState<ClubTrainingIntensity | null>(null);
   const [weekGoal, setWeekGoal] = useState<ClubWeekGoal | null>(null);
   const [note, setNote] = useState("");
+  const [matchThisWeekend, setMatchThisWeekend] = useState<boolean | null>(null);
   const [savingContext, setSavingContext] = useState(false);
+  const [teamGender, setTeamGender] = useState<ClubTeamGender | null>(null);
 
   // Recharge les overviews joueurs (voyants). Best-effort + ISOLATION par joueur :
   // une erreur sur un joueur → "Détails indispo" pour lui seul, jamais toute la page.
@@ -124,6 +147,7 @@ export default function CoachHomeScreen() {
         const data = clubSnap.data() as any;
         setClubName(typeof data?.name === "string" ? data.name : "Mon club");
         setInviteCode(typeof data?.inviteCode === "string" ? data.inviteCode : null);
+        setTeamGender(normalizeTeamGender(data?.teamGender));
       }
 
       const list = await fetchClubPlayers(resolvedClubId);
@@ -140,6 +164,7 @@ export default function CoachHomeScreen() {
           setIntensity(wc.trainingIntensity);
           setWeekGoal(wc.weekGoal);
           setNote(wc.note ?? "");
+          setMatchThisWeekend(typeof wc.matchThisWeekend === "boolean" ? wc.matchThisWeekend : null);
         }
       } catch (e) {
         if (__DEV__) console.warn("[CoachHome] weekContext load failed:", e);
@@ -152,6 +177,18 @@ export default function CoachHomeScreen() {
     }
   }, [uid, weekKey, loadPlayerOverviews]);
 
+  const handleSetTeamGender = useCallback(async (g: ClubTeamGender) => {
+    if (!clubId) return;
+    setTeamGender(g);
+    try {
+      await setClubTeamGender(clubId, g);
+      haptics.success();
+    } catch (e) {
+      if (__DEV__) console.error("[CoachHome] setTeamGender failed:", e);
+      showToast({ type: "error", title: "Erreur", message: "Impossible d'enregistrer le type d'équipe." });
+    }
+  }, [clubId, haptics]);
+
   const handleSaveContext = useCallback(async () => {
     if (!uid || !clubId || !intensity || !weekGoal) {
       showToast({ type: "warn", title: "Champs manquants", message: "Choisis l'intensité et l'objectif." });
@@ -159,17 +196,17 @@ export default function CoachHomeScreen() {
     }
     setSavingContext(true);
     try {
-      await saveClubWeekContext({ clubId, weekKey, uid, trainingIntensity: intensity, weekGoal, note });
+      await saveClubWeekContext({ clubId, weekKey, uid, trainingIntensity: intensity, weekGoal, note, matchThisWeekend });
       haptics.success();
-      showToast({ type: "success", title: "Contexte enregistré", message: "FKS adapte la prépa de tes joueurs." });
+      showToast({ type: "success", title: "Cadre enregistré", message: "FKS s'appuie sur ce cadre pour la prépa de la semaine." });
     } catch (e) {
       if (__DEV__) console.error("[CoachHome] save weekContext failed:", e);
       haptics.error();
-      showToast({ type: "error", title: "Erreur", message: "Impossible d'enregistrer le contexte." });
+      showToast({ type: "error", title: "Erreur", message: "Impossible d'enregistrer le cadre." });
     } finally {
       setSavingContext(false);
     }
-  }, [uid, clubId, intensity, weekGoal, note, weekKey, haptics]);
+  }, [uid, clubId, intensity, weekGoal, note, matchThisWeekend, weekKey, haptics]);
 
   useEffect(() => {
     load();
@@ -200,6 +237,13 @@ export default function CoachHomeScreen() {
       showToast({ type: "error", title: "Erreur", message: "Déconnexion impossible." });
     }
   };
+
+  // Lignes triées (priorité actionnable) + compteurs groupe — calculés une fois.
+  const rows = useMemo(
+    () => sortCoachPlayersForDashboard(players, overviews, todayKey),
+    [players, overviews, todayKey],
+  );
+  const summary = useMemo(() => summarizeCoachGroup(rows), [rows]);
 
   if (loading) {
     return (
@@ -244,16 +288,30 @@ export default function CoachHomeScreen() {
         />
       </Card>
 
-      {/* Contexte de la semaine */}
+      {/* Cadre de la semaine */}
       <Card variant="soft" style={styles.contextCard}>
-        <Text style={styles.sectionTitle}>Contexte de la semaine</Text>
+        <Text style={styles.sectionTitle}>Cadre de la semaine</Text>
         <Text style={styles.contextHint}>
-          Tu donnes le terrain, FKS construit la prépa. Indique comment s'est passée la semaine club.
+          Ce cadre aide FKS à adapter la charge et donne du contexte au coach.
         </Text>
 
-        <Text style={styles.fieldLabel}>Intensité club</Text>
+        <Text style={styles.fieldLabel}>Type d'équipe</Text>
         <View style={styles.chipRow}>
-          {CLUB_TRAINING_INTENSITIES.map((v) => (
+          {CLUB_TEAM_GENDERS.map((v) => (
+            <TouchableOpacity
+              key={v}
+              style={[styles.chip, teamGender === v && styles.chipActive]}
+              onPress={() => handleSetTeamGender(v)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.chipText, teamGender === v && styles.chipTextActive]}>{TEAM_GENDER_LABELS[v]}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={styles.fieldLabel}>Intensité club cette semaine</Text>
+        <View style={styles.chipRow}>
+          {OFFERED_INTENSITIES.map((v) => (
             <TouchableOpacity
               key={v}
               style={[styles.chip, intensity === v && styles.chipActive]}
@@ -265,9 +323,9 @@ export default function CoachHomeScreen() {
           ))}
         </View>
 
-        <Text style={styles.fieldLabel}>Objectif de la semaine</Text>
+        <Text style={styles.fieldLabel}>Objectif FKS</Text>
         <View style={styles.chipRow}>
-          {CLUB_WEEK_GOALS.map((v) => (
+          {OFFERED_WEEK_GOALS.map((v) => (
             <TouchableOpacity
               key={v}
               style={[styles.chip, weekGoal === v && styles.chipActive]}
@@ -275,6 +333,23 @@ export default function CoachHomeScreen() {
               activeOpacity={0.7}
             >
               <Text style={[styles.chipText, weekGoal === v && styles.chipTextActive]}>{GOAL_LABELS[v]}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={styles.fieldLabel}>Match ce week-end ?</Text>
+        <View style={styles.chipRow}>
+          {([
+            { value: true, label: "Oui" },
+            { value: false, label: "Non" },
+          ] as const).map(({ value, label }) => (
+            <TouchableOpacity
+              key={label}
+              style={[styles.chip, matchThisWeekend === value && styles.chipActive]}
+              onPress={() => { haptics.impactLight(); setMatchThisWeekend(value); }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.chipText, matchThisWeekend === value && styles.chipTextActive]}>{label}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -291,35 +366,51 @@ export default function CoachHomeScreen() {
         />
 
         <Button
-          label={savingContext ? "Enregistrement..." : "Enregistrer le contexte"}
+          label={savingContext ? "Enregistrement..." : "Enregistrer le cadre de la semaine"}
           onPress={handleSaveContext}
           disabled={savingContext || !intensity || !weekGoal}
           fullWidth
         />
       </Card>
 
-      {/* Liste joueurs */}
+      {/* Situation du groupe — compteurs scannables (pas de graph) */}
+      {players.length > 0 ? (
+        <Card variant="soft" style={styles.summaryCard}>
+          <View style={styles.summaryRow}>
+            <SummaryStat value={summary.planned} label="Prévues" />
+            <SummaryStat value={summary.done} label="Faites" tone="ok" />
+            <SummaryStat value={summary.toRelance} label="À relancer" tone={summary.toRelance > 0 ? "warn" : "default"} />
+            <SummaryStat value={summary.adapted} label="Adaptées FKS" />
+          </View>
+        </Card>
+      ) : null}
+
+      {/* Liste de l'effectif (titre selon type d'équipe) */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Joueurs</Text>
+        <Text style={styles.sectionTitle}>{getTeamPlayerLabel(teamGender)}</Text>
         <Badge label={String(players.length)} tone="default" />
       </View>
 
       {players.length === 0 ? (
         <Card variant="soft" style={styles.emptyCard}>
           <Ionicons name="person-add-outline" size={28} color={palette.sub} />
-          <Text style={styles.emptyTitle}>Aucun joueur pour l'instant</Text>
+          <Text style={styles.emptyTitle}>Aucun membre pour l'instant</Text>
           <Text style={styles.emptyText}>
-            Partage ton code d'invitation. Les joueurs apparaîtront ici dès qu'ils auront rejoint le club.
+            Partage ton code d'invitation. Ton effectif apparaîtra ici dès la première inscription.
           </Text>
         </Card>
       ) : (
-        sortCoachPlayersForDashboard(players, overviews, todayKey).map(({ player: p, status: st }) => {
+        rows.map(({ player: p, status: st }) => {
+          const adaptationPhrase =
+            st?.adaptationLabel === "Adaptée"
+              ? topCoachAdaptationLabel(overviews[p.uid]?.session?.adaptationTokens)
+              : null;
           return (
             <TouchableOpacity
               key={p.uid}
               activeOpacity={0.7}
               onPress={() => { haptics.impactLight(); navigation.navigate("CoachPlayerDetail", { player: p }); }}
-              accessibilityLabel={`Voir ${p.firstName ?? "le joueur"}`}
+              accessibilityLabel={`Voir ${p.firstName ?? "ce profil"}`}
             >
               <Card variant="soft" style={styles.playerCard}>
                 <View style={styles.avatar}>
@@ -329,7 +420,7 @@ export default function CoachHomeScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <View style={styles.playerNameRow}>
-                    <Text style={styles.playerName}>{p.firstName ?? "Joueur"}</Text>
+                    <Text style={styles.playerName}>{p.firstName ?? "Membre"}</Text>
                     {p.ageCategory ? <Badge label={p.ageCategory} tone="default" /> : null}
                   </View>
                   <Text style={styles.playerMeta}>
@@ -343,6 +434,12 @@ export default function CoachHomeScreen() {
                       {st.adaptationLabel ? <Badge label={st.adaptationLabel} tone="default" /> : null}
                     </View>
                   ) : null}
+                  {/* Phrase courte d'adaptation (langage coach, jamais médical) */}
+                  {adaptationPhrase ? (
+                    <Text style={styles.adaptationPhrase} numberOfLines={1}>
+                      {adaptationPhrase}
+                    </Text>
+                  ) : null}
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={palette.sub} />
               </Card>
@@ -351,6 +448,25 @@ export default function CoachHomeScreen() {
         })
       )}
     </ScreenContainer>
+  );
+}
+
+function SummaryStat({
+  value,
+  label,
+  tone = "default",
+}: {
+  value: number;
+  label: string;
+  tone?: "default" | "ok" | "warn";
+}) {
+  const valueColor =
+    tone === "warn" && value > 0 ? palette.warn : tone === "ok" ? palette.accent : palette.text;
+  return (
+    <View style={styles.summaryStat}>
+      <Text style={[styles.summaryValue, { color: valueColor }]}>{value}</Text>
+      <Text style={styles.summaryLabel}>{label}</Text>
+    </View>
   );
 }
 
@@ -406,6 +522,30 @@ const styles = StyleSheet.create({
   contextCard: {
     padding: 16,
     gap: 8,
+  },
+  summaryCard: {
+    padding: 16,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  summaryStat: {
+    flex: 1,
+    alignItems: "center",
+    gap: 2,
+  },
+  summaryValue: {
+    fontSize: 22,
+    fontWeight: "800",
+  },
+  summaryLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: palette.sub,
+    textAlign: "center",
   },
   contextHint: {
     fontSize: 12,
@@ -524,6 +664,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
     marginTop: 8,
+  },
+  adaptationPhrase: {
+    fontSize: 12,
+    color: palette.sub,
+    marginTop: 6,
   },
   playerMutedMeta: {
     fontSize: 12,
