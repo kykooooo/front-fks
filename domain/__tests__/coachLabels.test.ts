@@ -9,6 +9,9 @@ import {
   pickCoachSessionToDisplay,
   buildCoachPlayerRowStatus,
   sortCoachPlayersForDashboard,
+  summarizeCoachGroup,
+  topCoachAdaptationLabel,
+  getTeamPlayerLabel,
 } from "../coachLabels";
 
 describe("guardrailToCoachLabel — exemples du cahier des charges", () => {
@@ -352,5 +355,76 @@ describe("readable helpers", () => {
     expect(readableSessionStatus("planned")).toBe("Prévue");
     expect(readableSessionStatus("done")).toBe("Faite");
     expect(readableSessionStatus("whatever")).toBe("Inconnue");
+  });
+});
+
+describe("getTeamPlayerLabel — libellé groupe selon type d'équipe", () => {
+  test("female → Joueuses", () => expect(getTeamPlayerLabel("female")).toBe("Joueuses"));
+  test("male → Joueurs", () => expect(getTeamPlayerLabel("male")).toBe("Joueurs"));
+  test("mixed → Effectif", () => expect(getTeamPlayerLabel("mixed")).toBe("Effectif"));
+  test("absent / inconnu → Effectif", () => {
+    expect(getTeamPlayerLabel(null)).toBe("Effectif");
+    expect(getTeamPlayerLabel(undefined)).toBe("Effectif");
+    expect(getTeamPlayerLabel("whatever")).toBe("Effectif");
+  });
+});
+
+describe("topCoachAdaptationLabel — phrase courte ligne joueur", () => {
+  test("renvoie la première phrase traduisible", () => {
+    expect(topCoachAdaptationLabel(["club:heavy_week_adjustment"])).toBe(
+      "Semaine club intense : charge FKS réduite",
+    );
+  });
+  test("séance standard / tokens non traduisibles → null", () => {
+    expect(topCoachAdaptationLabel([])).toBeNull();
+    expect(topCoachAdaptationLabel(["volume:debug_seed_42"])).toBeNull();
+    expect(topCoachAdaptationLabel(undefined)).toBeNull();
+  });
+  test("ne fuite jamais de détail médical (blessure → phrase générique)", () => {
+    expect(topCoachAdaptationLabel(["injury:hamstring_left_severe"])).toBe(
+      "Adaptation sécurité appliquée",
+    );
+  });
+});
+
+describe("summarizeCoachGroup — compteurs situation du groupe", () => {
+  const TODAY = "2026-06-10";
+  const ovPrevue = { session: { status: "planned", dateKey: "2026-06-12", adaptationTokens: [] }, lastActivity: null };
+  const ovFaiteStd = { session: { status: "done", dateKey: "2026-06-09", adaptationTokens: [] }, lastActivity: { dateISO: "2026-06-09" } };
+  const ovAdaptee = { session: { status: "done", dateKey: "2026-06-09", adaptationTokens: ["club:heavy_week_adjustment"] }, lastActivity: { dateISO: "2026-06-09" } };
+  const ovRelancer = { session: { status: "done", dateKey: "2026-06-01", adaptationTokens: [] }, lastActivity: { dateISO: "2026-06-01" } };
+  const ovIndispo = { session: null, lastActivity: null, detailsUnavailable: true };
+
+  const summarize = (players: any[], overviews: any) =>
+    summarizeCoachGroup(sortCoachPlayersForDashboard(players, overviews, TODAY));
+
+  test("compte prévue / faite / à relancer / adaptée", () => {
+    const players = [
+      { uid: "p", firstName: "A" },
+      { uid: "f", firstName: "B" },
+      { uid: "a", firstName: "C" },
+      { uid: "r", firstName: "D" },
+    ];
+    const res = summarize(players, { p: ovPrevue, f: ovFaiteStd, a: ovAdaptee, r: ovRelancer });
+    // a (adaptée) est aussi "Faite" → done compte a + f
+    expect(res).toEqual({ loaded: 4, planned: 1, done: 2, toRelance: 1, adapted: 1 });
+  });
+
+  test("overview non chargé (status null) jamais compté", () => {
+    const res = summarizeCoachGroup(
+      sortCoachPlayersForDashboard([{ uid: "x", firstName: "A" }], {}, TODAY),
+    );
+    expect(res).toEqual({ loaded: 0, planned: 0, done: 0, toRelance: 0, adapted: 0 });
+  });
+
+  test("détails indispo → loaded compté mais pas dans les 3 statuts séance", () => {
+    const res = summarize([{ uid: "i", firstName: "A" }], { i: ovIndispo });
+    expect(res.loaded).toBe(1);
+    expect(res.planned + res.done + res.toRelance).toBe(0);
+    expect(res.adapted).toBe(0);
+  });
+
+  test("liste vide → tout à zéro", () => {
+    expect(summarizeCoachGroup([])).toEqual({ loaded: 0, planned: 0, done: 0, toRelance: 0, adapted: 0 });
   });
 });

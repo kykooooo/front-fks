@@ -246,6 +246,8 @@ export type ClubWeekContext = {
   trainingIntensity: ClubTrainingIntensity;
   weekGoal: ClubWeekGoal;
   note?: string | null;
+  /** Match prévu ce week-end (info coach). null = non renseigné. */
+  matchThisWeekend?: boolean | null;
 };
 
 /** Type d'équipe (genre) — attribut club stable, posé par le coach. Pas de donnée individuelle. */
@@ -267,6 +269,7 @@ export async function saveClubWeekContext(opts: {
   trainingIntensity: ClubTrainingIntensity;
   weekGoal: ClubWeekGoal;
   note?: string | null;
+  matchThisWeekend?: boolean | null;
 }): Promise<void> {
   const ref = doc(db, "clubs", opts.clubId, "weekContexts", opts.weekKey);
   const note = typeof opts.note === "string" ? opts.note.trim().slice(0, 200) : "";
@@ -279,6 +282,7 @@ export async function saveClubWeekContext(opts: {
       trainingIntensity: opts.trainingIntensity,
       weekGoal: opts.weekGoal,
       note: note || null,
+      matchThisWeekend: typeof opts.matchThisWeekend === "boolean" ? opts.matchThisWeekend : null,
       updatedAt: serverTimestamp(),
     },
     { merge: true }
@@ -431,5 +435,6 @@ export async function getClubWeekContext(clubId: string, weekKey: string): Promi
     trainingIntensity: trainingIntensity ?? "normal",
     weekGoal: weekGoal ?? "freshness",
     note: typeof data?.note === "string" ? data.note : null,
+    matchThisWeekend: typeof data?.matchThisWeekend === "boolean" ? data.matchThisWeekend : null,
   };
 }

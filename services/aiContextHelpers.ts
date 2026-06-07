@@ -20,6 +20,8 @@ export type ClubContextPayload = {
   week_key?: string;
   /** Genre d'équipe (attribut équipe, jamais individuel). Oriente le focus neuromusculaire. */
   team_gender?: ClubTeamGender;
+  /** Match prévu ce week-end (trace coach). Le backend peut l'ignorer sans risque. */
+  match_this_weekend?: boolean;
 };
 
 /**
@@ -36,11 +38,13 @@ export function buildClubContextPayload(
   const wg = normalizeClubWeekGoal((raw as any).weekGoal);
   if (!ti && !wg) return null;
   const noteRaw = typeof (raw as any).note === "string" ? (raw as any).note.trim() : "";
+  const matchThisWeekend = (raw as any).matchThisWeekend;
   return {
     ...(ti ? { training_intensity: ti } : {}),
     ...(wg ? { week_goal: wg } : {}),
     ...(noteRaw ? { note: noteRaw.slice(0, 200) } : {}),
     ...(weekKey ? { week_key: weekKey } : {}),
+    ...(typeof matchThisWeekend === "boolean" ? { match_this_weekend: matchThisWeekend } : {}),
   };
 }
 
