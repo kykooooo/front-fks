@@ -17,7 +17,8 @@ import {
   type CoachPlayerOverview,
 } from "../repositories/clubsRepo";
 import {
-  toCoachAdaptationLabels,
+  getCoachTrustReasons,
+  getCoachGuardrailNotes,
   readableIntensity,
   readableFocus,
   readableSessionStatus,
@@ -53,7 +54,8 @@ export default function CoachPlayerDetailScreen() {
 
   const session = overview?.session ?? null;
   const activity = overview?.lastActivity ?? null;
-  const adaptationLabels = toCoachAdaptationLabels(session?.adaptationTokens);
+  const trustReasons = getCoachTrustReasons(session?.adaptationTokens, 4);
+  const guardrailNotes = getCoachGuardrailNotes(player?.ageCategory);
 
   return (
     <ScreenContainer>
@@ -122,17 +124,24 @@ export default function CoachPlayerDetailScreen() {
             </Card>
           )}
 
-          {/* Pourquoi cette séance est adaptée */}
-          {session && adaptationLabels.length > 0 ? (
+          {/* Pourquoi cette séance — raisons en langage coach (max 4), jamais médical */}
+          {session ? (
             <>
-              <Text style={styles.sectionTitle}>Contexte pris en compte</Text>
+              <Text style={styles.sectionTitle}>Pourquoi cette séance</Text>
               <Card variant="soft" style={styles.card}>
-                {adaptationLabels.map((label) => (
-                  <View key={label} style={styles.reasonRow}>
-                    <Ionicons name="shield-checkmark-outline" size={16} color={palette.accent} />
-                    <Text style={styles.reasonText}>{label}</Text>
+                {trustReasons.length > 0 ? (
+                  trustReasons.map((label) => (
+                    <View key={label} style={styles.reasonRow}>
+                      <Ionicons name="information-circle-outline" size={16} color={palette.accent} />
+                      <Text style={styles.reasonText}>{label}</Text>
+                    </View>
+                  ))
+                ) : (
+                  <View style={styles.reasonRow}>
+                    <Ionicons name="checkmark-circle-outline" size={16} color={palette.sub} />
+                    <Text style={styles.reasonText}>Séance standard, aucun ajustement particulier.</Text>
                   </View>
-                ))}
+                )}
               </Card>
             </>
           ) : null}
@@ -169,9 +178,16 @@ export default function CoachPlayerDetailScreen() {
             </Card>
           )}
 
-          <Text style={styles.footnote}>
-            Vue lecture seule. FKS construit la préparation ; tu donnes le contexte de la semaine.
-          </Text>
+          {/* Garde-fous FKS — zone de confiance courte, lecture seule */}
+          <Text style={styles.sectionTitle}>Garde-fous FKS</Text>
+          <Card variant="soft" style={styles.card}>
+            {guardrailNotes.map((note) => (
+              <View key={note} style={styles.reasonRow}>
+                <Ionicons name="lock-closed-outline" size={15} color={palette.sub} />
+                <Text style={styles.guardrailText}>{note}</Text>
+              </View>
+            ))}
+          </Card>
         </>
       )}
     </ScreenContainer>
@@ -216,6 +232,7 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 15, fontWeight: "700", color: palette.text },
   reasonRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   reasonText: { fontSize: 14, color: palette.text, flex: 1, lineHeight: 19 },
+  guardrailText: { fontSize: 13, color: palette.sub, flex: 1, lineHeight: 18 },
   emptyCard: { padding: 18, alignItems: "center", gap: 8 },
   emptyTitle: { fontSize: 15, fontWeight: "700", color: palette.text },
   emptyText: { fontSize: 13, color: palette.sub, textAlign: "center", lineHeight: 18 },

@@ -44,6 +44,7 @@ import {
   summarizeCoachGroup,
   topCoachAdaptationLabel,
   getTeamPlayerLabel,
+  readableIntensity,
 } from "../domain/coachLabels";
 import { weekKeyOf, toDateKey } from "../utils/dateHelpers";
 import { showToast } from "../utils/toast";
@@ -373,16 +374,21 @@ export default function CoachHomeScreen() {
         />
       </Card>
 
-      {/* Situation du groupe — compteurs scannables (pas de graph) */}
+      {/* Ce que FKS a prévu — compteurs scannables (pas de graph) */}
       {players.length > 0 ? (
-        <Card variant="soft" style={styles.summaryCard}>
-          <View style={styles.summaryRow}>
-            <SummaryStat value={summary.planned} label="Prévues" />
-            <SummaryStat value={summary.done} label="Faites" tone="ok" />
-            <SummaryStat value={summary.toRelance} label="À relancer" tone={summary.toRelance > 0 ? "warn" : "default"} />
-            <SummaryStat value={summary.adapted} label="Adaptées FKS" />
+        <>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Ce que FKS a prévu</Text>
           </View>
-        </Card>
+          <Card variant="soft" style={styles.summaryCard}>
+            <View style={styles.summaryRow}>
+              <SummaryStat value={summary.planned} label="Prévues" tone="ok" />
+              <SummaryStat value={summary.adapted} label="Adaptées FKS" />
+              <SummaryStat value={summary.toRelance} label="À relancer" tone={summary.toRelance > 0 ? "warn" : "default"} />
+              <SummaryStat value={summary.noData} label="Sans donnée" />
+            </View>
+          </Card>
+        </>
       ) : null}
 
       {/* Liste de l'effectif (titre selon type d'équipe) */}
@@ -401,10 +407,21 @@ export default function CoachHomeScreen() {
         </Card>
       ) : (
         rows.map(({ player: p, status: st }) => {
+          const sess = overviews[p.uid]?.session ?? null;
           const adaptationPhrase =
             st?.adaptationLabel === "Adaptée"
-              ? topCoachAdaptationLabel(overviews[p.uid]?.session?.adaptationTokens)
+              ? topCoachAdaptationLabel(sess?.adaptationTokens)
               : null;
+          // Aperçu "ce que FKS a prévu" : titre · durée · intensité (données déjà fetchées).
+          const sessionPreview = sess
+            ? [
+                sess.title,
+                sess.durationMin ? `${sess.durationMin} min` : null,
+                sess.intensity ? readableIntensity(sess.intensity) : null,
+              ]
+                .filter(Boolean)
+                .join(" · ") || null
+            : null;
           return (
             <TouchableOpacity
               key={p.uid}
@@ -426,6 +443,13 @@ export default function CoachHomeScreen() {
                   <Text style={styles.playerMeta}>
                     {[p.position, p.level].filter(Boolean).join(" · ") || "Profil à compléter"}
                   </Text>
+                  {/* Ce que FKS a prévu pour cette joueuse (titre · durée · intensité) */}
+                  {sessionPreview ? (
+                    <View style={styles.previewRow}>
+                      <Ionicons name="barbell-outline" size={13} color={palette.sub} />
+                      <Text style={styles.previewText} numberOfLines={1}>{sessionPreview}</Text>
+                    </View>
+                  ) : null}
                   {/* 3 voyants max — détail complet dans CoachPlayerDetail */}
                   {st ? (
                     <View style={styles.statusRow}>
@@ -669,6 +693,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: palette.sub,
     marginTop: 6,
+  },
+  previewRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginTop: 5,
+  },
+  previewText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "600",
+    color: palette.text,
   },
   playerMutedMeta: {
     fontSize: 12,

@@ -326,19 +326,52 @@ export type CoachGroupSummary = {
   done: number; // séance faite
   toRelance: number; // à relancer
   adapted: number; // séances adaptées par FKS
+  noData: number; // chargé mais aucune donnée séance (angle mort)
 };
 
 export function summarizeCoachGroup<P>(rows: CoachDashboardRow<P>[]): CoachGroupSummary {
-  const summary: CoachGroupSummary = { loaded: 0, planned: 0, done: 0, toRelance: 0, adapted: 0 };
+  const summary: CoachGroupSummary = { loaded: 0, planned: 0, done: 0, toRelance: 0, adapted: 0, noData: 0 };
   for (const { status } of rows) {
     if (!status) continue;
     summary.loaded += 1;
     if (status.sessionStatusLabel === "Prévue") summary.planned += 1;
     else if (status.sessionStatusLabel === "Faite") summary.done += 1;
     else if (status.sessionStatusLabel === "À relancer") summary.toRelance += 1;
+    else if (status.sessionStatusLabel === "Aucune donnée") summary.noData += 1;
     if (status.adaptationLabel === "Adaptée") summary.adapted += 1;
   }
   return summary;
+}
+
+// ─── Trust Layer : raisons "pourquoi cette séance" (fiche joueur) ────────────
+// Réutilise toCoachAdaptationLabels (mêmes garde-fous : jamais médical / TSB /
+// token brut) puis plafonne à `max` raisons pour rester scannable.
+export function getCoachTrustReasons(tokens: unknown, max = 4): string[] {
+  return toCoachAdaptationLabels(tokens).slice(0, Math.max(0, max));
+}
+
+// ─── Trust Layer : garde-fous FKS (zone de confiance, lecture seule) ─────────
+// Phrases statiques, courtes, non médicales. La ligne "jeunes" n'apparaît que
+// pour une catégorie d'âge jeune (U13/U15/U17/U18). Aucune promesse médicale.
+const YOUTH_AGE_CATEGORIES = ["U13", "U15", "U17", "U18"];
+const KNOWN_AGE_CATEGORIES = [...YOUTH_AGE_CATEGORIES, "SENIOR"];
+
+export function getCoachGuardrailNotes(ageCategory?: unknown): string[] {
+  const cat = typeof ageCategory === "string" ? ageCategory.trim().toUpperCase() : "";
+  // Catégorie connue → on affirme l'adaptation catégorie ; sinon on reste neutre
+  // (ne jamais survendre une adaptation catégorie quand l'âge est inconnu).
+  const categoryNote = KNOWN_AGE_CATEGORIES.includes(cat)
+    ? "Durée et intensité adaptées à la catégorie."
+    : "Durée et intensité cadrées par FKS.";
+  const notes = [
+    "Lecture seule : le coach observe, FKS construit la séance.",
+    "Pas de données médicales détaillées affichées.",
+    categoryNote,
+  ];
+  if (YOUTH_AGE_CATEGORIES.includes(cat)) {
+    notes.push("Les séances jeunes privilégient contrôle, appuis et renfo.");
+  }
+  return notes;
 }
 
 export function pickCoachSessionToDisplay<T extends DisplayableSession>(
