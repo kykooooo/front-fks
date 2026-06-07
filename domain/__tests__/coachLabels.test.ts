@@ -12,6 +12,8 @@ import {
   summarizeCoachGroup,
   topCoachAdaptationLabel,
   getTeamPlayerLabel,
+  getCoachTrustReasons,
+  getCoachGuardrailNotes,
 } from "../coachLabels";
 
 describe("guardrailToCoachLabel — exemples du cahier des charges", () => {
@@ -407,24 +409,98 @@ describe("summarizeCoachGroup — compteurs situation du groupe", () => {
     ];
     const res = summarize(players, { p: ovPrevue, f: ovFaiteStd, a: ovAdaptee, r: ovRelancer });
     // a (adaptée) est aussi "Faite" → done compte a + f
-    expect(res).toEqual({ loaded: 4, planned: 1, done: 2, toRelance: 1, adapted: 1 });
+    expect(res).toEqual({ loaded: 4, planned: 1, done: 2, toRelance: 1, adapted: 1, noData: 0 });
   });
 
   test("overview non chargé (status null) jamais compté", () => {
     const res = summarizeCoachGroup(
       sortCoachPlayersForDashboard([{ uid: "x", firstName: "A" }], {}, TODAY),
     );
-    expect(res).toEqual({ loaded: 0, planned: 0, done: 0, toRelance: 0, adapted: 0 });
+    expect(res).toEqual({ loaded: 0, planned: 0, done: 0, toRelance: 0, adapted: 0, noData: 0 });
   });
 
-  test("détails indispo → loaded compté mais pas dans les 3 statuts séance", () => {
+  test("détails indispo → loaded + noData comptés, pas dans les 3 statuts séance", () => {
     const res = summarize([{ uid: "i", firstName: "A" }], { i: ovIndispo });
     expect(res.loaded).toBe(1);
+    expect(res.noData).toBe(1);
     expect(res.planned + res.done + res.toRelance).toBe(0);
     expect(res.adapted).toBe(0);
   });
 
+  test("aucune donnée séance → compté dans noData", () => {
+    const ovNoData = { session: null, lastActivity: null };
+    const res = summarize([{ uid: "n", firstName: "A" }], { n: ovNoData });
+    expect(res.noData).toBe(1);
+    expect(res.loaded).toBe(1);
+  });
+
   test("liste vide → tout à zéro", () => {
-    expect(summarizeCoachGroup([])).toEqual({ loaded: 0, planned: 0, done: 0, toRelance: 0, adapted: 0 });
+    expect(summarizeCoachGroup([])).toEqual({ loaded: 0, planned: 0, done: 0, toRelance: 0, adapted: 0, noData: 0 });
+  });
+});
+
+describe("getCoachTrustReasons — raisons fiche joueur (Trust Layer)", () => {
+  test("traduit + plafonne à max", () => {
+    const tokens = [
+      "age:U15_duration_cap",
+      "club:heavy_week_adjustment",
+      "club:goal_freshness",
+      "team:female_neuromuscular_focus",
+      "age:U15_intensity_cap",
+    ];
+    const reasons = getCoachTrustReasons(tokens, 4);
+    expect(reasons.length).toBe(4);
+    reasons.forEach((r) => expect(typeof r).toBe("string"));
+  });
+  test("séance standard → []", () => {
+    expect(getCoachTrustReasons([], 4)).toEqual([]);
+    expect(getCoachTrustReasons(["volume:debug_seed"], 4)).toEqual([]);
+    expect(getCoachTrustReasons(undefined, 4)).toEqual([]);
+  });
+  test("ne fuite jamais le détail médical", () => {
+    const reasons = getCoachTrustReasons(["injury:acl_left_severe"], 4);
+    expect(reasons).toEqual(["Adaptation sécurité appliquée"]);
+    reasons.forEach((r) => {
+      expect(r.toLowerCase()).not.toMatch(/acl|ligament|gauche|severe|blessure/);
+    });
+  });
+});
+
+describe("getCoachGuardrailNotes — garde-fous FKS", () => {
+  test("Senior → 3 notes + 'adaptées à la catégorie' (pas de note jeune)", () => {
+    const notes = getCoachGuardrailNotes("Senior");
+    expect(notes.length).toBe(3);
+    expect(notes[0]).toMatch(/Lecture seule/);
+    expect(notes.join(" ")).toContain("adaptées à la catégorie");
+    expect(notes.join(" ")).not.toMatch(/jeunes/);
+  });
+  test("catégorie jeune (U15) → 'adaptées à la catégorie' + note jeune", () => {
+    const notes = getCoachGuardrailNotes("U15");
+    expect(notes.length).toBe(4);
+    expect(notes.join(" ")).toContain("adaptées à la catégorie");
+    expect(notes[3]).toMatch(/jeunes/);
+  });
+  test("toutes les catégories jeunes → +1 note appuis/renfo", () => {
+    for (const cat of ["U13", "U15", "U17", "U18"]) {
+      const notes = getCoachGuardrailNotes(cat);
+      expect(notes.length).toBe(4);
+      expect(notes[3]).toMatch(/jeunes/);
+    }
+  });
+  test("absent / inconnu → 'cadrées par FKS', pas 'à la catégorie', pas de note jeune", () => {
+    for (const v of [null, undefined, "", "U99", "brutal"]) {
+      const notes = getCoachGuardrailNotes(v);
+      expect(notes.length).toBe(3);
+      expect(notes.join(" ")).toContain("cadrées par FKS");
+      expect(notes.join(" ")).not.toContain("adaptées à la catégorie");
+      expect(notes.join(" ")).not.toMatch(/jeunes/);
+    }
+  });
+  test("aucune note ne contient de promesse / terme interdit", () => {
+    // "données médicales détaillées" (mention de l'ABSENCE) est autorisé ;
+    // on traque les promesses/claims réels.
+    const notes = getCoachGuardrailNotes("U15");
+    const forbidden = /blessure|protège|réduit le risque|lca|entorse|claquage|menstru|fragile/i;
+    notes.forEach((n) => expect(n).not.toMatch(forbidden));
   });
 });
