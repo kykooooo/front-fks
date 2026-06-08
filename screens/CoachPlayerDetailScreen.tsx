@@ -3,14 +3,15 @@
 // Le coach observe : aucune modification de séance possible.
 // Ne montre ni données médicales détaillées, ni TSB/ATL/CTL, ni guardrails bruts.
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
-import { useRoute, type RouteProp } from "@react-navigation/native";
+import { StatusBar } from "expo-status-bar";
+import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ScreenContainer } from "../components/ui/ScreenContainer";
 import { Card } from "../components/ui/Card";
-import { Badge } from "../components/ui/Badge";
+import { CoachBadge, coachColors, coachRadius } from "../components/coach/coachUi";
 import {
   fetchPlayerSessionOverview,
   type ClubPlayer,
@@ -24,16 +25,26 @@ import {
   readableSessionStatus,
 } from "../domain/coachLabels";
 import { toDateKey } from "../utils/dateHelpers";
-import { theme } from "../constants/theme";
 
-const palette = theme.colors;
+const palette = coachColors;
 
 type DetailRoute = RouteProp<{ CoachPlayerDetail: { player: ClubPlayer } }, "CoachPlayerDetail">;
 
 export default function CoachPlayerDetailScreen() {
   const route = useRoute<DetailRoute>();
+  const navigation = useNavigation();
   const player = route.params?.player;
   const uid = player?.uid ?? null;
+
+  // Header de navigation en DA claire (cohérent avec l'écran clair).
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerStyle: { backgroundColor: palette.card },
+      headerTintColor: palette.text,
+      headerTitleStyle: { color: palette.text },
+      headerShadowVisible: false,
+    });
+  }, [navigation]);
 
   const [overview, setOverview] = useState<CoachPlayerOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -58,7 +69,8 @@ export default function CoachPlayerDetailScreen() {
   const guardrailNotes = getCoachGuardrailNotes(player?.ageCategory);
 
   return (
-    <ScreenContainer>
+    <ScreenContainer safeAreaStyle={styles.screenBg} contentContainerStyle={styles.screenBg}>
+      <StatusBar style="dark" />
       {/* Identité */}
       <View style={styles.headerRow}>
         <View style={styles.avatar}>
@@ -67,7 +79,7 @@ export default function CoachPlayerDetailScreen() {
         <View style={{ flex: 1 }}>
           <View style={styles.nameRow}>
             <Text style={styles.name}>{player?.firstName ?? "Joueur"}</Text>
-            {player?.ageCategory ? <Badge label={player.ageCategory} tone="default" /> : null}
+            {player?.ageCategory ? <CoachBadge label={player.ageCategory} tone="default" /> : null}
           </View>
           <Text style={styles.meta}>
             {[player?.position, player?.level].filter(Boolean).join(" · ") || "Profil à compléter"}
@@ -95,9 +107,9 @@ export default function CoachPlayerDetailScreen() {
             <Card variant="soft" style={styles.card}>
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>{session.title ?? "Séance FKS"}</Text>
-                <Badge
+                <CoachBadge
                   label={readableSessionStatus(session.status)}
-                  tone={session.status === "done" ? "ok" : "default"}
+                  tone={session.status === "done" ? "ok" : "info"}
                 />
               </View>
               <View style={styles.statRow}>
@@ -206,35 +218,42 @@ function Stat({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; la
   );
 }
 
+const CARD = {
+  backgroundColor: palette.card,
+  borderColor: palette.border,
+  borderRadius: coachRadius.card,
+  borderWidth: 1,
+};
+
 const styles = StyleSheet.create({
+  screenBg: { backgroundColor: palette.bg },
   center: { paddingVertical: 32, alignItems: "center" },
   headerRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   avatar: {
     width: 48,
     height: 48,
-    borderRadius: 24,
+    borderRadius: 12,
     backgroundColor: palette.accentSoft,
     alignItems: "center",
     justifyContent: "center",
   },
   avatarText: { fontSize: 19, fontWeight: "800", color: palette.accent },
   nameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  name: { fontSize: 20, fontWeight: "800", color: palette.text },
-  meta: { fontSize: 13, color: palette.sub, marginTop: 2 },
-  sectionTitle: { fontSize: 16, fontWeight: "700", color: palette.text, marginTop: 4 },
-  card: { padding: 14, gap: 12 },
+  name: { fontSize: 21, fontWeight: "800", color: palette.text, letterSpacing: -0.2 },
+  meta: { fontSize: 13.5, color: palette.sub, marginTop: 2 },
+  sectionTitle: { fontSize: 16, fontWeight: "800", color: palette.text, marginTop: 4, letterSpacing: -0.2 },
+  card: { ...CARD, padding: 14, gap: 12 },
   cardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-  cardTitle: { fontSize: 15, fontWeight: "700", color: palette.text, flex: 1 },
+  cardTitle: { fontSize: 15.5, fontWeight: "700", color: palette.text, flex: 1 },
   statRow: { flexDirection: "row", gap: 12 },
-  stat: { flex: 1, gap: 2 },
-  statLabelRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  statLabel: { fontSize: 11, color: palette.sub, textTransform: "uppercase", letterSpacing: 0.4 },
-  statValue: { fontSize: 15, fontWeight: "700", color: palette.text },
-  reasonRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  stat: { flex: 1, gap: 3 },
+  statLabelRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  statLabel: { fontSize: 12, color: palette.sub, letterSpacing: 0.1 },
+  statValue: { fontSize: 15.5, fontWeight: "700", color: palette.text },
+  reasonRow: { flexDirection: "row", alignItems: "center", gap: 9 },
   reasonText: { fontSize: 14, color: palette.text, flex: 1, lineHeight: 19 },
-  guardrailText: { fontSize: 13, color: palette.sub, flex: 1, lineHeight: 18 },
-  emptyCard: { padding: 18, alignItems: "center", gap: 8 },
+  guardrailText: { fontSize: 13.5, color: palette.sub, flex: 1, lineHeight: 18 },
+  emptyCard: { ...CARD, padding: 18, alignItems: "center", gap: 8 },
   emptyTitle: { fontSize: 15, fontWeight: "700", color: palette.text },
   emptyText: { fontSize: 13, color: palette.sub, textAlign: "center", lineHeight: 18 },
-  footnote: { fontSize: 12, color: palette.muted, fontStyle: "italic", marginTop: 8, lineHeight: 16 },
 });

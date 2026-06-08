@@ -14,6 +14,7 @@ import {
   getTeamPlayerLabel,
   getCoachTrustReasons,
   getCoachGuardrailNotes,
+  formatCoachWeekLabel,
 } from "../coachLabels";
 
 describe("guardrailToCoachLabel — exemples du cahier des charges", () => {
@@ -131,7 +132,7 @@ describe("guardrailToCoachLabel — honnêteté objectifs coach", () => {
   test("objectifs trace-only → 'renseigné' (ne survend pas)", () => {
     expect(guardrailToCoachLabel("club:goal_strength")).toBe("Objectif coach renseigné : force");
     expect(guardrailToCoachLabel("club:goal_speed")).toBe("Objectif coach renseigné : vitesse");
-    expect(guardrailToCoachLabel("club:goal_prevention")).toBe("Objectif coach renseigné : prévention");
+    expect(guardrailToCoachLabel("club:goal_prevention")).toBe("Objectif coach renseigné : appuis & freinage");
     expect(guardrailToCoachLabel("club:goal_comeback")).toBe("Objectif coach renseigné : reprise");
   });
 });
@@ -170,12 +171,12 @@ describe("pickCoachSessionToDisplay — choix planned vs completed", () => {
 describe("buildCoachPlayerRowStatus — dashboard coach", () => {
   const TODAY = "2026-06-10";
 
-  test("1. planned future → Prévue", () => {
+  test("1. planned future → Prête", () => {
     const r = buildCoachPlayerRowStatus(
       { session: { status: "planned", dateKey: "2026-06-12", adaptationTokens: [] }, lastActivity: null, detailsUnavailable: false },
       TODAY,
     );
-    expect(r.sessionStatusLabel).toBe("Prévue");
+    expect(r.sessionStatusLabel).toBe("Prête");
     expect(r.tone).toBe("default");
   });
 
@@ -240,7 +241,7 @@ describe("buildCoachPlayerRowStatus — dashboard coach", () => {
     expect(r.sessionStatusLabel).toBe("Aucune donnée");
   });
 
-  test("planifiée passée non faite → À relancer (pas Prévue)", () => {
+  test("planifiée passée non faite → À relancer (pas Prête)", () => {
     const r = buildCoachPlayerRowStatus(
       { session: { status: "planned", dateKey: "2026-06-01", adaptationTokens: [] }, lastActivity: null },
       TODAY,
@@ -286,7 +287,7 @@ describe("sortCoachPlayersForDashboard — priorité actionnable", () => {
     expect(res).toEqual(["indispo", "std"]);
   });
 
-  test("4. Prévue avant Faite standard", () => {
+  test("4. Prête avant Faite standard", () => {
     const res = order(
       [{ uid: "faite", firstName: "Zoe" }, { uid: "prevue", firstName: "Zoe" }],
       { faite: ovFaiteStd, prevue: ovPrevue },
@@ -354,9 +355,23 @@ describe("readable helpers", () => {
     expect(readableFocus("run")).toBe("Course / Endurance");
   });
   test("statut", () => {
-    expect(readableSessionStatus("planned")).toBe("Prévue");
+    expect(readableSessionStatus("planned")).toBe("Prête");
     expect(readableSessionStatus("done")).toBe("Faite");
     expect(readableSessionStatus("whatever")).toBe("Inconnue");
+  });
+});
+
+describe("formatCoachWeekLabel — libellé semaine active", () => {
+  test("semaine dans le même mois (lundi 8 → dimanche 14 juin 2026)", () => {
+    expect(formatCoachWeekLabel("2026-06-08")).toBe("Semaine du 8 au 14 juin 2026");
+  });
+  test("semaine à cheval sur deux mois (lundi 29 juin → dimanche 5 juillet)", () => {
+    expect(formatCoachWeekLabel("2026-06-29")).toBe("Semaine du 29 juin au 5 juillet 2026");
+  });
+  test("entrée invalide → fallback neutre", () => {
+    expect(formatCoachWeekLabel(null)).toBe("Semaine en cours");
+    expect(formatCoachWeekLabel("")).toBe("Semaine en cours");
+    expect(formatCoachWeekLabel("pas-une-date")).toBe("Semaine en cours");
   });
 });
 

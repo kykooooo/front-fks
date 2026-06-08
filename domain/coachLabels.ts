@@ -31,7 +31,7 @@ export function guardrailToCoachLabel(raw: unknown): string | null {
   if (low === "club:heavy_week_adjustment") return "Semaine club intense : charge FKS réduite";
   if (low === "club:very_heavy_week_adjustment") return "Semaine club très intense : séance fortement allégée";
   if (low === "club:goal_freshness") return "Objectif coach : fraîcheur (séance allégée si besoin)";
-  if (low === "club:goal_prevention") return "Objectif coach renseigné : prévention";
+  if (low === "club:goal_prevention") return "Objectif coach renseigné : appuis & freinage";
   if (low === "club:goal_speed") return "Objectif coach renseigné : vitesse";
   if (low === "club:goal_strength") return "Objectif coach renseigné : force";
   if (low === "club:goal_comeback") return "Objectif coach renseigné : reprise";
@@ -170,11 +170,34 @@ export function getTeamPlayerLabel(teamGender: unknown): "Joueuses" | "Joueurs" 
   }
 }
 
+// ─── Libellé de la semaine active (cadre coach) ─────────────────────────────
+// Prend une weekKey (date du LUNDI "YYYY-MM-DD", cf. weekKeyOf) et renvoie
+// "Semaine du 8 au 14 juin 2026" (ou "du 29 juin au 5 juillet 2026" à cheval).
+const COACH_MONTHS_FR = [
+  "janvier", "février", "mars", "avril", "mai", "juin",
+  "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+];
+
+export function formatCoachWeekLabel(weekKey: unknown): string {
+  if (typeof weekKey !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(weekKey)) return "Semaine en cours";
+  const start = new Date(`${weekKey}T12:00:00`);
+  if (Number.isNaN(start.getTime())) return "Semaine en cours";
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  const d1 = start.getDate();
+  const m1 = start.getMonth();
+  const d2 = end.getDate();
+  const m2 = end.getMonth();
+  const y2 = end.getFullYear();
+  if (m1 === m2) return `Semaine du ${d1} au ${d2} ${COACH_MONTHS_FR[m2]} ${y2}`;
+  return `Semaine du ${d1} ${COACH_MONTHS_FR[m1]} au ${d2} ${COACH_MONTHS_FR[m2]} ${y2}`;
+}
+
 /** Statut séance → mot coach. */
 export function readableSessionStatus(status: unknown): string {
   switch (status) {
     case "planned":
-      return "Prévue";
+      return "Prête";
     case "done":
       return "Faite";
     default:
@@ -194,7 +217,7 @@ export type DisplayableSession = {
 // ─── Statut compact d'un joueur pour le dashboard coach ─────────────────────
 // 3 voyants max, scannables. Aucune donnée médicale / RPE / TSB.
 export type CoachRowStatus = {
-  sessionStatusLabel: "Prévue" | "Faite" | "À relancer" | "Aucune donnée";
+  sessionStatusLabel: "Prête" | "Faite" | "À relancer" | "Aucune donnée";
   activityLabel: string; // "Aujourd'hui" | "Hier" | "Il y a X jours" | "Jamais" | "—"
   adaptationLabel: "" | "Adaptée" | "Standard" | "Détails indispo";
   tone: "default" | "ok" | "warn" | "danger";
@@ -242,7 +265,7 @@ export function buildCoachPlayerRowStatus(
     sessionStatusLabel = "Aucune donnée";
     tone = "default";
   } else if (hasFuturePlanned) {
-    sessionStatusLabel = "Prévue";
+    sessionStatusLabel = "Prête";
     tone = "default";
   } else if (completedKey && daysSince <= RELANCE_DAYS) {
     sessionStatusLabel = "Faite";
@@ -271,7 +294,7 @@ export function buildCoachPlayerRowStatus(
 
 // ─── Tri par priorité pour le dashboard coach ───────────────────────────────
 // Haute : À relancer > Aucune donnée > Détails indispo.
-// Moyenne : Prévue > Adaptée.  Basse : Faite/Standard.
+// Moyenne : Prête > Adaptée.  Basse : Faite/Standard.
 // Overview non chargé → rang bas (jamais de faux "Aucune donnée").
 // Égalité → prénom (fr), puis uid stable.
 function dashboardRank(status: CoachRowStatus | null): number {
@@ -279,7 +302,7 @@ function dashboardRank(status: CoachRowStatus | null): number {
   if (status.adaptationLabel === "Détails indispo") return 2;
   if (status.sessionStatusLabel === "À relancer") return 0;
   if (status.sessionStatusLabel === "Aucune donnée") return 1;
-  if (status.sessionStatusLabel === "Prévue") return 3;
+  if (status.sessionStatusLabel === "Prête") return 3;
   if (status.adaptationLabel === "Adaptée") return 4;
   return 5; // Faite + Standard
 }
@@ -334,7 +357,7 @@ export function summarizeCoachGroup<P>(rows: CoachDashboardRow<P>[]): CoachGroup
   for (const { status } of rows) {
     if (!status) continue;
     summary.loaded += 1;
-    if (status.sessionStatusLabel === "Prévue") summary.planned += 1;
+    if (status.sessionStatusLabel === "Prête") summary.planned += 1;
     else if (status.sessionStatusLabel === "Faite") summary.done += 1;
     else if (status.sessionStatusLabel === "À relancer") summary.toRelance += 1;
     else if (status.sessionStatusLabel === "Aucune donnée") summary.noData += 1;

@@ -12,6 +12,7 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
 } from "react-native";
+import { StatusBar } from "expo-status-bar";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { getAuth } from "firebase/auth";
@@ -20,12 +21,12 @@ import { ScreenContainer } from "../components/ui/ScreenContainer";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { LoadingOverlay } from "../components/ui/LoadingOverlay";
+import { coachColors, coachRadius } from "../components/coach/coachUi";
 import { createClubAsCoach } from "../repositories/clubsRepo";
 import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
-import { theme } from "../constants/theme";
 
-const palette = theme.colors;
+const palette = coachColors;
 
 export default function CoachOnboardingScreen() {
   const navigation = useNavigation<any>();
@@ -74,7 +75,8 @@ export default function CoachOnboardingScreen() {
   };
 
   return (
-    <ScreenContainer>
+    <ScreenContainer safeAreaStyle={styles.screenBg} contentContainerStyle={styles.screenBg}>
+      <StatusBar style="dark" />
       <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
         <View style={styles.wrap}>
           <TouchableOpacity style={styles.backRow} onPress={() => navigation.goBack()} activeOpacity={0.7}>
@@ -121,7 +123,7 @@ export default function CoachOnboardingScreen() {
               onPress={handleCreate}
               disabled={!canSubmit}
               fullWidth
-              style={{ marginTop: 8 }}
+              style={styles.primaryBtn}
             />
           </Card>
 
@@ -137,6 +139,9 @@ export default function CoachOnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
+  screenBg: {
+    backgroundColor: palette.bg,
+  },
   wrap: {
     flex: 1,
     gap: 18,
@@ -174,31 +179,40 @@ const styles = StyleSheet.create({
     color: palette.sub,
   },
   card: {
+    backgroundColor: palette.card,
+    borderColor: palette.border,
+    borderRadius: coachRadius.card,
+    borderWidth: 1,
     padding: 16,
     gap: 8,
   },
   label: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "700",
-    color: palette.sub,
+    color: palette.text,
     marginTop: 10,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.1,
   },
   input: {
     borderWidth: 1,
-    borderColor: palette.borderSoft,
-    borderRadius: theme.radius.md,
+    borderColor: palette.border,
+    borderRadius: coachRadius.chip,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
     color: palette.text,
     backgroundColor: palette.card,
   },
+  primaryBtn: {
+    backgroundColor: palette.accent,
+    borderColor: palette.accent,
+    shadowColor: palette.accent,
+    borderRadius: 10,
+    marginTop: 8,
+  },
   note: {
-    fontSize: 12,
+    fontSize: 12.5,
     lineHeight: 17,
     color: palette.muted,
-    fontStyle: "italic",
   },
 });
