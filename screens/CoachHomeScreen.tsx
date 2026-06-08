@@ -14,6 +14,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { StatusBar } from "expo-status-bar";
 import { useNavigation } from "@react-navigation/native";
 import { getAuth, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
@@ -21,7 +22,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { ScreenContainer } from "../components/ui/ScreenContainer";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
-import { Badge } from "../components/ui/Badge";
+import { CoachBadge, coachColors, coachRadius } from "../components/coach/coachUi";
 import { db, auth } from "../services/firebase";
 import {
   fetchClubPlayers,
@@ -45,13 +46,13 @@ import {
   topCoachAdaptationLabel,
   getTeamPlayerLabel,
   readableIntensity,
+  formatCoachWeekLabel,
 } from "../domain/coachLabels";
 import { weekKeyOf, toDateKey } from "../utils/dateHelpers";
 import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
-import { theme } from "../constants/theme";
 
-const palette = theme.colors;
+const palette = coachColors;
 
 const INTENSITY_LABELS: Record<ClubTrainingIntensity, string> = {
   light: "Légère",
@@ -109,6 +110,7 @@ export default function CoachHomeScreen() {
   const [weekGoal, setWeekGoal] = useState<ClubWeekGoal | null>(null);
   const [note, setNote] = useState("");
   const [matchThisWeekend, setMatchThisWeekend] = useState<boolean | null>(null);
+  const [cadreSaved, setCadreSaved] = useState(false);
   const [savingContext, setSavingContext] = useState(false);
   const [teamGender, setTeamGender] = useState<ClubTeamGender | null>(null);
   const [tab, setTab] = useState<CoachTabKey>("seances");
@@ -133,6 +135,16 @@ export default function CoachHomeScreen() {
     setOverviews(Object.fromEntries(entries));
   }, []);
 
+  // Remet le cadre de la semaine à vide. Appelé quand aucun cadre n'existe pour
+  // la semaine active (ou pas de club) → cohérent avec "À réactualiser chaque semaine".
+  const resetWeekContextState = useCallback(() => {
+    setIntensity(null);
+    setWeekGoal(null);
+    setNote("");
+    setMatchThisWeekend(null);
+    setCadreSaved(false);
+  }, []);
+
   const load = useCallback(async () => {
     if (!uid) {
       setLoading(false);
@@ -147,6 +159,7 @@ export default function CoachHomeScreen() {
         setInviteCode(null);
         setPlayers([]);
         setOverviews({});
+        resetWeekContextState();
         return;
       }
       setClubId(resolvedClubId);
@@ -166,7 +179,8 @@ export default function CoachHomeScreen() {
       // même si la liste d'UIDs est identique.
       await loadPlayerOverviews(list);
 
-      // Contexte de semaine existant (best-effort)
+      // Cadre de semaine existant (best-effort). Si absent → reset explicite
+      // (évite qu'un ancien cadre reste affiché après changement de semaine/club).
       try {
         const wc = await getClubWeekContext(resolvedClubId, weekKey);
         if (wc) {
@@ -174,6 +188,9 @@ export default function CoachHomeScreen() {
           setWeekGoal(wc.weekGoal);
           setNote(wc.note ?? "");
           setMatchThisWeekend(typeof wc.matchThisWeekend === "boolean" ? wc.matchThisWeekend : null);
+          setCadreSaved(true);
+        } else {
+          resetWeekContextState();
         }
       } catch (e) {
         if (__DEV__) console.warn("[CoachHome] weekContext load failed:", e);
@@ -184,7 +201,7 @@ export default function CoachHomeScreen() {
     } finally {
       setLoading(false);
     }
-  }, [uid, weekKey, loadPlayerOverviews]);
+  }, [uid, weekKey, loadPlayerOverviews, resetWeekContextState]);
 
   const handleSetTeamGender = useCallback(async (g: ClubTeamGender) => {
     if (!clubId) return;
@@ -206,8 +223,9 @@ export default function CoachHomeScreen() {
     setSavingContext(true);
     try {
       await saveClubWeekContext({ clubId, weekKey, uid, trainingIntensity: intensity, weekGoal, note, matchThisWeekend });
+      setCadreSaved(true);
       haptics.success();
-      showToast({ type: "success", title: "Cadre enregistré", message: "FKS s'appuie sur ce cadre pour la prépa de la semaine." });
+      showToast({ type: "success", title: "Cadre enregistré", message: "Il s'applique aux prochaines séances générées cette semaine." });
     } catch (e) {
       if (__DEV__) console.error("[CoachHome] save weekContext failed:", e);
       haptics.error();
@@ -256,7 +274,8 @@ export default function CoachHomeScreen() {
 
   if (loading) {
     return (
-      <ScreenContainer scroll={false}>
+      <ScreenContainer scroll={false} safeAreaStyle={styles.screenBg}>
+        <StatusBar style="dark" />
         <View style={styles.center}>
           <ActivityIndicator color={palette.accent} />
         </View>
@@ -265,6 +284,33 @@ export default function CoachHomeScreen() {
   }
 
   const teamLabel = getTeamPlayerLabel(teamGender);
+  const memberWord = teamGender === "female" ? "joueuse" : teamGender === "male" ? "joueur" : "membre";
+
+  // État du groupe : une phrase actionnable selon la priorité (relance > prévu > rien).
+  const groupState =
+    summary.toRelance > 0
+      ? {
+          icon: "alert-circle" as const,
+          color: coachColors.warn,
+          tint: coachColors.warnSoft,
+          text: `${summary.toRelance} ${memberWord}${summary.toRelance > 1 ? "s" : ""} à relancer aujourd'hui`,
+        }
+      : summary.planned > 0
+        ? {
+            icon: "checkmark-circle" as const,
+            color: coachColors.success,
+            tint: coachColors.successSoft,
+            text: "Des séances sont prêtes pour le groupe",
+          }
+        : {
+            icon: "time-outline" as const,
+            color: coachColors.sub,
+            tint: coachColors.cardAlt,
+            text: "Aucune séance générée pour l'instant",
+          };
+
+  const statusTone = (label: string): "ok" | "warn" | "info" | "default" =>
+    label === "Faite" ? "ok" : label === "À relancer" ? "warn" : label === "Prête" ? "info" : "default";
 
   const renderEmptyRoster = () => (
     <Card variant="soft" style={styles.emptyCard}>
@@ -298,7 +344,17 @@ export default function CoachHomeScreen() {
       </Card>
 
       <Card variant="soft" style={styles.contextCard}>
+        <View style={styles.weekHead}>
+          <Text style={styles.weekRange}>{formatCoachWeekLabel(weekKey)}</Text>
+          <CoachBadge
+            label={cadreSaved ? "Cadre enregistré" : "Non renseigné"}
+            tone={cadreSaved ? "ok" : "default"}
+          />
+        </View>
         <Text style={styles.sectionTitle}>Cadre de la semaine</Text>
+        <Text style={styles.weekExplain}>
+          Ce cadre s'applique aux prochaines séances générées cette semaine. À réactualiser chaque semaine.
+        </Text>
 
         <Text style={styles.fieldLabel}>Type d'équipe</Text>
         <View style={styles.chipRow}>
@@ -358,6 +414,7 @@ export default function CoachHomeScreen() {
             </TouchableOpacity>
           ))}
         </View>
+        <Text style={styles.fieldHint}>Info staff ajoutée au cadre.</Text>
 
         <Text style={styles.fieldLabel}>Note (optionnel)</Text>
         <TextInput
@@ -371,25 +428,44 @@ export default function CoachHomeScreen() {
         />
 
         <Button
-          label={savingContext ? "Enregistrement..." : "Enregistrer le cadre"}
+          label={
+            savingContext
+              ? "Enregistrement..."
+              : cadreSaved
+                ? "Mettre à jour le cadre de la semaine"
+                : "Enregistrer le cadre de la semaine"
+          }
           onPress={handleSaveContext}
           disabled={savingContext || !intensity || !weekGoal}
           fullWidth
+          style={styles.primaryBtn}
         />
       </Card>
     </>
   );
 
-  // ── Onglet "Séances" : compteurs + liste orientée séance (lignes compactes) ──
+  // ── Onglet "Séances" : état du groupe + compteurs + liste orientée séance ──
   const renderSeances = () => (
     <>
-      <Text style={styles.sectionTitle}>Suivi des séances</Text>
+      {/* État du groupe — phrase actionnable (priorité : relance > prévu > rien) */}
+      <View style={[styles.groupCard, { borderLeftColor: groupState.color }]}>
+        <View style={[styles.groupIcon, { backgroundColor: groupState.tint }]}>
+          <Ionicons name={groupState.icon} size={18} color={groupState.color} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.groupHeadline}>{groupState.text}</Text>
+          <Text style={styles.groupSub}>FKS garde la charge sous contrôle, tu gardes la vision.</Text>
+        </View>
+      </View>
+
+      <Text style={styles.sectionTitle}>Séances générées</Text>
+      <Text style={styles.weekExplain}>FKS génère la séance au moment où la joueuse la lance.</Text>
       <Card variant="soft" style={styles.summaryCard}>
         <View style={styles.summaryRow}>
-          <SummaryStat value={summary.planned} label="Prévues" tone="ok" />
-          <SummaryStat value={summary.adapted} label="Adaptées" />
-          <SummaryStat value={summary.toRelance} label="À relancer" tone={summary.toRelance > 0 ? "warn" : "default"} />
-          <SummaryStat value={summary.noData} label="Sans donnée" />
+          <SummaryStat value={summary.planned} label="Prêtes" icon="checkmark-done-outline" color={palette.accent} />
+          <SummaryStat value={summary.adapted} label="Adaptées" icon="options-outline" color={palette.success} />
+          <SummaryStat value={summary.toRelance} label="À relancer" icon="alert-circle-outline" color={palette.warn} />
+          <SummaryStat value={summary.noData} label="Sans séance" icon="ellipse-outline" color={palette.muted} />
         </View>
       </Card>
 
@@ -410,6 +486,9 @@ export default function CoachHomeScreen() {
                   .filter(Boolean)
                   .join(" · ") || null
               : null;
+            const label = st?.sessionStatusLabel;
+            const barColor =
+              label === "À relancer" ? palette.warn : label === "Faite" ? palette.success : "transparent";
             return (
               <TouchableOpacity
                 key={p.uid}
@@ -418,15 +497,24 @@ export default function CoachHomeScreen() {
                 onPress={() => { haptics.impactLight(); navigation.navigate("CoachPlayerDetail", { player: p }); }}
                 accessibilityLabel={`Voir la séance de ${p.firstName ?? "ce profil"}`}
               >
+                <View style={[styles.priorityBar, { backgroundColor: barColor }]} />
                 <View style={{ flex: 1 }}>
                   <View style={styles.rowTop}>
-                    <Text style={styles.rowName} numberOfLines={1}>{p.firstName ?? "Membre"}</Text>
-                    {st ? <Badge label={st.sessionStatusLabel} tone={st.tone} /> : null}
+                    <View style={styles.nameWrap}>
+                      <Text style={styles.rowName} numberOfLines={1}>{p.firstName ?? "Membre"}</Text>
+                      {p.position ? <CoachBadge label={p.position} tone="default" style={styles.posBadge} /> : null}
+                    </View>
+                    {st ? <CoachBadge label={st.sessionStatusLabel} tone={statusTone(st.sessionStatusLabel)} /> : null}
                   </View>
-                  <Text style={styles.rowLine} numberOfLines={1}>{line ?? "Aucune séance prévue"}</Text>
-                  {reason ? <Text style={styles.rowReason} numberOfLines={1}>{reason}</Text> : null}
+                  <Text style={styles.rowLine} numberOfLines={1}>{line ?? "Aucune séance générée"}</Text>
+                  {reason ? (
+                    <Text style={styles.noteText} numberOfLines={1}>
+                      <Text style={styles.noteLabel}>Note FKS</Text>
+                      {`  ·  ${reason}`}
+                    </Text>
+                  ) : null}
                 </View>
-                <Ionicons name="chevron-forward" size={16} color={palette.sub} />
+                <Ionicons name="chevron-forward" size={16} color={palette.muted} />
               </TouchableOpacity>
             );
           })}
@@ -440,7 +528,7 @@ export default function CoachHomeScreen() {
     <>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>{teamLabel}</Text>
-        <Badge label={String(players.length)} tone="default" />
+        <CoachBadge label={String(players.length)} tone="default" />
       </View>
 
       {players.length === 0 ? (
@@ -461,16 +549,16 @@ export default function CoachHomeScreen() {
               <View style={{ flex: 1 }}>
                 <View style={styles.rowTop}>
                   <Text style={styles.rowName} numberOfLines={1}>{p.firstName ?? "Membre"}</Text>
-                  {p.ageCategory ? <Badge label={p.ageCategory} tone="default" /> : null}
+                  {p.ageCategory ? <CoachBadge label={p.ageCategory} tone="default" /> : null}
                 </View>
                 <Text style={styles.rowMeta} numberOfLines={1}>
                   {[p.position, p.level].filter(Boolean).join(" · ") || "Profil à compléter"}
                 </Text>
                 {st ? (
                   <View style={styles.statusRow}>
-                    <Badge label={st.sessionStatusLabel} tone={st.tone} />
-                    <Badge label={st.activityLabel} tone="default" />
-                    {st.adaptationLabel === "Adaptée" ? <Badge label="Adaptée" tone="default" /> : null}
+                    <CoachBadge label={st.sessionStatusLabel} tone={statusTone(st.sessionStatusLabel)} />
+                    <CoachBadge label={st.activityLabel} tone="default" />
+                    {st.adaptationLabel === "Adaptée" ? <CoachBadge label="Adaptée" tone="ok" /> : null}
                   </View>
                 ) : null}
               </View>
@@ -484,12 +572,15 @@ export default function CoachHomeScreen() {
 
   return (
     <ScreenContainer
+      safeAreaStyle={styles.screenBg}
+      contentContainerStyle={styles.screenBg}
       scrollProps={{
         refreshControl: (
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.accent} />
         ),
       }}
     >
+      <StatusBar style="dark" />
       {/* Header club compact */}
       <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>
@@ -528,27 +619,40 @@ export default function CoachHomeScreen() {
 function SummaryStat({
   value,
   label,
-  tone = "default",
+  icon,
+  color,
 }: {
   value: number;
   label: string;
-  tone?: "default" | "ok" | "warn";
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
 }) {
-  const valueColor =
-    tone === "warn" && value > 0 ? palette.warn : tone === "ok" ? palette.accent : palette.text;
+  // Valeur colorée seulement si > 0 — sinon atténuée (moins "dashboard froid").
+  const active = value > 0;
   return (
     <View style={styles.summaryStat}>
-      <Text style={[styles.summaryValue, { color: valueColor }]}>{value}</Text>
+      <Ionicons name={icon} size={15} color={active ? color : palette.muted} />
+      <Text style={[styles.summaryValue, { color: active ? color : palette.muted }]}>{value}</Text>
       <Text style={styles.summaryLabel}>{label}</Text>
     </View>
   );
 }
 
+const CARD = {
+  backgroundColor: palette.card,
+  borderColor: palette.border,
+  borderRadius: coachRadius.card,
+};
+
 const styles = StyleSheet.create({
+  screenBg: {
+    backgroundColor: palette.bg,
+  },
   center: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: palette.bg,
   },
   headerRow: {
     flexDirection: "row",
@@ -557,75 +661,81 @@ const styles = StyleSheet.create({
   },
   kicker: {
     fontSize: 11,
-    fontWeight: "700",
+    fontWeight: "800",
     color: palette.accent,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   clubName: {
-    fontSize: 20,
+    fontSize: 21,
     fontWeight: "800",
     color: palette.text,
-    marginTop: 1,
+    marginTop: 2,
+    letterSpacing: -0.2,
   },
-  // ── Segmented control ──
+  // ── Segmented control (track clair, onglet actif = pastille blanche) ──
   segment: {
     flexDirection: "row",
-    backgroundColor: palette.card,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    padding: 3,
-    gap: 2,
+    backgroundColor: palette.cardAlt,
+    borderRadius: 10,
+    padding: 4,
+    gap: 4,
     marginTop: 4,
   },
   segmentItem: {
     flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 9,
+    borderRadius: 7,
     alignItems: "center",
   },
   segmentItemActive: {
-    backgroundColor: palette.accentSoft,
+    backgroundColor: palette.card,
+    shadowColor: "#0B1220",
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
   },
   segmentText: {
-    fontSize: 13,
-    fontWeight: "700",
+    fontSize: 14,
+    fontWeight: "600",
     color: palette.sub,
   },
   segmentTextActive: {
-    color: palette.accent,
+    color: palette.text,
+    fontWeight: "700",
   },
   // ── Code club compact (onglet Semaine) ──
   codeCardCompact: {
+    ...CARD,
+    borderWidth: 1,
     flexDirection: "row",
     alignItems: "center",
     padding: 14,
     gap: 12,
   },
   codeLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "700",
     color: palette.sub,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.2,
   },
   codeValueCompact: {
     fontSize: 22,
     fontWeight: "800",
     color: palette.text,
     letterSpacing: 2,
-    marginTop: 2,
+    marginTop: 3,
   },
   shareBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingVertical: 8,
+    paddingVertical: 9,
     paddingHorizontal: 14,
-    borderRadius: theme.radius.pill,
+    borderRadius: coachRadius.chip,
     borderWidth: 1,
-    borderColor: palette.accent,
+    borderColor: "#C9D8FA",
     backgroundColor: palette.accentSoft,
   },
   shareBtnDisabled: {
@@ -638,16 +748,42 @@ const styles = StyleSheet.create({
   },
   // ── Cadre ──
   contextCard: {
+    ...CARD,
+    borderWidth: 1,
     padding: 16,
     gap: 8,
   },
-  fieldLabel: {
-    fontSize: 12,
+  weekHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginBottom: 2,
+  },
+  weekRange: {
+    fontSize: 12.5,
     fontWeight: "700",
     color: palette.sub,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginTop: 10,
+    letterSpacing: 0.2,
+    flexShrink: 1,
+  },
+  weekExplain: {
+    fontSize: 12.5,
+    color: palette.muted,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  fieldHint: {
+    fontSize: 12,
+    color: palette.muted,
+    marginTop: 5,
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: palette.text,
+    letterSpacing: 0.1,
+    marginTop: 12,
   },
   chipRow: {
     flexDirection: "row",
@@ -655,19 +791,19 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   chip: {
-    paddingVertical: 8,
+    paddingVertical: 9,
     paddingHorizontal: 14,
-    borderRadius: theme.radius.pill,
+    borderRadius: coachRadius.chip,
     borderWidth: 1,
-    borderColor: palette.borderSoft,
-    backgroundColor: "transparent",
+    borderColor: palette.border,
+    backgroundColor: palette.card,
   },
   chipActive: {
     borderColor: palette.accent,
     backgroundColor: palette.accentSoft,
   },
   chipText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "600",
     color: palette.sub,
   },
@@ -677,18 +813,56 @@ const styles = StyleSheet.create({
   },
   noteInput: {
     borderWidth: 1,
-    borderColor: palette.borderSoft,
-    borderRadius: theme.radius.md,
+    borderColor: palette.border,
+    borderRadius: coachRadius.chip,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
     color: palette.text,
     backgroundColor: palette.card,
-    minHeight: 44,
+    minHeight: 46,
     marginBottom: 4,
+  },
+  primaryBtn: {
+    backgroundColor: palette.accent,
+    borderColor: palette.accent,
+    shadowColor: palette.accent,
+    borderRadius: 10,
+    marginTop: 6,
+  },
+  // ── État du groupe (onglet Séances) ──
+  groupCard: {
+    ...CARD,
+    borderWidth: 1,
+    borderLeftWidth: 3,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+  },
+  groupIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  groupHeadline: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: palette.text,
+    letterSpacing: -0.2,
+  },
+  groupSub: {
+    fontSize: 12.5,
+    color: palette.sub,
+    marginTop: 2,
+    lineHeight: 16,
   },
   // ── Compteurs (onglet Séances) ──
   summaryCard: {
+    ...CARD,
+    borderWidth: 1,
     padding: 16,
   },
   summaryRow: {
@@ -700,14 +874,14 @@ const styles = StyleSheet.create({
   summaryStat: {
     flex: 1,
     alignItems: "center",
-    gap: 2,
+    gap: 3,
   },
   summaryValue: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "800",
   },
   summaryLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "600",
     color: palette.sub,
     textAlign: "center",
@@ -720,10 +894,13 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: "700",
+    fontWeight: "800",
     color: palette.text,
+    letterSpacing: -0.2,
   },
   listCard: {
+    ...CARD,
+    borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 2,
   },
@@ -731,17 +908,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    paddingVertical: 12,
+    paddingVertical: 13,
   },
   rosterRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingVertical: 12,
+    gap: 11,
+    paddingVertical: 13,
   },
   listRowDivider: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: palette.borderSoft,
+    borderTopColor: palette.border,
   },
   rowTop: {
     flexDirection: "row",
@@ -750,36 +927,56 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   rowName: {
-    fontSize: 15,
+    fontSize: 15.5,
     fontWeight: "700",
     color: palette.text,
     flexShrink: 1,
   },
   rowLine: {
-    fontSize: 13,
+    fontSize: 13.5,
     color: palette.sub,
     marginTop: 3,
   },
-  rowReason: {
-    fontSize: 12,
-    color: palette.accent,
-    marginTop: 3,
+  noteText: {
+    fontSize: 12.5,
+    color: palette.muted,
+    marginTop: 4,
+  },
+  noteLabel: {
+    fontWeight: "700",
+    color: palette.sub,
+  },
+  priorityBar: {
+    width: 3,
+    borderRadius: 2,
+    alignSelf: "stretch",
+    marginRight: 11,
+  },
+  nameWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    flexShrink: 1,
+  },
+  posBadge: {
+    paddingVertical: 2,
+    paddingHorizontal: 7,
   },
   rowMeta: {
-    fontSize: 12,
+    fontSize: 13,
     color: palette.sub,
     marginTop: 2,
   },
   avatarSm: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     backgroundColor: palette.accentSoft,
     alignItems: "center",
     justifyContent: "center",
   },
   avatarSmText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "800",
     color: palette.accent,
   },
@@ -788,11 +985,13 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     alignItems: "center",
     gap: 6,
-    marginTop: 6,
+    marginTop: 7,
   },
   // ── Empty ──
   emptyCard: {
-    padding: 20,
+    ...CARD,
+    borderWidth: 1,
+    padding: 22,
     alignItems: "center",
     gap: 8,
   },
