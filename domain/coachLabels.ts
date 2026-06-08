@@ -31,7 +31,7 @@ export function guardrailToCoachLabel(raw: unknown): string | null {
   if (low === "club:heavy_week_adjustment") return "Semaine club intense : charge FKS réduite";
   if (low === "club:very_heavy_week_adjustment") return "Semaine club très intense : séance fortement allégée";
   if (low === "club:goal_freshness") return "Objectif coach : fraîcheur (séance allégée si besoin)";
-  if (low === "club:goal_prevention") return "Objectif coach renseigné : prévention";
+  if (low === "club:goal_prevention") return "Objectif coach renseigné : appuis & freinage";
   if (low === "club:goal_speed") return "Objectif coach renseigné : vitesse";
   if (low === "club:goal_strength") return "Objectif coach renseigné : force";
   if (low === "club:goal_comeback") return "Objectif coach renseigné : reprise";

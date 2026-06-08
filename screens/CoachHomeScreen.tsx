@@ -82,6 +82,13 @@ const TEAM_GENDER_LABELS: Record<ClubTeamGender, string> = {
   mixed: "Mixte",
 };
 
+type CoachTabKey = "semaine" | "seances" | "effectif";
+const COACH_TABS: { key: CoachTabKey; label: string }[] = [
+  { key: "semaine", label: "Semaine" },
+  { key: "seances", label: "Séances" },
+  { key: "effectif", label: "Effectif" },
+];
+
 export default function CoachHomeScreen() {
   const haptics = useHaptics();
   const navigation = useNavigation<any>();
@@ -96,7 +103,7 @@ export default function CoachHomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const todayKey = toDateKey(new Date());
 
-  // Contexte de la semaine
+  // Cadre de la semaine
   const weekKey = weekKeyOf();
   const [intensity, setIntensity] = useState<ClubTrainingIntensity | null>(null);
   const [weekGoal, setWeekGoal] = useState<ClubWeekGoal | null>(null);
@@ -104,6 +111,7 @@ export default function CoachHomeScreen() {
   const [matchThisWeekend, setMatchThisWeekend] = useState<boolean | null>(null);
   const [savingContext, setSavingContext] = useState(false);
   const [teamGender, setTeamGender] = useState<ClubTeamGender | null>(null);
+  const [tab, setTab] = useState<CoachTabKey>("seances");
 
   // Recharge les overviews joueurs (voyants). Best-effort + ISOLATION par joueur :
   // une erreur sur un joueur → "Détails indispo" pour lui seul, jamais toute la page.
@@ -256,45 +264,41 @@ export default function CoachHomeScreen() {
     );
   }
 
-  return (
-    <ScreenContainer
-      scrollProps={{
-        refreshControl: (
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.accent} />
-        ),
-      }}
-    >
-      {/* En-tête club */}
-      <View style={styles.headerRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.kicker}>Espace coach</Text>
-          <Text style={styles.clubName}>{clubName ?? "Mon club"}</Text>
-        </View>
-        <TouchableOpacity onPress={handleSignOut} hitSlop={8} accessibilityLabel="Se déconnecter">
-          <Ionicons name="log-out-outline" size={24} color={palette.sub} />
-        </TouchableOpacity>
-      </View>
+  const teamLabel = getTeamPlayerLabel(teamGender);
 
-      {/* Code d'invitation */}
-      <Card variant="soft" style={styles.codeCard}>
-        <Text style={styles.codeLabel}>Code d'invitation</Text>
-        <Text style={styles.codeValue}>{inviteCode ?? "—"}</Text>
-        <Text style={styles.codeHint}>Partage ce code à tes joueurs pour qu'ils rejoignent le club.</Text>
-        <Button
-          label="Partager le code"
+  const renderEmptyRoster = () => (
+    <Card variant="soft" style={styles.emptyCard}>
+      <Ionicons name="person-add-outline" size={28} color={palette.sub} />
+      <Text style={styles.emptyTitle}>Aucun membre pour l'instant</Text>
+      <Text style={styles.emptyText}>
+        Partage ton code club. Ton effectif apparaîtra ici dès la première inscription.
+      </Text>
+    </Card>
+  );
+
+  // ── Onglet "Semaine" : code club compact + cadre ──
+  const renderSemaine = () => (
+    <>
+      <Card variant="soft" style={styles.codeCardCompact}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.codeLabel}>Code club</Text>
+          <Text style={styles.codeValueCompact} numberOfLines={1}>{inviteCode ?? "—"}</Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.shareBtn, !inviteCode && styles.shareBtnDisabled]}
           onPress={handleShareCode}
           disabled={!inviteCode}
-          fullWidth
-          leftAccessory={<Ionicons name="share-outline" size={18} color="#fff" />}
-        />
+          accessibilityLabel="Partager le code"
+          hitSlop={8}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="share-outline" size={16} color={palette.accent} />
+          <Text style={styles.shareBtnText}>Partager</Text>
+        </TouchableOpacity>
       </Card>
 
-      {/* Cadre de la semaine */}
       <Card variant="soft" style={styles.contextCard}>
         <Text style={styles.sectionTitle}>Cadre de la semaine</Text>
-        <Text style={styles.contextHint}>
-          Ce cadre aide FKS à adapter la charge et donne du contexte au coach.
-        </Text>
 
         <Text style={styles.fieldLabel}>Type d'équipe</Text>
         <View style={styles.chipRow}>
@@ -367,110 +371,156 @@ export default function CoachHomeScreen() {
         />
 
         <Button
-          label={savingContext ? "Enregistrement..." : "Enregistrer le cadre de la semaine"}
+          label={savingContext ? "Enregistrement..." : "Enregistrer le cadre"}
           onPress={handleSaveContext}
           disabled={savingContext || !intensity || !weekGoal}
           fullWidth
         />
       </Card>
+    </>
+  );
 
-      {/* Ce que FKS a prévu — compteurs scannables (pas de graph) */}
-      {players.length > 0 ? (
-        <>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Ce que FKS a prévu</Text>
-          </View>
-          <Card variant="soft" style={styles.summaryCard}>
-            <View style={styles.summaryRow}>
-              <SummaryStat value={summary.planned} label="Prévues" tone="ok" />
-              <SummaryStat value={summary.adapted} label="Adaptées FKS" />
-              <SummaryStat value={summary.toRelance} label="À relancer" tone={summary.toRelance > 0 ? "warn" : "default"} />
-              <SummaryStat value={summary.noData} label="Sans donnée" />
-            </View>
-          </Card>
-        </>
-      ) : null}
+  // ── Onglet "Séances" : compteurs + liste orientée séance (lignes compactes) ──
+  const renderSeances = () => (
+    <>
+      <Text style={styles.sectionTitle}>Suivi des séances</Text>
+      <Card variant="soft" style={styles.summaryCard}>
+        <View style={styles.summaryRow}>
+          <SummaryStat value={summary.planned} label="Prévues" tone="ok" />
+          <SummaryStat value={summary.adapted} label="Adaptées" />
+          <SummaryStat value={summary.toRelance} label="À relancer" tone={summary.toRelance > 0 ? "warn" : "default"} />
+          <SummaryStat value={summary.noData} label="Sans donnée" />
+        </View>
+      </Card>
 
-      {/* Liste de l'effectif (titre selon type d'équipe) */}
+      {players.length === 0 ? (
+        renderEmptyRoster()
+      ) : (
+        <Card variant="soft" style={styles.listCard}>
+          {rows.map(({ player: p, status: st }, i) => {
+            const sess = overviews[p.uid]?.session ?? null;
+            const reason =
+              st?.adaptationLabel === "Adaptée" ? topCoachAdaptationLabel(sess?.adaptationTokens) : null;
+            const line = sess
+              ? [
+                  sess.title,
+                  sess.durationMin ? `${sess.durationMin} min` : null,
+                  sess.intensity ? readableIntensity(sess.intensity) : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || null
+              : null;
+            return (
+              <TouchableOpacity
+                key={p.uid}
+                style={[styles.listRow, i > 0 && styles.listRowDivider]}
+                activeOpacity={0.7}
+                onPress={() => { haptics.impactLight(); navigation.navigate("CoachPlayerDetail", { player: p }); }}
+                accessibilityLabel={`Voir la séance de ${p.firstName ?? "ce profil"}`}
+              >
+                <View style={{ flex: 1 }}>
+                  <View style={styles.rowTop}>
+                    <Text style={styles.rowName} numberOfLines={1}>{p.firstName ?? "Membre"}</Text>
+                    {st ? <Badge label={st.sessionStatusLabel} tone={st.tone} /> : null}
+                  </View>
+                  <Text style={styles.rowLine} numberOfLines={1}>{line ?? "Aucune séance prévue"}</Text>
+                  {reason ? <Text style={styles.rowReason} numberOfLines={1}>{reason}</Text> : null}
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={palette.sub} />
+              </TouchableOpacity>
+            );
+          })}
+        </Card>
+      )}
+    </>
+  );
+
+  // ── Onglet "Effectif" : roster compact (avatar réduit, lignes denses) ──
+  const renderEffectif = () => (
+    <>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>{getTeamPlayerLabel(teamGender)}</Text>
+        <Text style={styles.sectionTitle}>{teamLabel}</Text>
         <Badge label={String(players.length)} tone="default" />
       </View>
 
       {players.length === 0 ? (
-        <Card variant="soft" style={styles.emptyCard}>
-          <Ionicons name="person-add-outline" size={28} color={palette.sub} />
-          <Text style={styles.emptyTitle}>Aucun membre pour l'instant</Text>
-          <Text style={styles.emptyText}>
-            Partage ton code d'invitation. Ton effectif apparaîtra ici dès la première inscription.
-          </Text>
-        </Card>
+        renderEmptyRoster()
       ) : (
-        rows.map(({ player: p, status: st }) => {
-          const sess = overviews[p.uid]?.session ?? null;
-          const adaptationPhrase =
-            st?.adaptationLabel === "Adaptée"
-              ? topCoachAdaptationLabel(sess?.adaptationTokens)
-              : null;
-          // Aperçu "ce que FKS a prévu" : titre · durée · intensité (données déjà fetchées).
-          const sessionPreview = sess
-            ? [
-                sess.title,
-                sess.durationMin ? `${sess.durationMin} min` : null,
-                sess.intensity ? readableIntensity(sess.intensity) : null,
-              ]
-                .filter(Boolean)
-                .join(" · ") || null
-            : null;
-          return (
+        <Card variant="soft" style={styles.listCard}>
+          {rows.map(({ player: p, status: st }, i) => (
             <TouchableOpacity
               key={p.uid}
+              style={[styles.rosterRow, i > 0 && styles.listRowDivider]}
               activeOpacity={0.7}
               onPress={() => { haptics.impactLight(); navigation.navigate("CoachPlayerDetail", { player: p }); }}
               accessibilityLabel={`Voir ${p.firstName ?? "ce profil"}`}
             >
-              <Card variant="soft" style={styles.playerCard}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {(p.firstName ?? "?").slice(0, 1).toUpperCase()}
-                  </Text>
+              <View style={styles.avatarSm}>
+                <Text style={styles.avatarSmText}>{(p.firstName ?? "?").slice(0, 1).toUpperCase()}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={styles.rowTop}>
+                  <Text style={styles.rowName} numberOfLines={1}>{p.firstName ?? "Membre"}</Text>
+                  {p.ageCategory ? <Badge label={p.ageCategory} tone="default" /> : null}
                 </View>
-                <View style={{ flex: 1 }}>
-                  <View style={styles.playerNameRow}>
-                    <Text style={styles.playerName}>{p.firstName ?? "Membre"}</Text>
-                    {p.ageCategory ? <Badge label={p.ageCategory} tone="default" /> : null}
+                <Text style={styles.rowMeta} numberOfLines={1}>
+                  {[p.position, p.level].filter(Boolean).join(" · ") || "Profil à compléter"}
+                </Text>
+                {st ? (
+                  <View style={styles.statusRow}>
+                    <Badge label={st.sessionStatusLabel} tone={st.tone} />
+                    <Badge label={st.activityLabel} tone="default" />
+                    {st.adaptationLabel === "Adaptée" ? <Badge label="Adaptée" tone="default" /> : null}
                   </View>
-                  <Text style={styles.playerMeta}>
-                    {[p.position, p.level].filter(Boolean).join(" · ") || "Profil à compléter"}
-                  </Text>
-                  {/* Ce que FKS a prévu pour cette joueuse (titre · durée · intensité) */}
-                  {sessionPreview ? (
-                    <View style={styles.previewRow}>
-                      <Ionicons name="barbell-outline" size={13} color={palette.sub} />
-                      <Text style={styles.previewText} numberOfLines={1}>{sessionPreview}</Text>
-                    </View>
-                  ) : null}
-                  {/* 3 voyants max — détail complet dans CoachPlayerDetail */}
-                  {st ? (
-                    <View style={styles.statusRow}>
-                      <Badge label={st.sessionStatusLabel} tone={st.tone} />
-                      <Badge label={st.activityLabel} tone="default" />
-                      {st.adaptationLabel ? <Badge label={st.adaptationLabel} tone="default" /> : null}
-                    </View>
-                  ) : null}
-                  {/* Phrase courte d'adaptation (langage coach, jamais médical) */}
-                  {adaptationPhrase ? (
-                    <Text style={styles.adaptationPhrase} numberOfLines={1}>
-                      {adaptationPhrase}
-                    </Text>
-                  ) : null}
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={palette.sub} />
-              </Card>
+                ) : null}
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={palette.sub} />
+            </TouchableOpacity>
+          ))}
+        </Card>
+      )}
+    </>
+  );
+
+  return (
+    <ScreenContainer
+      scrollProps={{
+        refreshControl: (
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.accent} />
+        ),
+      }}
+    >
+      {/* Header club compact */}
+      <View style={styles.headerRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.kicker}>Espace coach</Text>
+          <Text style={styles.clubName} numberOfLines={1}>{clubName ?? "Mon club"}</Text>
+        </View>
+        <TouchableOpacity onPress={handleSignOut} hitSlop={8} accessibilityLabel="Se déconnecter">
+          <Ionicons name="log-out-outline" size={22} color={palette.sub} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Segmented control : Semaine / Séances / Effectif */}
+      <View style={styles.segment}>
+        {COACH_TABS.map((t) => {
+          const active = tab === t.key;
+          return (
+            <TouchableOpacity
+              key={t.key}
+              style={[styles.segmentItem, active && styles.segmentItemActive]}
+              onPress={() => { haptics.impactLight(); setTab(t.key); }}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+            >
+              <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{t.label}</Text>
             </TouchableOpacity>
           );
-        })
-      )}
+        })}
+      </View>
+
+      {tab === "semaine" ? renderSemaine() : tab === "seances" ? renderSeances() : renderEffectif()}
     </ScreenContainer>
   );
 }
@@ -506,75 +556,90 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   kicker: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
     color: palette.accent,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   clubName: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: "800",
     color: palette.text,
-    marginTop: 2,
+    marginTop: 1,
   },
-  codeCard: {
-    padding: 16,
-    gap: 8,
+  // ── Segmented control ──
+  segment: {
+    flexDirection: "row",
+    backgroundColor: palette.card,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    padding: 3,
+    gap: 2,
+    marginTop: 4,
+  },
+  segmentItem: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
     alignItems: "center",
   },
+  segmentItemActive: {
+    backgroundColor: palette.accentSoft,
+  },
+  segmentText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: palette.sub,
+  },
+  segmentTextActive: {
+    color: palette.accent,
+  },
+  // ── Code club compact (onglet Semaine) ──
+  codeCardCompact: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    gap: 12,
+  },
   codeLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
     color: palette.sub,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  codeValue: {
-    fontSize: 28,
+  codeValueCompact: {
+    fontSize: 22,
     fontWeight: "800",
     color: palette.text,
-    letterSpacing: 3,
+    letterSpacing: 2,
+    marginTop: 2,
   },
-  codeHint: {
-    fontSize: 12,
-    lineHeight: 16,
-    color: palette.muted,
-    textAlign: "center",
-    marginBottom: 4,
+  shareBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: palette.accent,
+    backgroundColor: palette.accentSoft,
   },
+  shareBtnDisabled: {
+    opacity: 0.4,
+  },
+  shareBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: palette.accent,
+  },
+  // ── Cadre ──
   contextCard: {
     padding: 16,
     gap: 8,
-  },
-  summaryCard: {
-    padding: 16,
-  },
-  summaryRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 8,
-  },
-  summaryStat: {
-    flex: 1,
-    alignItems: "center",
-    gap: 2,
-  },
-  summaryValue: {
-    fontSize: 22,
-    fontWeight: "800",
-  },
-  summaryLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: palette.sub,
-    textAlign: "center",
-  },
-  contextHint: {
-    fontSize: 12,
-    lineHeight: 16,
-    color: palette.muted,
   },
   fieldLabel: {
     fontSize: 12,
@@ -622,6 +687,32 @@ const styles = StyleSheet.create({
     minHeight: 44,
     marginBottom: 4,
   },
+  // ── Compteurs (onglet Séances) ──
+  summaryCard: {
+    padding: 16,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  summaryStat: {
+    flex: 1,
+    alignItems: "center",
+    gap: 2,
+  },
+  summaryValue: {
+    fontSize: 22,
+    fontWeight: "800",
+  },
+  summaryLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: palette.sub,
+    textAlign: "center",
+  },
+  // ── Listes denses (Séances / Effectif) ──
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -632,6 +723,74 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: palette.text,
   },
+  listCard: {
+    paddingHorizontal: 14,
+    paddingVertical: 2,
+  },
+  listRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+  },
+  rosterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+  },
+  listRowDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: palette.borderSoft,
+  },
+  rowTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  rowName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: palette.text,
+    flexShrink: 1,
+  },
+  rowLine: {
+    fontSize: 13,
+    color: palette.sub,
+    marginTop: 3,
+  },
+  rowReason: {
+    fontSize: 12,
+    color: palette.accent,
+    marginTop: 3,
+  },
+  rowMeta: {
+    fontSize: 12,
+    color: palette.sub,
+    marginTop: 2,
+  },
+  avatarSm: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: palette.accentSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarSmText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: palette.accent,
+  },
+  statusRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 6,
+  },
+  // ── Empty ──
   emptyCard: {
     padding: 20,
     alignItems: "center",
@@ -647,69 +806,5 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: palette.sub,
     textAlign: "center",
-  },
-  playerCard: {
-    padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: palette.accentSoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: palette.accent,
-  },
-  playerNameRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  playerName: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: palette.text,
-  },
-  playerMeta: {
-    fontSize: 13,
-    color: palette.sub,
-    marginTop: 2,
-  },
-  statusRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 8,
-  },
-  adaptationPhrase: {
-    fontSize: 12,
-    color: palette.sub,
-    marginTop: 6,
-  },
-  previewRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    marginTop: 5,
-  },
-  previewText: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: "600",
-    color: palette.text,
-  },
-  playerMutedMeta: {
-    fontSize: 12,
-    color: palette.muted,
-    fontStyle: "italic",
-    marginTop: 2,
   },
 });

@@ -131,7 +131,7 @@ describe("guardrailToCoachLabel — honnêteté objectifs coach", () => {
   test("objectifs trace-only → 'renseigné' (ne survend pas)", () => {
     expect(guardrailToCoachLabel("club:goal_strength")).toBe("Objectif coach renseigné : force");
     expect(guardrailToCoachLabel("club:goal_speed")).toBe("Objectif coach renseigné : vitesse");
-    expect(guardrailToCoachLabel("club:goal_prevention")).toBe("Objectif coach renseigné : prévention");
+    expect(guardrailToCoachLabel("club:goal_prevention")).toBe("Objectif coach renseigné : appuis & freinage");
     expect(guardrailToCoachLabel("club:goal_comeback")).toBe("Objectif coach renseigné : reprise");
   });
 });
