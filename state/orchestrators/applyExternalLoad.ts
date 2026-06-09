@@ -4,7 +4,7 @@ import { todayISO } from "../../utils/virtualClock";
 import { toDateKey } from "../../utils/dateHelpers";
 import { updateTrainingLoad, decayLoadOverDays } from "../../engine/loadModel";
 import { DEV_FLAGS } from "../../config/devFlags";
-import { LOAD_CAPS } from "../../config/trainingDefaults";
+import { LOAD_CAPS, autoExternalDefaultsFor } from "../../config/trainingDefaults";
 import { computeDailyTotals, computeInterveningOffDays, pruneDailyAppliedWindow, type ExternalLoadLike } from "../computeDailyApplied";
 import { dayKeyToDow } from "../../utils/dateHelpers";
 import type { ExternalLoad, DebugEvent } from "../stores/types";
@@ -98,24 +98,25 @@ export function applyExternalLoad(load: ExternalLoad): void {
   useDebugStore.setState((s) => ({ debugLog: [evt, ...s.debugLog].slice(0, 200) }));
 }
 
-// Defaults raisonnables pour footballeur amateur quand le joueur n'a pas configuré RPE/durée
-const EXTERNAL_DEFAULTS = {
-  match: { rpe: 8, durationMin: 90 },
-  club: { rpe: 6, durationMin: 75 },
-};
-
 /**
  * Auto-apply external loads for a set of day keys (club training / match days).
+ *
+ * Charge AUTO-calendrier uniquement. Les défauts de charge dépendent de la
+ * catégorie d'âge : un match auto U13/U15 utilise un preset jeune plus léger
+ * (cf. autoExternalDefaultsFor) au lieu de l'hypothèse senior 90 min / RPE 8.
+ * Un `autoExternalConfig` explicite (profil) reste prioritaire à tout âge.
+ * Les charges manuelles / feedbacks de séance ne passent pas par ici.
  */
 export function applyAutoExternalLoads(dayKeys: string[]): void {
   const externalState = useExternalStore.getState();
   if (!externalState.autoExternalEnabled) return;
 
   const cfg = externalState.autoExternalConfig ?? {};
-  const matchRpe = cfg.match?.rpe ?? EXTERNAL_DEFAULTS.match.rpe;
-  const matchDuration = cfg.match?.durationMin ?? EXTERNAL_DEFAULTS.match.durationMin;
-  const clubRpe = cfg.club?.rpe ?? EXTERNAL_DEFAULTS.club.rpe;
-  const clubDuration = cfg.club?.durationMin ?? EXTERNAL_DEFAULTS.club.durationMin;
+  const defs = autoExternalDefaultsFor(externalState.ageCategory ?? null);
+  const matchRpe = cfg.match?.rpe ?? defs.match.rpe;
+  const matchDuration = cfg.match?.durationMin ?? defs.match.durationMin;
+  const clubRpe = cfg.club?.rpe ?? defs.club.rpe;
+  const clubDuration = cfg.club?.durationMin ?? defs.club.durationMin;
 
   const allMatchDays: string[] = externalState.matchDays?.length
     ? externalState.matchDays

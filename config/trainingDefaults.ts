@@ -15,7 +15,7 @@ export const TRAINING_DEFAULTS = {
   ATL0: 12,                   // Acute Training Load de départ (fatigue)
   // → TSB initial = 15 - 12 = +3 (légèrement frais)
 
-  // Protection onboarding
+  // Garde-fou onboarding
   ONBOARDING_SESSIONS: 3,     // Nombre de séances protégées
   TSB_FLOOR_ONBOARDING: -10,  // TSB ne descend pas en dessous pendant l'onboarding
 };
@@ -41,6 +41,36 @@ export const EXTERNAL_WEIGHTS = {
   other: 0.60,    // Autre activité (cross-training, etc.)
 };
 
+// ===========================================================================
+// AUTO-CHARGE CALENDRIER (club/match) — défauts par âge
+// ===========================================================================
+// Quand FKS injecte une charge AUTO d'après le calendrier (jour club/match du
+// profil), il faut une hypothèse de charge réaliste. Un match U13/U15 est plus
+// court et moins intense qu'un match senior → preset jeune plus léger.
+// N'affecte QUE les charges auto-calendrier ; les charges saisies manuellement
+// et les feedbacks de séance comptent normalement, à tout âge.
+export const AUTO_EXTERNAL_DEFAULTS = {
+  adult: {
+    match: { rpe: 8, durationMin: 90 },
+    club: { rpe: 6, durationMin: 75 },
+  },
+  youth: {
+    match: { rpe: 6, durationMin: 60 },
+    club: { rpe: 5, durationMin: 60 },
+  },
+} as const;
+
+// Catégories traitées en "jeune" pour l'auto-charge (U13/U15). U17/U18/Senior = adulte.
+export const YOUTH_AUTO_AGE_CATEGORIES = ["U13", "U15"];
+
+/** Renvoie les défauts d'auto-charge (club/match) adaptés à la catégorie d'âge. */
+export function autoExternalDefaultsFor(ageCategory?: string | null) {
+  const cat = typeof ageCategory === "string" ? ageCategory.trim() : "";
+  return YOUTH_AUTO_AGE_CATEGORIES.includes(cat)
+    ? AUTO_EXTERNAL_DEFAULTS.youth
+    : AUTO_EXTERNAL_DEFAULTS.adult;
+}
+
 // Guard factors (réduction de charge)
 export const GUARD_FACTORS = {
   clubDay: 0.75,      // Jour d'entraînement club : -25%
@@ -63,17 +93,17 @@ export const TSB_ZONES = {
 
   // Seuils d'alerte
   OVERREACHING_THRESHOLD: -10,   // Surcharge fonctionnelle (attention)
-  OVERTRAINING_THRESHOLD: -20,   // Risque surentraînement (danger)
+  OVERTRAINING_THRESHOLD: -20,   // Seuil charge très haute (alerte)
   DETRAINING_THRESHOLD: 15,      // Perte de forme (trop de repos)
 
   // Labels pour l'UI
   LABELS: {
-    OVERTRAINED: { min: -Infinity, max: -20, label: "Surentraînement", color: "#dc2626", icon: "warning" },
-    OVERREACHING: { min: -20, max: -10, label: "Surcharge", color: "#f59e0b", icon: "alert-circle" },
-    LOADED: { min: -10, max: -5, label: "Chargé", color: "#eab308", icon: "fitness" },
+    OVERTRAINED: { min: -Infinity, max: -20, label: "Charge très haute", color: "#dc2626", icon: "warning" },
+    OVERREACHING: { min: -20, max: -10, label: "Charge haute", color: "#f59e0b", icon: "alert-circle" },
+    LOADED: { min: -10, max: -5, label: "Un peu chargé", color: "#eab308", icon: "fitness" },
     OPTIMAL: { min: -5, max: 5, label: "Optimal", color: "#22c55e", icon: "checkmark-circle" },
     FRESH: { min: 5, max: 15, label: "Frais", color: "#3b82f6", icon: "battery-full" },
-    DETRAINING: { min: 15, max: Infinity, label: "Désentraîné", color: "#6b7280", icon: "bed" },
+    DETRAINING: { min: 15, max: Infinity, label: "Reprise douce", color: "#6b7280", icon: "bed" },
   } as const,
 };
 
@@ -113,12 +143,12 @@ export type FootballLabel = {
 };
 
 export const FOOTBALL_LABELS: Record<string, FootballLabel> = {
-  OVERTRAINED: { label: "Cramé", emoji: "🔴", message: "Comme après 3 matchs en 5 jours — ton corps a besoin de souffler.", color: "#dc2626" },
-  OVERREACHING: { label: "Cuit", emoji: "🟠", message: "Tu accumules la fatigue, va falloir lever le pied.", color: "#f59e0b" },
-  LOADED: { label: "Chargé", emoji: "🟡", message: "Un peu de fatigue dans les jambes, comme en milieu de semaine.", color: "#eab308" },
+  OVERTRAINED: { label: "Journée légère", emoji: "🔴", message: "Grosse charge récente. Aujourd'hui, place à du léger.", color: "#dc2626" },
+  OVERREACHING: { label: "À alléger", emoji: "🟠", message: "La charge monte. On lève le pied aujourd'hui.", color: "#f59e0b" },
+  LOADED: { label: "Un peu chargé", emoji: "🟡", message: "Un peu de charge dans les jambes. Adapte l'intensité.", color: "#eab308" },
   OPTIMAL: { label: "En forme", emoji: "🟢", message: "Prêt à performer, c'est le moment d'envoyer.", color: "#22c55e" },
   FRESH: { label: "Frais", emoji: "🔵", message: "Bien reposé, comme après une coupure.", color: "#3b82f6" },
-  DETRAINING: { label: "Rouillé", emoji: "⚪", message: "Ça fait longtemps — reprends doucement pour pas te blesser.", color: "#6b7280" },
+  DETRAINING: { label: "Reprise douce", emoji: "⚪", message: "Ça fait un moment. Reprends en douceur, sans forcer.", color: "#6b7280" },
 };
 
 /** Retourne le label football pour un TSB donné */

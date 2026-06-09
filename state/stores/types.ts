@@ -10,6 +10,7 @@ import type {
   DailyFeedback,
   AdaptiveFactors,
   InjuryRecord,
+  AgeCategory,
 } from "../../domain/types";
 import type { FKS_NextSessionV2 } from "../../screens/newSession/types";
 import type { FKS_AiContext } from "../../services/aiContext";
@@ -162,6 +163,8 @@ export type ExternalState = {
     club?: { rpe: number; durationMin: number };
     match?: { rpe: number; durationMin: number };
   };
+  /** Catégorie d'âge du joueur (pont profil → calibre l'auto-charge jeune). null = adulte/inconnu. */
+  ageCategory: AgeCategory | null;
 
   // actions
   addCompletedRoutine: (routine: Omit<CompletedRoutine, "id" | "dateISO">) => void;

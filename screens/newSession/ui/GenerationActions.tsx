@@ -138,8 +138,8 @@ const styles = {
     justifyContent: "center" as const,
   },
   ctaPrimary: {
-    backgroundColor: palette.accent,
-    borderColor: palette.accent,
+    backgroundColor: palette.cta,
+    borderColor: palette.cta,
   },
   ctaPrimaryText: {
     color: palette.bg,

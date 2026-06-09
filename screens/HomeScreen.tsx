@@ -3,14 +3,12 @@ import React, { useMemo, useLayoutEffect, useEffect, useCallback } from "react";
 import {
   View,
   Text,
-  Image,
   TouchableOpacity,
   ScrollView,
   StyleSheet,
   Animated,
   AccessibilityInfo,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { signOut } from "firebase/auth";
@@ -25,7 +23,6 @@ import { auth } from "../services/firebase";
 import { DEV_FLAGS } from "../config/devFlags";
 import { theme } from "../constants/theme";
 import { useSettingsStore } from "../state/settingsStore";
-import HomeStatusBar from "../components/home/HomeStatusBar";
 import HomeReadinessHero from "../components/home/HomeReadinessHero";
 import HomePrimaryCTA from "../components/home/HomePrimaryCTA";
 import HomeNextSessionCard from "../components/home/HomeNextSessionCard";
@@ -40,11 +37,9 @@ import { useContextualAdvice } from "../hooks/home/useContextualAdvice";
 import HomeAdviceCard from "../components/home/HomeAdviceCard";
 import { isSameDay, toDateKey } from "../utils/dateHelpers";
 import { showToast } from "../utils/toast";
-import { BANNER_FALLBACK } from "../constants/bannerImages";
+import { getFootballLabel } from "../config/trainingDefaults";
 
 const palette = theme.colors;
-const HERO_DARK = require("../assets/images/hero-dark.jpg");
-const HERO_LIGHT = require("../assets/images/hero-light.jpg");
 
 // Stable default references to prevent ?? [] from creating new arrays each render
 const EMPTY_STRINGS: string[] = [];
@@ -155,8 +150,6 @@ export default function HomeScreen() {
 
   const weekStart = useSettingsStore((s) => s.weekStart);
   const weeklyGoal = useSettingsStore((s) => s.weeklyGoal ?? 2);
-  const themeMode = useSettingsStore((s) => s.themeMode);
-  const heroImage = themeMode === "light" ? HERO_LIGHT : HERO_DARK;
 
   const nowISO = devNowISO ?? undefined;
   const hasAppliedToday =
@@ -166,7 +159,8 @@ export default function HomeScreen() {
 
   const loadSeries = useLoadSeries(dailyApplied, nowISO);
 
-  const tsbTone = tsb <= -15 ? "danger" : tsb < 0 ? "warn" : "good";
+  // Libellé "état du jour" joueur-friendly (jamais de TSB brut).
+  const football = getFootballLabel(tsb);
 
   const matchSoon = useMatchSoon(matchDays, nowISO);
 
@@ -230,181 +224,113 @@ export default function HomeScreen() {
     }
   }, [nowISO]);
 
+  const animStyle = (v: Animated.Value) => ({
+    opacity: v,
+    transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }],
+  });
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.screenContainer}
         showsVerticalScrollIndicator={false}
-        stickyHeaderIndices={[0]}
       >
-        <View style={styles.stickyHeader}>
-          <HomeStatusBar
-            phaseLabel={phase ?? "Playlist"}
-            tsbValue={tsb}
-            tsbTone={tsbTone}
-            matchSoon={matchSoon}
-          />
-        </View>
-
-        <View style={styles.mainContent}>
-          <View style={styles.heroShell}>
-            <Image
-              source={heroImage}
-              style={styles.heroPhotoBackdrop}
-              resizeMode="cover"
-              blurRadius={10}
-              fadeDuration={0}
-            />
-            <Image
-              source={heroImage}
-              style={styles.heroPhotoFigure}
-              resizeMode="contain"
-              fadeDuration={0}
-            />
-            <View style={styles.heroTint} />
-            <LinearGradient
-              colors={["rgba(5,8,10,0.08)", "rgba(5,8,10,0.58)", "rgba(5,8,10,0.9)"]}
-              locations={[0.08, 0.6, 1]}
-              style={styles.heroGradient}
-            />
-
-            {/* Contenu par-dessus */}
-            <View style={styles.heroBannerContent}>
-              <View style={styles.heroTopRow}>
-                <View style={styles.heroBadge}>
-                  <Text style={styles.heroBadgeText}>FKS</Text>
-                </View>
-                <Text style={styles.heroDate}>{todayLabel}</Text>
-              </View>
-              <Text style={styles.helloTitle}>Salut, {athleteName}</Text>
-              <Text style={styles.helloSub}>
-                Ton état du jour et ta prochaine séance.
-              </Text>
-              <View style={styles.quickRow}>
-                <View style={styles.quickChip}>
-                  <Text style={styles.quickLabel}>Semaine</Text>
-                  <Text style={styles.quickValue}>{weekSummary.fksCount}/{weeklyGoal}</Text>
-                </View>
-                <View style={styles.quickChip}>
-                  <Text style={styles.quickLabel}>Série</Text>
-                  <Text style={styles.quickValue}>{activityStreak}j</Text>
-                </View>
-                <View style={[styles.quickChip, matchSoon ? styles.quickChipWarn : null]}>
-                  <Text style={styles.quickLabel}>Match</Text>
-                  <Text style={styles.quickValue}>{matchSoon ? "Proche" : "—"}</Text>
-                </View>
-              </View>
+        {/* Header compact clair */}
+        <Animated.View style={animStyle(heroAnim)}>
+          <View style={styles.header}>
+            <View style={styles.headerText}>
+              <Text style={styles.greeting} numberOfLines={1}>Salut, {athleteName}</Text>
+              <Text style={styles.date}>{todayLabel}</Text>
+            </View>
+            <View style={styles.readyChip}>
+              <View style={[styles.readyDot, { backgroundColor: football.color }]} />
+              <Text style={styles.readyLabel} numberOfLines={1}>{football.label}</Text>
             </View>
           </View>
+        </Animated.View>
 
-          <Animated.View
-            style={{
-              opacity: heroAnim,
-              transform: [
-                {
-                  translateY: heroAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [18, 0],
-                  }),
-                },
-              ],
-            }}
-          >
-            <HomeReadinessHero
-              tsb={tsb}
-              tsbHistory={loadSeries.tsbArr}
-            />
-          </Animated.View>
+        {/* CTA principal — action n°1, en haut */}
+        <Animated.View style={animStyle(ctaAnim)}>
+          <HomePrimaryCTA
+            label={primaryCta.label}
+            subLabel={primaryCta.sub}
+            tone={primaryCta.tone}
+            disabled={primaryCta.disabled}
+            onPress={primaryCta.onPress}
+          />
+        </Animated.View>
 
-          <Animated.View
-            style={{
-              opacity: ctaAnim,
-              transform: [
-                {
-                  translateY: ctaAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [18, 0],
-                  }),
-                },
-              ],
-            }}
-          >
-            <HomePrimaryCTA
-              label={primaryCta.label}
-              subLabel={primaryCta.sub}
-              tone={primaryCta.tone}
-              disabled={primaryCta.disabled}
-              onPress={primaryCta.onPress}
-            />
-          </Animated.View>
-
-          {advice && (
-            <Animated.View
-              style={{
-                opacity: ctaAnim,
-                transform: [
-                  {
-                    translateY: ctaAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [18, 0],
-                    }),
-                  },
-                ],
-              }}
-            >
-              <HomeAdviceCard advice={advice} />
-            </Animated.View>
-          )}
-
-          <Animated.View
-            style={{
-              opacity: cardsAnim,
-              transform: [
-                {
-                    translateY: cardsAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [18, 0],
-                    }),
-                  },
-                ],
-            }}
-          >
-            <View style={styles.cardsStack}>
-              <HomeCarouselCard title="Progression" subtitle="Régularité & forme">
-                <View style={styles.progressRow}>
-                  <Ionicons name="flame" size={18} color={palette.accent} />
-                  <Text style={styles.progressText}>{activityStreak} jours d’affilée</Text>
+        {/* Ligne stats compacte : Semaine / Série / Match */}
+        <Animated.View style={animStyle(ctaAnim)}>
+          <View style={styles.statsLine}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Semaine</Text>
+              <Text style={styles.statValue}>{weekSummary.fksCount}/{weeklyGoal}</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Série</Text>
+              <Text style={styles.statValue}>{activityStreak > 0 ? `${activityStreak} j` : "Nouvelle"}</Text>
+            </View>
+            {matchSoon ? (
+              <>
+                <View style={styles.statDivider} />
+                <View style={styles.statItem}>
+                  <Text style={styles.statLabel}>Match</Text>
+                  <Text style={[styles.statValue, { color: palette.warn }]}>Proche</Text>
                 </View>
-                <TouchableOpacity onPress={() => nav.navigate("Progression")} style={styles.link}>
-                  <Text style={styles.linkText}>Voir ma progression</Text>
-                  <Text style={styles.linkArrow}>→</Text>
-                </TouchableOpacity>
-              </HomeCarouselCard>
+              </>
+            ) : null}
+          </View>
+        </Animated.View>
 
-              <HomeNextSessionCard
-                hasPending={Boolean(pendingSession)}
-                upcomingLabel={upcomingSessionLabel}
-                primaryLabel={pendingSession ? "Voir la séance" : primaryCta.label}
-                onPrimary={pendingSession ? startPendingSession : onPressNew}
-                  primaryDisabled={!pendingSession && Boolean(primaryCta.disabled)}
-                  secondaryLabel="Historique"
-                  onSecondary={goToHistory}
-                  onFeedback={pendingSession ? goToFeedback : undefined}
-              />
+        {/* État du jour (détail + tendance 7j) — placé plus bas, ne vole pas la vedette */}
+        <Animated.View style={animStyle(cardsAnim)}>
+          <HomeReadinessHero tsb={tsb} tsbHistory={loadSeries.tsbArr} />
+        </Animated.View>
+
+        {advice && (
+          <Animated.View style={animStyle(cardsAnim)}>
+            <HomeAdviceCard advice={advice} />
+          </Animated.View>
+        )}
+
+        <Animated.View style={animStyle(cardsAnim)}>
+          <View style={styles.cardsStack}>
+            <HomeCarouselCard title="Progression" subtitle="Régularité & forme">
+              <View style={styles.progressRow}>
+                <Ionicons name="flame" size={18} color={palette.cta} />
+                <Text style={styles.progressText}>{activityStreak} jours d’affilée</Text>
               </View>
-            </Animated.View>
+              <TouchableOpacity onPress={() => nav.navigate("Progression")} style={styles.link}>
+                <Text style={styles.linkText}>Voir ma progression</Text>
+                <Text style={styles.linkArrow}>→</Text>
+              </TouchableOpacity>
+            </HomeCarouselCard>
 
-          {DEV_FLAGS.ENABLED && (
-            <TouchableOpacity onPress={onRunHarness} style={styles.devChip}>
-              <Text style={styles.devChipText}>
-                Mode test : injecter charges club/match + externes (7j)
-              </Text>
-            </TouchableOpacity>
-          )}
+            <HomeNextSessionCard
+              hasPending={Boolean(pendingSession)}
+              upcomingLabel={upcomingSessionLabel}
+              primaryLabel={pendingSession ? "Voir la séance" : primaryCta.label}
+              onPrimary={pendingSession ? startPendingSession : onPressNew}
+              primaryDisabled={!pendingSession && Boolean(primaryCta.disabled)}
+              secondaryLabel="Historique"
+              onSecondary={goToHistory}
+              onFeedback={pendingSession ? goToFeedback : undefined}
+            />
+          </View>
+        </Animated.View>
 
-          <View style={styles.bottomSpacer} />
-        </View>
+        {DEV_FLAGS.ENABLED && (
+          <TouchableOpacity onPress={onRunHarness} style={styles.devChip}>
+            <Text style={styles.devChipText}>
+              Mode test : injecter charges club/match + externes (7j)
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        <View style={styles.bottomSpacer} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -412,8 +338,10 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   screenContainer: {
-    paddingTop: 10,
+    paddingTop: 8,
+    paddingHorizontal: 16,
     paddingBottom: 24,
+    gap: 14,
     backgroundColor: palette.bg,
   },
   safeArea: {
@@ -432,130 +360,84 @@ const styles = StyleSheet.create({
     color: palette.sub,
     fontSize: 12,
   },
-  stickyHeader: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-    backgroundColor: palette.bg,
-  },
-  mainContent: {
-    paddingHorizontal: 16,
-    gap: 16,
-  },
-  heroShell: {
-    borderRadius: 24,
-    overflow: "hidden",
-    height: 232,
-    position: "relative" as const,
-    backgroundColor: BANNER_FALLBACK.explosif,
-  },
-  heroPhotoBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.5,
-    transform: [{ scale: 1.08 }],
-  },
-  heroPhotoFigure: {
-    position: "absolute",
-    right: -18,
-    top: -8,
-    bottom: 0,
-    width: "62%",
-  },
-  heroTint: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(4,8,10,0.18)",
-    borderRadius: 24,
-  },
-  heroGradient: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: "72%",
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-  },
-  heroBannerContent: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 14,
-    gap: 6,
-  },
-  heroTopRow: {
+  // ── Header compact clair ──
+  header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 12,
   },
-  heroBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.16)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.22)",
+  headerText: {
+    flex: 1,
   },
-  heroBadgeText: {
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-    color: "#ffffff",
-  },
-  heroDate: {
-    fontSize: 12,
-    color: "rgba(255,255,255,0.7)",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    textShadowColor: "rgba(0,0,0,0.5)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  helloTitle: {
+  greeting: {
     fontSize: 22,
     fontWeight: "800",
-    color: "#fff",
-    textShadowColor: "rgba(0,0,0,0.5)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    color: palette.text,
+    letterSpacing: -0.3,
   },
-  helloSub: {
-    fontSize: 12,
-    color: "rgba(255,255,255,0.8)",
-    textShadowColor: "rgba(0,0,0,0.4)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+  date: {
+    fontSize: 12.5,
+    color: palette.sub,
+    marginTop: 2,
+    textTransform: "capitalize",
   },
-  quickRow: {
+  readyChip: {
     flexDirection: "row",
-    gap: 10,
-    flexWrap: "wrap",
-  },
-  quickChip: {
-    flexGrow: 1,
-    minWidth: 96,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 14,
+    alignItems: "center",
+    gap: 7,
+    paddingVertical: 7,
+    paddingHorizontal: 11,
+    borderRadius: 999,
+    backgroundColor: palette.card,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    backgroundColor: "rgba(255,255,255,0.14)",
+    borderColor: palette.border,
+    maxWidth: 150,
   },
-  quickChipWarn: {
-    borderColor: "rgba(245,158,11,0.5)",
-    backgroundColor: "rgba(245,158,11,0.16)",
+  readyDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 999,
   },
-  quickLabel: {
-    fontSize: 10,
-    color: "rgba(255,255,255,0.62)",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  quickValue: {
-    marginTop: 3,
+  readyLabel: {
     fontSize: 13,
+    fontWeight: "700",
+    color: palette.text,
+    flexShrink: 1,
+  },
+  // ── Ligne stats compacte ──
+  statsLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: palette.card,
+    borderWidth: 1,
+    borderColor: palette.border,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: "center",
+    gap: 2,
+  },
+  statLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: palette.sub,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  statValue: {
+    fontSize: 15,
     fontWeight: "800",
-    color: "#ffffff",
+    color: palette.text,
+  },
+  statDivider: {
+    width: StyleSheet.hairlineWidth,
+    alignSelf: "stretch",
+    backgroundColor: palette.border,
+    marginVertical: 2,
   },
   cardsStack: {
     gap: 16,

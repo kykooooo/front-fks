@@ -58,7 +58,7 @@ export type AdviceContext = {
   daysSinceLastMobility: number | null;
   routineStreak: number;
 
-  // Blessures
+  // Gêne / douleur signalée
   hasActiveInjury: boolean;
   injuryArea?: string;
 
@@ -87,7 +87,7 @@ export const ADVICE_RULES: AdviceRule[] = [
       icon: "football-outline",
       actionLabel: "Activation Express",
       actionRoute: "PrebuiltSessions",
-      tip: "Les pros font une activation de 15 min max le jour du match : mobilité + quelques sprints courts.",
+      tip: "Dans une semaine de foot, le jour du match c'est activation courte : mobilité + quelques accélérations.",
     }),
   },
 
@@ -104,7 +104,7 @@ export const ADVICE_RULES: AdviceRule[] = [
       icon: "calendar-outline",
       actionLabel: "Routine pré-match",
       actionRoute: "PrebuiltSessions",
-      tip: "La veille de match, les pros privilégient la mobilité et la visualisation plutôt que la force.",
+      tip: "La veille de match, on garde les jambes fraîches : mobilité plutôt que séance lourde.",
     }),
   },
 
@@ -113,17 +113,16 @@ export const ADVICE_RULES: AdviceRule[] = [
     id: "tsb_extreme_fatigue",
     priority: 3,
     condition: (ctx) => ctx.tsb <= -20,
-    build: (ctx) => {
-      const label = getFootballLabel(ctx.tsb);
+    build: () => {
       return {
         id: "tsb_extreme_fatigue",
-        title: "Tu es cramé",
-        message: `Ton corps accumule trop de fatigue. Privilégie récup ou mobilité, pas de grosse séance aujourd'hui.`,
+        title: "Journée légère",
+        message: `Grosse charge ces derniers jours. Aujourd'hui, place à de la récup ou de la mobilité, pas de grosse séance.`,
         tone: "danger",
         icon: "battery-dead-outline",
         actionLabel: "Routine récupération",
         actionRoute: "PrebuiltSessions",
-        tip: "En foot pro, quand un joueur est cramé, il sort de l'entraînement collectif pour faire de la récup individuelle.",
+        tip: "Dans une semaine chargée, une séance courte de récup vaut mieux qu'une séance forcée.",
       };
     },
   },
@@ -154,11 +153,11 @@ export const ADVICE_RULES: AdviceRule[] = [
       const label = getFootballLabel(ctx.tsb);
       return {
         id: "tsb_fatigue",
-        title: "Fatigue dans les jambes",
+        title: "Jambes un peu lourdes",
         message: `Tu es ${label.label.toLowerCase()}. Tu peux t'entraîner, mais évite d'envoyer trop lourd.`,
         tone: "info",
         icon: "battery-half-outline",
-        tip: "La fatigue accumulée augmente le risque de blessure. Comme en milieu de semaine, adapte l'intensité.",
+        tip: "Quand la charge monte, garde de la qualité : adapte l'intensité plutôt que forcer.",
       };
     },
   },
@@ -174,22 +173,22 @@ export const ADVICE_RULES: AdviceRule[] = [
       message: "Tu as entraînement avec ton club. Si tu veux une séance FKS, garde-la courte et légère.",
       tone: "info",
       icon: "people-outline",
-      tip: "Doubler les entraînements sans adapter l'effort, c'est le meilleur moyen de se blesser. Qualité > quantité.",
+      tip: "Doubler les séances sans adapter l'effort, c'est perdre en qualité. Qualité > quantité.",
     }),
   },
 
-  // Priorité 7: Blessure active
+  // Priorité 7: Gêne signalée
   {
     id: "injury_active",
     priority: 7,
     condition: (ctx) => ctx.hasActiveInjury,
     build: (ctx) => ({
       id: "injury_active",
-      title: `Douleur ${ctx.injuryArea ?? ""} signalée`,
-      message: "Évite les exercices avec impact sur cette zone. FKS adapte ta séance automatiquement.",
+      title: `Gêne ${ctx.injuryArea ?? ""} signalée`.replace(/\s+/g, " ").trim(),
+      message: "FKS adapte ta séance à ce que tu as signalé.",
       tone: "warn",
       icon: "medkit-outline",
-      tip: "Forcer sur une douleur peut transformer une gêne de 3 jours en blessure de 3 semaines.",
+      tip: "Forcer sur une gêne ralentit la suite. Mieux vaut l'écouter et adapter.",
     }),
   },
 
@@ -239,7 +238,7 @@ export const ADVICE_RULES: AdviceRule[] = [
       icon: "body-outline",
       actionLabel: "Flow Mobilité",
       actionRoute: "PrebuiltSessions",
-      tip: "La mobilité, c'est comme l'échauffement : personne aime ça, mais ceux qui le font se blessent moins.",
+      tip: "La mobilité, c'est comme l'échauffement : pas le plus fun, mais ça garde des jambes qui répondent.",
     }),
   },
 

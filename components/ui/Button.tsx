@@ -145,8 +145,8 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   primary: {
-    backgroundColor: theme.colors.accent,
-    borderColor: theme.colors.accent,
+    backgroundColor: theme.colors.cta,
+    borderColor: theme.colors.cta,
     ...theme.shadow.accent,
   },
   secondary: {

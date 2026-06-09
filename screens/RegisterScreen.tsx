@@ -278,7 +278,7 @@ const styles = StyleSheet.create({
   strengthBar: { width: 32, height: 4, borderRadius: 2 },
   strengthLabel: { fontSize: 12, fontWeight: "600" },
   cta: {
-    backgroundColor: palette.accent,
+    backgroundColor: palette.cta,
     borderRadius: theme.radius.pill,
     paddingVertical: 16,
     alignItems: "center",
