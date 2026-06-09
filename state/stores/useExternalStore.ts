@@ -18,6 +18,7 @@ const baseExternalState = () => ({
   matchDay: null as string | null,
   autoExternalEnabled: true,
   autoExternalConfig: {} as ExternalState["autoExternalConfig"],
+  ageCategory: null as ExternalState["ageCategory"],
 });
 
 export const useExternalStore = create<ExternalState>()(
@@ -76,6 +77,7 @@ export const useExternalStore = create<ExternalState>()(
         matchDay: s.matchDay ?? null,
         autoExternalEnabled: s.autoExternalEnabled ?? true,
         autoExternalConfig: s.autoExternalConfig,
+        ageCategory: s.ageCategory ?? null,
       }),
       onRehydrateStorage: () => () => { onStoreHydrated(); },
       migrate: (persisted) => persisted as ExternalState,

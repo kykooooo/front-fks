@@ -225,7 +225,7 @@ export const useSyncStore = create<SyncState>()(
                     : undefined,
               };
 
-              useExternalStore.setState({ clubTrainingDays: days, matchDays, matchDay, autoExternalConfig });
+              useExternalStore.setState({ clubTrainingDays: days, matchDays, matchDay, autoExternalConfig, ageCategory: data.ageCategory ?? null });
             },
             (err: unknown) => {
               const code = err != null && typeof err === "object" && "code" in err ? (err as { code: string }).code : undefined;

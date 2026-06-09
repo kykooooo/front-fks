@@ -80,7 +80,7 @@ export function useContextualAdvice(): Advice | null {
       daysSinceLastMobility = differenceInDays(now, lastMobilityDate);
     }
 
-    // === Blessure active ===
+    // === Gêne signalée ===
     const todayDayState = dayStates[nowISO];
     const injury = todayDayState?.feedback?.injury;
     const hasActiveInjury = Boolean(injury && injury.severity > 0);

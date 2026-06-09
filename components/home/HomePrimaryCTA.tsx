@@ -40,12 +40,15 @@ function HomePrimaryCTAInner({
     inputRange: [0, 1],
     outputRange: [1, 1.015],
   });
+  // CTA primaire = action clé → fond orange (cta) + texte BLANC (contraste propre).
   const bg =
-    tone === "warn" ? "rgba(245,158,11,0.16)" : tone === "disabled" ? palette.cardSoft : palette.accent;
+    tone === "warn" ? "rgba(245,158,11,0.16)" : tone === "disabled" ? palette.cardSoft : palette.cta;
   const border =
-    tone === "warn" ? palette.warn : tone === "disabled" ? palette.borderSoft : palette.accent;
+    tone === "warn" ? palette.warn : tone === "disabled" ? palette.borderSoft : palette.cta;
   const textColor =
-    tone === "warn" ? palette.warn : tone === "disabled" ? palette.sub : palette.text;
+    tone === "warn" ? palette.warn : tone === "disabled" ? palette.sub : "#ffffff";
+  const subColor =
+    tone === "disabled" ? palette.sub : tone === "warn" ? palette.warn : "rgba(255,255,255,0.9)";
 
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
@@ -57,7 +60,7 @@ function HomePrimaryCTAInner({
       >
       <View style={{ flex: 1 }}>
         <Text style={[styles.label, { color: textColor }]}>{label}</Text>
-        {subLabel ? <Text style={[styles.sub, { color: tone === "disabled" ? palette.sub : palette.text }]}>{subLabel}</Text> : null}
+        {subLabel ? <Text style={[styles.sub, { color: subColor }]}>{subLabel}</Text> : null}
       </View>
       <View style={[styles.iconWrap, { borderColor: textColor }]}>
         <Ionicons name="arrow-forward" size={18} color={textColor} />

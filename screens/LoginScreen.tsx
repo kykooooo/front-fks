@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
   forgot: { alignSelf: "flex-end" },
   forgotText: { color: palette.sub, fontSize: 13, fontWeight: "600" },
   cta: {
-    backgroundColor: palette.accent,
+    backgroundColor: palette.cta,
     borderRadius: theme.radius.pill,
     paddingVertical: 16,
     alignItems: "center",

@@ -12,6 +12,9 @@ type ThemeColors = {
   muted: string;
   accent: string;
   accentSoft: string;
+  /** Couleur d'action clé (CTA) + alertes — orange FKS, réservé aux boutons primaires. */
+  cta: string;
+  ctaSoft: string;
   success: string;
   warn: string;
   danger: string;
@@ -22,28 +25,34 @@ type ThemeColors = {
   textMuted: string;
 };
 
+// DA claire premium (par défaut) : blanc/gris froid très léger (fini le beige),
+// accent bleu profond pour l'ambient (états actifs, liens, highlights),
+// orange réservé aux CTA/alertes via `cta`.
 const lightColors: ThemeColors = {
-  bg: "#f7f5f1",
+  bg: "#F5F7FA",
   bgSoft: "#ffffff",
   card: "#ffffff",
-  cardSoft: "#f1ede6",
-  border: "#e6e1d9",
-  borderSoft: "#ede8df",
-  text: "#141414",
-  sub: "#6b6b6b",
-  muted: "#8b8b8b",
-  accent: "#ff7a1a",
-  accentSoft: "rgba(255,122,26,0.14)",
-  success: "#16a34a",
-  warn: "#f59e0b",
-  danger: "#ef4444",
-  info: "#2563eb",
-  background: "#f7f5f1",
+  cardSoft: "#F1F4F8",
+  border: "#E2E7EE",
+  borderSoft: "#EAEEF4",
+  text: "#141A24",
+  sub: "#586374",
+  muted: "#8A93A1",
+  accent: "#2A4D8F",
+  accentSoft: "#E9EEF7",
+  cta: "#F2741B",
+  ctaSoft: "rgba(242,116,27,0.14)",
+  success: "#15803D",
+  warn: "#D97706",
+  danger: "#DC2626",
+  info: "#2A4D8F",
+  background: "#F5F7FA",
   surface: "#ffffff",
-  surfaceSoft: "#f1ede6",
-  textMuted: "#6b6b6b",
+  surfaceSoft: "#F1F4F8",
+  textMuted: "#586374",
 };
 
+// Dark conservé comme option. Accent bleu clair (cohérence brand), CTA orange.
 const darkColors: ThemeColors = {
   bg: "#070707",
   bgSoft: "#0b0b0e",
@@ -54,8 +63,10 @@ const darkColors: ThemeColors = {
   text: "#f9fafb",
   sub: "#a1a1aa",
   muted: "#a1a1aa",
-  accent: "#ff7a1a",
-  accentSoft: "rgba(255,122,26,0.18)",
+  accent: "#6E97E0",
+  accentSoft: "rgba(110,151,224,0.18)",
+  cta: "#ff7a1a",
+  ctaSoft: "rgba(255,122,26,0.18)",
   success: "#f5b942",
   warn: "#fbbf24",
   danger: "#fb7185",
