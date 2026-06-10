@@ -15,7 +15,7 @@ import {
 import { StatusBar } from "expo-status-bar";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { getAuth } from "firebase/auth";
+import { getAuth, signOut } from "firebase/auth";
 
 import { ScreenContainer } from "../components/ui/ScreenContainer";
 import { Card } from "../components/ui/Card";
@@ -37,6 +37,17 @@ export default function CoachOnboardingScreen() {
   const [loading, setLoading] = useState(false);
 
   const canSubmit = clubName.trim().length >= 2 && !loading;
+
+  const handleLogout = async () => {
+    haptics.impactLight();
+    try {
+      await signOut(getAuth());
+      // Le listener auth du RootNavigator renvoie vers la connexion.
+    } catch (e) {
+      if (__DEV__) console.warn("[CoachOnboarding] signOut failed", e);
+      showToast({ type: "error", title: "Erreur", message: "Déconnexion impossible. Réessaie." });
+    }
+  };
 
   const handleCreate = async () => {
     if (!canSubmit) return;
@@ -79,10 +90,16 @@ export default function CoachOnboardingScreen() {
       <StatusBar style="dark" />
       <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
         <View style={styles.wrap}>
-          <TouchableOpacity style={styles.backRow} onPress={() => navigation.goBack()} activeOpacity={0.7}>
-            <Ionicons name="chevron-back" size={20} color={palette.sub} />
-            <Text style={styles.backText}>Retour</Text>
-          </TouchableOpacity>
+          <View style={styles.headerRow}>
+            <TouchableOpacity style={styles.backRow} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+              <Ionicons name="chevron-back" size={20} color={palette.sub} />
+              <Text style={styles.backText}>Retour</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.backRow} onPress={handleLogout} activeOpacity={0.7}>
+              <Ionicons name="log-out-outline" size={18} color={palette.sub} />
+              <Text style={styles.backText}>Se déconnecter</Text>
+            </TouchableOpacity>
+          </View>
 
           <View style={styles.header}>
             <View style={styles.iconCircle}>
@@ -145,6 +162,11 @@ const styles = StyleSheet.create({
   wrap: {
     flex: 1,
     gap: 18,
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   backRow: {
     flexDirection: "row",

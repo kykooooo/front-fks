@@ -126,7 +126,7 @@ export default function RegisterScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={palette.bg} />
+      <StatusBar barStyle="dark-content" backgroundColor={palette.bg} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -143,7 +143,7 @@ export default function RegisterScreen({ navigation }: Props) {
             </Pressable>
 
             <Text style={styles.title}>Crée ton compte</Text>
-            <Text style={styles.subtitle}>30 secondes, promis.</Text>
+            <Text style={styles.subtitle}>Rejoins ton club ou configure ton profil FKS.</Text>
 
             <Animated.View style={[styles.form, { transform: [{ translateX: shake }] }]}>
               <View style={styles.inputWrap}>
