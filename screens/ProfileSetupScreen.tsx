@@ -104,7 +104,14 @@ const toggleInList = (value: string, list: string[], setter: (next: string[]) =>
 };
 
 /* ══════════════════════════════════════════ */
-export default function ProfileSetupScreen() {
+type ProfileSetupScreenProps = {
+  /** Fourni par RootNavigator pendant l'onboarding : bascule immédiate vers l'app
+   *  après enregistrement réussi (le listener Firestore reste la source durable).
+   *  Absent quand l'écran est ouvert en édition depuis l'app déjà complète. */
+  onProfileCompleted?: () => void;
+};
+
+export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupScreenProps = {}) {
   const navigation = useNavigation<any>();
   const haptics = useHaptics();
   const activeCycleGoal = useSessionsStore((s) => s.microcycleGoal);
@@ -342,6 +349,10 @@ export default function ProfileSetupScreen() {
 
       haptics.success();
       showToast({ type: "success", title: "Profil enregistre", message: "Configuration terminee !" });
+
+      // Pont local : bascule immédiate vers l'app sans attendre le onSnapshot Firestore
+      // (le listener RootNavigator reste la source durable). No-op en mode édition profil.
+      onProfileCompleted?.();
     } catch (error) {
       if (__DEV__) console.error("Erreur sauvegarde profil:", error);
       runShake(shake);
