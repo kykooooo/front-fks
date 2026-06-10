@@ -401,11 +401,11 @@ export default function RootNavigator() {
     return (
       <SafeAreaProvider>
         <AppStack.Navigator screenOptions={{ headerShown: false }}>
-          <AppStack.Screen
-            name="ProfileSetup"
-            component={ProfileSetupScreen}
-            options={{ headerShown: false }}
-          />
+          <AppStack.Screen name="ProfileSetup" options={{ headerShown: false }}>
+            {() => (
+              <ProfileSetupScreen onProfileCompleted={() => setProfileCompleted(true)} />
+            )}
+          </AppStack.Screen>
           <AppStack.Screen
             name="CoachOnboarding"
             component={CoachOnboardingScreen}
