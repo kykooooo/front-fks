@@ -44,6 +44,8 @@ export type MicrocycleDef = {
   description: string;
   icon: string;
   highlights: string[];
+  /** Niveau d'intensité affiché (tag UI, non utilisé par le moteur) */
+  intensity?: string;
   allowedLocations: TrainingLocation[];
   locationDescriptions?: Partial<Record<TrainingLocation, string>>;
   /** Analogie football pour aider le joueur à comprendre */
@@ -55,86 +57,91 @@ export type MicrocycleDef = {
 export const MICROCYCLES: Record<MicrocycleId, MicrocycleDef> = {
   fondation: {
     id: "fondation",
-    label: "Pr\u00eat pour la reprise",
-    subtitle: "Construis ta base \u2022 \u00e9vite les blessures",
+    label: "Reprise & bases",
+    subtitle: "Reprendre proprement et poser les bases",
     description:
-      "Pose les fondations pour ne pas te blesser d\u00e8s les premiers matchs. Tu renforces tes appuis, tes tendons et ton cardio de base.",
+      "Tu reprends en douceur et tu construis une base solide : contr\u00f4le, appuis, gainage et cardio l\u00e9ger. De quoi encha\u00eener les semaines sereinement.",
     icon: "shield-checkmark-outline",
-    highlights: ["Anti-blessure", "Cardio de base", "Solidit\u00e9"],
+    highlights: ["Appuis & contr\u00f4le", "Gainage", "Cardio l\u00e9ger"],
+    intensity: "Intensit\u00e9 douce",
     allowedLocations: ["home", "pitch", "gym"],
     locationDescriptions: {
-      gym: "Renforcement progressif + pr\u00e9vention",
+      gym: "Renforcement progressif",
       pitch: "Course facile + appuis + technique",
-      home: "Renforcement l\u00e9ger + pr\u00e9vention",
+      home: "Renforcement l\u00e9ger + gainage",
     },
-    footballTip: "C'est la pr\u00e9-saison : tu poses les bases pour encha\u00eener les matchs sans p\u00e9pin.",
+    footballTip: "La pr\u00e9-saison : on construit la base avant de monter en intensit\u00e9.",
     suggestedNext: ["force", "endurance"],
   },
   force: {
     id: "force",
     label: "Duels & puissance",
-    subtitle: "Gagne tes duels \u2022 frappe plus fort",
+    subtitle: "Plus solide dans les duels, plus de puissance utile",
     description:
-      "Deviens plus solide dans les contacts, gagne tes duels et frappe plus fort. Le renforcement qui fait la diff\u00e9rence sur le terrain.",
+      "Tu gagnes en force utile : tenir les duels, rester stable sur tes appuis, frapper plus fort. Du renforcement qui se voit sur le terrain.",
     icon: "barbell-outline",
-    highlights: ["Duels", "Frappes", "Solidit\u00e9"],
+    highlights: ["Duels", "Stabilit\u00e9", "Puissance"],
+    intensity: "Intensit\u00e9 \u00e9lev\u00e9e",
     allowedLocations: ["gym", "home"],
     locationDescriptions: {
       gym: "Renforcement avec charges + machines",
       home: "Renforcement au poids du corps",
     },
-    footballTip: "Plus de force = duels gagn\u00e9s, frappes plus puissantes, moins de blessures.",
+    footballTip: "Plus de force = duels gagn\u00e9s et frappes plus franches.",
     suggestedNext: ["explosivite", "endurance"],
   },
   endurance: {
     id: "endurance",
-    label: "Tenir 90 minutes",
-    subtitle: "Ne plus mourir en 2e mi-temps",
+    label: "Tenir tout le match",
+    subtitle: "Tenir les efforts r\u00e9p\u00e9t\u00e9s, sans baisser en fin de match",
     description:
-      "Arr\u00eate de subir en fin de match. Tu construis le cardio pour presser, replacer et encha\u00eener les sprints pendant 90 minutes \u2014 sans flancher au sprint de la 85e.",
+      "Tu construis le moteur pour r\u00e9p\u00e9ter les courses et les sprints, presser et te replacer pendant tout le match.",
     icon: "pulse-outline",
     highlights: ["Fin de match", "Sprints r\u00e9p\u00e9t\u00e9s", "R\u00e9cup rapide"],
+    intensity: "Intensit\u00e9 mod\u00e9r\u00e9e \u00e0 \u00e9lev\u00e9e",
     allowedLocations: ["pitch", "gym", "home"],
     locationDescriptions: {
       pitch: "Courses + intervalles + sprints r\u00e9p\u00e9t\u00e9s",
       gym: "Tapis, v\u00e9lo ou rameur + intervalles",
       home: "Circuits cardio courts",
     },
-    footballTip: "C'est ce qui te permet de presser \u00e0 la 85e comme \u00e0 la 5e, et d'encha\u00eener les sprints sans tomber dans le rouge.",
+    footballTip: "Pour presser en fin de match comme au d\u00e9but.",
     suggestedNext: ["explosivite", "saison"],
   },
   explosivite: {
     id: "explosivite",
     label: "Vitesse & d\u00e9tente",
-    subtitle: "Explose au sol et dans les airs",
+    subtitle: "Appuis, acc\u00e9l\u00e9rations, changements de rythme",
     description:
-      "Travaille ta vitesse de d\u00e9marrage, tes changements de direction et ta d\u00e9tente. Les 3 premiers m\u00e8tres et la hauteur de saut font la diff\u00e9rence sur un appel, un pressing ou un duel a\u00e9rien.",
+      "Tu travailles la vitesse de d\u00e9marrage, les changements de direction et la d\u00e9tente. Les premiers m\u00e8tres et le saut font la diff\u00e9rence.",
     icon: "flash-outline",
-    highlights: ["D\u00e9marrages", "D\u00e9tente", "Puissance"],
+    highlights: ["D\u00e9marrages", "Appuis", "D\u00e9tente"],
+    intensity: "Intensit\u00e9 \u00e9lev\u00e9e",
     allowedLocations: ["pitch", "gym", "home"],
     locationDescriptions: {
       pitch: "Sprints courts + sauts + changements de direction",
       gym: "Vitesse + charges explosives + sauts",
       home: "Coordination + sauts + r\u00e9activit\u00e9",
     },
-    footballTip: "Les premiers m\u00e8tres font la diff sur un appel, la d\u00e9tente sur un coup de t\u00eate. Ce cycle muscle les deux.",
+    footballTip: "Les premiers appuis font la diff sur un appel ou un duel a\u00e9rien.",
     suggestedNext: ["endurance", "saison"],
   },
   saison: {
     id: "saison",
     label: "Rester frais pour les matchs",
-    subtitle: "Performe le week-end \u2022 sans te cramer",
+    subtitle: "Performer le week-end en restant frais",
     description:
-      "En pleine saison, l'objectif c'est rester frais et performant pour les matchs. Pas de surcharge, juste ce qu'il faut.",
+      "En pleine saison, l'objectif c'est rester performant le jour du match : juste ce qu'il faut \u00e0 l'entra\u00eenement, pas plus.",
     icon: "leaf-outline",
-    highlights: ["Fra\u00eecheur", "Pr\u00e9vention", "R\u00e9gularit\u00e9"],
+    highlights: ["Fra\u00eecheur", "Entretien", "R\u00e9gularit\u00e9"],
+    intensity: "Intensit\u00e9 ma\u00eetris\u00e9e",
     allowedLocations: ["pitch", "gym", "home"],
     locationDescriptions: {
       pitch: "Maintien + fra\u00eecheur terrain",
       gym: "Entretien sans fatigue",
-      home: "Pr\u00e9vention + r\u00e9cup",
+      home: "Mobilit\u00e9 + r\u00e9cup",
     },
-    footballTip: "En pleine saison, l'objectif c'est rester frais pour les matchs, pas se d\u00e9foncer \u00e0 l'entra\u00eenement.",
+    footballTip: "En saison, on entretient sans se vider \u00e0 l'entra\u00eenement.",
     suggestedNext: ["force", "endurance"],
   },
 };
@@ -179,7 +186,7 @@ export const CYCLE_PATHWAYS: CyclePathway[] = [
     id: "saison_active",
     label: "En pleine saison",
     description:
-      "Reste frais pour les matchs du week-end sans te cramer \u00e0 l'entra\u00eenement.",
+      "Reste performant pour les matchs du week-end en g\u00e9rant ta fatigue d'entra\u00eenement.",
     icon: "shield-checkmark-outline",
     sequence: ["saison", "endurance", "saison"],
     forWhom:
@@ -189,11 +196,11 @@ export const CYCLE_PATHWAYS: CyclePathway[] = [
     id: "reprise",
     label: "Retour apr\u00e8s coupure",
     description:
-      "Reprends en douceur apr\u00e8s l'inter-saison ou une blessure, sans griller les \u00e9tapes.",
+      "Reprends en douceur apr\u00e8s l'inter-saison ou une coupure, sans griller les \u00e9tapes.",
     icon: "refresh-outline",
     sequence: ["fondation", "force", "endurance", "saison"],
     forWhom:
-      "Tu reviens d'une pause (inter-saison, blessure, arr\u00eat long) et tu veux repartir sans risque.",
+      "Tu reviens d'une pause (inter-saison, arr\u00eat long) et tu veux repartir progressivement.",
   },
 ];
 
