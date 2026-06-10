@@ -14,14 +14,15 @@ import {
   ScrollView,
   Platform,
   KeyboardAvoidingView,
+  StatusBar,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { getAuth } from "firebase/auth";
+import { getAuth, signOut } from "firebase/auth";
 import { useHaptics } from "../hooks/useHaptics";
-import { db } from "../services/firebase";
+import { auth as firebaseAuth, db } from "../services/firebase";
 import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { LoadingOverlay } from "../components/ui/LoadingOverlay";
 import { findClubByInviteCode, normalizeInviteCode, setClubMembership } from "../repositories/clubsRepo";
@@ -32,7 +33,6 @@ import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { showToast } from "../utils/toast";
 import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
-import { AuthBackground, AUTH_IMAGES } from "../components/auth/AuthBackground";
 
 const TOTAL_STEPS = 5;
 const palette = theme.colors;
@@ -268,6 +268,17 @@ export default function ProfileSetupScreen() {
   const goBack = () => {
     haptics.impactLight();
     if (step > 0) animateTransition(step - 1);
+  };
+
+  const handleLogout = async () => {
+    haptics.impactLight();
+    try {
+      await signOut(firebaseAuth);
+      // Le listener auth du RootNavigator renvoie automatiquement vers la connexion.
+    } catch (e) {
+      if (__DEV__) console.warn("[ProfileSetup] signOut failed", e);
+      showToast({ type: "error", title: "Erreur", message: "Déconnexion impossible. Réessaie." });
+    }
   };
 
   /* ─── Save ─── */
@@ -563,11 +574,20 @@ export default function ProfileSetupScreen() {
   const progressPercent = ((step + 1) / TOTAL_STEPS) * 100;
 
   return (
-    <AuthBackground image={AUTH_IMAGES.setup}>
-      <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-            <View style={{ flex: 1 }}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
+      <StatusBar barStyle="dark-content" backgroundColor={palette.bg} />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <View style={{ flex: 1 }}>
+
+            {/* ─── Top bar : marque + changer de compte ─── */}
+            <View style={styles.topBar}>
+              <Text style={styles.brand}>FKS</Text>
+              <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
+                <Ionicons name="log-out-outline" size={16} color={palette.sub} />
+                <Text style={styles.logoutText}>Changer de compte</Text>
+              </TouchableOpacity>
+            </View>
 
               {/* ─── Progress section ─── */}
               <View style={styles.progressSection}>
@@ -663,7 +683,6 @@ export default function ProfileSetupScreen() {
           submessage="Configuration initiale en cours."
         />
       </SafeAreaView>
-    </AuthBackground>
   );
 }
 
@@ -671,6 +690,34 @@ export default function ProfileSetupScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
+    backgroundColor: palette.bg,
+  },
+
+  /* Top bar */
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 24,
+    paddingTop: 8,
+  },
+  brand: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: palette.text,
+    letterSpacing: 2,
+  },
+  logoutBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+  },
+  logoutText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: palette.sub,
   },
 
   /* Progress */
@@ -741,15 +788,16 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  /* Card — semi-transparent pour voir l'image de fond */
+  /* Card */
   card: {
     borderRadius: theme.radius.xxl,
     padding: 20,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: palette.card,
     borderWidth: 1,
-    borderColor: palette.borderSoft,
+    borderColor: palette.border,
     overflow: "hidden",
     gap: 4,
+    ...theme.shadow.soft,
   },
 
   /* Fields */
@@ -770,7 +818,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 15,
     color: palette.text,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: palette.cardSoft,
   },
 
   /* Choice */
@@ -843,7 +891,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     padding: 14,
     borderRadius: theme.radius.md,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: palette.cardSoft,
     borderWidth: 1,
     borderColor: palette.borderSoft,
   },
@@ -903,7 +951,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderTopWidth: 1,
     borderTopColor: palette.borderSoft,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: palette.bg,
   },
   backButton: {
     flex: 1,
