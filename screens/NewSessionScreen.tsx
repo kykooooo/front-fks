@@ -336,7 +336,7 @@ export default function NewSessionScreen() {
   const handleGenerate = async () => {
     try {
       if (!cycleId) {
-        showToast({ type: "warn", title: "Choisir un cycle", message: "Choisis ton cycle (playlist) avant de générer des séances." });
+        showToast({ type: "warn", title: "Choisir un cycle", message: "Choisis ton cycle avant de générer des séances." });
         nav.navigate("CycleModal", { mode: "select", origin: "newSession" });
         return;
       }
@@ -605,12 +605,27 @@ export default function NewSessionScreen() {
 
         {!cycleId ? (
           <View style={[styles.card, styles.cycleGateCard]}>
-            <Text style={styles.cardTitle}>Choisis ton cycle</Text>
+            <Text style={styles.cardTitle}>Choisis ton objectif de cycle</Text>
             <Text style={styles.cardSubtitle}>
-              Pour générer des séances cohérentes, sélectionne un cycle (playlist). Tu pourras le gérer ensuite depuis ton profil.
+              Avant de créer une séance, FKS a besoin de savoir ce que tu veux travailler sur les prochaines semaines.
             </Text>
+            <View style={styles.gateBenefits}>
+              {["Séances plus cohérentes", "Progression suivie", "Charge mieux cadrée"].map((b) => (
+                <View key={b} style={styles.gateBenefitRow}>
+                  <View style={styles.gateBenefitDot} />
+                  <Text style={styles.gateBenefitText}>{b}</Text>
+                </View>
+              ))}
+            </View>
             <Button
-              label="Choisir mon cycle"
+              label="Voir les cycles"
+              onPress={() => nav.navigate("CycleModal", { mode: "select", origin: "newSession" })}
+              fullWidth
+              style={styles.ctaBlue}
+            />
+            <Button
+              label="Me recommander un cycle"
+              variant="ghost"
               onPress={() => nav.navigate("CycleModal", { mode: "select", origin: "newSession" })}
               fullWidth
             />
@@ -625,6 +640,7 @@ export default function NewSessionScreen() {
               label="Choisir un nouveau cycle"
               onPress={() => nav.navigate("CycleModal", { mode: "select", origin: "newSession" })}
               fullWidth
+              style={styles.ctaBlue}
             />
             <Button
               label="Voir mon cycle"
@@ -814,6 +830,32 @@ const styles = StyleSheet.create({
   },
   cycleGateCard: {
     gap: 12,
+  },
+  gateBenefits: {
+    gap: 8,
+    marginTop: 2,
+    marginBottom: 4,
+  },
+  gateBenefitRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  gateBenefitDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: palette.accent,
+  },
+  gateBenefitText: {
+    fontSize: 13,
+    color: palette.text,
+    fontWeight: "600",
+  },
+  ctaBlue: {
+    backgroundColor: palette.accent,
+    borderColor: palette.accent,
+    shadowColor: palette.accent,
   },
   cycleMiniCard: {
     paddingVertical: 12,

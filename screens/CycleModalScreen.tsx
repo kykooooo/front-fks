@@ -1,8 +1,9 @@
 // screens/CycleModalScreen.tsx
-// Sélection de programme — parcours guidé en 3 étapes
-// Step 1: Choisis ton objectif (pathway)
-// Step 2: Programme recommandé + alternatives
-// Step 3: Confirmation + lancement
+// Choix du cycle — liste directe des cycles
+//  • Liste : tous les cycles visibles (bénéfice, durée, intensité, axes, recommandé)
+//  • Confirmation : récap + tests optionnels + lancement
+//  • Cycle actif : progression + changement de cycle
+//  • Cycle terminé : choix d'un nouveau cycle
 
 import React, { useMemo, useState, useCallback, useRef } from "react";
 import {
@@ -17,14 +18,12 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   Animated,
-  AccessibilityInfo,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 
 import { theme } from "../constants/theme";
 import { auth, db } from "../services/firebase";
@@ -32,10 +31,8 @@ import { useSessionsStore } from "../state/stores/useSessionsStore";
 import {
   MICROCYCLES,
   MICROCYCLE_TOTAL_SESSIONS_DEFAULT,
-  CYCLE_PATHWAYS,
   suggestNextCycle,
   type MicrocycleId,
-  type CyclePathway,
   isMicrocycleId,
 } from "../domain/microcycles";
 import { recommendMicrocycle } from "../domain/recommendMicrocycle";
@@ -43,7 +40,6 @@ import { Badge } from "../components/ui/Badge";
 import { showToast } from "../utils/toast";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
-import { SectionHeader } from "../components/ui/SectionHeader";
 import { trackEvent } from "../services/analytics";
 import { ModalContainer } from "../components/modal/ModalContainer";
 import { useHaptics } from "../hooks/useHaptics";
@@ -59,7 +55,7 @@ const ABANDON_REASONS: Array<{ id: string; label: string }> = [
   { id: "too_hard", label: "Trop difficile" },
   { id: "too_easy", label: "Trop facile" },
   { id: "no_time", label: "Manque de temps" },
-  { id: "injury", label: "Douleur / blessure" },
+  { id: "injury", label: "Gêne physique" },
   { id: "goal_changed", label: "Objectif changé" },
   { id: "other", label: "Autre" },
 ];
@@ -76,30 +72,6 @@ const clampInt = (value: any) => {
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.trunc(n));
-};
-
-/* ═══ Couleurs par pathway (dégradés subtils, pas kitsch) ═══ */
-const PATHWAY_GRADIENTS: Record<string, [string, string]> = {
-  debut: ["#1a2a1a", "#0f170f"],
-  performance: ["#2a1a0f", "#170f0a"],
-  saison_active: ["#0f1a2a", "#0a0f17"],
-  reprise: ["#1a1a2a", "#0f0f17"],
-};
-
-const PATHWAY_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
-  debut: "fitness-outline",
-  performance: "rocket-outline",
-  saison_active: "shield-checkmark-outline",
-  reprise: "refresh-outline",
-};
-
-/* ═══ Couleurs par cycle ═══ */
-const CYCLE_ACCENT: Partial<Record<MicrocycleId, string>> = {
-  fondation: "#22c55e",
-  force: "#f59e0b",
-  endurance: "#3b82f6",
-  explosivite: "#a855f7",
-  saison: "#06b6d4",
 };
 
 /* ═══════════════════════════════════════════ */
@@ -128,12 +100,10 @@ export default function CycleModalScreen() {
   const isCompleted = Boolean(activeCycleId) && completed >= total;
   const hasActiveCycle = Boolean(activeCycleId) && !isCompleted;
 
-  // ─── Wizard state ───
-  const [step, setStep] = useState<1 | 2 | 3>(hasActiveCycle ? 1 : 1);
-  const [selectedPathway, setSelectedPathway] = useState<CyclePathway | null>(null);
+  // ─── Sélection state ───
+  // step 1 = liste des cycles, step 3 = confirmation
+  const [step, setStep] = useState<1 | 3>(1);
   const [selectedId, setSelectedId] = useState<MicrocycleId>(() => activeCycleId ?? "fondation");
-  const [pendingPathway, setPendingPathway] = useState<{ id: string; index: number } | null>(null);
-  const [showAllCycles, setShowAllCycles] = useState(false);
 
   // ─── Abandon state ───
   const [abandonOpen, setAbandonOpen] = useState(false);
@@ -142,8 +112,6 @@ export default function CycleModalScreen() {
   const [abandonOtherText, setAbandonOtherText] = useState("");
 
   // ─── Tests state ───
-  const [suppressTestsPrompt, setSuppressTestsPrompt] = useState(false);
-  const [showTestsPrompt, setShowTestsPrompt] = useState(false);
   const [mainObjective, setMainObjective] = useState<string | null>(null);
   const [lastTestPlaylist, setLastTestPlaylist] = useState<MicrocycleId | null>(null);
   const [lastTestTs, setLastTestTs] = useState<number | null>(null);
@@ -210,16 +178,17 @@ export default function CycleModalScreen() {
     await setDoc(ref, { ...payload, updatedAt: serverTimestamp() }, { merge: true });
   };
 
+  // Ferme le modal et revient à l'écran qui l'a ouvert (NewSession, Profile, Home…).
+  // On NE navigue PAS vers Tabs depuis le modal (sinon Tabs s'affiche dans la présentation
+  // transparentModal → écran prisonnier). Le store (microcycleGoal) mis à jour rafraîchit
+  // l'écran sous-jacent (la carte "choisir un cycle" disparaît).
   const goNextAfterStart = () => {
-    if (params.origin === "profile") {
-      navigation.goBack();
-      return;
-    }
-    navigation.navigate("Tabs", { screen: "NewSession" });
+    navigation.goBack();
   };
 
   const startCycleNow = async () => {
     try {
+      // Choix direct d'un cycle : pas de parcours (pathway) associé.
       const cyclePayload: Record<string, any> = {
         microcycleGoal: selectedId,
         goal: selectedId,
@@ -228,37 +197,24 @@ export default function CycleModalScreen() {
         microcycleTotalSessions: total,
         microcycleSessionIndex: 0,
         microcycleStartedAt: serverTimestamp(),
+        activePathwayId: null,
+        activePathwayIndex: 0,
       };
-      if (pendingPathway) {
-        cyclePayload.activePathwayId = pendingPathway.id;
-        cyclePayload.activePathwayIndex = pendingPathway.index;
-      } else {
-        cyclePayload.activePathwayId = null;
-        cyclePayload.activePathwayIndex = 0;
-      }
       await persistCycle(cyclePayload);
       setMicrocycleGoal(selectedId);
-      if (pendingPathway) {
-        setActivePathway(pendingPathway.id, pendingPathway.index);
-      } else {
-        setActivePathway(null);
-      }
+      setActivePathway(null);
       trackEvent("cycle_selected", {
         cycleId: selectedId,
-        pathway: pendingPathway?.id ?? "none",
+        pathway: "none",
         origin: params.origin ?? "unknown",
       });
       goNextAfterStart();
     } catch {
-      showToast({ type: "error", title: "Erreur", message: "Impossible d'enregistrer ton programme. Réessaie." });
+      showToast({ type: "error", title: "Erreur", message: "Impossible d'enregistrer ton cycle. Réessaie." });
     }
   };
 
   const handleStartCycle = async () => {
-    if (!suppressTestsPrompt && shouldSuggestTests) {
-      setShowTestsPrompt(true);
-      return;
-    }
     await startCycleNow();
   };
 
@@ -279,244 +235,130 @@ export default function CycleModalScreen() {
       setAbandonOpen(false);
       trackEvent("cycle_abandoned", { cycleId: activeCycleId ?? "none", reason, origin: params.origin ?? "unknown" });
     } catch {
-      showToast({ type: "error", title: "Erreur", message: "Impossible d'abandonner le programme. Réessaie." });
+      showToast({ type: "error", title: "Erreur", message: "Impossible de changer de cycle. Réessaie." });
     }
   };
 
   const locationLabels: Record<string, string> = { home: "Maison", pitch: "Terrain", gym: "Salle" };
 
-  // ─── Navigation entre steps ───
-  const goToStep = (s: 1 | 2 | 3) => {
+  // ─── Navigation entre vues ───
+  const goToStep = (s: 1 | 3) => {
     haptics.impactLight();
     animateTransition(() => setStep(s));
-  };
-
-  const selectPathway = (pw: CyclePathway) => {
-    haptics.impactMedium();
-    setSelectedPathway(pw);
-    setSelectedId(pw.sequence[0]);
-    setPendingPathway({ id: pw.id, index: 0 });
-    goToStep(2);
   };
 
   const selectCycleDirect = (id: MicrocycleId) => {
     haptics.impactMedium();
     setSelectedId(id);
-    setPendingPathway(null);
-    setSelectedPathway(null);
     goToStep(3);
   };
 
   /* ═══════════════════════════════════════════ */
-  /*              STEP 1 — OBJECTIF              */
+  /*              LISTE DES CYCLES               */
   /* ═══════════════════════════════════════════ */
-  const renderStep1 = () => (
-    <View style={s.stepContainer}>
-      <View style={s.stepHeader}>
-        <Text style={s.stepKicker}>ÉTAPE 1 SUR 3</Text>
-        <Text style={s.stepTitle}>Quel est ton objectif ?</Text>
-        <Text style={s.stepSubtitle}>
-          Choisis le parcours qui te correspond. On s'occupe du reste.
-        </Text>
-      </View>
+  const renderCycleList = () => {
+    const recId = isMicrocycleId(recommendation.id) ? recommendation.id : null;
+    const cycles = (Object.keys(MICROCYCLES) as MicrocycleId[]).map((id) => MICROCYCLES[id]);
+    return (
+      <View style={s.stepContainer}>
+        <View style={s.stepHeader}>
+          <Text style={s.stepTitle}>Choisir un cycle</Text>
+          <Text style={s.stepSubtitle}>
+            Un cycle guide tes prochaines séances. Tu peux changer plus tard.
+          </Text>
+        </View>
 
-      <View style={s.pathwayGrid}>
-        {CYCLE_PATHWAYS.map((pw) => {
-          const gradientColors = PATHWAY_GRADIENTS[pw.id] ?? ["#1a1a1a", "#0f0f0f"];
-          const icon = PATHWAY_ICONS[pw.id] ?? (pw.icon as any);
+        {recId ? (
+          <View style={s.recoBanner}>
+            <Ionicons name="sparkles-outline" size={16} color={palette.accent} />
+            <Text style={s.recoBannerText}>
+              Recommandé pour ton profil :{" "}
+              <Text style={s.recoBannerStrong}>{MICROCYCLES[recId].label}</Text>
+            </Text>
+          </View>
+        ) : null}
+
+        {cycles.map((cycle) => {
+          const isReco = cycle.id === recId;
           return (
-            <TouchableOpacity
-              key={pw.id}
-              onPress={() => selectPathway(pw)}
-              activeOpacity={0.85}
-              style={s.pathwayCard}
-            >
-              <LinearGradient colors={gradientColors} style={s.pathwayGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-                <View style={s.pathwayIconWrap}>
-                  <Ionicons name={icon} size={28} color={palette.accent} />
+            <View key={cycle.id} style={[s.cycleCard, isReco && s.cycleCardReco]}>
+              <View style={s.cycleCardHead}>
+                <View style={s.cycleCardIcon}>
+                  <Ionicons name={cycle.icon as any} size={22} color={palette.accent} />
                 </View>
-                <Text style={s.pathwayLabel}>{pw.label}</Text>
-                <Text style={s.pathwayDesc}>{pw.forWhom}</Text>
-                <View style={s.pathwayArrow}>
-                  <Ionicons name="arrow-forward" size={18} color={palette.accent} />
+                <View style={{ flex: 1 }}>
+                  <Text style={s.cycleCardTitle}>{cycle.label}</Text>
+                  <Text style={s.cycleCardSub}>{cycle.subtitle}</Text>
                 </View>
-              </LinearGradient>
-            </TouchableOpacity>
+                {isReco ? <Badge label="Recommandé" tone="ok" /> : null}
+              </View>
+
+              <View style={s.tagRow}>
+                <View style={s.tag}>
+                  <Text style={s.tagText}>{total} séances</Text>
+                </View>
+                {cycle.intensity ? (
+                  <View style={s.tag}>
+                    <Text style={s.tagText}>{cycle.intensity}</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={s.axisRow}>
+                {cycle.highlights.slice(0, 3).map((h) => (
+                  <View key={h} style={s.axisChip}>
+                    <Text style={s.axisChipText}>{h}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <TouchableOpacity
+                onPress={() => selectCycleDirect(cycle.id)}
+                activeOpacity={0.85}
+                style={s.cycleChooseBtn}
+              >
+                <Text style={s.cycleChooseBtnText}>Choisir ce cycle</Text>
+                <Ionicons name="arrow-forward" size={16} color="#fff" />
+              </TouchableOpacity>
+            </View>
           );
         })}
       </View>
-
-      <TouchableOpacity
-        onPress={() => {
-          setShowAllCycles(true);
-          goToStep(2);
-          setSelectedPathway(null);
-          setPendingPathway(null);
-        }}
-        style={s.skipLink}
-      >
-        <Text style={s.skipText}>Je veux choisir moi-même</Text>
-        <Ionicons name="chevron-forward" size={16} color={palette.accent} />
-      </TouchableOpacity>
-    </View>
-  );
+    );
+  };
 
   /* ═══════════════════════════════════════════ */
-  /*         STEP 2 — PROGRAMME RECOMMANDÉ       */
+  /*               CONFIRMATION                  */
   /* ═══════════════════════════════════════════ */
-  const renderStep2 = () => {
+  const renderConfirm = () => {
     const cycle = MICROCYCLES[selectedId];
-    const cycleAccent = CYCLE_ACCENT[selectedId] ?? palette.accent;
-    const isFromPathway = selectedPathway != null;
-
-    // Build list of cycles to show
-    const cyclesToShow = isFromPathway && !showAllCycles
-      ? selectedPathway!.sequence.map((id) => MICROCYCLES[id])
-      : (Object.keys(MICROCYCLES) as MicrocycleId[]).map((id) => MICROCYCLES[id]);
+    const cycleAccent = palette.accent;
 
     return (
       <View style={s.stepContainer}>
         {/* Back button */}
         <TouchableOpacity onPress={() => goToStep(1)} style={s.backRow}>
           <Ionicons name="chevron-back" size={20} color={palette.sub} />
-          <Text style={s.backText}>Objectif</Text>
-        </TouchableOpacity>
-
-        <View style={s.stepHeader}>
-          <Text style={s.stepKicker}>ÉTAPE 2 SUR 3</Text>
-          <Text style={s.stepTitle}>
-            {isFromPathway ? "Ton parcours" : "Choisis ton programme"}
-          </Text>
-          {isFromPathway ? (
-            <Text style={s.stepSubtitle}>
-              On te recommande de commencer par{"\u00a0"}
-              <Text style={{ color: palette.accent, fontWeight: "700" }}>{cycle.label}</Text>
-            </Text>
-          ) : null}
-        </View>
-
-        {/* Cycle recommandé — carte hero */}
-        <TouchableOpacity
-          onPress={() => {
-            setSelectedId(cycle.id);
-            goToStep(3);
-          }}
-          activeOpacity={0.9}
-          style={[s.heroCard, { borderColor: cycleAccent + "40" }]}
-        >
-          <LinearGradient
-            colors={[cycleAccent + "18", "transparent"]}
-            style={StyleSheet.absoluteFill}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          />
-          <View style={s.heroTop}>
-            <View style={[s.heroIconWrap, { backgroundColor: cycleAccent + "20", borderColor: cycleAccent + "30" }]}>
-              <Ionicons name={cycle.icon as any} size={26} color={cycleAccent} />
-            </View>
-            {isFromPathway ? <Badge label="Recommandé" tone="ok" /> : null}
-          </View>
-          <Text style={s.heroTitle}>{cycle.label}</Text>
-          <Text style={s.heroSubtitle}>{cycle.subtitle}</Text>
-          {cycle.footballTip ? (
-            <View style={s.heroTipRow}>
-              <Ionicons name="football-outline" size={14} color={palette.accent} />
-              <Text style={s.heroTipText}>{cycle.footballTip}</Text>
-            </View>
-          ) : null}
-          <View style={s.heroHighlights}>
-            {cycle.highlights.map((h) => (
-              <View key={h} style={[s.highlightPill, { backgroundColor: cycleAccent + "15" }]}>
-                <Text style={[s.highlightText, { color: cycleAccent }]}>{h}</Text>
-              </View>
-            ))}
-          </View>
-          <View style={s.heroCta}>
-            <Text style={[s.heroCtaText, { color: cycleAccent }]}>Sélectionner ce programme</Text>
-            <Ionicons name="arrow-forward" size={16} color={cycleAccent} />
-          </View>
-        </TouchableOpacity>
-
-        {/* Autres cycles */}
-        {cyclesToShow.length > 1 ? (
-          <>
-            <Text style={s.altSectionTitle}>
-              {isFromPathway ? "Séquence du parcours" : "Tous les programmes"}
-            </Text>
-            {cyclesToShow.map((item, idx) => {
-              if (item.id === selectedId && isFromPathway) return null;
-              const itemAccent = CYCLE_ACCENT[item.id] ?? palette.sub;
-              const isFirst = isFromPathway && idx === 0;
-              return (
-                <TouchableOpacity
-                  key={`${item.id}_${idx}`}
-                  onPress={() => {
-                    setSelectedId(item.id);
-                    if (isFromPathway) {
-                      setPendingPathway({ id: selectedPathway!.id, index: idx });
-                    } else {
-                      setPendingPathway(null);
-                    }
-                    goToStep(3);
-                  }}
-                  activeOpacity={0.9}
-                  style={s.altCard}
-                >
-                  <View style={[s.altIcon, { backgroundColor: itemAccent + "15" }]}>
-                    <Ionicons name={item.icon as any} size={18} color={itemAccent} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <View style={s.altLabelRow}>
-                      {isFromPathway ? (
-                        <Text style={s.altStepNum}>#{idx + 1}</Text>
-                      ) : null}
-                      <Text style={s.altLabel}>{item.label}</Text>
-                    </View>
-                    <Text style={s.altSub}>{item.subtitle}</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={16} color={palette.sub} />
-                </TouchableOpacity>
-              );
-            })}
-          </>
-        ) : null}
-      </View>
-    );
-  };
-
-  /* ═══════════════════════════════════════════ */
-  /*         STEP 3 — CONFIRMATION               */
-  /* ═══════════════════════════════════════════ */
-  const renderStep3 = () => {
-    const cycle = MICROCYCLES[selectedId];
-    const cycleAccent = CYCLE_ACCENT[selectedId] ?? palette.accent;
-
-    return (
-      <View style={s.stepContainer}>
-        {/* Back button */}
-        <TouchableOpacity onPress={() => goToStep(2)} style={s.backRow}>
-          <Ionicons name="chevron-back" size={20} color={palette.sub} />
           <Text style={s.backText}>Retour</Text>
         </TouchableOpacity>
 
         <View style={s.stepHeader}>
-          <Text style={s.stepKicker}>ÉTAPE 3 SUR 3</Text>
+          <Text style={s.stepKicker}>CONFIRMATION</Text>
           <Text style={s.stepTitle}>Prêt à lancer ?</Text>
         </View>
 
         {/* Résumé du cycle */}
         <View style={[s.confirmCard, { borderColor: cycleAccent + "30" }]}>
-          <LinearGradient
-            colors={[cycleAccent + "10", "transparent"]}
-            style={[StyleSheet.absoluteFill, { borderRadius: 20 }]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          />
           <View style={[s.confirmIconWrap, { backgroundColor: cycleAccent + "20" }]}>
             <Ionicons name={cycle.icon as any} size={32} color={cycleAccent} />
           </View>
           <Text style={s.confirmTitle}>{cycle.label}</Text>
           <Text style={s.confirmSub}>{cycle.description}</Text>
+          {cycle.intensity ? (
+            <View style={s.tag}>
+              <Text style={s.tagText}>{cycle.intensity}</Text>
+            </View>
+          ) : null}
 
           {/* Stats */}
           <View style={s.confirmStats}>
@@ -542,55 +384,37 @@ export default function CycleModalScreen() {
               </View>
             ))}
           </View>
-
-          {selectedPathway ? (
-            <View style={s.confirmPathwayRow}>
-              <Ionicons name="map-outline" size={14} color={palette.accent} />
-              <Text style={s.confirmPathwayText}>
-                Parcours : {selectedPathway.label}
-              </Text>
-            </View>
-          ) : null}
         </View>
 
-        {/* Tests prompt */}
-        {showTestsPrompt ? (
-          <Card variant="surface" style={s.testsCard}>
-            <View style={s.testsHeader}>
-              <Ionicons name="analytics-outline" size={20} color={palette.accent} />
-              <Text style={s.testsTitle}>Tests conseillés</Text>
-            </View>
-            <Text style={s.testsText}>
-              {testsCount === 0
-                ? "Tu n'as pas encore fait les tests terrain. Ils aident FKS à mieux cibler tes séances."
-                : `Tes tests datent de ${testsAgeDays} jours. Les refaire améliore la précision.`}
+        {/* Tests — info compacte, non bloquante */}
+        {shouldSuggestTests ? (
+          <View style={s.testsCompact}>
+            <Ionicons name="analytics-outline" size={16} color={palette.sub} style={{ marginTop: 1 }} />
+            <Text style={s.testsCompactText}>
+              Les tests terrain affinent les séances, mais tu peux commencer sans.
             </Text>
-            <View style={s.testsActions}>
-              <Button label="Faire mes tests" onPress={() => {
-                setShowTestsPrompt(false);
-                navigation.navigate("Tests", { initialPlaylist: selectedId });
-              }} fullWidth />
-              <Button label="Démarrer quand même" variant="secondary" onPress={() => {
-                setShowTestsPrompt(false);
-                setSuppressTestsPrompt(true);
-                startCycleNow();
-              }} fullWidth />
-              <Button label="Annuler" variant="ghost" onPress={() => setShowTestsPrompt(false)} fullWidth />
-            </View>
-          </Card>
+            <TouchableOpacity
+              onPress={() => navigation.navigate("Tests", { initialPlaylist: selectedId })}
+              style={s.testsCompactLink}
+              activeOpacity={0.7}
+            >
+              <Text style={s.testsCompactLinkText}>Faire les tests</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
 
         {/* CTA */}
         <View style={s.confirmActions}>
           <Button
-            label="Lancer le programme"
+            label="Démarrer ce cycle"
             onPress={handleStartCycle}
             fullWidth
+            style={s.ctaBlue}
           />
           <Button
-            label="Changer de programme"
+            label="Changer de cycle"
             variant="ghost"
-            onPress={() => goToStep(2)}
+            onPress={() => goToStep(1)}
             fullWidth
           />
         </View>
@@ -602,7 +426,7 @@ export default function CycleModalScreen() {
   /*        CYCLE ACTIF — MODE GESTION           */
   /* ═══════════════════════════════════════════ */
   const renderActiveCycle = () => {
-    const cycleAccent = CYCLE_ACCENT[activeCycleId!] ?? palette.accent;
+    const cycleAccent = palette.accent;
     const progressPct = (completed / total) * 100;
 
     const timelineRows = Array.from({ length: total }).map((_, idx) => {
@@ -614,19 +438,13 @@ export default function CycleModalScreen() {
     return (
       <View style={s.stepContainer}>
         <View style={s.stepHeader}>
-          <Text style={s.stepKicker}>PROGRAMME ACTIF</Text>
+          <Text style={s.stepKicker}>CYCLE ACTUEL</Text>
           <Text style={s.stepTitle}>{activeCycle?.label}</Text>
           <Text style={s.stepSubtitle}>{activeCycle?.subtitle}</Text>
         </View>
 
         {/* Progress card */}
         <View style={[s.confirmCard, { borderColor: cycleAccent + "30" }]}>
-          <LinearGradient
-            colors={[cycleAccent + "10", "transparent"]}
-            style={[StyleSheet.absoluteFill, { borderRadius: 20 }]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          />
           <View style={[s.confirmIconWrap, { backgroundColor: cycleAccent + "20" }]}>
             <Ionicons name={activeCycle?.icon as any} size={32} color={cycleAccent} />
           </View>
@@ -659,12 +477,13 @@ export default function CycleModalScreen() {
         {/* Actions */}
         <View style={s.confirmActions}>
           <Button
-            label="Continuer ma séance"
-            onPress={() => navigation.navigate("Tabs", { screen: "NewSession" })}
+            label="Continuer mon cycle"
+            onPress={() => navigation.goBack()}
             fullWidth
+            style={s.ctaBlue}
           />
           <Button
-            label="Changer de programme"
+            label="Changer de cycle"
             variant="ghost"
             onPress={() => setAbandonOpen(true)}
             fullWidth
@@ -674,7 +493,7 @@ export default function CycleModalScreen() {
         {/* Abandon */}
         {abandonOpen ? (
           <Card variant="surface" style={s.abandonCard}>
-            <Text style={s.abandonTitle}>Abandonner ce programme</Text>
+            <Text style={s.abandonTitle}>Changer de cycle</Text>
             <Text style={s.abandonSub}>
               Ta progression ({completed}/{total}) sera remise à zéro.
             </Text>
@@ -710,13 +529,13 @@ export default function CycleModalScreen() {
                   <View style={s.confirmBoxActions}>
                     <Button label="Non, annuler" variant="secondary" size="sm" onPress={() => setConfirmAbandon(false)} fullWidth />
                     <TouchableOpacity onPress={() => { setConfirmAbandon(false); handleAbandon(); }} style={s.dangerButton} activeOpacity={0.9}>
-                      <Text style={s.dangerButtonText}>Oui, abandonner</Text>
+                      <Text style={s.dangerButtonText}>Oui, changer</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
               ) : (
                 <TouchableOpacity onPress={() => setConfirmAbandon(true)} style={s.dangerButton} activeOpacity={0.9}>
-                  <Text style={s.dangerButtonText}>Abandonner</Text>
+                  <Text style={s.dangerButtonText}>Changer de cycle</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -727,7 +546,7 @@ export default function CycleModalScreen() {
   };
 
   /* ═══════════════════════════════════════════ */
-  /*        CYCLE TERMINÉ                        */
+  /*               CYCLE TERMINÉ                 */
   /* ═══════════════════════════════════════════ */
   const renderCompleted = () => {
     const nextSuggestions = activeCycleId ? suggestNextCycle(activeCycleId) : null;
@@ -737,9 +556,9 @@ export default function CycleModalScreen() {
           <View style={s.completedBadge}>
             <Ionicons name="trophy" size={32} color={palette.accent} />
           </View>
-          <Text style={s.stepTitle}>Programme terminé !</Text>
+          <Text style={s.stepTitle}>Cycle terminé !</Text>
           <Text style={s.stepSubtitle}>
-            {completed}/{total} séances validées. Choisis ton prochain programme.
+            {completed}/{total} séances validées. Choisis ton prochain cycle.
           </Text>
         </View>
 
@@ -750,11 +569,11 @@ export default function CycleModalScreen() {
           </View>
         ) : null}
 
-        <Button label="Choisir un nouveau programme" onPress={() => {
+        <Button label="Choisir un nouveau cycle" onPress={() => {
           setMicrocycleGoal(null);
           setActivePathway(null);
           goToStep(1);
-        }} fullWidth />
+        }} fullWidth style={s.ctaBlue} />
       </View>
     );
   };
@@ -765,11 +584,7 @@ export default function CycleModalScreen() {
   const renderContent = () => {
     if (isCompleted) return renderCompleted();
     if (hasActiveCycle) return renderActiveCycle();
-    switch (step) {
-      case 1: return renderStep1();
-      case 2: return renderStep2();
-      case 3: return renderStep3();
-    }
+    return step === 3 ? renderConfirm() : renderCycleList();
   };
 
   return (
@@ -779,12 +594,13 @@ export default function CycleModalScreen() {
         onClose={() => navigation.goBack()}
         animationType="slide"
         blurIntensity={40}
+        showHandle={false}
         allowBackdropDismiss
         allowSwipeDismiss
       >
         <SafeAreaView style={s.safeArea} edges={["bottom"]}>
           <View style={[s.modalHeader, { paddingTop: insets.top }]}>
-            <Text style={s.modalHeaderTitle}>Programme</Text>
+            <Text style={s.modalHeaderTitle}>Cycle</Text>
             <TouchableOpacity onPress={() => navigation.goBack()} style={s.closeButton}>
               <Ionicons name="close" size={22} color={palette.text} />
             </TouchableOpacity>
@@ -830,7 +646,7 @@ const s = StyleSheet.create({
   closeButton: { paddingHorizontal: 12, paddingVertical: 8 },
   scrollContent: { padding: 16, paddingBottom: 40 },
 
-  // ─── Steps communs ───
+  // ─── Vues communes ───
   stepContainer: { gap: 16 },
   stepHeader: { gap: 6, marginBottom: 4 },
   stepKicker: {
@@ -846,83 +662,100 @@ const s = StyleSheet.create({
   backRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 4 },
   backText: { fontSize: 14, color: palette.sub, fontWeight: "600" },
 
-  // ─── Step 1 — Pathways ───
-  pathwayGrid: { gap: 12 },
-  pathwayCard: { borderRadius: 20, overflow: "hidden" },
-  pathwayGradient: {
-    padding: 20,
-    borderRadius: 20,
+  // ─── Tags (durée / intensité) ───
+  tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  tag: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 99,
+    backgroundColor: palette.cardSoft,
     borderWidth: 1,
     borderColor: palette.borderSoft,
-    position: "relative",
   },
-  pathwayIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,122,26,0.12)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-  },
-  pathwayLabel: { fontSize: 18, fontWeight: "800", color: palette.text, marginBottom: 4 },
-  pathwayDesc: { fontSize: 13, color: palette.sub, lineHeight: 18 },
-  pathwayArrow: {
-    position: "absolute",
-    top: 20,
-    right: 20,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,122,26,0.12)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  tagText: { fontSize: 12, fontWeight: "600", color: palette.sub },
 
-  skipLink: {
+  // ─── Bannière recommandé ───
+  recoBanner: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
+    gap: 8,
+    paddingHorizontal: 14,
     paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: palette.accentSoft,
   },
-  skipText: { fontSize: 14, fontWeight: "600", color: palette.accent },
+  recoBannerText: { flex: 1, fontSize: 13, color: palette.text, lineHeight: 18 },
+  recoBannerStrong: { fontWeight: "800", color: palette.accent },
 
-  // ─── Step 2 — Hero card ───
-  heroCard: {
-    borderRadius: 20,
+  // ─── Carte cycle (liste directe) ───
+  cycleCard: {
+    borderRadius: 18,
     borderWidth: 1,
-    padding: 20,
-    gap: 10,
-    overflow: "hidden",
+    borderColor: palette.border,
     backgroundColor: palette.card,
+    padding: 16,
+    gap: 12,
+    ...theme.shadow.soft,
   },
-  heroTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  heroIconWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    borderWidth: 1,
+  cycleCardReco: { borderColor: palette.accent },
+  cycleCardHead: { flexDirection: "row", alignItems: "center", gap: 12 },
+  cycleCardIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: palette.accentSoft,
     alignItems: "center",
     justifyContent: "center",
   },
-  heroTitle: { fontSize: 22, fontWeight: "900", color: palette.text },
-  heroSubtitle: { fontSize: 14, color: palette.sub, lineHeight: 20 },
-  heroTipRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
-  heroTipText: { flex: 1, fontSize: 12, color: palette.accent, fontStyle: "italic", lineHeight: 17 },
-  heroHighlights: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-  highlightPill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99 },
-  highlightText: { fontSize: 12, fontWeight: "700" },
-  heroCta: {
+  cycleCardTitle: { fontSize: 17, fontWeight: "800", color: palette.text },
+  cycleCardSub: { fontSize: 13, color: palette.sub, lineHeight: 18, marginTop: 2 },
+
+  axisRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  axisChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: palette.cardSoft,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+  },
+  axisChipText: { fontSize: 12, fontWeight: "600", color: palette.text },
+
+  cycleChooseBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    paddingTop: 6,
+    paddingVertical: 13,
+    borderRadius: theme.radius.pill,
+    backgroundColor: palette.accent,
   },
-  heroCtaText: { fontSize: 14, fontWeight: "700" },
+  cycleChooseBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
 
-  // ─── Step 2 — Alternatives ───
+  // ─── Tests compact (confirmation) ───
+  testsCompact: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: palette.cardSoft,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+  },
+  testsCompactText: { flex: 1, fontSize: 12.5, color: palette.sub, lineHeight: 17 },
+  testsCompactLink: { paddingVertical: 2 },
+  testsCompactLinkText: { fontSize: 13, fontWeight: "700", color: palette.accent },
+
+  // ─── CTA bleu (override DA flow cycle) ───
+  ctaBlue: {
+    backgroundColor: palette.accent,
+    borderColor: palette.accent,
+    shadowColor: palette.accent,
+  },
+
+  // ─── Section "Séances" (cycle actif) ───
   altSectionTitle: {
     fontSize: 13,
     fontWeight: "700",
@@ -931,29 +764,8 @@ const s = StyleSheet.create({
     letterSpacing: 0.8,
     marginTop: 4,
   },
-  altCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 14,
-    borderRadius: 16,
-    backgroundColor: palette.card,
-    borderWidth: 1,
-    borderColor: palette.border,
-  },
-  altIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  altLabelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  altStepNum: { fontSize: 11, fontWeight: "800", color: palette.accent },
-  altLabel: { fontSize: 15, fontWeight: "700", color: palette.text },
-  altSub: { fontSize: 12, color: palette.sub, marginTop: 2 },
 
-  // ─── Step 3 — Confirm ───
+  // ─── Confirmation ───
   confirmCard: {
     borderRadius: 20,
     borderWidth: 1,
@@ -985,11 +797,9 @@ const s = StyleSheet.create({
   confirmHighlights: { gap: 8, width: "100%" },
   confirmHighlightRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   confirmHighlightText: { fontSize: 13, color: palette.text, fontWeight: "600" },
-  confirmPathwayRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  confirmPathwayText: { fontSize: 12, color: palette.accent, fontWeight: "600" },
   confirmActions: { gap: 10 },
 
-  // ─── Active cycle ───
+  // ─── Cycle actif ───
   progressLabel: { fontSize: 16, fontWeight: "700", color: palette.text, textAlign: "center" },
   progressTrack: {
     height: 10,
@@ -1004,7 +814,7 @@ const s = StyleSheet.create({
   timelineDot: { width: 10, height: 10, borderRadius: 999 },
   timelineTitle: { flex: 1, color: palette.text, fontWeight: "700", fontSize: 13 },
 
-  // ─── Completed ───
+  // ─── Cycle terminé ───
   completedBadge: {
     width: 64,
     height: 64,
@@ -1018,7 +828,7 @@ const s = StyleSheet.create({
   nextHint: { flexDirection: "row", alignItems: "flex-start", gap: 8, paddingHorizontal: 4 },
   nextHintText: { flex: 1, fontSize: 13, color: palette.sub, lineHeight: 18 },
 
-  // ─── Abandon ───
+  // ─── Abandon / changement ───
   abandonCard: { padding: 14, gap: 10 },
   abandonTitle: { color: palette.text, fontSize: 16, fontWeight: "900" },
   abandonSub: { color: palette.sub, fontSize: 12, lineHeight: 17 },
@@ -1065,11 +875,4 @@ const s = StyleSheet.create({
   },
   confirmBoxText: { color: palette.danger, fontSize: 13 },
   confirmBoxActions: { flexDirection: "row", gap: 10 },
-
-  // ─── Tests ───
-  testsCard: { padding: 14, gap: 10 },
-  testsHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
-  testsTitle: { fontSize: 15, fontWeight: "700", color: palette.text },
-  testsText: { fontSize: 13, color: palette.sub, lineHeight: 18 },
-  testsActions: { gap: 8 },
 });
