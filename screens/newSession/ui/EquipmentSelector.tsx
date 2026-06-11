@@ -236,7 +236,7 @@ export function EquipmentSelector({
             <View style={[styles.activeBadge, { backgroundColor: "rgba(34, 197, 94, 0.1)" }]}>
               <Ionicons name="checkmark-circle" size={14} color="#22c55e" />
               <Text style={[styles.activeBadgeText, { color: "#22c55e" }]}>
-                Cônes, plots, échelle, mini-haies, bandes
+                Cônes, plots, bandes élastiques
               </Text>
             </View>
           )}
