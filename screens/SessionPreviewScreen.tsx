@@ -314,25 +314,25 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
 
               {/* Reset explain */}
               {isResetPlan && resetExplain ? (
-                <Card variant="surface" style={styles.resetExplainCard}>
+                <Card variant="surface" style={[styles.resetExplainCard, { backgroundColor: cycleTheme.soft }]}>
                   <View style={styles.resetExplainHeader}>
-                    <Ionicons name="alert-circle-outline" size={16} color={palette.accent} />
-                    <Text style={styles.resetExplainTitle}>{resetExplain.title}</Text>
+                    <Ionicons name="alert-circle-outline" size={16} color={cycleTheme.textOnSoft} />
+                    <Text style={[styles.resetExplainTitle, { color: cycleTheme.textOnSoft }]}>{resetExplain.title}</Text>
                   </View>
                   <Text style={styles.resetExplainSubtitle}>{resetExplain.subtitle}</Text>
                   <View style={styles.resetExplainGroup}>
                     {resetExplain.reasons.map((reason, index) => (
                       <View key={`${reason}-${index}`} style={styles.resetBulletRow}>
-                        <Text style={styles.resetBullet}>{'\u2022'}</Text>
+                        <Text style={[styles.resetBullet, { color: cycleTheme.textOnSoft }]}>{'\u2022'}</Text>
                         <Text style={styles.resetBulletText}>{reason}</Text>
                       </View>
                     ))}
                   </View>
-                  <Text style={styles.resetExplainLabel}>Exemples concrets</Text>
+                  <Text style={[styles.resetExplainLabel, { color: cycleTheme.textOnSoft }]}>Exemples concrets</Text>
                   <View style={styles.resetExplainGroup}>
                     {resetExplain.examples.map((example, index) => (
                       <View key={`${example}-${index}`} style={styles.resetBulletRow}>
-                        <Text style={styles.resetBullet}>{'\u2022'}</Text>
+                        <Text style={[styles.resetBullet, { color: cycleTheme.textOnSoft }]}>{'\u2022'}</Text>
                         <Text style={styles.resetBulletText}>{example}</Text>
                       </View>
                     ))}
@@ -400,6 +400,7 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
                 restSec={restSec}
                 timerPresets={timerPresets}
                 isCompleted={isCompleted}
+                cycleStrong={cycleTheme.strong}
                 onToggleSession={() => setSessionRunning((v) => !v)}
                 onResetSession={() => { setSessionRunning(false); timerRef.current?.reset(); }}
                 onStartRest={(s) => { setRestSec(s); setRestRunning(true); }}

@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { AppStackParamList } from "../navigation/RootNavigator";
 import { theme } from "../constants/theme";
@@ -24,6 +25,8 @@ import { withSessionErrorBoundary } from "../components/withErrorBoundary";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { SessionTimer, type SessionTimerHandle } from "../components/session/SessionTimer";
 import { useSettingsStore } from "../state/settingsStore";
+import { useSessionsStore } from "../state/stores/useSessionsStore";
+import { getCycleTheme, type CycleTheme } from "../constants/cycleTheme";
 
 type BlockItem = {
   id?: string | null;
@@ -285,6 +288,8 @@ type BlockCardProps = {
   ) => void;
   onOpenExercise: (exerciseId: string | null) => void;
   getPulse: (key: string) => Animated.Value;
+  /** Thème couleur du cycle — STATIQUE pour la séance (props stables → memo préservé). */
+  cycleTheme: CycleTheme;
 };
 
 const BlockCard = React.memo(function BlockCard({
@@ -297,6 +302,7 @@ const BlockCard = React.memo(function BlockCard({
   onToggleSet,
   onOpenExercise,
   getPulse,
+  cycleTheme,
 }: BlockCardProps) {
   const items = block.items ?? [];
   const blockTitle =
@@ -374,12 +380,15 @@ const BlockCard = React.memo(function BlockCard({
                         <Animated.View
                           style={[
                             styles.checkbox,
-                            checkedItem && styles.checkboxChecked,
+                            checkedItem && {
+                              backgroundColor: cycleTheme.soft,
+                              borderColor: cycleTheme.strong,
+                            },
                             { transform: [{ scale: pulse }] },
                           ]}
                         >
                           {checkedItem ? (
-                            <Text style={styles.checkboxIcon}>✓</Text>
+                            <Text style={[styles.checkboxIcon, { color: cycleTheme.textOnSoft }]}>✓</Text>
                           ) : null}
                         </Animated.View>
                       </TouchableOpacity>
@@ -404,7 +413,10 @@ const BlockCard = React.memo(function BlockCard({
                               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                               style={[
                                 styles.setChip,
-                                done && styles.setChipDone,
+                                done && {
+                                  backgroundColor: cycleTheme.soft,
+                                  borderColor: cycleTheme.strong,
+                                },
                               ]}
                               activeOpacity={0.85}
                               accessibilityRole="checkbox"
@@ -414,7 +426,7 @@ const BlockCard = React.memo(function BlockCard({
                               <Text
                                 style={[
                                   styles.setChipText,
-                                  done && styles.setChipTextDone,
+                                  done && { color: cycleTheme.textOnSoft },
                                 ]}
                               >
                                 {setIndex + 1}
@@ -463,6 +475,11 @@ function SessionLiveScreen() {
   const { v2, plannedDateISO, sessionId } = route.params;
   const soundsEnabled = useSettingsStore((s) => s.soundsEnabled);
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
+  const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  // Thème couleur du cycle : STATIQUE pour toute la séance → calculé une seule fois.
+  // Identité stable (useMemo) → passé en prop à la BlockCard mémoïsée sans casser le memo,
+  // et hors du tick chrono (aucun re-render à la seconde).
+  const cycleTheme = useMemo(() => getCycleTheme(microcycleGoal), [microcycleGoal]);
 
   const { width } = useWindowDimensions();
   const blocks: Block[] = useMemo(
@@ -893,9 +910,10 @@ function SessionLiveScreen() {
         onToggleSet={toggleSet}
         onOpenExercise={goToExercise}
         getPulse={getPulse}
+        cycleTheme={cycleTheme}
       />
     ),
-    [blockWidth, itemSize, scrollX, checkedSets, toggleSet, goToExercise, getPulse]
+    [blockWidth, itemSize, scrollX, checkedSets, toggleSet, goToExercise, getPulse, cycleTheme]
   );
 
   return (
@@ -909,30 +927,37 @@ function SessionLiveScreen() {
             ]}
           >
             <Card variant="surface" style={styles.heroCard}>
-              <View style={styles.heroTop}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.title} numberOfLines={2}>{title}</Text>
-                  {subtitle ? <Text style={styles.subtitle} numberOfLines={3}>{subtitle}</Text> : null}
+              {/* Header thémé par cycle — cohérent avec le header Preview */}
+              <View style={[styles.headerBand, { backgroundColor: cycleTheme.strong }]}>
+                <View style={styles.pill}>
+                  <Ionicons name={cycleTheme.icon as any} size={26} color={cycleTheme.strong} />
                 </View>
-                <Badge label={plannedDateISO} />
+                <View style={styles.headerText}>
+                  <Text style={styles.kicker}>Cycle {cycleTheme.label}</Text>
+                  <Text style={styles.title} numberOfLines={2}>{title}</Text>
+                  {subtitle ? <Text style={styles.subtitle} numberOfLines={2}>{subtitle}</Text> : null}
+                  {plannedDateISO ? <Text style={styles.headerDate}>{plannedDateISO}</Text> : null}
+                </View>
               </View>
 
-              <View style={styles.tagRow}>
-                {v2.intensity ? (
-                  <Badge label={v2.intensity} tone={intensityTone(v2.intensity)} />
-                ) : null}
-                {v2.focusPrimary ? <Badge label={v2.focusPrimary} /> : null}
-                {v2.durationMin ? <Badge label={`${v2.durationMin} min`} /> : null}
-                {v2.rpeTarget ? <Badge label={`RPE ${v2.rpeTarget}`} /> : null}
-                {v2.location ? <Badge label={v2.location} /> : null}
-              </View>
+              <View style={styles.heroBody}>
+                <View style={styles.tagRow}>
+                  {v2.intensity ? (
+                    <Badge label={v2.intensity} tone={intensityTone(v2.intensity)} />
+                  ) : null}
+                  {v2.focusPrimary ? <Badge label={v2.focusPrimary} /> : null}
+                  {v2.durationMin ? <Badge label={`${v2.durationMin} min`} /> : null}
+                  {v2.rpeTarget ? <Badge label={`RPE ${v2.rpeTarget}`} /> : null}
+                  {v2.location ? <Badge label={v2.location} /> : null}
+                </View>
 
-              <View style={styles.progressWrap}>
-                <Text style={styles.progressLabel}>
-                  Progression : {completedItems}/{totalItems || "—"} séries
-                </Text>
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+                <View style={styles.progressWrap}>
+                  <Text style={styles.progressLabel}>
+                    Progression : {completedItems}/{totalItems || "—"} séries
+                  </Text>
+                  <View style={styles.progressTrack}>
+                    <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: cycleTheme.strong }]} />
+                  </View>
                 </View>
               </View>
             </Card>
@@ -962,7 +987,11 @@ function SessionLiveScreen() {
                   onPress={() => setSessionRunning((v) => !v)}
                   size="sm"
                   variant={sessionRunning ? "secondary" : "primary"}
-                  style={styles.timerButton}
+                  style={[
+                    styles.timerButton,
+                    // CTA de séance : couleur du cycle (override de l'orange) à l'état "Démarrer".
+                    !sessionRunning && { backgroundColor: cycleTheme.strong, borderColor: cycleTheme.strong },
+                  ]}
                 />
                 <Button
                   label="Réinit"
@@ -980,17 +1009,17 @@ function SessionLiveScreen() {
                 {[30, 60, 90].map((s) => (
                   <TouchableOpacity
                     key={s}
-                    style={styles.restChip}
+                    style={[styles.restChip, { backgroundColor: cycleTheme.soft }]}
                     onPress={() => startRest(s, "manual")}
                     activeOpacity={0.85}
                     accessibilityRole="button"
                     accessibilityLabel={`Repos ${s} secondes`}
                   >
-                    <Text style={styles.restChipText}>{s}s</Text>
+                    <Text style={[styles.restChipText, { color: cycleTheme.textOnSoft }]}>{s}s</Text>
                   </TouchableOpacity>
                 ))}
                 <TouchableOpacity
-                  style={[styles.restChip, styles.restChipGhost]}
+                  style={[styles.restChip, styles.restChipGhost, { backgroundColor: cycleTheme.soft, borderColor: cycleTheme.strong }]}
                   onPress={() => {
                     setRestRunning(false);
                     setRestSec(0);
@@ -999,7 +1028,7 @@ function SessionLiveScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Arrêter le repos"
                 >
-                  <Text style={styles.restChipGhostText}>Stop</Text>
+                  <Text style={[styles.restChipGhostText, { color: cycleTheme.strong }]}>Stop</Text>
                 </TouchableOpacity>
               </View>
               {timerPresets.length > 0 ? (
@@ -1007,7 +1036,7 @@ function SessionLiveScreen() {
                   {timerPresets.map((preset, idx) => (
                     <TouchableOpacity
                       key={`preset_${idx}`}
-                      style={styles.restChip}
+                      style={[styles.restChip, { backgroundColor: cycleTheme.soft }]}
                       onPress={() => {
                         const rest = Number(preset.restS);
                         if (Number.isFinite(rest) && rest > 0) {
@@ -1015,7 +1044,7 @@ function SessionLiveScreen() {
                         }
                       }}
                     >
-                      <Text style={styles.restChipText}>{formatPresetLabel(preset)}</Text>
+                      <Text style={[styles.restChipText, { color: cycleTheme.textOnSoft }]}>{formatPresetLabel(preset)}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -1071,7 +1100,7 @@ function SessionLiveScreen() {
                     style={[
                       styles.dot,
                       done && styles.dotDone,
-                      isActive && styles.dotActive,
+                      isActive && [styles.dotActive, { backgroundColor: cycleTheme.strong }],
                     ]}
                   />
                 );
@@ -1079,9 +1108,16 @@ function SessionLiveScreen() {
             </View>
 
             {blocks.length > 0 ? (
-              <Card variant="soft" style={styles.coachMiniCard}>
+              // Encadré conseil thémé : fond soft + barre gauche strong (comme en Preview)
+              <Card
+                variant="soft"
+                style={[
+                  styles.coachMiniCard,
+                  { backgroundColor: cycleTheme.soft, borderLeftWidth: 3, borderLeftColor: cycleTheme.strong },
+                ]}
+              >
                 <SectionHeader title={`Focus bloc ${Math.min(activeBlock + 1, blocks.length)}`} />
-                <Text style={styles.coachMiniText}>{coachTip}</Text>
+                <Text style={[styles.coachMiniText, { color: cycleTheme.textOnSoft }]}>{coachTip}</Text>
               </Card>
             ) : null}
 
@@ -1098,7 +1134,14 @@ function SessionLiveScreen() {
               </Card>
             ) : null}
 
-            <Button label={finishLabel} onPress={finishAction} fullWidth size="lg" />
+            {/* CTA de séance : couleur du cycle (override de l'orange, cf. cycleTheme) */}
+            <Button
+              label={finishLabel}
+              onPress={finishAction}
+              fullWidth
+              size="lg"
+              style={{ backgroundColor: cycleTheme.strong, borderColor: cycleTheme.strong }}
+            />
           </Animated.View>
         </ScrollView>
 
@@ -1151,10 +1194,28 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   container: { padding: 16 },
   content: { gap: 16 },
-  heroCard: { padding: 16, gap: 12 },
-  heroTop: { flexDirection: "row", gap: 12, alignItems: "center" },
-  title: { fontSize: 22, fontWeight: "800", color: palette.text },
-  subtitle: { fontSize: 13, color: palette.sub, marginTop: 4 },
+  heroCard: { padding: 0, overflow: "hidden" },
+  headerBand: { flexDirection: "row", alignItems: "center", gap: 14, padding: 16 },
+  pill: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerText: { flex: 1, gap: 2 },
+  kicker: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    color: "rgba(255,255,255,0.78)",
+  },
+  headerDate: { fontSize: 11, color: "rgba(255,255,255,0.65)", marginTop: 2 },
+  heroBody: { padding: 16, gap: 12 },
+  title: { fontSize: 18, fontWeight: "600", color: "#fff" },
+  subtitle: { fontSize: 13, color: "rgba(255,255,255,0.82)", marginTop: 2 },
   tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   progressWrap: { gap: 6 },
   progressLabel: { color: palette.sub, fontSize: 12 },
@@ -1249,12 +1310,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: palette.card,
   },
-  setChipDone: {
-    backgroundColor: palette.accent,
-    borderColor: palette.accent,
-  },
   setChipText: { fontSize: 12, color: palette.sub, fontWeight: "700" },
-  setChipTextDone: { color: palette.bg },
   checkbox: {
     width: 32,
     height: 32,
@@ -1265,11 +1321,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 0,
   },
-  checkboxChecked: {
-    backgroundColor: palette.accent,
-    borderColor: palette.accent,
-  },
-  checkboxIcon: { color: palette.bg, fontSize: 16, fontWeight: "800" },
+  checkboxIcon: { fontSize: 16, fontWeight: "800" },
   itemName: { color: palette.text, fontSize: 14, fontWeight: "600" },
   itemMeta: { color: palette.sub, fontSize: 12, marginTop: 2 },
   itemContext: { color: palette.text, fontSize: 11, marginTop: 2 },

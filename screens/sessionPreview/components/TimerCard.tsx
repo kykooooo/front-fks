@@ -24,6 +24,8 @@ type Props = {
   restSec: number;
   timerPresets: TimerPreset[];
   isCompleted: boolean;
+  /** Couleur "strong" du cycle pour le CTA Démarrer (override de l'orange sur l'écran de séance). */
+  cycleStrong: string;
   onToggleSession: () => void;
   onResetSession: () => void;
   onStartRest: (seconds: number) => void;
@@ -36,6 +38,7 @@ export function TimerCard({
   restSec,
   timerPresets,
   isCompleted,
+  cycleStrong,
   onToggleSession,
   onResetSession,
   onStartRest,
@@ -61,7 +64,10 @@ export function TimerCard({
           onPress={onToggleSession}
           size="sm"
           variant={sessionRunning ? "secondary" : "primary"}
-          style={styles.timerButton}
+          style={[
+            styles.timerButton,
+            !sessionRunning && { backgroundColor: cycleStrong, borderColor: cycleStrong },
+          ]}
           disabled={isCompleted}
         />
         <Button

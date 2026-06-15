@@ -172,6 +172,13 @@ function SessionSummaryScreen() {
     outputRange: [18, 0],
   });
 
+  // Chip thémé par cycle pour les badges non-sémantiques (l'intensité garde son ton).
+  const cycleChip = (label: string, key: string) => (
+    <View key={key} style={[styles.cycleChip, { backgroundColor: ct.soft }]}>
+      <Text style={[styles.cycleChipText, { color: ct.textOnSoft }]}>{label}</Text>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
@@ -197,12 +204,12 @@ function SessionSummaryScreen() {
                 <Text style={styles.heroSubtitle}>{summary.subtitle}</Text>
               ) : null}
               <View style={styles.heroBadges}>
-                {summary.plannedDateISO ? <Badge label={summary.plannedDateISO} /> : null}
+                {summary.plannedDateISO ? cycleChip(summary.plannedDateISO, "hero-date") : null}
                 {summary.intensity ? (
                   <Badge label={summary.intensity} tone={intensityTone(summary.intensity)} />
                 ) : null}
-                {summary.focus ? <Badge label={summary.focus} /> : null}
-                {summary.location ? <Badge label={summary.location} /> : null}
+                {summary.focus ? cycleChip(summary.focus, "hero-focus") : null}
+                {summary.location ? cycleChip(summary.location, "hero-loc") : null}
               </View>
               <View style={styles.heroProgress}>
                 <Text style={styles.progressLabel}>
@@ -257,9 +264,9 @@ function SessionSummaryScreen() {
               {summary.intensity ? (
                 <Badge label={summary.intensity} tone={intensityTone(summary.intensity)} />
               ) : null}
-              {summary.focus ? <Badge label={summary.focus} /> : null}
-              {durationMin ? <Badge label={`${durationMin} min`} /> : null}
-              {rpe ? <Badge label={`RPE ${rpe}`} /> : null}
+              {summary.focus ? cycleChip(summary.focus, "badge-focus") : null}
+              {durationMin ? cycleChip(`${durationMin} min`, "badge-dur") : null}
+              {rpe ? cycleChip(`RPE ${rpe}`, "badge-rpe") : null}
             </View>
           </Card>
 
@@ -368,6 +375,12 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 8,
   },
+  cycleChip: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: theme.radius.pill,
+  },
+  cycleChipText: { fontWeight: "600", fontSize: 11 },
   heroProgress: {
     gap: 6,
   },
