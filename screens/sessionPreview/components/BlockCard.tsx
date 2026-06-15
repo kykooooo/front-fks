@@ -120,6 +120,9 @@ export function BlockCard({
                         activeOpacity={0.85}
                         style={styles.itemMain}
                         disabled={isCompleted}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: checkedItem }}
                       >
                         <Animated.View
                           style={[

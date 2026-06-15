@@ -3,7 +3,7 @@
 
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { CommonActions, useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 import type { AppStackParamList } from '../navigation/RootNavigator';
 import { theme } from '../constants/theme';
@@ -21,7 +21,14 @@ export function SessionErrorFallback({ error, onRetry }: Props) {
   const navigation = useNavigation<NavigationProp<AppStackParamList>>();
 
   const handleGoHome = () => {
-    navigation.navigate('Tabs', { screen: 'Home' });
+    // reset (et pas navigate) : si le crash survient dans un transparentModal,
+    // un simple navigate laisserait l'écran prisonnier sous la modale.
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: 'Tabs', params: { screen: 'Home' } }],
+      })
+    );
   };
 
   return (

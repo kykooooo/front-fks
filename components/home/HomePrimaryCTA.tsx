@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../constants/theme";
+import { useHaptics } from "../../hooks/useHaptics";
 
 const palette = theme.colors;
 
@@ -22,7 +23,18 @@ function HomePrimaryCTAInner({
 }: Props) {
   if (__DEV__) console.log("[RENDER] HomePrimaryCTA");
   const isDisabled = disabled || tone === "disabled";
+  const haptics = useHaptics();
   const pulse = useRef(new Animated.Value(0)).current;
+  const press = useRef(new Animated.Value(0)).current;
+
+  const onPressIn = () => {
+    haptics.impactLight();
+    Animated.timing(press, { toValue: 1, duration: 150, useNativeDriver: true }).start();
+  };
+  const onPressOut = () => {
+    Animated.timing(press, { toValue: 0, duration: 100, useNativeDriver: true }).start();
+  };
+  const pressScale = press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.96] });
 
   useEffect(() => {
     if (isDisabled) return;
@@ -51,9 +63,11 @@ function HomePrimaryCTAInner({
     tone === "disabled" ? palette.sub : tone === "warn" ? palette.warn : "rgba(255,255,255,0.9)";
 
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
+    <Animated.View style={{ transform: [{ scale }, { scale: pressScale }] }}>
       <TouchableOpacity
         onPress={onPress}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
         disabled={isDisabled}
         activeOpacity={0.9}
         style={[styles.wrap, { backgroundColor: bg, borderColor: border, opacity: isDisabled ? 0.7 : 1 }]}

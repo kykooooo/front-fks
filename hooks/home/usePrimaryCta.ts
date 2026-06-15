@@ -4,6 +4,7 @@ import { showToast } from "../../utils/toast";
 import { MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../../domain/microcycles";
 import { DEV_FLAGS } from "../../config/devFlags";
 import { toDateKey } from "../../utils/dateHelpers";
+import { useNavGuard } from "../useNavGuard";
 import type { Session } from "../../domain/types";
 
 type Nav = {
@@ -31,6 +32,8 @@ export function usePrimaryCta({
   tsb,
   devNowISO,
 }: Params) {
+  const guardNav = useNavGuard();
+
   const pendingSession = useMemo(
     () => {
       const toSessionTime = (session: Session) => {
@@ -93,27 +96,29 @@ export function usePrimaryCta({
     const plannedDateISO = toDateKey(
       pendingSession.dateISO ?? pendingSession.date
     );
-    if (v2) {
-      nav.navigate("SessionLive", {
-        v2,
+    guardNav(() => {
+      if (v2) {
+        nav.navigate("SessionLive", {
+          v2,
+          plannedDateISO,
+          sessionId: pendingSession.id,
+        });
+        return;
+      }
+      nav.navigate("SessionPreview", {
+        v2: lastAiSessionV2?.v2,
         plannedDateISO,
         sessionId: pendingSession.id,
       });
-      return;
-    }
-    nav.navigate("SessionPreview", {
-      v2: lastAiSessionV2?.v2,
-      plannedDateISO,
-      sessionId: pendingSession.id,
     });
-  }, [nav, pendingSession, lastAiSessionV2]);
+  }, [nav, pendingSession, lastAiSessionV2, guardNav]);
 
   const onPressNew = useCallback(() => {
     const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
     const microIdx = Math.max(0, Math.trunc(microcycleSessionIndex ?? 0));
     const cycleCompleted = Boolean(cycleId) && microIdx >= MICROCYCLE_TOTAL_SESSIONS_DEFAULT;
     if (!cycleId || cycleCompleted) {
-      nav.navigate("CycleModal", { mode: "select", origin: "home" });
+      guardNav(() => nav.navigate("CycleModal", { mode: "select", origin: "home" }));
       return;
     }
 
@@ -128,9 +133,8 @@ export function usePrimaryCta({
           {
             text: "C'est parti",
             onPress: () =>
-              nav.navigate(
-                "Feedback",
-                { sessionId: pendingSession.id }
+              guardNav(() =>
+                nav.navigate("Feedback", { sessionId: pendingSession.id })
               ),
           },
           {
@@ -143,11 +147,13 @@ export function usePrimaryCta({
               const plannedDateISO =
                 toDateKey(pendingSession.dateISO ?? pendingSession.date);
               if (v2) {
-                nav.navigate("SessionPreview", {
-                  v2,
-                  plannedDateISO,
-                  sessionId: pendingSession.id,
-                });
+                guardNav(() =>
+                  nav.navigate("SessionPreview", {
+                    v2,
+                    plannedDateISO,
+                    sessionId: pendingSession.id,
+                  })
+                );
               }
             },
           },
@@ -165,7 +171,7 @@ export function usePrimaryCta({
         return;
       }
     }
-    nav.navigate("NewSession");
+    guardNav(() => nav.navigate("NewSession"));
   }, [
     nav,
     microcycleGoal,
@@ -173,11 +179,12 @@ export function usePrimaryCta({
     pendingSession,
     lastAiSessionV2,
     hasAppliedToday,
+    guardNav,
   ]);
 
   const goToRecovery = useCallback(() => {
-    nav.navigate("PrebuiltSessions");
-  }, [nav]);
+    guardNav(() => nav.navigate("PrebuiltSessions"));
+  }, [nav, guardNav]);
 
   const primaryCta = useMemo(() => {
     if (tsb <= -15) {

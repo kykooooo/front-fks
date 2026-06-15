@@ -21,6 +21,7 @@ import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { MICROCYCLES, isMicrocycleId, MICROCYCLE_TOTAL_SESSIONS_DEFAULT } from "../domain/microcycles";
 import { useHaptics } from "../hooks/useHaptics";
+import { useNavGuard } from "../hooks/useNavGuard";
 
 const palette = theme.colors;
 const TESTS_STORAGE_KEY = "fks_tests_v1";
@@ -182,6 +183,7 @@ function HubCard({
 
 export default function SessionHubScreen() {
   const nav = useNavigation<any>();
+  const guardNav = useNavGuard();
   const pending = useSessionsStore((s) => s.sessions.find((x) => !x.completed));
   const pendingId = typeof pending?.id === "string" ? pending.id : null;
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
@@ -314,7 +316,7 @@ export default function SessionHubScreen() {
               key={option.id}
               option={option}
               index={index}
-              onPress={() => nav.navigate(option.route)}
+              onPress={() => guardNav(() => nav.navigate(option.route))}
             />
           ))}
         </View>

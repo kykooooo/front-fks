@@ -14,6 +14,7 @@ import { useLoadStore } from "../state/stores/useLoadStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { updateTrainingLoad } from "../engine/loadModel";
 import { useSettingsStore } from "../state/settingsStore";
+import { withSessionErrorBoundary } from "../components/withErrorBoundary";
 import { ImageBanner } from "../components/ui/ImageBanner";
 import { BANNER_IMAGES, BANNER_FALLBACK } from "../constants/bannerImages";
 
@@ -33,7 +34,7 @@ const intensityTone = (intensity?: string) => {
   return "default";
 };
 
-export default function SessionSummaryScreen() {
+function SessionSummaryScreen() {
   const nav = useNavigation<any>();
   const route = useRoute<SummaryRoute>();
   const { summary, sessionId } = route.params;
@@ -449,3 +450,5 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
   },
 });
+
+export default withSessionErrorBoundary(SessionSummaryScreen);

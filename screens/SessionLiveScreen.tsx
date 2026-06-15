@@ -22,6 +22,7 @@ import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
 import { withSessionErrorBoundary } from "../components/withErrorBoundary";
 import { SectionHeader } from "../components/ui/SectionHeader";
+import { SessionTimer, type SessionTimerHandle } from "../components/session/SessionTimer";
 import { useSettingsStore } from "../state/settingsStore";
 
 type BlockItem = {
@@ -158,6 +159,304 @@ const getCoachTip = (block: Block | undefined, index: number) => {
   return `Bloc ${index + 1} : qualité d'exécution avant volume.`;
 };
 
+const MAX_SESSION_SEC = 4 * 60 * 60; // 4 heures (timeout de sécurité)
+
+const getItemKey = (blockIndex: number, itemIndex: number) =>
+  `${blockIndex}-${itemIndex}`;
+
+const getSetCount = (item: BlockItem) => {
+  const raw = typeof item?.sets === "number" ? item.sets : 1;
+  const normalized = Number.isFinite(raw) ? Math.round(raw) : 1;
+  return Math.max(1, normalized);
+};
+
+const getSetState = (
+  state: Record<string, boolean[]>,
+  key: string,
+  total: number
+) => {
+  const current = state[key] ?? [];
+  if (current.length === total) return current;
+  return Array.from({ length: total }, (_, idx) => !!current[idx]);
+};
+
+const getItemProgress = (
+  state: Record<string, boolean[]>,
+  blockIndex: number,
+  itemIndex: number,
+  item: BlockItem
+) => {
+  const total = getSetCount(item);
+  const key = getItemKey(blockIndex, itemIndex);
+  const sets = getSetState(state, key, total);
+  const done = sets.filter(Boolean).length;
+  return { total, done, sets, complete: done >= total };
+};
+
+const isItemComplete = (
+  state: Record<string, boolean[]>,
+  blockIndex: number,
+  itemIndex: number,
+  item: BlockItem
+) => getItemProgress(state, blockIndex, itemIndex, item).complete;
+
+const parseRestFromText = (text?: string | null) => {
+  if (!text) return null;
+  const cleaned = text.toLowerCase().replace(",", ".");
+  const split = cleaned.split("/");
+  const candidate = split.length >= 2 ? split[1] : cleaned;
+  const match = candidate.match(/(\d+)/);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const getAutoRestSeconds = (item: BlockItem) => {
+  if (Array.isArray(item?.workRestSec) && item.workRestSec.length >= 2) {
+    const rest = Number(item.workRestSec[1]);
+    return Number.isFinite(rest) ? rest : null;
+  }
+  if (typeof item?.restS === "number" && Number.isFinite(item.restS)) {
+    return item.restS;
+  }
+  return parseRestFromText(item?.workRest);
+};
+
+const formatItemMeta = (item: BlockItem) => {
+  const parts: string[] = [];
+  if (item?.sets != null && item.sets > 0) parts.push(`${item.sets}x`);
+  if (item?.reps != null && item.reps > 0) parts.push(`${item.reps} reps`);
+  if (Array.isArray(item?.workRestSec) && item.workRestSec.length >= 2) {
+    const [w, r] = item.workRestSec;
+    parts.push(`${w ?? "?"}s/${r ?? "?"}s`);
+  } else if (item?.workS || item?.restS) {
+    if (item.workS) parts.push(`${item.workS}s`);
+    if (item.restS) parts.push(`/${item.restS}s`);
+  } else if (item?.workRest && item.workRest.trim().length > 0) {
+    parts.push(item.workRest.trim());
+  }
+  if (item?.durationPerSetSec) parts.push(`${item.durationPerSetSec}s / série`);
+  if (item?.durationMin) parts.push(`${item.durationMin} min`);
+  return parts.join(" · ");
+};
+
+const getDisplayName = (item: BlockItem) => {
+  const displayNameRaw = (item?.name || "").trim();
+  const fallbackId =
+    typeof item?.exerciseId === "string" && item.exerciseId.trim()
+      ? item.exerciseId.trim()
+      : typeof item?.id === "string" && item.id.trim()
+        ? item.id.trim()
+        : undefined;
+  return displayNameRaw.length > 0
+    ? prettifyName(displayNameRaw)
+    : fallbackId
+      ? prettifyName(fallbackId)
+      : item?.modality
+        ? prettifyName(String(item.modality))
+        : "Exercice";
+};
+
+const getExerciseId = (item: BlockItem) => {
+  if (typeof item?.exerciseId === "string" && item.exerciseId.trim()) {
+    return item.exerciseId.trim();
+  }
+  if (typeof item?.id === "string" && item.id.trim()) {
+    return item.id.trim();
+  }
+  return null;
+};
+
+// Carte de bloc mémoïsée : ne se redessine que si SES props changent.
+// Couplé au chrono isolé, ça évite que le tick (1/s) redessine toutes les cartes.
+type BlockCardProps = {
+  block: Block;
+  blockIndex: number;
+  blockWidth: number;
+  itemSize: number;
+  scrollX: Animated.Value;
+  checkedSets: Record<string, boolean[]>;
+  onToggleSet: (
+    blockIndex: number,
+    itemIndex: number,
+    setIndex: number,
+    item: BlockItem,
+    items: BlockItem[]
+  ) => void;
+  onOpenExercise: (exerciseId: string | null) => void;
+  getPulse: (key: string) => Animated.Value;
+};
+
+const BlockCard = React.memo(function BlockCard({
+  block,
+  blockIndex,
+  blockWidth,
+  itemSize,
+  scrollX,
+  checkedSets,
+  onToggleSet,
+  onOpenExercise,
+  getPulse,
+}: BlockCardProps) {
+  const items = block.items ?? [];
+  const blockTitle =
+    block.goal || block.name || block.type || block.focus || `Bloc ${blockIndex + 1}`;
+  const isComplete =
+    items.length > 0 &&
+    items.every((item, idx) => isItemComplete(checkedSets, blockIndex, idx, item));
+  const inputRange = [
+    (blockIndex - 1) * itemSize,
+    blockIndex * itemSize,
+    (blockIndex + 1) * itemSize,
+  ];
+  const scale = scrollX.interpolate({
+    inputRange,
+    outputRange: [0.94, 1, 0.94],
+    extrapolate: "clamp",
+  });
+  const opacity = scrollX.interpolate({
+    inputRange,
+    outputRange: [0.6, 1, 0.6],
+    extrapolate: "clamp",
+  });
+  return (
+    <Animated.View
+      style={[
+        styles.blockCardWrap,
+        { width: blockWidth, opacity, transform: [{ scale }] },
+      ]}
+    >
+      <Card variant="surface" style={styles.blockCard}>
+        <View style={styles.blockHeader}>
+          <View>
+            <Text style={styles.blockTitle} numberOfLines={2}>{blockTitle}</Text>
+            <Text style={styles.blockMeta}>
+              {block.intensity ?? "—"} · {block.durationMin ?? "?"} min
+            </Text>
+          </View>
+          {isComplete ? <Badge label="OK" tone="ok" /> : null}
+        </View>
+
+        {items.length === 0 ? (
+          <Text style={styles.blockEmpty}>Bloc sans items détaillés.</Text>
+        ) : (
+          <View style={{ gap: 10 }}>
+            {items.map((item, itemIndex) => {
+              const key = getItemKey(blockIndex, itemIndex);
+              const itemProgress = getItemProgress(
+                checkedSets,
+                blockIndex,
+                itemIndex,
+                item
+              );
+              const checkedItem = itemProgress.complete;
+              const itemName = getDisplayName(item);
+              const meta = formatItemMeta(item);
+              const exerciseId = getExerciseId(item);
+              const pulse = getPulse(key);
+              const setCount = itemProgress.total;
+              const doneSets = itemProgress.done;
+              const setState = itemProgress.sets;
+              return (
+                <View key={key} style={styles.itemRow}>
+                  <View style={styles.itemMain}>
+                    {setCount <= 1 ? (
+                      <TouchableOpacity
+                        onPress={() =>
+                          onToggleSet(blockIndex, itemIndex, 0, item, items)
+                        }
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        activeOpacity={0.85}
+                        accessibilityRole="checkbox"
+                        accessibilityLabel={`${itemName}, ${checkedItem ? 'terminé' : 'à faire'}`}
+                        accessibilityState={{ checked: !!checkedItem }}
+                      >
+                        <Animated.View
+                          style={[
+                            styles.checkbox,
+                            checkedItem && styles.checkboxChecked,
+                            { transform: [{ scale: pulse }] },
+                          ]}
+                        >
+                          {checkedItem ? (
+                            <Text style={styles.checkboxIcon}>✓</Text>
+                          ) : null}
+                        </Animated.View>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={styles.setsWrap}>
+                        <Text style={styles.setsLabel}>
+                          {doneSets}/{setCount} séries
+                        </Text>
+                        <View style={styles.setsRow}>
+                          {setState.map((done, setIndex) => (
+                            <TouchableOpacity
+                              key={`${key}-set-${setIndex}`}
+                              onPress={() =>
+                                onToggleSet(
+                                  blockIndex,
+                                  itemIndex,
+                                  setIndex,
+                                  item,
+                                  items
+                                )
+                              }
+                              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                              style={[
+                                styles.setChip,
+                                done && styles.setChipDone,
+                              ]}
+                              activeOpacity={0.85}
+                              accessibilityRole="checkbox"
+                              accessibilityLabel={`Série ${setIndex + 1} sur ${setCount}, ${done ? 'terminée' : 'à faire'}`}
+                              accessibilityState={{ checked: !!done }}
+                            >
+                              <Text
+                                style={[
+                                  styles.setChipText,
+                                  done && styles.setChipTextDone,
+                                ]}
+                              >
+                                {setIndex + 1}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemName} numberOfLines={2}>{itemName}</Text>
+                      {item.description ? (
+                        <Text style={styles.itemNote}>{item.description}</Text>
+                      ) : null}
+                      {meta ? <Text style={styles.itemMeta}>{meta}</Text> : null}
+                      {item.footballContext ? (
+                        <Text style={styles.itemContext}>{item.footballContext}</Text>
+                      ) : null}
+                      {cleanDisplayNote(item.notes) ? (
+                        <Text style={styles.itemNote}>{cleanDisplayNote(item.notes)}</Text>
+                      ) : null}
+                    </View>
+                  </View>
+                  {exerciseId ? (
+                    <TouchableOpacity
+                      onPress={() => onOpenExercise(exerciseId)}
+                      activeOpacity={0.85}
+                      style={styles.itemLink}
+                    >
+                      <Text style={styles.itemLinkText}>Fiche</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </Card>
+    </Animated.View>
+  );
+});
+
 function SessionLiveScreen() {
   const nav = useNavigation<any>();
   const route = useRoute<LiveRoute>();
@@ -166,7 +465,10 @@ function SessionLiveScreen() {
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
 
   const { width } = useWindowDimensions();
-  const blocks: Block[] = Array.isArray(v2.blocks) ? v2.blocks : [];
+  const blocks: Block[] = useMemo(
+    () => (Array.isArray(v2.blocks) ? v2.blocks : []),
+    [v2.blocks]
+  );
   const title = v2.title || "Séance FKS";
   const subtitle = v2.subtitle;
 
@@ -174,8 +476,8 @@ function SessionLiveScreen() {
   const [activeBlock, setActiveBlock] = useState(0);
 
   const [sessionRunning, setSessionRunning] = useState(false);
-  const [sessionSec, setSessionSec] = useState(0);
-  const sessionRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<SessionTimerHandle>(null);
+  const handleReachMax = useCallback(() => setSessionRunning(false), []);
 
   const [restRunning, setRestRunning] = useState(false);
   const [restSec, setRestSec] = useState(0);
@@ -235,14 +537,14 @@ function SessionLiveScreen() {
       sessionId,
       checkedSets,
       activeBlock,
-      sessionSec,
+      sessionSec: timerRef.current?.getSeconds() ?? 0,
       sessionRunning,
       savedAt: Date.now(),
     };
     AsyncStorage.setItem(LIVE_SESSION_KEY, JSON.stringify(data)).catch((err) => {
       if (__DEV__) console.error("[SessionLive] Failed to persist live session state:", err);
     });
-  }, [sessionId, checkedSets, activeBlock, sessionSec, sessionRunning]);
+  }, [sessionId, checkedSets, activeBlock, sessionRunning]);
 
   // Save on every significant change (set toggled, block changed)
   const lastPersistRef = useRef<string>("");
@@ -303,7 +605,7 @@ function SessionLiveScreen() {
               onPress: () => {
                 setCheckedSets(saved.checkedSets);
                 setActiveBlock(saved.activeBlock);
-                setSessionSec(saved.sessionSec);
+                timerRef.current?.setSeconds(saved.sessionSec);
                 if (saved.sessionRunning) setSessionRunning(true);
               },
             },
@@ -378,43 +680,21 @@ function SessionLiveScreen() {
     }
   }, [soundsEnabled, hapticsEnabled]);
 
-  const getPulse = (key: string) => {
+  const getPulse = useCallback((key: string) => {
     if (!pulseMap.current[key]) {
       pulseMap.current[key] = new Animated.Value(1);
     }
     return pulseMap.current[key];
-  };
+  }, []);
 
-  const triggerPulse = (key: string) => {
+  const triggerPulse = useCallback((key: string) => {
     const pulse = getPulse(key);
     pulse.setValue(0.86);
     Animated.sequence([
       Animated.spring(pulse, { toValue: 1.08, useNativeDriver: true }),
       Animated.spring(pulse, { toValue: 1, friction: 6, useNativeDriver: true }),
     ]).start();
-  };
-
-  // Chrono principal avec timeout de sécurité (4h max)
-  const MAX_SESSION_SEC = 4 * 60 * 60; // 4 heures
-  useEffect(() => {
-    if (sessionRunning) {
-      sessionRef.current = setInterval(() => {
-        setSessionSec((prev) => {
-          if (prev + 1 >= MAX_SESSION_SEC) {
-            setSessionRunning(false);
-            return prev;
-          }
-          return prev + 1;
-        });
-      }, 1000);
-    }
-    return () => {
-      if (sessionRef.current) {
-        clearInterval(sessionRef.current);
-        sessionRef.current = null;
-      }
-    };
-  }, [sessionRunning]);
+  }, [getPulse]);
 
   useEffect(() => {
     if (restRunning) {
@@ -461,39 +741,6 @@ function SessionLiveScreen() {
     }).start();
   }, [enter]);
 
-  const getItemKey = (blockIndex: number, itemIndex: number) =>
-    `${blockIndex}-${itemIndex}`;
-
-  const getSetCount = (item: BlockItem) => {
-    const raw = typeof item?.sets === "number" ? item.sets : 1;
-    const normalized = Number.isFinite(raw) ? Math.round(raw) : 1;
-    return Math.max(1, normalized);
-  };
-
-  const getSetState = (
-    state: Record<string, boolean[]>,
-    key: string,
-    total: number
-  ) => {
-    const current = state[key] ?? [];
-    if (current.length === total) return current;
-    const next = Array.from({ length: total }, (_, idx) => !!current[idx]);
-    return next;
-  };
-
-  const getItemProgress = (
-    state: Record<string, boolean[]>,
-    blockIndex: number,
-    itemIndex: number,
-    item: BlockItem
-  ) => {
-    const total = getSetCount(item);
-    const key = getItemKey(blockIndex, itemIndex);
-    const sets = getSetState(state, key, total);
-    const done = sets.filter(Boolean).length;
-    return { total, done, sets, complete: done >= total };
-  };
-
   const totalItems = useMemo(() => {
     return blocks.reduce((acc, block) => {
       return (
@@ -515,78 +762,54 @@ function SessionLiveScreen() {
 
   const progress = totalItems > 0 ? completedItems / totalItems : 0;
 
-  const parseRestFromText = (text?: string | null) => {
-    if (!text) return null;
-    const cleaned = text.toLowerCase().replace(",", ".");
-    const split = cleaned.split("/");
-    const candidate = split.length >= 2 ? split[1] : cleaned;
-    const match = candidate.match(/(\d+)/);
-    if (!match) return null;
-    const parsed = Number(match[1]);
-    return Number.isFinite(parsed) ? parsed : null;
-  };
+  const startRest = useCallback(
+    (seconds: number, source: "auto" | "manual" = "manual") => {
+      if (!Number.isFinite(seconds) || seconds <= 0) return;
+      setRestSource(source);
+      setRestSec(Math.max(1, Math.round(seconds)));
+      setRestRunning(true);
+    },
+    []
+  );
 
-  const getAutoRestSeconds = (item: BlockItem) => {
-    if (Array.isArray(item?.workRestSec) && item.workRestSec.length >= 2) {
-      const rest = Number(item.workRestSec[1]);
-      return Number.isFinite(rest) ? rest : null;
-    }
-    if (typeof item?.restS === "number" && Number.isFinite(item.restS)) {
-      return item.restS;
-    }
-    const parsed = parseRestFromText(item?.workRest);
-    return parsed;
-  };
-
-  const startRest = (seconds: number, source: "auto" | "manual" = "manual") => {
-    if (!Number.isFinite(seconds) || seconds <= 0) return;
-    setRestSource(source);
-    setRestSec(Math.max(1, Math.round(seconds)));
-    setRestRunning(true);
-  };
-
-  const isItemComplete = (
-    state: Record<string, boolean[]>,
-    blockIndex: number,
-    itemIndex: number,
-    item: BlockItem
-  ) => getItemProgress(state, blockIndex, itemIndex, item).complete;
-
-  const toggleSet = (
-    blockIndex: number,
-    itemIndex: number,
-    setIndex: number,
-    item: BlockItem,
-    items: BlockItem[]
-  ) => {
-    const key = getItemKey(blockIndex, itemIndex);
-    const total = getSetCount(item);
-    setCheckedSets((prev) => {
-      const current = getSetState(prev, key, total);
-      const nextValue = !current[setIndex];
-      const nextSets = [...current];
-      nextSets[setIndex] = nextValue;
-      const next = { ...prev, [key]: nextSets };
-      if (nextValue) {
-        triggerPulse(key);
-        if (hapticsEnabled && Platform.OS !== "web") Vibration.vibrate(14);
-        if (!sessionRunning) setSessionRunning(true);
-        const restAuto = getAutoRestSeconds(item);
-        if (restAuto) startRest(restAuto, "auto");
-        const isComplete =
-          items.length > 0 &&
-          items.every((it, idx) => isItemComplete(next, blockIndex, idx, it));
-        if (isComplete && blockIndex < blocks.length - 1) {
-          const nextIndex = blockIndex + 1;
-          requestAnimationFrame(() => {
-            listRef.current?.scrollToIndex?.({ index: nextIndex, animated: true });
-          });
-          if (hapticsEnabled && Platform.OS !== "web") Vibration.vibrate(35);
+  const toggleSet = useCallback(
+    (
+      blockIndex: number,
+      itemIndex: number,
+      setIndex: number,
+      item: BlockItem,
+      items: BlockItem[]
+    ) => {
+      const key = getItemKey(blockIndex, itemIndex);
+      const total = getSetCount(item);
+      setCheckedSets((prev) => {
+        const current = getSetState(prev, key, total);
+        const nextValue = !current[setIndex];
+        const nextSets = [...current];
+        nextSets[setIndex] = nextValue;
+        const next = { ...prev, [key]: nextSets };
+        if (nextValue) {
+          triggerPulse(key);
+          if (hapticsEnabled && Platform.OS !== "web") Vibration.vibrate(14);
+          setSessionRunning(true);
+          const restAuto = getAutoRestSeconds(item);
+          if (restAuto) startRest(restAuto, "auto");
+          const isComplete =
+            items.length > 0 &&
+            items.every((it, idx) => isItemComplete(next, blockIndex, idx, it));
+          if (isComplete && blockIndex < blocks.length - 1) {
+            const nextIndex = blockIndex + 1;
+            requestAnimationFrame(() => {
+              listRef.current?.scrollToIndex?.({ index: nextIndex, animated: true });
+            });
+            if (hapticsEnabled && Platform.OS !== "web") Vibration.vibrate(35);
+          }
         }
-      }
-      return next;
-    });
-  };
+        return next;
+      });
+    },
+    [blocks, hapticsEnabled, triggerPulse, startRest]
+  );
 
   const isBlockComplete = (blockIndex: number, items: BlockItem[] = []) => {
     if (items.length === 0) return false;
@@ -600,59 +823,13 @@ function SessionLiveScreen() {
     if (activeBlock >= blocks.length) setActiveBlock(0);
   }, [blocks, activeBlock]);
 
-  const formatItemMeta = (item: BlockItem) => {
-    const parts: string[] = [];
-    if (item?.sets != null && item.sets > 0) parts.push(`${item.sets}x`);
-    if (item?.reps != null && item.reps > 0) parts.push(`${item.reps} reps`);
-    if (Array.isArray(item?.workRestSec) && item.workRestSec.length >= 2) {
-      const [w, r] = item.workRestSec;
-      parts.push(`${w ?? "?"}s/${r ?? "?"}s`);
-    } else if (item?.workS || item?.restS) {
-      if (item.workS) parts.push(`${item.workS}s`);
-      if (item.restS) parts.push(`/${item.restS}s`);
-    } else if (item?.workRest && item.workRest.trim().length > 0) {
-      parts.push(item.workRest.trim());
-    }
-    if (item?.durationPerSetSec) parts.push(`${item.durationPerSetSec}s / série`);
-    if (item?.durationMin) parts.push(`${item.durationMin} min`);
-    return parts.join(" · ");
-  };
-
-  const getDisplayName = (item: BlockItem) => {
-    const displayNameRaw = (item?.name || "").trim();
-    const fallbackId =
-      typeof item?.exerciseId === "string" && item.exerciseId.trim()
-        ? item.exerciseId.trim()
-        : typeof item?.id === "string" && item.id.trim()
-          ? item.id.trim()
-          : undefined;
-    const displayName =
-      displayNameRaw.length > 0
-        ? prettifyName(displayNameRaw)
-        : fallbackId
-          ? prettifyName(fallbackId)
-          : item?.modality
-            ? prettifyName(String(item.modality))
-            : "Exercice";
-    return displayName;
-  };
-
-  const getExerciseId = (item: BlockItem) => {
-    if (typeof item?.exerciseId === "string" && item.exerciseId.trim()) {
-      return item.exerciseId.trim();
-    }
-    if (typeof item?.id === "string" && item.id.trim()) {
-      return item.id.trim();
-    }
-    return null;
-  };
-
   const finishLabel = sessionId
     ? "Terminer et donner le feedback"
     : "Terminer la séance";
 
   const finishAction = () => {
     clearPersistedSession();
+    const elapsedSec = timerRef.current?.getSeconds() ?? 0;
     const estimatedRpe = (() => {
       if (typeof v2.rpeTarget === "number" && Number.isFinite(v2.rpeTarget)) {
         return Math.max(1, Math.min(10, Math.round(v2.rpeTarget)));
@@ -663,8 +840,8 @@ function SessionLiveScreen() {
       return 6;
     })();
     const durationMin =
-      sessionSec >= 60
-        ? Math.max(5, Math.round(sessionSec / 60))
+      elapsedSec >= 60
+        ? Math.max(5, Math.round(elapsedSec / 60))
         : typeof v2.durationMin === "number"
           ? Math.round(v2.durationMin)
           : undefined;
@@ -699,10 +876,27 @@ function SessionLiveScreen() {
     });
   };
 
-  const goToExercise = (exerciseId: string | null) => {
+  const goToExercise = useCallback((exerciseId: string | null) => {
     if (!exerciseId) return;
     nav.navigate("ExerciseDetail", { highlightId: exerciseId });
-  };
+  }, [nav]);
+
+  const renderBlock = useCallback(
+    ({ item: block, index }: { item: Block; index: number }) => (
+      <BlockCard
+        block={block}
+        blockIndex={index}
+        blockWidth={blockWidth}
+        itemSize={itemSize}
+        scrollX={scrollX}
+        checkedSets={checkedSets}
+        onToggleSet={toggleSet}
+        onOpenExercise={goToExercise}
+        getPulse={getPulse}
+      />
+    ),
+    [blockWidth, itemSize, scrollX, checkedSets, toggleSet, goToExercise, getPulse]
+  );
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
@@ -748,7 +942,13 @@ function SessionLiveScreen() {
               <View style={styles.timerRow}>
                 <View style={styles.timerBlock}>
                   <Text style={styles.timerLabel}>Séance</Text>
-                  <Text style={styles.timerValue}>{formatTime(sessionSec)}</Text>
+                  <SessionTimer
+                    ref={timerRef}
+                    running={sessionRunning}
+                    maxSec={MAX_SESSION_SEC}
+                    onReachMax={handleReachMax}
+                    style={styles.timerValue}
+                  />
                 </View>
                 <View style={styles.timerBlock}>
                   <Text style={styles.timerLabel}>Repos</Text>
@@ -768,7 +968,7 @@ function SessionLiveScreen() {
                   label="Réinit"
                   onPress={() => {
                     setSessionRunning(false);
-                    setSessionSec(0);
+                    timerRef.current?.reset();
                   }}
                   size="sm"
                   variant="ghost"
@@ -833,163 +1033,8 @@ function SessionLiveScreen() {
               data={blocks}
               horizontal
               keyExtractor={(_, index) => `block_${index}`}
-              renderItem={({ item: block, index: blockIndex }) => {
-                const items = block.items ?? [];
-                const blockTitle =
-                  block.goal || block.name || block.type || block.focus || `Bloc ${blockIndex + 1}`;
-                const isComplete = isBlockComplete(blockIndex, items);
-                const inputRange = [
-                  (blockIndex - 1) * itemSize,
-                  blockIndex * itemSize,
-                  (blockIndex + 1) * itemSize,
-                ];
-                const scale = scrollX.interpolate({
-                  inputRange,
-                  outputRange: [0.94, 1, 0.94],
-                  extrapolate: "clamp",
-                });
-                const opacity = scrollX.interpolate({
-                  inputRange,
-                  outputRange: [0.6, 1, 0.6],
-                  extrapolate: "clamp",
-                });
-                return (
-                  <Animated.View
-                    style={[
-                      styles.blockCardWrap,
-                      { width: blockWidth, opacity, transform: [{ scale }] },
-                    ]}
-                  >
-                    <Card variant="surface" style={styles.blockCard}>
-                      <View style={styles.blockHeader}>
-                        <View>
-                          <Text style={styles.blockTitle} numberOfLines={2}>{blockTitle}</Text>
-                          <Text style={styles.blockMeta}>
-                            {block.intensity ?? "—"} · {block.durationMin ?? "?"} min
-                          </Text>
-                        </View>
-                        {isComplete ? <Badge label="OK" tone="ok" /> : null}
-                      </View>
-
-                      {items.length === 0 ? (
-                        <Text style={styles.blockEmpty}>Bloc sans items détaillés.</Text>
-                      ) : (
-                        <View style={{ gap: 10 }}>
-                          {items.map((item, itemIndex) => {
-                            const key = getItemKey(blockIndex, itemIndex);
-                            const itemProgress = getItemProgress(
-                              checkedSets,
-                              blockIndex,
-                              itemIndex,
-                              item
-                            );
-                            const checkedItem = itemProgress.complete;
-                            const itemName = getDisplayName(item);
-                            const meta = formatItemMeta(item);
-                            const exerciseId = getExerciseId(item);
-                            const pulse = getPulse(key);
-                            const setCount = itemProgress.total;
-                            const doneSets = itemProgress.done;
-                            const setState = itemProgress.sets;
-                            return (
-                              <View key={key} style={styles.itemRow}>
-                                <View style={styles.itemMain}>
-                                  {setCount <= 1 ? (
-                                    <TouchableOpacity
-                                      onPress={() =>
-                                        toggleSet(blockIndex, itemIndex, 0, item, items)
-                                      }
-                                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                                      activeOpacity={0.85}
-                                      accessibilityRole="checkbox"
-                                      accessibilityLabel={`${itemName}, ${checkedItem ? 'terminé' : 'à faire'}`}
-                                      accessibilityState={{ checked: !!checkedItem }}
-                                    >
-                                      <Animated.View
-                                        style={[
-                                          styles.checkbox,
-                                          checkedItem && styles.checkboxChecked,
-                                          { transform: [{ scale: pulse }] },
-                                        ]}
-                                      >
-                                        {checkedItem ? (
-                                          <Text style={styles.checkboxIcon}>✓</Text>
-                                        ) : null}
-                                      </Animated.View>
-                                    </TouchableOpacity>
-                                  ) : (
-                                    <View style={styles.setsWrap}>
-                                      <Text style={styles.setsLabel}>
-                                        {doneSets}/{setCount} séries
-                                      </Text>
-                                      <View style={styles.setsRow}>
-                                        {setState.map((done, setIndex) => (
-                                          <TouchableOpacity
-                                            key={`${key}-set-${setIndex}`}
-                                            onPress={() =>
-                                              toggleSet(
-                                                blockIndex,
-                                                itemIndex,
-                                                setIndex,
-                                                item,
-                                                items
-                                              )
-                                            }
-                                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                                            style={[
-                                              styles.setChip,
-                                              done && styles.setChipDone,
-                                            ]}
-                                            activeOpacity={0.85}
-                                            accessibilityRole="checkbox"
-                                            accessibilityLabel={`Série ${setIndex + 1} sur ${setCount}, ${done ? 'terminée' : 'à faire'}`}
-                                            accessibilityState={{ checked: !!done }}
-                                          >
-                                            <Text
-                                              style={[
-                                                styles.setChipText,
-                                                done && styles.setChipTextDone,
-                                              ]}
-                                            >
-                                              {setIndex + 1}
-                                            </Text>
-                                          </TouchableOpacity>
-                                        ))}
-                                      </View>
-                                    </View>
-                                  )}
-                                  <View style={{ flex: 1 }}>
-                                    <Text style={styles.itemName} numberOfLines={2}>{itemName}</Text>
-                                    {item.description ? (
-                                      <Text style={styles.itemNote}>{item.description}</Text>
-                                    ) : null}
-                                    {meta ? <Text style={styles.itemMeta}>{meta}</Text> : null}
-                                    {item.footballContext ? (
-                                      <Text style={styles.itemContext}>{item.footballContext}</Text>
-                                    ) : null}
-                                    {cleanDisplayNote(item.notes) ? (
-                                      <Text style={styles.itemNote}>{cleanDisplayNote(item.notes)}</Text>
-                                    ) : null}
-                                  </View>
-                                </View>
-                                {exerciseId ? (
-                                  <TouchableOpacity
-                                    onPress={() => goToExercise(exerciseId)}
-                                    activeOpacity={0.85}
-                                    style={styles.itemLink}
-                                  >
-                                    <Text style={styles.itemLinkText}>Fiche</Text>
-                                  </TouchableOpacity>
-                                ) : null}
-                              </View>
-                            );
-                          })}
-                        </View>
-                      )}
-                    </Card>
-                  </Animated.View>
-                );
-              }}
+              renderItem={renderBlock}
+              extraData={checkedSets}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ paddingHorizontal: 16 }}
               ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
