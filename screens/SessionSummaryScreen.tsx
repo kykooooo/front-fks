@@ -15,8 +15,7 @@ import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { updateTrainingLoad } from "../engine/loadModel";
 import { useSettingsStore } from "../state/settingsStore";
 import { withSessionErrorBoundary } from "../components/withErrorBoundary";
-import { ImageBanner } from "../components/ui/ImageBanner";
-import { BANNER_IMAGES, BANNER_FALLBACK } from "../constants/bannerImages";
+import { getCycleTheme } from "../constants/cycleTheme";
 
 type SummaryRoute = RouteProp<AppStackParamList, "SessionSummary">;
 
@@ -44,6 +43,9 @@ function SessionSummaryScreen() {
   const sessionCompleted = useSessionsStore((s) =>
     sessionId ? !!s.sessions.find((session) => session.id === sessionId)?.completed : false
   );
+  const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  // Thème couleur du cycle de la séance terminée (cycle actif → fallback Force).
+  const ct = getCycleTheme(microcycleGoal);
   const autoFeedbackEnabled = useSettingsStore((s) => s.autoFeedbackEnabled);
   const canAutoFeedback = !!sessionId && !sessionCompleted && autoFeedbackEnabled;
 
@@ -180,15 +182,16 @@ function SessionSummaryScreen() {
           ]}
         >
           <Card variant="surface" style={styles.heroCard}>
-            <ImageBanner
-              source={BANNER_IMAGES.celebration}
-              height={200}
-              fallbackColor={BANNER_FALLBACK.celebration}
-              borderRadius={18}
-            >
-              <Text style={styles.heroKicker}>Séance terminée 🔥</Text>
-              <Text style={styles.heroTitle}>{summary.title}</Text>
-            </ImageBanner>
+            {/* Header thémé par cycle — plus de photo "celebration" */}
+            <View style={[styles.headerBand, { backgroundColor: ct.strong }]}>
+              <View style={styles.pill}>
+                <Ionicons name="trophy-outline" size={26} color={ct.strong} />
+              </View>
+              <View style={styles.headerText}>
+                <Text style={styles.heroKicker}>Séance terminée</Text>
+                <Text style={styles.heroTitle} numberOfLines={2}>{summary.title}</Text>
+              </View>
+            </View>
             <View style={styles.heroBody}>
               {summary.subtitle ? (
                 <Text style={styles.heroSubtitle}>{summary.subtitle}</Text>
@@ -208,7 +211,7 @@ function SessionSummaryScreen() {
                 </Text>
                 <View style={styles.progressTrack}>
                   <View
-                    style={[styles.progressFill, { width: `${completionRatio * 100}%` }]}
+                    style={[styles.progressFill, { width: `${completionRatio * 100}%`, backgroundColor: ct.strong }]}
                   />
                 </View>
               </View>
@@ -282,6 +285,7 @@ function SessionSummaryScreen() {
               size="lg"
               variant="primary"
               disabled={!sessionId || sessionCompleted}
+              style={{ backgroundColor: ct.strong, borderColor: ct.strong }}
             />
             {canAutoFeedback && countdown > 0 ? (
               <Text style={styles.countdownText}>
@@ -324,27 +328,36 @@ const styles = StyleSheet.create({
     padding: 0,
     overflow: "hidden",
   },
+  headerBand: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 16,
+  },
+  pill: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerText: { flex: 1, gap: 2 },
   heroBody: {
     padding: 14,
     gap: 10,
   },
   heroKicker: {
-    color: "#fff",
-    fontSize: 13,
-    letterSpacing: 1,
+    color: "rgba(255,255,255,0.78)",
+    fontSize: 11,
+    letterSpacing: 0.6,
     textTransform: "uppercase",
     fontWeight: "700",
-    textShadowColor: "rgba(0,0,0,0.6)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
   },
   heroTitle: {
     color: "#fff",
-    fontSize: 22,
-    fontWeight: "800",
-    textShadowColor: "rgba(0,0,0,0.6)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    fontSize: 18,
+    fontWeight: "600",
   },
   heroSubtitle: {
     color: palette.sub,

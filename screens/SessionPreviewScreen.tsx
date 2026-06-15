@@ -29,6 +29,7 @@ import { withSessionErrorBoundary } from '../components/withErrorBoundary';
 import { ModalContainer } from '../components/modal/ModalContainer';
 import { useNavGuard } from '../hooks/useNavGuard';
 import type { SessionTimerHandle } from '../components/session/SessionTimer';
+import { getCycleTheme } from '../constants/cycleTheme';
 import { buildResetExplain } from './newSession/resetExplain';
 
 import {
@@ -59,6 +60,8 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
   const matchDays = useExternalStore((s) => s.matchDays ?? []);
   const sessions = useSessionsStore((s) => s.sessions);
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  // Thème couleur de l'écran de séance, dérivé du cycle servi (sinon cycle actif → fallback Force).
+  const cycleTheme = getCycleTheme(microcycleGoal);
   const currentSession = sessionId ? sessions.find((s: any) => s.id === sessionId) : null;
   const canStart = !currentSession?.completed;
   const isCompleted = !!currentSession?.completed;
@@ -380,6 +383,7 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
                       onToggleItem={toggleItem}
                       onGoToExercise={goToExercise}
                       getPulse={getPulse}
+                      cycleTheme={cycleTheme}
                     />
                   ))}
                 </>
@@ -448,12 +452,14 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
 
               {/* Finish */}
               <View style={{ marginBottom: 24 }}>
+                {/* CTA d'écran de séance : couleur du cycle (override de l'orange CTA, cf. cycleTheme). */}
                 <Button
                   label={finishLabel}
                   onPress={finishAction}
                   fullWidth
                   size="lg"
                   disabled={isCompleted}
+                  style={{ backgroundColor: cycleTheme.strong, borderColor: cycleTheme.strong }}
                 />
               </View>
             </Animated.View>
