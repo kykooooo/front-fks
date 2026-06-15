@@ -25,6 +25,10 @@ export function useSwipeToDismiss({
   const gesture = useMemo(() => {
     if (!enabled) return Gesture.Pan().enabled(false);
     return Gesture.Pan()
+      // Le geste ne s'arme qu'après un vrai mouvement vertical, et échoue si le
+      // doigt part à l'horizontale → plus de "j'appuie et l'écran bouge".
+      .activeOffsetY(15)
+      .failOffsetX([-20, 20])
       .onUpdate((event) => {
         const next = event.translationY;
         translateY.value = Math.max(0, next);
