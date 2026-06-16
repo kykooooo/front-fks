@@ -6,6 +6,7 @@ import { Card } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
 import { Button } from "../../../components/ui/Button";
 import { SectionHeader } from "../../../components/ui/SectionHeader";
+import { SessionTimer, type SessionTimerHandle } from "../../../components/session/SessionTimer";
 import { formatTime, formatPresetLabel } from "../sessionPreviewConfig";
 
 const palette = theme.colors;
@@ -18,11 +19,13 @@ type TimerPreset = {
 };
 
 type Props = {
-  sessionSec: number;
+  timerRef: React.Ref<SessionTimerHandle>;
   sessionRunning: boolean;
   restSec: number;
   timerPresets: TimerPreset[];
   isCompleted: boolean;
+  /** Couleur "strong" du cycle pour le CTA Démarrer (override de l'orange sur l'écran de séance). */
+  cycleStrong: string;
   onToggleSession: () => void;
   onResetSession: () => void;
   onStartRest: (seconds: number) => void;
@@ -30,11 +33,12 @@ type Props = {
 };
 
 export function TimerCard({
-  sessionSec,
+  timerRef,
   sessionRunning,
   restSec,
   timerPresets,
   isCompleted,
+  cycleStrong,
   onToggleSession,
   onResetSession,
   onStartRest,
@@ -46,7 +50,7 @@ export function TimerCard({
       <View style={styles.timerRow}>
         <View style={styles.timerBlock}>
           <Text style={styles.timerLabel}>Séance</Text>
-          <Text style={styles.timerValue}>{formatTime(sessionSec)}</Text>
+          <SessionTimer ref={timerRef} running={sessionRunning} style={styles.timerValue} />
         </View>
         <View style={styles.timerBlock}>
           <Text style={styles.timerLabel}>Repos</Text>
@@ -60,7 +64,10 @@ export function TimerCard({
           onPress={onToggleSession}
           size="sm"
           variant={sessionRunning ? "secondary" : "primary"}
-          style={styles.timerButton}
+          style={[
+            styles.timerButton,
+            !sessionRunning && { backgroundColor: cycleStrong, borderColor: cycleStrong },
+          ]}
           disabled={isCompleted}
         />
         <Button
@@ -81,6 +88,9 @@ export function TimerCard({
             onPress={() => onStartRest(s)}
             activeOpacity={0.85}
             disabled={isCompleted}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            accessibilityRole="button"
+            accessibilityLabel={`Repos ${s} secondes`}
           >
             <Text style={styles.restChipText}>{s}s</Text>
           </TouchableOpacity>
@@ -89,6 +99,9 @@ export function TimerCard({
           style={[styles.restChip, styles.restChipGhost]}
           onPress={onStopRest}
           disabled={isCompleted}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          accessibilityRole="button"
+          accessibilityLabel="Arrêter le repos"
         >
           <Text style={styles.restChipGhostText}>Stop</Text>
         </TouchableOpacity>
@@ -115,12 +128,14 @@ const styles = StyleSheet.create({
   restRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
   presetRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
   restChip: {
-    paddingVertical: 5,
-    paddingHorizontal: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     borderRadius: theme.radius.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
+    minHeight: 44,
+    justifyContent: "center",
   },
   restChipGhost: {
     backgroundColor: palette.accentSoft,

@@ -27,6 +27,9 @@ import { SectionHeader } from '../components/ui/SectionHeader';
 import { useSettingsStore } from '../state/settingsStore';
 import { withSessionErrorBoundary } from '../components/withErrorBoundary';
 import { ModalContainer } from '../components/modal/ModalContainer';
+import { useNavGuard } from '../hooks/useNavGuard';
+import type { SessionTimerHandle } from '../components/session/SessionTimer';
+import { getCycleTheme } from '../constants/cycleTheme';
 import { buildResetExplain } from './newSession/resetExplain';
 
 import {
@@ -44,6 +47,7 @@ const palette = theme.colors;
 function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
   const { v2, plannedDateISO, sessionId } = route.params;
   const nav = useNavigation<any>();
+  const guardNav = useNavGuard();
   const title = v2.title || 'Séance personnalisée';
   const subtitle = v2.subtitle;
   const blocks: Block[] = Array.isArray(v2.blocks) ? v2.blocks : [];
@@ -56,13 +60,14 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
   const matchDays = useExternalStore((s) => s.matchDays ?? []);
   const sessions = useSessionsStore((s) => s.sessions);
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  // Thème couleur de l'écran de séance, dérivé du cycle servi (sinon cycle actif → fallback Force).
+  const cycleTheme = getCycleTheme(microcycleGoal);
   const currentSession = sessionId ? sessions.find((s: any) => s.id === sessionId) : null;
   const canStart = !currentSession?.completed;
   const isCompleted = !!currentSession?.completed;
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [sessionRunning, setSessionRunning] = useState(false);
-  const [sessionSec, setSessionSec] = useState(0);
-  const sessionRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<SessionTimerHandle>(null);
   const [restRunning, setRestRunning] = useState(false);
   const [restSec, setRestSec] = useState(0);
   const restRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -148,15 +153,6 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
   }, [soundsEnabled, hapticsEnabled]);
 
   useEffect(() => {
-    if (sessionRunning) {
-      sessionRef.current = setInterval(() => setSessionSec((s) => s + 1), 1000);
-    }
-    return () => {
-      if (sessionRef.current) { clearInterval(sessionRef.current); sessionRef.current = null; }
-    };
-  }, [sessionRunning]);
-
-  useEffect(() => {
     if (restRunning) {
       restRef.current = setInterval(() => {
         setRestSec((s) => {
@@ -226,6 +222,7 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
   const finishLabel = sessionId ? 'Terminer et donner le feedback' : 'Terminer la séance';
 
   const finishAction = () => {
+    const elapsedSec = timerRef.current?.getSeconds() ?? 0;
     const estimatedRpe = (() => {
       if (typeof v2.rpeTarget === 'number' && Number.isFinite(v2.rpeTarget)) {
         return Math.max(1, Math.min(10, Math.round(v2.rpeTarget)));
@@ -236,8 +233,8 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
       return 6;
     })();
     const durationMin =
-      sessionSec >= 60
-        ? Math.max(5, Math.round(sessionSec / 60))
+      elapsedSec >= 60
+        ? Math.max(5, Math.round(elapsedSec / 60))
         : typeof v2.durationMin === 'number'
         ? Math.round(v2.durationMin)
         : undefined;
@@ -249,16 +246,18 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
       Array.isArray(v2.postSession?.recoveryTips) && v2.postSession!.recoveryTips!.length > 0
         ? v2.postSession!.recoveryTips
         : undefined;
-    nav.navigate('SessionSummary', {
-      sessionId,
-      summary: {
-        title, subtitle, plannedDateISO, completedItems, totalItems,
-        durationMin, rpe: estimatedRpe, intensity, focus, location,
-        srpe: typeof v2?.estimatedLoad?.srpe === 'number' && Number.isFinite(v2.estimatedLoad.srpe)
-          ? v2.estimatedLoad.srpe : undefined,
-        recoveryTips,
-      },
-    });
+    guardNav(() =>
+      nav.navigate('SessionSummary', {
+        sessionId,
+        summary: {
+          title, subtitle, plannedDateISO, completedItems, totalItems,
+          durationMin, rpe: estimatedRpe, intensity, focus, location,
+          srpe: typeof v2?.estimatedLoad?.srpe === 'number' && Number.isFinite(v2.estimatedLoad.srpe)
+            ? v2.estimatedLoad.srpe : undefined,
+          recoveryTips,
+        },
+      })
+    );
   };
 
   return (
@@ -306,32 +305,34 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
                 onGoLive={() => {
                   setSessionRunning(false);
                   setRestRunning(false);
-                  nav.navigate('SessionLive', { v2, plannedDateISO, sessionId });
+                  guardNav(() =>
+                    nav.navigate('SessionLive', { v2, plannedDateISO, sessionId })
+                  );
                 }}
                 cycleType={microcycleGoal}
               />
 
               {/* Reset explain */}
               {isResetPlan && resetExplain ? (
-                <Card variant="surface" style={styles.resetExplainCard}>
+                <Card variant="surface" style={[styles.resetExplainCard, { backgroundColor: cycleTheme.soft }]}>
                   <View style={styles.resetExplainHeader}>
-                    <Ionicons name="alert-circle-outline" size={16} color={palette.accent} />
-                    <Text style={styles.resetExplainTitle}>{resetExplain.title}</Text>
+                    <Ionicons name="alert-circle-outline" size={16} color={cycleTheme.textOnSoft} />
+                    <Text style={[styles.resetExplainTitle, { color: cycleTheme.textOnSoft }]}>{resetExplain.title}</Text>
                   </View>
                   <Text style={styles.resetExplainSubtitle}>{resetExplain.subtitle}</Text>
                   <View style={styles.resetExplainGroup}>
                     {resetExplain.reasons.map((reason, index) => (
                       <View key={`${reason}-${index}`} style={styles.resetBulletRow}>
-                        <Text style={styles.resetBullet}>{'\u2022'}</Text>
+                        <Text style={[styles.resetBullet, { color: cycleTheme.textOnSoft }]}>{'\u2022'}</Text>
                         <Text style={styles.resetBulletText}>{reason}</Text>
                       </View>
                     ))}
                   </View>
-                  <Text style={styles.resetExplainLabel}>Exemples concrets</Text>
+                  <Text style={[styles.resetExplainLabel, { color: cycleTheme.textOnSoft }]}>Exemples concrets</Text>
                   <View style={styles.resetExplainGroup}>
                     {resetExplain.examples.map((example, index) => (
                       <View key={`${example}-${index}`} style={styles.resetBulletRow}>
-                        <Text style={styles.resetBullet}>{'\u2022'}</Text>
+                        <Text style={[styles.resetBullet, { color: cycleTheme.textOnSoft }]}>{'\u2022'}</Text>
                         <Text style={styles.resetBulletText}>{example}</Text>
                       </View>
                     ))}
@@ -382,6 +383,7 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
                       onToggleItem={toggleItem}
                       onGoToExercise={goToExercise}
                       getPulse={getPulse}
+                      cycleTheme={cycleTheme}
                     />
                   ))}
                 </>
@@ -393,13 +395,14 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
 
               {/* Timer */}
               <TimerCard
-                sessionSec={sessionSec}
+                timerRef={timerRef}
                 sessionRunning={sessionRunning}
                 restSec={restSec}
                 timerPresets={timerPresets}
                 isCompleted={isCompleted}
+                cycleStrong={cycleTheme.strong}
                 onToggleSession={() => setSessionRunning((v) => !v)}
-                onResetSession={() => { setSessionRunning(false); setSessionSec(0); }}
+                onResetSession={() => { setSessionRunning(false); timerRef.current?.reset(); }}
                 onStartRest={(s) => { setRestSec(s); setRestRunning(true); }}
                 onStopRest={() => { setRestRunning(false); setRestSec(0); }}
               />
@@ -450,12 +453,14 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
 
               {/* Finish */}
               <View style={{ marginBottom: 24 }}>
+                {/* CTA d'écran de séance : couleur du cycle (override de l'orange CTA, cf. cycleTheme). */}
                 <Button
                   label={finishLabel}
                   onPress={finishAction}
                   fullWidth
                   size="lg"
                   disabled={isCompleted}
+                  style={{ backgroundColor: cycleTheme.strong, borderColor: cycleTheme.strong }}
                 />
               </View>
             </Animated.View>

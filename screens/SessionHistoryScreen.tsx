@@ -1,6 +1,6 @@
 // screens/SessionHistoryScreen.tsx
 import React, { useEffect, useMemo, useRef } from "react";
-import { View, Text, Image, StyleSheet, ScrollView, TouchableOpacity, Animated } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
@@ -8,7 +8,6 @@ import { useNavigation } from "@react-navigation/native";
 import { theme } from "../constants/theme";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
-import { BANNER_IMAGES } from "../constants/bannerImages";
 import { toDateKey } from "../utils/dateHelpers";
 import type { Session } from "../domain/types";
 
@@ -91,12 +90,9 @@ export default function SessionHistoryScreen() {
 
         {sorted.length === 0 ? (
           <View style={styles.emptyState}>
-            <Image
-              source={BANNER_IMAGES.empty}
-              style={styles.emptyImage}
-              resizeMode="cover"
-              accessibilityElementsHidden
-            />
+            <View style={styles.emptyIconWrap}>
+              <Ionicons name="calendar-outline" size={40} color={palette.accent} />
+            </View>
             <Text style={styles.emptyTitle}>Aucune séance</Text>
             <Text style={styles.emptyText}>
               Tes séances complétées apparaîtront ici.
@@ -179,11 +175,13 @@ const styles = StyleSheet.create({
     paddingVertical: 48,
     gap: 8,
   },
-  emptyImage: {
-    width: 220,
-    height: 140,
-    borderRadius: 16,
-    opacity: 0.7,
+  emptyIconWrap: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: palette.accentSoft,
+    alignItems: "center",
+    justifyContent: "center",
   },
   emptyTitle: {
     fontSize: 16,

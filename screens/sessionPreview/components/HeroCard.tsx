@@ -1,18 +1,13 @@
 // screens/sessionPreview/components/HeroCard.tsx
+// Header de séance thémé par cycle (FRONT-2) : plus de photo Pexels.
+// Bande pleine en couleur "strong" du cycle + pastille icône + kicker/titre/sous-titre.
+// Accents (chips meta, barre de progression, CTA) reprennent la couleur du cycle.
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
-import { Badge } from "../../../components/ui/Badge";
-import { Button } from "../../../components/ui/Button";
-import { intensityTone } from "../sessionPreviewConfig";
-import { ImageBanner } from "../../../components/ui/ImageBanner";
-import {
-  BANNER_IMAGES,
-  BANNER_FALLBACK,
-  cycleToBannerKey,
-} from "../../../constants/bannerImages";
+import { getCycleTheme } from "../../../constants/cycleTheme";
 
 const palette = theme.colors;
 
@@ -55,53 +50,47 @@ export function HeroCard({
   onGoLive,
   cycleType,
 }: Props) {
-  const bannerKey = cycleToBannerKey(cycleType);
+  const ct = getCycleTheme(cycleType);
+  const metaChips = [intensity, focusPrimary, focusSecondary, location].filter(
+    (v): v is string => typeof v === "string" && v.trim().length > 0
+  );
 
   return (
     <Card variant="surface" style={styles.heroCard}>
-      {/* Bandeau image pleine largeur */}
-      <ImageBanner
-        source={BANNER_IMAGES[bannerKey]}
-        height={180}
-        fallbackColor={BANNER_FALLBACK[bannerKey]}
-        borderRadius={20}
-      >
-        <View style={styles.bannerOverlay}>
-          <Text style={styles.bannerTitle} numberOfLines={2}>
-            {title}
-          </Text>
-          {subtitle ? (
-            <Text style={styles.bannerSubtitle} numberOfLines={2}>
-              {subtitle}
-            </Text>
-          ) : null}
-          <View style={styles.bannerBadges}>
-            <Badge label={plannedDateISO} />
-            {intensity ? (
-              <Badge label={intensity} tone={intensityTone(intensity)} />
-            ) : null}
-          </View>
+      {/* Bande pleine couleur du cycle — aucune photo / dégradé / overlay sombre */}
+      <View style={[styles.headerBand, { backgroundColor: ct.strong }]}>
+        <View style={styles.pill}>
+          <Ionicons name={ct.icon as any} size={26} color={ct.strong} />
         </View>
-      </ImageBanner>
+        <View style={styles.headerText}>
+          <Text style={styles.kicker}>Cycle {ct.label}</Text>
+          <Text style={styles.title} numberOfLines={2}>{title}</Text>
+          {subtitle ? (
+            <Text style={styles.subtitle} numberOfLines={2}>{subtitle}</Text>
+          ) : null}
+          {plannedDateISO ? <Text style={styles.headerDate}>{plannedDateISO}</Text> : null}
+        </View>
+      </View>
 
-      {/* Contenu sous le bandeau */}
+      {/* Contenu sous la bande */}
       <View style={styles.body}>
         {sessionTheme ? (
           <View style={styles.sessionThemeRow}>
-            <Ionicons
-              name="color-palette-outline"
-              size={13}
-              color={palette.accent}
-            />
-            <Text style={styles.sessionThemeText}>{sessionTheme}</Text>
+            <Ionicons name="color-palette-outline" size={13} color={ct.textOnSoft} />
+            <Text style={[styles.sessionThemeText, { color: ct.textOnSoft }]}>{sessionTheme}</Text>
           </View>
         ) : null}
 
-        <View style={styles.heroTags}>
-          {focusPrimary ? <Badge label={focusPrimary} /> : null}
-          {focusSecondary ? <Badge label={focusSecondary} /> : null}
-          {location ? <Badge label={location} /> : null}
-        </View>
+        {/* Chips meta (intensité / focus / lieu) — fond "soft", texte "textOnSoft" */}
+        {metaChips.length > 0 ? (
+          <View style={styles.metaChips}>
+            {metaChips.map((label, i) => (
+              <View key={`meta_${i}`} style={[styles.chip, { backgroundColor: ct.soft }]}>
+                <Text style={[styles.chipText, { color: ct.textOnSoft }]}>{label}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         <View style={styles.heroStats}>
           <View style={styles.heroStat}>
@@ -122,24 +111,29 @@ export function HeroCard({
 
         <View style={styles.progressWrap}>
           <Text style={styles.progressLabel}>
-            Progression : {completedItems}/{totalItems || "\u2014"}
+            Progression : {completedItems}/{totalItems || "—"}
           </Text>
           <View style={styles.progressTrack}>
             <View
-              style={[styles.progressFill, { width: `${progress * 100}%` }]}
+              style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: ct.strong }]}
             />
           </View>
         </View>
 
         {canStart ? (
-          <Button
-            label="Passer en mode live"
+          // CTA primaire d'écran de séance : couleur du cycle (pas l'orange CTA).
+          // Choix FRONT-2 : sur les écrans de séance, le CTA primaire prend la
+          // couleur "strong" du cycle ; l'orange reste la convention CTA ailleurs (Home…).
+          <TouchableOpacity
             onPress={onGoLive}
-            fullWidth
-            size="md"
-            variant="secondary"
-            style={styles.heroCta}
-          />
+            activeOpacity={0.85}
+            style={[styles.cta, { backgroundColor: ct.strong }]}
+            accessibilityRole="button"
+            accessibilityLabel="Passer en mode live"
+          >
+            <Text style={styles.ctaText}>Passer en mode live</Text>
+            <Ionicons name="play" size={16} color="#fff" />
+          </TouchableOpacity>
         ) : null}
       </View>
     </Card>
@@ -152,29 +146,31 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: "hidden",
   },
-  bannerOverlay: {
-    gap: 6,
-  },
-  bannerTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#fff",
-    textShadowColor: "rgba(0,0,0,0.6)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  bannerSubtitle: {
-    fontSize: 13,
-    color: "rgba(255,255,255,0.85)",
-    textShadowColor: "rgba(0,0,0,0.5)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  bannerBadges: {
+  headerBand: {
     flexDirection: "row",
-    gap: 8,
-    marginTop: 4,
+    alignItems: "center",
+    gap: 14,
+    padding: 16,
   },
+  pill: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerText: { flex: 1, gap: 2 },
+  kicker: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    color: "rgba(255,255,255,0.78)",
+  },
+  title: { fontSize: 18, fontWeight: "500", color: "#fff" },
+  subtitle: { fontSize: 13, color: "rgba(255,255,255,0.82)" },
+  headerDate: { fontSize: 11, color: "rgba(255,255,255,0.65)", marginTop: 2 },
   body: {
     padding: 14,
     gap: 10,
@@ -186,11 +182,16 @@ const styles = StyleSheet.create({
   },
   sessionThemeText: {
     fontSize: 12,
-    color: palette.accent,
     fontWeight: "600",
     fontStyle: "italic",
   },
-  heroTags: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  metaChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: theme.radius.pill,
+  },
+  chipText: { fontWeight: "600", fontSize: 11 },
   heroStats: { flexDirection: "row", alignItems: "center", marginTop: 2 },
   heroStat: { flex: 1 },
   heroStatLabel: {
@@ -211,7 +212,6 @@ const styles = StyleSheet.create({
     backgroundColor: palette.borderSoft,
     marginHorizontal: 12,
   },
-  heroCta: { marginTop: 4 },
   progressWrap: { gap: 4 },
   progressLabel: { color: palette.sub, fontSize: 12 },
   progressTrack: {
@@ -220,5 +220,17 @@ const styles = StyleSheet.create({
     backgroundColor: palette.borderSoft,
     overflow: "hidden",
   },
-  progressFill: { height: "100%", backgroundColor: palette.accent },
+  progressFill: { height: "100%" },
+  cta: {
+    marginTop: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 52,
+    borderRadius: theme.radius.pill,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  ctaText: { color: "#fff", fontSize: 15, fontWeight: "700", letterSpacing: 0.3 },
 });

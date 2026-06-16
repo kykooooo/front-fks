@@ -69,6 +69,7 @@ export function GenerationActions({
           style={[styles.cta, styles.ctaPrimary, disabled && { opacity: 0.5 }]}
           onPress={onGenerate}
           disabled={disabled}
+          activeOpacity={0.85}
         >
           {generating ? (
             <ActivityIndicator color={palette.bg} />
@@ -79,10 +80,10 @@ export function GenerationActions({
       </View>
 
       <View style={[styles.buttonRow, { marginTop: 10 }]}>
-        <TouchableOpacity style={[styles.cta, styles.ctaSecondaryGreen]} onPress={onAdvanceDay}>
+        <TouchableOpacity style={[styles.cta, styles.ctaSecondaryGreen]} onPress={onAdvanceDay} activeOpacity={0.85}>
           <Text style={styles.ctaSecondaryGreenText}>Jour OFF (+1j)</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.cta, styles.ctaSecondaryOrange]} onPress={onRestTwoDays}>
+        <TouchableOpacity style={[styles.cta, styles.ctaSecondaryOrange]} onPress={onRestTwoDays} activeOpacity={0.85}>
           <Text style={styles.ctaSecondaryOrangeText}>Repos 2 jours</Text>
         </TouchableOpacity>
       </View>

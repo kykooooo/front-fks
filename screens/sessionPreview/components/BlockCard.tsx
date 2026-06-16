@@ -17,6 +17,7 @@ import {
   formatItemMeta,
   cleanDisplayNote,
 } from "../sessionPreviewConfig";
+import { type CycleTheme } from "../../../constants/cycleTheme";
 
 const palette = theme.colors;
 
@@ -31,6 +32,7 @@ type Props = {
   onToggleItem: (blockIndex: number, itemIndex: number) => void;
   onGoToExercise: (exerciseId: string | null) => void;
   getPulse: (key: string) => Animated.Value;
+  cycleTheme: CycleTheme;
 };
 
 export function BlockCard({
@@ -44,6 +46,7 @@ export function BlockCard({
   onToggleItem,
   onGoToExercise,
   getPulse,
+  cycleTheme,
 }: Props) {
   const cfg = getBlockConfig(block.type);
   const items = block.items ?? [];
@@ -120,16 +123,24 @@ export function BlockCard({
                         activeOpacity={0.85}
                         style={styles.itemMain}
                         disabled={isCompleted}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: checkedItem }}
                       >
                         <Animated.View
                           style={[
                             styles.checkbox,
-                            checkedItem && styles.checkboxChecked,
+                            checkedItem && {
+                              backgroundColor: cycleTheme.soft,
+                              borderColor: cycleTheme.strong,
+                            },
                             { transform: [{ scale: pulse }] },
                           ]}
                         >
                           {checkedItem ? (
-                            <Text style={styles.checkboxIcon}>{'\u2713'}</Text>
+                            <Text style={[styles.checkboxIcon, { color: cycleTheme.textOnSoft }]}>
+                              {'\u2713'}
+                            </Text>
                           ) : null}
                         </Animated.View>
                         <View style={{ flex: 1 }}>
@@ -172,9 +183,19 @@ export function BlockCard({
               <Text style={styles.blockEmpty}>Bloc sans items détaillés.</Text>
             )}
 
-            <View style={styles.vBlockTipRow}>
-              <Ionicons name="chatbubble-ellipses-outline" size={13} color={palette.sub} />
-              <Text style={styles.vBlockTipText}>{tipText}</Text>
+            <View
+              style={[
+                styles.coachTipBox,
+                { backgroundColor: cycleTheme.soft, borderLeftColor: cycleTheme.strong },
+              ]}
+            >
+              <View style={styles.coachTipHeader}>
+                <Ionicons name="chatbubble-ellipses-outline" size={12} color={cycleTheme.textOnSoft} />
+                <Text style={[styles.coachTipKicker, { color: cycleTheme.textOnSoft }]}>
+                  Conseil du coach
+                </Text>
+              </View>
+              <Text style={[styles.coachTipText, { color: cycleTheme.textOnSoft }]}>{tipText}</Text>
             </View>
           </View>
         </Card>
@@ -204,15 +225,23 @@ const styles = StyleSheet.create({
   vBlockBadges: { flexDirection: "row", gap: 6 },
   vBlockNotes: { fontSize: 12, color: palette.sub, lineHeight: 18 },
   vBlockItems: { gap: 10 },
-  vBlockTipRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 6,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: palette.borderSoft,
+  // Encadré "Conseil du coach" : fond "soft" + barre gauche "strong" du cycle.
+  // border-radius 0 côté barre (bord simple), arrondi côté opposé.
+  coachTipBox: {
+    gap: 4,
+    padding: 10,
+    borderLeftWidth: 3,
+    borderTopRightRadius: theme.radius.sm,
+    borderBottomRightRadius: theme.radius.sm,
   },
-  vBlockTipText: { flex: 1, fontSize: 12, color: palette.sub, lineHeight: 16 },
+  coachTipHeader: { flexDirection: "row", alignItems: "center", gap: 5 },
+  coachTipKicker: {
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  coachTipText: { fontSize: 12, lineHeight: 16 },
   transitionRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 2 },
   transitionLine: { flex: 1, height: 1, backgroundColor: palette.borderSoft },
   transitionChip: {
@@ -239,8 +268,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 2,
   },
-  checkboxChecked: { backgroundColor: palette.accent, borderColor: palette.accent },
-  checkboxIcon: { color: palette.bg, fontSize: 12, fontWeight: "800" },
+  checkboxIcon: { fontSize: 12, fontWeight: "800" },
   itemName: { color: palette.text, fontSize: 14, fontWeight: "600" },
   itemNameChecked: { textDecorationLine: "line-through", color: palette.sub },
   itemMeta: { color: palette.sub, fontSize: 12, marginTop: 2 },

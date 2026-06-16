@@ -33,6 +33,7 @@ import { theme } from '../constants/theme';
 import { Button } from '../components/ui/Button';
 import { LoadingOverlay } from '../components/ui/LoadingOverlay';
 import { ModalContainer } from '../components/modal/ModalContainer';
+import { withSessionErrorBoundary } from '../components/withErrorBoundary';
 import { clamp } from './feedback/feedbackScales';
 
 // Hooks extraits
@@ -52,7 +53,7 @@ import { CyclePrompt } from './feedback/components/CyclePrompt';
 
 const COLORS = theme.colors;
 
-export default function FeedbackScreen() {
+function FeedbackScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<AppStackParamList, 'Feedback'>>();
   const haptics = useHaptics();
@@ -398,3 +399,5 @@ const styles = StyleSheet.create({
   debugTitle: { fontWeight: '700', marginBottom: 4, color: COLORS.textMuted, fontSize: 12 },
   debugText: { color: COLORS.textMuted, fontSize: 11 },
 });
+
+export default withSessionErrorBoundary(FeedbackScreen);

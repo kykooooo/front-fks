@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { AppStackParamList } from "../navigation/RootNavigator";
 import { theme } from "../constants/theme";
@@ -22,7 +23,10 @@ import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
 import { withSessionErrorBoundary } from "../components/withErrorBoundary";
 import { SectionHeader } from "../components/ui/SectionHeader";
+import { SessionTimer, type SessionTimerHandle } from "../components/session/SessionTimer";
 import { useSettingsStore } from "../state/settingsStore";
+import { useSessionsStore } from "../state/stores/useSessionsStore";
+import { getCycleTheme, type CycleTheme } from "../constants/cycleTheme";
 
 type BlockItem = {
   id?: string | null;
@@ -158,15 +162,330 @@ const getCoachTip = (block: Block | undefined, index: number) => {
   return `Bloc ${index + 1} : qualité d'exécution avant volume.`;
 };
 
+const MAX_SESSION_SEC = 4 * 60 * 60; // 4 heures (timeout de sécurité)
+
+const getItemKey = (blockIndex: number, itemIndex: number) =>
+  `${blockIndex}-${itemIndex}`;
+
+const getSetCount = (item: BlockItem) => {
+  const raw = typeof item?.sets === "number" ? item.sets : 1;
+  const normalized = Number.isFinite(raw) ? Math.round(raw) : 1;
+  return Math.max(1, normalized);
+};
+
+const getSetState = (
+  state: Record<string, boolean[]>,
+  key: string,
+  total: number
+) => {
+  const current = state[key] ?? [];
+  if (current.length === total) return current;
+  return Array.from({ length: total }, (_, idx) => !!current[idx]);
+};
+
+const getItemProgress = (
+  state: Record<string, boolean[]>,
+  blockIndex: number,
+  itemIndex: number,
+  item: BlockItem
+) => {
+  const total = getSetCount(item);
+  const key = getItemKey(blockIndex, itemIndex);
+  const sets = getSetState(state, key, total);
+  const done = sets.filter(Boolean).length;
+  return { total, done, sets, complete: done >= total };
+};
+
+const isItemComplete = (
+  state: Record<string, boolean[]>,
+  blockIndex: number,
+  itemIndex: number,
+  item: BlockItem
+) => getItemProgress(state, blockIndex, itemIndex, item).complete;
+
+const parseRestFromText = (text?: string | null) => {
+  if (!text) return null;
+  const cleaned = text.toLowerCase().replace(",", ".");
+  const split = cleaned.split("/");
+  const candidate = split.length >= 2 ? split[1] : cleaned;
+  const match = candidate.match(/(\d+)/);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const getAutoRestSeconds = (item: BlockItem) => {
+  if (Array.isArray(item?.workRestSec) && item.workRestSec.length >= 2) {
+    const rest = Number(item.workRestSec[1]);
+    return Number.isFinite(rest) ? rest : null;
+  }
+  if (typeof item?.restS === "number" && Number.isFinite(item.restS)) {
+    return item.restS;
+  }
+  return parseRestFromText(item?.workRest);
+};
+
+const formatItemMeta = (item: BlockItem) => {
+  const parts: string[] = [];
+  if (item?.sets != null && item.sets > 0) parts.push(`${item.sets}x`);
+  if (item?.reps != null && item.reps > 0) parts.push(`${item.reps} reps`);
+  if (Array.isArray(item?.workRestSec) && item.workRestSec.length >= 2) {
+    const [w, r] = item.workRestSec;
+    parts.push(`${w ?? "?"}s/${r ?? "?"}s`);
+  } else if (item?.workS || item?.restS) {
+    if (item.workS) parts.push(`${item.workS}s`);
+    if (item.restS) parts.push(`/${item.restS}s`);
+  } else if (item?.workRest && item.workRest.trim().length > 0) {
+    parts.push(item.workRest.trim());
+  }
+  if (item?.durationPerSetSec) parts.push(`${item.durationPerSetSec}s / série`);
+  if (item?.durationMin) parts.push(`${item.durationMin} min`);
+  return parts.join(" · ");
+};
+
+const getDisplayName = (item: BlockItem) => {
+  const displayNameRaw = (item?.name || "").trim();
+  const fallbackId =
+    typeof item?.exerciseId === "string" && item.exerciseId.trim()
+      ? item.exerciseId.trim()
+      : typeof item?.id === "string" && item.id.trim()
+        ? item.id.trim()
+        : undefined;
+  return displayNameRaw.length > 0
+    ? prettifyName(displayNameRaw)
+    : fallbackId
+      ? prettifyName(fallbackId)
+      : item?.modality
+        ? prettifyName(String(item.modality))
+        : "Exercice";
+};
+
+const getExerciseId = (item: BlockItem) => {
+  if (typeof item?.exerciseId === "string" && item.exerciseId.trim()) {
+    return item.exerciseId.trim();
+  }
+  if (typeof item?.id === "string" && item.id.trim()) {
+    return item.id.trim();
+  }
+  return null;
+};
+
+// Carte de bloc mémoïsée : ne se redessine que si SES props changent.
+// Couplé au chrono isolé, ça évite que le tick (1/s) redessine toutes les cartes.
+type BlockCardProps = {
+  block: Block;
+  blockIndex: number;
+  blockWidth: number;
+  itemSize: number;
+  scrollX: Animated.Value;
+  checkedSets: Record<string, boolean[]>;
+  onToggleSet: (
+    blockIndex: number,
+    itemIndex: number,
+    setIndex: number,
+    item: BlockItem,
+    items: BlockItem[]
+  ) => void;
+  onOpenExercise: (exerciseId: string | null) => void;
+  getPulse: (key: string) => Animated.Value;
+  /** Thème couleur du cycle — STATIQUE pour la séance (props stables → memo préservé). */
+  cycleTheme: CycleTheme;
+};
+
+const BlockCard = React.memo(function BlockCard({
+  block,
+  blockIndex,
+  blockWidth,
+  itemSize,
+  scrollX,
+  checkedSets,
+  onToggleSet,
+  onOpenExercise,
+  getPulse,
+  cycleTheme,
+}: BlockCardProps) {
+  const items = block.items ?? [];
+  const blockTitle =
+    block.goal || block.name || block.type || block.focus || `Bloc ${blockIndex + 1}`;
+  const isComplete =
+    items.length > 0 &&
+    items.every((item, idx) => isItemComplete(checkedSets, blockIndex, idx, item));
+  const inputRange = [
+    (blockIndex - 1) * itemSize,
+    blockIndex * itemSize,
+    (blockIndex + 1) * itemSize,
+  ];
+  const scale = scrollX.interpolate({
+    inputRange,
+    outputRange: [0.94, 1, 0.94],
+    extrapolate: "clamp",
+  });
+  const opacity = scrollX.interpolate({
+    inputRange,
+    outputRange: [0.6, 1, 0.6],
+    extrapolate: "clamp",
+  });
+  return (
+    <Animated.View
+      style={[
+        styles.blockCardWrap,
+        { width: blockWidth, opacity, transform: [{ scale }] },
+      ]}
+    >
+      <Card variant="surface" style={styles.blockCard}>
+        <View style={styles.blockHeader}>
+          <View>
+            <Text style={styles.blockTitle} numberOfLines={2}>{blockTitle}</Text>
+            <Text style={styles.blockMeta}>
+              {block.intensity ?? "—"} · {block.durationMin ?? "?"} min
+            </Text>
+          </View>
+          {isComplete ? <Badge label="OK" tone="ok" /> : null}
+        </View>
+
+        {items.length === 0 ? (
+          <Text style={styles.blockEmpty}>Bloc sans items détaillés.</Text>
+        ) : (
+          <View style={{ gap: 10 }}>
+            {items.map((item, itemIndex) => {
+              const key = getItemKey(blockIndex, itemIndex);
+              const itemProgress = getItemProgress(
+                checkedSets,
+                blockIndex,
+                itemIndex,
+                item
+              );
+              const checkedItem = itemProgress.complete;
+              const itemName = getDisplayName(item);
+              const meta = formatItemMeta(item);
+              const exerciseId = getExerciseId(item);
+              const pulse = getPulse(key);
+              const setCount = itemProgress.total;
+              const doneSets = itemProgress.done;
+              const setState = itemProgress.sets;
+              return (
+                <View key={key} style={styles.itemRow}>
+                  <View style={styles.itemMain}>
+                    {setCount <= 1 ? (
+                      <TouchableOpacity
+                        onPress={() =>
+                          onToggleSet(blockIndex, itemIndex, 0, item, items)
+                        }
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        activeOpacity={0.85}
+                        accessibilityRole="checkbox"
+                        accessibilityLabel={`${itemName}, ${checkedItem ? 'terminé' : 'à faire'}`}
+                        accessibilityState={{ checked: !!checkedItem }}
+                      >
+                        <Animated.View
+                          style={[
+                            styles.checkbox,
+                            checkedItem && {
+                              backgroundColor: cycleTheme.soft,
+                              borderColor: cycleTheme.strong,
+                            },
+                            { transform: [{ scale: pulse }] },
+                          ]}
+                        >
+                          {checkedItem ? (
+                            <Text style={[styles.checkboxIcon, { color: cycleTheme.textOnSoft }]}>✓</Text>
+                          ) : null}
+                        </Animated.View>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={styles.setsWrap}>
+                        <Text style={styles.setsLabel}>
+                          {doneSets}/{setCount} séries
+                        </Text>
+                        <View style={styles.setsRow}>
+                          {setState.map((done, setIndex) => (
+                            <TouchableOpacity
+                              key={`${key}-set-${setIndex}`}
+                              onPress={() =>
+                                onToggleSet(
+                                  blockIndex,
+                                  itemIndex,
+                                  setIndex,
+                                  item,
+                                  items
+                                )
+                              }
+                              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                              style={[
+                                styles.setChip,
+                                done && {
+                                  backgroundColor: cycleTheme.soft,
+                                  borderColor: cycleTheme.strong,
+                                },
+                              ]}
+                              activeOpacity={0.85}
+                              accessibilityRole="checkbox"
+                              accessibilityLabel={`Série ${setIndex + 1} sur ${setCount}, ${done ? 'terminée' : 'à faire'}`}
+                              accessibilityState={{ checked: !!done }}
+                            >
+                              <Text
+                                style={[
+                                  styles.setChipText,
+                                  done && { color: cycleTheme.textOnSoft },
+                                ]}
+                              >
+                                {setIndex + 1}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemName} numberOfLines={2}>{itemName}</Text>
+                      {item.description ? (
+                        <Text style={styles.itemNote}>{item.description}</Text>
+                      ) : null}
+                      {meta ? <Text style={styles.itemMeta}>{meta}</Text> : null}
+                      {item.footballContext ? (
+                        <Text style={styles.itemContext}>{item.footballContext}</Text>
+                      ) : null}
+                      {cleanDisplayNote(item.notes) ? (
+                        <Text style={styles.itemNote}>{cleanDisplayNote(item.notes)}</Text>
+                      ) : null}
+                    </View>
+                  </View>
+                  {exerciseId ? (
+                    <TouchableOpacity
+                      onPress={() => onOpenExercise(exerciseId)}
+                      activeOpacity={0.85}
+                      style={styles.itemLink}
+                    >
+                      <Text style={styles.itemLinkText}>Fiche</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </Card>
+    </Animated.View>
+  );
+});
+
 function SessionLiveScreen() {
   const nav = useNavigation<any>();
   const route = useRoute<LiveRoute>();
   const { v2, plannedDateISO, sessionId } = route.params;
   const soundsEnabled = useSettingsStore((s) => s.soundsEnabled);
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
+  const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  // Thème couleur du cycle : STATIQUE pour toute la séance → calculé une seule fois.
+  // Identité stable (useMemo) → passé en prop à la BlockCard mémoïsée sans casser le memo,
+  // et hors du tick chrono (aucun re-render à la seconde).
+  const cycleTheme = useMemo(() => getCycleTheme(microcycleGoal), [microcycleGoal]);
 
   const { width } = useWindowDimensions();
-  const blocks: Block[] = Array.isArray(v2.blocks) ? v2.blocks : [];
+  const blocks: Block[] = useMemo(
+    () => (Array.isArray(v2.blocks) ? v2.blocks : []),
+    [v2.blocks]
+  );
   const title = v2.title || "Séance FKS";
   const subtitle = v2.subtitle;
 
@@ -174,8 +493,8 @@ function SessionLiveScreen() {
   const [activeBlock, setActiveBlock] = useState(0);
 
   const [sessionRunning, setSessionRunning] = useState(false);
-  const [sessionSec, setSessionSec] = useState(0);
-  const sessionRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<SessionTimerHandle>(null);
+  const handleReachMax = useCallback(() => setSessionRunning(false), []);
 
   const [restRunning, setRestRunning] = useState(false);
   const [restSec, setRestSec] = useState(0);
@@ -235,14 +554,14 @@ function SessionLiveScreen() {
       sessionId,
       checkedSets,
       activeBlock,
-      sessionSec,
+      sessionSec: timerRef.current?.getSeconds() ?? 0,
       sessionRunning,
       savedAt: Date.now(),
     };
     AsyncStorage.setItem(LIVE_SESSION_KEY, JSON.stringify(data)).catch((err) => {
       if (__DEV__) console.error("[SessionLive] Failed to persist live session state:", err);
     });
-  }, [sessionId, checkedSets, activeBlock, sessionSec, sessionRunning]);
+  }, [sessionId, checkedSets, activeBlock, sessionRunning]);
 
   // Save on every significant change (set toggled, block changed)
   const lastPersistRef = useRef<string>("");
@@ -303,7 +622,7 @@ function SessionLiveScreen() {
               onPress: () => {
                 setCheckedSets(saved.checkedSets);
                 setActiveBlock(saved.activeBlock);
-                setSessionSec(saved.sessionSec);
+                timerRef.current?.setSeconds(saved.sessionSec);
                 if (saved.sessionRunning) setSessionRunning(true);
               },
             },
@@ -378,43 +697,21 @@ function SessionLiveScreen() {
     }
   }, [soundsEnabled, hapticsEnabled]);
 
-  const getPulse = (key: string) => {
+  const getPulse = useCallback((key: string) => {
     if (!pulseMap.current[key]) {
       pulseMap.current[key] = new Animated.Value(1);
     }
     return pulseMap.current[key];
-  };
+  }, []);
 
-  const triggerPulse = (key: string) => {
+  const triggerPulse = useCallback((key: string) => {
     const pulse = getPulse(key);
     pulse.setValue(0.86);
     Animated.sequence([
       Animated.spring(pulse, { toValue: 1.08, useNativeDriver: true }),
       Animated.spring(pulse, { toValue: 1, friction: 6, useNativeDriver: true }),
     ]).start();
-  };
-
-  // Chrono principal avec timeout de sécurité (4h max)
-  const MAX_SESSION_SEC = 4 * 60 * 60; // 4 heures
-  useEffect(() => {
-    if (sessionRunning) {
-      sessionRef.current = setInterval(() => {
-        setSessionSec((prev) => {
-          if (prev + 1 >= MAX_SESSION_SEC) {
-            setSessionRunning(false);
-            return prev;
-          }
-          return prev + 1;
-        });
-      }, 1000);
-    }
-    return () => {
-      if (sessionRef.current) {
-        clearInterval(sessionRef.current);
-        sessionRef.current = null;
-      }
-    };
-  }, [sessionRunning]);
+  }, [getPulse]);
 
   useEffect(() => {
     if (restRunning) {
@@ -461,39 +758,6 @@ function SessionLiveScreen() {
     }).start();
   }, [enter]);
 
-  const getItemKey = (blockIndex: number, itemIndex: number) =>
-    `${blockIndex}-${itemIndex}`;
-
-  const getSetCount = (item: BlockItem) => {
-    const raw = typeof item?.sets === "number" ? item.sets : 1;
-    const normalized = Number.isFinite(raw) ? Math.round(raw) : 1;
-    return Math.max(1, normalized);
-  };
-
-  const getSetState = (
-    state: Record<string, boolean[]>,
-    key: string,
-    total: number
-  ) => {
-    const current = state[key] ?? [];
-    if (current.length === total) return current;
-    const next = Array.from({ length: total }, (_, idx) => !!current[idx]);
-    return next;
-  };
-
-  const getItemProgress = (
-    state: Record<string, boolean[]>,
-    blockIndex: number,
-    itemIndex: number,
-    item: BlockItem
-  ) => {
-    const total = getSetCount(item);
-    const key = getItemKey(blockIndex, itemIndex);
-    const sets = getSetState(state, key, total);
-    const done = sets.filter(Boolean).length;
-    return { total, done, sets, complete: done >= total };
-  };
-
   const totalItems = useMemo(() => {
     return blocks.reduce((acc, block) => {
       return (
@@ -515,78 +779,54 @@ function SessionLiveScreen() {
 
   const progress = totalItems > 0 ? completedItems / totalItems : 0;
 
-  const parseRestFromText = (text?: string | null) => {
-    if (!text) return null;
-    const cleaned = text.toLowerCase().replace(",", ".");
-    const split = cleaned.split("/");
-    const candidate = split.length >= 2 ? split[1] : cleaned;
-    const match = candidate.match(/(\d+)/);
-    if (!match) return null;
-    const parsed = Number(match[1]);
-    return Number.isFinite(parsed) ? parsed : null;
-  };
+  const startRest = useCallback(
+    (seconds: number, source: "auto" | "manual" = "manual") => {
+      if (!Number.isFinite(seconds) || seconds <= 0) return;
+      setRestSource(source);
+      setRestSec(Math.max(1, Math.round(seconds)));
+      setRestRunning(true);
+    },
+    []
+  );
 
-  const getAutoRestSeconds = (item: BlockItem) => {
-    if (Array.isArray(item?.workRestSec) && item.workRestSec.length >= 2) {
-      const rest = Number(item.workRestSec[1]);
-      return Number.isFinite(rest) ? rest : null;
-    }
-    if (typeof item?.restS === "number" && Number.isFinite(item.restS)) {
-      return item.restS;
-    }
-    const parsed = parseRestFromText(item?.workRest);
-    return parsed;
-  };
-
-  const startRest = (seconds: number, source: "auto" | "manual" = "manual") => {
-    if (!Number.isFinite(seconds) || seconds <= 0) return;
-    setRestSource(source);
-    setRestSec(Math.max(1, Math.round(seconds)));
-    setRestRunning(true);
-  };
-
-  const isItemComplete = (
-    state: Record<string, boolean[]>,
-    blockIndex: number,
-    itemIndex: number,
-    item: BlockItem
-  ) => getItemProgress(state, blockIndex, itemIndex, item).complete;
-
-  const toggleSet = (
-    blockIndex: number,
-    itemIndex: number,
-    setIndex: number,
-    item: BlockItem,
-    items: BlockItem[]
-  ) => {
-    const key = getItemKey(blockIndex, itemIndex);
-    const total = getSetCount(item);
-    setCheckedSets((prev) => {
-      const current = getSetState(prev, key, total);
-      const nextValue = !current[setIndex];
-      const nextSets = [...current];
-      nextSets[setIndex] = nextValue;
-      const next = { ...prev, [key]: nextSets };
-      if (nextValue) {
-        triggerPulse(key);
-        if (hapticsEnabled && Platform.OS !== "web") Vibration.vibrate(14);
-        if (!sessionRunning) setSessionRunning(true);
-        const restAuto = getAutoRestSeconds(item);
-        if (restAuto) startRest(restAuto, "auto");
-        const isComplete =
-          items.length > 0 &&
-          items.every((it, idx) => isItemComplete(next, blockIndex, idx, it));
-        if (isComplete && blockIndex < blocks.length - 1) {
-          const nextIndex = blockIndex + 1;
-          requestAnimationFrame(() => {
-            listRef.current?.scrollToIndex?.({ index: nextIndex, animated: true });
-          });
-          if (hapticsEnabled && Platform.OS !== "web") Vibration.vibrate(35);
+  const toggleSet = useCallback(
+    (
+      blockIndex: number,
+      itemIndex: number,
+      setIndex: number,
+      item: BlockItem,
+      items: BlockItem[]
+    ) => {
+      const key = getItemKey(blockIndex, itemIndex);
+      const total = getSetCount(item);
+      setCheckedSets((prev) => {
+        const current = getSetState(prev, key, total);
+        const nextValue = !current[setIndex];
+        const nextSets = [...current];
+        nextSets[setIndex] = nextValue;
+        const next = { ...prev, [key]: nextSets };
+        if (nextValue) {
+          triggerPulse(key);
+          if (hapticsEnabled && Platform.OS !== "web") Vibration.vibrate(14);
+          setSessionRunning(true);
+          const restAuto = getAutoRestSeconds(item);
+          if (restAuto) startRest(restAuto, "auto");
+          const isComplete =
+            items.length > 0 &&
+            items.every((it, idx) => isItemComplete(next, blockIndex, idx, it));
+          if (isComplete && blockIndex < blocks.length - 1) {
+            const nextIndex = blockIndex + 1;
+            requestAnimationFrame(() => {
+              listRef.current?.scrollToIndex?.({ index: nextIndex, animated: true });
+            });
+            if (hapticsEnabled && Platform.OS !== "web") Vibration.vibrate(35);
+          }
         }
-      }
-      return next;
-    });
-  };
+        return next;
+      });
+    },
+    [blocks, hapticsEnabled, triggerPulse, startRest]
+  );
 
   const isBlockComplete = (blockIndex: number, items: BlockItem[] = []) => {
     if (items.length === 0) return false;
@@ -600,59 +840,13 @@ function SessionLiveScreen() {
     if (activeBlock >= blocks.length) setActiveBlock(0);
   }, [blocks, activeBlock]);
 
-  const formatItemMeta = (item: BlockItem) => {
-    const parts: string[] = [];
-    if (item?.sets != null && item.sets > 0) parts.push(`${item.sets}x`);
-    if (item?.reps != null && item.reps > 0) parts.push(`${item.reps} reps`);
-    if (Array.isArray(item?.workRestSec) && item.workRestSec.length >= 2) {
-      const [w, r] = item.workRestSec;
-      parts.push(`${w ?? "?"}s/${r ?? "?"}s`);
-    } else if (item?.workS || item?.restS) {
-      if (item.workS) parts.push(`${item.workS}s`);
-      if (item.restS) parts.push(`/${item.restS}s`);
-    } else if (item?.workRest && item.workRest.trim().length > 0) {
-      parts.push(item.workRest.trim());
-    }
-    if (item?.durationPerSetSec) parts.push(`${item.durationPerSetSec}s / série`);
-    if (item?.durationMin) parts.push(`${item.durationMin} min`);
-    return parts.join(" · ");
-  };
-
-  const getDisplayName = (item: BlockItem) => {
-    const displayNameRaw = (item?.name || "").trim();
-    const fallbackId =
-      typeof item?.exerciseId === "string" && item.exerciseId.trim()
-        ? item.exerciseId.trim()
-        : typeof item?.id === "string" && item.id.trim()
-          ? item.id.trim()
-          : undefined;
-    const displayName =
-      displayNameRaw.length > 0
-        ? prettifyName(displayNameRaw)
-        : fallbackId
-          ? prettifyName(fallbackId)
-          : item?.modality
-            ? prettifyName(String(item.modality))
-            : "Exercice";
-    return displayName;
-  };
-
-  const getExerciseId = (item: BlockItem) => {
-    if (typeof item?.exerciseId === "string" && item.exerciseId.trim()) {
-      return item.exerciseId.trim();
-    }
-    if (typeof item?.id === "string" && item.id.trim()) {
-      return item.id.trim();
-    }
-    return null;
-  };
-
   const finishLabel = sessionId
     ? "Terminer et donner le feedback"
     : "Terminer la séance";
 
   const finishAction = () => {
     clearPersistedSession();
+    const elapsedSec = timerRef.current?.getSeconds() ?? 0;
     const estimatedRpe = (() => {
       if (typeof v2.rpeTarget === "number" && Number.isFinite(v2.rpeTarget)) {
         return Math.max(1, Math.min(10, Math.round(v2.rpeTarget)));
@@ -663,8 +857,8 @@ function SessionLiveScreen() {
       return 6;
     })();
     const durationMin =
-      sessionSec >= 60
-        ? Math.max(5, Math.round(sessionSec / 60))
+      elapsedSec >= 60
+        ? Math.max(5, Math.round(elapsedSec / 60))
         : typeof v2.durationMin === "number"
           ? Math.round(v2.durationMin)
           : undefined;
@@ -699,10 +893,28 @@ function SessionLiveScreen() {
     });
   };
 
-  const goToExercise = (exerciseId: string | null) => {
+  const goToExercise = useCallback((exerciseId: string | null) => {
     if (!exerciseId) return;
     nav.navigate("ExerciseDetail", { highlightId: exerciseId });
-  };
+  }, [nav]);
+
+  const renderBlock = useCallback(
+    ({ item: block, index }: { item: Block; index: number }) => (
+      <BlockCard
+        block={block}
+        blockIndex={index}
+        blockWidth={blockWidth}
+        itemSize={itemSize}
+        scrollX={scrollX}
+        checkedSets={checkedSets}
+        onToggleSet={toggleSet}
+        onOpenExercise={goToExercise}
+        getPulse={getPulse}
+        cycleTheme={cycleTheme}
+      />
+    ),
+    [blockWidth, itemSize, scrollX, checkedSets, toggleSet, goToExercise, getPulse, cycleTheme]
+  );
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
@@ -715,30 +927,37 @@ function SessionLiveScreen() {
             ]}
           >
             <Card variant="surface" style={styles.heroCard}>
-              <View style={styles.heroTop}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.title} numberOfLines={2}>{title}</Text>
-                  {subtitle ? <Text style={styles.subtitle} numberOfLines={3}>{subtitle}</Text> : null}
+              {/* Header thémé par cycle — cohérent avec le header Preview */}
+              <View style={[styles.headerBand, { backgroundColor: cycleTheme.strong }]}>
+                <View style={styles.pill}>
+                  <Ionicons name={cycleTheme.icon as any} size={26} color={cycleTheme.strong} />
                 </View>
-                <Badge label={plannedDateISO} />
+                <View style={styles.headerText}>
+                  <Text style={styles.kicker}>Cycle {cycleTheme.label}</Text>
+                  <Text style={styles.title} numberOfLines={2}>{title}</Text>
+                  {subtitle ? <Text style={styles.subtitle} numberOfLines={2}>{subtitle}</Text> : null}
+                  {plannedDateISO ? <Text style={styles.headerDate}>{plannedDateISO}</Text> : null}
+                </View>
               </View>
 
-              <View style={styles.tagRow}>
-                {v2.intensity ? (
-                  <Badge label={v2.intensity} tone={intensityTone(v2.intensity)} />
-                ) : null}
-                {v2.focusPrimary ? <Badge label={v2.focusPrimary} /> : null}
-                {v2.durationMin ? <Badge label={`${v2.durationMin} min`} /> : null}
-                {v2.rpeTarget ? <Badge label={`RPE ${v2.rpeTarget}`} /> : null}
-                {v2.location ? <Badge label={v2.location} /> : null}
-              </View>
+              <View style={styles.heroBody}>
+                <View style={styles.tagRow}>
+                  {v2.intensity ? (
+                    <Badge label={v2.intensity} tone={intensityTone(v2.intensity)} />
+                  ) : null}
+                  {v2.focusPrimary ? <Badge label={v2.focusPrimary} /> : null}
+                  {v2.durationMin ? <Badge label={`${v2.durationMin} min`} /> : null}
+                  {v2.rpeTarget ? <Badge label={`RPE ${v2.rpeTarget}`} /> : null}
+                  {v2.location ? <Badge label={v2.location} /> : null}
+                </View>
 
-              <View style={styles.progressWrap}>
-                <Text style={styles.progressLabel}>
-                  Progression : {completedItems}/{totalItems || "—"} séries
-                </Text>
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+                <View style={styles.progressWrap}>
+                  <Text style={styles.progressLabel}>
+                    Progression : {completedItems}/{totalItems || "—"} séries
+                  </Text>
+                  <View style={styles.progressTrack}>
+                    <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: cycleTheme.strong }]} />
+                  </View>
                 </View>
               </View>
             </Card>
@@ -748,7 +967,13 @@ function SessionLiveScreen() {
               <View style={styles.timerRow}>
                 <View style={styles.timerBlock}>
                   <Text style={styles.timerLabel}>Séance</Text>
-                  <Text style={styles.timerValue}>{formatTime(sessionSec)}</Text>
+                  <SessionTimer
+                    ref={timerRef}
+                    running={sessionRunning}
+                    maxSec={MAX_SESSION_SEC}
+                    onReachMax={handleReachMax}
+                    style={styles.timerValue}
+                  />
                 </View>
                 <View style={styles.timerBlock}>
                   <Text style={styles.timerLabel}>Repos</Text>
@@ -762,13 +987,17 @@ function SessionLiveScreen() {
                   onPress={() => setSessionRunning((v) => !v)}
                   size="sm"
                   variant={sessionRunning ? "secondary" : "primary"}
-                  style={styles.timerButton}
+                  style={[
+                    styles.timerButton,
+                    // CTA de séance : couleur du cycle (override de l'orange) à l'état "Démarrer".
+                    !sessionRunning && { backgroundColor: cycleTheme.strong, borderColor: cycleTheme.strong },
+                  ]}
                 />
                 <Button
                   label="Réinit"
                   onPress={() => {
                     setSessionRunning(false);
-                    setSessionSec(0);
+                    timerRef.current?.reset();
                   }}
                   size="sm"
                   variant="ghost"
@@ -780,17 +1009,17 @@ function SessionLiveScreen() {
                 {[30, 60, 90].map((s) => (
                   <TouchableOpacity
                     key={s}
-                    style={styles.restChip}
+                    style={[styles.restChip, { backgroundColor: cycleTheme.soft }]}
                     onPress={() => startRest(s, "manual")}
                     activeOpacity={0.85}
                     accessibilityRole="button"
                     accessibilityLabel={`Repos ${s} secondes`}
                   >
-                    <Text style={styles.restChipText}>{s}s</Text>
+                    <Text style={[styles.restChipText, { color: cycleTheme.textOnSoft }]}>{s}s</Text>
                   </TouchableOpacity>
                 ))}
                 <TouchableOpacity
-                  style={[styles.restChip, styles.restChipGhost]}
+                  style={[styles.restChip, styles.restChipGhost, { backgroundColor: cycleTheme.soft, borderColor: cycleTheme.strong }]}
                   onPress={() => {
                     setRestRunning(false);
                     setRestSec(0);
@@ -799,7 +1028,7 @@ function SessionLiveScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Arrêter le repos"
                 >
-                  <Text style={styles.restChipGhostText}>Stop</Text>
+                  <Text style={[styles.restChipGhostText, { color: cycleTheme.strong }]}>Stop</Text>
                 </TouchableOpacity>
               </View>
               {timerPresets.length > 0 ? (
@@ -807,7 +1036,7 @@ function SessionLiveScreen() {
                   {timerPresets.map((preset, idx) => (
                     <TouchableOpacity
                       key={`preset_${idx}`}
-                      style={styles.restChip}
+                      style={[styles.restChip, { backgroundColor: cycleTheme.soft }]}
                       onPress={() => {
                         const rest = Number(preset.restS);
                         if (Number.isFinite(rest) && rest > 0) {
@@ -815,7 +1044,7 @@ function SessionLiveScreen() {
                         }
                       }}
                     >
-                      <Text style={styles.restChipText}>{formatPresetLabel(preset)}</Text>
+                      <Text style={[styles.restChipText, { color: cycleTheme.textOnSoft }]}>{formatPresetLabel(preset)}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -833,163 +1062,8 @@ function SessionLiveScreen() {
               data={blocks}
               horizontal
               keyExtractor={(_, index) => `block_${index}`}
-              renderItem={({ item: block, index: blockIndex }) => {
-                const items = block.items ?? [];
-                const blockTitle =
-                  block.goal || block.name || block.type || block.focus || `Bloc ${blockIndex + 1}`;
-                const isComplete = isBlockComplete(blockIndex, items);
-                const inputRange = [
-                  (blockIndex - 1) * itemSize,
-                  blockIndex * itemSize,
-                  (blockIndex + 1) * itemSize,
-                ];
-                const scale = scrollX.interpolate({
-                  inputRange,
-                  outputRange: [0.94, 1, 0.94],
-                  extrapolate: "clamp",
-                });
-                const opacity = scrollX.interpolate({
-                  inputRange,
-                  outputRange: [0.6, 1, 0.6],
-                  extrapolate: "clamp",
-                });
-                return (
-                  <Animated.View
-                    style={[
-                      styles.blockCardWrap,
-                      { width: blockWidth, opacity, transform: [{ scale }] },
-                    ]}
-                  >
-                    <Card variant="surface" style={styles.blockCard}>
-                      <View style={styles.blockHeader}>
-                        <View>
-                          <Text style={styles.blockTitle} numberOfLines={2}>{blockTitle}</Text>
-                          <Text style={styles.blockMeta}>
-                            {block.intensity ?? "—"} · {block.durationMin ?? "?"} min
-                          </Text>
-                        </View>
-                        {isComplete ? <Badge label="OK" tone="ok" /> : null}
-                      </View>
-
-                      {items.length === 0 ? (
-                        <Text style={styles.blockEmpty}>Bloc sans items détaillés.</Text>
-                      ) : (
-                        <View style={{ gap: 10 }}>
-                          {items.map((item, itemIndex) => {
-                            const key = getItemKey(blockIndex, itemIndex);
-                            const itemProgress = getItemProgress(
-                              checkedSets,
-                              blockIndex,
-                              itemIndex,
-                              item
-                            );
-                            const checkedItem = itemProgress.complete;
-                            const itemName = getDisplayName(item);
-                            const meta = formatItemMeta(item);
-                            const exerciseId = getExerciseId(item);
-                            const pulse = getPulse(key);
-                            const setCount = itemProgress.total;
-                            const doneSets = itemProgress.done;
-                            const setState = itemProgress.sets;
-                            return (
-                              <View key={key} style={styles.itemRow}>
-                                <View style={styles.itemMain}>
-                                  {setCount <= 1 ? (
-                                    <TouchableOpacity
-                                      onPress={() =>
-                                        toggleSet(blockIndex, itemIndex, 0, item, items)
-                                      }
-                                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                                      activeOpacity={0.85}
-                                      accessibilityRole="checkbox"
-                                      accessibilityLabel={`${itemName}, ${checkedItem ? 'terminé' : 'à faire'}`}
-                                      accessibilityState={{ checked: !!checkedItem }}
-                                    >
-                                      <Animated.View
-                                        style={[
-                                          styles.checkbox,
-                                          checkedItem && styles.checkboxChecked,
-                                          { transform: [{ scale: pulse }] },
-                                        ]}
-                                      >
-                                        {checkedItem ? (
-                                          <Text style={styles.checkboxIcon}>✓</Text>
-                                        ) : null}
-                                      </Animated.View>
-                                    </TouchableOpacity>
-                                  ) : (
-                                    <View style={styles.setsWrap}>
-                                      <Text style={styles.setsLabel}>
-                                        {doneSets}/{setCount} séries
-                                      </Text>
-                                      <View style={styles.setsRow}>
-                                        {setState.map((done, setIndex) => (
-                                          <TouchableOpacity
-                                            key={`${key}-set-${setIndex}`}
-                                            onPress={() =>
-                                              toggleSet(
-                                                blockIndex,
-                                                itemIndex,
-                                                setIndex,
-                                                item,
-                                                items
-                                              )
-                                            }
-                                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                                            style={[
-                                              styles.setChip,
-                                              done && styles.setChipDone,
-                                            ]}
-                                            activeOpacity={0.85}
-                                            accessibilityRole="checkbox"
-                                            accessibilityLabel={`Série ${setIndex + 1} sur ${setCount}, ${done ? 'terminée' : 'à faire'}`}
-                                            accessibilityState={{ checked: !!done }}
-                                          >
-                                            <Text
-                                              style={[
-                                                styles.setChipText,
-                                                done && styles.setChipTextDone,
-                                              ]}
-                                            >
-                                              {setIndex + 1}
-                                            </Text>
-                                          </TouchableOpacity>
-                                        ))}
-                                      </View>
-                                    </View>
-                                  )}
-                                  <View style={{ flex: 1 }}>
-                                    <Text style={styles.itemName} numberOfLines={2}>{itemName}</Text>
-                                    {item.description ? (
-                                      <Text style={styles.itemNote}>{item.description}</Text>
-                                    ) : null}
-                                    {meta ? <Text style={styles.itemMeta}>{meta}</Text> : null}
-                                    {item.footballContext ? (
-                                      <Text style={styles.itemContext}>{item.footballContext}</Text>
-                                    ) : null}
-                                    {cleanDisplayNote(item.notes) ? (
-                                      <Text style={styles.itemNote}>{cleanDisplayNote(item.notes)}</Text>
-                                    ) : null}
-                                  </View>
-                                </View>
-                                {exerciseId ? (
-                                  <TouchableOpacity
-                                    onPress={() => goToExercise(exerciseId)}
-                                    activeOpacity={0.85}
-                                    style={styles.itemLink}
-                                  >
-                                    <Text style={styles.itemLinkText}>Fiche</Text>
-                                  </TouchableOpacity>
-                                ) : null}
-                              </View>
-                            );
-                          })}
-                        </View>
-                      )}
-                    </Card>
-                  </Animated.View>
-                );
-              }}
+              renderItem={renderBlock}
+              extraData={checkedSets}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ paddingHorizontal: 16 }}
               ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
@@ -1026,7 +1100,7 @@ function SessionLiveScreen() {
                     style={[
                       styles.dot,
                       done && styles.dotDone,
-                      isActive && styles.dotActive,
+                      isActive && [styles.dotActive, { backgroundColor: cycleTheme.strong }],
                     ]}
                   />
                 );
@@ -1034,9 +1108,16 @@ function SessionLiveScreen() {
             </View>
 
             {blocks.length > 0 ? (
-              <Card variant="soft" style={styles.coachMiniCard}>
+              // Encadré conseil thémé : fond soft + barre gauche strong (comme en Preview)
+              <Card
+                variant="soft"
+                style={[
+                  styles.coachMiniCard,
+                  { backgroundColor: cycleTheme.soft, borderLeftWidth: 3, borderLeftColor: cycleTheme.strong },
+                ]}
+              >
                 <SectionHeader title={`Focus bloc ${Math.min(activeBlock + 1, blocks.length)}`} />
-                <Text style={styles.coachMiniText}>{coachTip}</Text>
+                <Text style={[styles.coachMiniText, { color: cycleTheme.textOnSoft }]}>{coachTip}</Text>
               </Card>
             ) : null}
 
@@ -1053,7 +1134,14 @@ function SessionLiveScreen() {
               </Card>
             ) : null}
 
-            <Button label={finishLabel} onPress={finishAction} fullWidth size="lg" />
+            {/* CTA de séance : couleur du cycle (override de l'orange, cf. cycleTheme) */}
+            <Button
+              label={finishLabel}
+              onPress={finishAction}
+              fullWidth
+              size="lg"
+              style={{ backgroundColor: cycleTheme.strong, borderColor: cycleTheme.strong }}
+            />
           </Animated.View>
         </ScrollView>
 
@@ -1106,10 +1194,28 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   container: { padding: 16 },
   content: { gap: 16 },
-  heroCard: { padding: 16, gap: 12 },
-  heroTop: { flexDirection: "row", gap: 12, alignItems: "center" },
-  title: { fontSize: 22, fontWeight: "800", color: palette.text },
-  subtitle: { fontSize: 13, color: palette.sub, marginTop: 4 },
+  heroCard: { padding: 0, overflow: "hidden" },
+  headerBand: { flexDirection: "row", alignItems: "center", gap: 14, padding: 16 },
+  pill: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerText: { flex: 1, gap: 2 },
+  kicker: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    color: "rgba(255,255,255,0.78)",
+  },
+  headerDate: { fontSize: 11, color: "rgba(255,255,255,0.65)", marginTop: 2 },
+  heroBody: { padding: 16, gap: 12 },
+  title: { fontSize: 18, fontWeight: "600", color: "#fff" },
+  subtitle: { fontSize: 13, color: "rgba(255,255,255,0.82)", marginTop: 2 },
   tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   progressWrap: { gap: 6 },
   progressLabel: { color: palette.sub, fontSize: 12 },
@@ -1204,12 +1310,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: palette.card,
   },
-  setChipDone: {
-    backgroundColor: palette.accent,
-    borderColor: palette.accent,
-  },
   setChipText: { fontSize: 12, color: palette.sub, fontWeight: "700" },
-  setChipTextDone: { color: palette.bg },
   checkbox: {
     width: 32,
     height: 32,
@@ -1220,11 +1321,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 0,
   },
-  checkboxChecked: {
-    backgroundColor: palette.accent,
-    borderColor: palette.accent,
-  },
-  checkboxIcon: { color: palette.bg, fontSize: 16, fontWeight: "800" },
+  checkboxIcon: { fontSize: 16, fontWeight: "800" },
   itemName: { color: palette.text, fontSize: 14, fontWeight: "600" },
   itemMeta: { color: palette.sub, fontSize: 12, marginTop: 2 },
   itemContext: { color: palette.text, fontSize: 11, marginTop: 2 },

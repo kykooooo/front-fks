@@ -14,8 +14,8 @@ import { useLoadStore } from "../state/stores/useLoadStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { updateTrainingLoad } from "../engine/loadModel";
 import { useSettingsStore } from "../state/settingsStore";
-import { ImageBanner } from "../components/ui/ImageBanner";
-import { BANNER_IMAGES, BANNER_FALLBACK } from "../constants/bannerImages";
+import { withSessionErrorBoundary } from "../components/withErrorBoundary";
+import { getCycleTheme } from "../constants/cycleTheme";
 
 type SummaryRoute = RouteProp<AppStackParamList, "SessionSummary">;
 
@@ -33,7 +33,7 @@ const intensityTone = (intensity?: string) => {
   return "default";
 };
 
-export default function SessionSummaryScreen() {
+function SessionSummaryScreen() {
   const nav = useNavigation<any>();
   const route = useRoute<SummaryRoute>();
   const { summary, sessionId } = route.params;
@@ -43,6 +43,9 @@ export default function SessionSummaryScreen() {
   const sessionCompleted = useSessionsStore((s) =>
     sessionId ? !!s.sessions.find((session) => session.id === sessionId)?.completed : false
   );
+  const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  // Thème couleur du cycle de la séance terminée (cycle actif → fallback Force).
+  const ct = getCycleTheme(microcycleGoal);
   const autoFeedbackEnabled = useSettingsStore((s) => s.autoFeedbackEnabled);
   const canAutoFeedback = !!sessionId && !sessionCompleted && autoFeedbackEnabled;
 
@@ -169,6 +172,13 @@ export default function SessionSummaryScreen() {
     outputRange: [18, 0],
   });
 
+  // Chip thémé par cycle pour les badges non-sémantiques (l'intensité garde son ton).
+  const cycleChip = (label: string, key: string) => (
+    <View key={key} style={[styles.cycleChip, { backgroundColor: ct.soft }]}>
+      <Text style={[styles.cycleChipText, { color: ct.textOnSoft }]}>{label}</Text>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
@@ -179,26 +189,27 @@ export default function SessionSummaryScreen() {
           ]}
         >
           <Card variant="surface" style={styles.heroCard}>
-            <ImageBanner
-              source={BANNER_IMAGES.celebration}
-              height={200}
-              fallbackColor={BANNER_FALLBACK.celebration}
-              borderRadius={18}
-            >
-              <Text style={styles.heroKicker}>Séance terminée 🔥</Text>
-              <Text style={styles.heroTitle}>{summary.title}</Text>
-            </ImageBanner>
+            {/* Header thémé par cycle — plus de photo "celebration" */}
+            <View style={[styles.headerBand, { backgroundColor: ct.strong }]}>
+              <View style={styles.pill}>
+                <Ionicons name="trophy-outline" size={26} color={ct.strong} />
+              </View>
+              <View style={styles.headerText}>
+                <Text style={styles.heroKicker}>Séance terminée</Text>
+                <Text style={styles.heroTitle} numberOfLines={2}>{summary.title}</Text>
+              </View>
+            </View>
             <View style={styles.heroBody}>
               {summary.subtitle ? (
                 <Text style={styles.heroSubtitle}>{summary.subtitle}</Text>
               ) : null}
               <View style={styles.heroBadges}>
-                {summary.plannedDateISO ? <Badge label={summary.plannedDateISO} /> : null}
+                {summary.plannedDateISO ? cycleChip(summary.plannedDateISO, "hero-date") : null}
                 {summary.intensity ? (
                   <Badge label={summary.intensity} tone={intensityTone(summary.intensity)} />
                 ) : null}
-                {summary.focus ? <Badge label={summary.focus} /> : null}
-                {summary.location ? <Badge label={summary.location} /> : null}
+                {summary.focus ? cycleChip(summary.focus, "hero-focus") : null}
+                {summary.location ? cycleChip(summary.location, "hero-loc") : null}
               </View>
               <View style={styles.heroProgress}>
                 <Text style={styles.progressLabel}>
@@ -207,7 +218,7 @@ export default function SessionSummaryScreen() {
                 </Text>
                 <View style={styles.progressTrack}>
                   <View
-                    style={[styles.progressFill, { width: `${completionRatio * 100}%` }]}
+                    style={[styles.progressFill, { width: `${completionRatio * 100}%`, backgroundColor: ct.strong }]}
                   />
                 </View>
               </View>
@@ -253,9 +264,9 @@ export default function SessionSummaryScreen() {
               {summary.intensity ? (
                 <Badge label={summary.intensity} tone={intensityTone(summary.intensity)} />
               ) : null}
-              {summary.focus ? <Badge label={summary.focus} /> : null}
-              {durationMin ? <Badge label={`${durationMin} min`} /> : null}
-              {rpe ? <Badge label={`RPE ${rpe}`} /> : null}
+              {summary.focus ? cycleChip(summary.focus, "badge-focus") : null}
+              {durationMin ? cycleChip(`${durationMin} min`, "badge-dur") : null}
+              {rpe ? cycleChip(`RPE ${rpe}`, "badge-rpe") : null}
             </View>
           </Card>
 
@@ -281,6 +292,7 @@ export default function SessionSummaryScreen() {
               size="lg"
               variant="primary"
               disabled={!sessionId || sessionCompleted}
+              style={{ backgroundColor: ct.strong, borderColor: ct.strong }}
             />
             {canAutoFeedback && countdown > 0 ? (
               <Text style={styles.countdownText}>
@@ -323,27 +335,36 @@ const styles = StyleSheet.create({
     padding: 0,
     overflow: "hidden",
   },
+  headerBand: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 16,
+  },
+  pill: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerText: { flex: 1, gap: 2 },
   heroBody: {
     padding: 14,
     gap: 10,
   },
   heroKicker: {
-    color: "#fff",
-    fontSize: 13,
-    letterSpacing: 1,
+    color: "rgba(255,255,255,0.78)",
+    fontSize: 11,
+    letterSpacing: 0.6,
     textTransform: "uppercase",
     fontWeight: "700",
-    textShadowColor: "rgba(0,0,0,0.6)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
   },
   heroTitle: {
     color: "#fff",
-    fontSize: 22,
-    fontWeight: "800",
-    textShadowColor: "rgba(0,0,0,0.6)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    fontSize: 18,
+    fontWeight: "600",
   },
   heroSubtitle: {
     color: palette.sub,
@@ -354,6 +375,12 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 8,
   },
+  cycleChip: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: theme.radius.pill,
+  },
+  cycleChipText: { fontWeight: "600", fontSize: 11 },
   heroProgress: {
     gap: 6,
   },
@@ -449,3 +476,5 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
   },
 });
+
+export default withSessionErrorBoundary(SessionSummaryScreen);
