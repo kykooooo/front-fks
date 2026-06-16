@@ -6,6 +6,10 @@ import { toDateKey } from "../../../utils/dateHelpers";
 
 type Props = {
   current: Session;
+  /** Phase d'affichage dérivée du cycle (ex: "Pic de forme"). Voir utils/microcycleUtils. */
+  phaseLabel?: string | null;
+  /** Phrase de sens de la phase courante (optionnelle). */
+  phaseMeaning?: string | null;
   nextAllowedISO?: string | null;
   alreadyAppliedToday: boolean;
   onFeedback: () => void;
@@ -15,6 +19,8 @@ type Props = {
 
 export function CurrentSessionCard({
   current,
+  phaseLabel,
+  phaseMeaning,
   nextAllowedISO,
   alreadyAppliedToday,
   onFeedback,
@@ -29,8 +35,11 @@ export function CurrentSessionCard({
       </Text>
 
       <Text style={styles.meta}>
-        Phase : {current.phase} · Intensité : {current.intensity} · Volume : {current.volumeScore}
+        {phaseLabel ? `Phase : ${phaseLabel} · ` : ""}Intensité : {current.intensity} · Volume : {current.volumeScore}
       </Text>
+      {phaseLabel && phaseMeaning ? (
+        <Text style={styles.phaseMeaning}>{phaseMeaning}</Text>
+      ) : null}
 
       <FlatList<Exercise>
         data={Array.isArray(current.exercises) ? current.exercises : []}
@@ -106,6 +115,13 @@ const styles = {
     fontSize: 12,
     color: palette.sub,
     marginTop: 8,
+  },
+  phaseMeaning: {
+    fontSize: 11.5,
+    color: palette.sub,
+    marginTop: 4,
+    lineHeight: 16,
+    fontStyle: "italic" as const,
   },
   list: { marginTop: 10 },
   exerciseItem: {

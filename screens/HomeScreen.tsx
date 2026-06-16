@@ -38,6 +38,9 @@ import HomeAdviceCard from "../components/home/HomeAdviceCard";
 import { isSameDay, toDateKey } from "../utils/dateHelpers";
 import { showToast } from "../utils/toast";
 import { getFootballLabel } from "../config/trainingDefaults";
+import { MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
+import { getCycleTheme } from "../constants/cycleTheme";
+import { getMicrocyclePhase } from "../utils/microcycleUtils";
 
 const palette = theme.colors;
 
@@ -126,7 +129,6 @@ export default function HomeScreen() {
   const runTestHarness = useDebugStore((s) => s.runTestHarness);
 
   // ── Load state ──
-  const phase = useSessionsStore((s) => s.phase);
   const tsb = useLoadStore((s) => s.tsb);
   const devNowISO = useDebugStore((s) => s.devNowISO);
   const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
@@ -211,6 +213,14 @@ export default function HomeScreen() {
 
   const activityStreak = useActivityStreak(sessions, externalLoads, nowISO);
 
+  // Badge compact "Séance N/12 · <phase>" — affichage dérivé (jamais session.phase = "Playlist").
+  const homeCycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
+  const homeCycleDone =
+    Math.max(0, Math.trunc(microcycleSessionIndex ?? 0)) >= MICROCYCLE_TOTAL_SESSIONS_DEFAULT;
+  const homeCyclePhase =
+    homeCycleId && !homeCycleDone ? getMicrocyclePhase(microcycleSessionIndex) : null;
+  const homeCycleColor = homeCycleId ? getCycleTheme(homeCycleId).strong : palette.accent;
+
   const todayLabel = useMemo(() => {
     const base = nowISO ? new Date(nowISO) : new Date();
     try {
@@ -260,6 +270,27 @@ export default function HomeScreen() {
             onPress={primaryCta.onPress}
           />
         </Animated.View>
+
+        {/* Badge cycle : où en est le joueur dans son voyage (séance + phase) */}
+        {homeCyclePhase ? (
+          <Animated.View style={animStyle(ctaAnim)}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => nav.navigate("CycleModal", { mode: "manage", origin: "home" })}
+              style={[styles.cycleChip, { borderColor: homeCycleColor + "40" }]}
+            >
+              <View style={[styles.cycleChipDot, { backgroundColor: homeCycleColor }]} />
+              <Text style={styles.cycleChipText} numberOfLines={1}>
+                <Text style={[styles.cycleChipStrong, { color: homeCycleColor }]}>
+                  Séance {homeCyclePhase.sessionNumber}/{homeCyclePhase.total}
+                </Text>
+                {"  ·  "}
+                {homeCyclePhase.label}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={palette.sub} />
+            </TouchableOpacity>
+          </Animated.View>
+        ) : null}
 
         {/* Ligne stats compacte : Semaine / Série / Match */}
         <Animated.View style={animStyle(ctaAnim)}>
@@ -406,6 +437,19 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   // ── Ligne stats compacte ──
+  cycleChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: palette.card,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  cycleChipDot: { width: 8, height: 8, borderRadius: 999 },
+  cycleChipText: { flex: 1, fontSize: 13, color: palette.sub, fontWeight: "600" },
+  cycleChipStrong: { fontWeight: "800" },
   statsLine: {
     flexDirection: "row",
     alignItems: "center",

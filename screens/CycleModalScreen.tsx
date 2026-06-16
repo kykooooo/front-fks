@@ -36,6 +36,8 @@ import {
   isMicrocycleId,
 } from "../domain/microcycles";
 import { recommendMicrocycle } from "../domain/recommendMicrocycle";
+import { getCycleTheme } from "../constants/cycleTheme";
+import { getMicrocyclePhase, getMicrocyclePhaseRanges } from "../utils/microcycleUtils";
 import { Badge } from "../components/ui/Badge";
 import { showToast } from "../utils/toast";
 import { Button } from "../components/ui/Button";
@@ -426,14 +428,13 @@ export default function CycleModalScreen() {
   /*        CYCLE ACTIF — MODE GESTION           */
   /* ═══════════════════════════════════════════ */
   const renderActiveCycle = () => {
-    const cycleAccent = palette.accent;
+    // Couleur du cycle actif (cohérence avec les headers thémés des écrans de séance).
+    const cycleAccent = getCycleTheme(activeCycleId).strong;
     const progressPct = (completed / total) * 100;
 
-    const timelineRows = Array.from({ length: total }).map((_, idx) => {
-      const number = idx + 1;
-      const status = completed > idx ? "done" : completed === idx ? "current" : "next";
-      return { number, status };
-    });
+    // Phase courante + découpage du cycle en 4 phases (affichage dérivé, voir microcycleUtils).
+    const currentPhase = getMicrocyclePhase(completed, total);
+    const phaseRanges = getMicrocyclePhaseRanges(total);
 
     return (
       <View style={s.stepContainer}>
@@ -452,27 +453,74 @@ export default function CycleModalScreen() {
           <View style={s.progressTrack}>
             <View style={[s.progressFill, { width: `${progressPct}%`, backgroundColor: cycleAccent }]} />
           </View>
+
+          {/* Phase courante + sens (où le joueur en est dans son voyage) */}
+          <View style={[s.phaseNow, { backgroundColor: cycleAccent + "12", borderColor: cycleAccent + "33" }]}>
+            <Text style={s.phaseNowKicker}>SÉANCE {currentPhase.sessionNumber} / {total}</Text>
+            <Text style={[s.phaseNowLabel, { color: cycleAccent }]}>{currentPhase.label}</Text>
+            <Text style={s.phaseNowMeaning}>{currentPhase.meaning}</Text>
+          </View>
         </View>
 
-        {/* Timeline */}
-        <Text style={s.altSectionTitle}>Séances</Text>
-        <Card variant="soft" style={s.timelineCard}>
-          {timelineRows.map((row) => {
-            const dotColor =
-              row.status === "done" ? palette.success
-                : row.status === "current" ? palette.accent
-                  : palette.borderSoft;
-            const label = row.status === "done" ? "Terminée" : row.status === "current" ? "À faire" : "À venir";
-            const labelTone = row.status === "done" ? "ok" : row.status === "current" ? "warn" : "default";
+        {/* Voyage du cycle — les 4 phases regroupées et teintées */}
+        <Text style={s.altSectionTitle}>Ton voyage dans le cycle</Text>
+        <View style={s.journey}>
+          {phaseRanges.map((range) => {
+            const phaseDone = completed >= range.end;
+            const phaseCurrent = !phaseDone && completed >= range.start - 1;
+            const dotColor = phaseDone ? palette.success : phaseCurrent ? cycleAccent : palette.borderSoft;
+            const stateLabel = phaseDone ? "Terminé" : phaseCurrent ? "En cours" : "À venir";
+            const stateTone = phaseDone ? "ok" : phaseCurrent ? "warn" : "default";
             return (
-              <View key={`session_${row.number}`} style={s.timelineRow}>
-                <View style={[s.timelineDot, { backgroundColor: dotColor }]} />
-                <Text style={s.timelineTitle}>Séance {row.number}</Text>
-                <Badge label={label} tone={labelTone as any} />
+              <View
+                key={range.key}
+                style={[
+                  s.phaseBlock,
+                  { borderColor: phaseCurrent ? cycleAccent : palette.borderSoft },
+                  phaseCurrent ? { backgroundColor: cycleAccent + "12" } : null,
+                ]}
+              >
+                <View style={s.phaseBlockHead}>
+                  <View style={[s.phaseBlockDot, { backgroundColor: dotColor }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.phaseBlockTitle, phaseCurrent ? { color: cycleAccent } : null]}>
+                      {range.label}
+                    </Text>
+                    <Text style={s.phaseBlockRange}>
+                      {range.start === range.end
+                        ? `Séance ${range.start}`
+                        : `Séances ${range.start}–${range.end}`}
+                    </Text>
+                  </View>
+                  <Badge label={stateLabel} tone={stateTone as any} />
+                </View>
+
+                {phaseCurrent ? <Text style={s.phaseBlockMeaning}>{range.meaning}</Text> : null}
+
+                {/* Pastilles numérotées : une par séance de la phase */}
+                <View style={s.phasePills}>
+                  {Array.from({ length: range.count }).map((_, i) => {
+                    const number = range.start + i;
+                    const sDone = completed >= number;
+                    const sCurrent = completed === number - 1;
+                    const pillBg = sDone ? palette.success : sCurrent ? cycleAccent : palette.card;
+                    const pillBorder = sDone ? palette.success : sCurrent ? cycleAccent : palette.borderSoft;
+                    return (
+                      <View
+                        key={number}
+                        style={[s.sessionPill, { backgroundColor: pillBg, borderColor: pillBorder }]}
+                      >
+                        <Text style={[s.sessionPillText, sDone || sCurrent ? { color: "#fff" } : null]}>
+                          {number}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
               </View>
             );
           })}
-        </Card>
+        </View>
 
         {/* Actions */}
         <View style={s.confirmActions}>
@@ -809,10 +857,51 @@ const s = StyleSheet.create({
     width: "100%",
   },
   progressFill: { height: "100%", borderRadius: 999 },
-  timelineCard: { padding: 12, gap: 10 },
-  timelineRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  timelineDot: { width: 10, height: 10, borderRadius: 999 },
-  timelineTitle: { flex: 1, color: palette.text, fontWeight: "700", fontSize: 13 },
+
+  // ─── Phase courante (dans la progress card) ───
+  phaseNow: {
+    width: "100%",
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 4,
+    marginTop: 4,
+  },
+  phaseNowKicker: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: palette.sub,
+    letterSpacing: 1,
+  },
+  phaseNowLabel: { fontSize: 18, fontWeight: "900" },
+  phaseNowMeaning: { fontSize: 13, color: palette.text, lineHeight: 18 },
+
+  // ─── Voyage du cycle (4 phases) ───
+  journey: { gap: 10 },
+  phaseBlock: {
+    borderRadius: 16,
+    borderWidth: 1,
+    backgroundColor: palette.card,
+    padding: 14,
+    gap: 10,
+  },
+  phaseBlockHead: { flexDirection: "row", alignItems: "center", gap: 10 },
+  phaseBlockDot: { width: 12, height: 12, borderRadius: 999 },
+  phaseBlockTitle: { fontSize: 15, fontWeight: "800", color: palette.text },
+  phaseBlockRange: { fontSize: 12, color: palette.sub, marginTop: 1 },
+  phaseBlockMeaning: { fontSize: 12.5, color: palette.text, lineHeight: 18 },
+  phasePills: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  sessionPill: {
+    minWidth: 28,
+    height: 28,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 6,
+  },
+  sessionPillText: { fontSize: 12, fontWeight: "800", color: palette.sub },
 
   // ─── Cycle terminé ───
   completedBadge: {

@@ -38,6 +38,7 @@ import { CurrentSessionCard } from "./newSession/ui/CurrentSessionCard";
 import { useAiContextLoader, useEnvironmentEquipment } from "./newSession/hooks";
 import { palette } from "./newSession/theme";
 import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
+import { getMicrocyclePhase } from "../utils/microcycleUtils";
 import { Button } from "../components/ui/Button";
 import { trackEvent } from "../services/analytics";
 import { buildResetExplain } from "./newSession/resetExplain";
@@ -134,6 +135,8 @@ export default function NewSessionScreen() {
     Boolean(cycleId) &&
     Math.max(0, Math.trunc(microcycleSessionIndex ?? 0)) >= MICROCYCLE_TOTAL_SESSIONS_DEFAULT;
   const allowedLocations = cycleDef?.allowedLocations ?? ["gym", "pitch", "home"];
+  // Phase d'affichage dérivée (jamais le champ session.phase qui vaut "Playlist").
+  const cyclePhase = cycleId ? getMicrocyclePhase(microcycleSessionIndex, MICROCYCLE_TOTAL_SESSIONS_DEFAULT) : null;
 
   // IA / backend debug
   const [debugAgent, setDebugAgent] = useState<any>(null);
@@ -746,6 +749,8 @@ export default function NewSessionScreen() {
 	        // SI UNE SÉANCE EST DÉJÀ EN COURS
 	        <CurrentSessionCard
 	          current={current}
+          phaseLabel={cyclePhase?.label ?? null}
+          phaseMeaning={cyclePhase?.meaning ?? null}
           nextAllowedISO={nextAllowedISO}
           alreadyAppliedToday={alreadyAppliedToday}
           onFeedback={goFeedback}
