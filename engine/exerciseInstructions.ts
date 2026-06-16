@@ -965,6 +965,84 @@ export const EXERCISE_INSTRUCTIONS: Record<string, ExerciseInstruction> = {
   mb_chest_pass_wall: T.medballChestPass,
   mb_rotational_throw_wall: T.medballRotational,
   mb_overhead_slam: T.medballSlam,
+
+  // ── Explosivité — vitesse max longue + accélérations (ajouts) ──
+  sprint_flying_20m: {
+    howTo: "Prends 15m d'élan progressif, puis lâche tout sur 20m à pleine vitesse. Reste grand et relâché, récupère longtemps entre chaque course.",
+    cues: ["Élan progressif", "Relâche le haut du corps", "Repos long entre les courses"],
+  },
+  sprint_flying_30m: {
+    howTo: "Élan d'environ 15m puis 30m maintenus à vitesse maximale. Garde une foulée ample sans te crisper.",
+    cues: ["Monte en vitesse en douceur", "Foulée ample", "Repos complet entre les reps"],
+  },
+  run_build_up_40m: {
+    howTo: "Accélère progressivement sur 40m pour atteindre ta vitesse max en fin de course. Montée en régime lisse, sans à-coup.",
+    cues: ["Accélération progressive", "Vmax en fin de course", "Pas de saccade"],
+  },
+  sprint_float_sprint_30m: {
+    howTo: "10m vite, 10m relâché en gardant la vitesse, puis 10m vite à nouveau. La transition doit rester fluide.",
+    cues: ["Garde la vitesse en relâchant", "Transition fluide", "Re-accélère franc"],
+  },
+  sprint_ins_and_outs_50m: {
+    howTo: "Alterne environ 10m accélérés et 10m relâchés sur 50m, sans perdre trop de vitesse pendant les phases relâchées.",
+    cues: ["Relâche sans freiner", "Reste rapide", "Foulée économique"],
+  },
+  speed_wicket_run_maxv: {
+    howTo: "Cours sur des mini-haies basses et rapprochées en montant les genoux. Cherche un contact au sol bref et une cadence haute.",
+    cues: ["Genoux hauts", "Contact au sol court", "Cadence rapide"],
+  },
+  sprint_3point_start_10m: {
+    howTo: "Pars en position 3 appuis (une main au sol). Pousse fort sur le premier appui et projette-toi vers l'avant sur 10m.",
+    cues: ["Premier appui puissant", "Corps projeté vers l'avant", "Reste bas au départ"],
+  },
+  sprint_pushup_start_10m: {
+    howTo: "Depuis la position de pompe, relève-toi le plus vite possible et enchaîne un sprint de 10m sans temps mort.",
+    cues: ["Relève-toi vite", "Enchaîne sans pause", "Accélère franc"],
+  },
+  speed_dribble_to_sprint_15m: {
+    howTo: "Amorce avec quelques appuis sautillés pour lancer la fréquence, puis passe en sprint franc sur 15m.",
+    cues: ["Appuis sautillés courts", "Transition nette", "Sprint plein"],
+  },
+
+  // ── Explosivité — préhab ischios/adducteurs (ajouts) ──
+  str_nordic_hamstring_eccentric: {
+    howTo: "Genoux calés et chevilles bloquées, descends le buste vers l'avant le plus lentement possible en résistant avec les ischios. Amortis avec les mains puis repousse-toi pour remonter.",
+    cues: ["Descente la plus lente possible", "Bassin et tronc alignés", "Mains prêtes à amortir"],
+  },
+  str_copenhagen_adductor: {
+    howTo: "Avant-bras au sol, pied de la jambe haute posé sur un banc. Monte le bassin jusqu'à l'alignement et tiens, en gardant le corps gainé.",
+    cues: ["Corps aligné", "Bassin haut", "Gaine les adducteurs"],
+  },
+  str_hamstring_slider_curl: {
+    howTo: "Allongé sur le dos, talons sur sliders ou serviette, bassin levé. Tends lentement les jambes puis ramène les talons en gainant les ischios.",
+    cues: ["Bassin haut tout du long", "Extension lente", "Ramène en contrôle"],
+  },
+  str_single_leg_rdl_explo: {
+    howTo: "En appui sur une jambe, descends en charnière de hanche lente et contrôlée, puis reviens debout par une extension rapide et puissante.",
+    cues: ["Descente contrôlée", "Dos neutre", "Remontée explosive"],
+  },
+  str_adductor_iso_squeeze_band: {
+    howTo: "Allongé ou assis, place un élastique ou une serviette pliée entre les genoux et presse fort les cuisses l'une vers l'autre. Tiens 20 à 40 secondes.",
+    cues: ["Presse fort et constant", "Respiration libre", "Tiens 20-40s"],
+  },
+
+  // ── Explosivité — reset mobilité (ajouts) ──
+  mob_hip_flexor_dynamic: {
+    howTo: "En fente, bascule lentement le bassin vers l'avant puis reviens, buste droit. Tu dois sentir l'ouverture à l'avant de la hanche arrière.",
+    cues: ["Buste droit", "Ne creuse pas le dos", "Mouvement lent et rythmé"],
+  },
+  mob_ankle_rocks: {
+    howTo: "Genou qui avance au-dessus des orteils puis revient, talon collé au sol. Va-et-vient lents et contrôlés sur chaque cheville.",
+    cues: ["Talon au sol", "Genou vers l'avant", "Amplitude progressive"],
+  },
+  mob_hip_airplane: {
+    howTo: "En appui sur une jambe, buste penché et aligné, ouvre puis referme lentement le bassin en gardant l'équilibre.",
+    cues: ["Garde l'équilibre", "Mouvement lent", "Pied stable au sol"],
+  },
+  mob_walking_spiderman: {
+    howTo: "En avançant, pose une grande fente avec la main au sol côté pied avant et amène le coude vers la cheville. Enchaîne pas après pas.",
+    cues: ["Grande fente", "Coude vers la cheville", "Avance en contrôle"],
+  },
 };
 
 export const getExerciseInstruction = (id: string) =>

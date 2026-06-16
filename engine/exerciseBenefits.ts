@@ -358,6 +358,30 @@ const SPECIFIC_BENEFITS: Record<string, string> = {
   treadmill_maxv_10_15s: "Vitesse max sur tapis.",
   run_walk_run_intervals_20: "Alternance course/marche pour débutants.",
   str_jump_rope_easy: "Cardio et coordination des appuis.",
+
+  // ===== EXPLOSIVITÉ — vitesse max longue + accélérations (ajouts) =====
+  // sprint_flying_20m : bénéfice déjà défini plus haut (exo préexistant)
+  sprint_flying_30m: "Apprend à tenir ta vitesse max sur la durée — pour distancer un défenseur sur une longue course.",
+  run_build_up_40m: "Travaille la montée en vitesse sur la distance — pour arriver lancé dans la surface.",
+  sprint_float_sprint_30m: "Entraîne ta capacité à relancer après avoir relâché — comme un ailier qui réaccélère.",
+  sprint_ins_and_outs_50m: "Améliore ton économie de course à haute vitesse — pour enchaîner les courses rapides sans t'éteindre.",
+  speed_wicket_run_maxv: "Affûte ta fréquence de pas et ta mécanique de course — une foulée plus propre, plus de vitesse utile.",
+  sprint_3point_start_10m: "Développe la puissance de ton premier appui — pour gagner le départ sur un une-contre-un.",
+  sprint_pushup_start_10m: "Travaille ta réactivité à te relever et sprinter — pour repartir instantanément après un contact au sol.",
+  speed_dribble_to_sprint_15m: "Relie ta mise en action au sprint réel — passer d'un placement à une accélération pleine.",
+
+  // ===== EXPLOSIVITÉ — préhab ischios/adducteurs (ajouts) =====
+  str_nordic_hamstring_eccentric: "Construit des ischios puissants — pour garder de la vitesse en fin de match et tenir les accélérations répétées.",
+  str_copenhagen_adductor: "Renforce tes adducteurs en grande amplitude — plus de force dans les changements d'appui et les duels.",
+  str_hamstring_slider_curl: "Renforce tes ischios sur toute l'amplitude — plus de puissance dans la foulée.",
+  str_single_leg_rdl_explo: "Apprend à pousser fort sur un seul appui — le moteur des démarrages et des frappes puissantes.",
+  str_adductor_iso_squeeze_band: "Réveille et renforce tes adducteurs — plus de stabilité dans les appuis et les frappes intérieures.",
+
+  // ===== EXPLOSIVITÉ — reset mobilité (ajouts) =====
+  mob_hip_flexor_dynamic: "Rend de l'amplitude à l'avant de la hanche — des foulées plus longues et libres.",
+  mob_ankle_rocks: "Gagne de la flexion de cheville — des appuis plus profonds sur les démarrages et les changements de direction.",
+  mob_hip_airplane: "Développe le contrôle de ta hanche sur un appui — un bassin stable dans les changements de direction.",
+  mob_walking_spiderman: "Ouvre tes hanches en mouvement — plus d'aisance sur les grandes fentes et les frappes.",
 };
 
 /**

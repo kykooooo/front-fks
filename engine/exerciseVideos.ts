@@ -420,6 +420,26 @@ addMany(
   "E3 Rehab - Farmers Carry"
 );
 
+// ── EXPLOSIVITÉ — ajouts (vitesse max longue + accel + préhab + reset mobilité) ──
+addSearch(VETTED_BY_ID, "sprint_flying_20m", "flying 20m sprint max velocity drill");
+addSearch(VETTED_BY_ID, "sprint_flying_30m", "flying sprint 30m max velocity drill");
+addSearch(VETTED_BY_ID, "run_build_up_40m", "build up runs sprint acceleration drill");
+addSearch(VETTED_BY_ID, "sprint_float_sprint_30m", "sprint float sprint drill speed");
+addSearch(VETTED_BY_ID, "sprint_ins_and_outs_50m", "ins and outs sprint speed drill");
+addSearch(VETTED_BY_ID, "speed_wicket_run_maxv", "wicket runs sprint mechanics drill");
+addSearch(VETTED_BY_ID, "sprint_3point_start_10m", "3 point start sprint acceleration drill");
+addSearch(VETTED_BY_ID, "sprint_pushup_start_10m", "push up start sprint drill");
+addSearch(VETTED_BY_ID, "speed_dribble_to_sprint_15m", "dribble run to sprint speed drill");
+addSearch(VETTED_BY_ID, "str_nordic_hamstring_eccentric", "nordic hamstring curl eccentric technique");
+addSearch(VETTED_BY_ID, "str_copenhagen_adductor", "copenhagen plank adductor exercise");
+addSearch(VETTED_BY_ID, "str_hamstring_slider_curl", "hamstring slider curl exercise");
+addSearch(VETTED_BY_ID, "str_single_leg_rdl_explo", "single leg romanian deadlift technique");
+addSearch(VETTED_BY_ID, "str_adductor_iso_squeeze_band", "adductor squeeze isometric exercise");
+addSearch(VETTED_BY_ID, "mob_hip_flexor_dynamic", "dynamic hip flexor mobility drill");
+addSearch(VETTED_BY_ID, "mob_ankle_rocks", "ankle mobility rocks knee to wall drill");
+addSearch(VETTED_BY_ID, "mob_hip_airplane", "hip airplane exercise technique");
+addSearch(VETTED_BY_ID, "mob_walking_spiderman", "walking spiderman lunge mobility drill");
+
 // Returns either a vetted URL or a clean YouTube search link.
 export const getExerciseVideoRef = (exerciseId: string): ExerciseVideoRef => {
   const vetted = VETTED_BY_ID[exerciseId];

@@ -883,6 +883,30 @@ const BASE_EXERCISE_BANK: ExerciseDef[] = [
   { id: 'upper_fast_pushup', name: 'Pompes explosives', description: 'Vitesse d\'exécution, contrôle.', modality: 'strength', intensity: 'high', tags: ['heavy_upper','technique'] },
   { id: 'upper_hand_release_pushup', name: 'Pompes hand-release', description: 'Amplitude complète, tronc stable.', modality: 'strength', intensity: 'moderate', tags: ['heavy_upper','technique'] },
   { id: 'upper_incline_fast_pushup', name: 'Pompes explosives inclinées', description: 'Vitesse + technique propre.', modality: 'strength', intensity: 'moderate', tags: ['heavy_upper','technique'] },
+
+  // ---------------- EXPLOSIVITÉ — vitesse max + accel (ajouts) ----------------
+  { id: 'sprint_flying_20m', name: 'Flying 20m', description: 'Vitesse max sur 20m lancés, relâchement.', modality: 'run', intensity: 'high', tags: ['sprint','technique'] },
+  { id: 'sprint_flying_30m', name: 'Flying 30m', description: 'Vitesse max tenue sur 30m lancés.', modality: 'run', intensity: 'high', tags: ['sprint','technique'] },
+  { id: 'run_build_up_40m', name: 'Build-up 40m', description: 'Montée progressive vers Vmax sur 40m.', modality: 'run', intensity: 'high', tags: ['sprint','technique'] },
+  { id: 'sprint_float_sprint_30m', name: 'Sprint-float-sprint 30m', description: 'Vite, relâché, vite : relances enchaînées.', modality: 'run', intensity: 'high', tags: ['sprint','technique'] },
+  { id: 'sprint_ins_and_outs_50m', name: 'Ins & outs 50m', description: 'Alternance accélère / relâche à haute vitesse.', modality: 'run', intensity: 'high', tags: ['sprint','technique'] },
+  { id: 'speed_wicket_run_maxv', name: 'Wicket run (Vmax)', description: 'Mini-haies, fréquence et mécanique de course.', modality: 'run', intensity: 'moderate', tags: ['sprint','technique'] },
+  { id: 'sprint_3point_start_10m', name: 'Départ 3 appuis 10m', description: 'Départ 3 appuis, première poussée puissante.', modality: 'run', intensity: 'high', tags: ['sprint','technique'] },
+  { id: 'sprint_pushup_start_10m', name: 'Départ pompe 10m', description: 'Départ depuis position pompe puis sprint 10m.', modality: 'run', intensity: 'high', tags: ['sprint','technique'] },
+  { id: 'speed_dribble_to_sprint_15m', name: 'Dribble → sprint 15m', description: 'Course sautillée puis transition sprint.', modality: 'run', intensity: 'high', tags: ['sprint','technique'] },
+
+  // ---------------- EXPLOSIVITÉ — préhab ischios/adducteurs (ajouts) ----------------
+  { id: 'str_nordic_hamstring_eccentric', name: 'Nordic excentrique ischios', description: 'Excentrique ischios, descente lente contrôlée.', modality: 'strength', intensity: 'high', tags: ['hamstring_load'] },
+  { id: 'str_copenhagen_adductor', name: 'Copenhagen adducteurs', description: 'Adducteurs sur banc, grande amplitude.', modality: 'strength', intensity: 'high', tags: ['hip_load'] },
+  { id: 'str_hamstring_slider_curl', name: 'Leg curl glissé', description: 'Leg curl glissé sliders, contraction ischios.', modality: 'strength', intensity: 'moderate', tags: ['hamstring_load','technique'] },
+  { id: 'str_single_leg_rdl_explo', name: 'Soulevé de terre unilatéral explosif', description: 'Charnière unilatérale, retour explosif.', modality: 'strength', intensity: 'moderate', tags: ['hamstring_load','technique'] },
+  { id: 'str_adductor_iso_squeeze_band', name: 'Isométrie adducteurs (élastique)', description: 'Isométrie adducteurs élastique ou serviette.', modality: 'strength', intensity: 'low', tags: ['hip_load'] },
+
+  // ---------------- EXPLOSIVITÉ — reset mobilité (ajouts) ----------------
+  { id: 'mob_hip_flexor_dynamic', name: 'Ouverture dynamique fléchisseurs de hanche', description: 'Ouverture dynamique avant de hanche.', modality: 'mobility', intensity: 'low', tags: ['mobility','hip_load'] },
+  { id: 'mob_ankle_rocks', name: 'Mobilité cheville (rocks)', description: 'Mobilité cheville, genou au-dessus des orteils.', modality: 'mobility', intensity: 'low', tags: ['mobility','ankle_stress'] },
+  { id: 'mob_hip_airplane', name: 'Hip airplane', description: 'Contrôle de hanche sur un appui.', modality: 'mobility', intensity: 'low', tags: ['mobility','hip_load'] },
+  { id: 'mob_walking_spiderman', name: 'Spiderman marché', description: 'Fente marchée, ouverture de hanche.', modality: 'mobility', intensity: 'low', tags: ['mobility','hip_load'] },
 ];
 
 // Aligne l'app sur la bibliothèque backend: si un id est manquant localement, on génère un stub.

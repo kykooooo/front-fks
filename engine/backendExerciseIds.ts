@@ -377,6 +377,29 @@ export const BACKEND_EXERCISE_IDS = [
   "str_hip_adductor_machine",
   "str_cable_fly",
   "str_cable_tricep_pushdown",
+
+  // ── Explosivité — vitesse max longue + accélérations (ajouts) ───────────────
+  "sprint_flying_30m",
+  "run_build_up_40m",
+  "sprint_float_sprint_30m",
+  "sprint_ins_and_outs_50m",
+  "speed_wicket_run_maxv",
+  "sprint_3point_start_10m",
+  "sprint_pushup_start_10m",
+  "speed_dribble_to_sprint_15m",
+
+  // ── Explosivité — préhab ischios/adducteurs (ajouts) ────────────────────────
+  "str_nordic_hamstring_eccentric",
+  "str_copenhagen_adductor",
+  "str_hamstring_slider_curl",
+  "str_single_leg_rdl_explo",
+  "str_adductor_iso_squeeze_band",
+
+  // ── Explosivité — reset mobilité (ajouts) ───────────────────────────────────
+  "mob_hip_flexor_dynamic",
+  "mob_ankle_rocks",
+  "mob_hip_airplane",
+  "mob_walking_spiderman",
 ] as const;
 
 export type BackendExerciseId = (typeof BACKEND_EXERCISE_IDS)[number];
