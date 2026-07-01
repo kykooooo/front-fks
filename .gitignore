@@ -26,6 +26,11 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 
+# Firebase emulator logs (générés par `yarn test:rules`)
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+
 # macOS
 .DS_Store
 *.pem
