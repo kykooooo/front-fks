@@ -46,17 +46,21 @@ export const SENSITIVE = {
 // brute / commentaire. Labels déjà lisibles (pré-traduits), pas de token brut.
 // Utilisé par rules.target.test.ts (tests skip). En prod, `updatedAt` sera un
 // serverTimestamp() posé par la Cloud Function ; ici une valeur fixe (déterminisme).
+// Aligné EXACTEMENT sur le DTO produit par la Cloud Function (functions/src/dto.ts) :
+//  - position/level = allowlists front réelles ("Milieu"/"Regional") ;
+//  - title = dérivé du focus allowlisté ("Séance renfo / force"), jamais un titre libre ;
+//  - PAS d'`id` de séance (retiré du contrat public : doc ID = texte client arbitraire) ;
+//  - enveloppe watermark réellement persistée (sourceEventAt/Time/Id + updatedAt).
 export const SUMMARY = {
   playerUid: PLAYER_A1,
   firstName: "Anna",
   ageCategory: "U15",
-  position: "MIL",
-  level: "R1",
+  position: "Milieu",
+  level: "Regional",
   profileComplete: true,
   latestSession: {
-    id: "s1",
     dateKey: "2026-06-28",
-    title: "Renfo bas du corps",
+    title: "Séance renfo / force",
     focusLabel: "Renfo / Force",
     intensityLabel: "Modérée",
     durationMin: 40,
@@ -72,6 +76,11 @@ export const SUMMARY = {
     adapted: true,
     labels: ["Contrôle appuis et alignement"],
   },
+  // Enveloppe watermark (idempotence/ordre). En prod `updatedAt` = serverTimestamp() ;
+  // ici valeurs fixes pour le déterminisme des tests Rules (TARGET, skip en PR-4).
+  sourceEventAt: 1751133600000,
+  sourceEventTime: "2026-06-28T18:00:00.000Z",
+  sourceEventId: "seed-a1",
   updatedAt: "2026-06-28T18:00:00.000Z",
 };
 

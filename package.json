@@ -16,6 +16,10 @@
     "typecheck": "tsc --noEmit",
     "test": "jest --forceExit",
     "test:rules": "firebase emulators:exec --only firestore --project demo-fks-rules \"jest --config firestore-tests/jest.config.js\"",
+    "functions:install": "yarn --cwd functions install --frozen-lockfile",
+    "functions:build": "yarn --cwd functions build",
+    "functions:test": "yarn --cwd functions test",
+    "functions:test:integration": "firebase emulators:exec --only firestore --project demo-fks-functions \"yarn --cwd functions test:integration\"",
     "clean": "rm -rf node_modules .expo .expo-shared yarn.lock && yarn",
     "build:testers:android": "eas build --profile testers --platform android",
     "build:testers:ios": "eas build --profile testers --platform ios",
@@ -31,12 +35,14 @@
       "**/__tests__/**/*.test.tsx"
     ],
     "modulePathIgnorePatterns": [
-      "<rootDir>/.claude/worktrees/"
+      "<rootDir>/.claude/worktrees/",
+      "<rootDir>/functions/"
     ],
     "testPathIgnorePatterns": [
       "/node_modules/",
       "/.claude/worktrees/",
-      "/firestore-tests/"
+      "/firestore-tests/",
+      "/functions/"
     ],
     "transformIgnorePatterns": [
       "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg)"

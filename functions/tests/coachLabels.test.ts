@@ -1,0 +1,135 @@
+// functions/tests/coachLabels.test.ts
+// Vérifie le port de l'allowlist + pickCoachSessionToDisplay (parité front).
+
+import {
+  boundBlockCount,
+  boundDurationMin,
+  focusTitle,
+  guardrailToCoachLabel,
+  normalizeLevel,
+  normalizePosition,
+  pickCoachSessionToDisplay,
+  readableFocus,
+  readableIntensity,
+  sanitizeFirstName,
+  toDateKey,
+  toCoachAdaptationLabels,
+} from "../src/coachLabels";
+
+describe("guardrailToCoachLabel (allowlist)", () => {
+  it("masque douleur / TSB / debug / inconnu", () => {
+    expect(guardrailToCoachLabel("injury:knee_left")).toBe("Adaptation sécurité appliquée");
+    expect(guardrailToCoachLabel("tsb:-14.2")).toBe("Joueur chargé : séance allégée");
+    expect(guardrailToCoachLabel("selection_debug:seed=42")).toBeNull();
+    expect(guardrailToCoachLabel("nimportequoi")).toBeNull();
+    expect(guardrailToCoachLabel(42)).toBeNull();
+  });
+
+  it("traduit les tokens club/team connus", () => {
+    expect(guardrailToCoachLabel("team:female_neuromuscular_focus")).toBe("Contrôle appuis et alignement");
+    expect(guardrailToCoachLabel("club:heavy_week_adjustment")).toBe("Semaine club intense : charge FKS réduite");
+  });
+
+  it("dédup + filtre via toCoachAdaptationLabels", () => {
+    expect(toCoachAdaptationLabels(["unknown", "team:female_neuromuscular_focus", "team:female_neuromuscular_focus"])).toEqual([
+      "Contrôle appuis et alignement",
+    ]);
+  });
+
+  it("reformulations P1 (wording renfo & appuis / incompatibles)", () => {
+    expect(guardrailToCoachLabel("age:U15_youth_prevention_substitute")).toBe("Séance jeune adaptée (renfo & appuis)");
+    expect(guardrailToCoachLabel("age:U15_youth_prevention_speed_substitute")).toBe("Séance jeune adaptée (renfo & appuis)");
+    expect(guardrailToCoachLabel("age:U15_forbidden_family_filtered")).toBe("Exercices incompatibles retirés (catégorie d'âge)");
+  });
+});
+
+describe("focus (allowlist stricte)", () => {
+  it("readableFocus/focusTitle : inconnu → null (jamais valeur brute)", () => {
+    expect(readableFocus("SENTINEL_FOCUS")).toBeNull();
+    expect(focusTitle("SENTINEL_FOCUS")).toBeNull();
+    expect(readableFocus("strength")).toBe("Renfo / Force");
+    expect(focusTitle("strength")).toBe("Séance renfo / force");
+    expect(focusTitle("speed")).toBe("Séance vitesse");
+  });
+});
+
+describe("identité (allowlists + sanitisation)", () => {
+  it("position : seulement les 4 postes front", () => {
+    expect(normalizePosition("Milieu")).toBe("Milieu");
+    expect(normalizePosition("MIL")).toBeNull();
+    expect(normalizePosition("<script>")).toBeNull();
+    expect(normalizePosition(42)).toBeNull();
+  });
+  it("level : seulement les 5 niveaux front", () => {
+    expect(normalizeLevel("Regional")).toBe("Regional");
+    expect(normalizeLevel("R1")).toBeNull();
+    expect(normalizeLevel("")).toBeNull();
+  });
+  it("firstName : trim + retrait contrôle + longueur max", () => {
+    expect(sanitizeFirstName("  Anna\x07\x00  ")).toBe("Anna");
+    expect(sanitizeFirstName("x".repeat(100))!.length).toBe(40);
+    expect(sanitizeFirstName(123)).toBeNull();
+    expect(sanitizeFirstName("   ")).toBeNull();
+  });
+});
+
+describe("bornes numériques", () => {
+  it("durationMin 1..240", () => {
+    expect(boundDurationMin(40)).toBe(40);
+    expect(boundDurationMin(0)).toBeNull();
+    expect(boundDurationMin(99999)).toBeNull();
+    expect(boundDurationMin(null)).toBeNull();
+    expect(boundDurationMin(40.6)).toBe(41);
+  });
+  it("blockCount 1..20 entier", () => {
+    expect(boundBlockCount(4)).toBe(4);
+    expect(boundBlockCount(0)).toBeNull();
+    expect(boundBlockCount(500)).toBeNull();
+    expect(boundBlockCount(4.5)).toBeNull();
+  });
+});
+
+describe("readable* (null si inconnu)", () => {
+  it("intensity", () => {
+    expect(readableIntensity("moderate")).toBe("Modérée");
+    expect(readableIntensity("weird")).toBeNull();
+  });
+  it("focus", () => {
+    expect(readableFocus("strength")).toBe("Renfo / Force");
+    expect(readableFocus("")).toBeNull();
+  });
+});
+
+describe("toDateKey (UTC-stable)", () => {
+  it("bare YYYY-MM-DD inchangé", () => {
+    expect(toDateKey("2026-06-28")).toBe("2026-06-28");
+  });
+  it("ISO → jour UTC", () => {
+    expect(toDateKey("2026-06-28T23:30:00.000Z")).toBe("2026-06-28");
+  });
+  it("vide/invalide → ''", () => {
+    expect(toDateKey(null)).toBe("");
+    expect(toDateKey("pas une date")).toBe("");
+  });
+});
+
+describe("pickCoachSessionToDisplay", () => {
+  type S = { id: string | null; dateKey: string | null };
+  const P: S = { id: "p", dateKey: "2026-07-02" };
+  const C: S = { id: "c", dateKey: "2026-06-28" };
+  it("même jour → completed", () => {
+    expect(pickCoachSessionToDisplay<S>({ id: "p", dateKey: "2026-06-28" }, C)).toBe(C);
+  });
+  it("planned future → planned", () => {
+    expect(pickCoachSessionToDisplay<S>(P, C)).toBe(P);
+  });
+  it("date manquante → completed", () => {
+    expect(pickCoachSessionToDisplay<S>({ id: "p", dateKey: null }, C)).toBe(C);
+  });
+  it("même id → completed", () => {
+    expect(pickCoachSessionToDisplay({ id: "x", dateKey: "2026-07-02" }, { id: "x", dateKey: "2026-06-28" })).toEqual({
+      id: "x",
+      dateKey: "2026-06-28",
+    });
+  });
+});
