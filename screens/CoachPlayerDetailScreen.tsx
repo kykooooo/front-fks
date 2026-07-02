@@ -1,10 +1,14 @@
 // screens/CoachPlayerDetailScreen.tsx
-// Fiche joueur LECTURE SEULE pour le coach (Coach Visibility v1).
+// Fiche joueuse LECTURE SEULE pour le coach (Coach Visibility).
 // Le coach observe : aucune modification de séance possible.
-// Ne montre ni données médicales détaillées, ni TSB/ATL/CTL, ni guardrails bruts.
+//
+// Coach-safe (PR-3) : lit UN SEUL résumé de la projection serveur
+// (clubs/{clubId}/playerSummaries/{playerUid}). Jamais users/{uid}, jamais
+// sessions/plannedSessions. Aucun RPE, aucune donnée médicale, aucun TSB/ATL/CTL.
+// Les labels arrivent déjà traduits par le serveur : on les affiche tels quels.
 
 import React, { useCallback, useEffect, useLayoutEffect, useState } from "react";
-import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, RefreshControl } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,29 +16,24 @@ import { Ionicons } from "@expo/vector-icons";
 import { ScreenContainer } from "../components/ui/ScreenContainer";
 import { Card } from "../components/ui/Card";
 import { CoachBadge, coachColors, coachRadius } from "../components/coach/coachUi";
-import {
-  fetchPlayerSessionOverview,
-  type ClubPlayer,
-  type CoachPlayerOverview,
-} from "../repositories/clubsRepo";
-import {
-  getCoachTrustReasons,
-  getCoachGuardrailNotes,
-  readableIntensity,
-  readableFocus,
-  readableSessionStatus,
-} from "../domain/coachLabels";
-import { toDateKey } from "../utils/dateHelpers";
+import { fetchClubPlayerSummary, type CoachSummaryResult } from "../repositories/clubsRepo";
+import { coachSessionStatusLabel } from "../domain/coachSummary";
+import { getCoachGuardrailNotes } from "../domain/coachLabels";
 
 const palette = coachColors;
 
-type DetailRoute = RouteProp<{ CoachPlayerDetail: { player: ClubPlayer } }, "CoachPlayerDetail">;
+const MAX_TRUST_REASONS = 4;
+
+type DetailRoute = RouteProp<
+  { CoachPlayerDetail: { clubId: string; playerUid: string } },
+  "CoachPlayerDetail"
+>;
 
 export default function CoachPlayerDetailScreen() {
   const route = useRoute<DetailRoute>();
   const navigation = useNavigation();
-  const player = route.params?.player;
-  const uid = player?.uid ?? null;
+  const clubId = route.params?.clubId ?? null;
+  const playerUid = route.params?.playerUid ?? null;
 
   // Header de navigation en DA claire (cohérent avec l'écran clair).
   useLayoutEffect(() => {
@@ -46,43 +45,70 @@ export default function CoachPlayerDetailScreen() {
     });
   }, [navigation]);
 
-  const [overview, setOverview] = useState<CoachPlayerOverview | null>(null);
+  const [result, setResult] = useState<CoachSummaryResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    if (!uid) {
+    if (!clubId || !playerUid) {
       setLoading(false);
       return;
     }
-    const data = await fetchPlayerSessionOverview(uid);
-    setOverview(data);
+    // Un seul summary relu au montage.
+    const data = await fetchClubPlayerSummary(clubId, playerUid);
+    setResult(data);
     setLoading(false);
-  }, [uid]);
+  }, [clubId, playerUid]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const session = overview?.session ?? null;
-  const activity = overview?.lastActivity ?? null;
-  const trustReasons = getCoachTrustReasons(session?.adaptationTokens, 4);
-  const guardrailNotes = getCoachGuardrailNotes(player?.ageCategory);
+  // Pull-to-refresh : relit EXACTEMENT un summary (aucune lecture brute/fallback).
+  // On ne repasse pas par `loading` → l'ancien contenu reste affiché pendant le
+  // fetch, puis `setResult` le remplace en bloc.
+  const onRefresh = useCallback(async () => {
+    if (!clubId || !playerUid) return;
+    setRefreshing(true);
+    try {
+      const data = await fetchClubPlayerSummary(clubId, playerUid);
+      setResult(data);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [clubId, playerUid]);
+
+  const summary = result?.summary ?? null;
+  const unavailable = result?.unavailable ?? false;
+  const session = summary?.latestSession ?? null;
+  const activity = summary?.lastActivity ?? null;
+  // Labels d'adaptation DÉJÀ traduits par le serveur : on plafonne, on n'invente rien.
+  const trustReasons = summary?.adaptation.labels.slice(0, MAX_TRUST_REASONS) ?? [];
+  const guardrailNotes = getCoachGuardrailNotes(summary?.ageCategory);
 
   return (
-    <ScreenContainer safeAreaStyle={styles.screenBg} contentContainerStyle={styles.screenBg}>
+    <ScreenContainer
+      safeAreaStyle={styles.screenBg}
+      contentContainerStyle={styles.screenBg}
+      scrollProps={{
+        refreshControl: (
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.accent} />
+        ),
+      }}
+    >
       <StatusBar style="dark" />
-      {/* Identité */}
+      {/* Identité (issue de la projection coach-safe) */}
       <View style={styles.headerRow}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{(player?.firstName ?? "?").slice(0, 1).toUpperCase()}</Text>
+          <Text style={styles.avatarText}>{(summary?.firstName ?? "?").slice(0, 1).toUpperCase()}</Text>
         </View>
         <View style={{ flex: 1 }}>
           <View style={styles.nameRow}>
-            <Text style={styles.name}>{player?.firstName ?? "Joueur"}</Text>
-            {player?.ageCategory ? <CoachBadge label={player.ageCategory} tone="default" /> : null}
+            <Text style={styles.name}>{summary?.firstName ?? "Joueur"}</Text>
+            {summary?.ageCategory ? <CoachBadge label={summary.ageCategory} tone="default" /> : null}
           </View>
           <Text style={styles.meta}>
-            {[player?.position, player?.level].filter(Boolean).join(" · ") || "Profil à compléter"}
+            {[summary?.position, summary?.level].filter(Boolean).join(" · ") || "Profil à compléter"}
           </Text>
         </View>
       </View>
@@ -91,12 +117,12 @@ export default function CoachPlayerDetailScreen() {
         <View style={styles.center}>
           <ActivityIndicator color={palette.accent} />
         </View>
-      ) : overview?.detailsUnavailable ? (
+      ) : unavailable || !summary ? (
         <Card variant="soft" style={styles.emptyCard}>
           <Ionicons name="lock-closed-outline" size={26} color={palette.sub} />
           <Text style={styles.emptyTitle}>Détails indisponibles</Text>
           <Text style={styles.emptyText}>
-            Les séances de ce joueur ne sont pas accessibles pour le moment.
+            Le résumé de ce joueur n'est pas accessible pour le moment.
           </Text>
         </Card>
       ) : (
@@ -108,13 +134,13 @@ export default function CoachPlayerDetailScreen() {
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>{session.title ?? "Séance FKS"}</Text>
                 <CoachBadge
-                  label={readableSessionStatus(session.status)}
+                  label={coachSessionStatusLabel(session.status)}
                   tone={session.status === "done" ? "ok" : "info"}
                 />
               </View>
               <View style={styles.statRow}>
-                <Stat icon="flag-outline" label="Type" value={readableFocus(session.focus)} />
-                <Stat icon="speedometer-outline" label="Intensité" value={readableIntensity(session.intensity)} />
+                <Stat icon="flag-outline" label="Type" value={session.focusLabel ?? "—"} />
+                <Stat icon="speedometer-outline" label="Intensité" value={session.intensityLabel ?? "—"} />
               </View>
               <View style={styles.statRow}>
                 <Stat
@@ -158,29 +184,17 @@ export default function CoachPlayerDetailScreen() {
             </>
           ) : null}
 
-          {/* Dernière activité */}
+          {/* Dernière activité — date + durée uniquement (aucun RPE) */}
           <Text style={styles.sectionTitle}>Dernière activité</Text>
           {activity ? (
             <Card variant="soft" style={styles.card}>
               <View style={styles.statRow}>
-                <Stat
-                  icon="checkmark-done-outline"
-                  label="Faite le"
-                  value={activity.dateISO ? toDateKey(activity.dateISO) : "—"}
-                />
-                <Stat
-                  icon="pulse-outline"
-                  label="Ressenti (RPE)"
-                  value={activity.rpe != null ? `${activity.rpe}/10` : "—"}
-                />
-              </View>
-              <View style={styles.statRow}>
+                <Stat icon="checkmark-done-outline" label="Faite le" value={activity.dateKey ?? "—"} />
                 <Stat
                   icon="time-outline"
                   label="Durée réelle"
                   value={activity.durationMin ? `${activity.durationMin} min` : "—"}
                 />
-                <View style={styles.stat} />
               </View>
             </Card>
           ) : (

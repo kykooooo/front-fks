@@ -5,7 +5,6 @@ import {
   getDoc,
   getDocs,
   limit,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -13,17 +12,14 @@ import {
 } from "firebase/firestore";
 import { db } from "../services/firebase";
 import {
-  normalizeAgeCategory,
   normalizeClubTrainingIntensity,
   normalizeClubWeekGoal,
   normalizeTeamGender,
-  type AgeCategory,
   type ClubTrainingIntensity,
   type ClubWeekGoal,
   type ClubTeamGender,
 } from "../domain/types";
-import { pickCoachSessionToDisplay, collectAdaptationTokens } from "../domain/coachLabels";
-import { toDateKey } from "../utils/dateHelpers";
+import { parseCoachPlayerSummary, type CoachPlayerSummary } from "../domain/coachSummary";
 
 export type ClubDoc = {
   id: string;
@@ -33,20 +29,6 @@ export type ClubDoc = {
 };
 
 export type ClubRole = "coach" | "player";
-
-export type ClubMember = {
-  uid: string;
-  role: ClubRole;
-};
-
-export type ClubPlayer = {
-  uid: string;
-  firstName: string | null;
-  position: string | null;
-  level: string | null;
-  ageCategory: AgeCategory | null;
-  profileIncomplete: boolean;
-};
 
 export const normalizeInviteCode = (raw: string) =>
   raw
@@ -183,56 +165,70 @@ export async function createClubAsCoach(opts: {
   return club;
 }
 
-/** Liste les membres d'un club (coachs + joueurs). */
-export async function listClubMembers(clubId: string): Promise<ClubMember[]> {
-  const snap = await getDocs(collection(db, "clubs", clubId, "members"));
-  return snap.docs.map((d) => {
-    const data = d.data() as any;
-    return {
-      uid: d.id,
-      role: data?.role === "coach" ? "coach" : "player",
-    };
-  });
+// ─── Vue coach : projection coach-safe (lecture SEULE) ──────────────────────
+// Le coach ne lit QUE clubs/{clubId}/playerSummaries — jamais users/{uid},
+// jamais users/{uid}/sessions ni /plannedSessions. La projection est produite
+// serveur (Cloud Function, PR-2) : labels déjà traduits, aucune donnée médicale
+// / RPE / TSB / token brut. Un doc malformé est ignoré (parseur défensif) ; une
+// lecture refusée (permissions/réseau) → état "indisponible" propre, pas de crash
+// et AUCUN fallback vers les lectures brutes.
+//
+// Coût Firestore : `fetchClubPlayerSummaries` = UNE requête de collection, mais
+// facturée ~1 lecture document par joueuse (≈15 lectures pour 15 joueuses). Le
+// gain vs l'ancien flux n'est PAS un forfait magique : c'est la suppression du
+// N+1 réseau (1 aller-retour au lieu de 1 par joueuse) et l'arrêt de la lecture
+// des historiques sessions/plannedSessions bruts.
+
+// Garde-fou anti-scan : un effectif club reste raisonnable. Borne haute large.
+const COACH_SUMMARY_FETCH_LIMIT = 200;
+
+export type CoachSummariesResult = {
+  summaries: CoachPlayerSummary[];
+  unavailable: boolean; // true si la lecture de collection a échoué (permissions/réseau)
+};
+
+export type CoachSummaryResult = {
+  summary: CoachPlayerSummary | null; // null = absent, malformé, OU doc-id/playerUid incohérent
+  unavailable: boolean; // true si la lecture du doc a échoué (permissions/réseau)
+};
+
+/** Lit tous les résumés joueurs d'un club en UNE requête de collection bornée. */
+export async function fetchClubPlayerSummaries(clubId: string): Promise<CoachSummariesResult> {
+  try {
+    const snap = await getDocs(
+      query(collection(db, "clubs", clubId, "playerSummaries"), limit(COACH_SUMMARY_FETCH_LIMIT)),
+    );
+    const summaries: CoachPlayerSummary[] = [];
+    for (const d of snap.docs) {
+      const parsed = parseCoachPlayerSummary(d.data());
+      // Intégrité : le playerUid du payload DOIT correspondre à l'ID du document.
+      // Un doc dont le contenu prétend un autre UID est ignoré (jamais de mélange
+      // d'identités / de navigation vers un autre joueur).
+      if (parsed && parsed.playerUid === d.id) summaries.push(parsed);
+    }
+    return { summaries, unavailable: false };
+  } catch {
+    // Permissions Firestore refusées / réseau : état indisponible honnête.
+    return { summaries: [], unavailable: true };
+  }
 }
 
-/**
- * Récupère les joueurs d'un club avec leurs infos profil (lecture seule).
- * Le coach ne lit que prénom / poste / niveau — aucune donnée sensible
- * (douleurs, blessures) n'est exposée ici.
- */
-export async function fetchClubPlayers(clubId: string): Promise<ClubPlayer[]> {
-  const members = await listClubMembers(clubId);
-  const players = members.filter((m) => m.role === "player");
-
-  const profiles = await Promise.all(
-    players.map(async (m) => {
-      try {
-        const snap = await getDoc(doc(db, "users", m.uid));
-        const data = snap.exists() ? (snap.data() as any) : undefined;
-        const firstName = typeof data?.firstName === "string" ? data.firstName.trim() || null : null;
-        return {
-          uid: m.uid,
-          firstName,
-          position: typeof data?.position === "string" ? data.position : null,
-          level: typeof data?.level === "string" ? data.level : null,
-          ageCategory: normalizeAgeCategory(data?.ageCategory),
-          profileIncomplete: !data?.profileCompleted || !firstName,
-        } as ClubPlayer;
-      } catch {
-        // Permissions / réseau : on garde le joueur dans la liste mais en "incomplet".
-        return {
-          uid: m.uid,
-          firstName: null,
-          position: null,
-          level: null,
-          ageCategory: null,
-          profileIncomplete: true,
-        } as ClubPlayer;
-      }
-    })
-  );
-
-  return profiles;
+/** Lit le résumé d'un seul joueur (doc unique). */
+export async function fetchClubPlayerSummary(
+  clubId: string,
+  playerUid: string,
+): Promise<CoachSummaryResult> {
+  try {
+    const snap = await getDoc(doc(db, "clubs", clubId, "playerSummaries", playerUid));
+    if (!snap.exists()) return { summary: null, unavailable: false };
+    const parsed = parseCoachPlayerSummary(snap.data());
+    // Intégrité : le payload doit décrire EXACTEMENT le joueur demandé. Sinon on
+    // renvoie null (jamais afficher/ouvrir un autre UID que celui de la route).
+    if (!parsed || parsed.playerUid !== playerUid) return { summary: null, unavailable: false };
+    return { summary: parsed, unavailable: false };
+  } catch {
+    return { summary: null, unavailable: true };
+  }
 }
 
 // ─── Contexte de semaine club ──────────────────────────────────────────────
@@ -287,137 +283,6 @@ export async function saveClubWeekContext(opts: {
     },
     { merge: true }
   );
-}
-
-// ─── Vue coach : séances d'un joueur (lecture seule, coach-safe) ────────────
-// On NE renvoie JAMAIS de données médicales (douleurs/blessures détaillées) ni
-// de métriques brutes (TSB/ATL/CTL). Les tokens d'adaptation sont renvoyés bruts
-// et traduits en langage coach par domain/coachLabels.ts côté écran.
-
-export type CoachPlayerSession = {
-  id: string | null;
-  dateKey: string | null; // "YYYY-MM-DD" — pour choisir planned vs completed
-  title: string | null;
-  focus: string | null;
-  phase: string | null;
-  durationMin: number | null;
-  intensity: string | null;
-  blockCount: number | null;
-  status: "planned" | "done" | "unknown";
-  adaptationTokens: string[];
-};
-
-export type CoachPlayerActivity = {
-  dateISO: string | null;
-  rpe: number | null;
-  durationMin: number | null;
-};
-
-export type CoachPlayerOverview = {
-  session: CoachPlayerSession | null; // dernière séance FKS (planifiée, sinon faite)
-  lastActivity: CoachPlayerActivity | null; // dernière séance réellement faite
-  detailsUnavailable: boolean; // true si lecture refusée (permissions) — pas de crash
-};
-
-const cpNum = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
-const cpStr = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
-const cpDateOf = (d: any): string => cpStr(d?.dateISO) ?? cpStr(d?.date) ?? "";
-
-const cpPickLatest = (docs: any[]): any | null => {
-  if (!docs.length) return null;
-  return [...docs].sort((a, b) => {
-    const da = cpDateOf(a);
-    const dbb = cpDateOf(b);
-    return da < dbb ? 1 : da > dbb ? -1 : 0;
-  })[0];
-};
-
-// Lit au plus N docs récents via orderBy("date","desc") pour éviter de scanner
-// tout l'historique. Garde un tri client (cpPickLatest) en sécurité.
-// Limite connue : un doc SANS champ `date` n'est pas renvoyé par la requête —
-// tous les chemins d'écriture actuels (planned/completed) écrivent `date`.
-const COACH_SESSION_FETCH_LIMIT = 8;
-
-async function fetchRecentDocs(uid: string, sub: "plannedSessions" | "sessions"): Promise<any[]> {
-  const snap = await getDocs(
-    query(collection(db, "users", uid, sub), orderBy("date", "desc"), limit(COACH_SESSION_FETCH_LIMIT)),
-  );
-  return snap.docs.map((d) => ({ ...(d.data() as any), __docId: d.id }));
-}
-
-const cpIdOf = (d: any): string | null => cpStr(d?.id) ?? cpStr(d?.__docId);
-const cpDateKeyOf = (d: any): string | null => {
-  const raw = cpDateOf(d);
-  return raw ? toDateKey(raw) || null : null;
-};
-
-export async function fetchPlayerSessionOverview(uid: string): Promise<CoachPlayerOverview> {
-  try {
-    const [plannedDocs, completedDocs] = await Promise.all([
-      fetchRecentDocs(uid, "plannedSessions"),
-      fetchRecentDocs(uid, "sessions"),
-    ]);
-
-    const latestPlanned = cpPickLatest(plannedDocs);
-    const latestCompleted = cpPickLatest(completedDocs);
-
-    let plannedSession: CoachPlayerSession | null = null;
-    if (latestPlanned) {
-      const ai = latestPlanned.ai && typeof latestPlanned.ai === "object" ? latestPlanned.ai : {};
-      plannedSession = {
-        id: cpIdOf(latestPlanned),
-        dateKey: cpDateKeyOf(latestPlanned),
-        title: cpStr(ai.title) ?? cpStr(latestPlanned.title),
-        focus: cpStr(latestPlanned.focus) ?? cpStr(ai.focusPrimary) ?? cpStr(ai.focus_primary),
-        phase: cpStr(latestPlanned.phase),
-        durationMin: cpNum(ai.durationMin) ?? cpNum(ai.duration_min) ?? cpNum(latestPlanned.durationMin),
-        intensity: cpStr(latestPlanned.intensity) ?? cpStr(ai.intensity),
-        blockCount: Array.isArray(ai.blocks) ? ai.blocks.length : null,
-        status: "planned",
-        adaptationTokens: collectAdaptationTokens(
-          ai.guardrailsApplied, // tokens backend (camelCase)
-          ai.guardrails_applied, // tokens backend (snake_case)
-          latestPlanned.clientGuardrailsApplied, // tokens client stables (nouveau)
-          latestPlanned.guardrailsApplied, // legacy FR top-level (vieux docs) — traduit/filtré
-        ),
-      };
-    }
-
-    let completedSession: CoachPlayerSession | null = null;
-    let lastActivity: CoachPlayerActivity | null = null;
-    if (latestCompleted) {
-      const v2 = latestCompleted.aiV2 && typeof latestCompleted.aiV2 === "object" ? latestCompleted.aiV2 : {};
-      const fb = latestCompleted.feedback && typeof latestCompleted.feedback === "object" ? latestCompleted.feedback : {};
-      completedSession = {
-        id: cpIdOf(latestCompleted),
-        dateKey: cpDateKeyOf(latestCompleted),
-        title: cpStr(latestCompleted.title) ?? cpStr(v2.title),
-        focus: cpStr(latestCompleted.focus) ?? cpStr(v2.focusPrimary) ?? cpStr(v2.focus_primary),
-        phase: cpStr(latestCompleted.phase),
-        durationMin: cpNum(fb.durationMin) ?? cpNum(v2.durationMin) ?? cpNum(v2.duration_min),
-        intensity: cpStr(latestCompleted.intensity) ?? cpStr(v2.intensity),
-        blockCount: Array.isArray(v2.blocks) ? v2.blocks.length : null,
-        status: "done",
-        adaptationTokens: collectAdaptationTokens(v2.guardrailsApplied, v2.guardrails_applied),
-      };
-      lastActivity = {
-        dateISO: cpDateOf(latestCompleted) || null,
-        rpe: cpNum(fb.rpe) ?? cpNum(latestCompleted.rpe),
-        durationMin: cpNum(fb.durationMin),
-      };
-    }
-
-    return {
-      // Choix temporel planned vs completed (évite qu'une vieille planifiée masque
-      // une séance faite plus récente).
-      session: pickCoachSessionToDisplay(plannedSession, completedSession),
-      lastActivity,
-      detailsUnavailable: false,
-    };
-  } catch {
-    // Permissions Firestore refusées / réseau : joueur visible mais détails indispo.
-    return { session: null, lastActivity: null, detailsUnavailable: true };
-  }
 }
 
 /** Lit le contexte de semaine d'un club pour une weekKey. Null si absent/invalide. */
