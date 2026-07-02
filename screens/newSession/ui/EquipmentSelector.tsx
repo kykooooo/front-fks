@@ -314,6 +314,8 @@ export function EquipmentSelector({
                   key={item.id}
                   onPress={() => toggle(item.id)}
                   style={[styles.chip, selected && styles.chipSelected]}
+                  activeOpacity={0.85}
+                  hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
                 >
                   {selected && <Ionicons name="checkmark" size={14} color={palette.accent} />}
                   <Text style={[styles.chipText, selected && styles.chipTextSelected]}>

@@ -90,4 +90,29 @@ const weekKeyOf = (value?: string | Date | null): string => {
   return toDateKey(base);
 };
 
-export { toDateKey, isSameDay, frToKey, dayKeyToDow, isClubDay, lastNDates, weekKeyOf };
+const FR_DAYS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
+const FR_MONTHS = [
+  "janvier",
+  "février",
+  "mars",
+  "avril",
+  "mai",
+  "juin",
+  "juillet",
+  "août",
+  "septembre",
+  "octobre",
+  "novembre",
+  "décembre",
+];
+
+/** Date lisible FR pour l'utilisateur : "2026-07-04" | Date | ISO → "samedi 4 juillet". */
+const formatDayFR = (value?: string | Date | null): string => {
+  const key = toDateKey(value);
+  if (!key) return "";
+  const d = new Date(`${key}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return key;
+  return `${FR_DAYS[d.getDay()]} ${d.getDate()} ${FR_MONTHS[d.getMonth()]}`;
+};
+
+export { toDateKey, isSameDay, frToKey, dayKeyToDow, isClubDay, lastNDates, weekKeyOf, formatDayFR };

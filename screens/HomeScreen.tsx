@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Animated,
   AccessibilityInfo,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -66,13 +67,23 @@ export default function HomeScreen() {
   const ctaAnim = React.useRef(new Animated.Value(0)).current;
   const cardsAnim = React.useRef(new Animated.Value(0)).current;
 
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      resetTrainingStore(null);
-    } catch {
-      showToast({ type: "error", title: "Déconnexion", message: "Échec de la déconnexion. Réessaie." });
-    }
+  const handleLogout = () => {
+    // Confirmation : le bouton est dans le header, un tap accidentel ne doit pas déconnecter.
+    Alert.alert("Déconnexion", "Tu veux vraiment te déconnecter ?", [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Se déconnecter",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await signOut(auth);
+            resetTrainingStore(null);
+          } catch {
+            showToast({ type: "error", title: "Déconnexion", message: "Échec de la déconnexion. Réessaie." });
+          }
+        },
+      },
+    ]);
   };
 
   useLayoutEffect(() => {
@@ -85,6 +96,8 @@ export default function HomeScreen() {
         <TouchableOpacity
           onPress={handleLogout}
           style={styles.logoutButton}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Text
             style={styles.logoutText}
