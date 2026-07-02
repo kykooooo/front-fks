@@ -86,6 +86,7 @@ export const sessionV2Schema = z.object({
   badges: z.array(z.string()).optional().catch([]),
   blocks: z.array(blockSchema).catch([]),
   safety_notes: z.string().nullable().optional().catch(null),
+  injury_adaptation_explanation: z.string().nullable().optional().catch(null),
   guardrails_applied: z.array(z.string()).optional().catch([]),
   session_theme: z.string().nullable().optional().catch(null),
   coaching_tips: z.array(z.string()).optional().catch([]),

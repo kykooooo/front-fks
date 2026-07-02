@@ -420,10 +420,17 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
               ) : null}
 
               {/* Safety */}
-              {v2.safetyNotes ? (
+              {v2.safetyNotes || v2.injuryAdaptationExplanation ? (
                 <Card variant="soft" style={styles.coachCard}>
                   <SectionHeader title="Sécurité" />
-                  <Text style={styles.body}>{v2.safetyNotes}</Text>
+                  <View style={{ gap: 6 }}>
+                    {v2.injuryAdaptationExplanation ? (
+                      <Text style={styles.body}>{v2.injuryAdaptationExplanation}</Text>
+                    ) : null}
+                    {v2.safetyNotes ? (
+                      <Text style={styles.body}>{v2.safetyNotes}</Text>
+                    ) : null}
+                  </View>
                 </Card>
               ) : null}
 
