@@ -121,11 +121,13 @@ export default function CycleModalScreen() {
 
   // ─── Animation ───
   const fadeAnim = useRef(new Animated.Value(1)).current;
+  // Le contenu change IMMÉDIATEMENT (le tap répond tout de suite) ; le fade-in
+  // se joue en parallèle. Avant, le fade-out de 150ms d'abord donnait l'impression
+  // que le tap n'avait pas répondu.
   const animateTransition = useCallback((cb: () => void) => {
-    Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => {
-      cb();
-      Animated.timing(fadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }).start();
-    });
+    cb();
+    fadeAnim.setValue(0.4);
+    Animated.timing(fadeAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
   }, [fadeAnim]);
 
   // ─── Data fetch ───
@@ -339,7 +341,14 @@ export default function CycleModalScreen() {
     return (
       <View style={s.stepContainer}>
         {/* Back button */}
-        <TouchableOpacity onPress={() => goToStep(1)} style={s.backRow}>
+        <TouchableOpacity
+          onPress={() => goToStep(1)}
+          style={s.backRow}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Retour"
+        >
           <Ionicons name="chevron-back" size={20} color={palette.sub} />
           <Text style={s.backText}>Retour</Text>
         </TouchableOpacity>
@@ -399,6 +408,9 @@ export default function CycleModalScreen() {
               onPress={() => navigation.navigate("Tests", { initialPlaylist: selectedId })}
               style={s.testsCompactLink}
               activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Faire les tests"
             >
               <Text style={s.testsCompactLinkText}>Faire les tests</Text>
             </TouchableOpacity>
@@ -649,7 +661,14 @@ export default function CycleModalScreen() {
         <SafeAreaView style={s.safeArea} edges={["bottom"]}>
           <View style={[s.modalHeader, { paddingTop: insets.top }]}>
             <Text style={s.modalHeaderTitle}>Cycle</Text>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={s.closeButton}>
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={s.closeButton}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Fermer"
+            >
               <Ionicons name="close" size={22} color={palette.text} />
             </TouchableOpacity>
           </View>

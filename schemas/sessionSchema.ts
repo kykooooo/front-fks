@@ -11,27 +11,35 @@ const timerPresetSchema = z.object({
   rounds: z.number().nullable().catch(null),
 });
 
-const blockItemSchema = z.object({
-  exercise_id: z.string().nullable().optional().catch(null),
-  name: z.string().catch("Exercice"),
-  description: z.string().nullable().optional().catch(null),
-  football_context: z.string().nullable().optional().catch(null),
-  sets: z.number().nullable().optional().catch(null),
-  reps: z.number().nullable().optional().catch(null),
-  work_s: z.number().nullable().optional().catch(null),
-  rest_s: z.number().nullable().optional().catch(null),
-  notes: z.string().nullable().optional().catch(null),
-});
+// .passthrough() : on cesse de jeter l'enrichissement du moteur. Le contrat
+// backend (fks/src/fksSchema.ts) émet déjà des champs non déclarés ici
+// (pairing_id, pairing_order, role…) et pourra en ajouter d'autres ; sans
+// passthrough, z.object les supprimait silencieusement avant l'écran de séance.
+const blockItemSchema = z
+  .object({
+    exercise_id: z.string().nullable().optional().catch(null),
+    name: z.string().catch("Exercice"),
+    description: z.string().nullable().optional().catch(null),
+    football_context: z.string().nullable().optional().catch(null),
+    sets: z.number().nullable().optional().catch(null),
+    reps: z.number().nullable().optional().catch(null),
+    work_s: z.number().nullable().optional().catch(null),
+    rest_s: z.number().nullable().optional().catch(null),
+    notes: z.string().nullable().optional().catch(null),
+  })
+  .passthrough();
 
-const blockSchema = z.object({
-  id: z.string().catch("block_unknown"),
-  type: z.string().catch("run"),
-  goal: z.string().catch(""),
-  intensity: z.string().catch("moderate"),
-  duration_min: z.number().min(1).catch(5),
-  items: z.array(blockItemSchema).optional().catch([]),
-  notes: z.string().nullable().optional().catch(null),
-});
+const blockSchema = z
+  .object({
+    id: z.string().catch("block_unknown"),
+    type: z.string().catch("run"),
+    goal: z.string().catch(""),
+    intensity: z.string().catch("moderate"),
+    duration_min: z.number().min(1).catch(5),
+    items: z.array(blockItemSchema).optional().catch([]),
+    notes: z.string().nullable().optional().catch(null),
+  })
+  .passthrough();
 
 const displaySchema = z.object({
   color_theme: z.string().optional().catch(undefined),

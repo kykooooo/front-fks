@@ -24,6 +24,7 @@ import { Badge } from "../components/ui/Badge";
 import { withSessionErrorBoundary } from "../components/withErrorBoundary";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { SessionTimer, type SessionTimerHandle } from "../components/session/SessionTimer";
+import { getBlockLabel } from "../components/session/blockConfig";
 import { useSettingsStore } from "../state/settingsStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { getCycleTheme, type CycleTheme } from "../constants/cycleTheme";
@@ -62,6 +63,15 @@ type Block = {
     restS?: number | null;
     rounds?: number | null;
   }[] | null;
+};
+
+type CircuitState = {
+  workS: number;
+  restS: number;
+  totalRounds: number;
+  round: number; // tour courant (1-based)
+  phase: "work" | "rest";
+  secLeft: number;
 };
 
 type LiveRoute = RouteProp<AppStackParamList, "SessionLive">;
@@ -334,14 +344,25 @@ const BlockCard = React.memo(function BlockCard({
     >
       <Card variant="surface" style={styles.blockCard}>
         <View style={styles.blockHeader}>
-          <View>
+          <View style={styles.blockHeaderText}>
             <Text style={styles.blockTitle} numberOfLines={2}>{blockTitle}</Text>
+            {/* Label affiné (getBlockLabel) — cohérent avec la Preview ; l'intensité passe en badge. */}
             <Text style={styles.blockMeta}>
-              {block.intensity ?? "—"} · {block.durationMin ?? "?"} min
+              {getBlockLabel(block)} · {block.durationMin ?? "?"} min
             </Text>
           </View>
-          {isComplete ? <Badge label="OK" tone="ok" /> : null}
+          <View style={styles.blockHeaderBadges}>
+            {block.intensity ? (
+              <Badge label={block.intensity} tone={intensityTone(block.intensity)} />
+            ) : null}
+            {isComplete ? <Badge label="OK" tone="ok" /> : null}
+          </View>
         </View>
+
+        {/* Consigne de bloc (ex. "enchaîne 1→2→3, ×3 tours") — masque les lignes token:. */}
+        {cleanDisplayNote(block.notes) ? (
+          <Text style={styles.blockNotes}>{cleanDisplayNote(block.notes)}</Text>
+        ) : null}
 
         {items.length === 0 ? (
           <Text style={styles.blockEmpty}>Bloc sans items détaillés.</Text>
@@ -500,6 +521,10 @@ function SessionLiveScreen() {
   const [restSec, setRestSec] = useState(0);
   const restRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [restSource, setRestSource] = useState<"auto" | "manual" | null>(null);
+  // Circuit 40/20 : enchaîne travail → repos × tours (preset display.timer_presets).
+  // Mutuellement exclusif avec le repos simple ci-dessus.
+  const [circuitState, setCircuitState] = useState<CircuitState | null>(null);
+  const circuitActive = circuitState !== null;
   const blockWidth = useMemo(() => Math.max(280, width - 32), [width]);
   const itemSize = blockWidth + ITEM_SPACING;
   const scrollX = useRef(new Animated.Value(0)).current;
@@ -735,13 +760,64 @@ function SessionLiveScreen() {
     };
   }, [restRunning, playRestSignal]);
 
+  // Chrono de circuit : à chaque seconde, décompte la phase courante puis
+  // bascule travail→repos, et repos→tour suivant jusqu'au dernier tour.
   useEffect(() => {
+    if (!circuitActive) return;
+    const id = setInterval(() => {
+      setCircuitState((prev) => {
+        if (!prev) return prev;
+        if (prev.secLeft > 1) return { ...prev, secLeft: prev.secLeft - 1 };
+        // Fin de phase → transition (même logique de signal que le repos).
+        playRestSignal();
+        if (prev.phase === "work") {
+          return { ...prev, phase: "rest", secLeft: Math.max(1, prev.restS) };
+        }
+        if (prev.round < prev.totalRounds) {
+          return { ...prev, round: prev.round + 1, phase: "work", secLeft: Math.max(1, prev.workS) };
+        }
+        return null; // circuit terminé
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [circuitActive, playRestSignal]);
+
+  const startCircuit = useCallback(
+    (workS: number, restS: number, rounds: number) => {
+      const w = Math.max(1, Math.round(workS));
+      const r = Math.max(0, Math.round(restS));
+      const total = Math.max(1, Math.round(rounds));
+      // Exclusif avec le repos simple.
+      setRestRunning(false);
+      setRestSec(0);
+      setRestSource(null);
+      setCircuitState({ workS: w, restS: r, totalRounds: total, round: 1, phase: "work", secLeft: w });
+      if (hapticsEnabled && Platform.OS !== "web") Vibration.vibrate(20);
+    },
+    [hapticsEnabled]
+  );
+
+  const stopCircuit = useCallback(() => setCircuitState(null), []);
+
+  const skipCircuitPhase = useCallback(() => {
+    setCircuitState((prev) => {
+      if (!prev) return prev;
+      if (prev.phase === "work") return { ...prev, phase: "rest", secLeft: Math.max(1, prev.restS) };
+      if (prev.round < prev.totalRounds) {
+        return { ...prev, round: prev.round + 1, phase: "work", secLeft: Math.max(1, prev.workS) };
+      }
+      return null;
+    });
+  }, []);
+
+  useEffect(() => {
+    const visible = restRunning || circuitActive;
     Animated.timing(restOverlay, {
-      toValue: restRunning ? 1 : 0,
-      duration: restRunning ? 180 : 140,
+      toValue: visible ? 1 : 0,
+      duration: visible ? 180 : 140,
       useNativeDriver: true,
     }).start();
-  }, [restRunning, restOverlay]);
+  }, [restRunning, circuitActive, restOverlay]);
 
   useEffect(() => {
     if (blocks.length <= 1) return;
@@ -782,6 +858,7 @@ function SessionLiveScreen() {
   const startRest = useCallback(
     (seconds: number, source: "auto" | "manual" = "manual") => {
       if (!Number.isFinite(seconds) || seconds <= 0) return;
+      setCircuitState(null); // exclusif avec le circuit
       setRestSource(source);
       setRestSec(Math.max(1, Math.round(seconds)));
       setRestRunning(true);
@@ -1038,8 +1115,17 @@ function SessionLiveScreen() {
                       key={`preset_${idx}`}
                       style={[styles.restChip, { backgroundColor: cycleTheme.soft }]}
                       onPress={() => {
+                        const work = Number(preset.workS);
                         const rest = Number(preset.restS);
-                        if (Number.isFinite(rest) && rest > 0) {
+                        const rounds = Number(preset.rounds);
+                        // Circuit complet (travail→repos ×tours) si une phase travail existe ; sinon repos seul.
+                        if (Number.isFinite(work) && work > 0) {
+                          startCircuit(
+                            work,
+                            Number.isFinite(rest) ? rest : 0,
+                            Number.isFinite(rounds) && rounds > 0 ? rounds : 1
+                          );
+                        } else if (Number.isFinite(rest) && rest > 0) {
                           startRest(rest, "manual");
                         }
                       }}
@@ -1134,6 +1220,14 @@ function SessionLiveScreen() {
               </Card>
             ) : null}
 
+            {/* Sécurité — miroir de la Preview (rendu seulement si le moteur le fournit). */}
+            {v2.safetyNotes ? (
+              <Card variant="soft" style={styles.coachCard}>
+                <SectionHeader title="Sécurité" />
+                <Text style={styles.coachText}>{v2.safetyNotes}</Text>
+              </Card>
+            ) : null}
+
             {/* CTA de séance : couleur du cycle (override de l'orange, cf. cycleTheme) */}
             <Button
               label={finishLabel}
@@ -1146,7 +1240,7 @@ function SessionLiveScreen() {
         </ScrollView>
 
         <Animated.View
-          pointerEvents={restRunning ? "auto" : "none"}
+          pointerEvents={restRunning || circuitActive ? "auto" : "none"}
           style={[
             styles.restOverlay,
             {
@@ -1163,22 +1257,45 @@ function SessionLiveScreen() {
           ]}
         >
           <View style={styles.restOverlayCard}>
-            <Text style={styles.restOverlayTitle}>
-              {restSource === "auto" ? "Repos auto" : "Repos"}
-            </Text>
-            <Text style={styles.restOverlayTime}>{formatTime(restSec)}</Text>
-            <View style={styles.restOverlayActions}>
-              <Button
-                label="Passer"
-                onPress={() => {
-                  setRestRunning(false);
-                  setRestSec(0);
-                  setRestSource(null);
-                }}
-                size="sm"
-                variant="ghost"
-              />
-            </View>
+            {circuitState ? (
+              <>
+                <Text
+                  style={[
+                    styles.restOverlayTitle,
+                    circuitState.phase === "work" && { color: cycleTheme.strong },
+                  ]}
+                >
+                  {circuitState.phase === "work" ? "Travail" : "Repos"}
+                </Text>
+                <Text style={styles.restOverlayTime}>{formatTime(circuitState.secLeft)}</Text>
+                <Text style={styles.restOverlayRounds}>
+                  Tour {circuitState.round}/{circuitState.totalRounds}
+                </Text>
+                <View style={styles.restOverlayActions}>
+                  <Button label="Passer" onPress={skipCircuitPhase} size="sm" variant="ghost" />
+                  <Button label="Stop" onPress={stopCircuit} size="sm" variant="ghost" />
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.restOverlayTitle}>
+                  {restSource === "auto" ? "Repos auto" : "Repos"}
+                </Text>
+                <Text style={styles.restOverlayTime}>{formatTime(restSec)}</Text>
+                <View style={styles.restOverlayActions}>
+                  <Button
+                    label="Passer"
+                    onPress={() => {
+                      setRestRunning(false);
+                      setRestSec(0);
+                      setRestSource(null);
+                    }}
+                    size="sm"
+                    variant="ghost"
+                  />
+                </View>
+              </>
+            )}
           </View>
         </Animated.View>
       </View>
@@ -1287,13 +1404,22 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: "800",
   },
-  restOverlayActions: { marginTop: 4, alignSelf: "stretch" },
+  restOverlayActions: { marginTop: 4, flexDirection: "row", gap: 8, justifyContent: "center", alignSelf: "stretch" },
+  restOverlayRounds: {
+    color: palette.sub,
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+  },
   swipeHint: { color: palette.sub, fontSize: 12, marginTop: -6 },
   blockCardWrap: { marginBottom: 2 },
   blockCard: { padding: 14, gap: 10 },
-  blockHeader: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
+  blockHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 12 },
+  blockHeaderText: { flex: 1 },
+  blockHeaderBadges: { flexDirection: "row", gap: 6, flexShrink: 0 },
   blockTitle: { color: palette.text, fontSize: 15, fontWeight: "700" },
   blockMeta: { color: palette.sub, fontSize: 12, marginTop: 2 },
+  blockNotes: { color: palette.sub, fontSize: 12, lineHeight: 18 },
   blockEmpty: { color: palette.sub, fontSize: 12 },
   itemRow: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
   itemMain: { flex: 1, flexDirection: "row", gap: 10, alignItems: "flex-start" },
