@@ -35,6 +35,8 @@ module.exports = ({ config }) => {
       },
     },
     extra: {
+      // Toutes les clés extra d'app.json passent (feature flags, etc.)
+      ...extra,
       // Identifiants publics (non secrets)
       SENTRY_DSN: process.env.EXPO_PUBLIC_SENTRY_DSN ?? extra.SENTRY_DSN ?? "",
       AMPLITUDE_API_KEY: extra.AMPLITUDE_API_KEY ?? "",

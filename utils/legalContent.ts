@@ -8,7 +8,7 @@ export const LEGAL_NOTICE: LegalSection[] = [
     title: "Editeur de l'application",
     body: [
       "Nom : Le Bris Kyllian",
-      "Email : fks.entreprise@gmail.com",
+      "Email : kyllian@fks-app.com",
       "Adresse : [A completer]",
       "Pays : France",
     ],
@@ -29,7 +29,7 @@ export const LEGAL_NOTICE: LegalSection[] = [
   },
   {
     title: "Contact",
-    body: ["Pour toute question : fks.entreprise@gmail.com"],
+    body: ["Pour toute question : kyllian@fks-app.com"],
   },
 ];
 
@@ -38,7 +38,7 @@ export const PRIVACY_POLICY: LegalSection[] = [
     title: "Responsable du traitement",
     body: [
       "Nom : Le Bris Kyllian",
-      "Email : fks.entreprise@gmail.com",
+      "Email : kyllian@fks-app.com",
       "Adresse : [A completer]",
       "Pays : France",
     ],
@@ -87,7 +87,7 @@ export const PRIVACY_POLICY: LegalSection[] = [
     body: [
       "Droit d'acces, de rectification, d'effacement.",
       "Droit d'opposition a certains traitements.",
-      "Contact : fks.entreprise@gmail.com",
+      "Contact : kyllian@fks-app.com",
     ],
   },
   {
