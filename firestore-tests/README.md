@@ -1,8 +1,14 @@
-# Firestore Rules — tests d'émulateur (PR-1)
+# Firestore Rules — tests d'émulateur
 
 Infrastructure de tests **reproductible** pour les Firestore Security Rules.
-Cette PR **ne modifie pas** `firestore.rules` : elle **documente** le comportement
-de sécurité actuel (y compris les fuites) avant la PR de fermeture (PR-4).
+
+- **PR-1** a posé le harness et **documenté** le comportement de sécurité (fuites incluses)
+  sans toucher `firestore.rules`.
+- **PR-4** (cette itération) **ferme la frontière coach-safe** : `firestore.rules` retire
+  l'accès coach aux docs bruts (`users`/`sessions`/`plannedSessions`) et ouvre la lecture de
+  la projection `clubs/{clubId}/playerSummaries` au coach/owner du club. Les tests
+  `CURRENT VULNERABILITY` de lecture coach sont **inversés** et les 10 tests `TARGET`
+  **activés**.
 
 ## Commande unique
 
@@ -32,28 +38,30 @@ projet `demo-fks-rules` 100 % hors ligne (aucun credential Firebase).
 
 | Fichier | Rôle |
 |---|---|
-| `jest.config.js` | Runner Jest dédié (node + ts-jest), isolé de jest-expo |
+| `jest.config.js` | Runner Jest dédié (node + ts-jest), isolé de jest-expo. `maxWorkers: 1` : les suites partagent UN émulateur, sérialisation obligatoire (sinon `clearFirestore` d'un worker écrase un autre) |
 | `tsconfig.json` | tsconfig CommonJS/Node pour ts-jest (le tsconfig racine exclut ce dossier) |
 | `fixtures.ts` | Identifiants + seed admin (`withSecurityRulesDisabled`). Données factices. |
-| `rules.baseline.test.ts` | Tests VERTS contre les rules actuelles (légitimes + `CURRENT VULNERABILITY`) |
-| `rules.target.test.ts` | 10 scénarios `TARGET` de la future projection `playerSummaries` — **vraies fixtures/assertions**, en `test.skip` (activés en PR-4 en retirant `.skip`) |
+| `rules.baseline.test.ts` | Tests VERTS contre les rules PR-4 (légitimes + frontière coach-safe FERMÉE + vulnérabilités hors scope documentées) |
+| `rules.target.test.ts` | 10 scénarios `TARGET` de la projection `playerSummaries` — **vraies fixtures/assertions**, désormais **actifs** (`.skip` retiré en PR-4) |
+| `rules.summaryMembership.test.ts` | Mini-hardening : `isPlayerMember` (summary lisible seulement si la joueuse est ENCORE membre player), list refusée, write false, + séquence réelle `members → get summaries` du lecteur coach |
 
-## Ce qui est prouvé (baseline, vert aujourd'hui)
+## Ce qui est prouvé (PR-4, vert)
 
 **Légitime** : joueuse lit son profil/ses séances ; coach lit les members de son club ;
 membre lit le weekContext ; non-membre et non-authentifié sont refusés.
 
-**`CURRENT VULNERABILITY`** (comportement dangereux réel, à inverser en PR-4) :
-- coachA lit le **profil brut**, les **sessions brutes** et **plannedSessions brutes** de playerA1 ;
-- coachA récupère `feedback.pain`, `feedback.comment`, `metrics.tsb`, `aiV2` depuis le doc brut ;
+**Frontière coach-safe FERMÉE** (anciens `CURRENT VULNERABILITY` désormais `assertFails`) :
+- coachA ne lit **plus** le **profil brut**, les **sessions brutes** ni **plannedSessions brutes** de playerA1 ;
+- la lecture qui exposait `feedback.pain`, `feedback.comment`, `metrics.tsb`, `aiV2` est refusée ;
+- coach/owner du même club lit la projection `clubs/{id}/playerSummaries` (sans champ interdit) ;
+- coach d'un autre club, joueuse d'un autre club, non-membre et non-authentifié : refusés ;
+- écriture cliente d'un summary (coach OU joueuse) : refusée (`write: if false`) ;
+- la joueuse **conserve** l'accès à ses propres docs bruts.
+
+**Vulnérabilités HORS périmètre coach-safe** (restent `assertSucceeds`, **non traitées** par PR-4) :
 - tout connecté lit `clubs/{id}` → `inviteCode` exposé ;
 - un connecté crée son membership `player` **sans code d'invitation**.
+- → dette de sécurité distincte, à traiter dans une PR dédiée.
 
-**Contrôles déjà conformes** (resteront `assertFails` après PR-4) :
+**Contrôles déjà conformes** (restent `assertFails`) :
 - coachB (autre club) ne lit ni le profil ni les sessions de playerA1.
-
-## Tests qui seront INVERSÉS en PR-4
-
-Tous les tests du bloc `CURRENT VULNERABILITY` passant en `assertSucceeds`
-deviendront `assertFails` une fois les rules fermées et la projection
-`clubs/{clubId}/playerSummaries` en place. Voir `rules.target.test.ts`.

@@ -26,28 +26,36 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
     }
 
-    function clubIdForUser(userId) {
-      return get(/databases/$(database)/documents/users/$(userId)).data.clubId;
+    // La JOUEUSE ciblée est-elle un membre ACTIF du club, avec le rôle player ?
+    // Sert à invalider une projection playerSummaries STALE : si la joueuse a
+    // quitté le club (member doc supprimé) ou n'a pas le rôle player (coach/rôle
+    // invalide), le summary — même encore présent — n'est plus lisible.
+    // exists() protège le get() (court-circuit) contre un doc absent.
+    function isPlayerMember(clubId, playerUid) {
+      return exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid)) &&
+        get(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid)).data.role == "player";
     }
 
-    function isCoachOfUser(userId) {
-      return isSignedIn() &&
-        clubIdForUser(userId) != null &&
-        isCoach(clubIdForUser(userId));
-    }
-
+    // Frontière coach-safe (PR-4) : les docs BRUTS de la joueuse (profil, séances
+    // faites, séances planifiées) sont STRICTEMENT privés — seule la propriétaire
+    // y accède. Le coach ne lit JAMAIS ces docs : sa seule surface de lecture est
+    // la projection serveur clubs/{clubId}/playerSummaries (plus bas), écrite par
+    // Cloud Function et filtrée des champs médicaux/intimes/charge brute.
+    // La relation coach↔joueuse n'est plus dérivée d'un clubId lu dans le doc
+    // (potentiellement falsifiable par la joueuse) : elle est vérifiée par le
+    // membership réel du coach dans le club (isCoach), via le clubId du CHEMIN.
     match /users/{userId} {
-      allow read: if isOwner(userId) || isCoachOfUser(userId);
+      allow read: if isOwner(userId);
       allow create, update: if isOwner(userId);
       allow delete: if false;
 
       match /sessions/{sessionId} {
-        allow read: if isOwner(userId) || isCoachOfUser(userId);
+        allow read: if isOwner(userId);
         allow write: if isOwner(userId);
       }
 
       match /plannedSessions/{sessionId} {
-        allow read: if isOwner(userId) || isCoachOfUser(userId);
+        allow read: if isOwner(userId);
         allow write: if isOwner(userId);
       }
     }
@@ -59,7 +67,11 @@ service cloud.firestore {
       allow delete: if false;
 
       match /members/{memberId} {
-        allow read: if isOwner(memberId) || isCoach(clubId);
+        // Lecture : le membre lui-même, un coach du club, OU l'owner du club.
+        // `isClubOwner` est aligné EXPLICITEMENT sur la lecture de playerSummaries
+        // (même couple coach/owner) : le lecteur du roster (members → summaries)
+        // doit pouvoir lister les members avant de lire chaque projection.
+        allow read: if isOwner(memberId) || isCoach(clubId) || isClubOwner(clubId);
         allow create, update: if isOwner(memberId) && (
           request.resource.data.role == "player" ||
           (request.resource.data.role == "coach" && isClubOwner(clubId))
@@ -75,6 +87,26 @@ service cloud.firestore {
         allow read: if isClubMember(clubId) || isClubOwner(clubId);
         allow create, update: if isCoach(clubId);
         allow delete: if isClubOwner(clubId);
+      }
+
+      // Projection coach-safe (PR-4) : unique surface de lecture du coach sur les
+      // données joueuses. Produite EXCLUSIVEMENT par une Cloud Function (admin SDK,
+      // qui contourne les rules) — d'où `write: if false` : AUCUN client (ni coach,
+      // ni joueuse, ni owner) ne peut écrire/altérer une projection.
+      // Lecture autorisée SEULEMENT si le lecteur est coach/owner du club (relation
+      // vérifiée par membership sur le clubId du CHEMIN, jamais un clubId client) ET
+      // si la JOUEUSE ciblée est TOUJOURS membre player du club (isPlayerMember).
+      // Ce second garde-fou ferme la fuite d'un summary STALE : après le départ de
+      // la joueuse, sa projection résiduelle devient illisible (fail-closed).
+      // Par DESIGN, toute lecture list / getDocs de playerSummaries est REFUSÉE :
+      // la règle dépend de l'ID du document (isPlayerMember(playerUid)), non
+      // évaluable en list. Seules les lectures DIRECTES par playerUid d'une joueuse
+      // ENCORE membre player sont autorisées (le lecteur front liste members, puis
+      // lit chaque summary par son ID).
+      match /playerSummaries/{playerUid} {
+        allow read: if (isCoach(clubId) || isClubOwner(clubId)) &&
+          isPlayerMember(clubId, playerUid);
+        allow write: if false;
       }
     }
   }

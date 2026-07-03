@@ -32,7 +32,6 @@ import ProgressScreen from "../screens/ProgressScreen";
 import CoachHomeScreen from "../screens/CoachHomeScreen";
 import CoachOnboardingScreen from "../screens/CoachOnboardingScreen";
 import CoachPlayerDetailScreen from "../screens/CoachPlayerDetailScreen";
-import type { ClubPlayer } from "../repositories/clubsRepo";
 import { theme } from "../constants/theme";
 import { DEV_FLAGS } from "../config/devFlags";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -106,7 +105,9 @@ export type AuthStackParamList = {
 
 export type CoachStackParamList = {
   CoachHome: undefined;
-  CoachPlayerDetail: { player: ClubPlayer };
+  // Coach-safe : on ne transmet plus de profil brut, seulement les clés de lecture
+  // de la projection (clubs/{clubId}/playerSummaries/{playerUid}).
+  CoachPlayerDetail: { clubId: string; playerUid: string };
   LegalNotice: undefined;
   PrivacyPolicy: undefined;
 };
