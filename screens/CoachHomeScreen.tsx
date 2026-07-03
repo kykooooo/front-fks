@@ -25,14 +25,16 @@ import { Button } from "../components/ui/Button";
 import { CoachBadge, coachColors, coachRadius } from "../components/coach/coachUi";
 import { db, auth } from "../services/firebase";
 import {
-  fetchClubPlayers,
-  fetchPlayerSessionOverview,
+  fetchClubPlayerSummaries,
   getClubWeekContext,
   saveClubWeekContext,
   setClubTeamGender,
-  type ClubPlayer,
-  type CoachPlayerOverview,
 } from "../repositories/clubsRepo";
+import {
+  sortCoachSummaries,
+  summarizeCoachGroup,
+  type CoachPlayerSummary,
+} from "../domain/coachSummary";
 import {
   CLUB_TEAM_GENDERS,
   normalizeTeamGender,
@@ -40,14 +42,7 @@ import {
   type ClubWeekGoal,
   type ClubTeamGender,
 } from "../domain/types";
-import {
-  sortCoachPlayersForDashboard,
-  summarizeCoachGroup,
-  topCoachAdaptationLabel,
-  getTeamPlayerLabel,
-  readableIntensity,
-  formatCoachWeekLabel,
-} from "../domain/coachLabels";
+import { getTeamPlayerLabel, formatCoachWeekLabel } from "../domain/coachLabels";
 import { weekKeyOf, toDateKey } from "../utils/dateHelpers";
 import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
@@ -98,8 +93,8 @@ export default function CoachHomeScreen() {
   const [clubId, setClubId] = useState<string | null>(null);
   const [clubName, setClubName] = useState<string | null>(null);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
-  const [players, setPlayers] = useState<ClubPlayer[]>([]);
-  const [overviews, setOverviews] = useState<Record<string, CoachPlayerOverview>>({});
+  const [summaries, setSummaries] = useState<CoachPlayerSummary[]>([]);
+  const [summariesUnavailable, setSummariesUnavailable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const todayKey = toDateKey(new Date());
@@ -114,26 +109,6 @@ export default function CoachHomeScreen() {
   const [savingContext, setSavingContext] = useState(false);
   const [teamGender, setTeamGender] = useState<ClubTeamGender | null>(null);
   const [tab, setTab] = useState<CoachTabKey>("seances");
-
-  // Recharge les overviews joueurs (voyants). Best-effort + ISOLATION par joueur :
-  // une erreur sur un joueur → "Détails indispo" pour lui seul, jamais toute la page.
-  // On remplace la map d'un bloc à la fin → pas de flash "Aucune donnée" pendant le fetch.
-  const loadPlayerOverviews = useCallback(async (list: ClubPlayer[]) => {
-    if (list.length === 0) {
-      setOverviews({});
-      return;
-    }
-    const entries = await Promise.all(
-      list.map(async (p) => {
-        try {
-          return [p.uid, await fetchPlayerSessionOverview(p.uid)] as const;
-        } catch {
-          return [p.uid, { session: null, lastActivity: null, detailsUnavailable: true }] as const;
-        }
-      }),
-    );
-    setOverviews(Object.fromEntries(entries));
-  }, []);
 
   // Remet le cadre de la semaine à vide. Appelé quand aucun cadre n'existe pour
   // la semaine active (ou pas de club) → cohérent avec "À réactualiser chaque semaine".
@@ -157,8 +132,8 @@ export default function CoachHomeScreen() {
         setClubId(null);
         setClubName(null);
         setInviteCode(null);
-        setPlayers([]);
-        setOverviews({});
+        setSummaries([]);
+        setSummariesUnavailable(false);
         resetWeekContextState();
         return;
       }
@@ -172,12 +147,12 @@ export default function CoachHomeScreen() {
         setTeamGender(normalizeTeamGender(data?.teamGender));
       }
 
-      const list = await fetchClubPlayers(resolvedClubId);
-      setPlayers(list);
-
-      // Voyants joueurs — rechargés à chaque load() (donc aussi au pull-to-refresh),
-      // même si la liste d'UIDs est identique.
-      await loadPlayerOverviews(list);
+      // Effectif + voyants en UNE lecture de collection coach-safe (playerSummaries).
+      // Une erreur de collection → état global indisponible honnête (jamais de crash,
+      // jamais de fallback vers les documents bruts).
+      const res = await fetchClubPlayerSummaries(resolvedClubId);
+      setSummaries(res.summaries);
+      setSummariesUnavailable(res.unavailable);
 
       // Cadre de semaine existant (best-effort). Si absent → reset explicite
       // (évite qu'un ancien cadre reste affiché après changement de semaine/club).
@@ -197,11 +172,15 @@ export default function CoachHomeScreen() {
       }
     } catch (error) {
       if (__DEV__) console.error("[CoachHome] load failed:", error);
+      // On ne conserve JAMAIS les données d'un club précédent : vider + marquer
+      // indisponible pour afficher un état global honnête (pas de faux compteurs).
+      setSummaries([]);
+      setSummariesUnavailable(true);
       showToast({ type: "error", title: "Erreur", message: "Impossible de charger ton club." });
     } finally {
       setLoading(false);
     }
-  }, [uid, weekKey, loadPlayerOverviews, resetWeekContextState]);
+  }, [uid, weekKey, resetWeekContextState]);
 
   const handleSetTeamGender = useCallback(async (g: ClubTeamGender) => {
     if (!clubId) return;
@@ -241,7 +220,7 @@ export default function CoachHomeScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await load(); // recharge players + overviews (même si UIDs identiques)
+    await load(); // relit la collection playerSummaries (pull-to-refresh)
     setRefreshing(false);
   }, [load]);
 
@@ -266,10 +245,7 @@ export default function CoachHomeScreen() {
   };
 
   // Lignes triées (priorité actionnable) + compteurs groupe — calculés une fois.
-  const rows = useMemo(
-    () => sortCoachPlayersForDashboard(players, overviews, todayKey),
-    [players, overviews, todayKey],
-  );
+  const rows = useMemo(() => sortCoachSummaries(summaries, todayKey), [summaries, todayKey]);
   const summary = useMemo(() => summarizeCoachGroup(rows), [rows]);
 
   if (loading) {
@@ -318,6 +294,17 @@ export default function CoachHomeScreen() {
       <Text style={styles.emptyTitle}>Aucun membre pour l'instant</Text>
       <Text style={styles.emptyText}>
         Partage ton code club. Ton effectif apparaîtra ici dès la première inscription.
+      </Text>
+    </Card>
+  );
+
+  // Lecture de collection refusée (permissions/réseau) → état global honnête.
+  const renderUnavailable = () => (
+    <Card variant="soft" style={styles.emptyCard}>
+      <Ionicons name="cloud-offline-outline" size={28} color={palette.sub} />
+      <Text style={styles.emptyTitle}>Effectif indisponible</Text>
+      <Text style={styles.emptyText}>
+        Impossible de charger les résumés joueurs pour le moment. Réessaie en tirant vers le bas.
       </Text>
     </Card>
   );
@@ -445,7 +432,19 @@ export default function CoachHomeScreen() {
   );
 
   // ── Onglet "Séances" : état du groupe + compteurs + liste orientée séance ──
-  const renderSeances = () => (
+  const renderSeances = () => {
+    // Lecture de collection refusée → afficher UNIQUEMENT l'état global indisponible.
+    // On ne montre ni l'état du groupe ni les compteurs (qui seraient calculés à
+    // zéro et donc trompeurs).
+    if (summariesUnavailable) {
+      return (
+        <>
+          <Text style={styles.sectionTitle}>Séances générées</Text>
+          {renderUnavailable()}
+        </>
+      );
+    }
+    return (
     <>
       {/* État du groupe — phrase actionnable (priorité : relance > prévu > rien) */}
       <View style={[styles.groupCard, { borderLeftColor: groupState.color }]}>
@@ -465,36 +464,39 @@ export default function CoachHomeScreen() {
           <SummaryStat value={summary.planned} label="Prêtes" icon="checkmark-done-outline" color={palette.accent} />
           <SummaryStat value={summary.adapted} label="Adaptées" icon="options-outline" color={palette.success} />
           <SummaryStat value={summary.toRelance} label="À relancer" icon="alert-circle-outline" color={palette.warn} />
-          <SummaryStat value={summary.noData} label="Sans séance" icon="ellipse-outline" color={palette.muted} />
+          <SummaryStat value={summary.noSession} label="Sans séance" icon="ellipse-outline" color={palette.muted} />
         </View>
       </Card>
 
-      {players.length === 0 ? (
+      {rows.length === 0 ? (
         renderEmptyRoster()
       ) : (
         <Card variant="soft" style={styles.listCard}>
-          {rows.map(({ player: p, status: st }, i) => {
-            const sess = overviews[p.uid]?.session ?? null;
-            const reason =
-              st?.adaptationLabel === "Adaptée" ? topCoachAdaptationLabel(sess?.adaptationTokens) : null;
+          {rows.map(({ summary: p, status: st }, i) => {
+            const sess = p.latestSession;
+            // adaptation.labels[0] : déjà traduit serveur (jamais re-traduit ici).
+            const reason = st.adaptationLabel === "Adaptée" ? p.adaptation.labels[0] ?? null : null;
             const line = sess
               ? [
                   sess.title,
                   sess.durationMin ? `${sess.durationMin} min` : null,
-                  sess.intensity ? readableIntensity(sess.intensity) : null,
+                  sess.intensityLabel,
                 ]
                   .filter(Boolean)
                   .join(" · ") || null
               : null;
-            const label = st?.sessionStatusLabel;
+            const label = st.sessionStatusLabel;
             const barColor =
               label === "À relancer" ? palette.warn : label === "Faite" ? palette.success : "transparent";
             return (
               <TouchableOpacity
-                key={p.uid}
+                key={p.playerUid}
                 style={[styles.listRow, i > 0 && styles.listRowDivider]}
                 activeOpacity={0.7}
-                onPress={() => { haptics.impactLight(); navigation.navigate("CoachPlayerDetail", { player: p }); }}
+                onPress={() => {
+                  haptics.impactLight();
+                  if (clubId) navigation.navigate("CoachPlayerDetail", { clubId, playerUid: p.playerUid });
+                }}
                 accessibilityLabel={`Voir la séance de ${p.firstName ?? "ce profil"}`}
               >
                 <View style={[styles.priorityBar, { backgroundColor: barColor }]} />
@@ -504,7 +506,7 @@ export default function CoachHomeScreen() {
                       <Text style={styles.rowName} numberOfLines={1}>{p.firstName ?? "Membre"}</Text>
                       {p.position ? <CoachBadge label={p.position} tone="default" style={styles.posBadge} /> : null}
                     </View>
-                    {st ? <CoachBadge label={st.sessionStatusLabel} tone={statusTone(st.sessionStatusLabel)} /> : null}
+                    <CoachBadge label={st.sessionStatusLabel} tone={statusTone(st.sessionStatusLabel)} />
                   </View>
                   <Text style={styles.rowLine} numberOfLines={1}>{line ?? "Aucune séance générée"}</Text>
                   {reason ? (
@@ -521,26 +523,40 @@ export default function CoachHomeScreen() {
         </Card>
       )}
     </>
-  );
+    );
+  };
 
   // ── Onglet "Effectif" : roster compact (avatar réduit, lignes denses) ──
-  const renderEffectif = () => (
+  const renderEffectif = () => {
+    // Indisponible → titre + état global honnête, sans compteur d'effectif trompeur.
+    if (summariesUnavailable) {
+      return (
+        <>
+          <Text style={styles.sectionTitle}>{teamLabel}</Text>
+          {renderUnavailable()}
+        </>
+      );
+    }
+    return (
     <>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>{teamLabel}</Text>
-        <CoachBadge label={String(players.length)} tone="default" />
+        <CoachBadge label={String(summaries.length)} tone="default" />
       </View>
 
-      {players.length === 0 ? (
+      {rows.length === 0 ? (
         renderEmptyRoster()
       ) : (
         <Card variant="soft" style={styles.listCard}>
-          {rows.map(({ player: p, status: st }, i) => (
+          {rows.map(({ summary: p, status: st }, i) => (
             <TouchableOpacity
-              key={p.uid}
+              key={p.playerUid}
               style={[styles.rosterRow, i > 0 && styles.listRowDivider]}
               activeOpacity={0.7}
-              onPress={() => { haptics.impactLight(); navigation.navigate("CoachPlayerDetail", { player: p }); }}
+              onPress={() => {
+                haptics.impactLight();
+                if (clubId) navigation.navigate("CoachPlayerDetail", { clubId, playerUid: p.playerUid });
+              }}
               accessibilityLabel={`Voir ${p.firstName ?? "ce profil"}`}
             >
               <View style={styles.avatarSm}>
@@ -554,13 +570,11 @@ export default function CoachHomeScreen() {
                 <Text style={styles.rowMeta} numberOfLines={1}>
                   {[p.position, p.level].filter(Boolean).join(" · ") || "Profil à compléter"}
                 </Text>
-                {st ? (
-                  <View style={styles.statusRow}>
-                    <CoachBadge label={st.sessionStatusLabel} tone={statusTone(st.sessionStatusLabel)} />
-                    <CoachBadge label={st.activityLabel} tone="default" />
-                    {st.adaptationLabel === "Adaptée" ? <CoachBadge label="Adaptée" tone="ok" /> : null}
-                  </View>
-                ) : null}
+                <View style={styles.statusRow}>
+                  <CoachBadge label={st.sessionStatusLabel} tone={statusTone(st.sessionStatusLabel)} />
+                  <CoachBadge label={st.activityLabel} tone="default" />
+                  {st.adaptationLabel === "Adaptée" ? <CoachBadge label="Adaptée" tone="ok" /> : null}
+                </View>
               </View>
               <Ionicons name="chevron-forward" size={16} color={palette.sub} />
             </TouchableOpacity>
@@ -568,7 +582,8 @@ export default function CoachHomeScreen() {
         </Card>
       )}
     </>
-  );
+    );
+  };
 
   return (
     <ScreenContainer
