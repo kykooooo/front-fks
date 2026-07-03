@@ -163,6 +163,43 @@ export function coachSessionStatusLabel(status: CoachSessionStatus): string {
   return status === "planned" ? "Prête" : status === "done" ? "Faite" : "Inconnue";
 }
 
+// ─── Fiche joueuse : réduction d'état d'affichage (PUR, testable) ────────────
+// Décide de la vue à afficher après une lecture de la projection coach-safe.
+// Objectif : un pull-to-refresh RATÉ (permissions/réseau → `unavailable`) ne doit
+// PAS faire disparaître le dernier résumé valide déjà affiché — à condition qu'il
+// corresponde ENCORE à la route (clubId/playerUid) demandée. Aucun fallback : on
+// ne raisonne QUE sur des résultats de la projection.
+export type CoachDetailView = {
+  summary: CoachPlayerSummary | null;
+  unavailable: boolean;
+};
+
+export const EMPTY_COACH_DETAIL_VIEW: CoachDetailView = { summary: null, unavailable: false };
+
+/**
+ * @param prev  vue actuellement affichée (dernier résultat commit).
+ * @param incoming résultat de la nouvelle lecture (summary/unavailable).
+ * @param opts.isRefresh  true = pull-to-refresh (vs premier chargement).
+ * @param opts.prevMatchesRoute  true si `prev` reflète ENCORE la route demandée
+ *        (même clubId/playerUid) — calculé par l'écran, garde le helper pur.
+ * @returns la vue à afficher + `keptStale` (true = on a conservé l'ancien contenu
+ *          malgré un refresh indisponible → l'écran doit afficher un toast).
+ */
+export function nextCoachDetailView(
+  prev: CoachDetailView,
+  incoming: CoachDetailView,
+  opts: { isRefresh: boolean; prevMatchesRoute: boolean },
+): { view: CoachDetailView; keptStale: boolean } {
+  // Refresh indisponible + un summary valide encore aligné sur la route →
+  // on GARDE l'ancien contenu (pas de perte), signalé pour un toast non bloquant.
+  if (opts.isRefresh && incoming.unavailable && prev.summary !== null && opts.prevMatchesRoute) {
+    return { view: prev, keptStale: true };
+  }
+  // Premier chargement, succès, doc absent, ou refresh raté sans contenu
+  // conservable → on applique le résultat entrant tel quel (y compris indisponible).
+  return { view: { summary: incoming.summary, unavailable: incoming.unavailable }, keptStale: false };
+}
+
 // ─── Statut compact d'un joueur pour le dashboard coach ─────────────────────
 // 3 voyants scannables. Aucune donnée médicale / RPE / TSB. L'adaptation vient
 // du booléen serveur `adaptation.adapted` (labels déjà traduits).

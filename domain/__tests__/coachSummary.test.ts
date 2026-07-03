@@ -6,6 +6,9 @@ import {
   buildCoachRowStatus,
   sortCoachSummaries,
   summarizeCoachGroup,
+  nextCoachDetailView,
+  EMPTY_COACH_DETAIL_VIEW,
+  type CoachDetailView,
   type CoachPlayerSummary,
 } from "../coachSummary";
 
@@ -354,5 +357,70 @@ describe("summarizeCoachGroup — compteurs", () => {
 
   test("liste vide → tout à zéro", () => {
     expect(summarizeCoachGroup([])).toEqual({ total: 0, planned: 0, done: 0, toRelance: 0, adapted: 0, noSession: 0 });
+  });
+});
+
+describe("nextCoachDetailView — refresh défensif fiche joueuse", () => {
+  const summary = mk({ playerUid: "u1", firstName: "Anna" });
+  const withSummary: CoachDetailView = { summary, unavailable: false };
+  const unavailableRes: CoachDetailView = { summary: null, unavailable: true };
+  const absentRes: CoachDetailView = { summary: null, unavailable: false };
+
+  test("premier chargement en échec → applique 'indisponible' (pas de toast)", () => {
+    const r = nextCoachDetailView(EMPTY_COACH_DETAIL_VIEW, unavailableRes, {
+      isRefresh: false,
+      prevMatchesRoute: false,
+    });
+    expect(r.view).toEqual({ summary: null, unavailable: true });
+    expect(r.keptStale).toBe(false);
+  });
+
+  test("premier chargement OK → applique le summary", () => {
+    const r = nextCoachDetailView(EMPTY_COACH_DETAIL_VIEW, withSummary, {
+      isRefresh: false,
+      prevMatchesRoute: false,
+    });
+    expect(r.view.summary).toBe(summary);
+    expect(r.keptStale).toBe(false);
+  });
+
+  test("refresh OK → remplace par le nouveau summary", () => {
+    const next = mk({ playerUid: "u1", firstName: "Anna v2" });
+    const r = nextCoachDetailView(
+      withSummary,
+      { summary: next, unavailable: false },
+      { isRefresh: true, prevMatchesRoute: true },
+    );
+    expect(r.view.summary).toBe(next);
+    expect(r.keptStale).toBe(false);
+  });
+
+  test("refresh en échec + summary aligné route → GARDE l'ancien contenu + keptStale", () => {
+    const r = nextCoachDetailView(withSummary, unavailableRes, { isRefresh: true, prevMatchesRoute: true });
+    expect(r.view).toBe(withSummary); // conserve exactement l'ancienne vue
+    expect(r.view.summary).toBe(summary);
+    expect(r.view.unavailable).toBe(false); // pas de bascule en 'indisponible'
+    expect(r.keptStale).toBe(true); // → l'écran affiche un toast non bloquant
+  });
+
+  test("refresh en échec mais route CHANGÉE → applique 'indisponible' (jamais garder un autre joueur)", () => {
+    const r = nextCoachDetailView(withSummary, unavailableRes, { isRefresh: true, prevMatchesRoute: false });
+    expect(r.view).toEqual({ summary: null, unavailable: true });
+    expect(r.keptStale).toBe(false);
+  });
+
+  test("refresh en échec sans contenu préalable → applique 'indisponible' (pas de toast)", () => {
+    const r = nextCoachDetailView(EMPTY_COACH_DETAIL_VIEW, unavailableRes, {
+      isRefresh: true,
+      prevMatchesRoute: true,
+    });
+    expect(r.view).toEqual({ summary: null, unavailable: true });
+    expect(r.keptStale).toBe(false);
+  });
+
+  test("refresh renvoyant un doc absent (succès, summary null) → reflète l'absence, pas de conservation", () => {
+    const r = nextCoachDetailView(withSummary, absentRes, { isRefresh: true, prevMatchesRoute: true });
+    expect(r.view).toEqual({ summary: null, unavailable: false });
+    expect(r.keptStale).toBe(false);
   });
 });

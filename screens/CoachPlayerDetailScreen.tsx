@@ -7,7 +7,7 @@
 // sessions/plannedSessions. Aucun RPE, aucune donnée médicale, aucun TSB/ATL/CTL.
 // Les labels arrivent déjà traduits par le serveur : on les affiche tels quels.
 
-import React, { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ActivityIndicator, RefreshControl } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
@@ -16,9 +16,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { ScreenContainer } from "../components/ui/ScreenContainer";
 import { Card } from "../components/ui/Card";
 import { CoachBadge, coachColors, coachRadius } from "../components/coach/coachUi";
-import { fetchClubPlayerSummary, type CoachSummaryResult } from "../repositories/clubsRepo";
-import { coachSessionStatusLabel } from "../domain/coachSummary";
+import { fetchClubPlayerSummary } from "../repositories/clubsRepo";
+import {
+  coachSessionStatusLabel,
+  nextCoachDetailView,
+  EMPTY_COACH_DETAIL_VIEW,
+  type CoachDetailView,
+} from "../domain/coachSummary";
 import { getCoachGuardrailNotes } from "../domain/coachLabels";
+import { showToast } from "../utils/toast";
 
 const palette = coachColors;
 
@@ -45,41 +51,74 @@ export default function CoachPlayerDetailScreen() {
     });
   }, [navigation]);
 
-  const [result, setResult] = useState<CoachSummaryResult | null>(null);
+  const [view, setView] = useState<CoachDetailView>(EMPTY_COACH_DETAIL_VIEW);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
-    if (!clubId || !playerUid) {
-      setLoading(false);
-      return;
-    }
-    // Un seul summary relu au montage.
-    const data = await fetchClubPlayerSummary(clubId, playerUid);
-    setResult(data);
-    setLoading(false);
-  }, [clubId, playerUid]);
+  // Jeton de la requête en cours : neutralise une réponse TARDIVE si la route a
+  // changé entre le lancement du fetch et son retour (anti stale-response).
+  const activeKeyRef = useRef<string | null>(null);
+  // Route effectivement reflétée par `view` : on ne conserve l'ancien summary sur
+  // un refresh raté que s'il correspond ENCORE au clubId/playerUid affiché.
+  const committedKeyRef = useRef<string | null>(null);
+  // Miroir synchrone de `view` (lecture sans capturer `view` dans les closures).
+  const viewRef = useRef<CoachDetailView>(EMPTY_COACH_DETAIL_VIEW);
+
+  // Lecture coach-safe (UN summary) + application défensive de l'état.
+  // `mode` : "initial" (montage) ou "refresh" (pull-to-refresh).
+  const runFetch = useCallback(
+    async (mode: "initial" | "refresh") => {
+      if (!clubId || !playerUid) {
+        setLoading(false);
+        return;
+      }
+      const key = `${clubId}/${playerUid}`;
+      activeKeyRef.current = key;
+      // JAMAIS de fallback : on ne lit QUE la projection coach-safe.
+      const incoming = await fetchClubPlayerSummary(clubId, playerUid);
+      // Réponse tardive : la route a changé pendant le fetch → on ignore ce résultat.
+      if (activeKeyRef.current !== key) return;
+
+      const { view: nextView, keptStale } = nextCoachDetailView(viewRef.current, incoming, {
+        isRefresh: mode === "refresh",
+        prevMatchesRoute: committedKeyRef.current === key,
+      });
+      viewRef.current = nextView;
+      committedKeyRef.current = key;
+      setView(nextView);
+      if (mode === "initial") setLoading(false);
+      if (keptStale) {
+        // Refresh raté mais on garde le dernier résumé valide affiché.
+        showToast({
+          type: "warn",
+          title: "Mise à jour impossible",
+          message: "Dernières données affichées.",
+        });
+      }
+    },
+    [clubId, playerUid],
+  );
 
   useEffect(() => {
-    load();
-  }, [load]);
+    runFetch("initial");
+  }, [runFetch]);
 
   // Pull-to-refresh : relit EXACTEMENT un summary (aucune lecture brute/fallback).
-  // On ne repasse pas par `loading` → l'ancien contenu reste affiché pendant le
-  // fetch, puis `setResult` le remplace en bloc.
+  // On ne repasse pas par `loading` → l'ancien contenu reste monté pendant le fetch.
+  // Si la relecture échoue et qu'un summary aligné sur la route est déjà affiché,
+  // `runFetch` le conserve (+ toast) au lieu de le remplacer par un état indisponible.
   const onRefresh = useCallback(async () => {
     if (!clubId || !playerUid) return;
     setRefreshing(true);
     try {
-      const data = await fetchClubPlayerSummary(clubId, playerUid);
-      setResult(data);
+      await runFetch("refresh");
     } finally {
       setRefreshing(false);
     }
-  }, [clubId, playerUid]);
+  }, [clubId, playerUid, runFetch]);
 
-  const summary = result?.summary ?? null;
-  const unavailable = result?.unavailable ?? false;
+  const summary = view.summary;
+  const unavailable = view.unavailable;
   const session = summary?.latestSession ?? null;
   const activity = summary?.lastActivity ?? null;
   // Labels d'adaptation DÉJÀ traduits par le serveur : on plafonne, on n'invente rien.
