@@ -1,5 +1,5 @@
 // screens/HomeScreen.tsx
-import React, { useMemo, useLayoutEffect, useEffect, useCallback } from "react";
+import React, { useMemo, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,11 +8,9 @@ import {
   StyleSheet,
   Animated,
   AccessibilityInfo,
-  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
-import { signOut } from "firebase/auth";
 import { Ionicons } from "@expo/vector-icons";
 
 import { useLoadStore } from "../state/stores/useLoadStore";
@@ -35,6 +33,7 @@ import { useWeekSummary } from "../hooks/home/useWeekSummary";
 import { useActivityStreak } from "../hooks/home/useActivityStreak";
 import { usePrimaryCta } from "../hooks/home/usePrimaryCta";
 import { useContextualAdvice } from "../hooks/home/useContextualAdvice";
+import { useNavGuard } from "../hooks/useNavGuard";
 import HomeAdviceCard from "../components/home/HomeAdviceCard";
 import { isSameDay, toDateKey } from "../utils/dateHelpers";
 import { showToast } from "../utils/toast";
@@ -61,53 +60,13 @@ export default function HomeScreen() {
     setOptions?: (opts: any) => void;
   };
   const nav = useNavigation<RootNav>();
-  const resetTrainingStore = useSyncStore((s) => s.resetForUser);
 
   const heroAnim = React.useRef(new Animated.Value(0)).current;
   const ctaAnim = React.useRef(new Animated.Value(0)).current;
   const cardsAnim = React.useRef(new Animated.Value(0)).current;
 
-  const handleLogout = () => {
-    // Confirmation : le bouton est dans le header, un tap accidentel ne doit pas déconnecter.
-    Alert.alert("Déconnexion", "Tu veux vraiment te déconnecter ?", [
-      { text: "Annuler", style: "cancel" },
-      {
-        text: "Se déconnecter",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await signOut(auth);
-            resetTrainingStore(null);
-          } catch {
-            showToast({ type: "error", title: "Déconnexion", message: "Échec de la déconnexion. Réessaie." });
-          }
-        },
-      },
-    ]);
-  };
-
-  useLayoutEffect(() => {
-    nav.setOptions?.({
-      headerStyle: { backgroundColor: palette.bg },
-      headerTitle: "",
-      headerTintColor: palette.text,
-      headerTitleStyle: { color: palette.text },
-      headerRight: () => (
-        <TouchableOpacity
-          onPress={handleLogout}
-          style={styles.logoutButton}
-          activeOpacity={0.7}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Text
-            style={styles.logoutText}
-          >
-            Déconnexion
-          </Text>
-        </TouchableOpacity>
-      ),
-    });
-  }, [nav]);
+  // Note : pas de headerRight "Déconnexion" ici — les headers sont cachés
+  // (Tab.Navigator + AppStack "Tabs" en headerShown: false). Le logout vit dans Réglages.
 
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then((reduceMotion) => {
@@ -189,7 +148,7 @@ export default function HomeScreen() {
     plannedFksDays,
   });
 
-  const { primaryCta, upcomingSessionLabel, pendingSession, startPendingSession, onPressNew } = usePrimaryCta({
+  const { primaryCta, upcomingSessionLabel, pendingSession, viewPendingSession, onPressNew } = usePrimaryCta({
     nav,
     sessions,
     lastAiSessionV2,
@@ -200,11 +159,32 @@ export default function HomeScreen() {
     devNowISO: nowISO,
   });
 
-  // Stable callbacks for memoized children
-  const goToHistory = useCallback(() => nav.navigate("SessionHistory"), [nav]);
+  // Stable callbacks for memoized children — protégés anti double-tap (même garde que usePrimaryCta)
+  const guardNav = useNavGuard();
+  const goToHistory = useCallback(
+    () => guardNav(() => nav.navigate("SessionHistory")),
+    [nav, guardNav]
+  );
   const goToFeedback = useCallback(() => {
-    if (pendingSession) nav.navigate("Feedback", { sessionId: (pendingSession as any).id });
-  }, [nav, pendingSession]);
+    if (pendingSession) {
+      guardNav(() => nav.navigate("Feedback", { sessionId: (pendingSession as any).id }));
+    }
+  }, [nav, pendingSession, guardNav]);
+  const goToProgression = useCallback(
+    () => guardNav(() => nav.navigate("Progression")),
+    [nav, guardNav]
+  );
+  const goToCycleModal = useCallback(
+    () => guardNav(() => nav.navigate("CycleModal", { mode: "manage", origin: "home" })),
+    [nav, guardNav]
+  );
+
+  // Nag feedback légitime uniquement si la séance en attente date d'un jour passé.
+  const todayKey = toDateKey(nowISO ? new Date(nowISO) : new Date());
+  const pendingDateKey = pendingSession
+    ? toDateKey((pendingSession as any).dateISO ?? (pendingSession as any).date)
+    : null;
+  const feedbackDue = Boolean(pendingDateKey && pendingDateKey < todayKey);
 
   const advice = useContextualAdvice();
 
@@ -237,11 +217,13 @@ export default function HomeScreen() {
   const todayLabel = useMemo(() => {
     const base = nowISO ? new Date(nowISO) : new Date();
     try {
-      return base.toLocaleDateString("fr-FR", {
+      const label = base.toLocaleDateString("fr-FR", {
         weekday: "short",
         day: "numeric",
         month: "short",
       });
+      // Typo FR : seule la 1ʳᵉ lettre en majuscule (pas de capitalize CSS qui donnerait "Jeu. 3 Juil.")
+      return label.charAt(0).toUpperCase() + label.slice(1);
     } catch {
       return toDateKey(base);
     }
@@ -289,7 +271,7 @@ export default function HomeScreen() {
           <Animated.View style={animStyle(ctaAnim)}>
             <TouchableOpacity
               activeOpacity={0.85}
-              onPress={() => nav.navigate("CycleModal", { mode: "manage", origin: "home" })}
+              onPress={goToCycleModal}
               style={[styles.cycleChip, { borderColor: homeCycleColor + "40" }]}
             >
               <View style={[styles.cycleChipDot, { backgroundColor: homeCycleColor }]} />
@@ -345,9 +327,15 @@ export default function HomeScreen() {
             <HomeCarouselCard title="Progression" subtitle="Régularité & forme">
               <View style={styles.progressRow}>
                 <Ionicons name="flame" size={18} color={palette.cta} />
-                <Text style={styles.progressText}>{activityStreak} jours d’affilée</Text>
+                <Text style={styles.progressText}>
+                  {activityStreak === 0
+                    ? "Lance ta première séance"
+                    : activityStreak === 1
+                      ? "1 jour d’affilée"
+                      : `${activityStreak} jours d’affilée`}
+                </Text>
               </View>
-              <TouchableOpacity onPress={() => nav.navigate("Progression")} style={styles.link}>
+              <TouchableOpacity onPress={goToProgression} style={styles.link}>
                 <Text style={styles.linkText}>Voir ma progression</Text>
                 <Text style={styles.linkArrow}>→</Text>
               </TouchableOpacity>
@@ -357,11 +345,12 @@ export default function HomeScreen() {
               hasPending={Boolean(pendingSession)}
               upcomingLabel={upcomingSessionLabel}
               primaryLabel={pendingSession ? "Voir la séance" : primaryCta.label}
-              onPrimary={pendingSession ? startPendingSession : onPressNew}
+              onPrimary={pendingSession ? viewPendingSession : primaryCta.onPress ?? onPressNew}
               primaryDisabled={!pendingSession && Boolean(primaryCta.disabled)}
               secondaryLabel="Historique"
               onSecondary={goToHistory}
-              onFeedback={pendingSession ? goToFeedback : undefined}
+              feedbackDue={feedbackDue}
+              onFeedback={pendingSession && feedbackDue ? goToFeedback : undefined}
             />
           </View>
         </Animated.View>
@@ -395,15 +384,6 @@ const styles = StyleSheet.create({
   scroll: {
     flex: 1,
   },
-  logoutButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  logoutText: {
-    fontWeight: "500",
-    color: palette.sub,
-    fontSize: 12,
-  },
   // ── Header compact clair ──
   header: {
     flexDirection: "row",
@@ -424,7 +404,6 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     color: palette.sub,
     marginTop: 2,
-    textTransform: "capitalize",
   },
   readyChip: {
     flexDirection: "row",

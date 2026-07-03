@@ -24,9 +24,11 @@ function HomeReadinessHeroInner({
   const padRight = 8;
   const min = -20;
   const max = 20;
+  // tsbHistory est CHRONOLOGIQUE (ancien → aujourd'hui) : on garde les 7 derniers
+  // points dans cet ordre pour que le dernier point (droite, gros point) = aujourd'hui.
   const history = useMemo(() => {
-    if (tsbHistory.length >= 7) return tsbHistory.slice(0, 7).reverse();
-    return [tsb, ...tsbHistory].slice(0, 7).reverse();
+    if (tsbHistory.length >= 7) return tsbHistory.slice(-7);
+    return [...tsbHistory, tsb].slice(-7);
   }, [tsbHistory, tsb]);
 
   const toY = (value: number) => {

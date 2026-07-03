@@ -108,11 +108,13 @@ export const ADVICE_RULES: AdviceRule[] = [
     }),
   },
 
-  // Priorité 3: Fatigue extrême (surcharge)
+  // Priorité 3: Grosse fatigue (surcharge)
+  // Seuil aligné sur le CTA Home (usePrimaryCta passe en "Journée récup" à TSB <= -15) :
+  // le conseil doit délivrer le même message récup, pas "Tu peux t'entraîner".
   {
     id: "tsb_extreme_fatigue",
     priority: 3,
-    condition: (ctx) => ctx.tsb <= -20,
+    condition: (ctx) => ctx.tsb <= -15,
     build: () => {
       return {
         id: "tsb_extreme_fatigue",
@@ -144,11 +146,11 @@ export const ADVICE_RULES: AdviceRule[] = [
     }),
   },
 
-  // Priorité 5: Fatigue modérée
+  // Priorité 5: Fatigue modérée (au-dessus du seuil récup de -15)
   {
     id: "tsb_fatigue",
     priority: 5,
-    condition: (ctx) => ctx.tsb > -20 && ctx.tsb <= -12,
+    condition: (ctx) => ctx.tsb > -15 && ctx.tsb <= -12,
     build: (ctx) => {
       const label = getFootballLabel(ctx.tsb);
       return {
@@ -233,7 +235,11 @@ export const ADVICE_RULES: AdviceRule[] = [
     build: (ctx) => ({
       id: "no_mobility",
       title: "Mobilité oubliée",
-      message: `${ctx.daysSinceLastMobility} jours sans mobilité. Tes articulations te remercieront.`,
+      // daysSinceLastMobility peut être null (jamais de mobilité) : pas de nombre dans ce cas.
+      message:
+        ctx.daysSinceLastMobility == null
+          ? "Jamais fait de mobilité ? Tes articulations te remercieront."
+          : `${ctx.daysSinceLastMobility} jours sans mobilité. Tes articulations te remercieront.`,
       tone: "info",
       icon: "body-outline",
       actionLabel: "Flow Mobilité",

@@ -15,6 +15,8 @@ type Props = {
   onSecondary: () => void;
   secondaryLabel: string;
   onFeedback?: () => void;
+  /** true si la séance en attente est datée d'un jour PASSÉ → nag feedback légitime */
+  feedbackDue?: boolean;
   primaryDisabled?: boolean;
   secondaryDisabled?: boolean;
 };
@@ -27,6 +29,7 @@ function HomeNextSessionCardInner({
   onSecondary,
   secondaryLabel,
   onFeedback,
+  feedbackDue = false,
   primaryDisabled = false,
   secondaryDisabled = false,
 }: Props) {
@@ -48,7 +51,9 @@ function HomeNextSessionCardInner({
             <Text style={styles.nextMainText}>{upcomingLabel}</Text>
             {hasPending ? (
               <Text style={styles.nextSubText}>
-                Séance en attente. Dis-nous comment ça s'est passé pour débloquer la suivante.
+                {feedbackDue
+                  ? "Séance en attente. Dis-nous comment ça s'est passé pour débloquer la suivante."
+                  : "Prête à être lancée."}
               </Text>
             ) : null}
           </View>
@@ -77,7 +82,7 @@ function HomeNextSessionCardInner({
           </TouchableOpacity>
         </View>
 
-        {hasPending && onFeedback ? (
+        {hasPending && feedbackDue && onFeedback ? (
           <TouchableOpacity onPress={onFeedback} style={styles.nextFeedbackChip} activeOpacity={0.9}>
             <Text style={styles.nextFeedbackText}>Comment ça s'est passé ?</Text>
           </TouchableOpacity>
