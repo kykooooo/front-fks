@@ -7,6 +7,7 @@ import {
   sortCoachSummaries,
   summarizeCoachGroup,
   nextCoachDetailView,
+  shouldApplyCoachDetailResponse,
   EMPTY_COACH_DETAIL_VIEW,
   type CoachDetailView,
   type CoachPlayerSummary,
@@ -422,5 +423,37 @@ describe("nextCoachDetailView — refresh défensif fiche joueuse", () => {
     const r = nextCoachDetailView(withSummary, absentRes, { isRefresh: true, prevMatchesRoute: true });
     expect(r.view).toEqual({ summary: null, unavailable: false });
     expect(r.keptStale).toBe(false);
+  });
+});
+
+describe("shouldApplyCoachDetailResponse — garde anti réponse tardive/concurrente", () => {
+  const base = {
+    mounted: true,
+    requestId: 5,
+    latestRequestId: 5,
+    requestKey: "clubX/playerA",
+    currentKey: "clubX/playerA" as string | null,
+  };
+
+  test("dernier requestId + monté + route inchangée → accepté", () => {
+    expect(shouldApplyCoachDetailResponse(base)).toBe(true);
+  });
+
+  test("requestId dépassé (une requête plus récente a été émise) → rejeté", () => {
+    // Deux requêtes concurrentes sur la MÊME route : l'ancienne (5) revient après
+    // qu'une plus récente (6) a été lancée → on l'ignore.
+    expect(shouldApplyCoachDetailResponse({ ...base, requestId: 5, latestRequestId: 6 })).toBe(false);
+  });
+
+  test("composant démonté → rejeté", () => {
+    expect(shouldApplyCoachDetailResponse({ ...base, mounted: false })).toBe(false);
+  });
+
+  test("route changée pendant le fetch (currentKey ≠ requestKey) → rejeté", () => {
+    expect(shouldApplyCoachDetailResponse({ ...base, currentKey: "clubX/playerB" })).toBe(false);
+  });
+
+  test("plus aucune route courante (currentKey null) → rejeté", () => {
+    expect(shouldApplyCoachDetailResponse({ ...base, currentKey: null })).toBe(false);
   });
 });

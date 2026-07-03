@@ -200,6 +200,28 @@ export function nextCoachDetailView(
   return { view: { summary: incoming.summary, unavailable: incoming.unavailable }, keptStale: false };
 }
 
+// ─── Garde anti réponse tardive / concurrente (PUR, testable) ────────────────
+// Décide si la réponse d'un fetch de fiche joueuse est encore acceptable. Un
+// `requestId` monotone est capturé au lancement de CHAQUE fetch : la réponse
+// n'est appliquée que si elle est ENCORE la dernière émise (distingue deux
+// requêtes concurrentes sur la MÊME route), si le composant est monté, et si la
+// route (clubId/playerUid) demandée n'a pas changé. Une réponse rejetée ne doit
+// modifier AUCUN état (loading / refreshing / view / toast).
+export function shouldApplyCoachDetailResponse(args: {
+  mounted: boolean;
+  requestId: number;
+  latestRequestId: number;
+  requestKey: string;
+  currentKey: string | null;
+}): boolean {
+  return (
+    args.mounted &&
+    args.requestId === args.latestRequestId &&
+    args.currentKey !== null &&
+    args.currentKey === args.requestKey
+  );
+}
+
 // ─── Statut compact d'un joueur pour le dashboard coach ─────────────────────
 // 3 voyants scannables. Aucune donnée médicale / RPE / TSB. L'adaptation vient
 // du booléen serveur `adaptation.adapted` (labels déjà traduits).

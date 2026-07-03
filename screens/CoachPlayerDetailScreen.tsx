@@ -20,6 +20,7 @@ import { fetchClubPlayerSummary } from "../repositories/clubsRepo";
 import {
   coachSessionStatusLabel,
   nextCoachDetailView,
+  shouldApplyCoachDetailResponse,
   EMPTY_COACH_DETAIL_VIEW,
   type CoachDetailView,
 } from "../domain/coachSummary";
@@ -52,32 +53,66 @@ export default function CoachPlayerDetailScreen() {
   }, [navigation]);
 
   const [view, setView] = useState<CoachDetailView>(EMPTY_COACH_DETAIL_VIEW);
-  const [loading, setLoading] = useState(true);
+  // `loading` démarre à true seulement s'il y a une route à charger → la branche
+  // sans-route n'a aucun setState synchrone à faire dans l'effet de montage.
+  const [loading, setLoading] = useState<boolean>(() => Boolean(clubId && playerUid));
   const [refreshing, setRefreshing] = useState(false);
 
-  // Jeton de la requête en cours : neutralise une réponse TARDIVE si la route a
-  // changé entre le lancement du fetch et son retour (anti stale-response).
-  const activeKeyRef = useRef<string | null>(null);
-  // Route effectivement reflétée par `view` : on ne conserve l'ancien summary sur
-  // un refresh raté que s'il correspond ENCORE au clubId/playerUid affiché.
+  // ── Garde anti réponse tardive / concurrente ────────────────────────────────
+  // requestId monotone : chaque fetch capture SA valeur. Après l'await, la réponse
+  // n'est appliquée que si elle est ENCORE la dernière émise (distingue deux
+  // requêtes concurrentes sur la MÊME route), si la route n'a pas changé, et si le
+  // composant est monté (cf. shouldApplyCoachDetailResponse).
+  const requestIdRef = useRef(0);
+  const mountedRef = useRef(true);
+  // Clé de la route actuellement demandée (`/` interdit dans un doc-id/UID → sans collision).
+  const currentRouteKeyRef = useRef<string | null>(null);
+  // Route reflétée par `view` : on ne conserve l'ancien summary (refresh raté) que
+  // s'il correspond ENCORE à la route affichée.
   const committedKeyRef = useRef<string | null>(null);
   // Miroir synchrone de `view` (lecture sans capturer `view` dans les closures).
   const viewRef = useRef<CoachDetailView>(EMPTY_COACH_DETAIL_VIEW);
 
-  // Lecture coach-safe (UN summary) + application défensive de l'état.
-  // `mode` : "initial" (montage) ou "refresh" (pull-to-refresh).
+  // Tient la clé de route courante à jour AVANT le déclenchement des fetchs.
+  useEffect(() => {
+    currentRouteKeyRef.current = clubId && playerUid ? `${clubId}/${playerUid}` : null;
+  }, [clubId, playerUid]);
+
+  // Drapeau de montage : une réponse revenue après démontage est ignorée.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // Lecture coach-safe (UN summary) + application GARDÉE de l'état.
+  // `mode` : "initial" (montage/route) ou "refresh" (pull-to-refresh).
   const runFetch = useCallback(
     async (mode: "initial" | "refresh") => {
-      if (!clubId || !playerUid) {
-        setLoading(false);
-        return;
-      }
+      // Pas de route → rien à lire (aucun setState synchrone : `loading` est déjà
+      // false via l'init paresseux ; onRefresh est aussi gardé sur la route).
+      if (!clubId || !playerUid) return;
       const key = `${clubId}/${playerUid}`;
-      activeKeyRef.current = key;
+      const requestId = requestIdRef.current + 1;
+      requestIdRef.current = requestId; // requestId monotone unique pour CE fetch
+
       // JAMAIS de fallback : on ne lit QUE la projection coach-safe.
       const incoming = await fetchClubPlayerSummary(clubId, playerUid);
-      // Réponse tardive : la route a changé pendant le fetch → on ignore ce résultat.
-      if (activeKeyRef.current !== key) return;
+
+      // Réponse acceptée UNIQUEMENT si : montée + dernier requestId + route inchangée.
+      // Sinon on sort SANS toucher loading / refreshing / view / toast.
+      if (
+        !shouldApplyCoachDetailResponse({
+          mounted: mountedRef.current,
+          requestId,
+          latestRequestId: requestIdRef.current,
+          requestKey: key,
+          currentKey: currentRouteKeyRef.current,
+        })
+      ) {
+        return;
+      }
 
       const { view: nextView, keptStale } = nextCoachDetailView(viewRef.current, incoming, {
         isRefresh: mode === "refresh",
@@ -87,6 +122,7 @@ export default function CoachPlayerDetailScreen() {
       committedKeyRef.current = key;
       setView(nextView);
       if (mode === "initial") setLoading(false);
+      if (mode === "refresh") setRefreshing(false);
       if (keptStale) {
         // Refresh raté mais on garde le dernier résumé valide affiché.
         showToast({
@@ -101,21 +137,24 @@ export default function CoachPlayerDetailScreen() {
 
   useEffect(() => {
     runFetch("initial");
+    return () => {
+      // Changement de route / démontage : invalide toute réponse en vol. Le drapeau
+      // `mounted` + le requestId périmé empêchent alors toute mutation d'état.
+      requestIdRef.current += 1;
+    };
   }, [runFetch]);
 
   // Pull-to-refresh : relit EXACTEMENT un summary (aucune lecture brute/fallback).
-  // On ne repasse pas par `loading` → l'ancien contenu reste monté pendant le fetch.
-  // Si la relecture échoue et qu'un summary aligné sur la route est déjà affiché,
-  // `runFetch` le conserve (+ toast) au lieu de le remplacer par un état indisponible.
-  const onRefresh = useCallback(async () => {
-    if (!clubId || !playerUid) return;
+  // Bloqué pendant le chargement initial ET pendant un refresh déjà en cours
+  // (évite deux requêtes concurrentes). On ne repasse pas par `loading` → l'ancien
+  // contenu reste monté pendant le fetch ; runFetch gère la garde + le toast.
+  const onRefresh = useCallback(() => {
+    // Sans route, ou pendant le chargement initial / un refresh déjà en cours →
+    // on ne démarre pas de spinner qu'on ne pourrait pas éteindre.
+    if (!clubId || !playerUid || loading || refreshing) return;
     setRefreshing(true);
-    try {
-      await runFetch("refresh");
-    } finally {
-      setRefreshing(false);
-    }
-  }, [clubId, playerUid, runFetch]);
+    runFetch("refresh");
+  }, [clubId, playerUid, loading, refreshing, runFetch]);
 
   const summary = view.summary;
   const unavailable = view.unavailable;
