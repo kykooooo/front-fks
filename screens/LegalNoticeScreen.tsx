@@ -9,11 +9,11 @@ const palette = theme.colors;
 
 export default function LegalNoticeScreen() {
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
+    // Le titre est porté par le header natif ("Mentions légales") — pas de doublon in-page.
+    <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Mentions legales</Text>
         <Text style={styles.subtitle}>
-          Informations legales sur l'editeur et l'hebergement.
+          Informations légales sur l'éditeur et l'hébergement.
         </Text>
 
         {LEGAL_NOTICE.map((section) => (

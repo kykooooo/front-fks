@@ -15,6 +15,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   StatusBar,
+  BackHandler,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -30,6 +31,7 @@ import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "
 import { AGE_CATEGORIES } from "../domain/types";
 import { recommendMicrocycle } from "../domain/recommendMicrocycle";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
+import { useSettingsStore } from "../state/settingsStore";
 import { showToast } from "../utils/toast";
 import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
@@ -39,11 +41,11 @@ const palette = theme.colors;
 
 /* ─── Steps config ─── */
 const STEPS: { label: string; icon: keyof typeof Ionicons.glyphMap; subtitle: string }[] = [
-  { label: "Identite", icon: "person-outline", subtitle: "Dis-nous qui tu es" },
+  { label: "Identité", icon: "person-outline", subtitle: "Dis-nous qui tu es" },
   { label: "Objectif", icon: "flag-outline", subtitle: "Quel est ton but ?" },
   { label: "Club", icon: "people-outline", subtitle: "Tes entraînements & matchs" },
-  { label: "Salle", icon: "barbell-outline", subtitle: "Ton acces salle" },
-  { label: "Materiel", icon: "home-outline", subtitle: "Ton equipement hors salle" },
+  { label: "Salle", icon: "barbell-outline", subtitle: "Ton accès salle" },
+  { label: "Matériel", icon: "home-outline", subtitle: "Ton équipement hors salle" },
 ];
 
 /* ─── Constants ─── */
@@ -58,16 +60,32 @@ const objectives = [
 ] as const;
 const fksSessionsOptions = ["1", "2", "3", "4"] as const;
 
+// ⚠️ Les valeurs de `positions`, `levels` et `objectives` sont PERSISTÉES en Firestore
+// et comparées à des allowlists SANS accents côté Cloud Functions (functions/src/coachLabels.ts)
+// + matching substring dans recommendMicrocycle. On ne les modifie donc JAMAIS :
+// ces maps servent uniquement à afficher un libellé accentué dans l'UI.
+const POSITION_DISPLAY_LABELS: Partial<Record<(typeof positions)[number], string>> = {
+  Defenseur: "Défenseur",
+};
+const LEVEL_DISPLAY_LABELS: Partial<Record<(typeof levels)[number], string>> = {
+  Regional: "Régional",
+};
+const OBJECTIVE_DISPLAY_LABELS: Partial<Record<(typeof objectives)[number], string>> = {
+  "Etre en forme toute la saison": "Être en forme toute la saison",
+  "Gagner en vitesse / explosivite": "Gagner en vitesse / explosivité",
+  "Reprendre apres une blessure": "Reprendre après une blessure",
+};
+
 const gymEquipmentOptions = [
   { id: "barbell", label: "Barre + poids libres" },
-  { id: "squat_rack", label: "Rack a squat" },
+  { id: "squat_rack", label: "Rack à squat" },
   { id: "bench", label: "Banc de musculation" },
-  { id: "dumbbells_light", label: "Halteres legers (≤ 10 kg)" },
-  { id: "dumbbells_medium", label: "Halteres moyens (10-25 kg)" },
-  { id: "dumbbells_heavy", label: "Halteres lourds (≥ 25 kg)" },
+  { id: "dumbbells_light", label: "Haltères légers (≤ 10 kg)" },
+  { id: "dumbbells_medium", label: "Haltères moyens (10-25 kg)" },
+  { id: "dumbbells_heavy", label: "Haltères lourds (≥ 25 kg)" },
   { id: "kettlebell", label: "Kettlebells" },
   { id: "leg_press", label: "Presse (leg press)" },
-  { id: "cable_machine", label: "Poulies / cable" },
+  { id: "cable_machine", label: "Poulies / câble" },
   { id: "smith_machine", label: "Smith machine" },
   { id: "pullup_bar", label: "Barre de tractions" },
   { id: "box_plyo", label: "Box plyo" },
@@ -77,16 +95,16 @@ const gymEquipmentOptions = [
 ];
 
 const homeEquipmentOptions = [
-  { id: "field", label: "Terrain herbe / synthe" },
+  { id: "field", label: "Terrain herbe / synthé" },
   { id: "street_area", label: "City / bitume / parking" },
-  { id: "indoor_small", label: "Petit espace interieur" },
-  { id: "cones", label: "Cones" },
+  { id: "indoor_small", label: "Petit espace intérieur" },
+  { id: "cones", label: "Cônes" },
   { id: "flat_markers", label: "Plots plats" },
-  { id: "speed_ladder", label: "Echelle de rythme" },
+  { id: "speed_ladder", label: "Échelle de rythme" },
   { id: "mini_hurdles", label: "Petites haies" },
   { id: "minibands", label: "Mini-bands" },
-  { id: "long_bands", label: "Elastiques longues" },
-  { id: "home_dumbbells", label: "Halteres (chez toi)" },
+  { id: "long_bands", label: "Élastiques longs" },
+  { id: "home_dumbbells", label: "Haltères (chez toi)" },
   { id: "home_kettlebell", label: "Kettlebell (chez toi)" },
   { id: "sandbag", label: "Sac de sable / sandbag" },
   { id: "home_foam_roller", label: "Foam roller (chez toi)" },
@@ -114,6 +132,9 @@ type ProfileSetupScreenProps = {
 export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupScreenProps = {}) {
   const navigation = useNavigation<any>();
   const haptics = useHaptics();
+  const themeMode = useSettingsStore((s) => s.themeMode);
+  // Mode édition : écran ouvert depuis Profil/Réglages (header natif "Profil" déjà présent).
+  const isEditMode = !onProfileCompleted;
   const activeCycleGoal = useSessionsStore((s) => s.microcycleGoal);
   const setMicrocycleGoal = useSessionsStore((s) => s.setMicrocycleGoal);
   const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
@@ -156,10 +177,15 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
     const auth = getAuth();
     const user = auth.currentUser;
     if (!user) return;
+    // Fallback si le doc Firestore n'a pas (encore) de prénom : le setDoc du Register
+    // peut arriver après ce getDoc one-shot (course), on récupère le displayName auth.
+    const fallbackFirstName = user.displayName?.trim() ?? "";
     getDoc(doc(db, "users", user.uid)).then((snap) => {
       const d = snap.data();
+      const docFirstName = d && typeof d.firstName === "string" ? d.firstName.trim() : "";
+      if (docFirstName) setFirstName(docFirstName);
+      else if (fallbackFirstName) setFirstName(fallbackFirstName);
       if (!d) return;
-      if (typeof d.firstName === "string") setFirstName(d.firstName);
       if (typeof d.clubId === "string") setClubId(d.clubId);
       if (typeof d.position === "string") setPosition(d.position);
       if (typeof d.ageCategory === "string") setAgeCategory(d.ageCategory);
@@ -232,34 +258,34 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   const validateStep = (): boolean => {
     switch (step) {
       case 0:
-        if (!firstName.trim()) { fail("Champs manquants", "Merci d'indiquer ton prenom."); return false; }
+        if (!firstName.trim()) { fail("Champs manquants", "Merci d'indiquer ton prénom."); return false; }
         if (!positions.includes(position as any)) { fail("Champs manquants", "Choisis ton poste."); return false; }
-        if (!AGE_CATEGORIES.includes(ageCategory as any)) { fail("Champs manquants", "Choisis ta categorie."); return false; }
+        if (!AGE_CATEGORIES.includes(ageCategory as any)) { fail("Champs manquants", "Choisis ta catégorie."); return false; }
         if (!levels.includes(level as any)) { fail("Champs manquants", "Indique ton niveau."); return false; }
         if (!dominantFeet.includes(dominantFoot as any)) { fail("Champs manquants", "Choisis ton pied fort."); return false; }
         return true;
       case 1:
         if (!objectives.includes(mainObjective as any)) { fail("Champs manquants", "Choisis ton objectif principal."); return false; }
-        if (!fksSessionsOptions.includes(targetFksSessionsPerWeek as any)) { fail("Champs manquants", "Indique tes seances FKS / semaine."); return false; }
+        if (!fksSessionsOptions.includes(targetFksSessionsPerWeek as any)) { fail("Champs manquants", "Indique tes séances FKS / semaine."); return false; }
         return true;
       case 2: {
         const trainings = Number(clubTrainingsPerWeek);
         const matches = Number(matchesPerWeek);
-        if (!Number.isFinite(trainings) || trainings < 0) { fail("Valeur invalide", "Entrainements/semaine doit etre positif."); return false; }
-        if (!Number.isFinite(matches) || matches < 0) { fail("Valeur invalide", "Matchs/semaine doit etre positif."); return false; }
-        if (!hasClubTrainings) { fail("Champs manquants", "Indique si tu as des entrainements club."); return false; }
-        if (hasClubTrainings === "oui" && (!clubTrainingsPerWeek.trim() || trainings < 1)) { fail("Champs manquants", "Indique combien d'entrainements club par semaine."); return false; }
-        if (hasClubTrainings === "oui" && clubTrainingDays.length === 0) { fail("Champs manquants", "Precise les jours club."); return false; }
-        if (matches > 0 && matchDays.length === 0) { fail("Champs manquants", "Precise les jours de match."); return false; }
+        if (!Number.isFinite(trainings) || trainings < 0) { fail("Valeur invalide", "Entraînements/semaine doit être positif."); return false; }
+        if (!Number.isFinite(matches) || matches < 0) { fail("Valeur invalide", "Matchs/semaine doit être positif."); return false; }
+        if (!hasClubTrainings) { fail("Champs manquants", "Indique si tu as des entraînements club."); return false; }
+        if (hasClubTrainings === "oui" && (!clubTrainingsPerWeek.trim() || trainings < 1)) { fail("Champs manquants", "Indique combien d'entraînements club par semaine."); return false; }
+        if (hasClubTrainings === "oui" && clubTrainingDays.length === 0) { fail("Champs manquants", "Précise les jours club."); return false; }
+        if (matches > 0 && matchDays.length === 0) { fail("Champs manquants", "Précise les jours de match."); return false; }
         return true;
       }
       case 3:
-        if (!hasGymAccess) { fail("Champs manquants", "Indique si tu as acces a une salle."); return false; }
-        if (hasGymAccess !== "non" && gymEquipment.length === 0) { fail("Champs manquants", "Selectionne au moins un materiel en salle."); return false; }
+        if (!hasGymAccess) { fail("Champs manquants", "Indique si tu as accès à une salle."); return false; }
+        if (hasGymAccess !== "non" && gymEquipment.length === 0) { fail("Champs manquants", "Sélectionne au moins un matériel en salle."); return false; }
         return true;
       case 4:
-        if (!hasHomeEquipment) { fail("Champs manquants", "Indique si tu as du materiel hors salle."); return false; }
-        if (hasHomeEquipment === "oui" && homeEquipment.length === 0) { fail("Champs manquants", "Selectionne au moins un materiel."); return false; }
+        if (!hasHomeEquipment) { fail("Champs manquants", "Indique si tu as du matériel hors salle."); return false; }
+        if (hasHomeEquipment === "oui" && homeEquipment.length === 0) { fail("Champs manquants", "Sélectionne au moins un matériel."); return false; }
         return true;
       default:
         return true;
@@ -276,6 +302,19 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
     haptics.impactLight();
     if (step > 0) animateTransition(step - 1);
   };
+
+  /* ─── Back hardware Android : étape précédente au lieu de quitter l'app ─── */
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (step > 0) {
+        goBack();
+        return true;
+      }
+      return false;
+    });
+    return () => subscription.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
   const handleLogout = async () => {
     haptics.impactLight();
@@ -311,7 +350,13 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       let resolvedClubId: string | null = clubId?.trim() ? clubId.trim() : null;
       if (normalizedInvite) {
         const club = await findClubByInviteCode(normalizedInvite);
-        if (!club) { fail("Code club invalide", "Aucun club ne correspond a ce code."); return; }
+        if (!club) {
+          fail("Code club invalide", "Aucun club ne correspond à ce code.");
+          // Retour automatique à l'étape du code club (avec scroll top via animateTransition)
+          // pour ne pas laisser l'utilisateur bloqué à la dernière étape.
+          if (step !== 0) animateTransition(0);
+          return;
+        }
         resolvedClubId = club.id;
         await setClubMembership({ clubId: club.id, uid: user.uid, role: "player" });
       }
@@ -348,11 +393,16 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       if (autoCycleId) setMicrocycleGoal(autoCycleId);
 
       haptics.success();
-      showToast({ type: "success", title: "Profil enregistre", message: "Configuration terminee !" });
+      showToast({ type: "success", title: "Profil enregistré", message: "Configuration terminée !" });
 
       // Pont local : bascule immédiate vers l'app sans attendre le onSnapshot Firestore
-      // (le listener RootNavigator reste la source durable). No-op en mode édition profil.
-      onProfileCompleted?.();
+      // (le listener RootNavigator reste la source durable).
+      // En mode édition (ouvert depuis Profil/Réglages), on referme simplement l'écran.
+      if (onProfileCompleted) {
+        onProfileCompleted();
+      } else if (navigation.canGoBack()) {
+        navigation.goBack();
+      }
     } catch (error) {
       if (__DEV__) console.error("Erreur sauvegarde profil:", error);
       runShake(shake);
@@ -393,7 +443,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       case 0:
         return (
           <>
-            <Text style={styles.fieldLabel}>Prenom</Text>
+            <Text style={styles.fieldLabel}>Prénom</Text>
             <TextInput
               style={styles.input}
               placeholder="Ex: Kylian"
@@ -415,10 +465,10 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
             <Text style={styles.fieldLabel}>Poste</Text>
             {positions.map((p) => (
-              <Choice key={p} label={p} selected={position === p} onPress={() => setPosition(p)} />
+              <Choice key={p} label={POSITION_DISPLAY_LABELS[p] ?? p} selected={position === p} onPress={() => setPosition(p)} />
             ))}
 
-            <Text style={styles.fieldLabel}>Categorie</Text>
+            <Text style={styles.fieldLabel}>Catégorie</Text>
             <View style={styles.chipRow}>
               {AGE_CATEGORIES.map((c) => (
                 <Chip key={c} label={c} selected={ageCategory === c} onPress={() => setAgeCategory(c)} />
@@ -427,7 +477,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
             <Text style={styles.fieldLabel}>Niveau</Text>
             {levels.map((l) => (
-              <Choice key={l} label={l} selected={level === l} onPress={() => setLevel(l)} />
+              <Choice key={l} label={LEVEL_DISPLAY_LABELS[l] ?? l} selected={level === l} onPress={() => setLevel(l)} />
             ))}
 
             <Text style={styles.fieldLabel}>Pied fort</Text>
@@ -456,23 +506,23 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                 <Text style={styles.cycleLabel}>
                   {cycleLabel ? `${cycleLabel} · ${cycleProgress}/${MICROCYCLE_TOTAL_SESSIONS_DEFAULT}` : "Aucun cycle actif"}
                 </Text>
-                <Text style={styles.cycleHint}>Gere ton cycle depuis l'accueil ou le profil.</Text>
+                <Text style={styles.cycleHint}>Gère ton cycle depuis l'accueil ou le profil.</Text>
               </View>
               <TouchableOpacity
                 style={styles.cycleButton}
                 onPress={() => navigation.navigate("CycleModal", { mode: cycleLabel ? "manage" : "select", origin: "profile" })}
                 activeOpacity={0.7}
               >
-                <Text style={styles.cycleButtonText}>{cycleLabel ? "Gerer" : "Choisir"}</Text>
+                <Text style={styles.cycleButtonText}>{cycleLabel ? "Gérer" : "Choisir"}</Text>
               </TouchableOpacity>
             </View>
 
             <Text style={styles.fieldLabel}>Objectif principal avec FKS</Text>
             {objectives.map((o) => (
-              <Choice key={o} label={o} selected={mainObjective === o} onPress={() => setMainObjective(o)} />
+              <Choice key={o} label={OBJECTIVE_DISPLAY_LABELS[o] ?? o} selected={mainObjective === o} onPress={() => setMainObjective(o)} />
             ))}
 
-            <Text style={styles.fieldLabel}>Seances FKS / semaine (hors club)</Text>
+            <Text style={styles.fieldLabel}>Séances FKS / semaine (hors club)</Text>
             <View style={styles.chipRow}>
               {fksSessionsOptions.map((o) => (
                 <Chip key={o} label={o} selected={targetFksSessionsPerWeek === o} onPress={() => setTargetFksSessionsPerWeek(o)} />
@@ -484,7 +534,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       case 2:
         return (
           <>
-            <Text style={styles.fieldLabel}>As-tu des entrainements club ?</Text>
+            <Text style={styles.fieldLabel}>As-tu des entraînements club ?</Text>
             <View style={styles.chipRow}>
               <Chip label="Oui" selected={hasClubTrainings === "oui"} onPress={() => setHasClubTrainings("oui")} />
               <Chip label="Non" selected={hasClubTrainings === "non"} onPress={() => setHasClubTrainings("non")} />
@@ -504,12 +554,12 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
             {hasClubTrainings === "oui" ? (
               <>
-                <Text style={styles.fieldLabel}>Entrainements club / semaine</Text>
+                <Text style={styles.fieldLabel}>Entraînements club / semaine</Text>
                 <TextInput style={styles.input} keyboardType="number-pad" placeholder="ex: 3"
                   placeholderTextColor={palette.muted} value={clubTrainingsPerWeek} onChangeText={setClubTrainingsPerWeek} />
               </>
             ) : hasClubTrainings === "non" ? (
-              <Text style={styles.hintText}>Aucun entrainement club pris en compte.</Text>
+              <Text style={styles.hintText}>Aucun entraînement club pris en compte.</Text>
             ) : null}
 
             <Text style={styles.fieldLabel}>Matchs / semaine</Text>
@@ -527,7 +577,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                 </View>
               </>
             ) : (
-              <Text style={styles.hintText}>Aucun match selectionne.</Text>
+              <Text style={styles.hintText}>Aucun match sélectionné.</Text>
             )}
 
           </>
@@ -536,16 +586,16 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       case 3:
         return (
           <>
-            <Text style={styles.fieldLabel}>Acces a une salle de musculation ?</Text>
+            <Text style={styles.fieldLabel}>Accès à une salle de musculation ?</Text>
             <View style={styles.chipRow}>
-              <Chip label="Oui regulierement" selected={hasGymAccess === "oui"} onPress={() => setHasGymAccess("oui")} />
+              <Chip label="Oui régulièrement" selected={hasGymAccess === "oui"} onPress={() => setHasGymAccess("oui")} />
               <Chip label="De temps en temps" selected={hasGymAccess === "occasionnel"} onPress={() => setHasGymAccess("occasionnel")} />
               <Chip label="Non" selected={hasGymAccess === "non"} onPress={() => setHasGymAccess("non")} />
             </View>
 
             {hasGymAccess !== "" && hasGymAccess !== "non" && (
               <>
-                <Text style={styles.fieldLabel}>Materiel disponible en salle</Text>
+                <Text style={styles.fieldLabel}>Matériel disponible en salle</Text>
                 {gymEquipmentOptions.map((o) => (
                   <Choice key={o.id} label={o.label} selected={gymEquipment.includes(o.id)}
                     onPress={() => toggleInList(o.id, gymEquipment, setGymEquipment)} />
@@ -558,7 +608,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       case 4:
         return (
           <>
-            <Text style={styles.fieldLabel}>As-tu du materiel chez toi / sur le terrain ?</Text>
+            <Text style={styles.fieldLabel}>As-tu du matériel chez toi / sur le terrain ?</Text>
             <View style={styles.chipRow}>
               <Chip label="Oui" selected={hasHomeEquipment === "oui"} onPress={() => setHasHomeEquipment("oui")} />
               <Chip label="Non" selected={hasHomeEquipment === "non"} onPress={() => setHasHomeEquipment("non")} />
@@ -566,7 +616,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
             {hasHomeEquipment === "oui" && (
               <>
-                <Text style={styles.fieldLabel}>Materiel hors salle</Text>
+                <Text style={styles.fieldLabel}>Matériel hors salle</Text>
                 {homeEquipmentOptions.map((o) => (
                   <Choice key={o.id} label={o.label} selected={homeEquipment.includes(o.id)}
                     onPress={() => toggleInList(o.id, homeEquipment, setHomeEquipment)} />
@@ -586,24 +636,27 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
-      <StatusBar barStyle="dark-content" backgroundColor={palette.bg} />
+      <StatusBar barStyle={themeMode === "dark" ? "light-content" : "dark-content"} backgroundColor={palette.bg} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <View style={{ flex: 1 }}>
 
-            {/* ─── Top bar : marque + changer de compte ─── */}
-            <View style={styles.topBar}>
-              <Text style={styles.brand}>FKS</Text>
-              <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
-                <Ionicons name="log-out-outline" size={16} color={palette.sub} />
-                <Text style={styles.logoutText}>Changer de compte</Text>
-              </TouchableOpacity>
-            </View>
+            {/* ─── Top bar : marque + changer de compte (onboarding uniquement,
+                 masquée en mode édition où le header natif "Profil" fait doublon) ─── */}
+            {!isEditMode && (
+              <View style={styles.topBar}>
+                <Text style={styles.brand}>FKS</Text>
+                <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
+                  <Ionicons name="log-out-outline" size={16} color={palette.sub} />
+                  <Text style={styles.logoutText}>Changer de compte</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
               {/* ─── Progress section ─── */}
               <View style={styles.progressSection}>
                 <View style={styles.progressLabelRow}>
-                  <Text style={styles.progressStep}>Etape {step + 1}/{TOTAL_STEPS}</Text>
+                  <Text style={styles.progressStep}>Étape {step + 1}/{TOTAL_STEPS}</Text>
                   <Text style={styles.progressName}>{STEPS[step].label}</Text>
                 </View>
                 <View style={styles.progressBarBg}>

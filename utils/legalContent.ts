@@ -5,7 +5,7 @@ type LegalSection = {
 
 export const LEGAL_NOTICE: LegalSection[] = [
   {
-    title: "Editeur de l'application",
+    title: "Éditeur de l'application",
     body: [
       "Nom : Le Bris Kyllian",
       "Email : kyllian@fks-app.com",
@@ -14,17 +14,17 @@ export const LEGAL_NOTICE: LegalSection[] = [
     ],
   },
   {
-    title: "Hebergement des donnees",
+    title: "Hébergement des données",
     body: [
-      "Les donnees sont hebergees sur les services Firebase (Google).",
-      "Region de stockage : Union Europeenne (UE).",
+      "Les données sont hébergées sur les services Firebase (Google).",
+      "Région de stockage : Union Européenne (UE).",
     ],
   },
   {
-    title: "Propriete intellectuelle",
+    title: "Propriété intellectuelle",
     body: [
-      "L'ensemble des contenus (textes, visuels, programmes, design) est la propriete de l'editeur, sauf mention contraire.",
-      "Toute reproduction non autorisee est interdite.",
+      "L'ensemble des contenus (textes, visuels, programmes, design) est la propriété de l'éditeur, sauf mention contraire.",
+      "Toute reproduction non autorisée est interdite.",
     ],
   },
   {
@@ -44,56 +44,55 @@ export const PRIVACY_POLICY: LegalSection[] = [
     ],
   },
   {
-    title: "Donnees collectees",
+    title: "Données collectées",
     body: [
       "Email (connexion).",
-      "Nom / prenom (profil utilisateur).",
-      "Donnees de sante : blessures, douleurs, fatigue (RPE).",
-      "Donnees de performance : seances, tests, ATL/CTL/TSB.",
-      "Donnees d'usage (analytics) : pages visitees, temps passe.",
+      "Nom / prénom (profil utilisateur).",
+      "Données de santé : blessures, douleurs, fatigue (RPE).",
+      "Données de performance : séances, tests, ATL/CTL/TSB.",
+      "Données d'usage (analytics) : pages visitées, temps passé.",
     ],
   },
   {
-    title: "Finalites",
+    title: "Finalités",
     body: [
-      "Personnaliser les seances d'entrainement.",
-      "Calculer la charge d'entrainement (TSB) pour limiter les blessures.",
-      "Ameliorer l'application via analytics.",
-      "Fournir un support technique en cas de probleme.",
+      "Personnaliser les séances d'entraînement.",
+      "Calculer la charge d'entraînement (TSB) pour limiter les blessures.",
+      "Améliorer l'application via analytics.",
+      "Fournir un support technique en cas de problème.",
     ],
   },
   {
-    title: "Base legale",
-    body: ["Consentement explicite de l'utilisateur (case a cocher a l'inscription)."],
+    title: "Base légale",
+    body: ["Consentement explicite de l'utilisateur (case à cocher à l'inscription)."],
   },
   {
-    title: "Duree de conservation",
+    title: "Durée de conservation",
     body: [
-      "Donnees actives : tant que le compte existe.",
-      "Donnees inactives : suppression 2 ans apres la derniere connexion.",
+      "Données actives : tant que le compte existe.",
+      "Données inactives : suppression 2 ans après la dernière connexion.",
     ],
   },
   {
     title: "Services tiers",
     body: [
-      "Firebase (Google) : authentification et base de donnees.",
-      "OpenAI : generation des seances.",
+      "Firebase (Google) : authentification et base de données.",
+      "OpenAI : génération des séances.",
       "Amplitude : analyse d'utilisation.",
-      "Sentry : detection et correction de bugs.",
     ],
   },
   {
     title: "Droits des utilisateurs",
     body: [
-      "Droit d'acces, de rectification, d'effacement.",
-      "Droit d'opposition a certains traitements.",
+      "Droit d'accès, de rectification, d'effacement.",
+      "Droit d'opposition à certains traitements.",
       "Contact : kyllian@fks-app.com",
     ],
   },
   {
-    title: "Securite",
+    title: "Sécurité",
     body: [
-      "Des mesures techniques et organisationnelles sont mises en place pour proteger les donnees.",
+      "Des mesures techniques et organisationnelles sont mises en place pour protéger les données.",
     ],
   },
 ];

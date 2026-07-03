@@ -100,6 +100,8 @@ export type AuthStackParamList = {
   Welcome: undefined;
   Login: undefined;
   Register: undefined;
+  LegalNotice: undefined;
+  PrivacyPolicy: undefined;
 };
 
 export type CoachStackParamList = {
@@ -205,6 +207,12 @@ function AppNavigator() {
       <AppStack.Screen name="PrebuiltSessions" component={PrebuiltSessionsScreen} options={{ headerShown: true, title: "Séances pré-construites" }} />
       <AppStack.Screen name="PrebuiltSessionDetail" component={PrebuiltSessionDetailScreen} options={{ headerShown: true, title: "Détails séance" }} />
       <AppStack.Screen name="ProfileSetup" component={ProfileSetupScreen} options={{ headerShown: true, title: "Profil" }} />
+      {/* Accessible depuis l'édition de profil ("Tu fais partie du staff ?") */}
+      <AppStack.Screen
+        name="CoachOnboarding"
+        component={CoachOnboardingScreen}
+        options={{ headerShown: false, animation: "slide_from_right" }}
+      />
       <AppStack.Screen name="Tests" component={TestsScreen} options={{ headerShown: true, title: "Tests terrain" }} />
       <AppStack.Screen name="ExerciseDetail" component={VideoLibraryScreen} options={{ headerShown: true, title: "Fiche exercice" }} />
       <AppStack.Screen
@@ -274,6 +282,27 @@ function AuthNavigator({
       </AuthStack.Screen>
       <AuthStack.Screen name="Login" component={LoginScreen} />
       <AuthStack.Screen name="Register" component={RegisterScreen} />
+      {/* Consultables AVANT création de compte (RGPD / App Store 5.1.1) */}
+      <AuthStack.Screen
+        name="LegalNotice"
+        component={LegalNoticeScreen}
+        options={{
+          headerShown: true,
+          title: "Mentions légales",
+          headerStyle: { backgroundColor: theme.colors.background },
+          headerTintColor: theme.colors.text,
+        }}
+      />
+      <AuthStack.Screen
+        name="PrivacyPolicy"
+        component={PrivacyPolicyScreen}
+        options={{
+          headerShown: true,
+          title: "Confidentialité",
+          headerStyle: { backgroundColor: theme.colors.background },
+          headerTintColor: theme.colors.text,
+        }}
+      />
     </AuthStack.Navigator>
   );
 }
@@ -373,7 +402,13 @@ export default function RootNavigator() {
   // 4) Chargement des flags locaux
   if (welcomeDone === null) return <Splash />;
 
-  // 5) Pas connecté → Auth stack (Welcome intégré dans le stack pour back navigation)
+  // 5) Restauration de session Firebase en cours → Splash.
+  //    IMPORTANT : ce check doit précéder `!user`, sinon un utilisateur déjà
+  //    connecté voit flasher l'écran Login à chaque démarrage à froid
+  //    (user reste null tant que onAuthStateChanged n'a pas résolu).
+  if (initializing) return <Splash />;
+
+  // 5bis) Pas connecté → Auth stack (Welcome intégré dans le stack pour back navigation)
   if (!user) {
     return (
       <AuthNavigator
@@ -382,9 +417,6 @@ export default function RootNavigator() {
       />
     );
   }
-
-  // 6) Connecté → on attend profil
-  if (initializing) return <Splash />;
 
   // 6bis) Coach → espace coach (pas de questionnaire joueur, pas de tab bar joueur)
   if (role === "coach") {
@@ -421,6 +453,7 @@ export default function RootNavigator() {
               gestureEnabled: false,
             }}
           />
+          <AppStack.Screen name="Tests" component={TestsScreen} options={{ headerShown: true, title: "Tests terrain" }} />
         </AppStack.Navigator>
       </SafeAreaProvider>
     );
