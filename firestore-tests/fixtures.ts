@@ -20,6 +20,14 @@ export const PLAYER_A1 = "playerA1";
 export const PLAYER_A2 = "playerA2";
 export const CLUB_A_INVITE = "CLBA-1234";
 
+// Cas STALE / edge pour le durcissement isPlayerMember (PR-4 mini-hardening) :
+//  - PLAYER_A_GONE : une projection existe encore sous club A mais la joueuse n'a
+//    plus (ou n'a jamais eu) de doc members/ → summary orphelin, doit être illisible.
+//  - BADROLE_A : membre du club A avec un rôle NON "player" (ni player ni coach) →
+//    une projection à son nom ne doit pas être lisible via isPlayerMember.
+export const PLAYER_A_GONE = "playerAgone";
+export const BADROLE_A = "badroleA";
+
 // ── Club B ──────────────────────────────────────────────────────────────────
 export const CLUB_B = "clubB";
 export const COACH_B = "coachB"; // owner ET coach du club B

@@ -353,3 +353,25 @@ export function summarizeCoachGroup(rows: CoachDashboardRow[]): CoachGroupSummar
   }
   return summary;
 }
+
+// ─── Décision d'affichage du roster coach (PUR, testable) ───────────────────
+// Trois états mutuellement exclusifs pour l'effectif / la liste séances :
+//  - "unavailable" : lecture globale refusée (permissions/réseau) → état honnête,
+//    prioritaire (on ne devine RIEN, même si des compteurs traînent) ;
+//  - "empty"       : aucune projection prête ET aucune en préparation → vrai vide
+//    ("Aucun membre") ;
+//  - "list"        : au moins une projection prête OU en préparation → on affiche
+//    la liste et/ou le bandeau "en cours de synchronisation".
+// RÈGLE : ne JAMAIS afficher "Aucun membre" tant que des projections sont en
+// préparation (pendingCount > 0). Le compteur d'effectif = ready + pending.
+export type CoachRosterDisplay = "unavailable" | "empty" | "list";
+
+export function coachRosterDisplay(args: {
+  readyCount: number; // projections prêtes (summaries.length)
+  pendingCount: number; // projections en cours de synchronisation
+  unavailable: boolean;
+}): CoachRosterDisplay {
+  if (args.unavailable) return "unavailable";
+  if (args.readyCount <= 0 && args.pendingCount <= 0) return "empty";
+  return "list";
+}

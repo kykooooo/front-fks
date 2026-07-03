@@ -1,6 +1,8 @@
 // repositories/__tests__/clubsRepo.test.ts
 // Tests des helpers purs de gestion des codes club + preuve que la lecture coach
-// ne touche QUE clubs/{clubId}/playerSummaries (jamais users/sessions/plannedSessions).
+// suit la séquence coach-safe STRICTE : members (role player) → get direct de
+// chaque clubs/{clubId}/playerSummaries/{memberId}. Jamais users/sessions/
+// plannedSessions, jamais un getDocs de collection playerSummaries.
 // On mocke services/firebase + firebase/firestore pour capturer les chemins lus.
 
 jest.mock("../../services/firebase", () => ({ db: {}, auth: {} }));
@@ -8,15 +10,20 @@ jest.mock("../../services/firebase", () => ({ db: {}, auth: {} }));
 // Mock firestore : on enregistre le chemin de chaque ref lue (collection/doc).
 // Variables préfixées `mock` → autorisées dans une factory jest.mock().
 const mockFirestoreReads: { kind: "collection" | "doc"; path: string[] }[] = [];
+
+type SummaryEntry = { exists: boolean; data: () => any; throws?: boolean };
 const mockFlags: {
-  getDocsThrows: boolean;
+  membersThrows: boolean;
+  members: { id: string; role: string }[];
+  summaryById: Record<string, SummaryEntry>;
+  // Repli lecture doc unique (tests fetchClubPlayerSummary).
   getDocThrows: boolean;
-  collectionDocs: { id: string; data: () => any }[];
   detailDoc: { exists: boolean; data: () => any };
 } = {
-  getDocsThrows: false,
+  membersThrows: false,
+  members: [],
+  summaryById: {},
   getDocThrows: false,
-  collectionDocs: [],
   detailDoc: { exists: false, data: () => ({}) },
 };
 
@@ -41,11 +48,21 @@ jest.mock("firebase/firestore", () => ({
   deleteDoc: jest.fn(async () => undefined),
   getDocs: jest.fn(async (ref: any) => {
     mockFirestoreReads.push({ kind: "collection", path: ref.path });
-    if (mockFlags.getDocsThrows) throw new Error("permission-denied");
-    return { docs: mockFlags.collectionDocs };
+    const last = ref.path[ref.path.length - 1];
+    if (last === "members") {
+      if (mockFlags.membersThrows) throw new Error("permission-denied");
+      return { docs: mockFlags.members.map((m) => ({ id: m.id, data: () => ({ uid: m.id, role: m.role }) })) };
+    }
+    return { docs: [] };
   }),
   getDoc: jest.fn(async (ref: any) => {
     mockFirestoreReads.push({ kind: "doc", path: ref.path });
+    const id = ref.path[ref.path.length - 1];
+    const entry = mockFlags.summaryById[id];
+    if (entry) {
+      if (entry.throws) throw new Error("permission-denied");
+      return { exists: () => entry.exists, data: entry.data };
+    }
     if (mockFlags.getDocThrows) throw new Error("permission-denied");
     return { exists: () => mockFlags.detailDoc.exists, data: mockFlags.detailDoc.data };
   }),
@@ -60,12 +77,19 @@ import {
 
 beforeEach(() => {
   mockFirestoreReads.length = 0;
-  mockFlags.getDocsThrows = false;
+  mockFlags.membersThrows = false;
+  mockFlags.members = [];
+  mockFlags.summaryById = {};
   mockFlags.getDocThrows = false;
-  // Défaut : un doc valide dont l'id === payload.playerUid.
-  mockFlags.collectionDocs = [{ id: "playerA1", data: () => validPayload() }];
+  // Défaut lecture doc unique : un doc valide dont l'id === payload.playerUid.
   mockFlags.detailDoc = { exists: true, data: () => validPayload() };
 });
+
+// Helpers de lecture des chemins capturés.
+const summaryDocIds = () =>
+  mockFirestoreReads.filter((r) => r.kind === "doc" && r.path[2] === "playerSummaries").map((r) => r.path[3]);
+const memberCollectionReads = () =>
+  mockFirestoreReads.filter((r) => r.kind === "collection" && r.path[r.path.length - 1] === "members");
 
 describe("normalizeInviteCode", () => {
   test("met en majuscules et retire les espaces", () => {
@@ -101,42 +125,123 @@ describe("generateInviteCode", () => {
   });
 });
 
-describe("fetchClubPlayerSummaries — lecture coach-safe (collection)", () => {
-  test("lit UNIQUEMENT clubs/{clubId}/playerSummaries", async () => {
+describe("fetchClubPlayerSummaries — roster via members → summaries (coach-safe strict)", () => {
+  test("roster propre : members player → summaries lisibles (1 collection members + 1 doc/player)", async () => {
+    mockFlags.members = [
+      { id: "coachA", role: "coach" }, // exclu (pas player)
+      { id: "playerA1", role: "player" },
+      { id: "playerA2", role: "player" },
+    ];
+    mockFlags.summaryById = {
+      playerA1: { exists: true, data: () => validPayload({ playerUid: "playerA1" }) },
+      playerA2: { exists: true, data: () => validPayload({ playerUid: "playerA2" }) },
+    };
     const res = await fetchClubPlayerSummaries("clubX");
     expect(res.unavailable).toBe(false);
-    expect(res.summaries).toHaveLength(1);
-    expect(res.summaries[0].playerUid).toBe("playerA1");
+    expect(res.summaries.map((s) => s.playerUid).sort()).toEqual(["playerA1", "playerA2"]);
+    expect(res.pendingCount).toBe(0);
 
-    expect(mockFirestoreReads).toHaveLength(1);
-    expect(mockFirestoreReads[0]).toEqual({ kind: "collection", path: ["clubs", "clubX", "playerSummaries"] });
+    // UNE requête members, puis UN getDoc par player (jamais un getDocs de playerSummaries).
+    expect(memberCollectionReads()).toHaveLength(1);
+    expect(summaryDocIds().sort()).toEqual(["playerA1", "playerA2"]);
+    expect(
+      mockFirestoreReads.some((r) => r.kind === "collection" && r.path[2] === "playerSummaries"),
+    ).toBe(false);
+    expect(summaryDocIds()).not.toContain("coachA"); // le coach n'est jamais lu comme summary
   });
 
-  test("ne lit jamais users / sessions / plannedSessions", async () => {
-    await fetchClubPlayerSummaries("clubX");
+  test("rôle coach / invalide exclu du roster player", async () => {
+    mockFlags.members = [
+      { id: "coachA", role: "coach" },
+      { id: "staffA", role: "staff" },
+      { id: "playerA1", role: "player" },
+    ];
+    mockFlags.summaryById = { playerA1: { exists: true, data: () => validPayload({ playerUid: "playerA1" }) } };
+    const res = await fetchClubPlayerSummaries("clubX");
+    expect(res.summaries.map((s) => s.playerUid)).toEqual(["playerA1"]);
+    expect(summaryDocIds()).not.toContain("coachA");
+    expect(summaryDocIds()).not.toContain("staffA");
+  });
+
+  test("summary stale d'un NON-membre n'est jamais lu (source de vérité = members)", async () => {
+    // playerGone a un summary résiduel mais n'est PLUS dans members → jamais demandé.
+    mockFlags.members = [{ id: "playerA1", role: "player" }];
+    mockFlags.summaryById = {
+      playerA1: { exists: true, data: () => validPayload({ playerUid: "playerA1" }) },
+      playerGone: { exists: true, data: () => validPayload({ playerUid: "playerGone" }) },
+    };
+    const res = await fetchClubPlayerSummaries("clubX");
+    expect(res.summaries.map((s) => s.playerUid)).toEqual(["playerA1"]);
+    expect(summaryDocIds()).not.toContain("playerGone");
+  });
+
+  test("départ ENTRE members et get summary → unavailable, roster vide (pas de fuite)", async () => {
+    mockFlags.members = [
+      { id: "playerA1", role: "player" },
+      { id: "playerLeaving", role: "player" },
+    ];
+    mockFlags.summaryById = {
+      playerA1: { exists: true, data: () => validPayload({ playerUid: "playerA1" }) },
+      // Départ juste après le listing : la rule refuse le get → throw (permission-denied).
+      playerLeaving: { exists: false, data: () => ({}), throws: true },
+    };
+    const res = await fetchClubPlayerSummaries("clubX");
+    expect(res.unavailable).toBe(true);
+    expect(res.summaries).toEqual([]); // jamais de roster partiel présenté comme complet
+    expect(res.pendingCount).toBe(0);
+  });
+
+  test("membre actif sans summary / payload malformé → pending, jamais dropé en silence", async () => {
+    mockFlags.members = [
+      { id: "playerReady", role: "player" },
+      { id: "playerNoSummary", role: "player" },
+      { id: "playerBad", role: "player" },
+    ];
+    mockFlags.summaryById = {
+      playerReady: { exists: true, data: () => validPayload({ playerUid: "playerReady" }) },
+      playerNoSummary: { exists: false, data: () => ({}) }, // projection pas encore prête
+      playerBad: { exists: true, data: () => ({ nope: 1 }) }, // payload malformé (parse → null)
+    };
+    const res = await fetchClubPlayerSummaries("clubX");
+    expect(res.unavailable).toBe(false);
+    expect(res.summaries.map((s) => s.playerUid)).toEqual(["playerReady"]);
+    expect(res.pendingCount).toBe(2); // playerNoSummary + playerBad, comptés (jamais dropés)
+  });
+
+  test("mismatch playerUid (payload ≠ memberId) → refusé, traité comme non prêt (pas de mélange d'identité)", async () => {
+    mockFlags.members = [{ id: "playerA1", role: "player" }];
+    mockFlags.summaryById = {
+      playerA1: { exists: true, data: () => validPayload({ playerUid: "playerB" }) }, // incohérent
+    };
+    const res = await fetchClubPlayerSummaries("clubX");
+    expect(res.summaries).toEqual([]);
+    expect(res.pendingCount).toBe(1);
+  });
+
+  test("requête members refusée → indisponible global, aucun accès brut", async () => {
+    mockFlags.membersThrows = true;
+    const res = await fetchClubPlayerSummaries("clubX");
+    expect(res.unavailable).toBe(true);
+    expect(res.summaries).toEqual([]);
     const flat = mockFirestoreReads.flatMap((r) => r.path);
     expect(flat).not.toContain("users");
     expect(flat).not.toContain("sessions");
     expect(flat).not.toContain("plannedSessions");
   });
 
-  test("lecture refusée → état indisponible propre, pas de fallback", async () => {
-    mockFlags.getDocsThrows = true;
-    const res = await fetchClubPlayerSummaries("clubX");
-    expect(res.unavailable).toBe(true);
-    expect(res.summaries).toEqual([]);
-    // aucune autre lecture n'a été tentée (pas de repli vers users/sessions)
-    expect(mockFirestoreReads.every((r) => r.path[0] === "clubs" && r.path[2] === "playerSummaries")).toBe(true);
-  });
-
-  test("intégrité : doc.id='playerA' mais payload.playerUid='playerB' → doc ignoré", async () => {
-    mockFlags.collectionDocs = [
-      { id: "playerA", data: () => validPayload({ playerUid: "playerB" }) }, // incohérent
-      { id: "playerC", data: () => validPayload({ playerUid: "playerC" }) }, // cohérent
-    ];
-    const res = await fetchClubPlayerSummaries("clubX");
-    expect(res.unavailable).toBe(false);
-    expect(res.summaries.map((s) => s.playerUid)).toEqual(["playerC"]); // playerB jamais retenu
+  test("ne lit jamais users / sessions / plannedSessions (uniquement members + playerSummaries)", async () => {
+    mockFlags.members = [{ id: "playerA1", role: "player" }];
+    mockFlags.summaryById = { playerA1: { exists: true, data: () => validPayload({ playerUid: "playerA1" }) } };
+    await fetchClubPlayerSummaries("clubX");
+    const flat = mockFirestoreReads.flatMap((r) => r.path);
+    expect(flat).not.toContain("users");
+    expect(flat).not.toContain("sessions");
+    expect(flat).not.toContain("plannedSessions");
+    expect(
+      mockFirestoreReads.every(
+        (r) => r.path[0] === "clubs" && (r.path[2] === "members" || r.path[2] === "playerSummaries"),
+      ),
+    ).toBe(true);
   });
 });
 
