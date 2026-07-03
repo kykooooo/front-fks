@@ -33,6 +33,7 @@ import {
 import {
   sortCoachSummaries,
   summarizeCoachGroup,
+  coachRosterDisplay,
   type CoachPlayerSummary,
 } from "../domain/coachSummary";
 import {
@@ -95,6 +96,9 @@ export default function CoachHomeScreen() {
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [summaries, setSummaries] = useState<CoachPlayerSummary[]>([]);
   const [summariesUnavailable, setSummariesUnavailable] = useState(false);
+  // Nb de membres player dont la projection n'est pas encore prête (compteur only,
+  // aucun UID). Sert le bandeau "en cours de synchronisation".
+  const [summariesPending, setSummariesPending] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const todayKey = toDateKey(new Date());
@@ -134,6 +138,7 @@ export default function CoachHomeScreen() {
         setInviteCode(null);
         setSummaries([]);
         setSummariesUnavailable(false);
+        setSummariesPending(0);
         resetWeekContextState();
         return;
       }
@@ -153,6 +158,7 @@ export default function CoachHomeScreen() {
       const res = await fetchClubPlayerSummaries(resolvedClubId);
       setSummaries(res.summaries);
       setSummariesUnavailable(res.unavailable);
+      setSummariesPending(res.pendingCount);
 
       // Cadre de semaine existant (best-effort). Si absent → reset explicite
       // (évite qu'un ancien cadre reste affiché après changement de semaine/club).
@@ -176,6 +182,7 @@ export default function CoachHomeScreen() {
       // indisponible pour afficher un état global honnête (pas de faux compteurs).
       setSummaries([]);
       setSummariesUnavailable(true);
+      setSummariesPending(0);
       showToast({ type: "error", title: "Erreur", message: "Impossible de charger ton club." });
     } finally {
       setLoading(false);
@@ -308,6 +315,26 @@ export default function CoachHomeScreen() {
       </Text>
     </Card>
   );
+
+  // Projections pas encore prêtes (membres actifs sans summary). Bandeau NEUTRE :
+  // aucun nom, aucun UID, aucun détail technique — juste un compteur rassurant.
+  // Affiché seulement si des projections sont en cours ET la lecture n'a pas échoué.
+  const renderPendingNotice = () => {
+    if (summariesPending <= 0 || summariesUnavailable) return null;
+    return (
+      <Card variant="soft" style={styles.pendingCard}>
+        <Ionicons name="sync-outline" size={20} color={palette.accent} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.pendingTitle}>
+            {summariesPending} profil{summariesPending > 1 ? "s" : ""} en cours de synchronisation
+          </Text>
+          <Text style={styles.pendingText}>
+            Ils apparaîtront dès que FKS aura préparé leurs données.
+          </Text>
+        </View>
+      </Card>
+    );
+  };
 
   // ── Onglet "Semaine" : code club compact + cadre ──
   const renderSemaine = () => (
@@ -468,9 +495,10 @@ export default function CoachHomeScreen() {
         </View>
       </Card>
 
-      {rows.length === 0 ? (
+      {renderPendingNotice()}
+      {coachRosterDisplay({ readyCount: summaries.length, pendingCount: summariesPending, unavailable: false }) === "empty" ? (
         renderEmptyRoster()
-      ) : (
+      ) : rows.length > 0 ? (
         <Card variant="soft" style={styles.listCard}>
           {rows.map(({ summary: p, status: st }, i) => {
             const sess = p.latestSession;
@@ -521,7 +549,7 @@ export default function CoachHomeScreen() {
             );
           })}
         </Card>
-      )}
+      ) : null}
     </>
     );
   };
@@ -541,12 +569,14 @@ export default function CoachHomeScreen() {
     <>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>{teamLabel}</Text>
-        <CoachBadge label={String(summaries.length)} tone="default" />
+        {/* Effectif = projections prêtes + projections en cours de synchronisation. */}
+        <CoachBadge label={String(summaries.length + summariesPending)} tone="default" />
       </View>
 
-      {rows.length === 0 ? (
+      {renderPendingNotice()}
+      {coachRosterDisplay({ readyCount: summaries.length, pendingCount: summariesPending, unavailable: false }) === "empty" ? (
         renderEmptyRoster()
-      ) : (
+      ) : rows.length > 0 ? (
         <Card variant="soft" style={styles.listCard}>
           {rows.map(({ summary: p, status: st }, i) => (
             <TouchableOpacity
@@ -580,7 +610,7 @@ export default function CoachHomeScreen() {
             </TouchableOpacity>
           ))}
         </Card>
-      )}
+      ) : null}
     </>
     );
   };
@@ -1020,5 +1050,26 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: palette.sub,
     textAlign: "center",
+  },
+  // ── Bandeau "projections en cours de synchronisation" (neutre, sans UID) ──
+  pendingCard: {
+    ...CARD,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    marginBottom: 10,
+  },
+  pendingTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: palette.text,
+  },
+  pendingText: {
+    fontSize: 12.5,
+    color: palette.sub,
+    marginTop: 2,
+    lineHeight: 16,
   },
 });

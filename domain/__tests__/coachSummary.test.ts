@@ -8,6 +8,7 @@ import {
   summarizeCoachGroup,
   nextCoachDetailView,
   shouldApplyCoachDetailResponse,
+  coachRosterDisplay,
   EMPTY_COACH_DETAIL_VIEW,
   type CoachDetailView,
   type CoachPlayerSummary,
@@ -455,5 +456,25 @@ describe("shouldApplyCoachDetailResponse — garde anti réponse tardive/concurr
 
   test("plus aucune route courante (currentKey null) → rejeté", () => {
     expect(shouldApplyCoachDetailResponse({ ...base, currentKey: null })).toBe(false);
+  });
+});
+
+describe("coachRosterDisplay — jamais 'Aucun membre' si des projections sont en cours", () => {
+  test("indisponible → 'unavailable' (prioritaire, même avec des compteurs)", () => {
+    expect(coachRosterDisplay({ readyCount: 3, pendingCount: 2, unavailable: true })).toBe("unavailable");
+    expect(coachRosterDisplay({ readyCount: 0, pendingCount: 0, unavailable: true })).toBe("unavailable");
+  });
+
+  test("aucune projection prête ni en cours → 'empty' (vrai 'Aucun membre')", () => {
+    expect(coachRosterDisplay({ readyCount: 0, pendingCount: 0, unavailable: false })).toBe("empty");
+  });
+
+  test("roster VIDE mais pending > 0 → 'list' (JAMAIS 'empty'/'Aucun membre')", () => {
+    expect(coachRosterDisplay({ readyCount: 0, pendingCount: 2, unavailable: false })).toBe("list");
+  });
+
+  test("au moins une projection prête → 'list'", () => {
+    expect(coachRosterDisplay({ readyCount: 3, pendingCount: 0, unavailable: false })).toBe("list");
+    expect(coachRosterDisplay({ readyCount: 3, pendingCount: 2, unavailable: false })).toBe("list");
   });
 });

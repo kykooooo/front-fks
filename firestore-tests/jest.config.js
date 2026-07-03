@@ -19,4 +19,8 @@ module.exports = {
   // à séparateurs mixtes du worktree (.claude\worktrees\…) qui cassent les globs.
   testRegex: "\\.test\\.ts$",
   testTimeout: 20000,
+  // DÉTERMINISME OBLIGATOIRE : toutes les suites partagent UN seul émulateur
+  // Firestore. En parallèle, le `clearFirestore()`/`seed()` d'un worker écraserait
+  // les données d'un autre → faux échecs intermittents. On sérialise les suites.
+  maxWorkers: 1,
 };

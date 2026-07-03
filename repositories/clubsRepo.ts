@@ -166,25 +166,38 @@ export async function createClubAsCoach(opts: {
 }
 
 // ─── Vue coach : projection coach-safe (lecture SEULE) ──────────────────────
-// Le coach ne lit QUE clubs/{clubId}/playerSummaries — jamais users/{uid},
-// jamais users/{uid}/sessions ni /plannedSessions. La projection est produite
-// serveur (Cloud Function, PR-2) : labels déjà traduits, aucune donnée médicale
-// / RPE / TSB / token brut. Un doc malformé est ignoré (parseur défensif) ; une
-// lecture refusée (permissions/réseau) → état "indisponible" propre, pas de crash
-// et AUCUN fallback vers les lectures brutes.
+// Le coach ne lit QUE clubs/{clubId}/members (pour connaître l'effectif player)
+// et clubs/{clubId}/playerSummaries/{memberId} — jamais users/{uid}, jamais
+// users/{uid}/sessions ni /plannedSessions. La projection est produite serveur
+// (Cloud Function, PR-2) : labels déjà traduits, aucune donnée médicale / RPE /
+// TSB / token brut. Un doc malformé/absent → "projection non prête" (pending),
+// jamais dropé en silence ; une lecture refusée (permissions/réseau) → état
+// "indisponible" honnête, sans crash ni fallback vers les lectures brutes.
 //
-// Coût Firestore : `fetchClubPlayerSummaries` = UNE requête de collection, mais
-// facturée ~1 lecture document par joueuse (≈15 lectures pour 15 joueuses). Le
-// gain vs l'ancien flux n'est PAS un forfait magique : c'est la suppression du
-// N+1 réseau (1 aller-retour au lieu de 1 par joueuse) et l'arrêt de la lecture
-// des historiques sessions/plannedSessions bruts.
+// POURQUOI members → summaries (et pas un getDocs de collection) : la règle
+// Firestore de playerSummaries exige que la JOUEUSE ciblée soit ENCORE membre
+// player (anti-projection stale). Cette contrainte porte sur l'ID du document,
+// donc une lecture de COLLECTION (list) est refusée en bloc par les rules
+// (impossible à évaluer par doc). On lit donc l'effectif via members, puis
+// CHAQUE summary directement par son ID.
+//
+// Coût Firestore (à assumer) : 1 requête members (facturée ~1 lecture par doc
+// member) + 1 getDoc par joueuse active. Pour 15 joueuses + 1 coach ≈ 16 + 15 =
+// ~31 lectures/refresh (vs ~15 pour l'ancien getDocs de collection). C'est le
+// prix du garde-fou anti-stale. Bornes : MEMBERS_FETCH_LIMIT plafonne l'effectif
+// lu ; SUMMARY_READ_CONCURRENCY borne le parallélisme (pas de rafale simultanée).
 
 // Garde-fou anti-scan : un effectif club reste raisonnable. Borne haute large.
-const COACH_SUMMARY_FETCH_LIMIT = 200;
+const MEMBERS_FETCH_LIMIT = 200;
+// Parallélisme borné des lectures de summary (évite N getDoc simultanés).
+const SUMMARY_READ_CONCURRENCY = 8;
 
 export type CoachSummariesResult = {
-  summaries: CoachPlayerSummary[];
-  unavailable: boolean; // true si la lecture de collection a échoué (permissions/réseau)
+  summaries: CoachPlayerSummary[]; // projections prêtes & valides (playerUid === memberId)
+  // Nombre de membres player actifs SANS summary prêt (projection non prête). On
+  // expose un COMPTEUR, jamais les UIDs : aucun identifiant technique côté UI.
+  pendingCount: number;
+  unavailable: boolean; // true si members OU une lecture summary a échoué (permissions/réseau)
 };
 
 export type CoachSummaryResult = {
@@ -192,25 +205,67 @@ export type CoachSummaryResult = {
   unavailable: boolean; // true si la lecture du doc a échoué (permissions/réseau)
 };
 
-/** Lit tous les résumés joueurs d'un club en UNE requête de collection bornée. */
+/**
+ * map bornée en concurrence : au plus `limit` promesses actives à la fois.
+ * (Évite un Promise.all de 200 lectures simultanées.)
+ */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const runners = Array.from({ length: Math.min(Math.max(1, limit), items.length || 1) }, async () => {
+    for (let i = next++; i < items.length; i = next++) {
+      results[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
+
+/**
+ * Effectif → résumés joueurs, aligné sur la règle stricte playerSummaries.
+ *  1. lit clubs/{clubId}/members (borné) ;
+ *  2. ne garde que role === "player" (exclut coach / rôle invalide) ;
+ *  3. lit CHAQUE clubs/{clubId}/playerSummaries/{memberId} directement (concurrence bornée),
+ *     via le lecteur doc unique (intégrité playerUid === memberId, parse défensif, zéro fallback) ;
+ *  4. membre sans summary / payload malformé → compté dans `pendingCount` (projection non prête, jamais dropé) ;
+ *  5. échec members OU d'une lecture summary → `unavailable=true` et roster VIDE
+ *     (on ne présente JAMAIS un roster partiel comme complet).
+ */
 export async function fetchClubPlayerSummaries(clubId: string): Promise<CoachSummariesResult> {
+  // 1–2. Effectif player actif (source de vérité du roster). Échec → indisponible global.
+  let playerMemberIds: string[];
   try {
     const snap = await getDocs(
-      query(collection(db, "clubs", clubId, "playerSummaries"), limit(COACH_SUMMARY_FETCH_LIMIT)),
+      query(collection(db, "clubs", clubId, "members"), limit(MEMBERS_FETCH_LIMIT)),
     );
-    const summaries: CoachPlayerSummary[] = [];
-    for (const d of snap.docs) {
-      const parsed = parseCoachPlayerSummary(d.data());
-      // Intégrité : le playerUid du payload DOIT correspondre à l'ID du document.
-      // Un doc dont le contenu prétend un autre UID est ignoré (jamais de mélange
-      // d'identités / de navigation vers un autre joueur).
-      if (parsed && parsed.playerUid === d.id) summaries.push(parsed);
-    }
-    return { summaries, unavailable: false };
+    playerMemberIds = snap.docs
+      .filter((d) => (d.data() as { role?: unknown })?.role === "player")
+      .map((d) => d.id);
   } catch {
-    // Permissions Firestore refusées / réseau : état indisponible honnête.
-    return { summaries: [], unavailable: true };
+    return { summaries: [], pendingCount: 0, unavailable: true };
   }
+
+  // 3. Une lecture directe de summary par membre actif (parallélisme borné).
+  const reads = await mapWithConcurrency(playerMemberIds, SUMMARY_READ_CONCURRENCY, (memberId) =>
+    fetchClubPlayerSummary(clubId, memberId).then((res) => ({ memberId, ...res })),
+  );
+
+  const summaries: CoachPlayerSummary[] = [];
+  let pendingCount = 0;
+  for (const r of reads) {
+    // 5. Une lecture refusée (permissions/réseau, ex: départ entre members et get)
+    //    → indisponible global, roster vide (jamais de demi-liste trompeuse).
+    if (r.unavailable) return { summaries: [], pendingCount: 0, unavailable: true };
+    // 4. Prêt & valide vs projection non prête (absent/malformé/mismatch → null).
+    //    On ne garde que le COMPTEUR (jamais l'UID) → rien de technique à l'écran.
+    if (r.summary) summaries.push(r.summary);
+    else pendingCount += 1;
+  }
+  return { summaries, pendingCount, unavailable: false };
 }
 
 /** Lit le résumé d'un seul joueur (doc unique). */
