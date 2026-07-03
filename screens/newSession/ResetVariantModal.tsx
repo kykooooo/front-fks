@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
 import { palette } from "./theme";
 import type { ResetVariant } from "./types";
@@ -12,6 +12,13 @@ type Props = {
 };
 
 export function ResetVariantModal({ variants, onSelect, onCancel, explain }: Props) {
+  // Un double-tap sur une variante déclencherait deux processV2 (double séance).
+  const selectedRef = useRef(false);
+  const selectOnce = (id: string) => {
+    if (selectedRef.current) return;
+    selectedRef.current = true;
+    onSelect(id);
+  };
   return (
     <View style={styles.resetOverlay}>
       <View style={styles.resetModal}>
@@ -52,7 +59,7 @@ export function ResetVariantModal({ variants, onSelect, onCancel, explain }: Pro
             <TouchableOpacity
               key={v.id}
               style={styles.resetCard}
-              onPress={() => onSelect(v.id)}
+              onPress={() => selectOnce(v.id)}
             >
               <Text style={styles.resetCardTitle}>{v.title}</Text>
               <Text style={styles.resetCardSubtitle}>{v.subtitle}</Text>

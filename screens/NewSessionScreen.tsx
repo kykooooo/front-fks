@@ -305,9 +305,21 @@ export default function NewSessionScreen() {
     const unsubscribe = nav.addListener("beforeRemove", (e: any) => {
       if (!generating) return;
       e.preventDefault();
+      showToast({ type: "info", title: "Génération en cours", message: "Utilise Annuler pour interrompre." });
     });
     return unsubscribe;
   }, [nav, generating]);
+
+  // Annulation : le fetch continue en arrière-plan mais son résultat est ignoré
+  // (jeton de génération) — l'utilisateur reprend la main immédiatement.
+  const generationIdRef = useRef(0);
+  const cancelGeneration = useCallback(() => {
+    generationIdRef.current += 1;
+    setGenerating(false);
+    setContextLoading(false);
+    trackEvent("session_generate_cancelled", {});
+    showToast({ type: "info", title: "Génération annulée", message: "Tu peux relancer quand tu veux." });
+  }, []);
 
   // Disable header back button while generating
   useEffect(() => {
@@ -369,7 +381,13 @@ export default function NewSessionScreen() {
         return;
       }
 
-      if (!selectedEquipment.length) {
+      // Salle validée sans sélection explicite : l'équipement standard salle
+      // est implicite (l'UI dit "Équipement standard inclus par défaut").
+      let equipmentForGeneration = selectedEquipment;
+      if (!equipmentForGeneration.length && environment.includes("gym")) {
+        equipmentForGeneration = ["gym_full", "bodyweight"];
+      }
+      if (!equipmentForGeneration.length) {
         showToast({ type: "warn", title: "Matériel manquant", message: "Sélectionne au moins un matériel disponible." });
         return;
       }
@@ -385,16 +403,18 @@ export default function NewSessionScreen() {
       });
 
       setGenerating(true);
+      const genId = ++generationIdRef.current;
 
       // On reconstruit le contexte à chaque génération pour refléter microcycle/index/goal à jour.
       setContextLoading(true);
       const ctx = await buildAIPromptContext();
+      if (generationIdRef.current !== genId) return; // annulé pendant l'attente
       setAiContext(ctx);
       setContextLoading(false);
 
       const { context: preparedCtx, location } = prepareBackendContext(
         ctx,
-        selectedEquipment,
+        equipmentForGeneration,
         environment
       );
 
@@ -413,6 +433,7 @@ export default function NewSessionScreen() {
 
       // 3) Appel backend → workflow → v2
       const { v2, debug } = await fetchV2(preparedCtx);
+      if (generationIdRef.current !== genId) return; // annulé pendant l'appel
       await setSessionCache(preparedCtx, { v2, debug });
       if (isResetPlan(v2)) {
         const variants = buildResetVariants(v2).map((rv) => ({
@@ -502,6 +523,9 @@ export default function NewSessionScreen() {
       }
     } finally {
       setGenerating(false);
+      // Toujours relâcher le flag contexte : s'il reste bloqué à true, le CTA
+      // "Générer" est définitivement grisé (buildAIPromptContext peut throw).
+      setContextLoading(false);
     }
   };
 
@@ -790,6 +814,7 @@ export default function NewSessionScreen() {
           "Vérification et finalisation...",
         ]}
         estimatedDurationMs={25000}
+        onCancel={cancelGeneration}
       />
     </SafeAreaView>
   );

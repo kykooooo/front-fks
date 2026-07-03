@@ -28,7 +28,7 @@ export function ToastHost() {
   }, []);
 
   useEffect(() => {
-    return onToast((payload) => {
+    const unsubscribe = onToast((payload) => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
       }
@@ -50,6 +50,13 @@ export function ToastHost() {
         }
       }, duration);
     });
+    return () => {
+      unsubscribe();
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
   }, [anim]);
 
   if (!toast) return null;

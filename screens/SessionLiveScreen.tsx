@@ -11,7 +11,9 @@ import {
   Vibration,
   Platform,
   Alert,
+  AppState,
 } from "react-native";
+import { useKeepAwake } from "expo-keep-awake";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
@@ -25,6 +27,8 @@ import { withSessionErrorBoundary } from "../components/withErrorBoundary";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { SessionTimer, type SessionTimerHandle } from "../components/session/SessionTimer";
 import { getBlockLabel } from "../components/session/blockConfig";
+import { formatDayFR } from "../utils/dateHelpers";
+import { frIntensity, frFocus, frLocation } from "../utils/frLabels";
 import { useSettingsStore } from "../state/settingsStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { getCycleTheme, type CycleTheme } from "../constants/cycleTheme";
@@ -513,7 +517,16 @@ function SessionLiveScreen() {
   const [checkedSets, setCheckedSets] = useState<Record<string, boolean[]>>({});
   const [activeBlock, setActiveBlock] = useState(0);
 
+  // L'écran ne doit jamais se mettre en veille pendant une séance (mains occupées).
+  useKeepAwake();
+
   const [sessionRunning, setSessionRunning] = useState(false);
+  // Vrai dès que le chrono a démarré une fois (une pause ne doit pas
+  // désarmer la confirmation de sortie).
+  const [everStarted, setEverStarted] = useState(false);
+  useEffect(() => {
+    if (sessionRunning) setEverStarted(true);
+  }, [sessionRunning]);
   const timerRef = useRef<SessionTimerHandle>(null);
   const handleReachMax = useCallback(() => setSessionRunning(false), []);
 
@@ -540,7 +553,10 @@ function SessionLiveScreen() {
   ).current;
   const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 70 }).current;
   // --- Fix 1: Disable swipe back + confirm before leaving ---
-  const hasStarted = sessionRunning || Object.keys(checkedSets).length > 0;
+  const hasStarted = sessionRunning || everStarted || Object.keys(checkedSets).length > 0;
+  // Séance terminée (finishAction) : le reset vers Home émis par Summary/Feedback
+  // repasse par beforeRemove — il ne faut PAS re-demander confirmation.
+  const finishedRef = useRef(false);
 
   useEffect(() => {
     nav.setOptions({ gestureEnabled: false });
@@ -549,6 +565,7 @@ function SessionLiveScreen() {
   useEffect(() => {
     if (!hasStarted) return;
     const unsubscribe = nav.addListener("beforeRemove", (e: any) => {
+      if (finishedRef.current) return;
       // Allow programmatic navigation (e.g. finishAction → SessionSummary)
       if (e.data.action.type === "NAVIGATE") return;
       e.preventDefault();
@@ -574,7 +591,12 @@ function SessionLiveScreen() {
   }, [nav, hasStarted]);
 
   // --- Fix 2: Persist progress to AsyncStorage ---
+  // Ne JAMAIS écrire avant la fin du check de récupération : sinon l'état vide
+  // du mount écrase la sauvegarde d'une séance tuée (AsyncStorage sérialise
+  // les opérations dans l'ordre) et le prompt "Reprendre ?" ne s'affiche jamais.
+  const recoveryDoneRef = useRef(false);
   const persistState = useCallback(() => {
+    if (!recoveryDoneRef.current) return;
     const data: PersistedLiveState = {
       sessionId,
       checkedSets,
@@ -655,6 +677,8 @@ function SessionLiveScreen() {
         );
       } catch {
         // Corrupted data — ignore
+      } finally {
+        recoveryDoneRef.current = true;
       }
     })();
   }, [sessionId]);
@@ -770,9 +794,10 @@ function SessionLiveScreen() {
         if (prev.secLeft > 1) return { ...prev, secLeft: prev.secLeft - 1 };
         // Fin de phase → transition (même logique de signal que le repos).
         playRestSignal();
-        if (prev.phase === "work") {
-          return { ...prev, phase: "rest", secLeft: Math.max(1, prev.restS) };
+        if (prev.phase === "work" && prev.restS > 0) {
+          return { ...prev, phase: "rest", secLeft: prev.restS };
         }
+        // restS = 0 : pas de phase repos fantôme, on enchaîne le tour suivant.
         if (prev.round < prev.totalRounds) {
           return { ...prev, round: prev.round + 1, phase: "work", secLeft: Math.max(1, prev.workS) };
         }
@@ -802,12 +827,49 @@ function SessionLiveScreen() {
   const skipCircuitPhase = useCallback(() => {
     setCircuitState((prev) => {
       if (!prev) return prev;
-      if (prev.phase === "work") return { ...prev, phase: "rest", secLeft: Math.max(1, prev.restS) };
+      if (prev.phase === "work" && prev.restS > 0) return { ...prev, phase: "rest", secLeft: prev.restS };
       if (prev.round < prev.totalRounds) {
         return { ...prev, round: prev.round + 1, phase: "work", secLeft: Math.max(1, prev.workS) };
       }
       return null;
     });
+  }, []);
+
+  // Les setInterval JS sont suspendus quand l'app passe en arrière-plan / écran
+  // verrouillé : au retour, on rattrape le temps réel écoulé sur le repos et le
+  // circuit (sinon un repos de 60 s peut durer plusieurs minutes réelles).
+  const advanceCircuit = (prev: CircuitState, elapsed: number): CircuitState | null => {
+    let st = { ...prev };
+    let left = elapsed;
+    while (left > 0) {
+      if (st.secLeft > left) return { ...st, secLeft: st.secLeft - left };
+      left -= st.secLeft;
+      if (st.phase === "work" && st.restS > 0) {
+        st = { ...st, phase: "rest", secLeft: st.restS };
+      } else if (st.round < st.totalRounds) {
+        st = { ...st, round: st.round + 1, phase: "work", secLeft: Math.max(1, st.workS) };
+      } else {
+        return null;
+      }
+    }
+    return st;
+  };
+
+  const backgroundedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "background" || state === "inactive") {
+        if (backgroundedAtRef.current == null) backgroundedAtRef.current = Date.now();
+        return;
+      }
+      if (state !== "active" || backgroundedAtRef.current == null) return;
+      const elapsed = Math.floor((Date.now() - backgroundedAtRef.current) / 1000);
+      backgroundedAtRef.current = null;
+      if (elapsed < 1) return;
+      setRestSec((s) => (s > 0 ? Math.max(0, s - elapsed) : s));
+      setCircuitState((prev) => (prev ? advanceCircuit(prev, elapsed) : prev));
+    });
+    return () => sub.remove();
   }, []);
 
   useEffect(() => {
@@ -922,6 +984,7 @@ function SessionLiveScreen() {
     : "Terminer la séance";
 
   const finishAction = () => {
+    finishedRef.current = true;
     clearPersistedSession();
     const elapsedSec = timerRef.current?.getSeconds() ?? 0;
     const estimatedRpe = (() => {
@@ -1013,19 +1076,21 @@ function SessionLiveScreen() {
                   <Text style={styles.kicker}>Cycle {cycleTheme.label}</Text>
                   <Text style={styles.title} numberOfLines={2}>{title}</Text>
                   {subtitle ? <Text style={styles.subtitle} numberOfLines={2}>{subtitle}</Text> : null}
-                  {plannedDateISO ? <Text style={styles.headerDate}>{plannedDateISO}</Text> : null}
+                  {plannedDateISO ? (
+                    <Text style={styles.headerDate}>{formatDayFR(plannedDateISO) || plannedDateISO}</Text>
+                  ) : null}
                 </View>
               </View>
 
               <View style={styles.heroBody}>
                 <View style={styles.tagRow}>
                   {v2.intensity ? (
-                    <Badge label={v2.intensity} tone={intensityTone(v2.intensity)} />
+                    <Badge label={frIntensity(v2.intensity)} tone={intensityTone(v2.intensity)} />
                   ) : null}
-                  {v2.focusPrimary ? <Badge label={v2.focusPrimary} /> : null}
+                  {v2.focusPrimary ? <Badge label={frFocus(v2.focusPrimary)} /> : null}
                   {v2.durationMin ? <Badge label={`${v2.durationMin} min`} /> : null}
                   {v2.rpeTarget ? <Badge label={`RPE ${v2.rpeTarget}`} /> : null}
-                  {v2.location ? <Badge label={v2.location} /> : null}
+                  {v2.location ? <Badge label={frLocation(v2.location)} /> : null}
                 </View>
 
                 <View style={styles.progressWrap}>

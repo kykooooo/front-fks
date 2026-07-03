@@ -2,7 +2,7 @@
 // Overlay de chargement premium avec étapes animées
 
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated, Modal, Easing } from 'react-native';
+import { View, Text, StyleSheet, Animated, Modal, Easing, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../constants/theme';
 
@@ -14,6 +14,10 @@ interface LoadingOverlayProps {
   steps?: string[];
   /** Durée estimée en ms pour la barre de progression (défaut: 25000) */
   estimatedDurationMs?: number;
+  /** Si fourni, affiche un bouton texte discret pour annuler l'opération */
+  onCancel?: () => void;
+  /** Libellé du bouton d'annulation (défaut: "Annuler") */
+  cancelLabel?: string;
 }
 
 // ─── Bouncing Dots ───
@@ -107,16 +111,21 @@ export function LoadingOverlay({
   submessage,
   steps,
   estimatedDurationMs = 25000,
+  onCancel,
+  cancelLabel = 'Annuler',
 }: LoadingOverlayProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const stepFade = useRef(new Animated.Value(1)).current;
   const progressWidth = useRef(new Animated.Value(0)).current;
   const iconPulse = useRef(new Animated.Value(1)).current;
   const [currentStep, setCurrentStep] = useState(0);
+  // Reste monté le temps du fade-out (sinon le unmount court-circuite l'anim)
+  const [rendered, setRendered] = useState(visible);
 
   // Fade in/out overlay
   useEffect(() => {
     if (visible) {
+      setRendered(true);
       setCurrentStep(0);
       progressWidth.setValue(0);
       Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: true }).start();
@@ -137,7 +146,9 @@ export function LoadingOverlay({
         ])
       ).start();
     } else {
-      Animated.timing(fadeAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
+      Animated.timing(fadeAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start(({ finished }) => {
+        if (finished) setRendered(false);
+      });
     }
   }, [visible, fadeAnim, progressWidth, iconPulse, estimatedDurationMs]);
 
@@ -154,13 +165,13 @@ export function LoadingOverlay({
     return () => clearInterval(interval);
   }, [visible, steps, stepFade]);
 
-  if (!visible) return null;
+  if (!rendered) return null;
 
   const hasSteps = steps && steps.length > 0;
   const displayMessage = hasSteps ? steps[currentStep] : message;
 
   return (
-    <Modal transparent visible={visible} animationType="none" statusBarTranslucent>
+    <Modal transparent visible={rendered} animationType="none" statusBarTranslucent>
       <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
         {/* Glow circles */}
         <View style={styles.glowTop} />
@@ -198,6 +209,17 @@ export function LoadingOverlay({
 
           {/* Bouncing dots */}
           <BouncingDots />
+
+          {/* Bouton annuler (optionnel) */}
+          {onCancel ? (
+            <TouchableOpacity
+              onPress={onCancel}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
+            >
+              <Text style={styles.cancelText}>{cancelLabel}</Text>
+            </TouchableOpacity>
+          ) : null}
 
           {/* Progress bar */}
           <View style={styles.progressTrack}>
@@ -302,6 +324,13 @@ const styles = StyleSheet.create({
   stepDotActive: {
     width: 18,
     backgroundColor: theme.colors.accent,
+  },
+  cancelText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#9fb0c8',
+    textAlign: 'center',
+    textDecorationLine: 'underline',
   },
   progressTrack: {
     width: '100%',
