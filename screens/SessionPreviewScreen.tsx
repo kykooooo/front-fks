@@ -11,7 +11,7 @@ import {
   Vibration,
 } from 'react-native';
 import type { RouteProp } from '@react-navigation/native';
-import { useNavigation } from '@react-navigation/native';
+import { CommonActions, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { AppStackParamList } from '../navigation/RootNavigator';
@@ -44,7 +44,26 @@ import { TimerCard } from './sessionPreview/components/TimerCard';
 type SessionPreviewRoute = RouteProp<AppStackParamList, 'SessionPreview'>;
 const palette = theme.colors;
 
+// N18 — Guard : un deep link `fks://session-preview` sans params laisse
+// `route.params` (et donc `v2`) undefined → TypeError. On redirige vers Home.
 function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
+  const nav = useNavigation<any>();
+  const v2 = route.params?.v2;
+  useEffect(() => {
+    if (!v2) {
+      nav.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{ name: 'Tabs', params: { screen: 'Home' } }],
+        })
+      );
+    }
+  }, [v2, nav]);
+  if (!v2) return null;
+  return <SessionPreviewContent route={route} />;
+}
+
+function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
   const { v2, plannedDateISO, sessionId } = route.params;
   const nav = useNavigation<any>();
   const guardNav = useNavGuard();
@@ -75,7 +94,21 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
   const pulseMap = useRef<Record<string, Animated.Value>>({});
   const blockAnims = useRef(blocks.map(() => new Animated.Value(0))).current;
 
-  const warmup = useMemo(() => getWarmupForSession(v2), [v2]);
+  // S18 — Pas de carte "Échauffement recommandé" (générique) si la séance
+  // contient déjà un bloc warmup → sinon double échauffement à l'écran.
+  const hasWarmupBlock = useMemo(
+    () =>
+      blocks.some((block) => {
+        if ((block.type ?? '').toLowerCase() === 'warmup') return true;
+        const idText = `${block.id ?? ''} ${block.blockId ?? ''} ${block.goal ?? ''}`.toLowerCase();
+        return idText.includes('warmup') || idText.includes('échauffement') || idText.includes('echauffement');
+      }),
+    [blocks]
+  );
+  const warmup = useMemo(
+    () => (hasWarmupBlock ? null : getWarmupForSession(v2)),
+    [v2, hasWarmupBlock]
+  );
   const timerPresets = useMemo(() => {
     const globalRaw = Array.isArray(v2.display?.timerPresets) ? v2.display?.timerPresets : [];
     const blockRaw = blocks.flatMap((block) =>

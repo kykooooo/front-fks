@@ -444,7 +444,7 @@ export default function RoutineScreen() {
           <SectionHeader
             title="Mini-challenges"
             right={
-              <TouchableOpacity onPress={() => nav.navigate("Profile")}>
+              <TouchableOpacity onPress={() => nav.navigate("Tabs", { screen: "Profile" })}>
                 <Text style={styles.sectionLink}>Voir les badges</Text>
               </TouchableOpacity>
             }

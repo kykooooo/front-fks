@@ -335,15 +335,13 @@ export function showErrorWithRetry(
   }
 
   const title = getErrorTitle(appError.type);
-  const buttons: AlertButton[] = [{ text: 'Annuler', style: 'cancel' }];
-
-  if (appError.retryable) {
-    buttons.push({
-      text: 'Réessayer',
-      onPress: onRetry,
-      style: 'default',
-    });
-  }
+  // Sans action de retry, "Annuler" est confus : on affiche simplement "OK".
+  const buttons: AlertButton[] = appError.retryable
+    ? [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Réessayer', onPress: onRetry, style: 'default' },
+      ]
+    : [{ text: 'OK', style: 'cancel' }];
 
   Alert.alert(title, appError.userMessage, buttons);
 }

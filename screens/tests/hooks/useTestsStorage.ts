@@ -2,10 +2,24 @@
 import { useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { STORAGE_KEYS } from "../../../constants/storage";
+import { auth } from "../../../services/firebase";
 import { type TestEntry, isPlaylistId } from "../testConfig";
 import { canonicalizeMicrocycleGoal } from "../../../domain/microcycles";
 
-const STORAGE_KEY = STORAGE_KEYS.TESTS_V1;
+const LEGACY_STORAGE_KEY = STORAGE_KEYS.TESTS_V1;
+
+export const getTestsStorageKey = () => {
+  const uid = auth.currentUser?.uid ?? null;
+  return uid ? `${LEGACY_STORAGE_KEY}_${uid}` : LEGACY_STORAGE_KEY;
+};
+
+export async function readTestsRaw(): Promise<string | null> {
+  const key = getTestsStorageKey();
+  const raw = await AsyncStorage.getItem(key);
+  if (raw != null) return raw;
+  if (key !== LEGACY_STORAGE_KEY) return AsyncStorage.getItem(LEGACY_STORAGE_KEY);
+  return null;
+}
 
 export function useTestsStorage() {
   const [entries, setEntries] = useState<TestEntry[]>([]);
@@ -13,7 +27,16 @@ export function useTestsStorage() {
   useEffect(() => {
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        const key = getTestsStorageKey();
+        let raw = await AsyncStorage.getItem(key);
+        if (raw == null && key !== LEGACY_STORAGE_KEY) {
+          const legacy = await AsyncStorage.getItem(LEGACY_STORAGE_KEY);
+          if (legacy != null) {
+            await AsyncStorage.setItem(key, legacy);
+            await AsyncStorage.removeItem(LEGACY_STORAGE_KEY);
+            raw = legacy;
+          }
+        }
         if (raw) {
           const parsed = JSON.parse(raw) as TestEntry[];
           const normalized = Array.isArray(parsed)
@@ -45,7 +68,7 @@ export function useTestsStorage() {
 
   const persistEntries = async (next: TestEntry[]) => {
     setEntries(next);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    await AsyncStorage.setItem(getTestsStorageKey(), JSON.stringify(next));
   };
 
   return { entries, persistEntries };

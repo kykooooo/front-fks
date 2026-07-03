@@ -1,8 +1,12 @@
 import React from "react";
 import { View, Text, TouchableOpacity, FlatList } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import { palette } from "../theme";
 import type { Exercise, Session } from "../../../domain/types";
 import { toDateKey } from "../../../utils/dateHelpers";
+import { frIntensity } from "../../../utils/frLabels";
+import { useSessionsStore } from "../../../state/stores/useSessionsStore";
+import { useNavGuard } from "../../../hooks/useNavGuard";
 
 type Props = {
   current: Session;
@@ -27,6 +31,23 @@ export function CurrentSessionCard({
   onAdvanceDay,
   onRestTwoDays,
 }: Props) {
+  const nav = useNavigation<any>();
+  const guardNav = useNavGuard();
+  const lastAiSessionV2 = useSessionsStore((s) => s.lastAiSessionV2);
+  // S22 — v2 de la séance en cours (même source que usePrimaryCta) pour
+  // pouvoir la rouvrir en preview, pas seulement donner le feedback.
+  const pendingV2 = current.aiV2 ?? current.ai ?? lastAiSessionV2?.v2 ?? null;
+  const openSession = () => {
+    if (!pendingV2) return;
+    guardNav(() =>
+      nav.navigate("SessionPreview", {
+        v2: pendingV2,
+        plannedDateISO: toDateKey(current.dateISO ?? current.date),
+        sessionId: current.id,
+      })
+    );
+  };
+
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>Séance déjà générée</Text>
@@ -35,7 +56,7 @@ export function CurrentSessionCard({
       </Text>
 
       <Text style={styles.meta}>
-        {phaseLabel ? `Phase : ${phaseLabel} · ` : ""}Intensité : {current.intensity} · Volume : {current.volumeScore}
+        {phaseLabel ? `Phase : ${phaseLabel} · ` : ""}Intensité : {frIntensity(current.intensity) || "—"} · Volume : {current.volumeScore}
       </Text>
       {phaseLabel && phaseMeaning ? (
         <Text style={styles.phaseMeaning}>{phaseMeaning}</Text>
@@ -67,6 +88,14 @@ export function CurrentSessionCard({
           <Text style={styles.ctaPrimaryText}>Donner mon feedback</Text>
         </TouchableOpacity>
       </View>
+
+      {pendingV2 ? (
+        <View style={[styles.buttonRow, { marginTop: 10 }]}>
+          <TouchableOpacity style={[styles.cta, styles.ctaSecondaryGreen]} onPress={openSession}>
+            <Text style={styles.ctaSecondaryGreenText}>Voir la séance</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       <View style={[styles.buttonRow, { marginTop: 10 }]}>
         <TouchableOpacity style={[styles.cta, styles.ctaSecondaryGreen]} onPress={onAdvanceDay}>

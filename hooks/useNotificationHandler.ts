@@ -18,6 +18,16 @@ function navigateFromPayload(data: Record<string, unknown> | undefined): void {
   if (!data?.type) return;
   if (!navigationRef.isReady()) return;
 
+  // Guard : si l'utilisateur est déconnecté (Auth stack) ou en espace coach,
+  // les routes joueur n'existent pas dans le navigator racine → no-op.
+  let rootRouteNames: string[] = [];
+  try {
+    rootRouteNames = navigationRef.getRootState()?.routeNames ?? [];
+  } catch {
+    return;
+  }
+  const canNavigate = (routeName: string) => rootRouteNames.includes(routeName);
+
   const type = data.type as NotifType;
 
   switch (type) {
@@ -25,11 +35,11 @@ function navigateFromPayload(data: Record<string, unknown> | undefined): void {
     case "streak_reminder":
     case "match_eve":
       // All these lead to the home dashboard where the user can act
-      navigationRef.navigate("Tabs", { screen: "Home" });
+      if (canNavigate("Tabs")) navigationRef.navigate("Tabs", { screen: "Home" });
       break;
 
     case "weekly_recap":
-      navigationRef.navigate("Progression");
+      if (canNavigate("Progression")) navigationRef.navigate("Progression");
       break;
 
     case "session_planned": {
@@ -37,9 +47,9 @@ function navigateFromPayload(data: Record<string, unknown> | undefined): void {
       const v2 = data.v2 as any;
       const plannedDateISO = (data.plannedDateISO as string) ?? toDateKey(new Date());
       const sessionId = data.sessionId as string | undefined;
-      if (v2) {
+      if (v2 && canNavigate("SessionPreview")) {
         navigationRef.navigate("SessionPreview", { v2, plannedDateISO, sessionId });
-      } else {
+      } else if (canNavigate("Tabs")) {
         navigationRef.navigate("Tabs", { screen: "Home" });
       }
       break;
@@ -47,13 +57,13 @@ function navigateFromPayload(data: Record<string, unknown> | undefined): void {
 
     case "feedback_pending": {
       const sessionId = data.sessionId as string | undefined;
-      navigationRef.navigate("Feedback", { sessionId });
+      if (canNavigate("Feedback")) navigationRef.navigate("Feedback", { sessionId });
       break;
     }
 
     default:
       // Unknown type — go home
-      navigationRef.navigate("Tabs", { screen: "Home" });
+      if (canNavigate("Tabs")) navigationRef.navigate("Tabs", { screen: "Home" });
       break;
   }
 }

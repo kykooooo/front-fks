@@ -22,7 +22,7 @@ export type BlockConfig = {
 };
 
 export const BLOCK_CONFIG: Record<BlockType, BlockConfig> = {
-  warmup:   { icon: 'flame-outline',       label: 'Echauffement',    tint: '#f59e0b', tintSoft: 'rgba(245,158,11,0.10)' },
+  warmup:   { icon: 'flame-outline',       label: 'Échauffement',    tint: '#f59e0b', tintSoft: 'rgba(245,158,11,0.10)' },
   strength: { icon: 'barbell-outline',      label: 'Force',           tint: '#ef4444', tintSoft: 'rgba(239,68,68,0.10)' },
   run:      { icon: 'footsteps-outline',    label: 'Course',          tint: '#2563eb', tintSoft: 'rgba(37,99,235,0.10)' },
   speed:    { icon: 'flash-outline',        label: 'Vitesse',         tint: '#ff7a1a', tintSoft: 'rgba(255,122,26,0.10)' },

@@ -240,7 +240,14 @@ export default function VideoLibraryScreen() {
   useEffect(() => {
     if (!highlightId) return;
     const exercise = EXERCISE_BY_ID[highlightId];
-    if (!exercise) return;
+    if (!exercise) {
+      showToast({
+        type: "warn",
+        title: "Fiche exercice",
+        message: "Exercice introuvable dans la bibliothèque.",
+      });
+      return;
+    }
     setActiveHighlightId(highlightId);
     setQuery(exercise.name);
     setSelectedModalities([exercise.modality]);

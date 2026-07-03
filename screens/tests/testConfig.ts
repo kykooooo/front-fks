@@ -58,6 +58,8 @@ export type FieldConfig = {
   unit: string;
   group: "sauts" | "vitesse" | "endurance" | "force" | "agilite" | "power";
   lowerIsBetter?: boolean;
+  min?: number;
+  max?: number;
   protocol: string;
 };
 
@@ -70,6 +72,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     label: "Saut en longueur (cm)",
     unit: "cm",
     group: "sauts",
+    min: 20,
+    max: 500,
     protocol: "3 essais, meilleur saut. Bras libres, atterrissage stable.",
   },
   {
@@ -77,21 +81,27 @@ export const FIELD_DEFS: FieldConfig[] = [
     label: "Triple bonds (cm)",
     unit: "cm",
     group: "sauts",
-    protocol: "3 essais, prise d elan courte, note le meilleur.",
+    min: 50,
+    max: 1500,
+    protocol: "3 essais, prise d'élan courte, note le meilleur.",
   },
   {
     key: "cmjCm",
     label: "Counter movement jump (cm)",
     unit: "cm",
     group: "power",
+    min: 5,
+    max: 200,
     protocol: "3 essais, mains sur hanches si possible. Note le meilleur.",
   },
   {
     key: "lateralBoundCm",
-    label: "Saut lateral (cm)",
+    label: "Saut latéral (cm)",
     unit: "cm",
     group: "sauts",
-    protocol: "3 essais par cote, note la meilleure distance.",
+    min: 20,
+    max: 400,
+    protocol: "3 essais par côté, note la meilleure distance.",
   },
   {
     key: "sprint10s",
@@ -99,6 +109,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     unit: "s",
     group: "vitesse",
     lowerIsBetter: true,
+    min: 0.5,
+    max: 120,
     protocol: "2-3 essais, repos 2-3 min. Chrono manuel ok.",
   },
   {
@@ -107,7 +119,9 @@ export const FIELD_DEFS: FieldConfig[] = [
     unit: "s",
     group: "vitesse",
     lowerIsBetter: true,
-    protocol: "2 essais, repos 3 min. Depart identique.",
+    min: 0.5,
+    max: 120,
+    protocol: "2 essais, repos 3 min. Départ identique.",
   },
   {
     key: "sprint30s",
@@ -115,7 +129,9 @@ export const FIELD_DEFS: FieldConfig[] = [
     unit: "s",
     group: "vitesse",
     lowerIsBetter: true,
-    protocol: "2 essais, repos 3-4 min. Qualite max.",
+    min: 0.5,
+    max: 120,
+    protocol: "2 essais, repos 3-4 min. Qualité max.",
   },
   {
     key: "tTest_s",
@@ -123,6 +139,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     unit: "s",
     group: "agilite",
     lowerIsBetter: true,
+    min: 0.5,
+    max: 120,
     protocol: "2 essais, repos 3 min. Technique propre.",
   },
   {
@@ -131,13 +149,17 @@ export const FIELD_DEFS: FieldConfig[] = [
     unit: "s",
     group: "agilite",
     lowerIsBetter: true,
-    protocol: "2 essais par cote, repos 2-3 min.",
+    min: 0.5,
+    max: 120,
+    protocol: "2 essais par côté, repos 2-3 min.",
   },
   {
     key: "endurance6min_m",
     label: "Endurance 6 min (m)",
     unit: "m",
     group: "endurance",
+    min: 100,
+    max: 3000,
     protocol: "Distance totale en 6 min. Allure stable.",
   },
   {
@@ -145,6 +167,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     label: "Yo-Yo IR1 (m)",
     unit: "m",
     group: "endurance",
+    min: 40,
+    max: 5000,
     protocol: "Protocole Yo-Yo IR1, note la distance totale.",
   },
   {
@@ -153,6 +177,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     unit: "s",
     group: "endurance",
     lowerIsBetter: true,
+    min: 90,
+    max: 3600,
     protocol: "1 km chrono, allure continue. Note le temps.",
   },
   {
@@ -160,6 +186,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     label: "Goblet squat charge (kg)",
     unit: "kg",
     group: "force",
+    min: 1,
+    max: 150,
     protocol: "Charge pour 8-10 reps propres.",
   },
   {
@@ -167,13 +195,17 @@ export const FIELD_DEFS: FieldConfig[] = [
     label: "Goblet squat reps",
     unit: "",
     group: "force",
-    protocol: "Reps avec la charge choisie, tempo controle.",
+    min: 1,
+    max: 100,
+    protocol: "Reps avec la charge choisie, tempo contrôlé.",
   },
   {
     key: "splitKg",
     label: "Split squat charge (kg)",
     unit: "kg",
     group: "force",
+    min: 1,
+    max: 200,
     protocol: "Charge pour 6-8 reps / jambe, amplitude propre.",
   },
   {
@@ -181,6 +213,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     label: "Split squat reps",
     unit: "",
     group: "force",
+    min: 1,
+    max: 100,
     protocol: "Reps par jambe avec la charge choisie.",
   },
   {
@@ -188,7 +222,9 @@ export const FIELD_DEFS: FieldConfig[] = [
     label: "Trap bar 3RM (kg)",
     unit: "kg",
     group: "force",
-    protocol: "Monte en 3-4 series, 3RM propre, pas d echec.",
+    min: 10,
+    max: 400,
+    protocol: "Monte en 3-4 séries, 3RM propre, pas d'échec.",
   },
 ];
 
@@ -231,34 +267,34 @@ export const PLAYLIST_FIELDS: Record<PlaylistId, FieldKey[]> = {
 
 export const PLAYLIST_PLAN: Record<PlaylistId, string[]> = {
   fondation: [
-    "Echauffement structure (mobilite + activation + lignes droites)",
+    "Échauffement structuré (mobilité + activation + lignes droites)",
     "Sauts : broad jump",
     "Vitesse : 10-20 m",
     "Pause 5-8 min (hydratation)",
     "Endurance : 6 min",
-    "Force repere : goblet squat ou split squat",
+    "Force repère : goblet squat ou split squat",
   ],
   force: [
-    "Echauffement force (mobilite + activation)",
+    "Échauffement force (mobilité + activation)",
     "Test principal : trap bar 3RM (ou charge lourde 3-5 reps)",
     "Repos 6-8 min",
-    "Test secondaire : goblet/split squat (qualite technique)",
+    "Test secondaire : goblet/split squat (qualité technique)",
   ],
   explosivite: [
-    "Echauffement nerveux : gammes + 3 lignes droites",
+    "Échauffement nerveux : gammes + 3 lignes droites",
     "Sauts : CMJ + broad jump",
-    "Vitesse : 10-30 m (qualite max)",
+    "Vitesse : 10-30 m (qualité max)",
     "Pause 6-8 min",
     "Force/power : trap bar 3RM (ou charge lourde 3-5 reps)",
   ],
   endurance: [
-    "Echauffement progressif 10-12 min",
+    "Échauffement progressif 10-12 min",
     "Test principal : Yo-Yo IR1 ou 6 min",
-    "Recuperation 6-8 min",
+    "Récupération 6-8 min",
     "Test secondaire : 1 km (temps)",
   ],
   saison: [
-    "Echauffement progressif 8-10 min",
+    "Échauffement progressif 8-10 min",
     "Test endurance : 6 min ou Yo-Yo IR1",
     "Pause 5-6 min",
     "Test vitesse : 10 m",
