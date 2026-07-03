@@ -7,6 +7,10 @@ export type FKS_TimerPreset = {
 
 export type FKS_BlockItem = {
   exerciseId?: string | null;
+  /** Ancien ID V1 explicite fourni par le backend (contrat sessionSchema :
+   *  `legacy_exercise_id` → snakeToCamel). Conservé même sans affichage. */
+  legacyExerciseId?: string | null;
+  variantId?: string | null;
   id?: string | null;
   name: string;
   description?: string | null;
@@ -15,6 +19,15 @@ export type FKS_BlockItem = {
   reps?: number | null;
   workS?: number | null;
   restS?: number | null;
+  distanceM?: number | null;
+  contacts?: number | null;
+  rounds?: number | null;
+  signalConfig?: {
+    mode: "voice_direction" | "color_gate";
+    cues: string[];
+    minDelayMs: number;
+    maxDelayMs: number;
+  } | null;
   workRest?: string | null;
   workRestSec?: number[] | null;
   durationMin?: number | null;
@@ -44,6 +57,7 @@ export type FKS_Block = {
 
 export type FKS_NextSessionV2 = {
   version: string;
+  catalogVersion?: string | null;
   title: string;
   subtitle?: string | null;
   intensity: string;

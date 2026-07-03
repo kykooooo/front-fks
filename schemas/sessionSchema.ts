@@ -13,6 +13,8 @@ const timerPresetSchema = z.object({
 
 const blockItemSchema = z.object({
   exercise_id: z.string().nullable().optional().catch(null),
+  legacy_exercise_id: z.string().nullable().optional().catch(null),
+  variant_id: z.string().nullable().optional().catch(null),
   name: z.string().catch("Exercice"),
   description: z.string().nullable().optional().catch(null),
   football_context: z.string().nullable().optional().catch(null),
@@ -20,6 +22,15 @@ const blockItemSchema = z.object({
   reps: z.number().nullable().optional().catch(null),
   work_s: z.number().nullable().optional().catch(null),
   rest_s: z.number().nullable().optional().catch(null),
+  distance_m: z.number().nullable().optional().catch(null),
+  contacts: z.number().nullable().optional().catch(null),
+  rounds: z.number().nullable().optional().catch(null),
+  signal_config: z.object({
+    mode: z.enum(["voice_direction", "color_gate"]),
+    cues: z.array(z.string()),
+    min_delay_ms: z.number().min(500),
+    max_delay_ms: z.number().min(500),
+  }).nullable().optional().catch(null),
   notes: z.string().nullable().optional().catch(null),
 });
 
@@ -60,6 +71,7 @@ const resetVariantSchema = z.object({
 
 export const sessionV2Schema = z.object({
   version: z.string().catch("v2"),
+  catalog_version: z.string().nullable().optional().catch(null),
   title: z.string().catch("Séance"),
   subtitle: z.string().nullable().optional().catch(null),
   intensity: z.string().catch("moderate"),

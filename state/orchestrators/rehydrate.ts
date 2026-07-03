@@ -38,13 +38,17 @@ export function onStoreHydrated(): void {
 
 // Safety timeout: if stores don't all hydrate within 10s, force storeHydrated=true
 // so the app doesn't stay stuck on the loading spinner forever.
-setTimeout(() => {
+const _safetyTimer = setTimeout(() => {
   if (!_rehydrateOnce && _hydrationCount < TOTAL_STORES) {
     if (__DEV__) console.warn(`[rehydrate] safety timeout: only ${_hydrationCount}/${TOTAL_STORES} stores hydrated`);
     useSyncStore.setState({ storeHydrated: true, _rehydrating: false });
     _rehydrateOnce = true;
   }
 }, 10_000);
+// Sous Node (Jest), ce timer de module gardait l'event loop vivant (open handle,
+// « Force exiting Jest »). unref() le détache du cycle de vie du process ;
+// en React Native le handle n'a pas de unref → no-op, comportement app inchangé.
+(_safetyTimer as unknown as { unref?: () => void }).unref?.();
 
 // ---------------------------------------------------------------------------
 // Core rehydration logic

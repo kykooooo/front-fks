@@ -1,4 +1,5 @@
 import { EXERCISE_BANK } from "../../engine/exerciseBank";
+import { resolveExerciseCatalogId } from "../../services/exerciseCatalog";
 import type { Exercise, Session } from "../../domain/types";
 import { modalityFromBlockType, normalizeFocus, prettifyName, toPlannedIntensity } from "./helpers";
 import type { FKS_Block, FKS_NextSessionV2 } from "./types";
@@ -122,7 +123,25 @@ export function v2ToLocalSession(
             item.id ??
             null;
 
-          let exerciseId = rawExerciseId ? String(rawExerciseId) : null;
+          // Résolution canonique gérée par le flag (resolveExerciseCatalogId
+          // retourne l'ID brut quand FKS_CATALOG_V2 est OFF).
+          const resolvedId = rawExerciseId
+            ? resolveExerciseCatalogId(String(rawExerciseId))
+            : null;
+          // Ancien ID V1 : l'explicite backend (legacy_exercise_id) prime
+          // toujours ; sinon, si la résolution d'alias a changé l'ID, l'ID brut
+          // est conservé automatiquement comme legacyId. Jamais écrasé.
+          const explicitLegacyId =
+            typeof item.legacyExerciseId === "string" && item.legacyExerciseId
+              ? item.legacyExerciseId
+              : undefined;
+          const inferredLegacyId =
+            rawExerciseId && resolvedId && String(rawExerciseId) !== resolvedId
+              ? String(rawExerciseId)
+              : undefined;
+          const legacyId = explicitLegacyId ?? inferredLegacyId;
+
+          let exerciseId = resolvedId;
           if (exerciseId && seenExerciseIds.has(exerciseId)) {
             const fallback = pickFallbackExercise(modality);
             if (fallback) {
@@ -137,6 +156,8 @@ export function v2ToLocalSession(
 
           return {
             id: exerciseId ?? `${block.id || blockType || "block"}_${blockIdx}_${i}`,
+            legacyId,
+            variantId: item.variantId ?? undefined,
             name: friendlyName,
             modality,
             intensity: blockIntensity as Exercise["intensity"],
@@ -150,6 +171,18 @@ export function v2ToLocalSession(
               typeof item.restS === "number" && Number.isFinite(item.restS)
                 ? item.restS
                 : parsedRest,
+            distanceM:
+              typeof item.distanceM === "number" && Number.isFinite(item.distanceM)
+                ? item.distanceM
+                : undefined,
+            contacts:
+              typeof item.contacts === "number" && Number.isFinite(item.contacts)
+                ? item.contacts
+                : undefined,
+            rounds:
+              typeof item.rounds === "number" && Number.isFinite(item.rounds)
+                ? item.rounds
+                : undefined,
             notes: item.notes ?? undefined,
           } as Exercise;
         }).filter(Boolean) as Exercise[];

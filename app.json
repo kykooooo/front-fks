@@ -37,6 +37,8 @@
     "extra": {
       "SENTRY_DSN": "",
       "AMPLITUDE_API_KEY": "",
+      "FKS_CATALOG_V2": false,
+      "FKS_SIGNAL_V1": false,
       "eas": {
         "projectId": "607ef5fa-ce96-4c07-9643-b79885aa28a3"
       }

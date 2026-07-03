@@ -1,36 +1,18 @@
 import { getAuth } from "firebase/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BACKEND_URL, backendAuthHeaders } from "../../config/backend";
-import { BACKEND_EXERCISE_IDS } from "../../engine/backendExerciseIds";
-import { EXERCISE_BY_ID } from "../../engine/exerciseBank";
 import type { FKS_NextSessionV2 } from "./types";
 import { safeFetch, BackendError } from "../../utils/errorHandler";
 import { sessionV2Schema } from "../../schemas/sessionSchema";
 import { snakeToCamel } from "../../utils/caseTransform";
-
-// TODO: Backend optimization — envoyer uniquement les IDs d'exercices au lieu des objets
-// complets (~20 KB économisés par requête). Nécessite que le backend maintienne sa propre
-// banque d'exercices côté serveur. Actuellement le backend dépend des données complètes
-// envoyées par le client pour le matching des token pools.
-export const buildAllowedExercisesPayload = () =>
-  BACKEND_EXERCISE_IDS.map((id) => EXERCISE_BY_ID[id])
-    .filter(Boolean)
-    .map((ex) => ({
-      id: ex.id,
-      name: ex.name,
-      modality: ex.modality,
-      description: ex.description,
-      equipment: [],
-      intensity: ex.intensity,
-      tags: ex.tags,
-    }));
+import { reconcileCatalogVersion } from "../../services/exerciseCatalog";
 
 /* ─── Session cache ─── */
 const SESSION_CACHE_KEY = "fks_session_cache_v1";
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 function hashContext(context: Record<string, unknown>): string {
-  // Exclure allowed_exercises (toujours identique ~20KB) et flags debug du hash
+  // Tolérance de lecture pour les anciennes entrées de cache.
   const { allowed_exercises, debug, debug_allow_all_exercises, ...rest } = context;
   const str = JSON.stringify(rest);
   let h = 5381;
@@ -96,10 +78,6 @@ export async function clearSessionCache(): Promise<void> {
 
 import type { FKS_AiContext } from "../../services/aiContext";
 
-// The backend context is a superset of FKS_AiContext with extra fields
-// Use Record<string, unknown> intersection for the extra backend-specific fields
-type BackendCtx = FKS_AiContext & Record<string, unknown>;
-
 export function prepareBackendContext(
   ctx: FKS_AiContext,
   selectedEquipment: string[],
@@ -153,10 +131,10 @@ export function prepareBackendContext(
       venue,
       equipment: normalizedEquipment,
       pains: ctx.constraints?.pains ?? [],
+      participants_available: 1,
       ...(typeof availableTimeMin === "number" ? { available_time_min: availableTimeMin } : {}),
     },
-    // aide au debug backend : pools non vides + logs [FKS][token_pools]
-    allowed_exercises: buildAllowedExercisesPayload(),
+    participants_available: 1,
     debug: true,
     debug_allow_all_exercises: false,
   };
@@ -222,5 +200,8 @@ export async function fetchV2(
   }
 
   const v2 = snakeToCamel<FKS_NextSessionV2>(parsed.data);
+  // Si la séance annonce une version de catalogue différente, on rafraîchit le
+  // catalogue en arrière-plan — sans bloquer l'affichage de la séance.
+  reconcileCatalogVersion(v2.catalogVersion);
   return { v2, debug: data };
 }

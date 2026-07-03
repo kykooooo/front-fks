@@ -82,12 +82,20 @@ export function toRating0to5(n: number): Rating0to5 {
 
 export type Exercise = {
   id: string;
+  /** Ancien ID V1 (explicite backend via legacy_exercise_id, ou déduit lors
+   *  d'une résolution d'alias V2). Survit dans la Session persistée même s'il
+   *  n'est pas encore affiché. */
+  legacyId?: string;
+  variantId?: string;
   name: string;
   modality: Modality;
   sets?: number;
   reps?: number;
   durationSec?: number; // pour run structuré / circuits
   restSec?: number;
+  distanceM?: number;
+  contacts?: number;
+  rounds?: number;
   intensity?: Intensity;
   notes?: string;
 };

@@ -1,8 +1,21 @@
 import { EXERCISE_BY_ID } from "./exerciseBank";
+import {
+  getExerciseCatalogSnapshot,
+  resolveExerciseCatalogId,
+} from "../services/exerciseCatalog";
 
 export type ExerciseVideoRef =
-  | { kind: "vetted"; url: string; label: string }
+  | { kind: "fks_hosted"; url: string; label: string }
+  | { kind: "vetted"; url: string; label: string; alternative?: boolean }
   | { kind: "search"; url: string; query: string };
+
+/**
+ * Vidéo « directe » = démonstration réelle de CET exercice (FKS ou source vérifiée
+ * directe). Une recherche YouTube ou une vidéo empruntée à une variante ne comptent
+ * pas : elles ne doivent pas afficher le badge « Vidéo ».
+ */
+export const isDirectVideo = (ref: ExerciseVideoRef): boolean =>
+  ref.kind === "fks_hosted" || (ref.kind === "vetted" && !ref.alternative);
 
 const ytSearch = (query: string) =>
   `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
@@ -442,6 +455,25 @@ addSearch(VETTED_BY_ID, "mob_walking_spiderman", "walking spiderman lunge mobili
 
 // Returns either a vetted URL or a clean YouTube search link.
 export const getExerciseVideoRef = (exerciseId: string): ExerciseVideoRef => {
+  const catalog = getExerciseCatalogSnapshot();
+  const canonicalId = resolveExerciseCatalogId(exerciseId);
+  const catalogExercise = catalog.exercises.find((entry) => entry.id === canonicalId);
+  const catalogVideo = catalogExercise?.media.video;
+  if (catalogVideo?.kind === "fks_hosted") {
+    return {
+      kind: "fks_hosted",
+      url: catalogVideo.url,
+      label: "Vidéo officielle FKS",
+    };
+  }
+  if (catalogVideo?.kind === "external_vetted") {
+    return {
+      kind: "vetted",
+      url: catalogVideo.url,
+      label: catalogVideo.label,
+    };
+  }
+
   const vetted = VETTED_BY_ID[exerciseId];
   if (vetted) return vetted;
 
@@ -454,6 +486,7 @@ export const getExerciseVideoRef = (exerciseId: string): ExerciseVideoRef => {
     const originalName = ex?.name ?? exerciseId;
     return {
       kind: "vetted",
+      alternative: true,
       url: v.url,
       label: `Alternative (${variantName}) pour ${originalName} — ${v.label}`,
     };

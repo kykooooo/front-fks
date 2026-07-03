@@ -15,7 +15,14 @@ export type EquipmentKey =
   | "bench"
   | "trx"
   | "bike"
-  | "rower";
+  | "rower"
+  | "cones"
+  | "hurdles"
+  | "sled"
+  | "sliders"
+  | "medicine_ball"
+  | "football"
+  | "smartphone";
 
 export const MODALITY_LABELS: Record<BankModality, string> = {
   run: "Course",
@@ -30,7 +37,7 @@ export const MODALITY_LABELS: Record<BankModality, string> = {
 export const MODALITY_DESCRIPTIONS: Record<BankModality, string> = {
   run: "Endurance, tempo, vitesse.",
   circuit: "Full body, cardio + force.",
-  strength: "Force et prévention.",
+  strength: "Force utile et contrôle.",
   plyo: "Explosivité et appuis.",
   cod: "Agilité et changements.",
   core: "Gainage et stabilité.",
@@ -97,11 +104,19 @@ export const EQUIPMENT_LABELS: Record<EquipmentKey, string> = {
   trx: "TRX",
   bike: "Vélo",
   rower: "Rameur",
+  cones: "Plots",
+  hurdles: "Mini-haies",
+  sled: "Traîneau",
+  sliders: "Sliders",
+  medicine_ball: "Medball",
+  football: "Ballon",
+  smartphone: "Téléphone",
 };
 
 export const EQUIPMENT_ORDER: EquipmentKey[] = [
   "bodyweight", "dumbbell", "barbell", "kettlebell", "band",
   "machine", "box", "bench", "trx", "bike", "rower",
+  "cones", "hurdles", "sled", "sliders", "medicine_ball", "football", "smartphone",
 ];
 
 export const MODALITY_ORDER: BankModality[] = [
@@ -124,6 +139,43 @@ export const intensityTone = (intensity: BankIntensity) => {
 };
 
 export const inferEquipment = (item: ExerciseDef): EquipmentKey[] => {
+  const catalogEquipment = (item as ExerciseDef & {
+    catalog?: { equipment?: string[] };
+  }).catalog?.equipment;
+  if (Array.isArray(catalogEquipment)) {
+    const explicitMap: Record<string, EquipmentKey> = {
+      bodyweight: "bodyweight",
+      dumbbell: "dumbbell",
+      dumbbells: "dumbbell",
+      home_dumbbells: "dumbbell",
+      barbell: "barbell",
+      band: "band",
+      elastic_band: "band",
+      machine: "machine",
+      kettlebell: "kettlebell",
+      box: "box",
+      box_plyo: "box",
+      bench: "bench",
+      trx: "trx",
+      bike: "bike",
+      rower: "rower",
+      cones: "cones",
+      mini_hurdles: "hurdles",
+      hurdles: "hurdles",
+      sled: "sled",
+      sliders: "sliders",
+      medball: "medicine_ball",
+      football: "football",
+      smartphone: "smartphone",
+    };
+    return Array.from(
+      new Set(
+        catalogEquipment
+          .map((equipment) => explicitMap[equipment])
+          .filter(Boolean)
+      )
+    );
+  }
   const id = item.id.toLowerCase();
   const equip = new Set<EquipmentKey>();
   if (id.includes("db_") || id.includes("_db")) equip.add("dumbbell");

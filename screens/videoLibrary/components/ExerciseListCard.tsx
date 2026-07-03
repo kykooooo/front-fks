@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
-import { getExerciseVideoRef } from "../../../engine/exerciseVideos";
+import { getExerciseVideoRef, isDirectVideo } from "../../../engine/exerciseVideos";
 import type { ExerciseDef } from "../../../engine/exerciseBank";
 import {
   MODALITY_CONFIG,
@@ -35,7 +35,9 @@ export const ExerciseListCard = React.memo(function ExerciseListCard({
   onOpenVideo,
 }: Props) {
   const config = MODALITY_CONFIG[item.modality];
-  const hasVettedVideo = getExerciseVideoRef(item.id).kind === "vetted";
+  const videoRef = getExerciseVideoRef(item.id);
+  // Badge « Vidéo » uniquement pour une démo directe (ni recherche, ni alternative).
+  const hasDirectVideo = isDirectVideo(videoRef);
 
   return (
     <Card
@@ -61,7 +63,7 @@ export const ExerciseListCard = React.memo(function ExerciseListCard({
         </TouchableOpacity>
 
         <View style={styles.exerciseFooter}>
-          {hasVettedVideo ? (
+          {hasDirectVideo ? (
             <View style={styles.videoPill}>
               <Ionicons name="videocam" size={11} color={palette.accent} />
               <Text style={styles.videoPillText}>Vidéo</Text>
@@ -88,7 +90,11 @@ export const ExerciseListCard = React.memo(function ExerciseListCard({
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={styles.iconButton}
             >
-              <Ionicons name="logo-youtube" size={15} color={palette.sub} />
+              <Ionicons
+                name={videoRef.kind === "fks_hosted" ? "videocam" : "logo-youtube"}
+                size={15}
+                color={palette.sub}
+              />
             </TouchableOpacity>
           </View>
         </View>

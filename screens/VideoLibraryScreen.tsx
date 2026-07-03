@@ -27,15 +27,26 @@ import {
   type BankIntensity,
 } from "../engine/exerciseBank";
 import { EXERCISE_INSTRUCTIONS } from "../engine/exerciseInstructions";
-import { getExerciseVideoRef } from "../engine/exerciseVideos";
-import { YouTubePlayer } from "../components/ui/YouTubePlayer";
+import {
+  getExerciseVideoRef,
+  type ExerciseVideoRef,
+} from "../engine/exerciseVideos";
+import {
+  isCatalogExerciseView,
+  selectVisibleBank,
+} from "../engine/exerciseCatalogV2";
+import { ExerciseVideoPlayer } from "../components/ui/ExerciseVideoPlayer";
+import { FKS_CATALOG_V2_ENABLED } from "../config/features";
+import {
+  hydrateExerciseCatalog,
+  useExerciseCatalog,
+} from "../services/exerciseCatalog";
 
 import {
   MODALITY_LABELS,
   MODALITY_DESCRIPTIONS,
   MODALITY_CONFIG,
   MODALITY_ORDER,
-  isBallExercise,
   inferEquipment,
   type CategoryView,
   type SortMode,
@@ -68,6 +79,7 @@ export default function VideoLibraryScreen() {
   const [sortMode, setSortMode] = useState<SortMode>("favorites");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [detailExerciseId, setDetailExerciseId] = useState<string | null>(null);
+  const catalog = useExerciseCatalog();
   const favoriteExerciseIds = useExternalStore((s) => s.favoriteExerciseIds ?? []);
   const recentExerciseIds = useExternalStore((s) => s.recentExerciseIds ?? []);
   const toggleFavoriteExercise = useExternalStore((s) => s.toggleFavoriteExercise);
@@ -84,9 +96,24 @@ export default function VideoLibraryScreen() {
     ]).start();
   }, []);
 
+  useEffect(() => {
+    if (FKS_CATALOG_V2_ENABLED) void hydrateExerciseCatalog();
+  }, []);
+
   const normalizedQuery = query.trim().toLowerCase();
   const favoriteSet = useMemo(() => new Set(favoriteExerciseIds), [favoriteExerciseIds]);
-  const visibleBank = useMemo(() => EXERCISE_BANK.filter((item) => !isBallExercise(item)), []);
+  // Le rendu V2 n'est actif QUE si le flag est ON et que le catalogue contient au
+  // moins une fiche publiée. Sinon on garde strictement la bibliothèque V1 (jamais
+  // de bibliothèque vide) — cf. requirement "catalogue vide → V1 conservée".
+  useEffect(() => {
+    if (__DEV__ && FKS_CATALOG_V2_ENABLED && catalog.exercises.length === 0) {
+      console.warn("catalog_v2_not_ready");
+    }
+  }, [catalog.exercises.length]);
+  const visibleBank = useMemo(
+    () => selectVisibleBank(FKS_CATALOG_V2_ENABLED, catalog.exercises, EXERCISE_BANK),
+    [catalog]
+  );
   const recentRank = useMemo(() => {
     const map = new Map<string, number>();
     recentExerciseIds.forEach((id, idx) => map.set(id, idx));
@@ -105,10 +132,19 @@ export default function VideoLibraryScreen() {
   const filtered = useMemo(() => {
     return visibleBank.filter((item) => {
       const instruction = EXERCISE_INSTRUCTIONS[item.id];
-      const instructionText = instruction
-        ? `${instruction.howTo} ${instruction.cues.join(" ")}`.toLowerCase()
-        : "";
-      const hasVideo = getExerciseVideoRef(item.id).kind === "vetted";
+      const catalogItem = isCatalogExerciseView(item) ? item.catalog : null;
+      const instructionText = catalogItem
+        ? [
+            ...catalogItem.setup.instructions,
+            ...catalogItem.execution.steps,
+            ...catalogItem.execution.cues,
+          ]
+            .join(" ")
+            .toLowerCase()
+        : instruction
+          ? `${instruction.howTo} ${instruction.cues.join(" ")}`.toLowerCase()
+          : "";
+      const hasVideo = getExerciseVideoRef(item.id).kind !== "search";
       const matchesQuery =
         !normalizedQuery ||
         item.name.toLowerCase().includes(normalizedQuery) ||
@@ -190,15 +226,15 @@ export default function VideoLibraryScreen() {
 
   const closeDetail = () => setDetailExerciseId(null);
 
-  const [videoPlayerUrl, setVideoPlayerUrl] = useState<string | null>(null);
+  const [videoPlayerRef, setVideoPlayerRef] = useState<ExerciseVideoRef | null>(null);
   const [videoPlayerLabel, setVideoPlayerLabel] = useState<string>("");
 
   const openVideoRef = useCallback((exerciseId: string) => {
     const ref = getExerciseVideoRef(exerciseId);
-    const ex = EXERCISE_BY_ID[exerciseId];
+    const ex = visibleBank.find((item) => item.id === exerciseId) ?? EXERCISE_BY_ID[exerciseId];
     setVideoPlayerLabel(ex?.name ?? "Vidéo exercice");
-    setVideoPlayerUrl(ref.url);
-  }, []);
+    setVideoPlayerRef(ref);
+  }, [visibleBank]);
 
   const resetFilters = () => {
     setQuery("");
@@ -239,7 +275,8 @@ export default function VideoLibraryScreen() {
 
   useEffect(() => {
     if (!highlightId) return;
-    const exercise = EXERCISE_BY_ID[highlightId];
+    const exercise =
+      visibleBank.find((item) => item.id === highlightId) ?? EXERCISE_BY_ID[highlightId];
     if (!exercise) return;
     setActiveHighlightId(highlightId);
     setQuery(exercise.name);
@@ -250,7 +287,7 @@ export default function VideoLibraryScreen() {
     setSelectedEquipment([]);
     addRecentExercise(highlightId);
     setDetailExerciseId(highlightId);
-  }, [highlightId]);
+  }, [highlightId, visibleBank]);
 
   useEffect(() => {
     if (!startInFavorites || highlightId) return;
@@ -313,7 +350,7 @@ export default function VideoLibraryScreen() {
     isFavorite: (id: string) => favoriteSet.has(id),
     onOpenVideo: (id: string) => openVideoRef(id),
     onOpenVariant: (id: string) => {
-      const ex = EXERCISE_BY_ID[id];
+      const ex = visibleBank.find((item) => item.id === id) ?? EXERCISE_BY_ID[id];
       if (!ex) return;
       setDetailExerciseId(id);
       setActiveHighlightId(id);
@@ -397,11 +434,11 @@ export default function VideoLibraryScreen() {
           </View>
         </ScrollView>
         <ExerciseDetailModal {...detailModalProps} />
-        <YouTubePlayer
-          visible={videoPlayerUrl !== null}
-          url={videoPlayerUrl}
+        <ExerciseVideoPlayer
+          visible={videoPlayerRef !== null}
+          videoRef={videoPlayerRef}
           label={videoPlayerLabel}
-          onClose={() => setVideoPlayerUrl(null)}
+          onClose={() => setVideoPlayerRef(null)}
         />
       </SafeAreaView>
     );
@@ -506,11 +543,11 @@ export default function VideoLibraryScreen() {
         showsVerticalScrollIndicator={false}
       />
       <ExerciseDetailModal {...detailModalProps} />
-      <YouTubePlayer
-        visible={videoPlayerUrl !== null}
-        url={videoPlayerUrl}
+      <ExerciseVideoPlayer
+        visible={videoPlayerRef !== null}
+        videoRef={videoPlayerRef}
         label={videoPlayerLabel}
-        onClose={() => setVideoPlayerUrl(null)}
+        onClose={() => setVideoPlayerRef(null)}
       />
     </SafeAreaView>
   );
