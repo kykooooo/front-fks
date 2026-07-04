@@ -25,7 +25,8 @@ import { db } from "../services/firebase";
 import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { LoadingOverlay } from "../components/ui/LoadingOverlay";
 import { findClubByInviteCode, normalizeInviteCode, setClubMembership } from "../repositories/clubsRepo";
-import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
+import { MICROCYCLES, isMicrocycleId } from "../domain/microcycles";
+import { recommendMicrocycle } from "../domain/recommendMicrocycle";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { showToast } from "../utils/toast";
 import { runShake } from "../utils/animations";
@@ -33,40 +34,38 @@ import { useAppModeStore } from "../state/appModeStore";
 import { theme } from "../constants/theme";
 import { AuthBackground, AUTH_IMAGES } from "../components/auth/AuthBackground";
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 3;
 const palette = theme.colors;
 
 /* ─── Steps config ─── */
 const STEPS: { label: string; icon: keyof typeof Ionicons.glyphMap; subtitle: string }[] = [
-  { label: "Identite", icon: "person-outline", subtitle: "Dis-nous qui tu es" },
-  { label: "Objectif", icon: "flag-outline", subtitle: "Quel est ton but ?" },
-  { label: "Club", icon: "people-outline", subtitle: "Tes entraînements & matchs" },
-  { label: "Salle", icon: "barbell-outline", subtitle: "Ton acces salle" },
-  { label: "Materiel", icon: "home-outline", subtitle: "Ton equipement hors salle" },
+  { label: "Ton profil", icon: "person-outline", subtitle: "Dis-nous qui tu es" },
+  { label: "Tes entraînements", icon: "people-outline", subtitle: "Tes entraînements & matchs" },
+  { label: "Ton matériel", icon: "barbell-outline", subtitle: "Ton équipement" },
 ];
 
 /* ─── Constants ─── */
-const positions = ["Gardien", "Defenseur", "Milieu", "Attaquant"] as const;
-const levels = ["Amateur", "Regional", "National", "Semi-pro", "Pro"] as const;
+const positions = ["Gardien", "Défenseur", "Milieu", "Attaquant"] as const;
+const levels = ["Amateur", "Régional", "National", "Semi-pro", "Pro"] as const;
 const dominantFeet = ["Pied droit", "Pied gauche", "Ambidextre"] as const;
 const objectives = [
-  "Etre en forme toute la saison",
-  "Gagner en vitesse / explosivite",
+  "Être en forme toute la saison",
+  "Gagner en vitesse / explosivité",
   "Mieux encaisser les entraînements et les matchs",
-  "Reprendre apres une blessure",
+  "Reprendre après une blessure",
 ] as const;
 const fksSessionsOptions = ["1", "2", "3", "4"] as const;
 
 const gymEquipmentOptions = [
   { id: "barbell", label: "Barre + poids libres" },
-  { id: "squat_rack", label: "Rack a squat" },
+  { id: "squat_rack", label: "Rack à squat" },
   { id: "bench", label: "Banc de musculation" },
-  { id: "dumbbells_light", label: "Halteres legers (≤ 10 kg)" },
-  { id: "dumbbells_medium", label: "Halteres moyens (10-25 kg)" },
-  { id: "dumbbells_heavy", label: "Halteres lourds (≥ 25 kg)" },
+  { id: "dumbbells_light", label: "Haltères légers (≤ 10 kg)" },
+  { id: "dumbbells_medium", label: "Haltères moyens (10-25 kg)" },
+  { id: "dumbbells_heavy", label: "Haltères lourds (≥ 25 kg)" },
   { id: "kettlebell", label: "Kettlebells" },
   { id: "leg_press", label: "Presse (leg press)" },
-  { id: "cable_machine", label: "Poulies / cable" },
+  { id: "cable_machine", label: "Poulies / câble" },
   { id: "smith_machine", label: "Smith machine" },
   { id: "pullup_bar", label: "Barre de tractions" },
   { id: "box_plyo", label: "Box plyo" },
@@ -76,16 +75,16 @@ const gymEquipmentOptions = [
 ];
 
 const homeEquipmentOptions = [
-  { id: "field", label: "Terrain herbe / synthe" },
+  { id: "field", label: "Terrain herbe / synthé" },
   { id: "street_area", label: "City / bitume / parking" },
-  { id: "indoor_small", label: "Petit espace interieur" },
-  { id: "cones", label: "Cones" },
+  { id: "indoor_small", label: "Petit espace intérieur" },
+  { id: "cones", label: "Cônes" },
   { id: "flat_markers", label: "Plots plats" },
-  { id: "speed_ladder", label: "Echelle de rythme" },
+  { id: "speed_ladder", label: "Échelle de rythme" },
   { id: "mini_hurdles", label: "Petites haies" },
   { id: "minibands", label: "Mini-bands" },
-  { id: "long_bands", label: "Elastiques longues" },
-  { id: "home_dumbbells", label: "Halteres (chez toi)" },
+  { id: "long_bands", label: "Élastiques longues" },
+  { id: "home_dumbbells", label: "Haltères (chez toi)" },
   { id: "home_kettlebell", label: "Kettlebell (chez toi)" },
   { id: "sandbag", label: "Sac de sable / sandbag" },
   { id: "home_foam_roller", label: "Foam roller (chez toi)" },
@@ -106,17 +105,17 @@ const toggleInList = (value: string, list: string[], setter: (next: string[]) =>
 export default function ProfileSetupScreen() {
   const navigation = useNavigation<any>();
   const haptics = useHaptics();
-  const activeCycleGoal = useSessionsStore((s) => s.microcycleGoal);
-  const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
+  const setMicrocycleGoal = useSessionsStore((s) => s.setMicrocycleGoal);
   const scrollRef = useRef<ScrollView>(null);
 
   /* ─── Step state ─── */
   const [step, setStep] = useState(0);
+  const [showCycleReco, setShowCycleReco] = useState(false);
 
   /* ─── Form state ─── */
   const [firstName, setFirstName] = useState("");
   const [clubId, setClubId] = useState("");
-  const [clubInviteCode, setClubInviteCode] = useState("");
+  const [clubInviteCode] = useState(""); // conservé pour handleSave, non affiché
   const [position, setPosition] = useState("");
   const [level, setLevel] = useState("");
   const [dominantFoot, setDominantFoot] = useState("");
@@ -139,10 +138,6 @@ export default function ProfileSetupScreen() {
 
   const shake = useRef(new Animated.Value(0)).current;
   const stepFade = useRef(new Animated.Value(1)).current;
-
-  const cycleId = isMicrocycleId(activeCycleGoal) ? activeCycleGoal : null;
-  const cycleLabel = cycleId ? MICROCYCLES[cycleId].label : null;
-  const cycleProgress = Math.min(MICROCYCLE_TOTAL_SESSIONS_DEFAULT, Math.max(0, Math.trunc(microcycleSessionIndex ?? 0)));
 
   /* ─── Prefill ─── */
   useEffect(() => {
@@ -224,33 +219,29 @@ export default function ProfileSetupScreen() {
   const validateStep = (): boolean => {
     switch (step) {
       case 0:
-        if (selectedMode !== "player" && selectedMode !== "coach") { fail("Champs manquants", "Choisis ton role (joueur ou coach)."); return false; }
-        if (!firstName.trim()) { fail("Champs manquants", "Merci d'indiquer ton prenom."); return false; }
+        if (selectedMode !== "player" && selectedMode !== "coach") { fail("Champs manquants", "Choisis ton rôle (joueur ou coach)."); return false; }
+        if (!firstName.trim()) { fail("Champs manquants", "Merci d'indiquer ton prénom."); return false; }
         if (!positions.includes(position as any)) { fail("Champs manquants", "Choisis ton poste."); return false; }
         if (!levels.includes(level as any)) { fail("Champs manquants", "Indique ton niveau."); return false; }
         if (!dominantFeet.includes(dominantFoot as any)) { fail("Champs manquants", "Choisis ton pied fort."); return false; }
-        return true;
-      case 1:
         if (!objectives.includes(mainObjective as any)) { fail("Champs manquants", "Choisis ton objectif principal."); return false; }
-        if (!fksSessionsOptions.includes(targetFksSessionsPerWeek as any)) { fail("Champs manquants", "Indique tes seances FKS / semaine."); return false; }
+        if (!fksSessionsOptions.includes(targetFksSessionsPerWeek as any)) { fail("Champs manquants", "Indique tes séances FKS / semaine."); return false; }
         return true;
-      case 2: {
+      case 1: {
         const trainings = Number(clubTrainingsPerWeek);
         const matches = Number(matchesPerWeek);
-        if (!Number.isFinite(trainings) || trainings < 0) { fail("Valeur invalide", "Entrainements/semaine doit etre positif."); return false; }
-        if (!Number.isFinite(matches) || matches < 0) { fail("Valeur invalide", "Matchs/semaine doit etre positif."); return false; }
-        if (!hasClubTrainings) { fail("Champs manquants", "Indique si tu as des entrainements club."); return false; }
-        if (hasClubTrainings === "oui" && clubTrainingDays.length === 0) { fail("Champs manquants", "Precise les jours club."); return false; }
-        if (matches > 0 && matchDays.length === 0) { fail("Champs manquants", "Precise les jours de match."); return false; }
+        if (!hasClubTrainings) { fail("Champs manquants", "Indique si tu as des entraînements club."); return false; }
+        if (hasClubTrainings === "oui" && clubTrainingDays.length === 0) { fail("Champs manquants", "Précise les jours club."); return false; }
+        if (hasClubTrainings === "oui" && (!Number.isFinite(trainings) || trainings < 0)) { fail("Valeur invalide", "Entraînements/semaine doit être positif."); return false; }
+        if (!Number.isFinite(matches) || matches < 0) { fail("Valeur invalide", "Matchs/semaine doit être positif."); return false; }
+        if (matches > 0 && matchDays.length === 0) { fail("Champs manquants", "Précise les jours de match."); return false; }
         return true;
       }
-      case 3:
-        if (!hasGymAccess) { fail("Champs manquants", "Indique si tu as acces a une salle."); return false; }
-        if (hasGymAccess !== "non" && gymEquipment.length === 0) { fail("Champs manquants", "Selectionne au moins un materiel en salle."); return false; }
-        return true;
-      case 4:
-        if (!hasHomeEquipment) { fail("Champs manquants", "Indique si tu as du materiel hors salle."); return false; }
-        if (hasHomeEquipment === "oui" && homeEquipment.length === 0) { fail("Champs manquants", "Selectionne au moins un materiel."); return false; }
+      case 2:
+        if (!hasGymAccess) { fail("Champs manquants", "Indique si tu as accès à une salle."); return false; }
+        if (hasGymAccess !== "non" && gymEquipment.length === 0) { fail("Champs manquants", "Sélectionne au moins un matériel en salle."); return false; }
+        if (!hasHomeEquipment) { fail("Champs manquants", "Indique si tu as du matériel hors salle."); return false; }
+        if (hasHomeEquipment === "oui" && homeEquipment.length === 0) { fail("Champs manquants", "Sélectionne au moins un matériel."); return false; }
         return true;
       default:
         return true;
@@ -289,7 +280,7 @@ export default function ProfileSetupScreen() {
       let resolvedClubId: string | null = clubId?.trim() ? clubId.trim() : null;
       if (normalizedInvite) {
         const club = await findClubByInviteCode(normalizedInvite);
-        if (!club) { fail("Code club invalide", "Aucun club ne correspond a ce code."); return; }
+        if (!club) { fail("Code club invalide", "Aucun club ne correspond à ce code."); return; }
         resolvedClubId = club.id;
         await setClubMembership({ clubId: club.id, uid: user.uid, role: "player" });
       }
@@ -313,7 +304,7 @@ export default function ProfileSetupScreen() {
       }, { merge: true });
 
       haptics.success();
-      showToast({ type: "success", title: "Profil enregistre", message: "Configuration terminee !" });
+      setShowCycleReco(true);
     } catch (error) {
       if (__DEV__) console.error("Erreur sauvegarde profil:", error);
       runShake(shake);
@@ -358,7 +349,7 @@ export default function ProfileSetupScreen() {
             <Choice label="Joueur" selected={selectedMode === "player"} onPress={() => setSelectedMode("player")} />
             <Choice label="Coach" selected={selectedMode === "coach"} onPress={() => setSelectedMode("coach")} />
 
-            <Text style={styles.fieldLabel}>Prenom</Text>
+            <Text style={styles.fieldLabel}>Prénom</Text>
             <TextInput
               style={styles.input}
               placeholder="Ex: Kylian"
@@ -366,16 +357,6 @@ export default function ProfileSetupScreen() {
               value={firstName}
               onChangeText={setFirstName}
               autoCapitalize="words"
-            />
-
-            <Text style={styles.fieldLabel}>Code club (invitation)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ex: FKSFC-2026"
-              placeholderTextColor={palette.muted}
-              value={clubInviteCode}
-              onChangeText={setClubInviteCode}
-              autoCapitalize="characters"
             />
 
             <Text style={styles.fieldLabel}>Poste</Text>
@@ -394,34 +375,13 @@ export default function ProfileSetupScreen() {
                 <Chip key={f} label={f} selected={dominantFoot === f} onPress={() => setDominantFoot(f)} />
               ))}
             </View>
-          </>
-        );
-
-      case 1:
-        return (
-          <>
-            <View style={styles.cycleCard}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cycleLabel}>
-                  {cycleLabel ? `${cycleLabel} · ${cycleProgress}/${MICROCYCLE_TOTAL_SESSIONS_DEFAULT}` : "Aucun cycle actif"}
-                </Text>
-                <Text style={styles.cycleHint}>Gere ton cycle depuis l'accueil ou le profil.</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.cycleButton}
-                onPress={() => navigation.navigate("CycleModal", { mode: cycleLabel ? "manage" : "select", origin: "profile" })}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.cycleButtonText}>{cycleLabel ? "Gerer" : "Choisir"}</Text>
-              </TouchableOpacity>
-            </View>
 
             <Text style={styles.fieldLabel}>Objectif principal avec FKS</Text>
             {objectives.map((o) => (
               <Choice key={o} label={o} selected={mainObjective === o} onPress={() => setMainObjective(o)} />
             ))}
 
-            <Text style={styles.fieldLabel}>Seances FKS / semaine (hors club)</Text>
+            <Text style={styles.fieldLabel}>Séances FKS / semaine (hors club)</Text>
             <View style={styles.chipRow}>
               {fksSessionsOptions.map((o) => (
                 <Chip key={o} label={o} selected={targetFksSessionsPerWeek === o} onPress={() => setTargetFksSessionsPerWeek(o)} />
@@ -430,10 +390,10 @@ export default function ProfileSetupScreen() {
           </>
         );
 
-      case 2:
+      case 1:
         return (
           <>
-            <Text style={styles.fieldLabel}>As-tu des entrainements club ?</Text>
+            <Text style={styles.fieldLabel}>As-tu des entraînements club ?</Text>
             <View style={styles.chipRow}>
               <Chip label="Oui" selected={hasClubTrainings === "oui"} onPress={() => setHasClubTrainings("oui")} />
               <Chip label="Non" selected={hasClubTrainings === "non"} onPress={() => setHasClubTrainings("non")} />
@@ -453,12 +413,12 @@ export default function ProfileSetupScreen() {
 
             {hasClubTrainings === "oui" ? (
               <>
-                <Text style={styles.fieldLabel}>Entrainements club / semaine</Text>
+                <Text style={styles.fieldLabel}>Entraînements club / semaine</Text>
                 <TextInput style={styles.input} keyboardType="number-pad" placeholder="ex: 3"
                   placeholderTextColor={palette.muted} value={clubTrainingsPerWeek} onChangeText={setClubTrainingsPerWeek} />
               </>
             ) : hasClubTrainings === "non" ? (
-              <Text style={styles.hintText}>Aucun entrainement club pris en compte.</Text>
+              <Text style={styles.hintText}>Aucun entraînement club pris en compte.</Text>
             ) : null}
 
             <Text style={styles.fieldLabel}>Matchs / semaine</Text>
@@ -476,38 +436,32 @@ export default function ProfileSetupScreen() {
                 </View>
               </>
             ) : (
-              <Text style={styles.hintText}>Aucun match selectionne.</Text>
+              <Text style={styles.hintText}>Aucun match sélectionné.</Text>
             )}
-
           </>
         );
 
-      case 3:
+      case 2:
         return (
           <>
-            <Text style={styles.fieldLabel}>Acces a une salle de musculation ?</Text>
+            <Text style={styles.fieldLabel}>Accès à une salle de musculation ?</Text>
             <View style={styles.chipRow}>
-              <Chip label="Oui regulierement" selected={hasGymAccess === "oui"} onPress={() => setHasGymAccess("oui")} />
+              <Chip label="Oui régulièrement" selected={hasGymAccess === "oui"} onPress={() => setHasGymAccess("oui")} />
               <Chip label="De temps en temps" selected={hasGymAccess === "occasionnel"} onPress={() => setHasGymAccess("occasionnel")} />
               <Chip label="Non" selected={hasGymAccess === "non"} onPress={() => setHasGymAccess("non")} />
             </View>
 
             {hasGymAccess !== "" && hasGymAccess !== "non" && (
               <>
-                <Text style={styles.fieldLabel}>Materiel disponible en salle</Text>
+                <Text style={styles.fieldLabel}>Matériel disponible en salle</Text>
                 {gymEquipmentOptions.map((o) => (
                   <Choice key={o.id} label={o.label} selected={gymEquipment.includes(o.id)}
                     onPress={() => toggleInList(o.id, gymEquipment, setGymEquipment)} />
                 ))}
               </>
             )}
-          </>
-        );
 
-      case 4:
-        return (
-          <>
-            <Text style={styles.fieldLabel}>As-tu du materiel chez toi / sur le terrain ?</Text>
+            <Text style={styles.fieldLabel}>Matériel chez toi / sur le terrain ?</Text>
             <View style={styles.chipRow}>
               <Chip label="Oui" selected={hasHomeEquipment === "oui"} onPress={() => setHasHomeEquipment("oui")} />
               <Chip label="Non" selected={hasHomeEquipment === "non"} onPress={() => setHasHomeEquipment("non")} />
@@ -515,7 +469,7 @@ export default function ProfileSetupScreen() {
 
             {hasHomeEquipment === "oui" && (
               <>
-                <Text style={styles.fieldLabel}>Materiel hors salle</Text>
+                <Text style={styles.fieldLabel}>Matériel hors salle</Text>
                 {homeEquipmentOptions.map((o) => (
                   <Choice key={o.id} label={o.label} selected={homeEquipment.includes(o.id)}
                     onPress={() => toggleInList(o.id, homeEquipment, setHomeEquipment)} />
@@ -530,6 +484,86 @@ export default function ProfileSetupScreen() {
     }
   };
 
+  /* ─── Cycle recommendation screen ─── */
+  const renderCycleReco = () => {
+    const reco = recommendMicrocycle({ mainObjective });
+    const cycle = MICROCYCLES[reco.id];
+
+    return (
+      <AuthBackground image={AUTH_IMAGES.setup}>
+        <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
+          <ScrollView
+            contentContainerStyle={styles.recoScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.recoContainer}>
+              {/* Icône cycle */}
+              <LinearGradient
+                colors={[palette.accent, "#ff9a4a"]}
+                style={styles.recoIconCircle}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <Ionicons name={cycle.icon as keyof typeof Ionicons.glyphMap} size={36} color="#fff" />
+              </LinearGradient>
+
+              <Text style={styles.recoTitle}>On a un programme pour toi</Text>
+
+              {/* Card cycle recommandé */}
+              <View style={styles.recoCycleCard}>
+                <Text style={styles.recoCycleLabel}>{cycle.label}</Text>
+                <Text style={styles.recoCycleSubtitle}>{cycle.subtitle}</Text>
+
+                <View style={styles.recoReasonsList}>
+                  {reco.reasons.map((r, i) => (
+                    <View key={i} style={styles.recoReasonRow}>
+                      <Ionicons name="checkmark-circle-outline" size={16} color={palette.accent} />
+                      <Text style={styles.recoReasonText}>{r}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+
+              {/* CTA principal */}
+              <TouchableOpacity
+                style={styles.recoCtaButton}
+                onPress={() => {
+                  haptics.success();
+                  setMicrocycleGoal(reco.id);
+                }}
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={[palette.accent, "#ff9a4a"]}
+                  style={styles.recoCtaGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <Text style={styles.recoCtaText}>C'est parti !</Text>
+                  <Ionicons name="rocket-outline" size={20} color="#fff" />
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {/* Lien discret */}
+              <TouchableOpacity
+                style={styles.recoSecondaryLink}
+                onPress={() => navigation.navigate("CycleModal", { mode: "select", origin: "profile" })}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.recoSecondaryText}>Voir tous les programmes</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </AuthBackground>
+    );
+  };
+
+  /* ─── Show cycle reco after save ─── */
+  if (showCycleReco) {
+    return renderCycleReco();
+  }
+
   const isLastStep = step === TOTAL_STEPS - 1;
   const progressPercent = ((step + 1) / TOTAL_STEPS) * 100;
 
@@ -543,7 +577,7 @@ export default function ProfileSetupScreen() {
               {/* ─── Progress section ─── */}
               <View style={styles.progressSection}>
                 <View style={styles.progressLabelRow}>
-                  <Text style={styles.progressStep}>Etape {step + 1}/{TOTAL_STEPS}</Text>
+                  <Text style={styles.progressStep}>Étape {step + 1}/{TOTAL_STEPS}</Text>
                   <Text style={styles.progressName}>{STEPS[step].label}</Text>
                 </View>
                 <View style={styles.progressBarBg}>
@@ -806,43 +840,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  /* Cycle card */
-  cycleCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginBottom: 8,
-    padding: 14,
-    borderRadius: theme.radius.md,
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-  },
-  cycleLabel: {
-    color: palette.text,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  cycleHint: {
-    color: palette.sub,
-    fontSize: 12,
-    lineHeight: 16,
-    marginTop: 2,
-  },
-  cycleButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: palette.accent,
-    backgroundColor: "transparent",
-  },
-  cycleButtonText: {
-    color: palette.accent,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-
   hintText: {
     color: palette.sub,
     fontSize: 13,
@@ -891,5 +888,90 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: "#fff",
+  },
+
+  /* Cycle recommendation screen */
+  recoScrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    padding: 24,
+  },
+  recoContainer: {
+    alignItems: "center",
+    gap: 20,
+  },
+  recoIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+    ...theme.shadow.accent,
+  },
+  recoTitle: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: palette.text,
+    textAlign: "center",
+  },
+  recoCycleCard: {
+    width: "100%",
+    borderRadius: theme.radius.xxl,
+    padding: 20,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    gap: 8,
+  },
+  recoCycleLabel: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: palette.accent,
+  },
+  recoCycleSubtitle: {
+    fontSize: 14,
+    color: palette.sub,
+  },
+  recoReasonsList: {
+    marginTop: 8,
+    gap: 8,
+  },
+  recoReasonRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  recoReasonText: {
+    fontSize: 14,
+    color: palette.text,
+    flex: 1,
+    lineHeight: 20,
+  },
+  recoCtaButton: {
+    width: "100%",
+    borderRadius: theme.radius.lg,
+    overflow: "hidden",
+    ...theme.shadow.accent,
+  },
+  recoCtaGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+  },
+  recoCtaText: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#fff",
+  },
+  recoSecondaryLink: {
+    paddingVertical: 8,
+  },
+  recoSecondaryText: {
+    fontSize: 14,
+    color: palette.sub,
+    textDecorationLine: "underline",
   },
 });

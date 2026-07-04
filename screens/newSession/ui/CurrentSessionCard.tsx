@@ -25,11 +25,19 @@ export function CurrentSessionCard({
     <View style={styles.card}>
       <Text style={styles.cardTitle}>Séance déjà générée</Text>
       <Text style={styles.cardSubtitle}>
-        Complète-la et donne ton feedback avant de générer la suivante.
+        Tu as une séance en cours ! Termine-la et dis-nous comment ça s'est passé pour qu'on adapte la prochaine.
       </Text>
 
       <Text style={styles.meta}>
-        Phase : {current.phase} · Intensité : {current.intensity} · Volume : {current.volumeScore}
+        {current.aiV2?.title
+          ? current.aiV2.title
+          : current.intensity === "easy"
+            ? "Facile"
+            : current.intensity === "moderate"
+              ? "Modérée"
+              : current.intensity === "hard"
+                ? "Intense"
+                : current.intensity ?? ""}
       </Text>
 
       <FlatList<Exercise>
