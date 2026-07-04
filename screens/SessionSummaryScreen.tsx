@@ -14,6 +14,8 @@ import { useLoadStore } from "../state/stores/useLoadStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { updateTrainingLoad } from "../engine/loadModel";
 import { useSettingsStore } from "../state/settingsStore";
+import { FootballIllustration } from "../components/ui/FootballIllustration";
+import { PitchDecoration } from "../components/ui/PitchDecoration";
 
 type SummaryRoute = RouteProp<AppStackParamList, "SessionSummary">;
 
@@ -177,6 +179,8 @@ export default function SessionSummaryScreen() {
           ]}
         >
           <Card variant="surface" style={styles.heroCard}>
+            <PitchDecoration type="cornerArc" width={40} height={40} opacity={0.12} style={styles.heroCorner} />
+            <FootballIllustration type="celebration" width={120} height={120} opacity={0.15} style={styles.heroCelebration} />
             <View style={styles.heroGlow} />
             <Text style={styles.heroKicker}>Séance terminée</Text>
             <Text style={styles.heroTitle}>{summary.title}</Text>
@@ -313,6 +317,17 @@ const styles = StyleSheet.create({
     padding: 18,
     gap: 10,
     overflow: "hidden",
+    position: "relative" as const,
+  },
+  heroCorner: {
+    position: "absolute" as const,
+    top: 0,
+    left: 0,
+  },
+  heroCelebration: {
+    position: "absolute" as const,
+    bottom: 10,
+    right: 10,
   },
   heroGlow: {
     position: "absolute",

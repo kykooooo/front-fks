@@ -7,8 +7,17 @@ import { Card } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
 import { Button } from "../../../components/ui/Button";
 import { intensityTone } from "../sessionPreviewConfig";
+import { FootballIllustration, type IllustrationType } from "../../../components/ui/FootballIllustration";
 
 const palette = theme.colors;
+
+const cycleToIllustration = (cycle?: string | null): IllustrationType => {
+  const c = (cycle ?? "").toLowerCase();
+  if (c.includes("force") || c.includes("fondation")) return "strength";
+  if (c.includes("endurance") || c.includes("rsa") || c.includes("explosi") || c.includes("vitesse")) return "sprint";
+  if (c.includes("saison") || c.includes("offseason") || c.includes("transition") || c.includes("maintien")) return "rest";
+  return "sprint";
+};
 
 type Props = {
   title: string;
@@ -27,6 +36,7 @@ type Props = {
   progress: number;
   canStart: boolean;
   onGoLive: () => void;
+  cycleType?: string | null;
 };
 
 export function HeroCard({
@@ -46,9 +56,11 @@ export function HeroCard({
   progress,
   canStart,
   onGoLive,
+  cycleType,
 }: Props) {
   return (
     <Card variant="surface" style={styles.heroCard}>
+      <FootballIllustration type={cycleToIllustration(cycleType)} width={100} height={100} opacity={0.10} style={styles.heroIllustration} />
       <View style={styles.heroGlow} />
       <View style={styles.heroTop}>
         <View style={{ flex: 1 }}>
@@ -112,7 +124,8 @@ export function HeroCard({
 }
 
 const styles = StyleSheet.create({
-  heroCard: { padding: 14, gap: 10, borderRadius: 20, overflow: "hidden" },
+  heroCard: { padding: 14, gap: 10, borderRadius: 20, overflow: "hidden", position: "relative" as const },
+  heroIllustration: { position: "absolute" as const, top: -10, right: -10 },
   heroGlow: {
     position: "absolute",
     top: -90,
