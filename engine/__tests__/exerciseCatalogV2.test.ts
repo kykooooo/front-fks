@@ -81,6 +81,32 @@ describe("resolveCatalogId — aliases historiques & ID inconnu", () => {
     );
   });
 
+  it("migre les décisions du lot 7 protocoles/tests (04/07/2026)", () => {
+    // Le nombre de répétitions sort des IDs canoniques.
+    expect(resolveCatalogId("bike_intervals", HISTORICAL_EXERCISE_ALIASES)).toBe("bike_intervals_40_20");
+    expect(resolveCatalogId("bike_engine_intervals_10x40_20", HISTORICAL_EXERCISE_ALIASES)).toBe("bike_intervals_40_20");
+    expect(resolveCatalogId("rower_intervals", HISTORICAL_EXERCISE_ALIASES)).toBe("row_intervals_500m");
+    expect(resolveCatalogId("row_engine_intervals_6x500", HISTORICAL_EXERCISE_ALIASES)).toBe("row_intervals_500m");
+    // Doublon 1000 m fusionné.
+    expect(resolveCatalogId("vma_long_1000", HISTORICAL_EXERCISE_ALIASES)).toBe("run_intervals_1000m");
+    expect(resolveCatalogId("run_engine_intervals_4x1000", HISTORICAL_EXERCISE_ALIASES)).toBe("run_intervals_1000m");
+    expect(resolveCatalogId("run_engine_intervals_6x400", HISTORICAL_EXERCISE_ALIASES)).toBe("run_intervals_400m");
+    expect(resolveCatalogId("run_engine_intervals_8x300", HISTORICAL_EXERCISE_ALIASES)).toBe("run_intervals_300m");
+    expect(resolveCatalogId("run_engine_tempo_cruise_3x8", HISTORICAL_EXERCISE_ALIASES)).toBe("run_tempo_cruise_8min");
+    expect(resolveCatalogId("run_engine_tempo_cruise_4x5", HISTORICAL_EXERCISE_ALIASES)).toBe("run_tempo_cruise_5min");
+    expect(resolveCatalogId("run_engine_threshold_2x10", HISTORICAL_EXERCISE_ALIASES)).toBe("run_threshold_10min");
+    expect(resolveCatalogId("treadmill_engine_intervals_12x60_60", HISTORICAL_EXERCISE_ALIASES)).toBe("treadmill_intervals_60_60");
+    // rsa_runs_* → presets complets de run_intervals.
+    for (const legacy of ["rsa_runs_10_20_2x10", "rsa_runs_15_15_2x10", "rsa_runs_20_20_2x8", "rsa_runs_30_30_2x6"]) {
+      expect(resolveCatalogId(legacy, HISTORICAL_EXERCISE_ALIASES)).toBe("run_intervals");
+    }
+    // Distinctions préservées : IDs sans reps qui restent canoniques.
+    for (const id of ["vma_long", "vma_short", "rsa_bike_sprints_15_45", "rsa_row_sprints_20_40", "rsa_sprint_20m_repeat", "rsa_sprint_walkback_20m", "tempo_20_30", "run_engine_tempo_continuous_18_25"]) {
+      expect(HISTORICAL_EXERCISE_ALIASES[id]).toBeUndefined();
+      expect(resolveCatalogId(id, HISTORICAL_EXERCISE_ALIASES)).toBe(id);
+    }
+  });
+
   it("résout la fusion plyo finale (box jump à hauteur paramétrable)", () => {
     // Décision finale : box basse fusionnée dans le canonique plyo_box_jump.
     expect(resolveCatalogId("plyo_box_jump_low", HISTORICAL_EXERCISE_ALIASES)).toBe("plyo_box_jump");

@@ -187,6 +187,25 @@ export const HISTORICAL_EXERCISE_ALIASES: Record<string, string> = {
   run_engine_intervals_30_30_2x10: "run_intervals",
   run_engine_intervals_15_15_2x12: "run_intervals",
   run_intervals_8x200: "run_intervals",
+  // Lot 7 Protocoles/Tests (backend, 04/07/2026) : le nombre de répétitions
+  // sort des IDs canoniques ; doublons machines fusionnés ; rsa_runs_* =
+  // presets complets de run_intervals.
+  bike_intervals: "bike_intervals_40_20",
+  bike_engine_intervals_10x40_20: "bike_intervals_40_20",
+  rower_intervals: "row_intervals_500m",
+  row_engine_intervals_6x500: "row_intervals_500m",
+  run_engine_intervals_4x1000: "run_intervals_1000m",
+  vma_long_1000: "run_intervals_1000m",
+  run_engine_intervals_6x400: "run_intervals_400m",
+  run_engine_intervals_8x300: "run_intervals_300m",
+  run_engine_tempo_cruise_3x8: "run_tempo_cruise_8min",
+  run_engine_tempo_cruise_4x5: "run_tempo_cruise_5min",
+  run_engine_threshold_2x10: "run_threshold_10min",
+  treadmill_engine_intervals_12x60_60: "treadmill_intervals_60_60",
+  rsa_runs_10_20_2x10: "run_intervals",
+  rsa_runs_15_15_2x10: "run_intervals",
+  rsa_runs_20_20_2x8: "run_intervals",
+  rsa_runs_30_30_2x6: "run_intervals",
   str_jump_rope_easy: "plyo_jump_rope_easy",
   str_pogo_hops_low: "plyo_pogo_hops_low",
   // Décision plyo finale : box basse fusionnée dans le canonique à hauteur
