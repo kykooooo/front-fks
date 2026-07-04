@@ -48,3 +48,7 @@ ui-debug.log*
 
 # generated data
 backend-exercises.json
+
+# claude local state
+.claude/worktrees/
+.claude/settings.local.json
