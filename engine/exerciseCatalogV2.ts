@@ -198,17 +198,18 @@ export const HISTORICAL_EXERCISE_ALIASES: Record<string, string> = {
   sprint_flying_20m: "sprint_flying",
   sprint_flying_30m: "sprint_flying",
   spd_flying20: "sprint_flying",
-  run_build_up_20_30m: "run_build_up",
-  run_build_up_30_40m: "run_build_up",
-  run_build_up_40m: "run_build_up",
+  // Décision alias 04/07/2026 : run_build_up_20_30m / 30_40m / 40m RESTAURÉS en
+  // fiches distinctes côté backend (le canonique fusionné run_build_up est retiré)
+  // → plus d'alias front.
   spd_hill_sprints: "sprint_hill_8_10s",
   run_hills_10x10s: "sprint_hill_8_10s",
   spd_start_fall_forward: "sprint_falling_start_10m",
   run_strides_10_15s: "run_strides",
-  // Décisions Laurent lot vitesse (03/07/2026) : le 30 m sort de l'accélération
-  // courte ; ankling / wall drill A-skip / exposition Vmax / poussée traîneau
-  // lourde canonisés (anciens IDs conservés).
-  spd_accel_10_20_30: "sprint_transition_30m",
+  // Décisions Laurent lot vitesse (03/07/2026) : ankling / wall drill A-skip /
+  // exposition Vmax / poussée traîneau lourde canonisés (anciens IDs conservés).
+  // Décision alias 04/07/2026 : la pyramide 10/20/30 vit dans son propre
+  // protocole canonique (plus jamais présentée comme un simple sprint de 30 m).
+  spd_accel_10_20_30: "protocol_acceleration_pyramid_10_20_30",
   plyo_ankling: "speed_ankling",
   cod_wall_drill_a_skip: "speed_wall_drill_a_skip",
   spd_maxv_30_60: "sprint_max_velocity_exposure",
@@ -233,7 +234,8 @@ export const HISTORICAL_EXERCISE_ALIASES: Record<string, string> = {
   str_jump_lunge: "plyo_split_jump",
   str_nordic: "nordic_curl_partner",
   str_nordic_hamstring_eccentric: "nordic_curl_partner",
-  str_eccentric_nordic_3s: "nordic_curl_partner",
+  // Décision alias 04/07/2026 : str_eccentric_nordic_3s RESTAURÉ en fiche
+  // distincte côté backend (tempo 3 s non représentable) → plus d'alias front.
   // Lot 5 core/mobilité : doublons stricts + paramétrisations.
   core_copenhagen_side_plank: "str_copenhagen",
   core_stir_pot: "core_stir_the_pot_swissball",

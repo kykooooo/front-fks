@@ -93,10 +93,12 @@ describe("resolveCatalogId — aliases historiques & ID inconnu", () => {
     expect(resolveCatalogId("sprint_flying_20m", HISTORICAL_EXERCISE_ALIASES)).toBe("sprint_flying");
     expect(resolveCatalogId("sprint_flying_30m", HISTORICAL_EXERCISE_ALIASES)).toBe("sprint_flying");
     expect(resolveCatalogId("spd_flying20", HISTORICAL_EXERCISE_ALIASES)).toBe("sprint_flying");
-    // Build-ups → canonique unique (20-40 m).
-    expect(resolveCatalogId("run_build_up_20_30m", HISTORICAL_EXERCISE_ALIASES)).toBe("run_build_up");
-    expect(resolveCatalogId("run_build_up_30_40m", HISTORICAL_EXERCISE_ALIASES)).toBe("run_build_up");
-    expect(resolveCatalogId("run_build_up_40m", HISTORICAL_EXERCISE_ALIASES)).toBe("run_build_up");
+    // Build-ups : RESTAURÉS en fiches distinctes (décision alias 04/07/2026) —
+    // plus d'alias, chaque ID legacy résout vers lui-même.
+    for (const id of ["run_build_up_20_30m", "run_build_up_30_40m", "run_build_up_40m"]) {
+      expect(HISTORICAL_EXERCISE_ALIASES[id]).toBeUndefined();
+      expect(resolveCatalogId(id, HISTORICAL_EXERCISE_ALIASES)).toBe(id);
+    }
     // Doublons réels fusionnés.
     expect(resolveCatalogId("spd_hill_sprints", HISTORICAL_EXERCISE_ALIASES)).toBe("sprint_hill_8_10s");
     expect(resolveCatalogId("run_hills_10x10s", HISTORICAL_EXERCISE_ALIASES)).toBe("sprint_hill_8_10s");
@@ -105,8 +107,11 @@ describe("resolveCatalogId — aliases historiques & ID inconnu", () => {
   });
 
   it("migre les décisions Laurent du lot vitesse (03/07/2026)", () => {
-    // Le 30 m sort de l'accélération courte : l'alias conserve la distance.
-    expect(resolveCatalogId("spd_accel_10_20_30", HISTORICAL_EXERCISE_ALIASES)).toBe("sprint_transition_30m");
+    // Décision alias 04/07/2026 : la pyramide 10/20/30 = protocole canonique
+    // dédié (plus jamais un simple sprint de 30 m).
+    expect(resolveCatalogId("spd_accel_10_20_30", HISTORICAL_EXERCISE_ALIASES)).toBe(
+      "protocol_acceleration_pyramid_10_20_30"
+    );
     // Ankling = mécanique de course, canonique unique côté speed.
     expect(resolveCatalogId("plyo_ankling", HISTORICAL_EXERCISE_ALIASES)).toBe("speed_ankling");
     // Wall drill A-skip re-préfixé speed (ancien ID conservé).
@@ -168,11 +173,17 @@ describe("resolveCatalogId — aliases historiques & ID inconnu", () => {
     expect(resolveCatalogId("str_jump_lunge", HISTORICAL_EXERCISE_ALIASES)).toBe("plyo_split_jump");
     expect(HISTORICAL_EXERCISE_ALIASES.str_jump_squat_light).toBeUndefined();
     expect(HISTORICAL_EXERCISE_ALIASES.str_trapbar_jump).toBeUndefined();
-    // Nordic scindé par installation : tous les anciens IDs → version partenaire
+    // Nordic scindé par installation : anciens IDs → version partenaire
     // (leur contenu réel listait un partenaire) ; la version ancrée est nouvelle.
-    for (const legacy of ["str_nordic", "str_nordic_hamstring_eccentric", "str_eccentric_nordic_3s"]) {
+    for (const legacy of ["str_nordic", "str_nordic_hamstring_eccentric"]) {
       expect(resolveCatalogId(legacy, HISTORICAL_EXERCISE_ALIASES)).toBe("nordic_curl_partner");
     }
+    // Décision alias 04/07/2026 : nordic 3 s restauré en fiche distincte (tempo
+    // non représentable) — plus d'alias.
+    expect(HISTORICAL_EXERCISE_ALIASES.str_eccentric_nordic_3s).toBeUndefined();
+    expect(resolveCatalogId("str_eccentric_nordic_3s", HISTORICAL_EXERCISE_ALIASES)).toBe(
+      "str_eccentric_nordic_3s"
+    );
     expect(HISTORICAL_EXERCISE_ALIASES.str_nordic_assisted_band).toBeUndefined();
     // Lot 5 core/mobilité.
     expect(resolveCatalogId("core_copenhagen_side_plank", HISTORICAL_EXERCISE_ALIASES)).toBe("str_copenhagen");
