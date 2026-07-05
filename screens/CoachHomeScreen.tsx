@@ -14,7 +14,6 @@ import {
   RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { StatusBar } from "expo-status-bar";
 import { useNavigation } from "@react-navigation/native";
 import { getAuth, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
@@ -258,7 +257,6 @@ export default function CoachHomeScreen() {
   if (loading) {
     return (
       <ScreenContainer scroll={false} safeAreaStyle={styles.screenBg}>
-        <StatusBar style="dark" />
         <View style={styles.center}>
           <ActivityIndicator color={palette.accent} />
         </View>
@@ -625,7 +623,6 @@ export default function CoachHomeScreen() {
         ),
       }}
     >
-      <StatusBar style="dark" />
       {/* Header club compact */}
       <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>

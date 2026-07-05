@@ -15,7 +15,6 @@ import {
   Keyboard,
   ScrollView,
   ActivityIndicator,
-  StatusBar,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -31,7 +30,6 @@ import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
 import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
-import { useSettingsStore } from "../state/settingsStore";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
 const palette = theme.colors;
@@ -59,7 +57,6 @@ export default function LoginScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
   const [sendingReset, setSendingReset] = useState(false);
-  const themeMode = useSettingsStore((s) => s.themeMode);
   const shake = useRef(new Animated.Value(0)).current;
   const pwdInputRef = useRef<TextInput>(null);
   const haptics = useHaptics();
@@ -132,7 +129,6 @@ export default function LoginScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle={themeMode === "dark" ? "light-content" : "dark-content"} backgroundColor={palette.bg} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}

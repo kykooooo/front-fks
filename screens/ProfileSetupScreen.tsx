@@ -14,7 +14,6 @@ import {
   ScrollView,
   Platform,
   KeyboardAvoidingView,
-  StatusBar,
   BackHandler,
 } from "react-native";
 import { Screen } from "../components/ui/Screen";
@@ -31,7 +30,6 @@ import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "
 import { AGE_CATEGORIES } from "../domain/types";
 import { recommendMicrocycle } from "../domain/recommendMicrocycle";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
-import { useSettingsStore } from "../state/settingsStore";
 import { showToast } from "../utils/toast";
 import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
@@ -132,7 +130,6 @@ type ProfileSetupScreenProps = {
 export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupScreenProps = {}) {
   const navigation = useNavigation<any>();
   const haptics = useHaptics();
-  const themeMode = useSettingsStore((s) => s.themeMode);
   // Mode édition : écran ouvert depuis Profil/Réglages (header natif "Profil" déjà présent).
   const isEditMode = !onProfileCompleted;
   const activeCycleGoal = useSessionsStore((s) => s.microcycleGoal);
@@ -636,7 +633,6 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
   return (
     <Screen style={styles.safeArea}>
-      <StatusBar barStyle={themeMode === "dark" ? "light-content" : "dark-content"} backgroundColor={palette.bg} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <View style={{ flex: 1 }}>

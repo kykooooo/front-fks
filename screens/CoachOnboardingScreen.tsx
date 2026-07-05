@@ -12,7 +12,6 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
 } from "react-native";
-import { StatusBar } from "expo-status-bar";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { getAuth, signOut } from "firebase/auth";
@@ -87,7 +86,6 @@ export default function CoachOnboardingScreen() {
 
   return (
     <ScreenContainer safeAreaStyle={styles.screenBg} contentContainerStyle={styles.screenBg}>
-      <StatusBar style="dark" />
       <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
         <View style={styles.wrap}>
           <View style={styles.headerRow}>

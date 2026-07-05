@@ -15,7 +15,6 @@ import {
   Keyboard,
   ScrollView,
   ActivityIndicator,
-  StatusBar,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -28,7 +27,6 @@ import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
 import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
-import { useSettingsStore } from "../state/settingsStore";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Register">;
 const palette = theme.colors;
@@ -58,7 +56,6 @@ export default function RegisterScreen({ navigation }: Props) {
   const [showPwd, setShowPwd] = useState(false);
   const [consentAccepted, setConsentAccepted] = useState(false);
   const haptics = useHaptics();
-  const themeMode = useSettingsStore((s) => s.themeMode);
   const shake = useRef(new Animated.Value(0)).current;
   const emailRef = useRef<TextInput>(null);
   const pwdRef = useRef<TextInput>(null);
@@ -145,7 +142,6 @@ export default function RegisterScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle={themeMode === "dark" ? "light-content" : "dark-content"} backgroundColor={palette.bg} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}

@@ -6,7 +6,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  StatusBar,
   Platform,
   KeyboardAvoidingView,
   TouchableWithoutFeedback,
@@ -25,7 +24,6 @@ import { useLoadStore } from '../state/stores/useLoadStore';
 import { useSessionsStore } from '../state/stores/useSessionsStore';
 import { useFeedbackStore } from '../state/stores/useFeedbackStore';
 import { useDebugStore } from '../state/stores/useDebugStore';
-import { useSettingsStore } from '../state/settingsStore';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useHaptics } from '../hooks/useHaptics';
 import { toDateKey, lastNDates } from '../utils/dateHelpers';
@@ -59,7 +57,6 @@ function FeedbackScreen() {
   const route = useRoute<RouteProp<AppStackParamList, 'Feedback'>>();
   const haptics = useHaptics();
   const { isOnline, queueCount } = useNetworkStatus();
-  const themeMode = useSettingsStore((s) => s.themeMode);
   const tsb = useLoadStore((s) => s.tsb);
 
   // Animations
@@ -239,10 +236,6 @@ function FeedbackScreen() {
         allowSwipeDismiss
       >
         <SafeAreaView style={styles.safeArea} edges={['top', 'right', 'left', 'bottom']}>
-          <StatusBar
-            barStyle={themeMode === 'dark' ? 'light-content' : 'dark-content'}
-            backgroundColor={COLORS.background}
-          />
           <View style={styles.modalHeaderRow}>
             <Text style={styles.modalHeaderTitle}>Feedback</Text>
             <TouchableOpacity onPress={confirmClose} style={styles.modalClose} accessibilityRole="button" accessibilityLabel="Fermer le feedback">

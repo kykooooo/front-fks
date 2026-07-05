@@ -2,7 +2,9 @@
 import React, { useEffect, useState } from "react";
 import { NavigationContainer, type LinkingOptions } from "@react-navigation/native";
 import { ActivityIndicator, View } from "react-native";
+import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useSettingsStore } from "./state/settingsStore";
 import { setThemeMode } from "./constants/theme";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -87,13 +89,19 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <NavigationContainer ref={navigationRef} linking={linking}>
-        <GestureHandlerRootView style={{ flex: 1 }}>
-          <Navigator />
-          <OfflineBanner />
-        </GestureHandlerRootView>
-        <ToastHost />
-      </NavigationContainer>
+      {/* SafeAreaProvider unique, a la racine : couvre le NavigationContainer
+          ET l'OfflineBanner (qui vit hors des navigators). */}
+      <SafeAreaProvider>
+        {/* StatusBar globale unique — adaptee au theme (defaut = clair). */}
+        <StatusBar style={themeMode === "dark" ? "light" : "dark"} />
+        <NavigationContainer ref={navigationRef} linking={linking}>
+          <GestureHandlerRootView style={{ flex: 1 }}>
+            <Navigator />
+            <OfflineBanner />
+          </GestureHandlerRootView>
+          <ToastHost />
+        </NavigationContainer>
+      </SafeAreaProvider>
     </ErrorBoundary>
   );
 }

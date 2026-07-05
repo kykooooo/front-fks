@@ -9,7 +9,6 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ActivityIndicator, RefreshControl } from "react-native";
-import { StatusBar } from "expo-status-bar";
 import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -174,7 +173,6 @@ export default function CoachPlayerDetailScreen() {
         ),
       }}
     >
-      <StatusBar style="dark" />
       {/* Identité (issue de la projection coach-safe) */}
       <View style={styles.headerRow}>
         <View style={styles.avatar}>

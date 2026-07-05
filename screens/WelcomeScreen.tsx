@@ -9,7 +9,6 @@ import {
   useWindowDimensions,
   FlatList,
   Pressable,
-  StatusBar,
   type ViewToken,
   type ListRenderItemInfo,
 } from "react-native";
@@ -17,7 +16,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useHaptics } from "../hooks/useHaptics";
-import { useSettingsStore } from "../state/settingsStore";
 import { theme } from "../constants/theme";
 
 const palette = theme.colors;
@@ -66,7 +64,6 @@ function Slide({ item, width, bottomInset }: { item: SlideData; width: number; b
 /* ─── Main ─── */
 export default function WelcomeScreen({ onComplete }: Props) {
   const haptics = useHaptics();
-  const themeMode = useSettingsStore((s) => s.themeMode);
   const insets = useSafeAreaInsets();
   const { width: SCREEN_W } = useWindowDimensions();
   const [activeIndex, setActiveIndex] = useState(0);
@@ -106,8 +103,6 @@ export default function WelcomeScreen({ onComplete }: Props) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle={themeMode === "dark" ? "light-content" : "dark-content"} backgroundColor={palette.bg} />
-
       {/* Slides */}
       <FlatList
         ref={flatListRef}

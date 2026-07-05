@@ -34,7 +34,6 @@ import CoachOnboardingScreen from "../screens/CoachOnboardingScreen";
 import CoachPlayerDetailScreen from "../screens/CoachPlayerDetailScreen";
 import { theme } from "../constants/theme";
 import { DEV_FLAGS } from "../config/devFlags";
-import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useSyncStore } from "../state/stores/useSyncStore";
 import { SwipeTabsWrapper } from "../components/SwipeTabsWrapper";
@@ -421,19 +420,14 @@ export default function RootNavigator() {
 
   // 6bis) Coach → espace coach (pas de questionnaire joueur, pas de tab bar joueur)
   if (role === "coach") {
-    return (
-      <SafeAreaProvider>
-        <CoachNavigator />
-      </SafeAreaProvider>
-    );
+    return <CoachNavigator />;
   }
 
   // 6) Connecté mais profil non complété → écran profil (joueur)
   //    Le stack inclut CoachOnboarding pour qu'un staff puisse créer son club.
   if (profileCompleted === false) {
     return (
-      <SafeAreaProvider>
-        <AppStack.Navigator screenOptions={{ headerShown: false }}>
+      <AppStack.Navigator screenOptions={{ headerShown: false }}>
           <AppStack.Screen name="ProfileSetup" options={{ headerShown: false }}>
             {() => (
               <ProfileSetupScreen onProfileCompleted={() => setProfileCompleted(true)} />
@@ -455,15 +449,10 @@ export default function RootNavigator() {
             }}
           />
           <AppStack.Screen name="Tests" component={TestsScreen} options={{ headerShown: true, title: "Tests terrain" }} />
-        </AppStack.Navigator>
-      </SafeAreaProvider>
+      </AppStack.Navigator>
     );
   }
 
   // 6) Profil complet → app joueur (mode déjà choisi dans le questionnaire profil)
-  return (
-    <SafeAreaProvider>
-      <AppNavigator />
-    </SafeAreaProvider>
-  );
+  return <AppNavigator />;
 }
