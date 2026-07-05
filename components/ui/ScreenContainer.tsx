@@ -6,6 +6,7 @@ import { Screen } from "./Screen";
 type ScreenContainerProps = {
   children: React.ReactNode;
   scroll?: boolean;
+  keyboardAvoiding?: boolean;
   safeAreaStyle?: StyleProp<ViewStyle>;
   contentContainerStyle?: StyleProp<ViewStyle>;
   scrollProps?: ScrollViewProps;
@@ -19,6 +20,7 @@ type ScreenContainerProps = {
 export function ScreenContainer({
   children,
   scroll = true,
+  keyboardAvoiding = false,
   safeAreaStyle,
   contentContainerStyle,
   scrollProps,
@@ -26,6 +28,7 @@ export function ScreenContainer({
   return (
     <Screen
       scroll={scroll}
+      keyboardAvoiding={keyboardAvoiding}
       style={safeAreaStyle}
       contentContainerStyle={scroll ? [styles.container, contentContainerStyle] : undefined}
       scrollProps={scrollProps}

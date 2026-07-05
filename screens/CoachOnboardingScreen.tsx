@@ -85,7 +85,7 @@ export default function CoachOnboardingScreen() {
   };
 
   return (
-    <ScreenContainer safeAreaStyle={styles.screenBg} contentContainerStyle={styles.screenBg}>
+    <ScreenContainer keyboardAvoiding safeAreaStyle={styles.screenBg} contentContainerStyle={styles.screenBg}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
         <View style={styles.wrap}>
           <View style={styles.headerRow}>
