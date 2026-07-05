@@ -203,7 +203,7 @@ function SessionSummaryScreen() {
             </View>
             <View style={styles.heroBody}>
               {summary.subtitle ? (
-                <Text style={styles.heroSubtitle}>{summary.subtitle}</Text>
+                <Text style={styles.heroSubtitle} numberOfLines={2}>{summary.subtitle}</Text>
               ) : null}
               <View style={styles.heroBadges}>
                 {summary.plannedDateISO

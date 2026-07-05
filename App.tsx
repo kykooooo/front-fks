@@ -1,4 +1,5 @@
 // App.tsx
+import "./config/textScaling"; // cap global du scaling police — doit s'appliquer avant tout rendu
 import React, { useEffect, useState } from "react";
 import { NavigationContainer, type LinkingOptions } from "@react-navigation/native";
 import { ActivityIndicator, View } from "react-native";

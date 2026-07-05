@@ -83,7 +83,7 @@ export function HeroCard({
         {sessionTheme ? (
           <View style={styles.sessionThemeRow}>
             <Ionicons name="color-palette-outline" size={13} color={ct.textOnSoft} />
-            <Text style={[styles.sessionThemeText, { color: ct.textOnSoft }]}>{sessionTheme}</Text>
+            <Text style={[styles.sessionThemeText, { color: ct.textOnSoft }]} numberOfLines={2}>{sessionTheme}</Text>
           </View>
         ) : null}
 

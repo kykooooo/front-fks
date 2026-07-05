@@ -180,7 +180,7 @@ export default function CoachPlayerDetailScreen() {
         </View>
         <View style={{ flex: 1 }}>
           <View style={styles.nameRow}>
-            <Text style={styles.name}>{summary?.firstName ?? "Joueur"}</Text>
+            <Text style={[styles.name, { flexShrink: 1 }]} numberOfLines={1}>{summary?.firstName ?? "Joueur"}</Text>
             {summary?.ageCategory ? <CoachBadge label={summary.ageCategory} tone="default" /> : null}
           </View>
           <Text style={styles.meta}>
