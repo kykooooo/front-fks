@@ -76,8 +76,9 @@ describe("resolveCatalogId — aliases historiques & ID inconnu", () => {
     expect(resolveCatalogId("sprint_accel_20m", HISTORICAL_EXERCISE_ALIASES)).toBe(
       "sprint_acceleration"
     );
+    // Revue interne backend (04/07/2026) : le 200 m vit dans vma_short.
     expect(resolveCatalogId("run_intervals_8x200", HISTORICAL_EXERCISE_ALIASES)).toBe(
-      "run_intervals"
+      "vma_short"
     );
   });
 
@@ -101,10 +102,14 @@ describe("resolveCatalogId — aliases historiques & ID inconnu", () => {
       expect(resolveCatalogId(legacy, HISTORICAL_EXERCISE_ALIASES)).toBe("run_intervals");
     }
     // Distinctions préservées : IDs sans reps qui restent canoniques.
-    for (const id of ["vma_long", "vma_short", "rsa_bike_sprints_15_45", "rsa_row_sprints_20_40", "rsa_sprint_20m_repeat", "rsa_sprint_walkback_20m", "tempo_20_30", "run_engine_tempo_continuous_18_25"]) {
+    for (const id of ["vma_long", "vma_short", "rsa_bike_sprints_15_45", "rsa_row_sprints_20_40", "rsa_sprint_20m_repeat", "tempo_20_30", "run_engine_tempo_continuous_18_25"]) {
       expect(HISTORICAL_EXERCISE_ALIASES[id]).toBeUndefined();
       expect(resolveCatalogId(id, HISTORICAL_EXERCISE_ALIASES)).toBe(id);
     }
+    // Revue interne backend (04/07/2026) — fusion : walkback = preset du 20 m.
+    expect(resolveCatalogId("rsa_sprint_walkback_20m", HISTORICAL_EXERCISE_ALIASES)).toBe(
+      "rsa_sprint_20m_repeat"
+    );
   });
 
   it("résout la fusion plyo finale (box jump à hauteur paramétrable)", () => {

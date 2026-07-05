@@ -186,7 +186,12 @@ export const HISTORICAL_EXERCISE_ALIASES: Record<string, string> = {
   sprint_accel_20m: "sprint_acceleration",
   run_engine_intervals_30_30_2x10: "run_intervals",
   run_engine_intervals_15_15_2x12: "run_intervals",
-  run_intervals_8x200: "run_intervals",
+  // Revue interne backend (04/07/2026) : le 200 m vit dans un seul canonique
+  // (vma_short récupère le preset 8×200 m de run_intervals).
+  run_intervals_8x200: "vma_short",
+  // Revue interne backend (04/07/2026) — fusion : la récup (chrono vs marche
+  // retour) est un paramètre ; walkback = preset du canonique 20 m.
+  rsa_sprint_walkback_20m: "rsa_sprint_20m_repeat",
   // Lot 7 Protocoles/Tests (backend, 04/07/2026) : le nombre de répétitions
   // sort des IDs canoniques ; doublons machines fusionnés ; rsa_runs_* =
   // presets complets de run_intervals.
