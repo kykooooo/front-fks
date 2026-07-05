@@ -10,7 +10,7 @@ import {
   Animated,
   Platform,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Screen } from "../components/ui/Screen";
 import { useRoute, RouteProp, useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -268,7 +268,7 @@ export default function PrebuiltSessionDetailScreen() {
     : 0;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
+    <Screen style={styles.safeArea}>
       <View style={styles.root}>
         <ScrollView
           style={{ flex: 1 }}
@@ -624,7 +624,7 @@ export default function PrebuiltSessionDetailScreen() {
           </TouchableOpacity>
         </View>
       </View>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

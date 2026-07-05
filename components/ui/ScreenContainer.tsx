@@ -1,10 +1,7 @@
 import React from "react";
-import { ScrollView, type ScrollViewProps, type StyleProp, type ViewStyle } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { type ScrollViewProps, type StyleProp, type ViewStyle } from "react-native";
 
-import { theme } from "../../constants/theme";
-
-const palette = theme.colors;
+import { Screen } from "./Screen";
 
 type ScreenContainerProps = {
   children: React.ReactNode;
@@ -12,48 +9,36 @@ type ScreenContainerProps = {
   safeAreaStyle?: StyleProp<ViewStyle>;
   contentContainerStyle?: StyleProp<ViewStyle>;
   scrollProps?: ScrollViewProps;
-  edges?: Array<"top" | "bottom" | "left" | "right">;
 };
 
+/**
+ * Wrapper historique — delegue desormais a <Screen> (source unique de verite
+ * pour la safe area, header-aware). Conserve pour compat des appelants
+ * existants ; les nouveaux ecrans utilisent directement <Screen>.
+ */
 export function ScreenContainer({
   children,
   scroll = true,
   safeAreaStyle,
   contentContainerStyle,
   scrollProps,
-  edges = ["top", "bottom", "left", "right"],
 }: ScreenContainerProps) {
-  if (!scroll) {
-    return (
-      <SafeAreaView style={[styles.safeArea, safeAreaStyle]} edges={edges}>
-        {children}
-      </SafeAreaView>
-    );
-  }
   return (
-    <SafeAreaView style={[styles.safeArea, safeAreaStyle]} edges={edges}>
-      <ScrollView
-        contentContainerStyle={[styles.container, contentContainerStyle]}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        {...scrollProps}
-      >
-        {children}
-      </ScrollView>
-    </SafeAreaView>
+    <Screen
+      scroll={scroll}
+      style={safeAreaStyle}
+      contentContainerStyle={scroll ? [styles.container, contentContainerStyle] : undefined}
+      scrollProps={scrollProps}
+    >
+      {children}
+    </Screen>
   );
 }
 
 const styles = {
-  safeArea: {
-    flex: 1,
-    backgroundColor: palette.background,
-  } as ViewStyle,
   container: {
-    flexGrow: 1,
     paddingHorizontal: 16,
     paddingVertical: 16,
-    backgroundColor: palette.background,
     gap: 16,
   } as ViewStyle,
 };

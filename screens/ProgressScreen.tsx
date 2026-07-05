@@ -6,7 +6,7 @@ import {
   ScrollView,
   LayoutChangeEvent,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Screen } from "../components/ui/Screen";
 import { useNavigation } from "@react-navigation/native";
 import {
   format,
@@ -440,7 +440,7 @@ export default function ProgressScreen() {
   const loadDelta = Math.round(monthLoad - lastMonthLoad);
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
+    <Screen style={styles.safeArea}>
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
@@ -784,7 +784,7 @@ export default function ProgressScreen() {
           </View>
         </Card>
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

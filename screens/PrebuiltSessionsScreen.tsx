@@ -1,7 +1,7 @@
 // screens/PrebuiltSessionsScreen.tsx — orchestrator (refactored from 1838 → ~200 lines)
 import React, { useMemo, useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Screen } from "../components/ui/Screen";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useRoutineBadges } from "../hooks/useRoutineBadges";
@@ -105,7 +105,7 @@ export default function PrebuiltSessionsScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
+    <Screen style={styles.safeArea}>
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
@@ -199,7 +199,7 @@ export default function PrebuiltSessionsScreen() {
 
         <View style={{ height: 24 }} />
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

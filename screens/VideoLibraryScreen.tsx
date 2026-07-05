@@ -11,7 +11,7 @@ import {
   Animated,
 } from "react-native";
 import { RouteProp, useRoute } from "@react-navigation/native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Screen } from "../components/ui/Screen";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../constants/theme";
 import { showToast } from "../utils/toast";
@@ -374,7 +374,7 @@ export default function VideoLibraryScreen() {
   // ─── Vue catégories ───
   if (!showResults) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <Screen style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
           {renderHeader()}
           <SectionHeader title="Catégories" />
@@ -410,7 +410,7 @@ export default function VideoLibraryScreen() {
           label={videoPlayerLabel}
           onClose={() => setVideoPlayerUrl(null)}
         />
-      </SafeAreaView>
+      </Screen>
     );
   }
 
@@ -502,7 +502,7 @@ export default function VideoLibraryScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <Screen style={styles.safeArea}>
       <FlatList
         data={displayList.length > 0 ? displayList : []}
         keyExtractor={keyExtractor}
@@ -519,7 +519,7 @@ export default function VideoLibraryScreen() {
         label={videoPlayerLabel}
         onClose={() => setVideoPlayerUrl(null)}
       />
-    </SafeAreaView>
+    </Screen>
   );
 }
 

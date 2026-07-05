@@ -14,7 +14,7 @@ import {
   AppState,
 } from "react-native";
 import { useKeepAwake } from "expo-keep-awake";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Screen } from "../components/ui/Screen";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -1057,7 +1057,7 @@ function SessionLiveScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
+    <Screen style={styles.safeArea}>
       <View style={styles.root}>
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
           <Animated.View
@@ -1364,7 +1364,7 @@ function SessionLiveScreen() {
           </View>
         </Animated.View>
       </View>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

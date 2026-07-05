@@ -17,7 +17,7 @@ import {
   StatusBar,
   BackHandler,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Screen } from "../components/ui/Screen";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -635,7 +635,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   const progressPercent = ((step + 1) / TOTAL_STEPS) * 100;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
+    <Screen style={styles.safeArea}>
       <StatusBar barStyle={themeMode === "dark" ? "light-content" : "dark-content"} backgroundColor={palette.bg} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
@@ -746,7 +746,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
           message="Enregistrement de ton profil..."
           submessage="Configuration initiale en cours."
         />
-      </SafeAreaView>
+      </Screen>
   );
 }
 

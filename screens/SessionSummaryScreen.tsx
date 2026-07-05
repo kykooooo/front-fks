@@ -1,7 +1,7 @@
 // screens/SessionSummaryScreen.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Animated } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Screen } from "../components/ui/Screen";
 import { CommonActions, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import type { AppStackParamList } from "../navigation/RootNavigator";
 import { theme } from "../constants/theme";
@@ -182,7 +182,7 @@ function SessionSummaryScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
+    <Screen style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Animated.View
           style={[
@@ -320,7 +320,7 @@ function SessionSummaryScreen() {
           </View>
         </Animated.View>
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

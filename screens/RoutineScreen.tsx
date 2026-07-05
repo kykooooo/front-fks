@@ -6,7 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Screen } from "../components/ui/Screen";
 import { useNavigation } from "@react-navigation/native";
 import { addDays, format, parseISO, startOfWeek, subDays } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -305,7 +305,7 @@ export default function RoutineScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
+    <Screen style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Card variant="surface" style={styles.heroCard}>
           <View style={styles.heroGlow} />
@@ -540,7 +540,7 @@ export default function RoutineScreen() {
           </Card>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

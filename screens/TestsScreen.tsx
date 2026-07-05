@@ -1,7 +1,7 @@
 // screens/TestsScreen.tsx — orchestrator (refactored from 1879 → ~280 lines)
 import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { View, StyleSheet, ScrollView, Animated, KeyboardAvoidingView, Platform } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Screen } from "../components/ui/Screen";
 import { useRoute } from "@react-navigation/native";
 import { useHaptics } from "../hooks/useHaptics";
 import { theme } from "../constants/theme";
@@ -305,7 +305,7 @@ export default function TestsScreen() {
   // --- Render ---
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
+    <Screen style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -391,7 +391,7 @@ export default function TestsScreen() {
         <View style={{ height: 32 }} />
       </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

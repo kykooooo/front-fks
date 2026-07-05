@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   ScrollView,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Screen } from "../components/ui/Screen";
 import { subDays } from "date-fns";
 import { useNavigation, NavigationProp, useFocusEffect } from "@react-navigation/native";
 import { useLoadStore } from "../state/stores/useLoadStore";
@@ -600,7 +600,7 @@ export default function NewSessionScreen() {
       : "Générer une séance";
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: palette.bg }} edges={["top", "right", "left", "bottom"]}>
+    <Screen style={{ flex: 1, backgroundColor: palette.bg }}>
       {resetChoice && (
         <ResetVariantModal
           variants={resetChoice.variants}
@@ -816,7 +816,7 @@ export default function NewSessionScreen() {
         estimatedDurationMs={25000}
         onCancel={cancelGeneration}
       />
-    </SafeAreaView>
+    </Screen>
   );
 }
 
