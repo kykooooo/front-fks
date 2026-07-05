@@ -9,7 +9,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Modal,
-  Dimensions,
+  useWindowDimensions,
   Platform,
 } from "react-native";
 import { WebView } from "react-native-webview";
@@ -18,7 +18,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../constants/theme";
 
 const palette = theme.colors;
-const SCREEN_W = Dimensions.get("window").width;
 
 type Props = {
   visible: boolean;
@@ -48,6 +47,7 @@ function isYouTubeSearch(url: string): boolean {
 
 export function YouTubePlayer({ visible, url, label, onClose }: Props) {
   const insets = useSafeAreaInsets();
+  const { width: screenW } = useWindowDimensions();
 
   const embedUrl = useMemo(() => {
     if (!url) return null;
@@ -64,7 +64,7 @@ export function YouTubePlayer({ visible, url, label, onClose }: Props) {
 
   if (!embedUrl) return null;
 
-  const playerHeight = Math.round(SCREEN_W * 9 / 16); // 16:9
+  const playerHeight = Math.round((screenW * 9) / 16); // 16:9
 
   return (
     <Modal

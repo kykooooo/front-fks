@@ -1,5 +1,5 @@
 import React, { useMemo, useRef } from "react";
-import { Dimensions, PanResponder, View } from "react-native";
+import { PanResponder, View, useWindowDimensions } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 
 type SwipeTabsWrapperProps = {
@@ -17,6 +17,11 @@ export function SwipeTabsWrapper({
   currentTab,
 }: SwipeTabsWrapperProps) {
   const nav = useNavigation<any>();
+  // Largeur live via hook (suit rotation / multitâche iPad) ; capturee dans un
+  // ref car le PanResponder n'est cree qu'une fois (closure figee au montage).
+  const { width } = useWindowDimensions();
+  const widthRef = useRef(width);
+  widthRef.current = width;
   const currentIndex = useMemo(
     () => tabOrder.findIndex((tab) => tab === currentTab),
     [tabOrder, currentTab]
@@ -28,8 +33,7 @@ export function SwipeTabsWrapper({
         const { dx, dy, x0 } = gesture;
         if (Math.abs(dx) < 12) return false;
         if (Math.abs(dx) < Math.abs(dy) * 1.2) return false;
-        const width = Dimensions.get("window").width;
-        if (x0 > EDGE_SLOP && x0 < width - EDGE_SLOP) return false;
+        if (x0 > EDGE_SLOP && x0 < widthRef.current - EDGE_SLOP) return false;
         return true;
       },
       onPanResponderRelease: (_, gesture) => {

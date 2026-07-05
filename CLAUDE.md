@@ -324,6 +324,7 @@ Hook `useHaptics()` centralise :
 8. **Haptics via useHaptics() uniquement** (jamais d'appel direct expo-haptics)
 9. **Helpers partages dans utils/** (pas de duplication de toDateKey, isSameDay, frToKey)
 10. **Hooks metier du Home dans hooks/home/** (garder HomeScreen leger)
+11. **Socle visuel (regle d'or)** : tout nouvel ecran = `<Screen>` (`components/ui/Screen.tsx`, seule source de verite de la safe area, header-aware). Jamais de `<SafeAreaView edges={[...]}>` ni de `paddingTop` magique a la main. Jamais de `<StatusBar>` locale (une seule, globale, dans `App.tsx`). Sur les blocs de texte : `minHeight` (jamais `height`), et `numberOfLines` sur le contenu backend.
 
 ## Note pour Claude
 Je suis Kyllian, non-developpeur, j'ai cree cette app avec GPT puis Claude Code. Mon co-fondateur s'appelle Marvin (gere la partie call/closing).
