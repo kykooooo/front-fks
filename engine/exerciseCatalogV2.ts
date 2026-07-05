@@ -266,6 +266,17 @@ export const HISTORICAL_EXERCISE_ALIASES: Record<string, string> = {
   core_half_kneeling_pallof: "core_pallof",
   mob_walking_spiderman: "mob_spiderman_walk",
   mob_hip_airplane: "str_db_hip_airplane",
+  // Parité alias backend 73bb6e1 (05/07/2026) — les 10 manquants pour 72/72.
+  cod_wicket_drill_short: "speed_wicket_run",
+  speed_wicket_run_maxv: "speed_wicket_run",
+  plyo_cm_jump: "plyo_countermovement_jump",
+  plyo_pogo_hops: "plyo_pogos",
+  core_mcGill_curl_up: "core_mcgill_curl_up",
+  run_easy_20: "easy_jog_20_30",
+  run_mod_30: "run_engine_z2_30_40",
+  plyo_depth_jumps: "plyo_drop_jump",
+  str_rdl: "str_rdl_bar",
+  mob_tspine: "mob_thoracic",
 };
 
 export function catalogExerciseToView(

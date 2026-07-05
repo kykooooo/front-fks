@@ -1043,6 +1043,143 @@ export const EXERCISE_INSTRUCTIONS: Record<string, ExerciseInstruction> = {
     howTo: "En avançant, pose une grande fente avec la main au sol côté pied avant et amène le coude vers la cheville. Enchaîne pas après pas.",
     cues: ["Grande fente", "Coude vers la cheville", "Avance en contrôle"],
   },
+  // ── Backfill catalogue V2 (05/07/2026) — execution.steps/cues verbatim des fiches backend ──
+  bike_intervals_40_20: {
+    howTo: "40 s soutenu, cadence haute. 20 s facile sans t'arrêter de pédaler. Enchaîne les répétitions (10 en legacy) en gardant la posture stable.",
+    cues: ["Cadence haute", "Posture stable", "Qualité avant volume"],
+  },
+  circuit_home_cardio: {
+    howTo: "Enchaîne les 5 composants : 30 s chacun, 15 s de repos entre. Récupère entre les tours, repars propre. 3-4 tours (donnée legacy), technique avant tout.",
+    cues: ["30/15 au chrono", "Amortis les réceptions", "Qualité avant volume"],
+  },
+  circuit_tabata_bodyweight: {
+    howTo: "Lance le minuteur Tabata : 20 s d'effort, 10 s de repos, 8 rounds. Choisis un composant par round (ou alterne). Arrête un round plus tôt si la technique se dégrade.",
+    cues: ["Effort franc 20 s", "Repos total 10 s", "Technique jusqu'au bout"],
+  },
+  core_bicycle_crunch: {
+    howTo: "Amène le coude vers le genou opposé en pédalant. Épaules décollées, mouvement lent. Alterne sans tirer sur la nuque.",
+    cues: ["Lent et contrôlé", "Ne tire pas la nuque", "Coude vers genou opposé"],
+  },
+  core_mcgill_curl_up: {
+    howTo: "Décolle légèrement tête et épaules d'un bloc. Le creux lombaire reste soutenu par les mains. Tiens brièvement puis redescends. Change de jambe à mi-série.",
+    cues: ["Décollement minime", "Tête et épaules d'un bloc", "Respiration calme"],
+  },
+  core_mountain_climbers: {
+    howTo: "Amène un genou vers la poitrine puis alterne. Bassin stable, épaules au-dessus des mains. Rythme adapté à l'objectif (contrôle ou cardio).",
+    cues: ["Bassin stable", "Épaules sur les mains", "Rythme maîtrisé"],
+  },
+  core_v_ups: {
+    howTo: "Monte buste et jambes en même temps pour toucher tes pieds. Redescends en contrôle sans t'écraser au sol. Garde le mouvement fluide.",
+    cues: ["Monte d'un bloc", "Redescends contrôlé", "Respiration calme"],
+  },
+  mob_inchworm: {
+    howTo: "Penche-toi et marche avec les mains jusqu'en planche. Marche les pieds vers les mains, jambes quasi tendues. Redresse-toi et répète en avançant.",
+    cues: ["Jambes quasi tendues au retour", "Planche complète", "Rythme lent"],
+  },
+  mob_scorpion_stretch: {
+    howTo: "Monte un pied vers la main opposée en tournant le bassin. Épaules qui restent le plus possible au sol. Reviens lentement et alterne.",
+    cues: ["Épaules au sol", "Rotation lente", "Amplitude confortable, jamais forcée"],
+  },
+  mob_spiderman_walk: {
+    howTo: "Avance en grande fente, pose les mains au sol côté pied avant. Ouvre la hanche (coude qui plonge vers la cheville si confortable) puis tourne le buste vers le genou avant. Passe au pas suivant.",
+    cues: ["Grande fente", "Ouvre la hanche", "Rotation contrôlée"],
+  },
+  nordic_curl_partner: {
+    howTo: "Le partenaire cale les chevilles fermement. Descends le plus lentement possible, corps aligné. Amortis avec les mains puis remonte en poussant avec les bras.",
+    cues: ["Le plus lent possible", "Corps aligné", "Mains prêtes"],
+  },
+  plyo_pogo_hops_low: {
+    howTo: "Micro-rebonds très courts. Amplitude minimale, cheville active. Reste léger et régulier.",
+    cues: ["Amplitude minimale", "Contact au sol court", "Reste léger"],
+  },
+  protocol_acceleration_pyramid_10_20_30: {
+    howTo: "Accélération sur 10 m : départ gainé, poussées longues. Puis accélération sur 20 m : monte le buste progressivement. Puis accélération sur 30 m : termine à vitesse élevée, décélère en douceur. Récupération complète entre chaque course.",
+    cues: ["Poussées longues au départ", "Monte le buste progressivement", "Récupération complète entre les courses"],
+  },
+  row_intervals_500m: {
+    howTo: "500 m à allure rythmée et régulière. 90 s de récupération easy (pédalage doux ou pause). Enchaîne les répétitions (6 en legacy) sans dégrader le tirage.",
+    cues: ["Jambes puis bras", "Dos neutre", "Allure régulière"],
+  },
+  run_intervals: {
+    howTo: "Cours vite pendant le temps de travail (RPE 7-8, pas un sprint à bloc). Récupère en trottinant/marchant pendant le temps de récup. Respecte le repos entre séries (2-3 min easy, donnée legacy).",
+    cues: ["Course relâchée", "Le chrono décide", "Qualité avant volume"],
+  },
+  run_intervals_1000m: {
+    howTo: "1000 m proche du seuil, allure stable. Récupère 90-120 s en trottinant ou marchant. Répète (4-5 en legacy) sans sprint final.",
+    cues: ["Allure stable", "Reste relâchée", "Jamais de sprint final"],
+  },
+  run_intervals_300m: {
+    howTo: "300 m rythmés, allure régulière. Récupère 60-75 s easy. Répète (8 en legacy) proprement.",
+    cues: ["Répète propre", "Reste relâchée", "Jamais de sprint final"],
+  },
+  run_intervals_400m: {
+    howTo: "400 m en allure soutenue et stable. Récupère 75-90 s easy ou en marchant. Répète (6 en legacy) en gardant la même allure.",
+    cues: ["Allure stable", "Reste relâchée", "Jamais de sprint final"],
+  },
+  run_tempo_cruise_5min: {
+    howTo: "5 minutes en tempo contrôlé. 90 s easy. Répète (4 blocs en legacy) sans dérive d'allure.",
+    cues: ["Garde le contrôle", "Allure constante", "Reste relâchée"],
+  },
+  run_tempo_cruise_8min: {
+    howTo: "8 minutes en tempo Z3, cadence stable. 2 minutes easy sans t'arrêter. Répète (3 blocs en legacy).",
+    cues: ["Cadence stable", "Technique propre", "Reste relâchée"],
+  },
+  run_threshold_10min: {
+    howTo: "10 minutes proche du seuil, allure stable. 3 minutes easy. Répète (2 blocs en legacy). Jamais à bloc.",
+    cues: ["Stable, pas à bloc", "Reste relâchée", "Respiration contrôlée"],
+  },
+  sled_push_heavy: {
+    howTo: "Mains sur les poignées, corps incliné bas. Poussées longues et complètes, regard devant. Récupération longue entre les passages.",
+    cues: ["Angle bas", "Pousse complet", "Tronc gainé"],
+  },
+  speed_wall_drill_a_skip: {
+    howTo: "Appui mains contre mur, montées de genou alternées explosives, angle tibia/hanche propre, contact court.",
+    cues: [],
+  },
+  speed_wicket_run: {
+    howTo: "Prends ton élan progressif. Cours par-dessus les wickets en gardant une posture haute. Contacts courts et rythmés, genoux hauts.",
+    cues: ["Posture haute", "Contacts courts", "Genoux hauts"],
+  },
+  sprint_acceleration: {
+    howTo: "Départ gainé, poussées longues sur les premiers appuis. Monte le buste progressivement. Décélère en douceur après la distance cible.",
+    cues: ["Poussées longues", "Gainage fort", "Récupération complète entre les courses"],
+  },
+  sprint_flying: {
+    howTo: "Monte en régime progressivement sur l'élan. Traverse la zone lancée à pleine vitesse, posture haute et relâchée. Décélère progressivement, récupération complète. Stoppe la série si la vitesse baisse.",
+    cues: ["Posture haute", "Épaules et visage relâchés", "Récupération complète entre les courses"],
+  },
+  sprint_max_velocity_exposure: {
+    howTo: "Sprint complet sur la distance choisie : accélère puis atteins ta vitesse élevée. Épaules et visage relâchés à haute vitesse. Récupération complète entre les courses.",
+    cues: ["Épaules et visage relâchés", "Posture haute", "Récupération complète entre les courses"],
+  },
+  str_archer_pushup: {
+    howTo: "Descends vers une main, l'autre jambe... l'autre bras reste tendu. Pousse pour revenir au centre. Alterne les côtés.",
+    cues: ["Bras opposé tendu", "Corps aligné comme une planche", "Descente contrôlée"],
+  },
+  str_clamshell: {
+    howTo: "Ouvre le genou du dessus sans bouger le bassin. Pause brève en ouverture. Referme lentement.",
+    cues: ["Bassin immobile", "Pieds joints", "Tempo lent et contrôlé"],
+  },
+  str_fire_hydrant: {
+    howTo: "Ouvre un genou sur le côté, hanche qui travaille. Dos stable, sans rotation du buste. Reviens en contrôle.",
+    cues: ["Dos stable", "Ouvre par la hanche", "Tempo lent et contrôlé"],
+  },
+  str_pike_pushup: {
+    howTo: "Hanches hautes, plie les coudes pour descendre la tête vers le sol. Pousse pour revenir en pike. Regard entre les mains.",
+    cues: ["Hanches hautes", "Tête vers les mains", "Descente contrôlée"],
+  },
+  str_pistol_squat_assisted: {
+    howTo: "Descends sur une jambe en t'aidant des mains. Jambe libre tendue devant. Remonte en poussant, assistance minimale.",
+    cues: ["Assistance minimale", "Genoux alignés sur les pieds", "Talon au sol"],
+  },
+  str_superman_hold: {
+    howTo: "Décolle légèrement bras et jambes du sol. Regard vers le sol, nuque longue. Tiens la position en respirant.",
+    cues: ["Nuque longue", "Décollage léger", "Respire"],
+  },
+  treadmill_intervals_60_60: {
+    howTo: "60 s soutenu (pas un sprint). 60 s easy en réduisant la vitesse. Répète (12 en legacy) en restant fluide.",
+    cues: ["Soutenu, pas sprint", "Reste fluide", "Qualité avant volume"],
+  },
 };
 
 export const getExerciseInstruction = (id: string) =>

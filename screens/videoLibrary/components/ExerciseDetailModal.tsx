@@ -539,7 +539,43 @@ export function ExerciseDetailModal({
     return catalog.exercises.find((entry) => entry.id === canonical) ?? null;
   }, [exerciseId, catalog]);
 
-  const legacyExercise = exerciseId ? EXERCISE_BY_ID[exerciseId] : undefined;
+  // Fallback safe : un exercise_id que le front ne connaît pas encore (nouvel
+  // exo backend pas encore backfillé) affiche une fiche minimale au nom brut
+  // humanisé — plus jamais de modal qui ne s'ouvre pas.
+  const fallbackExercise = useMemo<ExerciseDef | null>(() => {
+    if (!exerciseId) return null;
+    const modality = exerciseId.startsWith("mob_")
+      ? ("mobility" as const)
+      : exerciseId.startsWith("core_")
+        ? ("core" as const)
+        : exerciseId.startsWith("plyo_")
+          ? ("plyo" as const)
+          : exerciseId.startsWith("cod_")
+            ? ("cod" as const)
+            : /^(run_|speed_|sprint_|vma_|tempo_|bike_|row_|treadmill_|easy_|rsa_)/.test(exerciseId)
+              ? ("run" as const)
+              : exerciseId.startsWith("circuit_")
+                ? ("circuit" as const)
+                : ("strength" as const);
+    const raw = exerciseId
+      .replace(/^(str|core|mob|plyo|cod|run|speed|sprint|rsa|circuit|upper|mb|fks|protocol|vma|tempo|bike|row|treadmill|easy)_/, "")
+      .replace(/_/g, " ")
+      .trim();
+    const name = raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : exerciseId;
+    return {
+      id: exerciseId,
+      name,
+      description:
+        "Fiche détaillée à venir — suis les consignes affichées dans ta séance.",
+      modality,
+      intensity: "moderate",
+      tags: [],
+    };
+  }, [exerciseId]);
+
+  const legacyExercise = exerciseId
+    ? EXERCISE_BY_ID[exerciseId] ?? fallbackExercise ?? undefined
+    : undefined;
   if (!catalogEntry && !legacyExercise) return null;
 
   return (
