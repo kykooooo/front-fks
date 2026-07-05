@@ -224,7 +224,7 @@ export function v2ToLocalSession(
     phase,
     focus: v2.focusPrimary ?? baseModality,
     intensity: baseIntensity,
-    dateISO: `${plannedDateISO}T00:00:00.000Z`,
+    dateISO: `${plannedDateISO}T12:00:00`, // midi local : évite le recul d'un jour via toDateKey dans les fuseaux UTC-
     completed: false,
     volumeScore,
     exercises: exos,

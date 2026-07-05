@@ -62,3 +62,59 @@ describe("adviceRules — wording U15-safe (garde-fou)", () => {
     expect(FOOTBALL_LABELS.LOADED.label).toBe("Un peu chargé");
   });
 });
+
+// Sélection de règle : première règle (par priorité) dont la condition matche.
+const pickAdvice = (ctx: AdviceContext) => {
+  const sorted = [...ADVICE_RULES].sort((a, b) => a.priority - b.priority);
+  const rule = sorted.find((r) => r.condition(ctx));
+  return rule ? rule.build(ctx) : null;
+};
+
+describe("adviceRules — no_mobility (daysSinceLastMobility null)", () => {
+  test("null → message sans nombre ni 'null'", () => {
+    const rule = ADVICE_RULES.find((r) => r.id === "no_mobility")!;
+    const ctx = baseCtx({ daysSinceLastMobility: null });
+    expect(rule.condition(ctx)).toBe(true);
+    const advice = rule.build(ctx);
+    expect(advice.message).not.toMatch(/null|undefined|\d/);
+    expect(advice.message).toBe("Jamais fait de mobilité ? Tes articulations te remercieront.");
+  });
+
+  test("nombre → message avec le nombre de jours", () => {
+    const rule = ADVICE_RULES.find((r) => r.id === "no_mobility")!;
+    const advice = rule.build(baseCtx({ daysSinceLastMobility: 6 }));
+    expect(advice.message).toContain("6 jours sans mobilité");
+  });
+});
+
+describe("adviceRules — cohérence seuils TSB avec le CTA récup (<= -15)", () => {
+  // Contexte neutre : seules les règles TSB peuvent matcher.
+  const quietCtx = (tsb: number) =>
+    baseCtx({
+      tsb,
+      daysUntilMatch: null,
+      isMatchToday: false,
+      isPostMatch: false,
+      isClubToday: false,
+      hasActiveInjury: false,
+      microcycleGoal: null,
+      cycleRemaining: 5,
+      daysSinceLastMobility: 1,
+      routineStreak: 0,
+    });
+
+  test("TSB <= -15 → conseil récup (pas 'Tu peux t'entraîner')", () => {
+    for (const tsb of [-15, -16, -20, -30]) {
+      const advice = pickAdvice(quietCtx(tsb));
+      expect(advice?.id).toBe("tsb_extreme_fatigue");
+      expect(advice?.message).not.toMatch(/tu peux t'entra[iî]ner/i);
+    }
+  });
+
+  test("-15 < TSB <= -12 → fatigue modérée (entraînement possible)", () => {
+    for (const tsb of [-14, -12.5]) {
+      const advice = pickAdvice(quietCtx(tsb));
+      expect(advice?.id).toBe("tsb_fatigue");
+    }
+  });
+});

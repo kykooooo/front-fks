@@ -9,11 +9,11 @@ const palette = theme.colors;
 
 export default function PrivacyPolicyScreen() {
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "right", "left", "bottom"]}>
+    // Le titre est porté par le header natif ("Confidentialité") — pas de doublon in-page.
+    <SafeAreaView style={styles.safeArea} edges={["right", "left", "bottom"]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Politique de confidentialite</Text>
         <Text style={styles.subtitle}>
-          Comment FKS collecte et protege vos donnees.
+          Comment FKS collecte et protège tes données.
         </Text>
 
         {PRIVACY_POLICY.map((section) => (

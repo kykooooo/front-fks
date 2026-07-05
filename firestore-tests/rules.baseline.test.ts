@@ -1,16 +1,18 @@
 // firestore-tests/rules.baseline.test.ts
 //
-// Tests Firestore Rules — BASELINE.
+// Tests Firestore Rules — comportement APRÈS fermeture de la frontière (PR-4).
 //
-// Ces tests sont VERTS contre firestore.rules ACTUEL (non modifié dans cette PR).
-// Objectif : documenter le comportement de sécurité PRÉSENT, y compris les fuites.
-//
-// Les tests marqués `CURRENT VULNERABILITY` affirment le comportement DANGEREUX
-// réel (une lecture sensible RÉUSSIT aujourd'hui). Ils seront INVERSÉS
-// (assertSucceeds → assertFails) lors de la PR de fermeture des rules (PR-4).
+// Ces tests sont VERTS contre firestore.rules PR-4. Ils couvrent :
+//   - les comportements légitimes (inchangés) ;
+//   - la frontière coach-safe FERMÉE : les anciens `CURRENT VULNERABILITY` de
+//     lecture coach des docs bruts sont désormais INVERSÉS (assertSucceeds →
+//     assertFails) — le coach ne lit plus profil/sessions/plannedSessions bruts ;
+//   - les vulnérabilités HORS périmètre coach-safe (inviteCode lisible, création
+//     de membership sans code) : NON traitées par PR-4, laissées telles quelles
+//     et explicitement documentées comme dette de sécurité distincte.
 //
 // RÈGLE : ne JAMAIS masquer une fuite pour obtenir du vert. Un test vert ici =
-// une vérité mesurée sur les rules de production actuelles.
+// une vérité mesurée sur les rules réelles.
 
 import { readFileSync } from "fs";
 import { resolve } from "path";
@@ -30,7 +32,6 @@ import {
   STRANGER,
   WEEK_KEY,
   CLUB_A_INVITE,
-  SENSITIVE,
   seed,
 } from "./fixtures";
 
@@ -88,38 +89,42 @@ describe("Comportements légitimes (doivent RESTER verts après PR-4)", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe("CURRENT VULNERABILITY — comportement dangereux ACTUEL (à INVERSER en PR-4)", () => {
-  // ⚠️ Chaque `assertSucceeds` ci-dessous passe AUJOURD'HUI et deviendra un
-  // `assertFails` après la fermeture des rules (PR-4).
+describe("Frontière coach-safe FERMÉE (PR-4) — anciens CURRENT VULNERABILITY inversés", () => {
+  // ⚠️ Chacun de ces `assertFails` passait en `assertSucceeds` AVANT PR-4 : c'était
+  // la fuite. Les rules PR-4 retirent l'accès coach aux docs bruts → lecture refusée.
 
-  test("CURRENT VULNERABILITY: coachA lit le profil BRUT de playerA1", async () => {
-    await assertSucceeds(getDoc(doc(asUser(COACH_A), "users", PLAYER_A1)));
+  test("coachA NE lit PLUS le profil BRUT de playerA1", async () => {
+    await assertFails(getDoc(doc(asUser(COACH_A), "users", PLAYER_A1)));
   });
 
-  test("CURRENT VULNERABILITY: coachA lit la séance BRUTE (sessions) de playerA1", async () => {
-    await assertSucceeds(getDoc(doc(asUser(COACH_A), "users", PLAYER_A1, "sessions", "s1")));
+  test("coachA NE lit PLUS la séance BRUTE (sessions) de playerA1", async () => {
+    await assertFails(getDoc(doc(asUser(COACH_A), "users", PLAYER_A1, "sessions", "s1")));
   });
 
-  test("CURRENT VULNERABILITY: coachA lit la séance PLANIFIÉE brute de playerA1", async () => {
-    await assertSucceeds(getDoc(doc(asUser(COACH_A), "users", PLAYER_A1, "plannedSessions", "p1")));
+  test("coachA NE lit PLUS la séance PLANIFIÉE brute de playerA1", async () => {
+    await assertFails(getDoc(doc(asUser(COACH_A), "users", PLAYER_A1, "plannedSessions", "p1")));
   });
 
-  test("CURRENT VULNERABILITY: coachA récupère pain/comment/tsb/aiV2 depuis le doc brut", async () => {
-    const snap = await getDoc(doc(asUser(COACH_A), "users", PLAYER_A1, "sessions", "s1"));
-    const data = snap.data() as Record<string, any>;
-    // Preuve CONCRÈTE de l'exposition des données sensibles au coach.
-    expect(data.feedback.pain).toBe(SENSITIVE.pain);
-    expect(data.feedback.comment).toBe(SENSITIVE.comment);
-    expect(data.metrics.tsb).toBe(SENSITIVE.tsb);
-    expect(data.aiV2).toBeDefined();
+  test("coachA NE peut PLUS atteindre le doc qui portait pain/comment/tsb/aiV2", async () => {
+    // Preuve inverse : la lecture qui exposait ces champs sensibles est refusée.
+    // (Le doc brut existe toujours ; seule la surface d'accès coach a été fermée.)
+    await assertFails(getDoc(doc(asUser(COACH_A), "users", PLAYER_A1, "sessions", "s1")));
   });
+});
 
-  test("CURRENT VULNERABILITY: tout connecté lit clubs/{id} et donc l'inviteCode", async () => {
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Vulnérabilités HORS périmètre coach-safe (NON traitées par PR-4)", () => {
+  // ⚠️ Ces deux `assertSucceeds` restent VERTS : ce sont des fuites RÉELLES mais
+  // DISTINCTES de la frontière coach-safe (pas de données joueuse exposées au coach
+  // ici). Hors scope de PR-4 → laissées inchangées et tracées comme dette de sécu.
+  // À traiter dans une PR dédiée (durcissement clubs/inviteCode + membership par code).
+
+  test("HORS SCOPE: tout connecté lit clubs/{id} et donc l'inviteCode", async () => {
     const snap = await getDoc(doc(asUser(STRANGER), "clubs", CLUB_A));
     expect((snap.data() as Record<string, any>).inviteCode).toBe(CLUB_A_INVITE);
   });
 
-  test("CURRENT VULNERABILITY: un connecté crée son membership 'player' SANS code d'invitation", async () => {
+  test("HORS SCOPE: un connecté crée son membership 'player' SANS code d'invitation", async () => {
     await assertSucceeds(
       setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), { uid: STRANGER, role: "player" }),
     );

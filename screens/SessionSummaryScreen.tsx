@@ -16,6 +16,8 @@ import { updateTrainingLoad } from "../engine/loadModel";
 import { useSettingsStore } from "../state/settingsStore";
 import { withSessionErrorBoundary } from "../components/withErrorBoundary";
 import { getCycleTheme } from "../constants/cycleTheme";
+import { formatDayFR } from "../utils/dateHelpers";
+import { frIntensity, frFocus, frLocation } from "../utils/frLabels";
 
 type SummaryRoute = RouteProp<AppStackParamList, "SessionSummary">;
 
@@ -204,12 +206,14 @@ function SessionSummaryScreen() {
                 <Text style={styles.heroSubtitle}>{summary.subtitle}</Text>
               ) : null}
               <View style={styles.heroBadges}>
-                {summary.plannedDateISO ? cycleChip(summary.plannedDateISO, "hero-date") : null}
+                {summary.plannedDateISO
+                  ? cycleChip(formatDayFR(summary.plannedDateISO) || summary.plannedDateISO, "hero-date")
+                  : null}
                 {summary.intensity ? (
-                  <Badge label={summary.intensity} tone={intensityTone(summary.intensity)} />
+                  <Badge label={frIntensity(summary.intensity)} tone={intensityTone(summary.intensity)} />
                 ) : null}
-                {summary.focus ? cycleChip(summary.focus, "hero-focus") : null}
-                {summary.location ? cycleChip(summary.location, "hero-loc") : null}
+                {summary.focus ? cycleChip(frFocus(summary.focus), "hero-focus") : null}
+                {summary.location ? cycleChip(frLocation(summary.location), "hero-loc") : null}
               </View>
               <View style={styles.heroProgress}>
                 <Text style={styles.progressLabel}>
@@ -262,9 +266,9 @@ function SessionSummaryScreen() {
             <SectionHeader title="Badges" />
             <View style={styles.badgeRow}>
               {summary.intensity ? (
-                <Badge label={summary.intensity} tone={intensityTone(summary.intensity)} />
+                <Badge label={frIntensity(summary.intensity)} tone={intensityTone(summary.intensity)} />
               ) : null}
-              {summary.focus ? cycleChip(summary.focus, "badge-focus") : null}
+              {summary.focus ? cycleChip(frFocus(summary.focus), "badge-focus") : null}
               {durationMin ? cycleChip(`${durationMin} min`, "badge-dur") : null}
               {rpe ? cycleChip(`RPE ${rpe}`, "badge-rpe") : null}
             </View>

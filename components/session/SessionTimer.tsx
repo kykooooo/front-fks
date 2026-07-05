@@ -36,20 +36,34 @@ const formatTime = (total: number) => `${pad(total / 60)}:${pad(total % 60)}`;
 export const SessionTimer = forwardRef<SessionTimerHandle, Props>(
   function SessionTimer({ running, maxSec, onReachMax, style }, ref) {
     const [sec, setSec] = useState(0);
-    const secRef = useRef(0);
-    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    // Chrono basé sur l'horloge réelle (Date.now) et non sur un compteur
+    // incrémental : les setInterval JS sont suspendus en arrière-plan /
+    // écran verrouillé, le temps réel doit quand même être compté.
+    const baseSecRef = useRef(0);
+    const runningSinceRef = useRef<number | null>(null);
+    const maxReachedRef = useRef(false);
+
+    const computeSeconds = () => {
+      const runningPart =
+        runningSinceRef.current != null ? (Date.now() - runningSinceRef.current) / 1000 : 0;
+      return baseSecRef.current + runningPart;
+    };
 
     useImperativeHandle(
       ref,
       () => ({
-        getSeconds: () => secRef.current,
+        getSeconds: () => Math.floor(computeSeconds()),
         setSeconds: (value: number) => {
           const next = Math.max(0, Math.round(value));
-          secRef.current = next;
+          baseSecRef.current = next;
+          if (runningSinceRef.current != null) runningSinceRef.current = Date.now();
+          maxReachedRef.current = false;
           setSec(next);
         },
         reset: () => {
-          secRef.current = 0;
+          baseSecRef.current = 0;
+          if (runningSinceRef.current != null) runningSinceRef.current = Date.now();
+          maxReachedRef.current = false;
           setSec(0);
         },
       }),
@@ -58,22 +72,26 @@ export const SessionTimer = forwardRef<SessionTimerHandle, Props>(
 
     useEffect(() => {
       if (!running) return;
-      intervalRef.current = setInterval(() => {
-        setSec((prev) => {
-          const next = prev + 1;
-          if (maxSec != null && next >= maxSec) {
+      runningSinceRef.current = Date.now();
+      const tick = () => {
+        let next = computeSeconds();
+        if (maxSec != null && next >= maxSec) {
+          next = maxSec;
+          if (!maxReachedRef.current) {
+            maxReachedRef.current = true;
             onReachMax?.();
-            return prev;
           }
-          secRef.current = next;
-          return next;
-        });
-      }, 1000);
-      return () => {
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-          intervalRef.current = null;
         }
+        setSec(Math.floor(next));
+      };
+      tick();
+      const id = setInterval(tick, 1000);
+      return () => {
+        clearInterval(id);
+        // Fige le temps accumulé à la pause (borné au plafond éventuel).
+        const stopped = Math.floor(computeSeconds());
+        baseSecRef.current = maxSec != null ? Math.min(stopped, maxSec) : stopped;
+        runningSinceRef.current = null;
       };
     }, [running, maxSec, onReachMax]);
 

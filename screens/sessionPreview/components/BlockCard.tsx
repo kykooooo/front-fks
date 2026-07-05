@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
-import { getBlockConfig, getBlockLabel, getTransitionLabel } from "../../../components/session/blockConfig";
+import { getBlockVisual, getBlockLabel, getTransitionLabel } from "../../../components/session/blockConfig";
 import { getExerciseBenefit } from "../../../engine/exerciseBenefits";
 import {
   type Block,
@@ -48,7 +48,7 @@ export function BlockCard({
   getPulse,
   cycleTheme,
 }: Props) {
-  const cfg = getBlockConfig(block.type);
+  const cfg = getBlockVisual(block);
   const items = block.items ?? [];
   const blockTitle =
     block.goal || block.name || block.type || block.focus || `Bloc ${blockIndex + 1}`;
@@ -153,6 +153,9 @@ export function BlockCard({
                           >
                             {itemName}
                           </Text>
+                          {item.description ? (
+                            <Text style={styles.itemNote}>{item.description}</Text>
+                          ) : null}
                           {meta ? <Text style={styles.itemMeta}>{meta}</Text> : null}
                           {item.footballContext ? (
                             <Text style={styles.itemContext}>{item.footballContext}</Text>

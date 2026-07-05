@@ -31,6 +31,7 @@ import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
 import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
+import { useSettingsStore } from "../state/settingsStore";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
 const palette = theme.colors;
@@ -57,6 +58,8 @@ export default function LoginScreen({ navigation }: Props) {
   const [pwd, setPwd] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
+  const [sendingReset, setSendingReset] = useState(false);
+  const themeMode = useSettingsStore((s) => s.themeMode);
   const shake = useRef(new Animated.Value(0)).current;
   const pwdInputRef = useRef<TextInput>(null);
   const haptics = useHaptics();
@@ -98,7 +101,7 @@ export default function LoginScreen({ navigation }: Props) {
   };
 
   const onForgot = async () => {
-    if (loading) return;
+    if (loading || sendingReset) return;
     if (!email) {
       showToast({ type: "warn", title: "Email requis", message: "Entre ton email pour recevoir le lien." });
       return;
@@ -107,6 +110,7 @@ export default function LoginScreen({ navigation }: Props) {
       showToast({ type: "warn", title: "Email invalide", message: "Vérifie le format avant de continuer." });
       return;
     }
+    setSendingReset(true);
     try {
       await sendPasswordResetEmail(auth, emailTrimmed);
       showToast({
@@ -121,16 +125,17 @@ export default function LoginScreen({ navigation }: Props) {
         title: "Erreur",
         message: "Impossible d'envoyer l'email de réinitialisation.",
       });
+    } finally {
+      setSendingReset(false);
     }
   };
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={palette.bg} />
+      <StatusBar barStyle={themeMode === "dark" ? "light-content" : "dark-content"} backgroundColor={palette.bg} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <ScrollView
@@ -200,10 +205,12 @@ export default function LoginScreen({ navigation }: Props) {
 
               <Pressable
                 onPress={onForgot}
-                disabled={loading}
-                style={[styles.forgot, loading && { opacity: 0.5 }]}
+                disabled={loading || sendingReset}
+                style={[styles.forgot, (loading || sendingReset) && { opacity: 0.5 }]}
               >
-                <Text style={styles.forgotText}>Mot de passe oublié ?</Text>
+                <Text style={styles.forgotText}>
+                  {sendingReset ? "Envoi en cours…" : "Mot de passe oublié ?"}
+                </Text>
               </Pressable>
 
               <Pressable

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -41,9 +41,24 @@ export function ModalContainer({
 }: Props) {
   const [mounted, setMounted] = useState(visible);
 
+  // S25 — Anti double-dismiss : pendant l'animation de fermeture (~180ms), le
+  // backdrop reste tapable → onClose (souvent nav.goBack) pouvait partir DEUX
+  // fois (swipe + tap, ou double tap) et pop l'écran du dessous. Le premier
+  // déclenchement pose ce flag, tout appel suivant est neutralisé.
+  const dismissingRef = useRef(false);
+
   useEffect(() => {
-    if (visible) setMounted(true);
+    if (visible) {
+      setMounted(true);
+      dismissingRef.current = false;
+    }
   }, [visible]);
+
+  const handleClose = useCallback(() => {
+    if (dismissingRef.current) return;
+    dismissingRef.current = true;
+    onClose?.();
+  }, [onClose]);
 
   const { contentStyle: animatedContent, backdropStyle } = useModalAnimation({
     visible,
@@ -55,7 +70,7 @@ export function ModalContainer({
   const { gesture, animatedStyle } = useSwipeToDismiss({
     enabled: allowSwipeDismiss,
     threshold: swipeThreshold,
-    onDismiss: onClose,
+    onDismiss: handleClose,
   });
 
   const blurTint = useMemo(() => "dark" as const, []);
@@ -67,7 +82,7 @@ export function ModalContainer({
       <TouchableWithoutFeedback
         onPress={() => {
           if (!allowBackdropDismiss) return;
-          onClose?.();
+          handleClose();
         }}
       >
         <Animated.View style={[styles.backdrop, backdropStyle]}>

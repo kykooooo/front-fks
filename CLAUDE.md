@@ -198,17 +198,13 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
 
   /components
     /home
-      HomeStatusBar.tsx       # Bande compacte : phase + TSB + alerte match
       HomeReadinessHero.tsx   # Card large readiness + sparkline TSB (SVG)
       HomePrimaryCTA.tsx      # Bouton action principale contextuel (pulse animation)
-      HomeCarousel.tsx        # FlatList horizontale + pagination dots
       HomeCarouselCard.tsx    # Template card pour carousel
-      HomeTestsNudge.tsx      # Nudge tests terrain
       HomeCycleHero.tsx       # (legacy) Hero cycle
       HomeDashboardCard.tsx   # (legacy) Dashboard metriques
       HomeReadinessCard.tsx   # (legacy) Card readiness ancienne version
       HomeNextSessionCard.tsx # (legacy) Card prochaine seance
-      HomeWeekSummaryCard.tsx # (legacy) Resume semaine
 
     /modal
       ModalContainer.tsx      # Wrapper modal universel (blur + slide + handle)
@@ -237,7 +233,6 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
       useWeekSummary.ts       # Resume semaine (fksCount, extCount, message)
       useActivityStreak.ts    # Streak d'activite consecutive
       usePrimaryCta.ts        # Logique CTA intelligent (repos/generer/commencer/feedback)
-      useHomeCarouselItems.tsx # Construction items carousel
 
   /utils
     dateHelpers.ts            # Helpers partages (toDateKey, isSameDay, frToKey)

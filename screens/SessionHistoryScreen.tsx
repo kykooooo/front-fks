@@ -8,7 +8,7 @@ import { useNavigation } from "@react-navigation/native";
 import { theme } from "../constants/theme";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
-import { toDateKey } from "../utils/dateHelpers";
+import { toDateKey, formatDayFR } from "../utils/dateHelpers";
 import type { Session } from "../domain/types";
 
 const palette = theme.colors;
@@ -145,7 +145,7 @@ export default function SessionHistoryScreen() {
                   >
                     <Card variant="surface" style={styles.row}>
                       <View>
-                        <Text style={styles.rowTitle}>{date}</Text>
+                        <Text style={styles.rowTitle}>{formatDayFR(date) || date}</Text>
                         <Text style={styles.rowSub}>
                           {focus} · RPE {rpe} · {dur}
                         </Text>

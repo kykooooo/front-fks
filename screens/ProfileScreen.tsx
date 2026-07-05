@@ -8,7 +8,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { readTestsRaw } from './tests/hooks/useTestsStorage';
 
 import { useSessionsStore } from '../state/stores/useSessionsStore';
 import { useLoadStore } from '../state/stores/useLoadStore';
@@ -34,7 +34,6 @@ import { recommendMicrocycle } from '../domain/recommendMicrocycle';
 import { getFootballLabel } from '../config/trainingDefaults';
 
 const palette = theme.colors;
-const TESTS_STORAGE_KEY = 'fks_tests_v1';
 const TESTS_RECENCY_DAYS = 30;
 const SECTION_COUNT = 9;
 
@@ -123,7 +122,7 @@ export default function ProfileScreen() {
     let alive = true;
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(TESTS_STORAGE_KEY);
+        const raw = await readTestsRaw();
         if (!raw) return;
         const parsed = JSON.parse(raw) as Array<any>;
         if (!Array.isArray(parsed)) return;

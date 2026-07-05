@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../../constants/theme";
 import { SectionHeader } from "../../../components/ui/SectionHeader";
-import { getBlockConfig, getBlockLabel } from "../../../components/session/blockConfig";
+import { getBlockVisual, getBlockLabel } from "../../../components/session/blockConfig";
 import type { Block } from "../sessionPreviewConfig";
 
 const palette = theme.colors;
@@ -26,7 +26,7 @@ export function FlowStrip({ blocks, isBlockComplete }: Props) {
         contentContainerStyle={styles.flowStrip}
       >
         {blocks.map((block, idx) => {
-          const cfg = getBlockConfig(block.type);
+          const cfg = getBlockVisual(block);
           const done = isBlockComplete(idx);
           return (
             <React.Fragment key={`flow_${idx}`}>

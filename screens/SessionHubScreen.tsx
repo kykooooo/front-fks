@@ -14,7 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { readTestsRaw } from "./tests/hooks/useTestsStorage";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { theme } from "../constants/theme";
 import { Card } from "../components/ui/Card";
@@ -22,9 +22,9 @@ import { Badge } from "../components/ui/Badge";
 import { MICROCYCLES, isMicrocycleId, MICROCYCLE_TOTAL_SESSIONS_DEFAULT } from "../domain/microcycles";
 import { useHaptics } from "../hooks/useHaptics";
 import { useNavGuard } from "../hooks/useNavGuard";
+import { toDateKey } from "../utils/dateHelpers";
 
 const palette = theme.colors;
-const TESTS_STORAGE_KEY = "fks_tests_v1";
 
 type HubOption = {
   id: string;
@@ -186,6 +186,21 @@ export default function SessionHubScreen() {
   const guardNav = useNavGuard();
   const pending = useSessionsStore((s) => s.sessions.find((x) => !x.completed));
   const pendingId = typeof pending?.id === "string" ? pending.id : null;
+  const lastAiSessionV2 = useSessionsStore((s) => s.lastAiSessionV2);
+  // S22 — v2 de la séance en attente (même source que usePrimaryCta) pour
+  // pouvoir la rouvrir en preview, pas seulement donner le feedback.
+  const pendingV2 = pending ? pending.aiV2 ?? pending.ai ?? lastAiSessionV2?.v2 ?? null : null;
+  const openPendingSession = () => {
+    if (!pending || !pendingV2) return;
+    const plannedDateISO = toDateKey(pending.dateISO ?? pending.date);
+    guardNav(() =>
+      nav.navigate("SessionPreview", {
+        v2: pendingV2,
+        plannedDateISO,
+        sessionId: pending.id,
+      })
+    );
+  };
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
   const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
   const completedSessions = useSessionsStore((s) => s.sessions.filter((x) => x.completed).length);
@@ -203,7 +218,7 @@ export default function SessionHubScreen() {
       let cancelled = false;
       (async () => {
         try {
-          const raw = await AsyncStorage.getItem(TESTS_STORAGE_KEY);
+          const raw = await readTestsRaw();
           if (cancelled) return;
           if (!raw) {
             setTestsEmpty(true);
@@ -266,7 +281,7 @@ export default function SessionHubScreen() {
               <View style={styles.alertTextContainer}>
                 <Text style={styles.alertTitle}>Séance en attente</Text>
                 <Text style={styles.alertSubtitle}>
-                  Complete ton feedback pour débloquer la suite
+                  Complète ton feedback pour débloquer la suite
                 </Text>
               </View>
             </View>
@@ -279,6 +294,18 @@ export default function SessionHubScreen() {
               <Text style={styles.alertButtonText}>Donner mon feedback</Text>
               <Ionicons name="arrow-forward" size={16} color={palette.accent} />
             </TouchableOpacity>
+            {pendingV2 ? (
+              <TouchableOpacity
+                style={[styles.alertButton, styles.alertButtonSecondary]}
+                onPress={openPendingSession}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.alertButtonText, styles.alertButtonSecondaryText]}>
+                  Voir la séance
+                </Text>
+                <Ionicons name="eye-outline" size={16} color={palette.sub} />
+              </TouchableOpacity>
+            ) : null}
           </Card>
         ) : null}
 
@@ -421,6 +448,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: palette.accent,
+  },
+  alertButtonSecondary: {
+    borderColor: palette.borderSoft,
+  },
+  alertButtonSecondaryText: {
+    color: palette.sub,
   },
   optionsContainer: {
     gap: 12,

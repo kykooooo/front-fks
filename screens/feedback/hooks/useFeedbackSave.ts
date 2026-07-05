@@ -32,6 +32,7 @@ type SaveParams = {
   injury: InjuryRecord | null;
   hasPainDetails: boolean;
   durationClamped: number | undefined;
+  durationInvalid: boolean;
   navigation: any;
   haptics: { success: () => void; warning: () => void };
 };
@@ -40,7 +41,7 @@ export function useFeedbackSave(params: SaveParams) {
   const {
     targetSessionId, targetSession, sessionDateKey, todayKey,
     canSaveToday, rpe, fatigue, pain, recovery, injury, hasPainDetails,
-    durationClamped, navigation, haptics,
+    durationClamped, durationInvalid, navigation, haptics,
   } = params;
 
   const atl = useLoadStore((s) => s.atl);
@@ -109,7 +110,11 @@ export function useFeedbackSave(params: SaveParams) {
       return;
     }
     if (!canSaveToday) {
-      showToast({ type: 'warn', title: 'Date non compatible', message: "Tu essaies de valider une séance qui n'est pas datée d'aujourd'hui." });
+      showToast({ type: 'warn', title: 'Séance trop ancienne', message: 'Cette séance date de plus de 2 jours. Génère une nouvelle séance depuis l’onglet Séance.' });
+      return;
+    }
+    if (durationInvalid) {
+      showToast({ type: 'warn', title: 'Durée invalide', message: 'Entre une durée entre 5 et 300 minutes, ou laisse le champ vide.' });
       return;
     }
 
@@ -291,19 +296,21 @@ export function useFeedbackSave(params: SaveParams) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isSaving, targetSessionId, targetSession, canSaveToday, sessionDateKey, todayKey,
-    rpe, fatigue, pain, recovery, injury, hasPainDetails, durationClamped,
+    rpe, fatigue, pain, recovery, injury, hasPainDetails, durationClamped, durationInvalid,
     atl, ctl, tsb, microcycleGoal, microcycleSessionIndex, lastAiContext,
     activePathwayId, activePathwayIndex,
   ]);
 
-  const saveDisabled = isSaving || !targetSession || targetSession?.completed || !canSaveToday;
+  const saveDisabled = isSaving || !targetSession || targetSession?.completed || !canSaveToday || durationInvalid;
   const saveLabel = isSaving
     ? 'Enregistrement…'
     : targetSession?.completed
       ? 'Déjà complétée'
       : !canSaveToday
-        ? "Séance pas datée d'aujourd'hui"
-        : 'Valider mon état';
+        ? 'Séance trop ancienne'
+        : durationInvalid
+          ? 'Durée invalide (5-300 min)'
+          : 'Valider mon état';
 
   return {
     onSave,

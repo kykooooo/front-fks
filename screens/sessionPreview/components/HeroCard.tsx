@@ -8,6 +8,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
 import { getCycleTheme } from "../../../constants/cycleTheme";
+import { formatDayFR } from "../../../utils/dateHelpers";
+import { frIntensity, frFocus, frLocation } from "../../../utils/frLabels";
 
 const palette = theme.colors;
 
@@ -51,9 +53,13 @@ export function HeroCard({
   cycleType,
 }: Props) {
   const ct = getCycleTheme(cycleType);
-  const metaChips = [intensity, focusPrimary, focusSecondary, location].filter(
-    (v): v is string => typeof v === "string" && v.trim().length > 0
-  );
+  const metaChips = [
+    frIntensity(intensity),
+    frFocus(focusPrimary),
+    frFocus(focusSecondary),
+    frLocation(location),
+  ].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+  const plannedDateLabel = formatDayFR(plannedDateISO) || plannedDateISO;
 
   return (
     <Card variant="surface" style={styles.heroCard}>
@@ -68,7 +74,7 @@ export function HeroCard({
           {subtitle ? (
             <Text style={styles.subtitle} numberOfLines={2}>{subtitle}</Text>
           ) : null}
-          {plannedDateISO ? <Text style={styles.headerDate}>{plannedDateISO}</Text> : null}
+          {plannedDateLabel ? <Text style={styles.headerDate}>{plannedDateLabel}</Text> : null}
         </View>
       </View>
 

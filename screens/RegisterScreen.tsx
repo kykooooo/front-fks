@@ -28,6 +28,7 @@ import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
 import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
+import { useSettingsStore } from "../state/settingsStore";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Register">;
 const palette = theme.colors;
@@ -55,14 +56,16 @@ export default function RegisterScreen({ navigation }: Props) {
   const [pwd, setPwd] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
+  const [consentAccepted, setConsentAccepted] = useState(false);
   const haptics = useHaptics();
+  const themeMode = useSettingsStore((s) => s.themeMode);
   const shake = useRef(new Animated.Value(0)).current;
   const emailRef = useRef<TextInput>(null);
   const pwdRef = useRef<TextInput>(null);
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const emailTrimmed = email.trim();
   const emailLooksValid = emailRegex.test(emailTrimmed);
-  const canSubmit = emailLooksValid && pwd.length >= 6;
+  const canSubmit = emailLooksValid && pwd.length >= 6 && consentAccepted;
 
   const fail = (title: string, message?: string) => {
     runShake(shake);
@@ -83,10 +86,16 @@ export default function RegisterScreen({ navigation }: Props) {
       fail("Mot de passe trop court", "Minimum 6 caractères.");
       return;
     }
+    if (!consentAccepted) {
+      fail("Consentement requis", "Accepte la politique de confidentialité pour continuer.");
+      return;
+    }
     setLoading(true);
+    let accountCreated = false;
     try {
       const cleanName = name.trim();
       const cred = await createUserWithEmailAndPassword(auth, emailTrimmed, pwd);
+      accountCreated = true;
       if (cleanName) {
         await updateProfile(cred.user, { displayName: cleanName });
       }
@@ -108,6 +117,16 @@ export default function RegisterScreen({ navigation }: Props) {
       showToast({ type: "success", title: "Compte créé", message: "On configure ton profil." });
     } catch (e: any) {
       if (__DEV__) console.warn("[register]", e?.code ?? e);
+      if (accountCreated) {
+        // Le compte EST créé (seul updateProfile/setDoc a échoué) : le RootNavigator
+        // bascule déjà vers le setup profil — ne pas afficher un faux échec.
+        showToast({
+          type: "warn",
+          title: "Compte créé",
+          message: "Petit souci réseau — complète ton profil pour finaliser.",
+        });
+        return;
+      }
       runShake(shake);
       haptics.error();
       showToast({
@@ -126,11 +145,10 @@ export default function RegisterScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={palette.bg} />
+      <StatusBar barStyle={themeMode === "dark" ? "light-content" : "dark-content"} backgroundColor={palette.bg} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <ScrollView
@@ -138,9 +156,11 @@ export default function RegisterScreen({ navigation }: Props) {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            <Pressable onPress={() => navigation.goBack()} style={styles.back}>
-              <Ionicons name="chevron-back" size={24} color={palette.sub} />
-            </Pressable>
+            {navigation.canGoBack() ? (
+              <Pressable onPress={() => navigation.goBack()} style={styles.back}>
+                <Ionicons name="chevron-back" size={24} color={palette.sub} />
+              </Pressable>
+            ) : null}
 
             <Text style={styles.title}>Crée ton compte</Text>
             <Text style={styles.subtitle}>Rejoins ton club ou configure ton profil FKS.</Text>
@@ -190,7 +210,7 @@ export default function RegisterScreen({ navigation }: Props) {
                   autoComplete="new-password"
                   value={pwd}
                   onChangeText={setPwd}
-                  returnKeyType="done"
+                  returnKeyType="go"
                   onSubmitEditing={() => {
                     if (!loading && canSubmit) void onRegister();
                   }}
@@ -222,6 +242,33 @@ export default function RegisterScreen({ navigation }: Props) {
                   </Text>
                 </View>
               ) : null}
+
+              {/* Consentement RGPD explicite (données santé collectées ensuite) */}
+              <View style={styles.consentRow}>
+                <Pressable
+                  onPress={() => setConsentAccepted(!consentAccepted)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: consentAccepted }}
+                >
+                  <Ionicons
+                    name={consentAccepted ? "checkbox" : "square-outline"}
+                    size={22}
+                    color={consentAccepted ? palette.accent : palette.muted}
+                  />
+                </Pressable>
+                <Text style={styles.consentText}>
+                  J'accepte la{" "}
+                  <Text style={styles.consentLink} onPress={() => navigation.navigate("PrivacyPolicy")}>
+                    politique de confidentialité
+                  </Text>{" "}
+                  et les{" "}
+                  <Text style={styles.consentLink} onPress={() => navigation.navigate("LegalNotice")}>
+                    mentions légales
+                  </Text>
+                  .
+                </Text>
+              </View>
 
               <Pressable
                 onPress={onRegister}
@@ -277,6 +324,9 @@ const styles = StyleSheet.create({
   strengthBars: { flexDirection: "row", gap: 4 },
   strengthBar: { width: 32, height: 4, borderRadius: 2 },
   strengthLabel: { fontSize: 12, fontWeight: "600" },
+  consentRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginTop: 4, marginLeft: 4 },
+  consentText: { flex: 1, color: palette.sub, fontSize: 12, lineHeight: 17 },
+  consentLink: { color: palette.accent, fontWeight: "700", textDecorationLine: "underline" },
   cta: {
     backgroundColor: palette.cta,
     borderRadius: theme.radius.pill,

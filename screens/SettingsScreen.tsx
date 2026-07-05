@@ -200,7 +200,7 @@ export default function SettingsScreen() {
     }
   }, [exporting]);
 
-  const handleLogout = useCallback(async () => {
+  const performLogout = useCallback(async () => {
     try {
       await signOut(auth);
       resetTrainingStore(null);
@@ -208,6 +208,21 @@ export default function SettingsScreen() {
       showToast({ type: "error", title: "Déconnexion", message: "Échec de la déconnexion. Réessaie." });
     }
   }, [resetTrainingStore]);
+
+  const handleLogout = useCallback(() => {
+    Alert.alert(
+      "Déconnexion",
+      "Tu veux vraiment te déconnecter ?",
+      [
+        { text: "Annuler", style: "cancel" },
+        {
+          text: "Se déconnecter",
+          style: "destructive",
+          onPress: () => performLogout(),
+        },
+      ]
+    );
+  }, [performLogout]);
 
   const triggerReload = useCallback(() => {
     if (Platform.OS === "web" && typeof window !== "undefined") {
@@ -242,21 +257,38 @@ export default function SettingsScreen() {
 
   const handleNotificationsToggle = useCallback(
     async (value: boolean) => {
+      // Capture l'état AVANT le toggle : couper les notifs force aussi
+      // sessionReminders=false dans le store, il faut restaurer les deux.
+      const previous = {
+        notificationsEnabled: settings.notificationsEnabled,
+        sessionReminders: settings.sessionReminders,
+      };
       updateSettings({ notificationsEnabled: value });
       try {
-        await saveNotifPrefs({ enabled: value });
         if (value) {
-          await registerForPushNotifications();
+          const token = await registerForPushNotifications();
+          if (token === null && Platform.OS !== "web") {
+            // Permission OS refusée : rollback complet du toggle
+            updateSettings(previous);
+            showToast({
+              type: "warn",
+              title: "Notifications",
+              message: "Active les notifications dans les réglages du téléphone.",
+            });
+            return;
+          }
+          await saveNotifPrefs({ enabled: true });
           await scheduleAllNotifications();
         } else {
+          await saveNotifPrefs({ enabled: false });
           await cancelAllScheduled();
         }
       } catch {
-        updateSettings({ notificationsEnabled: !value });
+        updateSettings(previous);
         showToast({ type: "error", title: "Notifications", message: "Impossible de mettre à jour les notifications." });
       }
     },
-    [updateSettings]
+    [settings.notificationsEnabled, settings.sessionReminders, updateSettings]
   );
 
   const handleSessionReminderToggle = useCallback(

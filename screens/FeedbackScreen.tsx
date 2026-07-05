@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   Keyboard,
   Animated,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -27,7 +28,7 @@ import { useDebugStore } from '../state/stores/useDebugStore';
 import { useSettingsStore } from '../state/settingsStore';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useHaptics } from '../hooks/useHaptics';
-import { toDateKey } from '../utils/dateHelpers';
+import { toDateKey, lastNDates } from '../utils/dateHelpers';
 import { DEV_FLAGS } from '../config/devFlags';
 import { theme } from '../constants/theme';
 import { Button } from '../components/ui/Button';
@@ -125,7 +126,16 @@ function FeedbackScreen() {
   const [injury, setInjuryLocal] = useState<any>(day?.feedback?.injury ?? null);
   const [hasPainDetails, setHasPainDetails] = useState<boolean>(!!day?.feedback?.injury);
 
+  // Le re-prefill ne doit jamais se battre avec une saisie utilisateur :
+  // une fois le champ touché (y compris vidé au focus), on ne re-remplit plus.
+  const durationTouched = useRef(false);
+  const onDurationChange = useCallback((v: string) => {
+    durationTouched.current = true;
+    setDurationMin(v.replace(',', '.'));
+  }, []);
+
   useEffect(() => {
+    if (durationTouched.current) return;
     if (!durationMin && durationPrefill) setDurationMin(String(durationPrefill));
   }, [durationPrefill, durationMin]);
 
@@ -139,16 +149,27 @@ function FeedbackScreen() {
     setRecovery((fb?.sleep as number) ?? d?.feedback?.recoveryPerceived ?? 3);
     setInjuryLocal((fb as unknown as Record<string, unknown>)?.injury ?? d?.feedback?.injury ?? null);
     setHasPainDetails(!!((fb as unknown as Record<string, unknown>)?.injury ?? d?.feedback?.injury));
-    setRpe((typeof fb?.rpe === 'number' ? fb?.rpe : targetSession?.rpe) ?? 5);
-  }, [todayKey, dayStates, targetSession]);
+    setRpe((typeof fb?.rpe === 'number' ? fb?.rpe : targetSession?.rpe) ?? prefillRpe ?? 5);
+  }, [todayKey, dayStates, targetSession, prefillRpe]);
 
   // Derived values
   const durationValue = Number(durationMin);
   const durationValid = Number.isFinite(durationValue) && durationValue >= 5 && durationValue <= 300;
   const durationClamped = durationValid ? Math.round(durationValue) : undefined;
+  const durationInvalid = durationMin.length > 0 && !durationValid;
 
-  const sessionIsToday = sessionDateKey ? sessionDateKey === todayKey : false;
-  const canSaveToday = DEV_FLAGS.ENABLED || sessionIsToday;
+  // Fenêtre de validation élargie : aujourd'hui, les 2 jours précédents et demain.
+  // Sans ça, une séance générée la veille devient un "zombie" : feedback refusé
+  // ("pas datée d'aujourd'hui") + génération bloquée par la séance en attente.
+  const allowedFeedbackKeys = useMemo(() => {
+    const keys = lastNDates(todayKey, 3);
+    const tomorrow = new Date(`${todayKey}T12:00:00`);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    keys.push(toDateKey(tomorrow));
+    return keys;
+  }, [todayKey]);
+  const sessionIsRecent = sessionDateKey ? allowedFeedbackKeys.includes(sessionDateKey) : false;
+  const canSaveToday = DEV_FLAGS.ENABLED || sessionIsRecent;
 
   // Hooks
   const { readiness, readinessLabel } = useReadinessScore(fatigue, pain, recovery);
@@ -160,9 +181,21 @@ function FeedbackScreen() {
     estimatedLoad, projectedTsb, projectedDelta,
   } = useFeedbackSave({
     targetSessionId, targetSession, sessionDateKey, todayKey, canSaveToday,
-    rpe, fatigue, pain, recovery, injury, hasPainDetails, durationClamped,
+    rpe, fatigue, pain, recovery, injury, hasPainDetails, durationClamped, durationInvalid,
     navigation, haptics,
   });
+
+  // Fermeture (backdrop/swipe/croix) : ne pas laisser croire que le feedback est parti.
+  const confirmClose = useCallback(() => {
+    if (targetSession && !targetSession.completed) {
+      Alert.alert('Feedback non enregistré', 'Quitter sans valider ton retour ?', [
+        { text: 'Rester', style: 'cancel' },
+        { text: 'Quitter', style: 'destructive', onPress: () => navigation.goBack() },
+      ]);
+      return;
+    }
+    navigation.goBack();
+  }, [navigation, targetSession]);
 
   // Callbacks pour suggestions
   const applyRpe = useCallback(() => { setRpe(suggestion.rpe); haptics.impactLight(); }, [suggestion.rpe, haptics]);
@@ -199,7 +232,7 @@ function FeedbackScreen() {
     <View style={styles.modalRoot}>
       <ModalContainer
         visible
-        onClose={() => navigation.goBack()}
+        onClose={confirmClose}
         animationType="slide"
         blurIntensity={40}
         allowBackdropDismiss
@@ -212,7 +245,7 @@ function FeedbackScreen() {
           />
           <View style={styles.modalHeaderRow}>
             <Text style={styles.modalHeaderTitle}>Feedback</Text>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.modalClose} accessibilityRole="button" accessibilityLabel="Fermer le feedback">
+            <TouchableOpacity onPress={confirmClose} style={styles.modalClose} accessibilityRole="button" accessibilityLabel="Fermer le feedback">
               <Ionicons name="close" size={22} color={COLORS.text} />
             </TouchableOpacity>
           </View>
@@ -275,7 +308,7 @@ function FeedbackScreen() {
                     tsb={tsb}
                     projectedTsb={projectedTsb}
                     projectedDelta={projectedDelta}
-                    onDurationChange={setDurationMin}
+                    onDurationChange={onDurationChange}
                   />
                 </Animated.View>
 

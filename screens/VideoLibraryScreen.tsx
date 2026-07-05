@@ -275,9 +275,18 @@ export default function VideoLibraryScreen() {
 
   useEffect(() => {
     if (!highlightId) return;
+    // Merge Signal + main : résolution catalogue V2 (visibleBank inclut les
+    // fiches live) conservée, toast "introuvable" des launch-fixes conservé.
     const exercise =
       visibleBank.find((item) => item.id === highlightId) ?? EXERCISE_BY_ID[highlightId];
-    if (!exercise) return;
+    if (!exercise) {
+      showToast({
+        type: "warn",
+        title: "Fiche exercice",
+        message: "Exercice introuvable dans la bibliothèque.",
+      });
+      return;
+    }
     setActiveHighlightId(highlightId);
     setQuery(exercise.name);
     setSelectedModalities([exercise.modality]);

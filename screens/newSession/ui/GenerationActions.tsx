@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { palette } from "../theme";
 import type { Advice } from "../../../domain/adviceRules";
-import { toDateKey } from "../../../utils/dateHelpers";
+import { formatDayFR } from "../../../utils/dateHelpers";
 
 type Props = {
   disabled: boolean;
@@ -38,6 +38,15 @@ export function GenerationActions({
   advice,
 }: Props) {
   const toneConfig = advice ? TONE_CONFIG[advice.tone] ?? TONE_CONFIG.info : null;
+
+  // Un double-tap accidentel sur "Jour OFF" avancerait le calendrier de 2 jours en silence.
+  const lastPressRef = React.useRef(0);
+  const guardedPress = (action: () => void) => {
+    const now = Date.now();
+    if (now - lastPressRef.current < 600) return;
+    lastPressRef.current = now;
+    action();
+  };
 
   return (
     <View style={styles.card}>
@@ -80,10 +89,20 @@ export function GenerationActions({
       </View>
 
       <View style={[styles.buttonRow, { marginTop: 10 }]}>
-        <TouchableOpacity style={[styles.cta, styles.ctaSecondaryGreen]} onPress={onAdvanceDay} activeOpacity={0.85}>
+        <TouchableOpacity
+          style={[styles.cta, styles.ctaSecondaryGreen, generating && { opacity: 0.5 }]}
+          onPress={() => guardedPress(onAdvanceDay)}
+          disabled={generating}
+          activeOpacity={0.85}
+        >
           <Text style={styles.ctaSecondaryGreenText}>Jour OFF (+1j)</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.cta, styles.ctaSecondaryOrange]} onPress={onRestTwoDays} activeOpacity={0.85}>
+        <TouchableOpacity
+          style={[styles.cta, styles.ctaSecondaryOrange, generating && { opacity: 0.5 }]}
+          onPress={() => guardedPress(onRestTwoDays)}
+          disabled={generating}
+          activeOpacity={0.85}
+        >
           <Text style={styles.ctaSecondaryOrangeText}>Repos 2 jours</Text>
         </TouchableOpacity>
       </View>
@@ -92,7 +111,7 @@ export function GenerationActions({
         <Text style={styles.helper}>Chargement de ton historique...</Text>
       ) : nextAllowedISO ? (
         <Text style={styles.helper}>
-          Prochaine séance autorisée à partir du {toDateKey(nextAllowedISO)}
+          Prochaine séance autorisée à partir de {formatDayFR(nextAllowedISO)}
         </Text>
       ) : null}
 

@@ -5,6 +5,7 @@ import { MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../../domain/
 import { DEV_FLAGS } from "../../config/devFlags";
 import { toDateKey } from "../../utils/dateHelpers";
 import { useNavGuard } from "../useNavGuard";
+import { frFocus, frIntensity } from "../../utils/frLabels";
 import type { Session } from "../../domain/types";
 
 type Nav = {
@@ -70,15 +71,15 @@ export function usePrimaryCta({
     if (v2) {
       const title = v2.title || "Séance FKS";
       const focusVal = v2.focusPrimary ?? v2.focus_primary;
-      const focus = focusVal ? ` · ${focusVal}` : "";
-      const intens = v2.intensity ? ` · ${v2.intensity}` : "";
+      const focus = focusVal ? ` · ${frFocus(String(focusVal))}` : "";
+      const intens = v2.intensity ? ` · ${frIntensity(String(v2.intensity))}` : "";
       const durVal = v2.durationMin ?? v2.duration_min;
       const dur =
         typeof durVal === "number" ? ` · ${Math.round(durVal)} min` : "";
       return `${title}${focus}${intens}${dur}`;
     }
-    const focus = pendingSession.focus ?? pendingSession.modality ?? "-";
-    const intens = pendingSession.intensity ?? "-";
+    const focus = frFocus(pendingSession.focus ?? pendingSession.modality) || "-";
+    const intens = frIntensity(pendingSession.intensity) || "-";
     return `Séance prévue · ${intens} · ${focus}`;
   }, [pendingSession]);
 
@@ -87,26 +88,54 @@ export function usePrimaryCta({
   );
   const isPendingToday = pendingDateKey && pendingDateKey === todayKey;
 
+  // Lance directement la séance (SessionLive) — utilisé par le CTA "C'est parti !".
   const startPendingSession = useCallback(() => {
     if (!pendingSession) return;
     const v2 =
       pendingSession.aiV2 ??
       pendingSession.ai ??
       lastAiSessionV2?.v2;
+    if (!v2) {
+      showToast({
+        type: "warn",
+        title: "Séance indisponible",
+        message: "Le contenu de cette séance est introuvable. Relance une génération.",
+      });
+      return;
+    }
     const plannedDateISO = toDateKey(
       pendingSession.dateISO ?? pendingSession.date
     );
     guardNav(() => {
-      if (v2) {
-        nav.navigate("SessionLive", {
-          v2,
-          plannedDateISO,
-          sessionId: pendingSession.id,
-        });
-        return;
-      }
+      nav.navigate("SessionLive", {
+        v2,
+        plannedDateISO,
+        sessionId: pendingSession.id,
+      });
+    });
+  }, [nav, pendingSession, lastAiSessionV2, guardNav]);
+
+  // Ouvre l'aperçu de la séance (SessionPreview) — utilisé par "Voir la séance".
+  const viewPendingSession = useCallback(() => {
+    if (!pendingSession) return;
+    const v2 =
+      pendingSession.aiV2 ??
+      pendingSession.ai ??
+      lastAiSessionV2?.v2;
+    if (!v2) {
+      showToast({
+        type: "warn",
+        title: "Séance indisponible",
+        message: "Le contenu de cette séance est introuvable. Relance une génération.",
+      });
+      return;
+    }
+    const plannedDateISO = toDateKey(
+      pendingSession.dateISO ?? pendingSession.date
+    );
+    guardNav(() => {
       nav.navigate("SessionPreview", {
-        v2: lastAiSessionV2?.v2,
+        v2,
         plannedDateISO,
         sessionId: pendingSession.id,
       });
@@ -241,5 +270,12 @@ export function usePrimaryCta({
     goToRecovery,
   ]);
 
-  return { primaryCta, upcomingSessionLabel, pendingSession, startPendingSession, onPressNew };
+  return {
+    primaryCta,
+    upcomingSessionLabel,
+    pendingSession,
+    startPendingSession,
+    viewPendingSession,
+    onPressNew,
+  };
 }

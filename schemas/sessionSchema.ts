@@ -11,38 +11,49 @@ const timerPresetSchema = z.object({
   rounds: z.number().nullable().catch(null),
 });
 
-const blockItemSchema = z.object({
-  exercise_id: z.string().nullable().optional().catch(null),
-  legacy_exercise_id: z.string().nullable().optional().catch(null),
-  variant_id: z.string().nullable().optional().catch(null),
-  name: z.string().catch("Exercice"),
-  description: z.string().nullable().optional().catch(null),
-  football_context: z.string().nullable().optional().catch(null),
-  sets: z.number().nullable().optional().catch(null),
-  reps: z.number().nullable().optional().catch(null),
-  work_s: z.number().nullable().optional().catch(null),
-  rest_s: z.number().nullable().optional().catch(null),
-  distance_m: z.number().nullable().optional().catch(null),
-  contacts: z.number().nullable().optional().catch(null),
-  rounds: z.number().nullable().optional().catch(null),
-  signal_config: z.object({
-    mode: z.enum(["voice_direction", "color_gate"]),
-    cues: z.array(z.string()),
-    min_delay_ms: z.number().min(500),
-    max_delay_ms: z.number().min(500),
-  }).nullable().optional().catch(null),
-  notes: z.string().nullable().optional().catch(null),
-});
+// .passthrough() : on cesse de jeter l'enrichissement du moteur. Le contrat
+// backend (fks/src/fksSchema.ts) émet déjà des champs non déclarés ici
+// (pairing_id, pairing_order, role…) et pourra en ajouter d'autres ; sans
+// passthrough, z.object les supprimait silencieusement avant l'écran de séance.
+// (Merge Signal + main : champs catalogue V2 — legacy_exercise_id, variant_id,
+// distance_m, contacts, rounds, signal_config — conservés, passthrough de main
+// conservé.)
+const blockItemSchema = z
+  .object({
+    exercise_id: z.string().nullable().optional().catch(null),
+    legacy_exercise_id: z.string().nullable().optional().catch(null),
+    variant_id: z.string().nullable().optional().catch(null),
+    name: z.string().catch("Exercice"),
+    description: z.string().nullable().optional().catch(null),
+    football_context: z.string().nullable().optional().catch(null),
+    sets: z.number().nullable().optional().catch(null),
+    reps: z.number().nullable().optional().catch(null),
+    work_s: z.number().nullable().optional().catch(null),
+    rest_s: z.number().nullable().optional().catch(null),
+    distance_m: z.number().nullable().optional().catch(null),
+    contacts: z.number().nullable().optional().catch(null),
+    rounds: z.number().nullable().optional().catch(null),
+    signal_config: z.object({
+      mode: z.enum(["voice_direction", "color_gate"]),
+      cues: z.array(z.string()),
+      min_delay_ms: z.number().min(500),
+      max_delay_ms: z.number().min(500),
+    }).nullable().optional().catch(null),
+    notes: z.string().nullable().optional().catch(null),
+  })
+  .passthrough();
 
-const blockSchema = z.object({
-  id: z.string().catch("block_unknown"),
-  type: z.string().catch("run"),
-  goal: z.string().catch(""),
-  intensity: z.string().catch("moderate"),
-  duration_min: z.number().min(1).catch(5),
-  items: z.array(blockItemSchema).optional().catch([]),
-  notes: z.string().nullable().optional().catch(null),
-});
+const blockSchema = z
+  .object({
+    id: z.string().catch("block_unknown"),
+    type: z.string().catch("run"),
+    goal: z.string().catch(""),
+    intensity: z.string().catch("moderate"),
+    duration_min: z.number().min(1).catch(5),
+    items: z.array(blockItemSchema).optional().catch([]),
+    notes: z.string().nullable().optional().catch(null),
+  })
+  .passthrough();
 
 const displaySchema = z.object({
   color_theme: z.string().optional().catch(undefined),
@@ -90,6 +101,7 @@ export const sessionV2Schema = z.object({
   badges: z.array(z.string()).optional().catch([]),
   blocks: z.array(blockSchema).catch([]),
   safety_notes: z.string().nullable().optional().catch(null),
+  injury_adaptation_explanation: z.string().nullable().optional().catch(null),
   guardrails_applied: z.array(z.string()).optional().catch([]),
   session_theme: z.string().nullable().optional().catch(null),
   coaching_tips: z.array(z.string()).optional().catch([]),

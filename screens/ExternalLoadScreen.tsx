@@ -24,6 +24,7 @@ import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { ModalContainer } from "../components/modal/ModalContainer";
 import { showToast } from "../utils/toast";
+import { formatDayFR } from "../utils/dateHelpers";
 
 type Modality = "Match" | "TeamTraining" | "Physio" | "Other";
 type ExternalSource = "match" | "club" | "other";
@@ -54,7 +55,10 @@ export default function ExternalLoadScreen() {
   const addExternalLoad = applyExternalLoad;
 
   const [date, setDate] = useState<Date>(new Date());
+  // iOS : picker inline "datetime" refermé par un bouton OK.
   const [showPicker, setShowPicker] = useState(false);
+  // Android : le mode "datetime" n'existe pas → flux en 2 étapes (date puis heure).
+  const [androidStep, setAndroidStep] = useState<null | "date" | "time">(null);
 
   const [modality, setModality] = useState<Modality>("Match");
   const [durationMin, setDurationMin] = useState<string>("75");
@@ -71,13 +75,26 @@ export default function ExternalLoadScreen() {
 
   const onOpenDate = () => {
     Keyboard.dismiss();            // ✅ ferme le clavier avant d’ouvrir le picker
-    setShowPicker(true);
+    if (Platform.OS === "android") setAndroidStep("date");
+    else setShowPicker(true);
   };
 
   const onSubmit = () => {
     Keyboard.dismiss();            // ✅ ferme le clavier au submit
-    if (parsedDuration <= 0 || parsedRpe <= 0) {
-      showToast({ type: "warn", title: "Entrée invalide", message: "Durée et RPE doivent être > 0" });
+    if (!Number.isFinite(parsedRpe) || parsedRpe < 1 || parsedRpe > 10) {
+      showToast({
+        type: "warn",
+        title: "RPE invalide",
+        message: "Le RPE doit être compris entre 1 et 10.",
+      });
+      return;
+    }
+    if (!Number.isFinite(parsedDuration) || parsedDuration < 5 || parsedDuration > 300) {
+      showToast({
+        type: "warn",
+        title: "Durée invalide",
+        message: "La durée doit être comprise entre 5 et 300 minutes.",
+      });
       return;
     }
     try {
@@ -137,17 +154,39 @@ export default function ExternalLoadScreen() {
               style={styles.inputButton}
             >
               <Text style={styles.inputText}>
-                {date.toDateString()} {date.toTimeString().slice(0, 5)}
+                {formatDayFR(date)} {'·'} {date.toTimeString().slice(0, 5)}
               </Text>
             </Pressable>
 
-            {Platform.OS !== "web" && showPicker && (
+            {Platform.OS === "ios" && showPicker && (
+              <>
+                <DateTimePicker
+                  value={date}
+                  mode="datetime"
+                  onChange={(_, d) => {
+                    if (d) setDate(d);
+                  }}
+                />
+                <Button
+                  label="OK"
+                  size="sm"
+                  onPress={() => setShowPicker(false)}
+                />
+              </>
+            )}
+
+            {Platform.OS === "android" && androidStep && (
               <DateTimePicker
                 value={date}
-                mode="datetime"
-                onChange={(_, d) => {
-                  setShowPicker(Platform.OS === "ios");
-                  if (d) setDate(d);
+                mode={androidStep}
+                onChange={(event, d) => {
+                  if (event.type === "dismissed" || !d) {
+                    setAndroidStep(null);
+                    return;
+                  }
+                  setDate(d);
+                  // Étape 1 (date) validée → on enchaîne sur l'heure.
+                  setAndroidStep(androidStep === "date" ? "time" : null);
                 }}
               />
             )}

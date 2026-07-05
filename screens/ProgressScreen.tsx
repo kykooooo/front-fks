@@ -18,10 +18,10 @@ import {
 } from "date-fns";
 import { fr } from "date-fns/locale";
 import Svg, { Line, Path, Circle } from "react-native-svg";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 
 import { theme } from "../constants/theme";
+import { useSettingsStore } from "../state/settingsStore";
 import { useLoadStore } from "../state/stores/useLoadStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useExternalStore } from "../state/stores/useExternalStore";
@@ -29,7 +29,7 @@ import { useDebugStore } from "../state/stores/useDebugStore";
 import { Card } from "../components/ui/Card";
 import { TRAINING_DEFAULTS, getFootballLabel } from "../config/trainingDefaults";
 import { updateTrainingLoad } from "../engine/loadModel";
-import { STORAGE_KEYS } from "../constants/storage";
+import { readTestsRaw } from "./tests/hooks/useTestsStorage";
 import { toDateKey } from "../utils/dateHelpers";
 
 const palette = theme.colors;
@@ -155,14 +155,18 @@ const TEST_FIELDS: {
 
 function computeTestComparisons(tests: TestEntry[]): TestComparison[] {
   if (tests.length < 2) return [];
-  const sorted = [...tests].sort((a, b) => a.ts - b.ts);
-  const first = sorted[0];
-  const last = sorted[sorted.length - 1];
+  const sorted = [...tests].sort((a, b) => b.ts - a.ts);
+  const latest = sorted[0];
+  const latestPlaylist = latest.playlist ?? "fondation";
+  const previous = sorted
+    .slice(1)
+    .find((e) => (e.playlist ?? "fondation") === latestPlaylist);
+  if (!previous) return [];
   const comparisons: TestComparison[] = [];
 
   for (const field of TEST_FIELDS) {
-    const before = first[field.key];
-    const after = last[field.key];
+    const before = previous[field.key];
+    const after = latest[field.key];
     if (typeof before === "number" && typeof after === "number" && before > 0 && after > 0) {
       const diff = after - before;
       const improved = field.lowerIsBetter ? diff < 0 : diff > 0;
@@ -188,6 +192,7 @@ export default function ProgressScreen() {
   const sessions = useSessionsStore((s) => s.sessions ?? []);
   const externalLoads = useExternalStore((s) => s.externalLoads ?? []);
   const dailyApplied = useLoadStore((s) => s.dailyApplied ?? {});
+  const weekStart = useSettingsStore((s) => s.weekStart);
   const [testEntries, setTestEntries] = useState<TestEntry[]>([]);
 
   useLayoutEffect(() => {
@@ -201,7 +206,7 @@ export default function ProgressScreen() {
 
   // Load test data
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEYS.TESTS_V1).then((raw) => {
+    readTestsRaw().then((raw) => {
       if (raw) {
         try {
           setTestEntries(JSON.parse(raw));
@@ -351,7 +356,7 @@ export default function ProgressScreen() {
       isActive: boolean;
       isToday: boolean;
     }[] = [];
-    const leadingEmpty = (getDay(start) + 6) % 7;
+    const leadingEmpty = weekStart === "sun" ? getDay(start) : (getDay(start) + 6) % 7;
     for (let i = 0; i < leadingEmpty; i += 1) {
       days.push({
         key: `empty_${i}`,
@@ -370,18 +375,20 @@ export default function ProgressScreen() {
       });
     }
     return days;
-  }, [activitySet, today, todayKey]);
+  }, [activitySet, today, todayKey, weekStart]);
 
   // ─── Milestones ───
+  // Proxy : cycles estimés via séances FKS complétées ÷ 12 (pas de compteur de cycles persisté)
+  const estimatedCycles = Math.floor(completedSessions.length / 12);
   const milestones = useMemo(
     () =>
       computeMilestones(
         completedSessions.length,
         activitySet.size,
         globalMaxStreak,
-        0
+        estimatedCycles
       ),
-    [completedSessions.length, activitySet.size, globalMaxStreak]
+    [completedSessions.length, activitySet.size, globalMaxStreak, estimatedCycles]
   );
 
   // ─── Tests comparisons ───
@@ -581,7 +588,7 @@ export default function ProgressScreen() {
               <Text style={styles.sectionTitle}>Évolution tests</Text>
             </View>
             <Text style={styles.testsSub}>
-              Première batterie vs dernière batterie
+              Deux dernières batteries du même cycle
             </Text>
             {testComparisons.map((tc) => {
               const diffStr = tc.lowerIsBetter
@@ -644,7 +651,10 @@ export default function ProgressScreen() {
             {format(today, "MMMM yyyy", { locale: fr })}
           </Text>
           <View style={styles.calendarHeader}>
-            {["L", "M", "M", "J", "V", "S", "D"].map((d, i) => (
+            {(weekStart === "sun"
+              ? ["D", "L", "M", "M", "J", "V", "S"]
+              : ["L", "M", "M", "J", "V", "S", "D"]
+            ).map((d, i) => (
               <Text key={`dow_${i}_${d}`} style={styles.calendarDow}>
                 {d}
               </Text>

@@ -1,17 +1,13 @@
 // firestore-tests/rules.target.test.ts
 //
-// Tests CIBLES pour la future projection coach-safe :
+// Tests CIBLES de la projection coach-safe :
 //   clubs/{clubId}/playerSummaries/{playerUid}
 //
-// Ces tests contiennent de VRAIES fixtures / actions / assertions. Ils restent
-// `test.skip` car les rules ACTUELLES (firestore.rules non modifié en PR-1) ne
-// satisfont PAS encore toutes les cibles :
-//   - playerSummaries n'a AUCUNE règle → toute lecture y est refusée par défaut
-//     (donc "coach lit summary" échouerait aujourd'hui) ;
-//   - le coach lit ENCORE les docs bruts (donc "coach ne lit plus" échouerait).
-//
-// Activation en PR-4 : retirer UNIQUEMENT `.skip` (aucune autre modification).
-// Cette PR NE touche PAS firestore.rules.
+// ACTIVÉS en PR-4 : firestore.rules ferme désormais la frontière coach et ouvre
+// la lecture de playerSummaries au coach/owner du club. Ces 10 tests (fixtures /
+// actions / assertions réelles) sont donc VERTS contre les rules PR-4 :
+//   - playerSummaries : lecture coach/owner du même club OK, tout le reste refusé ;
+//   - docs BRUTS (users/sessions/plannedSessions) : coach REFUSÉ, propriétaire OK.
 //
 // Décisions produit verrouillées (Codex) reflétées ici :
 //   - projection écrite par Cloud Function (trigger) → écriture cliente REFUSÉE ;
@@ -71,8 +67,8 @@ const asAnon = () => testEnv.unauthenticatedContext().firestore();
 const summaryRef = (db: ReturnType<typeof asUser>) =>
   doc(db, "clubs", CLUB_A, "playerSummaries", PLAYER_A1);
 
-describe("TARGET — clubs/{clubId}/playerSummaries (à ACTIVER en PR-4 en retirant .skip)", () => {
-  test.skip("TARGET 1: coach même club LIT le summary — et il ne contient AUCUN champ interdit", async () => {
+describe("TARGET — clubs/{clubId}/playerSummaries (ACTIVÉS en PR-4)", () => {
+  test("TARGET 1: coach même club LIT le summary — et il ne contient AUCUN champ interdit", async () => {
     const snap = await assertSucceeds(getDoc(summaryRef(asUser(COACH_A))));
     const data = (snap as any).data() as Record<string, unknown>;
     // Le summary expose bien les champs coach-safe…
@@ -85,41 +81,41 @@ describe("TARGET — clubs/{clubId}/playerSummaries (à ACTIVER en PR-4 en retir
     }
   });
 
-  test.skip("TARGET 2: coach même club NE LIT PLUS le profil brut (users/{uid})", async () => {
+  test("TARGET 2: coach même club NE LIT PLUS le profil brut (users/{uid})", async () => {
     await assertFails(getDoc(doc(asUser(COACH_A), "users", PLAYER_A1)));
   });
 
-  test.skip("TARGET 3: coach même club NE LIT PLUS les sessions brutes", async () => {
+  test("TARGET 3: coach même club NE LIT PLUS les sessions brutes", async () => {
     await assertFails(getDoc(doc(asUser(COACH_A), "users", PLAYER_A1, "sessions", "s1")));
   });
 
-  test.skip("TARGET 4: coach même club NE LIT PLUS les plannedSessions brutes", async () => {
+  test("TARGET 4: coach même club NE LIT PLUS les plannedSessions brutes", async () => {
     await assertFails(getDoc(doc(asUser(COACH_A), "users", PLAYER_A1, "plannedSessions", "p1")));
   });
 
-  test.skip("TARGET 5: coach d'un AUTRE club NE lit PAS le summary", async () => {
+  test("TARGET 5: coach d'un AUTRE club NE lit PAS le summary", async () => {
     await assertFails(getDoc(summaryRef(asUser(COACH_B))));
   });
 
-  test.skip("TARGET 6: joueuse d'un AUTRE club NE lit PAS le summary", async () => {
+  test("TARGET 6: joueuse d'un AUTRE club NE lit PAS le summary", async () => {
     await assertFails(getDoc(summaryRef(asUser(PLAYER_B))));
   });
 
-  test.skip("TARGET 7: non-membre (connecté sans club) NE lit PAS le summary", async () => {
+  test("TARGET 7: non-membre (connecté sans club) NE lit PAS le summary", async () => {
     await assertFails(getDoc(summaryRef(asUser(STRANGER))));
   });
 
-  test.skip("TARGET 8: non authentifié NE lit PAS le summary", async () => {
+  test("TARGET 8: non authentifié NE lit PAS le summary", async () => {
     await assertFails(getDoc(summaryRef(asAnon())));
   });
 
-  test.skip("TARGET 9: écriture CLIENTE du summary REFUSÉE (projection = trigger serveur only)", async () => {
+  test("TARGET 9: écriture CLIENTE du summary REFUSÉE (projection = trigger serveur only)", async () => {
     // Ni le coach du club, ni la joueuse elle-même ne peuvent écrire la projection.
     await assertFails(setDoc(summaryRef(asUser(COACH_A)), { ...SUMMARY, firstName: "Hack" }));
     await assertFails(setDoc(summaryRef(asUser(PLAYER_A1)), { ...SUMMARY, firstName: "Hack" }));
   });
 
-  test.skip("TARGET 10: la joueuse CONSERVE l'accès à ses propres docs bruts", async () => {
+  test("TARGET 10: la joueuse CONSERVE l'accès à ses propres docs bruts", async () => {
     await assertSucceeds(getDoc(doc(asUser(PLAYER_A1), "users", PLAYER_A1)));
     await assertSucceeds(getDoc(doc(asUser(PLAYER_A1), "users", PLAYER_A1, "sessions", "s1")));
     await assertSucceeds(getDoc(doc(asUser(PLAYER_A1), "users", PLAYER_A1, "plannedSessions", "p1")));

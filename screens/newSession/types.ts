@@ -73,6 +73,7 @@ export type FKS_NextSessionV2 = {
   badges?: string[];
   blocks: FKS_Block[];
   safetyNotes?: string | null;
+  injuryAdaptationExplanation?: string | null;
   guardrailsApplied?: string[];
   sessionTheme?: string | null;
   coachingTips?: string[];

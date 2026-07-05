@@ -11,7 +11,8 @@ export type BlockType =
   | 'core'
   | 'cod'
   | 'mobility'
-  | 'cooldown';
+  | 'cooldown'
+  | 'finisher';
 
 export type BlockConfig = {
   icon: string;
@@ -21,7 +22,7 @@ export type BlockConfig = {
 };
 
 export const BLOCK_CONFIG: Record<BlockType, BlockConfig> = {
-  warmup:   { icon: 'flame-outline',       label: 'Echauffement',    tint: '#f59e0b', tintSoft: 'rgba(245,158,11,0.10)' },
+  warmup:   { icon: 'flame-outline',       label: 'Échauffement',    tint: '#f59e0b', tintSoft: 'rgba(245,158,11,0.10)' },
   strength: { icon: 'barbell-outline',      label: 'Force',           tint: '#ef4444', tintSoft: 'rgba(239,68,68,0.10)' },
   run:      { icon: 'footsteps-outline',    label: 'Course',          tint: '#2563eb', tintSoft: 'rgba(37,99,235,0.10)' },
   speed:    { icon: 'flash-outline',        label: 'Vitesse',         tint: '#ff7a1a', tintSoft: 'rgba(255,122,26,0.10)' },
@@ -31,6 +32,8 @@ export const BLOCK_CONFIG: Record<BlockType, BlockConfig> = {
   cod:      { icon: 'git-branch-outline',   label: 'Agilité',        tint: '#16a34a', tintSoft: 'rgba(22,163,74,0.10)' },
   mobility: { icon: 'body-outline',         label: 'Mobilité',       tint: '#14b8a6', tintSoft: 'rgba(20,184,166,0.10)' },
   cooldown: { icon: 'snow-outline',         label: 'Retour au calme', tint: '#64748b', tintSoft: 'rgba(100,116,139,0.10)' },
+  // Défi de fin de séance — couleur or vif + trophée pour le distinguer du circuit générique.
+  finisher: { icon: 'trophy-outline',       label: 'Finisher',        tint: '#eab308', tintSoft: 'rgba(234,179,8,0.12)' },
 };
 
 const FALLBACK_CONFIG: BlockConfig = {
@@ -66,11 +69,42 @@ function extractToken(notes?: string | null): string | null {
   return match ? match[1].toLowerCase() : null;
 }
 
+type BlockIdentity = {
+  type?: string;
+  notes?: string | null;
+  id?: string | null;
+  blockId?: string | null;
+  goal?: string | null;
+  name?: string | null;
+};
+
 /**
- * Retourne le label affiné pour un bloc Force si un token est présent,
- * sinon le label générique du type.
+ * Détecte un bloc "finisher" (défi de fin de séance). Le moteur l'émet avec un
+ * type générique ("circuit") mais un id "blk_finisher…" et un goal "Finisher — …".
+ * On se base sur ces deux signaux (robustes cross-écran).
  */
-export function getBlockLabel(block: { type?: string; notes?: string | null }): string {
+export function isFinisherBlock(block: BlockIdentity): boolean {
+  const id = `${block.id ?? ''} ${block.blockId ?? ''}`.toLowerCase();
+  if (id.includes('finisher')) return true;
+  const text = `${block.goal ?? ''} ${block.name ?? ''}`.toLowerCase();
+  return text.includes('finisher');
+}
+
+/**
+ * Config visuelle (icône/couleur) d'un bloc en tenant compte du finisher,
+ * au-delà du seul `type`. À privilégier sur getBlockConfig(block.type) pour le rendu.
+ */
+export function getBlockVisual(block: BlockIdentity): BlockConfig {
+  if (isFinisherBlock(block)) return BLOCK_CONFIG.finisher;
+  return getBlockConfig(block.type);
+}
+
+/**
+ * Retourne le label affiné d'un bloc : "Finisher" si c'en est un, sinon le label
+ * Force par token si présent, sinon le label générique du type.
+ */
+export function getBlockLabel(block: BlockIdentity): string {
+  if (isFinisherBlock(block)) return BLOCK_CONFIG.finisher.label;
   const token = extractToken(block.notes);
   if (token && FORCE_TOKEN_LABEL[token]) return FORCE_TOKEN_LABEL[token];
   return getBlockConfig(block.type).label;

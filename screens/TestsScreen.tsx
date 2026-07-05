@@ -33,6 +33,16 @@ const palette = theme.colors;
 
 type Mode = "battery" | "entry";
 
+const formatBoundsMessage = (field: FieldConfig) =>
+  `${field.label} : entre ${field.min} et ${field.max}${field.unit ? ` ${field.unit}` : ""}.`;
+
+const isOutOfBounds = (field: FieldConfig | undefined, num: number) => {
+  if (!field) return false;
+  if (field.min !== undefined && num < field.min) return true;
+  if (field.max !== undefined && num > field.max) return true;
+  return false;
+};
+
 export default function TestsScreen() {
   const route = useRoute<any>();
   const haptics = useHaptics();
@@ -137,11 +147,11 @@ export default function TestsScreen() {
   // Grouped fields for overview card
   const groupedFields = useMemo(() => {
     const groupTitles: Record<FieldConfig["group"], string> = {
-      sauts: "Sauts / Explosivite",
-      vitesse: "Vitesse lineaire",
-      endurance: "Endurance aerobie",
-      force: "Force repere",
-      agilite: "Agilite / COD",
+      sauts: "Sauts / Explosivité",
+      vitesse: "Vitesse linéaire",
+      endurance: "Endurance aérobie",
+      force: "Force repère",
+      agilite: "Agilité / COD",
       power: "Puissance",
     };
     const groups: Record<string, { title: string; fields: FieldConfig[] }> = {};
@@ -181,6 +191,21 @@ export default function TestsScreen() {
       showToast({ type: "warn", title: "Batterie vide", message: "Renseigne au moins un test ou une note." });
       return;
     }
+    const outOfBoundsKey = PLAYLIST_FIELDS[selectedPlaylist].find((k) => {
+      const val = (form as any)[k];
+      if (val === undefined || val === null || val === "") return false;
+      const num = Number(val);
+      if (!Number.isFinite(num)) return false;
+      return isOutOfBounds(FIELD_BY_KEY[k], num);
+    });
+    if (outOfBoundsKey) {
+      showToast({
+        type: "warn",
+        title: "Valeur hors limites",
+        message: formatBoundsMessage(FIELD_BY_KEY[outOfBoundsKey]),
+      });
+      return;
+    }
     const cleanEntry: TestEntry = { ts: Date.now() };
     cleanEntry.playlist = selectedPlaylist;
     PLAYLIST_FIELDS[selectedPlaylist].forEach((k) => {
@@ -216,8 +241,18 @@ export default function TestsScreen() {
         showToast({ type: "warn", title: "Valeur manquante", message: "Entre une valeur ou passe ce test." });
         return;
       }
-      if (!Number.isFinite(Number(value))) {
+      const num = Number(value);
+      if (!Number.isFinite(num)) {
         showToast({ type: "warn", title: "Valeur invalide", message: "Utilise un nombre valide." });
+        return;
+      }
+      const field = FIELD_BY_KEY[currentStep as FieldKey];
+      if (isOutOfBounds(field, num)) {
+        showToast({
+          type: "warn",
+          title: "Valeur hors limites",
+          message: formatBoundsMessage(field),
+        });
         return;
       }
     }
@@ -257,7 +292,8 @@ export default function TestsScreen() {
   }, []);
 
   const onFormChange = useCallback((key: string, value: string) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    const normalized = key === "notes" ? value : value.replace(",", ".");
+    setForm((prev) => ({ ...prev, [key]: normalized }));
   }, []);
 
   const onSkipStep = useCallback(() => {
