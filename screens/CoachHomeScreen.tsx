@@ -266,6 +266,8 @@ export default function CoachHomeScreen() {
 
   const teamLabel = getTeamPlayerLabel(teamGender);
   const memberWord = teamGender === "female" ? "joueuse" : teamGender === "male" ? "joueur" : "membre";
+  // Effectif = projections prêtes + projections en cours de synchronisation (même calcul que l'onglet Effectif).
+  const rosterCount = summaries.length + summariesPending;
 
   // État du groupe : une phrase actionnable selon la priorité (relance > prévu > rien).
   const groupState =
@@ -293,6 +295,8 @@ export default function CoachHomeScreen() {
   const statusTone = (label: string): "ok" | "warn" | "info" | "default" =>
     label === "Faite" ? "ok" : label === "À relancer" ? "warn" : label === "Prête" ? "info" : "default";
 
+  // Aperçu grisé (mockup, aucune donnée réelle) : montre à quoi ressemblera
+  // l'écran une fois des joueurs inscrits — utile en démo à froid (0 joueur).
   const renderEmptyRoster = () => (
     <Card variant="soft" style={styles.emptyCard}>
       <Ionicons name="person-add-outline" size={28} color={palette.sub} />
@@ -300,6 +304,23 @@ export default function CoachHomeScreen() {
       <Text style={styles.emptyText}>
         Partage ton code club. Ton effectif apparaîtra ici dès la première inscription.
       </Text>
+      <View style={styles.previewWrap}>
+        <View style={styles.previewLabelRow}>
+          <Ionicons name="eye-outline" size={13} color={palette.muted} />
+          <Text style={styles.previewLabel}>Aperçu — à quoi ça ressemblera</Text>
+        </View>
+        <View style={styles.previewRow}>
+          <View style={styles.previewAvatar} />
+          <View style={styles.previewLines}>
+            <View style={[styles.previewBar, { width: "45%" }]} />
+            <View style={[styles.previewBar, { width: "70%" }]} />
+          </View>
+          <View style={styles.previewBadge} />
+        </View>
+        <Text style={styles.previewCaption}>
+          Assiduité, ressenti agrégé et alertes à relancer apparaîtront ici, joueur par joueur.
+        </Text>
+      </View>
     </Card>
   );
 
@@ -567,8 +588,7 @@ export default function CoachHomeScreen() {
     <>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>{teamLabel}</Text>
-        {/* Effectif = projections prêtes + projections en cours de synchronisation. */}
-        <CoachBadge label={String(summaries.length + summariesPending)} tone="default" />
+        <CoachBadge label={String(rosterCount)} tone="default" />
       </View>
 
       {renderPendingNotice()}
@@ -623,11 +643,17 @@ export default function CoachHomeScreen() {
         ),
       }}
     >
-      {/* Header club compact */}
+      {/* Header club — nom + effectif visibles en un coup d'œil, avant les onglets */}
       <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>
           <Text style={styles.kicker}>Espace coach</Text>
           <Text style={styles.clubName} numberOfLines={1}>{clubName ?? "Mon club"}</Text>
+          <View style={styles.heroStatPill}>
+            <Ionicons name="people" size={14} color={palette.accent} />
+            <Text style={styles.heroStatText}>
+              {rosterCount} {memberWord}{rosterCount > 1 ? "s" : ""}
+            </Text>
+          </View>
         </View>
         <TouchableOpacity onPress={handleSignOut} hitSlop={8} accessibilityLabel="Se déconnecter">
           <Ionicons name="log-out-outline" size={22} color={palette.sub} />
@@ -714,6 +740,22 @@ const styles = StyleSheet.create({
     color: palette.text,
     marginTop: 2,
     letterSpacing: -0.2,
+  },
+  heroStatPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    marginTop: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: coachRadius.pill,
+    backgroundColor: palette.accentSoft,
+  },
+  heroStatText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: palette.accent,
   },
   // ── Segmented control (track clair, onglet actif = pastille blanche) ──
   segment: {
@@ -1047,6 +1089,63 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: palette.sub,
     textAlign: "center",
+  },
+  // ── Aperçu mockup dans l'empty state (grisé, jamais de vraie donnée) ──
+  previewWrap: {
+    marginTop: 6,
+    width: "100%",
+    borderRadius: coachRadius.card,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.cardAlt,
+    padding: 12,
+    gap: 10,
+  },
+  previewLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  previewLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: palette.muted,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  previewRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    opacity: 0.55,
+  },
+  previewAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: palette.border,
+  },
+  previewLines: {
+    flex: 1,
+    gap: 6,
+  },
+  previewBar: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: palette.border,
+  },
+  previewBadge: {
+    width: 46,
+    height: 20,
+    borderRadius: 6,
+    backgroundColor: palette.border,
+  },
+  previewCaption: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: palette.sub,
+    textAlign: "left",
   },
   // ── Bandeau "projections en cours de synchronisation" (neutre, sans UID) ──
   pendingCard: {
