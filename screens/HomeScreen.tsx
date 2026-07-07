@@ -4,12 +4,11 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
   StyleSheet,
   Animated,
   AccessibilityInfo,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -20,12 +19,15 @@ import { useSyncStore } from "../state/stores/useSyncStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
 import { auth } from "../services/firebase";
 import { DEV_FLAGS } from "../config/devFlags";
-import { theme } from "../constants/theme";
+import { Screen } from "../components/ui/Screen";
+import { homeColors } from "../components/home/homeUi";
 import { useSettingsStore } from "../state/settingsStore";
 import HomeReadinessHero from "../components/home/HomeReadinessHero";
 import HomePrimaryCTA from "../components/home/HomePrimaryCTA";
 import HomeNextSessionCard from "../components/home/HomeNextSessionCard";
 import HomeCarouselCard from "../components/home/HomeCarouselCard";
+import { FootballIllustration } from "../components/ui/FootballIllustration";
+import { PitchDecoration } from "../components/ui/PitchDecoration";
 import { useLoadSeries } from "../hooks/home/useLoadSeries";
 import { useMatchSoon } from "../hooks/home/useMatchSoon";
 import { useWeekDays } from "../hooks/home/useWeekDays";
@@ -37,12 +39,11 @@ import { useNavGuard } from "../hooks/useNavGuard";
 import HomeAdviceCard from "../components/home/HomeAdviceCard";
 import { isSameDay, toDateKey } from "../utils/dateHelpers";
 import { showToast } from "../utils/toast";
-import { getFootballLabel } from "../config/trainingDefaults";
 import { MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
 import { getCycleTheme } from "../constants/cycleTheme";
 import { getMicrocyclePhase } from "../utils/microcycleUtils";
 
-const palette = theme.colors;
+const palette = homeColors;
 
 // Stable default references to prevent ?? [] from creating new arrays each render
 const EMPTY_STRINGS: string[] = [];
@@ -51,9 +52,6 @@ const EMPTY_EXTERNALS: { source?: string; dateISO?: string }[] = [];
 
 export default function HomeScreen() {
   if (__DEV__) console.log("[RENDER] HomeScreen");
-
-  // ─── Carrousel hero ───
-
 
   type RootNav = {
     navigate: (screen: string, params?: any) => void;
@@ -133,9 +131,6 @@ export default function HomeScreen() {
 
   const loadSeries = useLoadSeries(dailyApplied, nowISO);
 
-  // Libellé "état du jour" joueur-friendly (jamais de TSB brut).
-  const football = getFootballLabel(tsb);
-
   const matchSoon = useMatchSoon(matchDays, nowISO);
 
   const weekDays = useWeekDays({
@@ -188,8 +183,6 @@ export default function HomeScreen() {
 
   const advice = useContextualAdvice();
 
-  // Recommandations du coach
-
   const onRunHarness = () => {
     runTestHarness?.(7);
     showToast({ type: "info", title: "Harness appliqué", message: "Charges auto + externes de test injectées sur 7 jours." });
@@ -235,57 +228,100 @@ export default function HomeScreen() {
   });
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.screenContainer}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header compact clair */}
-        <Animated.View style={animStyle(heroAnim)}>
-          <View style={styles.header}>
-            <View style={styles.headerText}>
-              <Text style={styles.greeting} numberOfLines={1}>Salut, {athleteName}</Text>
-              <Text style={styles.date}>{todayLabel}</Text>
-            </View>
-            <View style={styles.readyChip}>
-              <View style={[styles.readyDot, { backgroundColor: football.color }]} />
-              <Text style={styles.readyLabel} numberOfLines={1}>{football.label}</Text>
-            </View>
+    <Screen scroll style={styles.screen} contentContainerStyle={styles.screenContainer}>
+      {/* ── Hero plein écran noir — identité Nike, indépendante du theme global ── */}
+      <Animated.View style={[styles.hero, animStyle(heroAnim)]}>
+        <LinearGradient
+          colors={[palette.heroFrom, palette.heroTo]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <PitchDecoration
+          type="cornerArc"
+          width={90}
+          height={90}
+          color="#FFFFFF"
+          opacity={0.06}
+          style={styles.decorCornerTL}
+        />
+        <FootballIllustration
+          type="sprint"
+          width={230}
+          height={230}
+          color="#FFFFFF"
+          opacity={0.05}
+          style={styles.decorSilhouette}
+        />
+
+        {/* Barre du haut : salutation + date, alerte match éventuelle */}
+        <View style={styles.heroTopBar}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.heroGreeting} numberOfLines={1}>SALUT {athleteName.toUpperCase()}</Text>
+            <Text style={styles.heroDate}>{todayLabel}</Text>
           </View>
-        </Animated.View>
+          {matchSoon ? (
+            <View style={styles.matchChip}>
+              <Ionicons name="football" size={12} color={palette.cta} />
+              <Text style={styles.matchChipText}>MATCH PROCHE</Text>
+            </View>
+          ) : null}
+        </View>
 
-        {/* CTA principal — action n°1, en haut */}
-        <Animated.View style={animStyle(ctaAnim)}>
-          <HomePrimaryCTA
-            label={primaryCta.label}
-            subLabel={primaryCta.sub}
-            tone={primaryCta.tone}
-            disabled={primaryCta.disabled}
-            onPress={primaryCta.onPress}
-          />
-        </Animated.View>
+        {/* Bloc ancré en bas : action du jour */}
+        <View style={styles.heroBottom}>
+          <Text style={styles.heroKicker}>AUJOURD'HUI</Text>
+          <Text
+            style={styles.heroTitle}
+            numberOfLines={2}
+            adjustsFontSizeToFit
+            minimumFontScale={0.6}
+          >
+            {primaryCta.label}
+          </Text>
+          {(primaryCta.sub || upcomingSessionLabel) ? (
+            <Text style={styles.heroSubtitle} numberOfLines={2}>
+              {primaryCta.sub ?? upcomingSessionLabel}
+            </Text>
+          ) : null}
 
-        {/* Badge cycle : où en est le joueur dans son voyage (séance + phase) */}
-        {homeCyclePhase ? (
-          <Animated.View style={animStyle(ctaAnim)}>
+          {homeCyclePhase ? (
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={goToCycleModal}
-              style={[styles.cycleChip, { borderColor: homeCycleColor + "40" }]}
+              style={[styles.cyclePill, { borderColor: homeCycleColor }]}
             >
-              <View style={[styles.cycleChipDot, { backgroundColor: homeCycleColor }]} />
-              <Text style={styles.cycleChipText} numberOfLines={1}>
-                <Text style={[styles.cycleChipStrong, { color: homeCycleColor }]}>
-                  Séance {homeCyclePhase.sessionNumber}/{homeCyclePhase.total}
-                </Text>
-                {"  ·  "}
-                {homeCyclePhase.label}
+              <View style={[styles.cyclePillDot, { backgroundColor: homeCycleColor }]} />
+              <Text style={styles.cyclePillText} numberOfLines={1}>
+                Séance {homeCyclePhase.sessionNumber}/{homeCyclePhase.total} · {homeCyclePhase.label}
               </Text>
-              <Ionicons name="chevron-forward" size={16} color={palette.sub} />
+              <Ionicons name="chevron-forward" size={14} color={palette.sub} />
             </TouchableOpacity>
+          ) : null}
+
+          <View style={styles.heroCta}>
+            <HomePrimaryCTA
+              label={primaryCta.label}
+              subLabel={primaryCta.sub}
+              tone={primaryCta.tone}
+              disabled={primaryCta.disabled}
+              onPress={primaryCta.onPress}
+            />
+          </View>
+        </View>
+      </Animated.View>
+
+      {/* ── Sections sous le hero — toujours sur fond noir Home ── */}
+      <View style={styles.sections}>
+        {advice && (
+          <Animated.View style={animStyle(cardsAnim)}>
+            <HomeAdviceCard advice={advice} />
           </Animated.View>
-        ) : null}
+        )}
+
+        <Animated.View style={animStyle(cardsAnim)}>
+          <HomeReadinessHero tsb={tsb} tsbHistory={loadSeries.tsbArr} />
+        </Animated.View>
 
         {/* Ligne stats compacte : Semaine / Série / Match */}
         <Animated.View style={animStyle(ctaAnim)}>
@@ -310,17 +346,6 @@ export default function HomeScreen() {
             ) : null}
           </View>
         </Animated.View>
-
-        {/* État du jour (détail + tendance 7j) — placé plus bas, ne vole pas la vedette */}
-        <Animated.View style={animStyle(cardsAnim)}>
-          <HomeReadinessHero tsb={tsb} tsbHistory={loadSeries.tsbArr} />
-        </Animated.View>
-
-        {advice && (
-          <Animated.View style={animStyle(cardsAnim)}>
-            <HomeAdviceCard advice={advice} />
-          </Animated.View>
-        )}
 
         <Animated.View style={animStyle(cardsAnim)}>
           <View style={styles.cardsStack}>
@@ -364,108 +389,142 @@ export default function HomeScreen() {
         )}
 
         <View style={styles.bottomSpacer} />
-      </ScrollView>
-    </SafeAreaView>
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    backgroundColor: palette.bg,
+  },
   screenContainer: {
-    paddingTop: 8,
-    paddingHorizontal: 16,
     paddingBottom: 24,
-    gap: 14,
     backgroundColor: palette.bg,
   },
-  safeArea: {
-    flex: 1,
-    backgroundColor: palette.bg,
-  },
-  scroll: {
-    flex: 1,
-  },
-  // ── Header compact clair ──
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
+  // ── Hero plein écran ──
+  hero: {
+    minHeight: 500,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 28,
     justifyContent: "space-between",
+    overflow: "hidden",
+  },
+  decorCornerTL: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+  },
+  decorSilhouette: {
+    position: "absolute",
+    bottom: 0,
+    right: -20,
+  },
+  heroTopBar: {
+    flexDirection: "row",
+    alignItems: "flex-start",
     gap: 12,
   },
-  headerText: {
-    flex: 1,
-  },
-  greeting: {
-    fontSize: 22,
+  heroGreeting: {
+    fontSize: 13,
     fontWeight: "800",
-    color: palette.text,
-    letterSpacing: -0.3,
-  },
-  date: {
-    fontSize: 12.5,
     color: palette.sub,
-    marginTop: 2,
+    letterSpacing: 1.2,
   },
-  readyChip: {
+  heroDate: {
+    fontSize: 12.5,
+    color: palette.muted,
+    marginTop: 3,
+  },
+  matchChip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 7,
-    paddingVertical: 7,
-    paddingHorizontal: 11,
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     borderRadius: 999,
-    backgroundColor: palette.card,
+    backgroundColor: palette.ctaSoft,
     borderWidth: 1,
-    borderColor: palette.border,
-    maxWidth: 150,
+    borderColor: palette.cta,
   },
-  readyDot: {
-    width: 9,
-    height: 9,
+  matchChipText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: palette.cta,
+    letterSpacing: 0.5,
+  },
+  heroBottom: {
+    gap: 4,
+  },
+  heroKicker: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: palette.cta,
+    textTransform: "uppercase",
+    letterSpacing: 2,
+  },
+  heroTitle: {
+    marginTop: 6,
+    fontSize: 44,
+    lineHeight: 48,
+    fontWeight: "900",
+    color: palette.text,
+    letterSpacing: -0.5,
+  },
+  heroSubtitle: {
+    marginTop: 8,
+    fontSize: 15,
+    color: palette.sub,
+    lineHeight: 20,
+  },
+  cyclePill: {
+    marginTop: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 8,
+    borderWidth: 1,
     borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    maxWidth: "100%",
   },
-  readyLabel: {
-    fontSize: 13,
+  cyclePillDot: { width: 7, height: 7, borderRadius: 999 },
+  cyclePillText: {
+    fontSize: 12,
     fontWeight: "700",
     color: palette.text,
     flexShrink: 1,
   },
-  // ── Ligne stats compacte ──
-  cycleChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: palette.card,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+  heroCta: {
+    marginTop: 20,
   },
-  cycleChipDot: { width: 8, height: 8, borderRadius: 999 },
-  cycleChipText: { flex: 1, fontSize: 13, color: palette.sub, fontWeight: "600" },
-  cycleChipStrong: { fontWeight: "800" },
+  // ── Sections sous le hero ──
+  sections: {
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    gap: 14,
+  },
   statsLine: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: palette.card,
-    borderWidth: 1,
-    borderColor: palette.border,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingVertical: 4,
   },
   statItem: {
     flex: 1,
     alignItems: "center",
-    gap: 2,
+    gap: 3,
   },
   statLabel: {
     fontSize: 11,
-    fontWeight: "600",
-    color: palette.sub,
+    fontWeight: "700",
+    color: palette.muted,
     textTransform: "uppercase",
-    letterSpacing: 0.4,
+    letterSpacing: 0.6,
   },
   statValue: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "800",
     color: palette.text,
   },

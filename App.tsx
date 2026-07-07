@@ -47,11 +47,30 @@ const linking: LinkingOptions<AppStackParamList> = {
   },
 };
 
+// Écrans qui imposent leurs propres icônes de StatusBar claires, quel que soit
+// le themeMode global — aujourd'hui uniquement Home (hero plein écran noir,
+// identité "Nike" indépendante du thème clair/sombre choisi dans Réglages).
+// Piloté ICI, au même endroit que la StatusBar globale unique : pas de
+// <StatusBar> locale dans l'écran (cf. CLAUDE.md > Regle d'or ecrans).
+const FORCED_LIGHT_STATUS_BAR_ROUTES = new Set(["Home"]);
+
 export default function App() {
   const themeMode = useSettingsStore((s) => s.themeMode);
   const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
   const hydrated = useSettingsStore((s) => s._hydrated);
   const [Navigator, setNavigator] = useState<React.ComponentType | null>(null);
+  // Nom de la route active (deepest focused screen, tous navigators confondus) —
+  // recalculé à chaque changement de navigation pour adapter la StatusBar sans
+  // que chaque écran gère la sienne.
+  const [activeRouteName, setActiveRouteName] = useState<string | undefined>();
+  const updateActiveRouteName = () => {
+    if (navigationRef.isReady()) setActiveRouteName(navigationRef.getCurrentRoute()?.name);
+  };
+  const statusBarStyle = FORCED_LIGHT_STATUS_BAR_ROUTES.has(activeRouteName ?? "")
+    ? "light"
+    : themeMode === "dark"
+      ? "light"
+      : "dark";
 
   // Handle notification taps → navigate to the correct screen
   useNotificationHandler();
@@ -93,9 +112,16 @@ export default function App() {
       {/* SafeAreaProvider unique, a la racine : couvre le NavigationContainer
           ET l'OfflineBanner (qui vit hors des navigators). */}
       <SafeAreaProvider>
-        {/* StatusBar globale unique — adaptee au theme (defaut = clair). */}
-        <StatusBar style={themeMode === "dark" ? "light" : "dark"} />
-        <NavigationContainer ref={navigationRef} linking={linking}>
+        {/* StatusBar globale unique — adaptee au theme, sauf ecrans a fond force
+            (ex: Home, hero noir) qui imposent des icones claires (voir
+            FORCED_LIGHT_STATUS_BAR_ROUTES ci-dessus). */}
+        <StatusBar style={statusBarStyle} />
+        <NavigationContainer
+          ref={navigationRef}
+          linking={linking}
+          onReady={updateActiveRouteName}
+          onStateChange={updateActiveRouteName}
+        >
           <GestureHandlerRootView style={{ flex: 1 }}>
             <Navigator />
             <OfflineBanner />

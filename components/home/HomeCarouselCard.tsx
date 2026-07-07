@@ -1,9 +1,8 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
-import { Card } from "../ui/Card";
-import { theme } from "../../constants/theme";
+import { homeColors } from "./homeUi";
 
-const palette = theme.colors;
+const palette = homeColors;
 
 type Props = {
   title: string;
@@ -13,11 +12,11 @@ type Props = {
 
 export default function HomeCarouselCard({ title, subtitle, children }: Props) {
   return (
-    <Card variant="soft" style={styles.card}>
+    <View style={styles.card}>
       <Text style={styles.title}>{title}</Text>
       {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       <View style={styles.content}>{children}</View>
-    </Card>
+    </View>
   );
 }
 
@@ -25,6 +24,9 @@ const styles = StyleSheet.create({
   card: {
     padding: 14,
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.cardSoft,
     gap: 10,
   },
   title: {

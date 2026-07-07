@@ -1,11 +1,10 @@
 import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, LayoutChangeEvent } from "react-native";
 import Svg, { Line, Path, Circle } from "react-native-svg";
-import { theme } from "../../constants/theme";
-import { Card } from "../ui/Card";
+import { homeColors } from "./homeUi";
 import { getFootballLabel } from "../../config/trainingDefaults";
 
-const palette = theme.colors;
+const palette = homeColors;
 
 type Props = {
   tsb: number;
@@ -63,10 +62,10 @@ function HomeReadinessHeroInner({
   };
 
   return (
-    <Card variant="surface" style={styles.card}>
+    <View style={styles.card}>
       <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.kicker}>TON ÉTAT</Text>
+          <Text style={styles.kicker}>TA FORME</Text>
           <Text style={styles.title}>{football.label}</Text>
           <Text style={styles.sub}>{football.message}</Text>
         </View>
@@ -78,12 +77,12 @@ function HomeReadinessHeroInner({
       <View style={styles.chartWrap} onLayout={handleLayout}>
         <Svg width={chartWidth} height={chartHeight}>
           {/* Optimal zone band (-5 to +5) */}
-          <Line x1={padLeft} y1={toY(5)} x2={chartWidth - padRight} y2={toY(5)} stroke="rgba(34, 197, 94, 0.2)" strokeWidth={1} strokeDasharray="4,4" />
-          <Line x1={padLeft} y1={toY(-5)} x2={chartWidth - padRight} y2={toY(-5)} stroke="rgba(34, 197, 94, 0.2)" strokeWidth={1} strokeDasharray="4,4" />
+          <Line x1={padLeft} y1={toY(5)} x2={chartWidth - padRight} y2={toY(5)} stroke="rgba(52, 211, 153, 0.28)" strokeWidth={1} strokeDasharray="4,4" />
+          <Line x1={padLeft} y1={toY(-5)} x2={chartWidth - padRight} y2={toY(-5)} stroke="rgba(52, 211, 153, 0.28)" strokeWidth={1} strokeDasharray="4,4" />
           {/* Zero line */}
           <Line x1={padLeft} y1={toY(0)} x2={chartWidth - padRight} y2={toY(0)} stroke={palette.borderSoft} strokeWidth={1} />
           {/* Overreaching threshold */}
-          <Line x1={padLeft} y1={toY(-10)} x2={chartWidth - padRight} y2={toY(-10)} stroke="rgba(245, 158, 11, 0.3)" strokeWidth={1} />
+          <Line x1={padLeft} y1={toY(-10)} x2={chartWidth - padRight} y2={toY(-10)} stroke="rgba(251, 191, 36, 0.35)" strokeWidth={1} />
           {/* TSB curve */}
           {path ? <Path d={path} stroke={lineColor} strokeWidth={2.6} fill="none" /> : null}
           {points.map((p, idx) => (
@@ -91,13 +90,13 @@ function HomeReadinessHeroInner({
           ))}
         </Svg>
         <Text style={[styles.refLabel, { top: toY(0) - 8 }]}>0</Text>
-        <Text style={[styles.refLabel, { top: toY(-10) - 8, color: "#f59e0b" }]}>-10</Text>
+        <Text style={[styles.refLabel, { top: toY(-10) - 8, color: palette.warn }]}>-10</Text>
       </View>
 
       <View style={styles.chartLabelRow}>
         <Text style={styles.chartLabel}>Ta forme sur 7 jours</Text>
       </View>
-    </Card>
+    </View>
   );
 }
 
@@ -105,6 +104,9 @@ const styles = StyleSheet.create({
   card: {
     padding: 16,
     borderRadius: 26,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.card,
     gap: 10,
     overflow: "hidden",
   },

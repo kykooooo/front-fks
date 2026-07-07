@@ -6,10 +6,10 @@ import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useHaptics } from "../../hooks/useHaptics";
-import { theme } from "../../constants/theme";
+import { homeColors } from "./homeUi";
 import type { Advice, AdviceTone } from "../../domain/adviceRules";
 
-const palette = theme.colors;
+const palette = homeColors;
 
 type Props = {
   advice: Advice;
@@ -20,31 +20,31 @@ const toneStyles: Record<
   { bg: string; border: string; accent: string; iconBg: string; label: string }
 > = {
   info: {
-    bg: "rgba(37, 99, 235, 0.08)",
-    border: "#3b82f6",
-    accent: "#2563eb",
-    iconBg: "rgba(37, 99, 235, 0.15)",
+    bg: "rgba(125, 162, 232, 0.14)",
+    border: palette.accent,
+    accent: palette.accent,
+    iconBg: "rgba(125, 162, 232, 0.22)",
     label: "Info",
   },
   warn: {
-    bg: "rgba(245, 158, 11, 0.10)",
-    border: "#f59e0b",
-    accent: "#d97706",
-    iconBg: "rgba(245, 158, 11, 0.18)",
+    bg: "rgba(251, 191, 36, 0.14)",
+    border: palette.warn,
+    accent: palette.warn,
+    iconBg: "rgba(251, 191, 36, 0.22)",
     label: "Attention",
   },
   danger: {
-    bg: "rgba(239, 68, 68, 0.10)",
-    border: "#ef4444",
-    accent: "#dc2626",
-    iconBg: "rgba(239, 68, 68, 0.18)",
+    bg: "rgba(251, 113, 133, 0.14)",
+    border: palette.danger,
+    accent: palette.danger,
+    iconBg: "rgba(251, 113, 133, 0.22)",
     label: "Important",
   },
   success: {
-    bg: "rgba(22, 163, 74, 0.08)",
-    border: "#22c55e",
-    accent: "#16a34a",
-    iconBg: "rgba(22, 163, 74, 0.15)",
+    bg: "rgba(52, 211, 153, 0.14)",
+    border: palette.success,
+    accent: palette.success,
+    iconBg: "rgba(52, 211, 153, 0.22)",
     label: "Top",
   },
 };
@@ -106,7 +106,7 @@ function HomeAdviceCardInner({ advice }: Props) {
           style={[styles.actionButton, { backgroundColor: colors.accent }]}
         >
           <Text style={styles.actionText}>{advice.actionLabel}</Text>
-          <Ionicons name="arrow-forward" size={16} color="#fff" />
+          <Ionicons name="arrow-forward" size={16} color="#000" />
         </TouchableOpacity>
       )}
     </View>
@@ -119,12 +119,6 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     padding: 16,
     gap: 14,
-    // Ombre subtile
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
   },
   badgeRow: {
     flexDirection: "row",
@@ -180,7 +174,7 @@ const styles = StyleSheet.create({
   actionText: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#fff",
+    color: "#000",
   },
   tipWrap: {
     flexDirection: "row",

@@ -1,10 +1,10 @@
 import React, { useEffect, useRef } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../constants/theme";
 import { useHaptics } from "../../hooks/useHaptics";
+import { homeColors } from "./homeUi";
 
-const palette = theme.colors;
+const palette = homeColors;
 
 type Props = {
   label: string;
@@ -34,7 +34,7 @@ function HomePrimaryCTAInner({
   const onPressOut = () => {
     Animated.timing(press, { toValue: 0, duration: 100, useNativeDriver: true }).start();
   };
-  const pressScale = press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.96] });
+  const pressScale = press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.97] });
 
   useEffect(() => {
     if (isDisabled) return;
@@ -50,17 +50,18 @@ function HomePrimaryCTAInner({
 
   const scale = pulse.interpolate({
     inputRange: [0, 1],
-    outputRange: [1, 1.015],
+    outputRange: [1, 1.012],
   });
-  // CTA primaire = action clé → fond orange (cta) + texte BLANC (contraste propre).
+  // CTA Nike : fond orange plein, texte blanc, glow orange en tone primaire.
   const bg =
-    tone === "warn" ? "rgba(245,158,11,0.16)" : tone === "disabled" ? palette.cardSoft : palette.cta;
+    tone === "warn" ? "rgba(251,191,36,0.16)" : tone === "disabled" ? palette.cardSoft : palette.cta;
   const border =
     tone === "warn" ? palette.warn : tone === "disabled" ? palette.borderSoft : palette.cta;
   const textColor =
     tone === "warn" ? palette.warn : tone === "disabled" ? palette.sub : "#ffffff";
   const subColor =
-    tone === "disabled" ? palette.sub : tone === "warn" ? palette.warn : "rgba(255,255,255,0.9)";
+    tone === "disabled" ? palette.sub : tone === "warn" ? palette.warn : "rgba(255,255,255,0.85)";
+  const glow = tone === "primary" && !isDisabled;
 
   return (
     <Animated.View style={{ transform: [{ scale }, { scale: pressScale }] }}>
@@ -70,15 +71,25 @@ function HomePrimaryCTAInner({
         onPressOut={onPressOut}
         disabled={isDisabled}
         activeOpacity={0.9}
-        style={[styles.wrap, { backgroundColor: bg, borderColor: border, opacity: isDisabled ? 0.7 : 1 }]}
+        style={[
+          styles.wrap,
+          { backgroundColor: bg, borderColor: border, opacity: isDisabled ? 0.7 : 1 },
+          glow && styles.glow,
+        ]}
       >
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.label, { color: textColor }]}>{label}</Text>
-        {subLabel ? <Text style={[styles.sub, { color: subColor }]}>{subLabel}</Text> : null}
-      </View>
-      <View style={[styles.iconWrap, { borderColor: textColor }]}>
-        <Ionicons name="arrow-forward" size={18} color={textColor} />
-      </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.label, { color: textColor }]} numberOfLines={1}>
+            {label.toUpperCase()}
+          </Text>
+          {subLabel ? (
+            <Text style={[styles.sub, { color: subColor }]} numberOfLines={1}>
+              {subLabel}
+            </Text>
+          ) : null}
+        </View>
+        <View style={[styles.iconWrap, { borderColor: textColor }]}>
+          <Ionicons name="arrow-forward" size={20} color={textColor} />
+        </View>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -86,26 +97,34 @@ function HomePrimaryCTAInner({
 
 const styles = StyleSheet.create({
   wrap: {
-    borderRadius: 22,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+    borderRadius: 24,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
     borderWidth: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 14,
+  },
+  glow: {
+    shadowColor: "#FF7A1A",
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
   label: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "900",
+    letterSpacing: 0.3,
   },
   sub: {
-    marginTop: 4,
-    fontSize: 12,
-    color: palette.sub,
+    marginTop: 5,
+    fontSize: 13,
+    fontWeight: "600",
   },
   iconWrap: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
     borderRadius: 999,
     borderWidth: 1,
     alignItems: "center",

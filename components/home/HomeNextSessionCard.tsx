@@ -1,11 +1,8 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
-import { Card } from "../ui/Card";
-import { Badge } from "../ui/Badge";
-import { SectionHeader } from "../ui/SectionHeader";
-import { theme } from "../../constants/theme";
+import { homeColors } from "./homeUi";
 
-const palette = theme.colors;
+const palette = homeColors;
 
 type Props = {
   hasPending: boolean;
@@ -38,14 +35,26 @@ function HomeNextSessionCardInner({
   const secondaryTextColor = secondaryDisabled ? palette.sub : palette.text;
   return (
     <View style={styles.section}>
-      <SectionHeader
-        title="Prochaine séance"
-        right={<Badge label={hasPending ? "Prête" : "À créer"} tone={hasPending ? "ok" : "default"} />}
-      />
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionTitleGroup}>
+          <View style={styles.sectionMark} />
+          <Text style={styles.sectionTitle}>Prochaine séance</Text>
+        </View>
+        <View
+          style={[
+            styles.badge,
+            hasPending
+              ? { backgroundColor: "rgba(52, 211, 153, 0.16)", borderColor: palette.success }
+              : { backgroundColor: palette.cardSoft, borderColor: palette.borderSoft },
+          ]}
+        >
+          <Text style={[styles.badgeText, { color: hasPending ? palette.success : palette.sub }]}>
+            {hasPending ? "Prête" : "À créer"}
+          </Text>
+        </View>
+      </View>
 
-      <Card variant="soft" style={styles.nextCard}>
-        <View style={styles.nextRail} />
-        <View style={styles.nextGlow} />
+      <View style={styles.nextCard}>
         <View style={styles.nextTopRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.nextMainText}>{upcomingLabel}</Text>
@@ -87,35 +96,54 @@ function HomeNextSessionCardInner({
             <Text style={styles.nextFeedbackText}>Comment ça s'est passé ?</Text>
           </TouchableOpacity>
         ) : null}
-      </Card>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   section: { gap: 10 },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sectionTitleGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  sectionMark: {
+    width: 3,
+    height: 14,
+    borderRadius: 999,
+    backgroundColor: palette.accent,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    color: palette.text,
+  },
+  badge: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  badgeText: {
+    fontWeight: "700",
+    fontSize: 11,
+  },
   nextCard: {
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.card,
     padding: 14,
     gap: 12,
     overflow: "hidden",
-  },
-  nextRail: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-    backgroundColor: palette.borderSoft,
-  },
-  nextGlow: {
-    position: "absolute",
-    top: -60,
-    right: -60,
-    width: 160,
-    height: 160,
-    borderRadius: 999,
-    backgroundColor: "rgba(20,20,20,0.04)",
   },
   nextTopRow: {
     flexDirection: "row",
@@ -170,7 +198,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: palette.borderSoft,
-    backgroundColor: palette.card,
+    backgroundColor: palette.cardSoft,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -188,7 +216,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: palette.borderSoft,
-    backgroundColor: palette.card,
+    backgroundColor: palette.cardSoft,
   },
   nextFeedbackText: {
     fontSize: 12,
