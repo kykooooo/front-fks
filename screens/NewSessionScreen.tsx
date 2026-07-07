@@ -27,7 +27,7 @@ import { isSameDay, RESET_VARIANT_FALLBACKS } from "./newSession/helpers";
 import { prepareBackendContext, fetchV2, getSessionCache, setSessionCache, clearSessionCache } from "./newSession/api";
 import { processV2 } from "./newSession/orchestrator";
 import { buildFallbackSession } from "./newSession/fallback";
-import { classifyError, ErrorType } from "../utils/errorHandler";
+import { classifyError, ErrorType, getErrorTitle } from "../utils/errorHandler";
 import { showToast } from "../utils/toast";
 import { LoadingOverlay } from "../components/ui/LoadingOverlay";
 import { ResetVariantModal } from "./newSession/ResetVariantModal";
@@ -519,7 +519,11 @@ export default function NewSessionScreen() {
           sessionId: session.id,
         });
       } else {
-        showToast({ type: "error", title: appError.type === ErrorType.VALIDATION ? "Données invalides" : "Erreur", message: appError.userMessage });
+        showToast({
+          type: appError.type === ErrorType.RATE_LIMIT ? "warn" : "error",
+          title: getErrorTitle(appError.type),
+          message: appError.userMessage,
+        });
       }
     } finally {
       setGenerating(false);

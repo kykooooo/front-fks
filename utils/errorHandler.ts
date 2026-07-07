@@ -12,6 +12,7 @@ type ErrorLike = {
   statusText?: string;
   userMessage?: string;
   stack?: string;
+  retryAfterS?: number;
 };
 function toErrorLike(err: unknown): ErrorLike {
   if (err && typeof err === 'object') return err as ErrorLike;
@@ -28,6 +29,7 @@ export enum ErrorType {
   AUTH = 'AUTH',                 // Problème d'authentification
   FIREBASE = 'FIREBASE',         // Erreur Firestore/Firebase
   TIMEOUT = 'TIMEOUT',           // Requête trop longue
+  RATE_LIMIT = 'RATE_LIMIT',     // 429 — trop de générations en peu de temps
   UNKNOWN = 'UNKNOWN',           // Erreur inconnue
 }
 
@@ -100,6 +102,23 @@ function classifyErrorLike(error: ErrorLike): AppError {
       type: ErrorType.SERVER,
       message: msg,
       userMessage: 'Le serveur rencontre un problème technique. Réessaie dans quelques minutes.',
+      technicalDetails: `Status ${status}: ${error.statusText ?? ''}`,
+      retryable: true,
+    };
+  }
+
+  // Rate limit (status 429) — pas une erreur de saisie, un simple "trop vite".
+  // Distingué de VALIDATION en amont : sinon le message trompeur "vérifie ton
+  // formulaire" s'affiche alors que rien n'est invalide (confirmé par le
+  // battery test prod — voir rateLimit.ts côté backend).
+  if (status === 429) {
+    const waitS = typeof error.retryAfterS === 'number' && error.retryAfterS > 0 ? error.retryAfterS : null;
+    return {
+      type: ErrorType.RATE_LIMIT,
+      message: msg,
+      userMessage: waitS
+        ? `Tu as généré plusieurs séances très rapidement. Attends ${waitS} seconde${waitS > 1 ? 's' : ''} et réessaie.`
+        : 'Tu as généré plusieurs séances très rapidement. Attends quelques secondes et réessaie.',
       technicalDetails: `Status ${status}: ${error.statusText ?? ''}`,
       retryable: true,
     };
@@ -197,7 +216,7 @@ export function showError(error: unknown, context?: string) {
 /**
  * Obtenir un titre approprié selon le type d'erreur
  */
-function getErrorTitle(type: ErrorType): string {
+export function getErrorTitle(type: ErrorType): string {
   const titles: Record<ErrorType, string> = {
     [ErrorType.NETWORK]: 'Pas de connexion',
     [ErrorType.SERVER]: 'Serveur indisponible',
@@ -205,6 +224,7 @@ function getErrorTitle(type: ErrorType): string {
     [ErrorType.AUTH]: 'Problème de connexion',
     [ErrorType.FIREBASE]: 'Erreur base de données',
     [ErrorType.TIMEOUT]: 'Temps d\'attente dépassé',
+    [ErrorType.RATE_LIMIT]: 'Trop de générations',
     [ErrorType.UNKNOWN]: 'Erreur',
   };
 
@@ -218,13 +238,16 @@ export class BackendError extends Error {
   status: number;
   statusText: string;
   userMessage?: string;
+  /** Header `retry-after` (secondes) — présent sur les 429 du rate limiter backend. */
+  retryAfterS?: number;
 
-  constructor(status: number, statusText: string, message: string, userMessage?: string) {
+  constructor(status: number, statusText: string, message: string, userMessage?: string, retryAfterS?: number) {
     super(message);
     this.name = 'BackendError';
     this.status = status;
     this.statusText = statusText;
     this.userMessage = userMessage;
+    this.retryAfterS = retryAfterS;
   }
 }
 
@@ -249,13 +272,16 @@ export async function safeFetch(
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => 'No response body');
+      const retryAfterHeader = response.headers.get('retry-after');
+      const retryAfterS = retryAfterHeader ? Number(retryAfterHeader) : undefined;
       throw new BackendError(
         response.status,
         response.statusText,
         errorBody,
         response.status >= 500
           ? 'Le serveur rencontre un problème. Réessaie dans quelques minutes.'
-          : undefined
+          : undefined,
+        Number.isFinite(retryAfterS) ? retryAfterS : undefined
       );
     }
 
