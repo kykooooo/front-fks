@@ -366,6 +366,48 @@ export function summarizeCoachGroup(rows: CoachDashboardRow[]): CoachGroupSummar
 // préparation (pendingCount > 0). Le compteur d'effectif = ready + pending.
 export type CoachRosterDisplay = "unavailable" | "empty" | "list";
 
+// ─── Phrase de synthèse hebdo (dashboard coach) ──────────────────────────────
+// Module PUR (aucune dépendance écran) : compose une phrase "bulletin de
+// semaine" à partir de données déjà calculées côté écran (weekLabel via
+// formatCoachWeekLabel, labels cadre déjà traduits, résumé du groupe via
+// summarizeCoachGroup). Aucune donnée joueur brute — mêmes garanties
+// coach-safe que le reste de ce module.
+export type WeeklyReportInput = {
+  /** Ex: "Semaine du 7 au 13 juillet 2026" (formatCoachWeekLabel). */
+  weekLabel: string;
+  cadreSaved: boolean;
+  /** Label déjà traduit (ex: "Normale") ou null si non renseigné. */
+  intensityLabel: string | null;
+  /** Label déjà traduit (ex: "Vitesse contrôlée") ou null si non renseigné. */
+  weekGoalLabel: string | null;
+  summary: CoachGroupSummary;
+  /** "joueuse" | "joueur" | "membre" — mot singulier, pluralisé ici. */
+  memberWord: string;
+};
+
+export function buildWeeklyReportSentence(input: WeeklyReportInput): string {
+  const cadrePart =
+    input.cadreSaved && input.intensityLabel && input.weekGoalLabel
+      ? `intensité ${input.intensityLabel.toLowerCase()}, objectif ${input.weekGoalLabel.toLowerCase()}`
+      : "cadre de la semaine non renseigné";
+
+  const statusParts: string[] = [];
+  if (input.summary.toRelance > 0) {
+    statusParts.push(
+      `${input.summary.toRelance} ${input.memberWord}${input.summary.toRelance > 1 ? "s" : ""} à relancer`
+    );
+  }
+  if (input.summary.planned > 0) {
+    statusParts.push(
+      `${input.summary.planned} séance${input.summary.planned > 1 ? "s" : ""} prête${input.summary.planned > 1 ? "s" : ""}`
+    );
+  }
+  const statusPart = statusParts.length > 0 ? statusParts.join(", ") : "aucune séance générée pour l'instant";
+  const statusSentence = statusPart.charAt(0).toUpperCase() + statusPart.slice(1);
+
+  return `${input.weekLabel} — ${cadrePart}. ${statusSentence}.`;
+}
+
 export function coachRosterDisplay(args: {
   readyCount: number; // projections prêtes (summaries.length)
   pendingCount: number; // projections en cours de synchronisation

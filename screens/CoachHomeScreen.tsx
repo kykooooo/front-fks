@@ -33,6 +33,7 @@ import {
   sortCoachSummaries,
   summarizeCoachGroup,
   coachRosterDisplay,
+  buildWeeklyReportSentence,
   type CoachPlayerSummary,
 } from "../domain/coachSummary";
 import {
@@ -269,28 +270,16 @@ export default function CoachHomeScreen() {
   // Effectif = projections prêtes + projections en cours de synchronisation (même calcul que l'onglet Effectif).
   const rosterCount = summaries.length + summariesPending;
 
-  // État du groupe : une phrase actionnable selon la priorité (relance > prévu > rien).
-  const groupState =
-    summary.toRelance > 0
-      ? {
-          icon: "alert-circle" as const,
-          color: coachColors.warn,
-          tint: coachColors.warnSoft,
-          text: `${summary.toRelance} ${memberWord}${summary.toRelance > 1 ? "s" : ""} à relancer aujourd'hui`,
-        }
-      : summary.planned > 0
-        ? {
-            icon: "checkmark-circle" as const,
-            color: coachColors.success,
-            tint: coachColors.successSoft,
-            text: "Des séances sont prêtes pour le groupe",
-          }
-        : {
-            icon: "time-outline" as const,
-            color: coachColors.sub,
-            tint: coachColors.cardAlt,
-            text: "Aucune séance générée pour l'instant",
-          };
+  // Bulletin hebdo : une phrase de synthèse (cadre + état du groupe), calculée
+  // par une fonction PURE (domain/coachSummary.ts) — aucune logique ici.
+  const weeklyReportText = buildWeeklyReportSentence({
+    weekLabel: formatCoachWeekLabel(weekKey),
+    cadreSaved,
+    intensityLabel: intensity ? INTENSITY_LABELS[intensity] : null,
+    weekGoalLabel: weekGoal ? GOAL_LABELS[weekGoal] : null,
+    summary,
+    memberWord,
+  });
 
   const statusTone = (label: string): "ok" | "warn" | "info" | "default" =>
     label === "Faite" ? "ok" : label === "À relancer" ? "warn" : label === "Prête" ? "info" : "default";
@@ -492,17 +481,6 @@ export default function CoachHomeScreen() {
     }
     return (
     <>
-      {/* État du groupe — phrase actionnable (priorité : relance > prévu > rien) */}
-      <View style={[styles.groupCard, { borderLeftColor: groupState.color }]}>
-        <View style={[styles.groupIcon, { backgroundColor: groupState.tint }]}>
-          <Ionicons name={groupState.icon} size={18} color={groupState.color} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.groupHeadline}>{groupState.text}</Text>
-          <Text style={styles.groupSub}>FKS garde la charge sous contrôle, tu gardes la vision.</Text>
-        </View>
-      </View>
-
       <Text style={styles.sectionTitle}>Séances générées</Text>
       <Text style={styles.weekExplain}>FKS génère la séance au moment où la joueuse la lance.</Text>
       <Card variant="soft" style={styles.summaryCard}>
@@ -660,6 +638,25 @@ export default function CoachHomeScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Résumé exécutif — visible avant tout onglet : lecture en 2 secondes
+          pour un président de club qui découvre l'app. */}
+      {!summariesUnavailable ? (
+        <>
+          <Card variant="soft" style={styles.kpiCard}>
+            <View style={styles.summaryRow}>
+              <SummaryStat value={summary.planned} label="Prêtes" icon="checkmark-done-outline" color={palette.accent} />
+              <SummaryStat value={summary.toRelance} label="À relancer" icon="alert-circle-outline" color={palette.warn} />
+              <SummaryStat value={rosterCount} label="Effectif" icon="people-outline" color={palette.text} />
+            </View>
+          </Card>
+
+          <View style={styles.reportCard}>
+            <Text style={styles.reportKicker}>BULLETIN DE LA SEMAINE</Text>
+            <Text style={styles.reportText}>{weeklyReportText}</Text>
+          </View>
+        </>
+      ) : null}
+
       {/* Segmented control : Semaine / Séances / Effectif */}
       <View style={styles.segment}>
         {COACH_TABS.map((t) => {
@@ -756,6 +753,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     color: palette.accent,
+  },
+  // ── Résumé exécutif (KPI + bulletin hebdo, avant les onglets) ──
+  kpiCard: {
+    ...CARD,
+    borderWidth: 1,
+    padding: 16,
+    marginTop: 4,
+  },
+  reportCard: {
+    ...CARD,
+    borderWidth: 1,
+    padding: 14,
+    gap: 4,
+  },
+  reportKicker: {
+    fontSize: 10.5,
+    fontWeight: "800",
+    color: palette.accent,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  reportText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: palette.text,
+    lineHeight: 20,
   },
   // ── Segmented control (track clair, onglet actif = pastille blanche) ──
   segment: {
@@ -913,35 +936,6 @@ const styles = StyleSheet.create({
     shadowColor: palette.accent,
     borderRadius: 10,
     marginTop: 6,
-  },
-  // ── État du groupe (onglet Séances) ──
-  groupCard: {
-    ...CARD,
-    borderWidth: 1,
-    borderLeftWidth: 3,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 14,
-  },
-  groupIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  groupHeadline: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: palette.text,
-    letterSpacing: -0.2,
-  },
-  groupSub: {
-    fontSize: 12.5,
-    color: palette.sub,
-    marginTop: 2,
-    lineHeight: 16,
   },
   // ── Compteurs (onglet Séances) ──
   summaryCard: {
