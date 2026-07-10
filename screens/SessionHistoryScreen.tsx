@@ -4,24 +4,34 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated } from "
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
+import { useDebugStore } from "../state/stores/useDebugStore";
 import { useNavigation } from "@react-navigation/native";
 import { theme } from "../constants/theme";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
-import { toDateKey, formatDayFR } from "../utils/dateHelpers";
+import { toDateKey, formatDayFR, isWithinFeedbackWindow } from "../utils/dateHelpers";
 import type { Session } from "../domain/types";
 
 const palette = theme.colors;
 
 export default function SessionHistoryScreen() {
   const sessions = useSessionsStore((s) => s.sessions);
+  const devNowISO = useDebugStore((s) => s.devNowISO);
   const nav = useNavigation<any>();
+
+  const todayKey = toDateKey(devNowISO ? new Date(devNowISO) : new Date());
 
   const sorted = useMemo(
     () => {
       const toSessionDay = (session: Session) => toDateKey(session.dateISO ?? session.date);
       return [...sessions]
-        .filter((s) => s.completed)
+        // Complétées + zombies (non complétées hors fenêtre de validation) :
+        // les zombies restent visibles en "Non validée", sans action possible.
+        // Une séance non complétée encore dans la fenêtre vit sur le Home, pas ici.
+        .filter(
+          (s) =>
+            s.completed || !isWithinFeedbackWindow(s.dateISO ?? s.date, todayKey)
+        )
         .sort((a, b) => {
           const da = toSessionDay(a);
           const db = toSessionDay(b);
@@ -33,7 +43,7 @@ export default function SessionHistoryScreen() {
           return db.localeCompare(da);
         });
     },
-    [sessions]
+    [sessions, todayKey]
   );
 
   const animMap = useRef(new Map<string, Animated.Value>()).current;
@@ -86,7 +96,9 @@ export default function SessionHistoryScreen() {
     <View style={{ flex: 1, backgroundColor: palette.bg }}>
       <ScrollView contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + 16 }]}>
         <SectionHeader title="Historique" />
-        <Text style={styles.subtitle}>Tes dernières séances complétées.</Text>
+        <Text style={styles.subtitle}>
+          Tes dernières séances. Les séances non validées ne comptent pas dans ta charge.
+        </Text>
 
         {sorted.length === 0 ? (
           <View style={styles.emptyState}>
@@ -101,6 +113,7 @@ export default function SessionHistoryScreen() {
         ) : (
           <View style={{ gap: 10 }}>
             {sorted.map((s, idx) => {
+              const isZombie = !s.completed;
               const date = toDateKey(s.dateISO ?? s.date);
               const focus =
                 s.focus ||
@@ -133,7 +146,7 @@ export default function SessionHistoryScreen() {
                 >
                   <TouchableOpacity
                   onPress={() => {
-                    if (!canPreview) return;
+                    if (isZombie || !canPreview) return;
                     const v2 = s.aiV2 ?? s.ai;
                     nav.navigate("SessionPreview", {
                       v2,
@@ -141,15 +154,29 @@ export default function SessionHistoryScreen() {
                       sessionId: s.id,
                     });
                   }}
-                  activeOpacity={canPreview ? 0.85 : 1}
+                  disabled={isZombie}
+                  activeOpacity={!isZombie && canPreview ? 0.85 : 1}
                   >
-                    <Card variant="surface" style={styles.row}>
+                    <Card variant="surface" style={[styles.row, isZombie && styles.rowZombie]}>
                       <View>
-                        <Text style={styles.rowTitle}>{formatDayFR(date) || date}</Text>
-                        <Text style={styles.rowSub}>
-                          {focus} · RPE {rpe} · {dur}
-                        </Text>
-                        {canPreview ? (
+                        <View style={styles.rowTitleLine}>
+                          <Text style={styles.rowTitle}>{formatDayFR(date) || date}</Text>
+                          {isZombie ? (
+                            <View style={styles.zombieBadge}>
+                              <Text style={styles.zombieBadgeText}>Non validée</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                        {isZombie ? (
+                          <Text style={styles.rowSub}>
+                            {focus} · sans feedback · pas comptée dans ta charge
+                          </Text>
+                        ) : (
+                          <Text style={styles.rowSub}>
+                            {focus} · RPE {rpe} · {dur}
+                          </Text>
+                        )}
+                        {isZombie ? null : canPreview ? (
                           <Text style={styles.rowHint}>Voir le détail →</Text>
                         ) : (
                           <Text style={styles.rowHintMuted}>Aucun détail disponible</Text>
@@ -196,6 +223,27 @@ const styles = StyleSheet.create({
   },
   row: {
     padding: 12,
+  },
+  rowZombie: {
+    opacity: 0.6,
+  },
+  rowTitleLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  zombieBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+  },
+  zombieBadgeText: {
+    color: palette.sub,
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "uppercase",
   },
   rowTitle: { color: palette.text, fontWeight: "700", fontSize: 14 },
   rowSub: { color: palette.sub, marginTop: 2, fontSize: 13 },

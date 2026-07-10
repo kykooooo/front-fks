@@ -8,7 +8,6 @@ import {
   ScrollView,
 } from "react-native";
 import { Screen } from "../components/ui/Screen";
-import { subDays } from "date-fns";
 import { useNavigation, NavigationProp, useFocusEffect } from "@react-navigation/native";
 import { useLoadStore } from "../state/stores/useLoadStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
@@ -44,6 +43,7 @@ import { trackEvent } from "../services/analytics";
 import { buildResetExplain } from "./newSession/resetExplain";
 import { useContextualAdvice } from "../hooks/home/useContextualAdvice";
 import { toDateKey } from "../utils/dateHelpers";
+import { selectPendingSession } from "../utils/sessionHelpers";
 
 /** Catalogue matériel (ids alignés avec le profil) */
 const EQUIPMENT_CATALOG = [
@@ -175,28 +175,12 @@ export default function NewSessionScreen() {
     setCachePrompt(null);
   }, [environment.join("|"), selectedEquipment.join("|")]);
 
+  // Même fenêtre que FeedbackScreen (aujourd'hui, J-1, J-2, demain) : une
+  // séance zombie hors fenêtre ne bloque plus la génération.
   const current: Session | undefined = useMemo(
     () => {
       const nowDate = devNowISO ? new Date(devNowISO) : new Date();
-      const oldestAllowedKey = toDateKey(subDays(nowDate, 2));
-      const withDate = sessions
-        .filter((s) => !s.completed)
-        .filter((s) => {
-          const day = toDateKey(s.dateISO ?? s.date);
-          if (!day) return true;
-          return day >= oldestAllowedKey;
-        })
-        .sort((a, b) => {
-          const da = toDateKey(a.dateISO ?? a.date) || "9999-12-31";
-          const db = toDateKey(b.dateISO ?? b.date) || "9999-12-31";
-          if (da === db) {
-            const ca = new Date(a.createdAt ?? 0).getTime();
-            const cb = new Date(b.createdAt ?? 0).getTime();
-            return ca - cb;
-          }
-          return da.localeCompare(db);
-        });
-      return withDate[0];
+      return selectPendingSession(sessions, toDateKey(nowDate));
     },
     [sessions, devNowISO]
   );

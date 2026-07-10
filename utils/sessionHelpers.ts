@@ -2,7 +2,7 @@
 // Helpers pour éviter la duplication de code lié aux sessions
 
 import type { Session } from '../domain/types';
-import { toDateKey } from './dateHelpers';
+import { toDateKey, isWithinFeedbackWindow } from './dateHelpers';
 
 /**
  * Obtenir la date d'une session de manière cohérente
@@ -53,6 +53,32 @@ export function getCompletedSessions(sessions: Session[]): Session[] {
  */
 export function getPendingSessions(sessions: Session[]): Session[] {
   return sessions.filter(s => !isSessionCompleted(s));
+}
+
+/**
+ * Séance "en attente" = non complétée ET dans la fenêtre de validation
+ * (aujourd'hui, J-1, J-2, demain — voir isWithinFeedbackWindow).
+ * Une séance non complétée hors fenêtre est une "zombie" : elle est ignorée
+ * ici pour ne jamais bloquer la génération ni le CTA du Home.
+ * Utilisé par usePrimaryCta, NewSessionScreen et SessionHubScreen.
+ */
+export function selectPendingSession(
+  sessions: Session[],
+  todayKey: string
+): Session | undefined {
+  return [...sessions]
+    .filter((s) => !s.completed)
+    .filter((s) => isWithinFeedbackWindow(getSessionDate(s), todayKey))
+    .sort((a, b) => {
+      const da = getSessionDayKey(a);
+      const db = getSessionDayKey(b);
+      if (da === db) {
+        const ca = new Date(a.createdAt ?? 0).getTime();
+        const cb = new Date(b.createdAt ?? 0).getTime();
+        return ca - cb;
+      }
+      return da.localeCompare(db);
+    })[0];
 }
 
 /**

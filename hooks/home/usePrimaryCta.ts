@@ -4,6 +4,7 @@ import { showToast } from "../../utils/toast";
 import { MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../../domain/microcycles";
 import { DEV_FLAGS } from "../../config/devFlags";
 import { toDateKey } from "../../utils/dateHelpers";
+import { selectPendingSession } from "../../utils/sessionHelpers";
 import { useNavGuard } from "../useNavGuard";
 import { frFocus, frIntensity } from "../../utils/frLabels";
 import type { Session } from "../../domain/types";
@@ -35,35 +36,17 @@ export function usePrimaryCta({
 }: Params) {
   const guardNav = useNavGuard();
 
-  const pendingSession = useMemo(
-    () => {
-      const toSessionTime = (session: Session) => {
-        const key = toDateKey(session?.dateISO ?? session?.date);
-        if (!key) return Number.POSITIVE_INFINITY;
-        const time = new Date(`${key}T12:00:00`).getTime();
-        return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY;
-      };
-
-      return [...sessions]
-        .filter((s) => !s.completed)
-        .sort((a, b) => {
-          const da = toSessionTime(a);
-          const db = toSessionTime(b);
-          if (da === db) {
-            const ca = new Date(a?.createdAt ?? 0).getTime();
-            const cb = new Date(b?.createdAt ?? 0).getTime();
-            return ca - cb;
-          }
-          return da - db;
-        })[0];
-    },
-    [sessions]
-  );
-
   const todayKey = useMemo(() => {
     const now = devNowISO ? new Date(devNowISO) : new Date();
     return toDateKey(now);
   }, [devNowISO]);
+
+  // Même fenêtre que FeedbackScreen : une séance non complétée hors fenêtre
+  // (zombie) ne bloque plus le CTA — voir selectPendingSession.
+  const pendingSession = useMemo(
+    () => selectPendingSession(sessions, todayKey),
+    [sessions, todayKey]
+  );
 
   const upcomingSessionLabel = useMemo(() => {
     if (!pendingSession) return "Pas de séance prévue";

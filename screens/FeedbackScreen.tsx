@@ -26,7 +26,7 @@ import { useFeedbackStore } from '../state/stores/useFeedbackStore';
 import { useDebugStore } from '../state/stores/useDebugStore';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useHaptics } from '../hooks/useHaptics';
-import { toDateKey, lastNDates } from '../utils/dateHelpers';
+import { toDateKey, isWithinFeedbackWindow } from '../utils/dateHelpers';
 import { DEV_FLAGS } from '../config/devFlags';
 import { theme } from '../constants/theme';
 import { Button } from '../components/ui/Button';
@@ -155,17 +155,9 @@ function FeedbackScreen() {
   const durationClamped = durationValid ? Math.round(durationValue) : undefined;
   const durationInvalid = durationMin.length > 0 && !durationValid;
 
-  // Fenêtre de validation élargie : aujourd'hui, les 2 jours précédents et demain.
-  // Sans ça, une séance générée la veille devient un "zombie" : feedback refusé
-  // ("pas datée d'aujourd'hui") + génération bloquée par la séance en attente.
-  const allowedFeedbackKeys = useMemo(() => {
-    const keys = lastNDates(todayKey, 3);
-    const tomorrow = new Date(`${todayKey}T12:00:00`);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    keys.push(toDateKey(tomorrow));
-    return keys;
-  }, [todayKey]);
-  const sessionIsRecent = sessionDateKey ? allowedFeedbackKeys.includes(sessionDateKey) : false;
+  // Fenêtre de validation partagée (aujourd'hui, J-1, J-2, demain) — même
+  // source de vérité que usePrimaryCta et NewSessionScreen (isWithinFeedbackWindow).
+  const sessionIsRecent = isWithinFeedbackWindow(sessionDateKey, todayKey);
   const canSaveToday = DEV_FLAGS.ENABLED || sessionIsRecent;
 
   // Hooks

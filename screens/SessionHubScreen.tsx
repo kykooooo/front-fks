@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { readTestsRaw } from "./tests/hooks/useTestsStorage";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
+import { useDebugStore } from "../state/stores/useDebugStore";
 import { theme } from "../constants/theme";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
@@ -23,6 +24,7 @@ import { MICROCYCLES, isMicrocycleId, MICROCYCLE_TOTAL_SESSIONS_DEFAULT } from "
 import { useHaptics } from "../hooks/useHaptics";
 import { useNavGuard } from "../hooks/useNavGuard";
 import { toDateKey } from "../utils/dateHelpers";
+import { selectPendingSession } from "../utils/sessionHelpers";
 
 const palette = theme.colors;
 
@@ -184,7 +186,14 @@ function HubCard({
 export default function SessionHubScreen() {
   const nav = useNavigation<any>();
   const guardNav = useNavGuard();
-  const pending = useSessionsStore((s) => s.sessions.find((x) => !x.completed));
+  const sessions = useSessionsStore((s) => s.sessions);
+  const devNowISO = useDebugStore((s) => s.devNowISO);
+  // Même fenêtre que FeedbackScreen : une zombie hors fenêtre n'apparaît plus
+  // ici comme "séance en attente" (elle vit dans l'historique en "non validée").
+  const pending = selectPendingSession(
+    sessions,
+    toDateKey(devNowISO ? new Date(devNowISO) : new Date())
+  );
   const pendingId = typeof pending?.id === "string" ? pending.id : null;
   const lastAiSessionV2 = useSessionsStore((s) => s.lastAiSessionV2);
   // S22 — v2 de la séance en attente (même source que usePrimaryCta) pour

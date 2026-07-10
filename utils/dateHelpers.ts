@@ -72,6 +72,30 @@ const lastNDates = (dayKey: string, n: number): string[] => {
 };
 
 /**
+ * Fenêtre de validation d'une séance : aujourd'hui, J-1, J-2 et demain.
+ * SOURCE DE VÉRITÉ UNIQUE partagée par FeedbackScreen (droit de valider),
+ * NewSessionScreen / usePrimaryCta / SessionHubScreen (séance en attente).
+ * Hors fenêtre = séance "zombie" : plus validable, ne doit plus bloquer
+ * la génération ni apparaître comme "à faire".
+ */
+const feedbackWindowKeys = (todayKey: string): string[] => {
+  const keys = lastNDates(todayKey, 3); // aujourd'hui, J-1, J-2
+  const tomorrow = new Date(`${todayKey}T12:00:00`);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  keys.push(toDateKey(tomorrow));
+  return keys;
+};
+
+/** true si la date tombe dans la fenêtre de validation. Séance sans date → false (jamais bloquante). */
+const isWithinFeedbackWindow = (
+  value: string | Date | null | undefined,
+  todayKey: string
+): boolean => {
+  const key = toDateKey(value);
+  return !!key && feedbackWindowKeys(todayKey).includes(key);
+};
+
+/**
  * Clé de semaine STABLE = date-key "YYYY-MM-DD" du LUNDI de la semaine.
  * Sert d'identifiant pour `clubs/{clubId}/weekContexts/{weekKey}`.
  * Le coach et le joueur calculent la même clé pour la semaine courante.
@@ -115,4 +139,15 @@ const formatDayFR = (value?: string | Date | null): string => {
   return `${FR_DAYS[d.getDay()]} ${d.getDate()} ${FR_MONTHS[d.getMonth()]}`;
 };
 
-export { toDateKey, isSameDay, frToKey, dayKeyToDow, isClubDay, lastNDates, weekKeyOf, formatDayFR };
+export {
+  toDateKey,
+  isSameDay,
+  frToKey,
+  dayKeyToDow,
+  isClubDay,
+  lastNDates,
+  weekKeyOf,
+  formatDayFR,
+  feedbackWindowKeys,
+  isWithinFeedbackWindow,
+};
