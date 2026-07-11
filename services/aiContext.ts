@@ -18,6 +18,7 @@ import {
   buildRecentByFocus,
   buildRecentFksSessionsPayload,
   buildClubContextPayload,
+  collectActivePainConstraints,
   type ClubContextPayload,
 } from "./aiContextHelpers";
 
@@ -74,6 +75,10 @@ export interface FKS_AiContext {
   constraints?: {
     equipment?: string[];
     pains?: string[];
+    /** Sévérité max des blessures actives (1..3) — lu par le backend (caps injury). Absent si aucune. */
+    injury_max_severity?: number;
+    /** Dev only : bypass du cap fatigue (ignoré par le backend en production). */
+    ignore_fatigue_cap?: boolean;
   };
   metrics: {
     atl: number;
@@ -172,10 +177,13 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
   const feedbackState = useFeedbackStore.getState();
   const nowISO = debugState.devNowISO ?? new Date().toISOString();
   const todayKey = toDateKey(nowISO);
-  const pains: string[] =
-    ((feedbackState.dayStates?.[todayKey]?.feedback as Record<string, unknown> | undefined)?.pains as string[] | undefined) ??
-    ((feedbackState.dayStates?.[todayKey]?.feedback as Record<string, unknown> | undefined)?.painZones as string[] | undefined) ??
-    [];
+  // Blessures déclarées au feedback (dayStates.injury) → tokens backend.
+  // Fenêtre glissante 7 jours : une blessure déclarée hier contraint encore
+  // aujourd'hui (voir collectActivePainConstraints dans aiContextHelpers).
+  const { pains, injuryMaxSeverity } = collectActivePainConstraints(
+    feedbackState.dayStates,
+    todayKey
+  );
 
   // Contexte de semaine club (FKS Club) : si le joueur a un clubId, on lit le
   // weekContext de la semaine courante. Lecture best-effort : toute erreur est
@@ -288,6 +296,7 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
     constraints: {
       equipment: equipment_available,
       pains,
+      ...(injuryMaxSeverity > 0 ? { injury_max_severity: injuryMaxSeverity } : {}),
       ...(ignoreFatigueCap ? { ignore_fatigue_cap: true } : {}),
     },
     phase,
