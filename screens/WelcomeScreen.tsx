@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useHaptics } from "../hooks/useHaptics";
 import { theme } from "../constants/theme";
+import { STORAGE_KEYS } from "../constants/storage";
 
 const palette = theme.colors;
 
@@ -84,13 +85,13 @@ export default function WelcomeScreen({ onComplete }: Props) {
 
   const handleStart = useCallback(async () => {
     haptics.impactMedium();
-    await AsyncStorage.setItem("fks_welcome_done", "true");
+    await AsyncStorage.setItem(STORAGE_KEYS.WELCOME_DONE, "true");
     onComplete("register");
   }, [haptics, onComplete]);
 
   const handleLogin = useCallback(async () => {
     haptics.impactLight();
-    await AsyncStorage.setItem("fks_welcome_done", "true");
+    await AsyncStorage.setItem(STORAGE_KEYS.WELCOME_DONE, "true");
     onComplete("login");
   }, [haptics, onComplete]);
 

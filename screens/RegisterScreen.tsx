@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AuthStackParamList } from "../navigation/RootNavigator";
 import { Ionicons } from "@expo/vector-icons";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
@@ -27,6 +28,8 @@ import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
 import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
+import { trackEvent } from "../services/analytics";
+import { STORAGE_KEYS } from "../constants/storage";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Register">;
 const palette = theme.colors;
@@ -93,6 +96,10 @@ export default function RegisterScreen({ navigation }: Props) {
       const cleanName = name.trim();
       const cred = await createUserWithEmailAndPassword(auth, emailTrimmed, pwd);
       accountCreated = true;
+      trackEvent("register_success");
+      // Départ du chrono funnel (Register → 1ère séance générée), consommé par
+      // first_session_generated dans NewSessionScreen — aucune donnée perso.
+      await AsyncStorage.setItem(STORAGE_KEYS.ONBOARDING_START_TS, String(Date.now()));
       if (cleanName) {
         await updateProfile(cred.user, { displayName: cleanName });
       }

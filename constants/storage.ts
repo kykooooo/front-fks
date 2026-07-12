@@ -9,7 +9,10 @@ export const STORAGE_KEYS = {
   OFFLINE_QUEUE: "fks_offline_queue",
 
   // Onboarding
-  ONBOARDING_DONE: "fks_onboarding_done",
+  WELCOME_DONE: "fks_welcome_done",
+  // Timestamp (ms) posé au register_success, consommé par first_session_generated
+  // pour mesurer le temps bout-en-bout jusqu'à la première séance.
+  ONBOARDING_START_TS: "fks_onboarding_start_ts",
 
   // Training store per-user snapshots
   TRAINING_SNAPSHOT: (uid: string) => `training-store-snapshot-${uid}`,
