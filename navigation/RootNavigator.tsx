@@ -33,6 +33,7 @@ import CoachHomeScreen from "../screens/CoachHomeScreen";
 import CoachOnboardingScreen from "../screens/CoachOnboardingScreen";
 import CoachPlayerDetailScreen from "../screens/CoachPlayerDetailScreen";
 import { theme } from "../constants/theme";
+import { STORAGE_KEYS } from "../constants/storage";
 import { DEV_FLAGS } from "../config/devFlags";
 import { Ionicons } from "@expo/vector-icons";
 import { useSyncStore } from "../state/stores/useSyncStore";
@@ -115,7 +116,7 @@ const AppStack = createNativeStackNavigator<AppStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const CoachStack = createNativeStackNavigator<CoachStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
-const WELCOME_KEY = "fks_welcome_done";
+const WELCOME_KEY = STORAGE_KEYS.WELCOME_DONE;
 const PLAYER_TAB_ORDER: Array<keyof TabParamList> = ["Home", "NewSession", "Profile"];
 
 function MainTabs() {

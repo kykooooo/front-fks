@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ScrollView,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Screen } from "../components/ui/Screen";
 import { useNavigation, NavigationProp, useFocusEffect } from "@react-navigation/native";
 import { useLoadStore } from "../state/stores/useLoadStore";
@@ -40,6 +41,7 @@ import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "
 import { getMicrocyclePhase } from "../utils/microcycleUtils";
 import { Button } from "../components/ui/Button";
 import { trackEvent } from "../services/analytics";
+import { STORAGE_KEYS } from "../constants/storage";
 import { buildResetExplain } from "./newSession/resetExplain";
 import { useContextualAdvice } from "../hooks/home/useContextualAdvice";
 import { toDateKey } from "../utils/dateHelpers";
@@ -101,6 +103,17 @@ type RootStackParamList = {
     sessionId?: string;
   };
   CycleModal: { mode?: "select" | "manage"; origin?: "home" | "profile" | "newSession" | "feedback" } | undefined;
+};
+
+/** Funnel analytics : mesure Register → 1ère séance générée (fire once, timestamp consommé). */
+const trackFirstSessionGeneratedIfNeeded = async () => {
+  const startedAtRaw = await AsyncStorage.getItem(STORAGE_KEYS.ONBOARDING_START_TS);
+  if (!startedAtRaw) return;
+  await AsyncStorage.removeItem(STORAGE_KEYS.ONBOARDING_START_TS);
+  const startedAt = Number(startedAtRaw);
+  if (!Number.isFinite(startedAt)) return;
+  const minutesSinceRegister = Math.round(((Date.now() - startedAt) / 60000) * 10) / 10;
+  trackEvent("first_session_generated", { minutesSinceRegister });
 };
 
 /** =====================================================================
@@ -262,6 +275,7 @@ export default function NewSessionScreen() {
       location: resetChoice.location,
       resetVariantId: chosen.id,
     });
+    await trackFirstSessionGeneratedIfNeeded();
   };
 
   /** ------------------------------------------------------------------
@@ -463,6 +477,7 @@ export default function NewSessionScreen() {
         cycleId,
         location,
       });
+      await trackFirstSessionGeneratedIfNeeded();
     } catch (err: any) {
       if (err?.code === "AUTH_REQUIRED") {
         showToast({ type: "error", title: "Connexion requise", message: "Connecte-toi pour enregistrer la séance." });
@@ -558,6 +573,7 @@ export default function NewSessionScreen() {
         },
       });
       trackEvent("session_generate_from_cache", { cycleId });
+      await trackFirstSessionGeneratedIfNeeded();
     } catch {
       showToast({ type: "error", title: "Erreur", message: "Impossible de charger la séance en cache." });
     } finally {

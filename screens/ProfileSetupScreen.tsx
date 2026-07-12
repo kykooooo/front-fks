@@ -33,6 +33,7 @@ import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { showToast } from "../utils/toast";
 import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
+import { trackEvent } from "../services/analytics";
 
 const TOTAL_STEPS = 5;
 const palette = theme.colors;
@@ -164,6 +165,8 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
   const shake = useRef(new Animated.Value(0)).current;
   const stepFade = useRef(new Animated.Value(1)).current;
+  // Départ du chrono setup (funnel analytics), consommé par profile_completed.
+  const setupStartRef = useRef(Date.now());
 
   const cycleId = isMicrocycleId(activeCycleGoal) ? activeCycleGoal : null;
   const cycleLabel = cycleId ? MICROCYCLES[cycleId].label : null;
@@ -291,6 +294,9 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
   const goNext = () => {
     if (!validateStep()) return;
+    if (!isEditMode) {
+      trackEvent("profile_step_completed", { step: step + 1, stepLabel: STEPS[step].label, totalSteps: TOTAL_STEPS });
+    }
     haptics.impactMedium();
     if (step < TOTAL_STEPS - 1) animateTransition(step + 1);
   };
@@ -327,6 +333,9 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   /* ─── Save ─── */
   const handleSave = async () => {
     if (!validateStep()) return;
+    if (!isEditMode) {
+      trackEvent("profile_step_completed", { step: step + 1, stepLabel: STEPS[step].label, totalSteps: TOTAL_STEPS });
+    }
     const targetFksSessions = Number(targetFksSessionsPerWeek);
     const trainings = Number(clubTrainingsPerWeek);
     const matches = Number(matchesPerWeek);
@@ -347,6 +356,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       let resolvedClubId: string | null = clubId?.trim() ? clubId.trim() : null;
       if (normalizedInvite) {
         const club = await findClubByInviteCode(normalizedInvite);
+        trackEvent("club_code_checked", { valid: Boolean(club) });
         if (!club) {
           fail("Code club invalide", "Aucun club ne correspond à ce code.");
           // Retour automatique à l'étape du code club (avec scroll top via animateTransition)
@@ -387,7 +397,16 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
         updatedAt: serverTimestamp(),
       }, { merge: true });
 
-      if (autoCycleId) setMicrocycleGoal(autoCycleId);
+      if (autoCycleId) {
+        setMicrocycleGoal(autoCycleId);
+        trackEvent("cycle_reco_shown", { cycleId: autoCycleId });
+      }
+
+      if (!isEditMode) {
+        trackEvent("profile_completed", {
+          durationSec: Math.round((Date.now() - setupStartRef.current) / 1000),
+        });
+      }
 
       haptics.success();
       showToast({ type: "success", title: "Profil enregistré", message: "Configuration terminée !" });
