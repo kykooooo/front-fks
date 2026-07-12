@@ -25,6 +25,9 @@ import { useHaptics } from "../hooks/useHaptics";
 import { useNavGuard } from "../hooks/useNavGuard";
 import { toDateKey } from "../utils/dateHelpers";
 import { selectPendingSession } from "../utils/sessionHelpers";
+import { FEATURES } from "../config/features";
+import { useWeekPlan } from "../hooks/routine/useWeekPlan";
+import { DOW_LABEL_SHORT, DAY_STATE_COLOR, explainDay, buildWeekSummary } from "../hooks/routine/dayLabels";
 
 const palette = theme.colors;
 
@@ -183,6 +186,37 @@ function HubCard({
   );
 }
 
+// É1 — carte "Ta semaine" (design §5.1), derrière FEATURES.WEEK_PLAN. Aperçu
+// compact du plan hebdo (domain/weekPlanning.ts via useWeekPlan) ; tap ->
+// écran Routine v2 pour le détail + le déplacement manuel.
+function WeekPlanPreviewCard({ onPress }: { onPress: () => void }) {
+  const plan = useWeekPlan();
+  const summary = buildWeekSummary(plan);
+
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
+      <Card variant="soft" style={styles.weekPlanCard}>
+        <View style={styles.weekPlanHeader}>
+          <Text style={styles.weekPlanTitle}>Ta semaine</Text>
+          <Ionicons name="chevron-forward" size={16} color={palette.sub} />
+        </View>
+        <Text style={styles.weekPlanSummary}>{summary}</Text>
+        <View style={styles.weekPlanDaysRow}>
+          {plan.days.map((day) => {
+            const state = explainDay(day).state;
+            return (
+              <View key={day.dow} style={styles.weekPlanDayPill}>
+                <Text style={styles.weekPlanDayLabel}>{DOW_LABEL_SHORT[day.dow][0]}</Text>
+                <View style={[styles.weekPlanDayDot, { backgroundColor: DAY_STATE_COLOR[state] }]} />
+              </View>
+            );
+          })}
+        </View>
+      </Card>
+    </TouchableOpacity>
+  );
+}
+
 export default function SessionHubScreen() {
   const nav = useNavigation<any>();
   const guardNav = useNavGuard();
@@ -258,6 +292,11 @@ export default function SessionHubScreen() {
             Génère, explore ou consulte tes entraînements
           </Text>
         </View>
+
+        {/* É1 — plan hebdo (design §5.1), invisible flag OFF */}
+        {FEATURES.WEEK_PLAN ? (
+          <WeekPlanPreviewCard onPress={() => guardNav(() => nav.navigate("Routine"))} />
+        ) : null}
 
         {/* Quick stats */}
         <View style={styles.statsRow}>
@@ -412,6 +451,42 @@ const styles = StyleSheet.create({
   statHighlight: {
     color: palette.text,
     fontWeight: "700",
+  },
+  weekPlanCard: {
+    padding: 14,
+    gap: 8,
+  },
+  weekPlanHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  weekPlanTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: palette.text,
+  },
+  weekPlanSummary: {
+    fontSize: 12,
+    color: palette.sub,
+  },
+  weekPlanDaysRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  weekPlanDayPill: {
+    alignItems: "center",
+    gap: 4,
+  },
+  weekPlanDayLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: palette.sub,
+  },
+  weekPlanDayDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
   },
   alertCard: {
     padding: 14,

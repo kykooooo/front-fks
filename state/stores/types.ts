@@ -165,6 +165,8 @@ export type ExternalState = {
   };
   /** Catégorie d'âge du joueur (pont profil → calibre l'auto-charge jeune). null = adulte/inconnu. */
   ageCategory: AgeCategory | null;
+  /** Souhait 1-4 séances FKS/semaine (profil). Miroir local pour domain/weekPlanning.ts (É1). null = pas encore saisi. */
+  targetFksSessionsPerWeek: number | null;
 
   // actions
   addCompletedRoutine: (routine: Omit<CompletedRoutine, "id" | "dateISO">) => void;

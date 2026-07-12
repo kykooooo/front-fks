@@ -50,7 +50,7 @@ const palette = theme.colors;
 
 type RouteParams = {
   mode?: "select" | "manage";
-  origin?: "home" | "profile" | "newSession" | "feedback";
+  origin?: "home" | "profile" | "newSession" | "feedback" | "routine";
 };
 
 const ABANDON_REASONS: Array<{ id: string; label: string }> = [

@@ -19,6 +19,7 @@ const baseExternalState = () => ({
   autoExternalEnabled: true,
   autoExternalConfig: {} as ExternalState["autoExternalConfig"],
   ageCategory: null as ExternalState["ageCategory"],
+  targetFksSessionsPerWeek: null as ExternalState["targetFksSessionsPerWeek"],
 });
 
 export const useExternalStore = create<ExternalState>()(
@@ -78,6 +79,7 @@ export const useExternalStore = create<ExternalState>()(
         autoExternalEnabled: s.autoExternalEnabled ?? true,
         autoExternalConfig: s.autoExternalConfig,
         ageCategory: s.ageCategory ?? null,
+        targetFksSessionsPerWeek: s.targetFksSessionsPerWeek ?? null,
       }),
       onRehydrateStorage: () => () => { onStoreHydrated(); },
       migrate: (persisted) => persisted as ExternalState,
