@@ -1,7 +1,7 @@
 // screens/SessionHubScreen.tsx
 // Hub séances modernisé - design pro avec icônes et hiérarchie visuelle
 
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,10 +11,9 @@ import {
   Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { readTestsRaw } from "./tests/hooks/useTestsStorage";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
 import { theme } from "../constants/theme";
@@ -213,36 +212,12 @@ export default function SessionHubScreen() {
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
   const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
   const completedSessions = useSessionsStore((s) => s.sessions.filter((x) => x.completed).length);
-  const [testsEmpty, setTestsEmpty] = useState<boolean | null>(null);
 
   const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
   const cycleDef = cycleId ? MICROCYCLES[cycleId] : null;
   const cycleProgress = Math.min(
     MICROCYCLE_TOTAL_SESSIONS_DEFAULT,
     Math.max(0, Math.trunc(microcycleSessionIndex ?? 0))
-  );
-
-  useFocusEffect(
-    useCallback(() => {
-      let cancelled = false;
-      (async () => {
-        try {
-          const raw = await readTestsRaw();
-          if (cancelled) return;
-          if (!raw) {
-            setTestsEmpty(true);
-            return;
-          }
-          const parsed = JSON.parse(raw);
-          setTestsEmpty(!Array.isArray(parsed) || parsed.length === 0);
-        } catch {
-          if (!cancelled) setTestsEmpty(true);
-        }
-      })();
-      return () => {
-        cancelled = true;
-      };
-    }, [])
   );
 
   return (
@@ -318,32 +293,10 @@ export default function SessionHubScreen() {
           </Card>
         ) : null}
 
-        {/* Tests missing alert */}
-        {testsEmpty === true && !pending ? (
-          <Card variant="soft" style={styles.alertCard}>
-            <View style={styles.alertHeader}>
-              <View style={[styles.alertIconCircle, { backgroundColor: "rgba(6,182,212,0.15)" }]}>
-                <Ionicons name="analytics-outline" size={18} color="#06b6d4" />
-              </View>
-              <View style={styles.alertTextContainer}>
-                <Text style={styles.alertTitle}>Tests terrain</Text>
-                <Text style={styles.alertSubtitle}>
-                  Mesure tes qualités pour affiner tes séances
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={[styles.alertButton, { borderColor: "#06b6d4" }]}
-              onPress={() => nav.navigate("Tests")}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.alertButtonText, { color: "#06b6d4" }]}>
-                Passer les tests
-              </Text>
-              <Ionicons name="arrow-forward" size={16} color="#06b6d4" />
-            </TouchableOpacity>
-          </Card>
-        ) : null}
+        {/* Pas de 2e alerte "Tests terrain" ici : le hub grid ci-dessous (entrée
+            "tests" de HUB_OPTIONS) est déjà l'entrée permanente vers Tests, et
+            ProfileScreen porte déjà une relance contextuelle avec fraîcheur
+            (shouldSuggestTests, 30j) — inutile de dupliquer le même intitulé. */}
 
         {/* Hub options */}
         <View style={styles.optionsContainer}>

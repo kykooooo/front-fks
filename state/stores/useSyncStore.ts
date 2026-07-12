@@ -225,7 +225,16 @@ export const useSyncStore = create<SyncState>()(
                     : undefined,
               };
 
-              useExternalStore.setState({ clubTrainingDays: days, matchDays, matchDay, autoExternalConfig, ageCategory: data.ageCategory ?? null });
+              useExternalStore.setState({
+                clubTrainingDays: days,
+                matchDays,
+                matchDay,
+                autoExternalConfig,
+                ageCategory: data.ageCategory ?? null,
+                clubTrainingsPerWeek: typeof data.clubTrainingsPerWeek === "number" ? data.clubTrainingsPerWeek : null,
+                matchesPerWeek: typeof data.matchesPerWeek === "number" ? data.matchesPerWeek : null,
+                targetFksSessionsPerWeek: data.targetFksSessionsPerWeek ?? null,
+              });
             },
             (err: unknown) => {
               const code = err != null && typeof err === "object" && "code" in err ? (err as { code: string }).code : undefined;
