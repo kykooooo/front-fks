@@ -18,6 +18,7 @@ import { auth } from '../services/firebase';
 import { computeStreakStats } from '../utils/streakStats';
 import { lastNDates } from '../utils/dateHelpers';
 import { toDateKey } from '../utils/dateHelpers';
+import { getFirstName } from '../utils/nameHelpers';
 import { theme } from '../constants/theme';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -152,7 +153,7 @@ export default function ProfileScreen() {
   });
 
   /* ─── Derived ─── */
-  const athleteName = profile?.first_name?.trim() || auth.currentUser?.displayName || 'Joueur';
+  const athleteName = getFirstName(profile?.first_name?.trim() || auth.currentUser?.displayName, 'Joueur');
   const athleteLevel = labelize(profile?.level);
   const athletePosition = labelize(profile?.position);
   const athleteFoot = labelize(profile?.dominant_foot);

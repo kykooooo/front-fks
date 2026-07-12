@@ -6,7 +6,7 @@
 // pur, zéro UI) — toute la traduction des traces `plan:*` en phrases FR vit
 // ici, jamais dans le domain.
 import type { DowKey } from "../../domain/weekPlanning";
-import type { DisplayDay } from "./weekPlanOverrides";
+import type { WeekDay } from "./useWeekPlan";
 import { theme } from "../../constants/theme";
 
 export const DOW_LABEL_SHORT: Record<DowKey, string> = {
@@ -55,7 +55,8 @@ export type DayVisualState =
   | "moderate"
   | "rest_forbidden"
   | "rest_available"
-  | "moved_away";
+  | "moved_away"
+  | "done";
 
 export type DayExplanation = {
   title: string;
@@ -72,10 +73,21 @@ export const DAY_STATE_COLOR: Record<DayVisualState, string> = {
   rest_forbidden: theme.colors.borderSoft,
   rest_available: theme.colors.borderSoft,
   moved_away: theme.colors.borderSoft,
+  done: theme.colors.success,
 };
 
-/** Explication FR d'un jour affiché — utilisée au tap (design §5.2). */
-export function explainDay(day: DisplayDay): DayExplanation {
+/**
+ * Explication FR d'un jour affiché — utilisée au tap (design §5.2).
+ *
+ * Revue web post-É1.5 (point 2) : un jour PASSÉ ne doit plus jamais se
+ * décrire comme une séance "à faire" (full/moderate) — soit elle a été
+ * complétée (croisée avec l'historique sessions, `day.isDone`) et se lit
+ * "Fait", soit elle est neutre/estompée, jamais un jugement ("raté").
+ */
+export function explainDay(day: WeekDay): DayExplanation {
+  if (day.isDone) {
+    return { title: "Fait", detail: "Séance FKS complétée ce jour-là.", state: "done" };
+  }
   if (day.status === "match") {
     return { title: "Match", detail: REST_REASON_LABEL["plan:p1_match_day"]!, state: "match" };
   }
@@ -91,6 +103,10 @@ export function explainDay(day: DisplayDay): DayExplanation {
   }
 
   const movedNote = day.movedFrom ? ` (déplacée depuis ${DOW_LABEL_FULL[day.movedFrom]})` : "";
+
+  if (day.isPast && day.placement !== null) {
+    return { title: "Repos", detail: "Ce jour est passé.", state: "rest_available" };
+  }
 
   if (day.placement === "full") {
     const reasonKey = day.reasons.find((r) => FULL_REASON_LABEL[r]);
@@ -128,28 +144,49 @@ export function formatShortDate(date: Date): string {
   return `${date.getDate()} ${SHORT_MONTHS[date.getMonth()]}`;
 }
 
-/** Phrase de synthèse en tête d'écran / carte "Ta semaine" (design §5.1). */
-export function buildWeekSummary(plan: {
-  target: number;
-  placedCount: number;
-  placedDows: DowKey[];
-  warnings: string[];
-}): string {
+/**
+ * Phrase de synthèse en tête d'écran / carte "Ta semaine" (design §5.1).
+ *
+ * `scope` (revue web post-É1.5, point 1) : "current" décrit le reste
+ * ACTIONNABLE de la semaine en cours (jamais les jours déjà passés — voir
+ * `useWeekPlan().remainingPlan`) ; "next" décrit un aperçu de la semaine
+ * suivante (`useWeekPlan().rawPlan`, appelé quand `isWeekOver` est vrai).
+ * Home et l'écran combiné appellent cette MÊME fonction avec les MÊMES
+ * données du hook partagé — plus de texte contradictoire entre les deux.
+ */
+export function buildWeekSummary(
+  plan: {
+    target: number;
+    placedCount: number;
+    placedDows: DowKey[];
+    warnings: string[];
+  },
+  scope: "current" | "next" = "current"
+): string {
   if (plan.warnings.includes("plan:no_active_cycle")) {
     return "Choisis ton cycle pour activer le planning.";
   }
   if (plan.target === 0) {
-    return "Semaine chargée avec le club — ta prépa FKS revient sur une semaine plus calme.";
+    return scope === "next"
+      ? "Semaine prochaine chargée avec le club — ta prépa FKS revient sur une semaine plus calme."
+      : "Semaine chargée avec le club — ta prépa FKS revient sur une semaine plus calme.";
   }
   if (plan.placedCount === 0) {
-    return "Pas de créneau qui convient cette semaine — on se retrouve la semaine prochaine.";
+    return scope === "next"
+      ? "Pas de créneau qui convient la semaine prochaine non plus."
+      : "Pas de créneau qui convient cette semaine — on se retrouve la semaine prochaine.";
   }
   const days = plan.placedDows.map((d) => DOW_LABEL_FULL[d]);
   const joined =
     days.length === 1 ? days[0] : `${days.slice(0, -1).join(", ")} et ${days[days.length - 1]}`;
-  const countLabel = `${plan.placedCount} séance${plan.placedCount > 1 ? "s" : ""}`;
   const suffix = plan.warnings.includes("plan:target_not_fully_reached")
     ? " (la semaine ne permet pas plus)"
     : "";
+  if (scope === "next") {
+    const countLabel = `${plan.placedCount} séance${plan.placedCount > 1 ? "s" : ""}`;
+    const verb = plan.placedCount > 1 ? "prévues" : "prévue";
+    return `Semaine prochaine : ${countLabel} ${verb} ${joined}${suffix}.`;
+  }
+  const countLabel = `${plan.placedCount} séance${plan.placedCount > 1 ? "s" : ""}`;
   return `${countLabel} cette semaine : ${joined}${suffix}.`;
 }

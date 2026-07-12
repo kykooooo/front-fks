@@ -13,31 +13,28 @@ import { Ionicons } from "@expo/vector-icons";
 import { Card } from "../ui/Card";
 import { theme } from "../../constants/theme";
 import { useWeekPlan } from "../../hooks/routine/useWeekPlan";
-import { useSessionsStore } from "../../state/stores/useSessionsStore";
-import { MICROCYCLES, isMicrocycleId } from "../../domain/microcycles";
-import { DOW_LABEL_SHORT, DOW_LABEL_FULL, DAY_STATE_COLOR, explainDay } from "../../hooks/routine/dayLabels";
+import { DOW_LABEL_SHORT, DAY_STATE_COLOR, explainDay, buildWeekSummary } from "../../hooks/routine/dayLabels";
 
 const palette = theme.colors;
 
 type Props = {
   streak: number;
+  /** Point 3 revue web : distingue "jamais fait" de "série retombée à 0" — jamais "Nouvelle" pour un compte avec historique. */
+  hasEverCompleted: boolean;
   onPress: () => void;
 };
 
-export default function HomeWeekPlanCard({ streak, onPress }: Props) {
+export default function HomeWeekPlanCard({ streak, hasEverCompleted, onPress }: Props) {
   const plan = useWeekPlan();
-  const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
-  const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
-  const cycleLabel = cycleId ? MICROCYCLES[cycleId].label : null;
+  const streakChipText = streak > 0 ? `${streak} j` : hasEverCompleted ? "Relance-la" : "Nouvelle";
 
-  const todayIdx = plan.days.findIndex((d) => d.dow === plan.todayDow);
-  const upcoming = todayIdx >= 0 ? plan.days.slice(todayIdx).find((d) => d.placement !== null) : undefined;
-
-  const nextLabel = !plan.hasActiveCycle
-    ? "Choisis ton cycle pour activer ta semaine."
-    : !upcoming
-      ? "Aucune séance programmée cette semaine."
-      : `Prochaine séance : ${upcoming.dow === plan.todayDow ? "aujourd'hui" : DOW_LABEL_FULL[upcoming.dow]}${cycleLabel ? ` — ${cycleLabel}` : ""}`;
+  // Revue web post-É1.5 (point 1) : même fonction + mêmes données que l'écran
+  // combiné (hooks/routine/dayLabels.buildWeekSummary), jamais une phrase
+  // recalculée localement — élimine le "Aucune séance" ici / "1 séance :
+  // jeudi" là-bas.
+  const nextLabel = plan.isWeekOver
+    ? buildWeekSummary(plan.rawPlan, "next")
+    : buildWeekSummary(plan.remainingPlan, "current");
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
@@ -46,7 +43,7 @@ export default function HomeWeekPlanCard({ streak, onPress }: Props) {
           <Text style={styles.title}>Ta semaine</Text>
           <View style={styles.streakChip}>
             <Ionicons name="flame" size={13} color={palette.cta} />
-            <Text style={styles.streakText}>{streak > 0 ? `${streak} j` : "Nouvelle"}</Text>
+            <Text style={styles.streakText}>{streakChipText}</Text>
           </View>
         </View>
 

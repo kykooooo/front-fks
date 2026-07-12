@@ -33,12 +33,13 @@ import { useLoadSeries } from "../hooks/home/useLoadSeries";
 import { useMatchSoon } from "../hooks/home/useMatchSoon";
 import { useWeekDays } from "../hooks/home/useWeekDays";
 import { useWeekSummary } from "../hooks/home/useWeekSummary";
-import { useActivityStreak } from "../hooks/home/useActivityStreak";
+import { useActivityStreak, hasAnyCompletedSession, streakCopy } from "../hooks/home/useActivityStreak";
 import { usePrimaryCta } from "../hooks/home/usePrimaryCta";
 import { useContextualAdvice } from "../hooks/home/useContextualAdvice";
 import { useNavGuard } from "../hooks/useNavGuard";
 import HomeAdviceCard from "../components/home/HomeAdviceCard";
 import { isSameDay, toDateKey } from "../utils/dateHelpers";
+import { getFirstName } from "../utils/nameHelpers";
 import { showToast } from "../utils/toast";
 import { getFootballLabel } from "../config/trainingDefaults";
 import { MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
@@ -211,9 +212,14 @@ export default function HomeScreen() {
     weeklyGoal,
   });
 
-  const athleteName = auth.currentUser?.displayName ?? "joueur";
+  // Point 4 revue web : n'affiche jamais qu'un seul mot (voir utils/nameHelpers.ts) —
+  // un displayName pollué ("Kyllian dnkxjeb") ne peut plus fuiter de fragment ici.
+  const athleteName = getFirstName(auth.currentUser?.displayName, "joueur");
 
   const activityStreak = useActivityStreak(sessions, externalLoads, nowISO);
+  // Point 3 revue web : "Nouvelle" ne doit s'afficher que pour un historique
+  // réellement vide (trouvé dans la ligne stats en plus des 3 endroits cités).
+  const hasEverCompleted = hasAnyCompletedSession(sessions);
 
   // Badge compact "Séance N/12 · <phase>" — affichage dérivé (jamais session.phase = "Playlist").
   const homeCycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
@@ -306,7 +312,9 @@ export default function HomeScreen() {
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statLabel}>Série</Text>
-              <Text style={styles.statValue}>{activityStreak > 0 ? `${activityStreak} j` : "Nouvelle"}</Text>
+              <Text style={styles.statValue}>
+                {activityStreak > 0 ? `${activityStreak} j` : hasEverCompleted ? "Relance-la" : "Nouvelle"}
+              </Text>
             </View>
             {matchSoon ? (
               <>
@@ -336,19 +344,13 @@ export default function HomeScreen() {
             {FEATURES.WEEK_PLAN ? (
               // É1.5 — carte "Ta semaine" : calendrier + prochaine séance + série,
               // remplace les deux cartes ci-dessous (voir components/home/HomeWeekPlanCard.tsx).
-              <HomeWeekPlanCard streak={activityStreak} onPress={goToRoutine} />
+              <HomeWeekPlanCard streak={activityStreak} hasEverCompleted={hasEverCompleted} onPress={goToRoutine} />
             ) : (
               <>
                 <HomeCarouselCard title="Progression" subtitle="Régularité & forme">
                   <View style={styles.progressRow}>
                     <Ionicons name="flame" size={18} color={palette.cta} />
-                    <Text style={styles.progressText}>
-                      {activityStreak === 0
-                        ? "Lance ta première séance"
-                        : activityStreak === 1
-                          ? "1 jour d’affilée"
-                          : `${activityStreak} jours d’affilée`}
-                    </Text>
+                    <Text style={styles.progressText}>{streakCopy(activityStreak, hasEverCompleted)}</Text>
                   </View>
                   <TouchableOpacity onPress={goToProgression} style={styles.link}>
                     <Text style={styles.linkText}>Voir ma progression</Text>
