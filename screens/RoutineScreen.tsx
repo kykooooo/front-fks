@@ -31,7 +31,7 @@ import { capFksForAge } from "../domain/weekPlanning";
 import { useExternalStore } from "../state/stores/useExternalStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
-import { useActivityStreak } from "../hooks/home/useActivityStreak";
+import { useActivityStreak, hasAnyCompletedSession, streakCopy } from "../hooks/home/useActivityStreak";
 import {
   DOW_LABEL_SHORT,
   DAY_STATE_COLOR,
@@ -66,8 +66,14 @@ export default function RoutineScreen() {
   const externalLoads = useExternalStore((s) => s.externalLoads ?? []);
   const devNowISO = useDebugStore((s) => s.devNowISO);
   const activityStreak = useActivityStreak(sessions, externalLoads, devNowISO ?? undefined);
+  const hasEverCompleted = hasAnyCompletedSession(sessions);
 
-  const summary = buildWeekSummary(plan);
+  // Revue web post-É1.5 (point 1) : même fonction + mêmes données que la
+  // carte Home (voir components/home/HomeWeekPlanCard.tsx) — jamais de texte
+  // recalculé localement qui pourrait diverger.
+  const summary = plan.isWeekOver
+    ? buildWeekSummary(plan.rawPlan, "next")
+    : buildWeekSummary(plan.remainingPlan, "current");
 
   const handleToggleMove = (dow: DowKey) => {
     haptics.impactLight();
@@ -167,7 +173,8 @@ export default function RoutineScreen() {
                   ? "Pas de séance — choisis d'abord ton cycle."
                   : explanation.detail;
               const isToday = day.dow === plan.todayDow;
-              const canMove = plan.hasActiveCycle && day.placement !== null && !day.movedFrom;
+              // Point 2 revue web : un jour passé n'est plus déplaçable.
+              const canMove = plan.hasActiveCycle && day.placement !== null && !day.movedFrom && !day.isPast;
               const isExpanded = expandedDow === day.dow;
               const stateColor = DAY_STATE_COLOR[explanation.state];
 
@@ -237,13 +244,7 @@ export default function RoutineScreen() {
           <Card variant="soft" style={styles.progressCard}>
             <View style={styles.progressRow}>
               <Ionicons name="flame" size={18} color={palette.cta} />
-              <Text style={styles.progressText}>
-                {activityStreak === 0
-                  ? "Lance ta première séance"
-                  : activityStreak === 1
-                    ? "1 jour d'affilée"
-                    : `${activityStreak} jours d'affilée`}
-              </Text>
+              <Text style={styles.progressText}>{streakCopy(activityStreak, hasEverCompleted)}</Text>
             </View>
             <TouchableOpacity
               onPress={() => guardNav(() => nav.navigate("Progression"))}

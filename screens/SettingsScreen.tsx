@@ -30,6 +30,7 @@ import { useSyncStore } from "../state/stores/useSyncStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
 import { useSettingsStore, type SettingsState } from "../state/settingsStore";
 import { useWeeklyGoal } from "../hooks/useWeeklyGoal";
+import { getFirstName } from "../utils/nameHelpers";
 import { DEV_FLAGS } from "../config/devFlags";
 import { ClubManagementCard } from "../components/settings/ClubManagementCard";
 import { showToast } from "../utils/toast";
@@ -120,16 +121,11 @@ export default function SettingsScreen() {
   const { value: weeklyGoalValue, setWeeklyGoal } = useWeeklyGoal();
 
   const initials = useMemo(() => {
-    const name =
-      auth.currentUser?.displayName ||
-      auth.currentUser?.email ||
-      "Utilisateur";
-    return name
-      .split(" ")
-      .map((part: string) => part[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
+    // Point 4 revue web : un seul mot pris en compte (voir utils/nameHelpers.ts)
+    // — évite qu'un displayName pollué ("Kyllian dnkxjeb") ne fasse fuiter la
+    // première lettre du fragment parasite dans l'initiale.
+    const name = getFirstName(auth.currentUser?.displayName, auth.currentUser?.email || "Utilisateur");
+    return name.slice(0, 2).toUpperCase();
   }, []);
 
   const handleReset = useCallback(() => {

@@ -169,7 +169,12 @@ export default function RegisterScreen({ navigation }: Props) {
                   placeholderTextColor={palette.muted}
                   value={name}
                   onChangeText={setName}
-                  autoComplete="name"
+                  // Point 4 revue web : "name"/"full name" laissait iOS suggérer un
+                  // nom complet de Contacts (2 mots) sur un champ prénom seul —
+                  // "given-name" scope correctement l'autofill (iOS textContentType
+                  // + Android autofillHints) sur le prénom uniquement.
+                  autoComplete="given-name"
+                  maxLength={40}
                   returnKeyType="next"
                   onSubmitEditing={() => emailRef.current?.focus()}
                   style={styles.input}
