@@ -29,6 +29,7 @@ import { useExternalStore } from "../state/stores/useExternalStore";
 import { useSyncStore } from "../state/stores/useSyncStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
 import { useSettingsStore, type SettingsState } from "../state/settingsStore";
+import { useWeeklyGoal } from "../hooks/useWeeklyGoal";
 import { DEV_FLAGS } from "../config/devFlags";
 import { ClubManagementCard } from "../components/settings/ClubManagementCard";
 import { showToast } from "../utils/toast";
@@ -113,6 +114,10 @@ export default function SettingsScreen() {
   const settings = useSettingsStore((s) => s);
   const updateSettings = useSettingsStore((s) => s.updateSettings);
   const resetSettings = useSettingsStore((s) => s.resetSettings);
+  // Doublon weeklyGoal/targetFksSessionsPerWeek (voir hooks/useWeeklyGoal.ts) :
+  // cette carte reste "Objectif FKS hebdo" mais écrit désormais la vraie
+  // source de vérité (profil), pas seulement le réglage local d'affichage.
+  const { value: weeklyGoalValue, setWeeklyGoal } = useWeeklyGoal();
 
   const initials = useMemo(() => {
     const name =
@@ -470,16 +475,14 @@ export default function SettingsScreen() {
               subtitle="Nombre de séances FKS par semaine"
               right={
                 <SegmentedControl
-                  value={String(settings.weeklyGoal)}
+                  value={String(weeklyGoalValue)}
                   options={[
                     { value: "1", label: "1" },
                     { value: "2", label: "2" },
                     { value: "3", label: "3" },
                     { value: "4", label: "4" },
                   ]}
-                  onChange={(value) =>
-                    updateSettings({ weeklyGoal: Number(value) })
-                  }
+                  onChange={(value) => setWeeklyGoal(Number(value))}
                 />
               }
             />

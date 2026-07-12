@@ -26,6 +26,9 @@ import HomeReadinessHero from "../components/home/HomeReadinessHero";
 import HomePrimaryCTA from "../components/home/HomePrimaryCTA";
 import HomeNextSessionCard from "../components/home/HomeNextSessionCard";
 import HomeCarouselCard from "../components/home/HomeCarouselCard";
+import HomeWeekPlanCard from "../components/home/HomeWeekPlanCard";
+import { FEATURES } from "../config/features";
+import { useWeeklyGoal } from "../hooks/useWeeklyGoal";
 import { useLoadSeries } from "../hooks/home/useLoadSeries";
 import { useMatchSoon } from "../hooks/home/useMatchSoon";
 import { useWeekDays } from "../hooks/home/useWeekDays";
@@ -123,7 +126,12 @@ export default function HomeScreen() {
   }, [startFirestoreWatch, storeHydrated]);
 
   const weekStart = useSettingsStore((s) => s.weekStart);
-  const weeklyGoal = useSettingsStore((s) => s.weeklyGoal ?? 2);
+  // Doublon weeklyGoal/targetFksSessionsPerWeek (hooks/useWeeklyGoal.ts) :
+  // flag OFF garde EXACTEMENT la lecture d'avant (zéro diff Home) ; flag ON
+  // bascule sur la source de vérité unifiée (celle que le moteur consomme).
+  const legacyWeeklyGoal = useSettingsStore((s) => s.weeklyGoal ?? 2);
+  const unifiedWeeklyGoal = useWeeklyGoal();
+  const weeklyGoal = FEATURES.WEEK_PLAN ? unifiedWeeklyGoal.value : legacyWeeklyGoal;
 
   const nowISO = devNowISO ?? undefined;
   const hasAppliedToday =
@@ -178,6 +186,7 @@ export default function HomeScreen() {
     () => guardNav(() => nav.navigate("CycleModal", { mode: "manage", origin: "home" })),
     [nav, guardNav]
   );
+  const goToRoutine = useCallback(() => guardNav(() => nav.navigate("Routine")), [nav, guardNav]);
 
   // Nag feedback légitime uniquement si la séance en attente date d'un jour passé.
   const todayKey = toDateKey(nowISO ? new Date(nowISO) : new Date());
@@ -324,34 +333,42 @@ export default function HomeScreen() {
 
         <Animated.View style={animStyle(cardsAnim)}>
           <View style={styles.cardsStack}>
-            <HomeCarouselCard title="Progression" subtitle="Régularité & forme">
-              <View style={styles.progressRow}>
-                <Ionicons name="flame" size={18} color={palette.cta} />
-                <Text style={styles.progressText}>
-                  {activityStreak === 0
-                    ? "Lance ta première séance"
-                    : activityStreak === 1
-                      ? "1 jour d’affilée"
-                      : `${activityStreak} jours d’affilée`}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={goToProgression} style={styles.link}>
-                <Text style={styles.linkText}>Voir ma progression</Text>
-                <Text style={styles.linkArrow}>→</Text>
-              </TouchableOpacity>
-            </HomeCarouselCard>
+            {FEATURES.WEEK_PLAN ? (
+              // É1.5 — carte "Ta semaine" : calendrier + prochaine séance + série,
+              // remplace les deux cartes ci-dessous (voir components/home/HomeWeekPlanCard.tsx).
+              <HomeWeekPlanCard streak={activityStreak} onPress={goToRoutine} />
+            ) : (
+              <>
+                <HomeCarouselCard title="Progression" subtitle="Régularité & forme">
+                  <View style={styles.progressRow}>
+                    <Ionicons name="flame" size={18} color={palette.cta} />
+                    <Text style={styles.progressText}>
+                      {activityStreak === 0
+                        ? "Lance ta première séance"
+                        : activityStreak === 1
+                          ? "1 jour d’affilée"
+                          : `${activityStreak} jours d’affilée`}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={goToProgression} style={styles.link}>
+                    <Text style={styles.linkText}>Voir ma progression</Text>
+                    <Text style={styles.linkArrow}>→</Text>
+                  </TouchableOpacity>
+                </HomeCarouselCard>
 
-            <HomeNextSessionCard
-              hasPending={Boolean(pendingSession)}
-              upcomingLabel={upcomingSessionLabel}
-              primaryLabel={pendingSession ? "Voir la séance" : primaryCta.label}
-              onPrimary={pendingSession ? viewPendingSession : primaryCta.onPress ?? onPressNew}
-              primaryDisabled={!pendingSession && Boolean(primaryCta.disabled)}
-              secondaryLabel="Historique"
-              onSecondary={goToHistory}
-              feedbackDue={feedbackDue}
-              onFeedback={pendingSession && feedbackDue ? goToFeedback : undefined}
-            />
+                <HomeNextSessionCard
+                  hasPending={Boolean(pendingSession)}
+                  upcomingLabel={upcomingSessionLabel}
+                  primaryLabel={pendingSession ? "Voir la séance" : primaryCta.label}
+                  onPrimary={pendingSession ? viewPendingSession : primaryCta.onPress ?? onPressNew}
+                  primaryDisabled={!pendingSession && Boolean(primaryCta.disabled)}
+                  secondaryLabel="Historique"
+                  onSecondary={goToHistory}
+                  feedbackDue={feedbackDue}
+                  onFeedback={pendingSession && feedbackDue ? goToFeedback : undefined}
+                />
+              </>
+            )}
           </View>
         </Animated.View>
 

@@ -107,6 +107,18 @@ const CYCLE_TARGET: Record<MicrocycleId, number> = {
 
 const YOUTH_AGE_CATEGORIES: ReadonlySet<AgeCategory> = new Set(["U13", "U15"]);
 
+/**
+ * Plafond FKS/semaine par âge (table P3, `AGE_BUDGET`) — exposé pour l'UI
+ * (contrôle objectif hebdo, É1.5) qui doit pouvoir expliquer honnêtement un
+ * plafond d'âge sans dupliquer la table de règles ici.
+ */
+export function capFksForAge(ageCategory: AgeCategory): number {
+  return AGE_BUDGET[ageCategory].capFks;
+}
+
+export const WEEKLY_GOAL_MIN = 1;
+export const WEEKLY_GOAL_MAX = 4;
+
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 
 const dowIndex = (d: DowKey): number => DOW_ORDER.indexOf(d);
@@ -245,7 +257,7 @@ export function computeTargetFks(inputs: WeekPlanInputs, week: DowKey[]): { targ
   const { ageCategory, clubTrainingDays, matchDays, targetFksSessionsPerWeek, microcycleGoal } = inputs;
   const warnings: string[] = [];
   const budget = AGE_BUDGET[ageCategory];
-  const souhait = clamp(targetFksSessionsPerWeek ?? 2, 1, 4);
+  const souhait = clamp(targetFksSessionsPerWeek ?? 2, WEEKLY_GOAL_MIN, WEEKLY_GOAL_MAX);
 
   if (!microcycleGoal) {
     warnings.push("plan:no_active_cycle");

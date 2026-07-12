@@ -12,6 +12,7 @@ import {
   replanRemainingWeek,
   evaluateManualMove,
   orderedWeek,
+  capFksForAge,
   DowKey,
   WeekPlanInputs,
   WeekPlanResult,
@@ -333,5 +334,23 @@ describe("Cas limites", () => {
       expect(d.status).toBe("libre");
       expect(d.window).toBe("normal");
     }
+  });
+
+  // É1.5 — capFksForAge exposé pour le contrôle "objectif hebdo" (UI) : doit
+  // rester la même table que celle utilisée par computeTargetFks (P3), jamais
+  // une copie qui pourrait diverger.
+  test("capFksForAge suit exactement la table AGE_BUDGET consommée par computeTargetFks (P3)", () => {
+    expect(capFksForAge("U13")).toBe(1);
+    expect(capFksForAge("U15")).toBe(2);
+    expect(capFksForAge("U17")).toBe(2);
+    expect(capFksForAge("U18")).toBe(3);
+    expect(capFksForAge("Senior")).toBe(3);
+
+    // Un souhait au-delà du cap ne doit jamais dépasser capFksForAge, quel
+    // que soit le cycle/le calendrier (trêve = cas le plus permissif).
+    const treveU13 = computeWeekPlan(
+      base({ ageCategory: "U13", clubTrainingDays: [], matchDays: [], targetFksSessionsPerWeek: 4, microcycleGoal: "fondation" })
+    );
+    expect(treveU13.target).toBeLessThanOrEqual(capFksForAge("U13"));
   });
 });
