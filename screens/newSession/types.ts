@@ -42,6 +42,17 @@ export type FKS_Block = {
   }[] | null;
 };
 
+export type FKS_PlayerContext = {
+  title: string;
+  summary: string;
+  cycleKey?: string | null;
+  cycleLabel?: string | null;
+  cycleProgressLabel?: string | null;
+  cyclePhaseLabel?: string | null;
+  adaptationLabels?: string[];
+  coachNote?: string | null;
+};
+
 export type FKS_NextSessionV2 = {
   version: string;
   title: string;
@@ -89,6 +100,7 @@ export type FKS_NextSessionV2 = {
     blocks?: FKS_Block[];
     display?: FKS_NextSessionV2["display"];
   }>;
+  playerContext?: FKS_PlayerContext | null;
 };
 
 export type PlannedIntensity = "easy" | "moderate" | "hard";

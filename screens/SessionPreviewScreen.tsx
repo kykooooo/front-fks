@@ -345,6 +345,24 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
                 cycleType={microcycleGoal}
               />
 
+              {/* Pourquoi cette séance pour toi */}
+              {v2.playerContext?.summary ? (
+                <Card variant="soft" style={styles.coachCard}>
+                  <SectionHeader title={v2.playerContext.title || 'Pourquoi cette séance pour toi'} />
+                  <Text style={styles.body} numberOfLines={4}>{v2.playerContext.summary}</Text>
+                  {v2.playerContext.adaptationLabels && v2.playerContext.adaptationLabels.length > 0 ? (
+                    <View style={styles.playerContextBadgeRow}>
+                      {v2.playerContext.adaptationLabels.map((label, i) => (
+                        <Badge key={`pc_${i}`} label={label} style={styles.playerContextBadge} />
+                      ))}
+                    </View>
+                  ) : null}
+                  {v2.playerContext.coachNote ? (
+                    <Text style={styles.playerContextCoachNote} numberOfLines={3}>{v2.playerContext.coachNote}</Text>
+                  ) : null}
+                </Card>
+              ) : null}
+
               {/* Reset explain */}
               {isResetPlan && resetExplain ? (
                 <Card variant="surface" style={[styles.resetExplainCard, { backgroundColor: cycleTheme.soft }]}>
@@ -542,6 +560,9 @@ const styles = StyleSheet.create({
   bullet: { color: palette.text, marginBottom: 4, fontSize: 13, lineHeight: 18 },
   body: { color: palette.text, fontSize: 13, lineHeight: 18 },
   coachCard: { padding: 12, gap: 8 },
+  playerContextBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  playerContextBadge: { marginRight: 0 },
+  playerContextCoachNote: { color: palette.sub, fontSize: 12, fontStyle: 'italic', lineHeight: 16 },
   recoveryTipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
   recoveryTipText: { flex: 1, color: palette.text, fontSize: 13, lineHeight: 18 },
   blockEmpty: { color: palette.sub, fontSize: 12 },

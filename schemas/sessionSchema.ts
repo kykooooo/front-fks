@@ -53,6 +53,17 @@ const postSessionSchema = z.object({
   recovery_tips: z.array(z.string()).optional().catch([]),
 }).nullable().catch(null);
 
+const playerContextSchema = z.object({
+  title: z.string().catch("Pourquoi cette séance pour toi"),
+  summary: z.string().catch(""),
+  cycle_key: z.string().nullable().optional().catch(null),
+  cycle_label: z.string().nullable().optional().catch(null),
+  cycle_progress_label: z.string().nullable().optional().catch(null),
+  cycle_phase_label: z.string().nullable().optional().catch(null),
+  adaptation_labels: z.array(z.string()).optional().catch([]),
+  coach_note: z.string().nullable().optional().catch(null),
+});
+
 const resetVariantSchema = z.object({
   id: z.string(),
   title: z.string().optional().catch(undefined),
@@ -103,6 +114,7 @@ export const sessionV2Schema = z.object({
     rationale: z.string().optional().catch(undefined),
   }).nullable().optional().catch(null),
   reset_variants: z.array(resetVariantSchema).optional().catch([]),
+  player_context: playerContextSchema.nullable().optional().catch(null),
 });
 
 export type SessionV2Parsed = z.infer<typeof sessionV2Schema>;
