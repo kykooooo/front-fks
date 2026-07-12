@@ -231,6 +231,8 @@ export const useSyncStore = create<SyncState>()(
                 matchDay,
                 autoExternalConfig,
                 ageCategory: data.ageCategory ?? null,
+                clubTrainingsPerWeek: typeof data.clubTrainingsPerWeek === "number" ? data.clubTrainingsPerWeek : null,
+                matchesPerWeek: typeof data.matchesPerWeek === "number" ? data.matchesPerWeek : null,
                 targetFksSessionsPerWeek: data.targetFksSessionsPerWeek ?? null,
               });
             },
