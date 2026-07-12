@@ -48,11 +48,16 @@ describe("shared/injuryMapping.ts — parité front ↔ back", () => {
   }
 
   (backendFile ? it : it.skip)("le fichier front est byte-identique au fichier backend", () => {
-    const front = fs.readFileSync(FRONT_FILE);
-    const back = fs.readFileSync(backendFile as string);
-    if (!front.equals(back)) {
-      const frontLines = front.toString("utf8").split("\n");
-      const backLines = back.toString("utf8").split("\n");
+    // Normalisation CRLF→LF avant comparaison : sur Windows, autocrlf=true
+    // matérialise les checkouts en CRLF selon le MOMENT où chaque fichier a été
+    // extrait — les blobs git, eux, sont LF des deux côtés (c'est la parité qui
+    // compte). Sans ça, le test échoue ou passe selon l'historique du checkout.
+    const normalize = (buf: Buffer) => buf.toString("utf8").replace(/\r\n/g, "\n");
+    const front = normalize(fs.readFileSync(FRONT_FILE));
+    const back = normalize(fs.readFileSync(backendFile as string));
+    if (front !== back) {
+      const frontLines = front.split("\n");
+      const backLines = back.split("\n");
       let firstDiff = 0;
       while (
         firstDiff < Math.max(frontLines.length, backLines.length) &&
