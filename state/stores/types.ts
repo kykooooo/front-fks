@@ -158,6 +158,10 @@ export type ExternalState = {
   clubTrainingDays: string[];
   matchDays: string[];
   matchDay: string | null;
+  /** Rythme hebdo déclaré au setup (users/{uid}) — null tant que non synchronisé/défini, jamais 0 par défaut. */
+  clubTrainingsPerWeek: number | null;
+  matchesPerWeek: number | null;
+  targetFksSessionsPerWeek: number | null;
   autoExternalEnabled: boolean;
   autoExternalConfig: {
     club?: { rpe: number; durationMin: number };

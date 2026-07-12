@@ -1,7 +1,7 @@
 // screens/ProfileScreen.tsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, Animated,
+  View, Text, ScrollView, StyleSheet, Animated, TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -32,6 +32,7 @@ import {
 } from '../domain/microcycles';
 import { recommendMicrocycle } from '../domain/recommendMicrocycle';
 import { getFootballLabel } from '../config/trainingDefaults';
+import { frFocus, frIntensity } from '../utils/frLabels';
 
 const palette = theme.colors;
 const TESTS_RECENCY_DAYS = 30;
@@ -106,6 +107,9 @@ export default function ProfileScreen() {
   const dailyApplied = useLoadStore((s) => s.dailyApplied ?? {});
   const clubDays = useExternalStore((s) => s.clubTrainingDays ?? []);
   const matchDays = useExternalStore((s) => s.matchDays ?? []);
+  const extTargetFks = useExternalStore((s) => s.targetFksSessionsPerWeek ?? null);
+  const extClubPerWeek = useExternalStore((s) => s.clubTrainingsPerWeek ?? null);
+  const extMatchesPerWeek = useExternalStore((s) => s.matchesPerWeek ?? null);
   const devNowISO = useDebugStore((s) => s.devNowISO);
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
   const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
@@ -157,9 +161,11 @@ export default function ProfileScreen() {
   const athletePosition = labelize(profile?.position);
   const athleteFoot = labelize(profile?.dominant_foot);
   const mainObjective = profile?.main_objective?.trim() ?? null;
-  const targetFks = typeof profile?.target_fks_sessions_per_week === 'number' ? profile.target_fks_sessions_per_week : null;
-  const clubPerWeek = typeof profile?.club_trainings_per_week === 'number' ? profile.club_trainings_per_week : null;
-  const matchesPerWeek = typeof profile?.matches_per_week === 'number' ? profile.matches_per_week : null;
+  // Source de vérité = watcher Firestore users/{uid} (useExternalStore, temps réel).
+  // Fallback sur le profil renvoyé par la dernière génération IA (peut être en retard d'une session).
+  const targetFks = extTargetFks ?? (typeof profile?.target_fks_sessions_per_week === 'number' ? profile.target_fks_sessions_per_week : null);
+  const clubPerWeek = extClubPerWeek ?? (typeof profile?.club_trainings_per_week === 'number' ? profile.club_trainings_per_week : null);
+  const matchesPerWeek = extMatchesPerWeek ?? (typeof profile?.matches_per_week === 'number' ? profile.matches_per_week : null);
 
   const testsAgeDays = useMemo(() => lastTestTs ? daysBetween(lastTestTs, Date.now()) : null, [lastTestTs]);
   const testsFresh = testsAgeDays != null ? testsAgeDays <= TESTS_RECENCY_DAYS : false;
@@ -185,8 +191,10 @@ export default function ProfileScreen() {
         const v2 = session?.aiV2 ?? session?.ai;
         const title = v2?.title || session?.focus || session?.modality || 'Séance FKS';
         const rawFocus = (v2?.focusPrimary ?? v2?.focus_primary ?? session?.focus ?? session?.modality ?? '').toLowerCase();
-        const focus = labelize(v2?.focusPrimary ?? v2?.focus_primary ?? session?.focus ?? session?.modality);
-        const intensity = labelize(v2?.intensity ?? session?.intensity);
+        const focusFr = frFocus(v2?.focusPrimary ?? v2?.focus_primary ?? session?.focus ?? session?.modality);
+        const focus = focusFr ? labelize(focusFr) : null;
+        const intensityFr = frIntensity(v2?.intensity ?? session?.intensity);
+        const intensity = intensityFr ? labelize(intensityFr) : null;
         const dateLabel = formatDayLabel(session?.dateISO ?? session?.date ?? null);
         const rpe = session?.feedback?.rpe ?? session?.rpe;
         return { id: session?.id ?? `${title}_${dateLabel}`, title, focus, rawFocus, intensity, dateLabel, rpe };
@@ -197,11 +205,13 @@ export default function ProfileScreen() {
   const tsbLabel = footballStatus.label;
   const tsbColor = footballStatus.color;
 
+  // Tendance TSB sur la fenêtre dispo (jusqu'à 7 jours) : diff > 0 = TSB qui remonte (forme qui revient),
+  // diff < 0 = TSB qui descend (charge récente plus dense). Libellés neutres, factuels, sans jugement.
   const tsbTrend = useMemo(() => {
     const vals = [...tsbHistory].slice(0, 7);
     if (vals.length < 2) return 'stable';
     const diff = vals[0] - vals[vals.length - 1];
-    return diff > 2 ? 'en montée' : diff < -2 ? 'en baisse' : 'stable';
+    return diff > 2 ? 'ça repart' : diff < -2 ? 'charge qui monte' : 'stable';
   }, [tsbHistory]);
 
   const todayKey = useMemo(() => toDateKey(devNowISO ?? new Date()), [devNowISO]);
@@ -220,7 +230,7 @@ export default function ProfileScreen() {
 
   const fatigueTone: TagTone = tsb <= -15 ? 'danger' : tsb <= -8 ? 'warn' : 'ok';
   const riskTone: TagTone = tsb <= -12 ? 'danger' : tsb < -5 ? 'warn' : 'ok';
-  const trendTone: TagTone = tsbTrend === 'en baisse' ? 'warn' : tsbTrend === 'en montée' ? 'ok' : 'default';
+  const trendTone: TagTone = tsbTrend === 'charge qui monte' ? 'warn' : tsbTrend === 'ça repart' ? 'ok' : 'default';
 
   /* ─── Cycle ─── */
   const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
@@ -229,6 +239,12 @@ export default function ProfileScreen() {
   const cycleCompleted = Math.min(cycleTotal, Math.max(0, Math.trunc(microcycleSessionIndex ?? 0)));
   const cycleNext = Math.min(cycleTotal, cycleCompleted + 1);
   const cycleDone = Boolean(cycleId) && cycleCompleted >= cycleTotal;
+  // Message conditionné à une progression réelle (≥3 séances) : sinon message de démarrage honnête,
+  // pas de "tu progresses bien" prématuré dès la 1ère séance.
+  const cycleRemaining = Math.max(0, cycleTotal - cycleNext);
+  const cycleSubMessage = cycleCompleted >= 3
+    ? 'Continue comme ça, tu progresses bien.'
+    : `C'est parti — ${cycleRemaining} séance${cycleRemaining > 1 ? 's' : ''} pour poser tes bases.`;
 
   /* ─── Pathway ─── */
   const pathway = useMemo(
@@ -261,15 +277,15 @@ export default function ProfileScreen() {
   const vmaThresholds = useMemo(() => ({ bronze: 2, silver: 4, gold: 6 }), []);
 
   const badgeItems = useMemo(() => {
-    const make = (id: string, title: string, value: number, thresholds: BadgeThresholds) => {
+    const make = (id: string, title: string, value: number, thresholds: BadgeThresholds, unit: string) => {
       const tier = getTier(value, thresholds);
-      return { id, title, value, progress: Math.min(1, value / thresholds.gold), tier, earned: tier !== 'none' };
+      return { id, title, value, progress: Math.min(1, value / thresholds.gold), tier, earned: tier !== 'none', thresholds, unit };
     };
     return [
-      make('weekly', 'Semaine active', last7Completed, weeklyThresholds),
-      make('streak', 'Régularité', streaks.weeksFks, streakThresholds),
-      make('load', 'Constance', loadDays, loadThresholds),
-      make('vma', 'Tests du mois', streaks.monthlyVmaCount, vmaThresholds),
+      make('weekly', 'Semaine active', last7Completed, weeklyThresholds, 'séance'),
+      make('streak', 'Régularité', streaks.weeksFks, streakThresholds, 'semaine'),
+      make('load', 'Constance', loadDays, loadThresholds, 'jour'),
+      make('vma', 'Tests du mois', streaks.monthlyVmaCount, vmaThresholds, 'test'),
     ];
   }, [last7Completed, weeklyThresholds, streaks, streakThresholds, loadDays, loadThresholds, vmaThresholds]);
 
@@ -416,16 +432,29 @@ export default function ProfileScreen() {
               { label: 'FKS / sem', value: targetFks, icon: 'flame-outline', tint: palette.accent },
               { label: 'Club / sem', value: clubPerWeek, icon: 'people-outline', tint: palette.info },
               { label: 'Matchs / sem', value: matchesPerWeek, icon: 'football-outline', tint: palette.success },
-            ] as const).map((s) => (
-              <Card key={s.label} variant="soft" style={styles.statCard}>
-                <View style={[styles.statAccent, { backgroundColor: s.tint }]} />
-                <View style={styles.statContent}>
-                  <Ionicons name={s.icon as any} size={16} color={s.tint} />
-                  <Text style={styles.statValue}>{s.value != null ? String(s.value) : '—'}</Text>
-                  <Text style={styles.statLabel}>{s.label}</Text>
-                </View>
-              </Card>
-            ))}
+            ] as const).map((s) => {
+              const isSet = s.value != null;
+              return (
+                <TouchableOpacity
+                  key={s.label}
+                  style={styles.statCardTouch}
+                  activeOpacity={isSet ? 1 : 0.7}
+                  disabled={isSet}
+                  onPress={() => nav.navigate('ProfileSetup')}
+                >
+                  <Card variant="soft" style={styles.statCard}>
+                    <View style={[styles.statAccent, { backgroundColor: s.tint }]} />
+                    <View style={styles.statContent}>
+                      <Ionicons name={s.icon as any} size={16} color={s.tint} />
+                      <Text style={[styles.statValue, !isSet && styles.statValueMuted]}>
+                        {isSet ? String(s.value) : 'À définir'}
+                      </Text>
+                      <Text style={styles.statLabel}>{s.label}</Text>
+                    </View>
+                  </Card>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </Animated.View>
 
@@ -454,7 +483,7 @@ export default function ProfileScreen() {
                   {cycleDone ? 'Programme terminé !' : `Séance ${cycleNext}/${cycleTotal}`}
                 </Text>
                 <Text style={styles.cycleSub}>
-                  {cycleDone ? 'Bien joué ! Choisis ton prochain programme.' : 'Continue comme ça, tu progresses bien.'}
+                  {cycleDone ? 'Bien joué ! Choisis ton prochain programme.' : cycleSubMessage}
                 </Text>
                 <View style={styles.dotsRow}>
                   {Array.from({ length: cycleTotal }).map((_, i) => (
@@ -496,12 +525,12 @@ export default function ProfileScreen() {
 
         {/* ─── MOMENTUM ─── */}
         <Animated.View style={[styles.section, aStyle(4)]}>
-          <SectionHeader title="Ta régularité" right={<Badge label={tsbTrend} tone={trendTone} />} />
+          <SectionHeader title="Ta régularité" right={<Badge label={labelize(tsbTrend) ?? tsbTrend} tone={trendTone} />} />
           <Card variant="soft" style={styles.momentumCard}>
             {([
               { label: 'Semaines FKS', value: streaks.weeksFks, unit: 'sem', icon: 'flame-outline' as const, tint: '#ef4444' },
               { label: 'Club / match', value: streaks.weeksClubMatch, unit: 'sem', icon: 'shield-outline' as const, tint: palette.info },
-              { label: 'Tests ce mois', value: streaks.monthlyVmaCount, unit: 'séances', icon: 'speedometer-outline' as const, tint: '#8b5cf6' },
+              { label: 'Tests ce mois', value: streaks.monthlyVmaCount, unit: 'tests', icon: 'speedometer-outline' as const, tint: '#8b5cf6' },
             ]).map((item, idx) => (
               <React.Fragment key={item.label}>
                 <View style={styles.momentumRow}>
@@ -519,7 +548,7 @@ export default function ProfileScreen() {
 
         {/* ─── CHARGE & FORME ─── */}
         <Animated.View style={[styles.section, aStyle(5)]}>
-          <SectionHeader title="Ta forme" right={<Badge label={`Tendance : ${tsbTrend}`} tone={trendTone} />} />
+          <SectionHeader title="Ta forme" right={<Badge label={`Tendance : ${labelize(tsbTrend) ?? tsbTrend}`} tone={trendTone} />} />
           <Card variant="soft" style={styles.chargeCard}>
             <View style={styles.chargeStatusRow}>
               <View style={[styles.chargeStatusDot, { backgroundColor: tsbColor }]} />
@@ -530,7 +559,7 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.tagRow}>
               <Badge label={tsb <= -15 ? 'Jambes lourdes' : tsb <= -8 ? 'Un peu de fatigue' : 'Frais'} tone={fatigueTone} />
-              <Badge label={tsb <= -12 ? 'Attention blessure' : tsb < -5 ? 'Fais gaffe' : 'C\'est bon'} tone={riskTone} />
+              <Badge label={tsb <= -12 ? 'Attention blessure' : tsb < -5 ? 'Chargé' : 'C\'est bon'} tone={riskTone} />
             </View>
 
             <Text style={styles.chartTitle}>Ta forme sur 7 jours</Text>
@@ -590,7 +619,16 @@ export default function ProfileScreen() {
                     <Ionicons name={cfg.icon as any} size={22} color={b.earned ? cfg.tint : palette.muted} />
                   </View>
                   <Text style={[styles.badgeCellTitle, !b.earned && { color: palette.muted }]}>{b.title}</Text>
-                  <Badge label={tierLabelMap[b.tier]} tone={b.tier === 'gold' || b.tier === 'silver' ? 'ok' : b.tier === 'bronze' ? 'warn' : 'default'} />
+                  {b.tier !== 'none' ? (
+                    <Badge label={tierLabelMap[b.tier]} tone={b.tier === 'gold' || b.tier === 'silver' ? 'ok' : 'warn'} />
+                  ) : (
+                    <Text style={styles.badgeCellHint} numberOfLines={1}>
+                      {(() => {
+                        const remaining = Math.max(0, b.thresholds.bronze - b.value);
+                        return `Encore ${remaining} ${b.unit}${remaining > 1 ? 's' : ''}`;
+                      })()}
+                    </Text>
+                  )}
                   <View style={styles.badgeCellTrack}>
                     <View style={[styles.badgeCellFill, {
                       width: `${Math.min(1, b.progress) * 100}%`,
@@ -614,10 +652,11 @@ export default function ProfileScreen() {
                 const active = isClub || isMatch;
                 return (
                   <View key={d.id} style={styles.calItem}>
+                    {/* Le libellé du jour ne vit qu'ici (calDayLbl) : le cercle ne montre
+                        qu'un statut (icône club/match) ou reste neutre, jamais la même lettre en double. */}
                     <View style={[styles.calCircle, isClub && styles.calClub, isMatch && styles.calMatch]}>
                       {isClub && !isMatch ? <Ionicons name="fitness-outline" size={14} color="#fff" /> : null}
                       {isMatch ? <Ionicons name="football-outline" size={14} color="#fff" /> : null}
-                      {!active ? <Text style={styles.calCircleText}>{d.short}</Text> : null}
                     </View>
                     <Text style={[styles.calDayLbl, active && styles.calDayLblActive]}>{d.short}</Text>
                   </View>
@@ -838,10 +877,12 @@ const styles = StyleSheet.create({
 
   /* Stats */
   statsRow: { flexDirection: 'row', gap: 10 },
+  statCardTouch: { flex: 1 },
   statCard: { flex: 1, borderRadius: 14, padding: 0, overflow: 'hidden', flexDirection: 'row' },
   statAccent: { width: 4 },
   statContent: { flex: 1, padding: 12, alignItems: 'center', gap: 4 },
   statValue: { fontSize: 20, fontWeight: '800', color: palette.text },
+  statValueMuted: { fontSize: 13, color: palette.sub },
   statLabel: { fontSize: 10, color: palette.sub, textAlign: 'center' },
 
   /* Cycle */
@@ -925,6 +966,7 @@ const styles = StyleSheet.create({
   badgeCell: { flexBasis: '47%', flexGrow: 1, borderRadius: 16, padding: 12, alignItems: 'center', gap: 6 },
   badgeIconCircle: { width: 44, height: 44, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   badgeCellTitle: { fontSize: 12, fontWeight: '700', color: palette.text, textAlign: 'center' },
+  badgeCellHint: { fontSize: 10, fontWeight: '600', color: palette.sub, textAlign: 'center' },
   badgeCellTrack: { width: '100%', height: 4, borderRadius: 999, backgroundColor: palette.borderSoft, overflow: 'hidden', marginTop: 4 },
   badgeCellFill: { height: '100%' },
 
@@ -938,7 +980,6 @@ const styles = StyleSheet.create({
   },
   calClub: { backgroundColor: palette.accent, borderColor: palette.accent },
   calMatch: { backgroundColor: palette.success, borderColor: palette.success },
-  calCircleText: { fontSize: 12, fontWeight: '600', color: palette.sub },
   calDayLbl: { fontSize: 10, fontWeight: '600', color: palette.sub },
   calDayLblActive: { color: palette.text, fontWeight: '700' },
   calLegend: { flexDirection: 'row', gap: 16, justifyContent: 'center' },
