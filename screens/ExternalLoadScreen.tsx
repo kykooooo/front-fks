@@ -13,7 +13,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { applyExternalLoad } from "../state/orchestrators/applyExternalLoad";
@@ -52,6 +52,10 @@ const sourceMap: Record<Modality, ExternalSource> = {
 
 export default function ExternalLoadScreen() {
   const nav = useNavigation();
+  // Insets via hook : cet écran n'appliquait AUCUN inset du haut (edges bottom
+  // seulement) → header/croix en permanence sous la Dynamic Island sur une
+  // feuille pleine hauteur. Même correction que Feedback/SessionPreview.
+  const insets = useSafeAreaInsets();
   const addExternalLoad = applyExternalLoad;
 
   const [date, setDate] = useState<Date>(new Date());
@@ -127,7 +131,15 @@ export default function ExternalLoadScreen() {
         allowBackdropDismiss
         allowSwipeDismiss
       >
-        <SafeAreaView style={{ flex: 1 }} edges={["bottom"]}>
+        <View
+          style={{
+            flex: 1,
+            paddingTop: Math.max(insets.top, 12),
+            paddingBottom: Math.max(insets.bottom, 8),
+            paddingLeft: insets.left,
+            paddingRight: insets.right,
+          }}
+        >
         <KeyboardAvoidingView
           style={styles.root}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -135,7 +147,13 @@ export default function ExternalLoadScreen() {
         >
           <View style={styles.modalHeaderRow}>
             <Text style={styles.modalHeaderTitle}>Charge externe</Text>
-            <Pressable onPress={() => nav.goBack()} style={styles.modalClose}>
+            <Pressable
+              onPress={() => nav.goBack()}
+              style={styles.modalClose}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel="Fermer"
+            >
               <Ionicons name="close" size={22} color={palette.text} />
             </Pressable>
           </View>
@@ -286,7 +304,7 @@ export default function ExternalLoadScreen() {
             </ScrollView>
           </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
-        </SafeAreaView>
+        </View>
       </ModalContainer>
     </View>
   );

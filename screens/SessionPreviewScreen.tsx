@@ -13,7 +13,7 @@ import {
 import type { RouteProp } from '@react-navigation/native';
 import { CommonActions, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { AppStackParamList } from '../navigation/RootNavigator';
 import { useLoadStore } from '../state/stores/useLoadStore';
 import { useSessionsStore } from '../state/stores/useSessionsStore';
@@ -66,6 +66,11 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
 function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
   const { v2, plannedDateISO, sessionId } = route.params;
   const nav = useNavigation<any>();
+  // Insets via hook : le composant SafeAreaView (tous bords par défaut) monté
+  // dans ce transparentModal animé appliquait l'inset du haut en retard par
+  // intermittence → croix sous la Dynamic Island, intouchable (même bug que
+  // FeedbackScreen, corrigé à l'identique).
+  const insets = useSafeAreaInsets();
   const guardNav = useNavGuard();
   const title = v2.title || 'Séance personnalisée';
   const subtitle = v2.subtitle;
@@ -303,10 +308,26 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
         allowBackdropDismiss
         allowSwipeDismiss
       >
-        <SafeAreaView style={styles.safeArea}>
+        <View
+          style={[
+            styles.safeArea,
+            {
+              paddingTop: Math.max(insets.top, 12),
+              paddingBottom: Math.max(insets.bottom, 8),
+              paddingLeft: insets.left,
+              paddingRight: insets.right,
+            },
+          ]}
+        >
           <View style={styles.modalHeaderRow}>
             <Text style={styles.modalHeaderTitle}>Séance</Text>
-            <TouchableOpacity onPress={() => nav.goBack()} style={styles.modalClose}>
+            <TouchableOpacity
+              onPress={() => nav.goBack()}
+              style={styles.modalClose}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel="Fermer la séance"
+            >
               <Ionicons name="close" size={22} color={palette.text} />
             </TouchableOpacity>
           </View>
@@ -523,7 +544,7 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
               </View>
             </Animated.View>
           </ScrollView>
-        </SafeAreaView>
+        </View>
       </ModalContainer>
     </View>
   );
