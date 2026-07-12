@@ -525,7 +525,9 @@ export default function ProfileScreen() {
 
         {/* ─── MOMENTUM ─── */}
         <Animated.View style={[styles.section, aStyle(4)]}>
-          <SectionHeader title="Ta régularité" right={<Badge label={labelize(tsbTrend) ?? tsbTrend} tone={trendTone} />} />
+          {/* Pas de labelize() ici : il capitalise CHAQUE mot ("Charge Qui Monte") — une
+              phrase FR ne prend qu'une majuscule initiale. */}
+          <SectionHeader title="Ta régularité" right={<Badge label={tsbTrend.charAt(0).toUpperCase() + tsbTrend.slice(1)} tone={trendTone} />} />
           <Card variant="soft" style={styles.momentumCard}>
             {([
               { label: 'Semaines FKS', value: streaks.weeksFks, unit: 'sem', icon: 'flame-outline' as const, tint: '#ef4444' },
@@ -548,7 +550,7 @@ export default function ProfileScreen() {
 
         {/* ─── CHARGE & FORME ─── */}
         <Animated.View style={[styles.section, aStyle(5)]}>
-          <SectionHeader title="Ta forme" right={<Badge label={`Tendance : ${labelize(tsbTrend) ?? tsbTrend}`} tone={trendTone} />} />
+          <SectionHeader title="Ta forme" right={<Badge label={`Tendance : ${tsbTrend}`} tone={trendTone} />} />
           <Card variant="soft" style={styles.chargeCard}>
             <View style={styles.chargeStatusRow}>
               <View style={[styles.chargeStatusDot, { backgroundColor: tsbColor }]} />
