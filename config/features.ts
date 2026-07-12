@@ -7,5 +7,5 @@ export const FEATURES = {
   // ne navigue vers "Routine"). É2 ajoutera notifications/CTA Home/sync
   // Firestore plan-aware derrière ce même flag — voir
   // C:\Users\Gamer\fks/src/dev/PLANNING_HEBDO_DESIGN.md §7.1.
-  WEEK_PLAN: false,
+  WEEK_PLAN: true, // PREVIEW LOCAL - ne pas commit
 };
