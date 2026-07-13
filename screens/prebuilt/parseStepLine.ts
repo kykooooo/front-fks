@@ -1,6 +1,7 @@
 // screens/prebuilt/parseStepLine.ts
 // Parseur d'affichage pur pour les lignes de `detail[]` (prebuiltSessions.ts).
-// Motif attendu : "Nom: dosage — consigne" (parfois sans consigne).
+// Motifs supportés : "Nom: dosage — consigne" (parfois sans consigne)
+// et "Nom — consigne" (sans dosage, fréquent dans les circuits).
 // Ne modifie jamais la donnée source — utilisé uniquement pour l'affichage.
 
 export type ParsedStep = {
@@ -11,16 +12,27 @@ export type ParsedStep = {
 };
 
 const DASH = "—";
+// Au-delà, la partie avant le tiret n'est plus un "nom" mais une phrase :
+// on préfère le repli brut plutôt qu'un titre interminable.
+const MAX_DASH_NAME_LENGTH = 60;
 
 export function parseStepLine(raw: string): ParsedStep {
   const line = raw.trim();
   const colonIdx = line.indexOf(":");
-  if (colonIdx === -1) return { raw: line };
-
   const dashIdx = line.indexOf(DASH);
-  // Un tiret avant le ":" (ex: "ÉCHAUFFEMENT — 5 min : ...") signifie que le
-  // ":" appartient à la consigne, pas au motif "Nom: dosage" -> repli.
-  if (dashIdx !== -1 && dashIdx < colonIdx) return { raw: line };
+
+  // Pas de ":" exploitable (absent, ou situé après le premier tiret donc
+  // appartenant à la consigne) : tenter le motif "Nom — consigne".
+  if (colonIdx === -1 || (dashIdx !== -1 && dashIdx < colonIdx)) {
+    if (dashIdx !== -1) {
+      const name = line.slice(0, dashIdx).trim();
+      const consigne = line.slice(dashIdx + 1).trim();
+      if (name && name.length <= MAX_DASH_NAME_LENGTH && consigne) {
+        return { name, consigne, raw: line };
+      }
+    }
+    return { raw: line };
+  }
 
   const name = line.slice(0, colonIdx).trim();
   if (!name) return { raw: line };

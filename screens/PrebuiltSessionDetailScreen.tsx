@@ -415,7 +415,7 @@ export default function PrebuiltSessionDetailScreen() {
                         <View style={{ flex: 1 }}>
                           <Text
                             style={[styles.itemName, isCompleted && styles.itemNameChecked]}
-                            numberOfLines={2}
+                            numberOfLines={step.name ? 2 : 4}
                           >
                             {step.name ?? step.raw}
                           </Text>

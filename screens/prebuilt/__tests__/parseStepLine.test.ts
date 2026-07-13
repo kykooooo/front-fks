@@ -23,18 +23,45 @@ describe("parseStepLine", () => {
     });
   });
 
-  test("repli : pas de ':' avant le dosage", () => {
-    const raw = "Hydratation + collation protéinée — Eau + shaker ou yaourt grec, à prendre en parallèle";
+  test("nom — consigne, sans ':' (fréquent dans les circuits)", () => {
+    const raw =
+      "Hydratation + collation protéinée — Eau + shaker ou yaourt grec, à prendre en parallèle";
+    expect(parseStepLine(raw)).toEqual({
+      name: "Hydratation + collation protéinée",
+      consigne: "Eau + shaker ou yaourt grec, à prendre en parallèle",
+      raw,
+    });
+  });
+
+  test("':' situé après le premier tiret : le ':' appartient à la consigne", () => {
+    const raw =
+      "ÉCHAUFFEMENT — 5 min : footing léger + gammes athlétiques + 3 accélérations progressives";
+    expect(parseStepLine(raw)).toEqual({
+      name: "ÉCHAUFFEMENT",
+      consigne: "5 min : footing léger + gammes athlétiques + 3 accélérations progressives",
+      raw,
+    });
+  });
+
+  test("ligne numérotée sans ':' : découpée sur le tiret", () => {
+    const raw =
+      "1. Sprint navette 10-20-10 m — Sprint 10 m, touche le sol, 20 m, touche, 10 m retour. Explosif à chaque départ";
+    expect(parseStepLine(raw)).toEqual({
+      name: "1. Sprint navette 10-20-10 m",
+      consigne:
+        "Sprint 10 m, touche le sol, 20 m, touche, 10 m retour. Explosif à chaque départ",
+      raw,
+    });
+  });
+
+  test("repli : aucun séparateur", () => {
+    const raw = "Gainage latéral statique 30 secondes de chaque côté";
     expect(parseStepLine(raw)).toEqual({ raw });
   });
 
-  test("repli : ':' situé après le premier tiret (dans la consigne)", () => {
-    const raw = "ÉCHAUFFEMENT — 5 min : footing léger + gammes athlétiques + 3 accélérations progressives";
-    expect(parseStepLine(raw)).toEqual({ raw });
-  });
-
-  test("repli : ligne numérotée sans ':'", () => {
-    const raw = "1. Sprint navette 10-20-10 m — Sprint 10 m, touche le sol, 20 m, touche, 10 m retour. Explosif à chaque départ";
+  test("repli : partie avant le tiret trop longue pour être un nom", () => {
+    const raw =
+      "Enchaîne les trois exercices sans temps de repos entre chaque mouvement du circuit — puis récupère 1 min";
     expect(parseStepLine(raw)).toEqual({ raw });
   });
 });
