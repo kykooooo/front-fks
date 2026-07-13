@@ -327,8 +327,8 @@ export default function PrebuiltSessionDetailScreen() {
             >
               <Card variant="soft" style={styles.equipmentCard}>
                 <View style={styles.equipmentHeader}>
-                  <View style={styles.equipmentIconCircle}>
-                    <Ionicons name="bag-outline" size={16} color="#8b5cf6" />
+                  <View style={[styles.equipmentIconCircle, { backgroundColor: categoryConfig.tintSoft }]}>
+                    <Ionicons name="bag-outline" size={16} color={categoryConfig.tint} />
                   </View>
                   <View>
                     <Text style={styles.cardTitle}>Matériel requis</Text>
@@ -602,7 +602,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: "rgba(139,92,246,0.15)",
     alignItems: "center",
     justifyContent: "center",
   },
