@@ -81,6 +81,11 @@ const CATEGORY_CONFIG: Record<string, CategoryConfig> = {
     gradient: ["#ff7a1a", "#ff9a4a"],
     tint: "#ff7a1a",
   },
+  CIRCUITS: {
+    icon: "repeat",
+    gradient: ["#e11d48", "#fb7185"],
+    tint: "#e11d48",
+  },
 };
 
 const getCategoryConfig = (category: string): CategoryConfig =>
