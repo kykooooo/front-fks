@@ -165,7 +165,8 @@ export function prepareBackendContext(
 }
 
 export async function fetchV2(
-  context: Record<string, unknown>
+  context: Record<string, unknown>,
+  options?: { onRetry?: (reason: "timeout" | "network") => void }
 ): Promise<{ v2: FKS_NextSessionV2; debug: Record<string, unknown> }> {
   const auth = getAuth();
   const userId = auth.currentUser?.uid ?? "test-user-dev";
@@ -187,8 +188,14 @@ export async function fetchV2(
   try {
     r = await safeFetch(url, fetchOptions, 90000);
   } catch (firstError: any) {
-    // Si timeout (cold start probable), retry une fois
-    if (firstError.code === "ETIMEDOUT") {
+    // Retry une fois sur timeout OU échec réseau : un cold start Render peut
+    // dépasser la limite système iOS (~60s) AVANT notre AbortController (90s),
+    // ce qui sort en "Network request failed"/"Failed to fetch" plutôt qu'en
+    // ETIMEDOUT — le 2e essai tombe sur un serveur déjà réveillé.
+    const isTimeout = firstError.code === "ETIMEDOUT";
+    const isNetwork = firstError.code === "NETWORK_ERROR";
+    if (isTimeout || isNetwork) {
+      options?.onRetry?.(isTimeout ? "timeout" : "network");
       r = await safeFetch(url, fetchOptions, 90000);
     } else {
       throw firstError;

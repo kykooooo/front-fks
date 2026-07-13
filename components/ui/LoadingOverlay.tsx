@@ -12,6 +12,8 @@ interface LoadingOverlayProps {
   submessage?: string;
   /** Étapes qui défilent automatiquement (cycle toutes les ~4s) */
   steps?: string[];
+  /** Si fourni, remplace temporairement steps/message (ex: réveil serveur en cours) */
+  overrideMessage?: string;
   /** Durée estimée en ms pour la barre de progression (défaut: 25000) */
   estimatedDurationMs?: number;
   /** Si fourni, affiche un bouton texte discret pour annuler l'opération */
@@ -110,6 +112,7 @@ export function LoadingOverlay({
   message,
   submessage,
   steps,
+  overrideMessage,
   estimatedDurationMs = 25000,
   onCancel,
   cancelLabel = 'Annuler',
@@ -168,7 +171,7 @@ export function LoadingOverlay({
   if (!rendered) return null;
 
   const hasSteps = steps && steps.length > 0;
-  const displayMessage = hasSteps ? steps[currentStep] : message;
+  const displayMessage = overrideMessage ?? (hasSteps ? steps[currentStep] : message);
 
   return (
     <Modal transparent visible={rendered} animationType="none" statusBarTranslucent>

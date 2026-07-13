@@ -165,6 +165,7 @@ export default function NewSessionScreen() {
   const [pitchSmallGearEnabled, setPitchSmallGearEnabled] = useState(false);
   const [setupDone, setSetupDone] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [wakingServer, setWakingServer] = useState(false);
   const [resetChoice, setResetChoice] = useState<ResetChoiceState>(null);
   const [cachePrompt, setCachePrompt] = useState<{
     cached: { v2: FKS_NextSessionV2; debug: Record<string, unknown> };
@@ -314,6 +315,7 @@ export default function NewSessionScreen() {
   const cancelGeneration = useCallback(() => {
     generationIdRef.current += 1;
     setGenerating(false);
+    setWakingServer(false);
     setContextLoading(false);
     trackEvent("session_generate_cancelled", {});
     showToast({ type: "info", title: "Génération annulée", message: "Tu peux relancer quand tu veux." });
@@ -401,6 +403,7 @@ export default function NewSessionScreen() {
       });
 
       setGenerating(true);
+      setWakingServer(false);
       const genId = ++generationIdRef.current;
 
       // On reconstruit le contexte à chaque génération pour refléter microcycle/index/goal à jour.
@@ -430,7 +433,11 @@ export default function NewSessionScreen() {
       }
 
       // 3) Appel backend → workflow → v2
-      const { v2, debug } = await fetchV2(preparedCtx);
+      const { v2, debug } = await fetchV2(preparedCtx, {
+        onRetry: () => {
+          if (generationIdRef.current === genId) setWakingServer(true);
+        },
+      });
       if (generationIdRef.current !== genId) return; // annulé pendant l'appel
       await setSessionCache(preparedCtx, { v2, debug });
       if (isResetPlan(v2)) {
@@ -526,6 +533,7 @@ export default function NewSessionScreen() {
       }
     } finally {
       setGenerating(false);
+      setWakingServer(false);
       // Toujours relâcher le flag contexte : s'il reste bloqué à true, le CTA
       // "Générer" est définitivement grisé (buildAIPromptContext peut throw).
       setContextLoading(false);
@@ -817,6 +825,9 @@ export default function NewSessionScreen() {
           "Personnalisation selon tes contraintes...",
           "Vérification et finalisation...",
         ]}
+        overrideMessage={
+          wakingServer ? "Le serveur se réveille, encore quelques secondes..." : undefined
+        }
         estimatedDurationMs={25000}
         onCancel={cancelGeneration}
       />
