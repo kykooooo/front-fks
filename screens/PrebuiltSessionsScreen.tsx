@@ -33,7 +33,9 @@ export default function PrebuiltSessionsScreen() {
   useFocusEffect(
     useCallback(() => {
       setAnimationKey((k) => k + 1);
-      return () => setSelectedCategory(null);
+      // Pas de reset de selectedCategory au blur : ouvrir un détail de routine
+      // blur l'écran sans le démonter, et l'utilisateur doit retrouver sa liste
+      // au retour. Quitter l'écran (pop) démonte et réinitialise naturellement.
     }, [])
   );
 
