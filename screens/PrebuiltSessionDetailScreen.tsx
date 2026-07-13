@@ -1,5 +1,6 @@
 // screens/PrebuiltSessionDetailScreen.tsx
-// Design moderne avec animations stagger, icônes gradient et cards pro
+// Même langage visuel que l'écran de séance (BlockCard/SessionPreviewScreen) :
+// Card surface + barre d'accent + icône teintée, plus de gradient plein cadre.
 import React, { useMemo, useEffect, useRef, useState, useCallback } from "react";
 import {
   View,
@@ -8,17 +9,19 @@ import {
   ScrollView,
   TouchableOpacity,
   Animated,
-  Platform,
 } from "react-native";
 import { Screen } from "../components/ui/Screen";
 import { useRoute, RouteProp, useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { useHaptics } from "../hooks/useHaptics";
 import type { AppStackParamList } from "../navigation/RootNavigator";
 import { theme } from "../constants/theme";
 import { Card } from "../components/ui/Card";
+import { Badge } from "../components/ui/Badge";
+import { Button } from "../components/ui/Button";
+import { SectionHeader } from "../components/ui/SectionHeader";
 import { useExternalStore } from "../state/stores/useExternalStore";
+import { parseStepLine } from "./prebuilt/parseStepLine";
 
 const palette = theme.colors;
 
@@ -38,61 +41,30 @@ type Prebuilt = {
   rpe_target?: number;
 };
 
-// Configuration visuelle des catégories
+// Configuration visuelle des catégories — icône + couleur en touches seulement
+// (barre d'accent, icône), jamais en fond plein.
 type CategoryConfig = {
   icon: keyof typeof Ionicons.glyphMap;
-  gradient: [string, string];
   tint: string;
+  tintSoft: string;
 };
 
 const CATEGORY_CONFIG: Record<string, CategoryConfig> = {
-  ACTIVATION: {
-    icon: "flash",
-    gradient: ["#f59e0b", "#fbbf24"],
-    tint: "#f59e0b",
-  },
-  RÉCUPÉRATION: {
-    icon: "leaf",
-    gradient: ["#10b981", "#34d399"],
-    tint: "#10b981",
-  },
-  "MOBILITÉ EXPRESS": {
-    icon: "body",
-    gradient: ["#8b5cf6", "#a78bfa"],
-    tint: "#8b5cf6",
-  },
-  PRÉVENTION: {
-    icon: "shield-checkmark",
-    gradient: ["#ef4444", "#f87171"],
-    tint: "#ef4444",
-  },
-  "MATCH DAY": {
-    icon: "football",
-    gradient: ["#3b82f6", "#60a5fa"],
-    tint: "#3b82f6",
-  },
-  "PACK 7 JOURS": {
-    icon: "calendar",
-    gradient: ["#14b8a6", "#2dd4bf"],
-    tint: "#14b8a6",
-  },
-  DÉFIS: {
-    icon: "trophy",
-    gradient: ["#ff7a1a", "#ff9a4a"],
-    tint: "#ff7a1a",
-  },
-  CIRCUITS: {
-    icon: "repeat",
-    gradient: ["#e11d48", "#fb7185"],
-    tint: "#e11d48",
-  },
+  ACTIVATION: { icon: "flash", tint: "#f59e0b", tintSoft: "rgba(245,158,11,0.12)" },
+  RÉCUPÉRATION: { icon: "leaf", tint: "#10b981", tintSoft: "rgba(16,185,129,0.12)" },
+  "MOBILITÉ EXPRESS": { icon: "body", tint: "#8b5cf6", tintSoft: "rgba(139,92,246,0.12)" },
+  PRÉVENTION: { icon: "shield-checkmark", tint: "#ef4444", tintSoft: "rgba(239,68,68,0.12)" },
+  "MATCH DAY": { icon: "football", tint: "#3b82f6", tintSoft: "rgba(59,130,246,0.12)" },
+  "PACK 7 JOURS": { icon: "calendar", tint: "#14b8a6", tintSoft: "rgba(20,184,166,0.12)" },
+  DÉFIS: { icon: "trophy", tint: "#ff7a1a", tintSoft: "rgba(255,122,26,0.12)" },
+  CIRCUITS: { icon: "repeat", tint: "#e11d48", tintSoft: "rgba(225,29,72,0.12)" },
 };
 
 const getCategoryConfig = (category: string): CategoryConfig =>
   CATEGORY_CONFIG[category] ?? {
     icon: "sparkles",
-    gradient: ["#6b7280", "#9ca3af"],
     tint: "#6b7280",
+    tintSoft: "rgba(107,114,128,0.12)",
   };
 
 const INTENSITY_LABEL: Record<string, string> = {
@@ -101,16 +73,11 @@ const INTENSITY_LABEL: Record<string, string> = {
   hard: "Intense",
 };
 
-const INTENSITY_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
-  easy: "sunny-outline",
-  moderate: "flame-outline",
-  hard: "flash",
-};
-
-const INTENSITY_COLOR: Record<string, string> = {
-  easy: "#10b981",
-  moderate: "#f59e0b",
-  hard: "#ef4444",
+type BadgeTone = "default" | "ok" | "warn" | "danger";
+const INTENSITY_TONE: Record<string, BadgeTone> = {
+  easy: "ok",
+  moderate: "warn",
+  hard: "danger",
 };
 
 const LOCATION_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -143,7 +110,6 @@ const FOCUS_LABEL: Record<string, string> = {
   mobility: "Mobilité",
 };
 
-
 // Parse duration string like "8-10 min" to average minutes
 const parseDurationMin = (raw?: string): number | undefined => {
   if (!raw) return undefined;
@@ -174,7 +140,8 @@ export default function PrebuiltSessionDetailScreen() {
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
-  const cardAnims = useRef([0, 1, 2, 3, 4, 5].map(() => new Animated.Value(0))).current;
+  // 0 = Matériel, 1 = Plan détaillé, 2 = Points clés, 3 = Chronomètre
+  const cardAnims = useRef([0, 1, 2, 3].map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -206,11 +173,11 @@ export default function PrebuiltSessionDetailScreen() {
     () => (session.detail ?? []).filter((line) => !!line && line.trim().length > 0),
     [session.detail]
   );
+  const parsedSteps = useMemo(() => detailLines.map(parseStepLine), [detailLines]);
 
   const categoryConfig = getCategoryConfig(session.category);
-  const intensityColor = INTENSITY_COLOR[session.intensity] ?? palette.accent;
-  const intensityIcon = INTENSITY_ICON[session.intensity] ?? "flash-outline";
   const intensityLabel = INTENSITY_LABEL[session.intensity] ?? session.intensity;
+  const intensityTone = INTENSITY_TONE[session.intensity] ?? "default";
 
   const handleFinish = useCallback(() => {
     // Enregistrer la routine complétée (pour badges, sans impact sur charge)
@@ -280,82 +247,67 @@ export default function PrebuiltSessionDetailScreen() {
           contentContainerStyle={styles.container}
           showsVerticalScrollIndicator={false}
         >
-          {/* HERO avec gradient */}
+          {/* HERO — Card surface + barre d'accent, langage BlockCard */}
           <Animated.View
-            style={[
-              styles.heroCard,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-              },
-            ]}
+            style={{
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            }}
           >
-            <LinearGradient
-              colors={categoryConfig.gradient}
-              style={styles.heroGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0.5 }}
-            >
-              <View style={styles.heroContent}>
-                {/* Header row */}
+            <Card variant="surface" style={styles.heroCard}>
+              <View style={[styles.heroAccentBar, { backgroundColor: categoryConfig.tint }]} />
+              <View style={styles.heroInner}>
                 <View style={styles.heroHeaderRow}>
-                  <View style={styles.categoryPill}>
-                    <Ionicons name={categoryConfig.icon} size={12} color="#fff" />
-                    <Text style={styles.categoryText}>{session.category}</Text>
+                  <View style={[styles.heroIconWrap, { backgroundColor: categoryConfig.tintSoft }]}>
+                    <Ionicons name={categoryConfig.icon} size={20} color={categoryConfig.tint} />
                   </View>
-                  <View style={styles.heroBadgesRow}>
-                    <View style={styles.heroBadge}>
-                      <Ionicons name={intensityIcon} size={10} color="#fff" />
-                      <Text style={styles.heroBadgeText}>{intensityLabel}</Text>
-                    </View>
-                    <View style={styles.heroBadge}>
-                      <Ionicons name="time-outline" size={10} color="#fff" />
-                      <Text style={styles.heroBadgeText}>{session.duration}</Text>
-                    </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.heroCategoryLabel, { color: categoryConfig.tint }]}>
+                      {session.category}
+                    </Text>
+                    <Text style={styles.heroTitle} numberOfLines={2}>{session.title}</Text>
                   </View>
                 </View>
 
-                {/* Title */}
-                <View style={styles.heroTitleBlock}>
-                  <Text style={styles.heroTitle}>{session.title}</Text>
-                  <Text style={styles.heroObjective}>{session.objective}</Text>
+                <Text style={styles.heroObjective} numberOfLines={3}>{session.objective}</Text>
+
+                <View style={styles.heroBadgesRow}>
+                  <Badge label={intensityLabel} tone={intensityTone} />
+                  <Badge label={session.duration} />
                 </View>
 
-                {/* Quick stats */}
-                <View style={styles.heroStatsRow}>
-                  {session.location && (
-                    <View style={styles.heroStat}>
-                      <Ionicons
-                        name={LOCATION_ICON[session.location] ?? "location-outline"}
-                        size={14}
-                        color="rgba(255,255,255,0.8)"
-                      />
-                      <Text style={styles.heroStatText}>
-                        {LOCATION_LABEL[session.location]}
-                      </Text>
-                    </View>
-                  )}
-                  {session.focus && (
-                    <View style={styles.heroStat}>
-                      <Ionicons
-                        name={FOCUS_ICON[session.focus] ?? "fitness-outline"}
-                        size={14}
-                        color="rgba(255,255,255,0.8)"
-                      />
-                      <Text style={styles.heroStatText}>
-                        {FOCUS_LABEL[session.focus]}
-                      </Text>
-                    </View>
-                  )}
-                  {session.level && (
-                    <View style={styles.heroStat}>
-                      <Ionicons name="person-outline" size={14} color="rgba(255,255,255,0.8)" />
-                      <Text style={styles.heroStatText}>{session.level}</Text>
-                    </View>
-                  )}
-                </View>
+                {session.location || session.focus || session.level ? (
+                  <View style={styles.heroChipsRow}>
+                    {session.location ? (
+                      <View style={styles.metaChip}>
+                        <Ionicons
+                          name={LOCATION_ICON[session.location] ?? "location-outline"}
+                          size={12}
+                          color={palette.sub}
+                        />
+                        <Text style={styles.metaChipText}>{LOCATION_LABEL[session.location]}</Text>
+                      </View>
+                    ) : null}
+                    {session.focus ? (
+                      <View style={styles.metaChip}>
+                        <Ionicons
+                          name={FOCUS_ICON[session.focus] ?? "fitness-outline"}
+                          size={12}
+                          color={palette.sub}
+                        />
+                        <Text style={styles.metaChipText}>{FOCUS_LABEL[session.focus]}</Text>
+                      </View>
+                    ) : null}
+                    {session.level ? (
+                      <View style={styles.metaChip}>
+                        <Ionicons name="person-outline" size={12} color={palette.sub} />
+                        <Text style={styles.metaChipText} numberOfLines={1}>{session.level}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
               </View>
-            </LinearGradient>
+            </Card>
           </Animated.View>
 
           {/* Matériel requis */}
@@ -395,7 +347,7 @@ export default function PrebuiltSessionDetailScreen() {
             </Animated.View>
           )}
 
-          {/* Plan détaillé */}
+          {/* Plan détaillé — étapes en itemRow, langage BlockCard */}
           <Animated.View
             style={{
               opacity: cardAnims[1],
@@ -412,14 +364,9 @@ export default function PrebuiltSessionDetailScreen() {
             <Card variant="surface" style={styles.planCard}>
               <View style={styles.planHeader}>
                 <View style={styles.planHeaderLeft}>
-                  <LinearGradient
-                    colors={categoryConfig.gradient}
-                    style={styles.planIconCircle}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="list" size={18} color="#fff" />
-                  </LinearGradient>
+                  <View style={[styles.planIconCircle, { backgroundColor: categoryConfig.tintSoft }]}>
+                    <Ionicons name="list" size={18} color={categoryConfig.tint} />
+                  </View>
                   <View>
                     <Text style={styles.cardTitle}>Plan détaillé</Text>
                     <Text style={styles.cardSubtitle}>
@@ -427,64 +374,65 @@ export default function PrebuiltSessionDetailScreen() {
                     </Text>
                   </View>
                 </View>
-                <View style={styles.planBadge}>
-                  <Text style={styles.planBadgeText}>
-                    {Math.round(progressRatio * 100)}%
-                  </Text>
-                </View>
+                <Badge label={`${Math.round(progressRatio * 100)}%`} />
               </View>
 
-              {/* Barre de progression */}
               <View style={styles.progressTrack}>
-                <LinearGradient
-                  colors={categoryConfig.gradient}
-                  style={[styles.progressFill, { width: `${progressRatio * 100}%` }]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${progressRatio * 100}%`, backgroundColor: categoryConfig.tint },
+                  ]}
                 />
               </View>
 
               <View style={styles.stepsContainer}>
-                {detailLines.map((line, index) => {
+                {parsedSteps.map((step, index) => {
                   const isCompleted = completedSteps.has(index);
                   return (
-                    <TouchableOpacity
-                      key={`step-${index}`}
-                      style={styles.stepRow}
-                      onPress={() => toggleStepComplete(index)}
-                      activeOpacity={0.8}
-                    >
-                      <View
-                        style={[
-                          styles.stepCheckbox,
-                          isCompleted && {
-                            backgroundColor: categoryConfig.tint,
-                            borderColor: categoryConfig.tint,
-                          },
-                        ]}
+                    <View key={`step-${index}`} style={styles.itemRow}>
+                      <TouchableOpacity
+                        onPress={() => toggleStepComplete(index)}
+                        activeOpacity={0.85}
+                        style={styles.itemMain}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: isCompleted }}
                       >
-                        {isCompleted ? (
-                          <Ionicons name="checkmark" size={14} color="#fff" />
-                        ) : (
-                          <Text style={styles.stepIndexText}>{index + 1}</Text>
-                        )}
-                      </View>
-                      <Text
-                        style={[
-                          styles.stepText,
-                          isCompleted && styles.stepTextCompleted,
-                        ]}
-                      >
-                        {line}
-                      </Text>
-                    </TouchableOpacity>
+                        <View
+                          style={[
+                            styles.checkbox,
+                            isCompleted && {
+                              backgroundColor: categoryConfig.tintSoft,
+                              borderColor: categoryConfig.tint,
+                            },
+                          ]}
+                        >
+                          {isCompleted ? (
+                            <Ionicons name="checkmark" size={14} color={categoryConfig.tint} />
+                          ) : null}
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={[styles.itemName, isCompleted && styles.itemNameChecked]}
+                            numberOfLines={2}
+                          >
+                            {step.name ?? step.raw}
+                          </Text>
+                          {step.dosage ? <Text style={styles.itemMeta}>{step.dosage}</Text> : null}
+                          {step.consigne ? (
+                            <Text style={styles.itemNote} numberOfLines={3}>{step.consigne}</Text>
+                          ) : null}
+                        </View>
+                      </TouchableOpacity>
+                    </View>
                   );
                 })}
               </View>
             </Card>
           </Animated.View>
 
-          {/* Attentes / Consignes */}
+          {/* Points clés — style coachTipBox de BlockCard */}
           {expectations.length > 0 && (
             <Animated.View
               style={{
@@ -499,29 +447,30 @@ export default function PrebuiltSessionDetailScreen() {
                 ],
               }}
             >
-              <Card variant="soft" style={styles.expectCard}>
-                <View style={styles.expectHeader}>
-                  <View style={styles.expectIconCircle}>
-                    <Ionicons name="bulb" size={16} color="#f59e0b" />
-                  </View>
-                  <View>
-                    <Text style={styles.cardTitle}>Points clés</Text>
-                    <Text style={styles.cardSubtitle}>Pour bien exécuter</Text>
-                  </View>
+              <View
+                style={[
+                  styles.coachTipBox,
+                  { backgroundColor: categoryConfig.tintSoft, borderLeftColor: categoryConfig.tint },
+                ]}
+              >
+                <View style={styles.coachTipHeader}>
+                  <Ionicons name="bulb-outline" size={12} color={categoryConfig.tint} />
+                  <Text style={[styles.coachTipKicker, { color: categoryConfig.tint }]}>
+                    Points clés
+                  </Text>
                 </View>
-                <View style={styles.expectList}>
+                <View style={styles.coachTipList}>
                   {expectations.map((line, idx) => (
-                    <View key={`expect-${idx}`} style={styles.expectRow}>
-                      <Ionicons name="arrow-forward-circle" size={16} color={categoryConfig.tint} />
-                      <Text style={styles.expectText}>{line}</Text>
-                    </View>
+                    <Text key={`expect-${idx}`} style={styles.coachTipText}>
+                      {'•'} {line}
+                    </Text>
                   ))}
                 </View>
-              </Card>
+              </View>
             </Animated.View>
           )}
 
-          {/* Chronomètre */}
+          {/* Chronomètre — carte sobre, boutons du design system */}
           <Animated.View
             style={{
               opacity: cardAnims[3],
@@ -535,98 +484,37 @@ export default function PrebuiltSessionDetailScreen() {
               ],
             }}
           >
-            <Card variant="surface" style={styles.timerCard}>
-              <View style={styles.timerHeader}>
-                <View style={styles.timerIconCircle}>
-                  <Ionicons name="stopwatch" size={18} color="#06b6d4" />
-                </View>
-                <Text style={styles.cardTitle}>Chronomètre</Text>
-              </View>
-
+            <Card variant="soft" style={styles.timerCard}>
+              <SectionHeader title="Chronomètre" />
               <Text style={styles.timerValue}>{formatTime(timeSec)}</Text>
-
               <View style={styles.timerActions}>
-                <TouchableOpacity
-                  style={styles.timerStartButton}
-                  activeOpacity={0.9}
+                <Button
+                  label={isRunning ? "Pause" : "Démarrer"}
                   onPress={toggleTimer}
-                >
-                  <LinearGradient
-                    colors={isRunning ? ["#ef4444", "#f87171"] : ["#10b981", "#34d399"]}
-                    style={styles.timerStartGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                  >
-                    <Ionicons
-                      name={isRunning ? "pause" : "play"}
-                      size={18}
-                      color="#fff"
-                    />
-                    <Text style={styles.timerStartText}>
-                      {isRunning ? "Pause" : "Démarrer"}
-                    </Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.timerResetButton}
-                  activeOpacity={0.85}
+                  size="sm"
+                  variant={isRunning ? "secondary" : "primary"}
+                  style={[
+                    styles.timerButton,
+                    !isRunning && { backgroundColor: categoryConfig.tint, borderColor: categoryConfig.tint },
+                  ]}
+                />
+                <Button
+                  label="Réinit"
                   onPress={resetTimer}
-                >
-                  <Ionicons name="refresh" size={16} color={palette.sub} />
-                  <Text style={styles.timerResetText}>Reset</Text>
-                </TouchableOpacity>
+                  size="sm"
+                  variant="ghost"
+                  style={styles.timerButton}
+                />
               </View>
             </Card>
           </Animated.View>
 
-          {/* Tags */}
-          {Array.isArray(session.tags) && session.tags.length > 0 && (
-            <Animated.View
-              style={{
-                opacity: cardAnims[4],
-                transform: [
-                  {
-                    translateY: cardAnims[4].interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [16, 0],
-                    }),
-                  },
-                ],
-              }}
-            >
-              <View style={styles.tagsSection}>
-                <Text style={styles.tagsSectionTitle}>Tags</Text>
-                <View style={styles.tagsRow}>
-                  {session.tags.map((tag) => (
-                    <View key={tag} style={styles.tagPill}>
-                      <Text style={styles.tagPillText}>{tag}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            </Animated.View>
-          )}
-
           <View style={{ height: 24 }} />
         </ScrollView>
 
-        {/* Bottom CTA */}
+        {/* Bottom CTA — sobre, couleur accent (comme les CTA de séance) */}
         <View style={styles.bottomBar}>
-          <TouchableOpacity
-            style={styles.mainButton}
-            activeOpacity={0.9}
-            onPress={handleFinish}
-          >
-            <LinearGradient
-              colors={categoryConfig.gradient}
-              style={styles.mainButtonGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-            >
-              <Ionicons name="checkmark-circle" size={20} color="#fff" />
-              <Text style={styles.mainButtonText}>Finir la routine</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+          <Button label="Finir la routine" onPress={handleFinish} fullWidth size="lg" />
         </View>
       </View>
     </Screen>
@@ -649,89 +537,44 @@ const styles = StyleSheet.create({
     gap: 14,
   },
 
-  // HERO
-  heroCard: {
-    borderRadius: 20,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 6,
+  // HERO — langage BlockCard : accent bar + icône teintée, pas de gradient
+  heroCard: { padding: 0, flexDirection: "row", overflow: "hidden" },
+  heroAccentBar: {
+    width: 4,
+    borderTopLeftRadius: theme.radius.sm,
+    borderBottomLeftRadius: theme.radius.sm,
   },
-  heroGradient: {
-    padding: 18,
-  },
-  heroContent: {
-    gap: 14,
-  },
-  heroHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  heroInner: { flex: 1, padding: 14, gap: 10 },
+  heroHeaderRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  heroIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: "center",
+    justifyContent: "center",
   },
-  categoryPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.2)",
-  },
-  categoryText: {
+  heroCategoryLabel: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#fff",
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  heroBadgesRow: {
-    flexDirection: "row",
-    gap: 6,
-  },
-  heroBadge: {
+  heroTitle: { fontSize: 18, fontWeight: "800", color: palette.text, marginTop: 2 },
+  heroObjective: { fontSize: 13, color: palette.sub, lineHeight: 18, minHeight: 18 },
+  heroBadgesRow: { flexDirection: "row", gap: 6 },
+  heroChipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  metaChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.bgSoft,
   },
-  heroBadgeText: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  heroTitleBlock: {
-    gap: 6,
-  },
-  heroTitle: {
-    color: "#fff",
-    fontSize: 22,
-    fontWeight: "800",
-  },
-  heroObjective: {
-    color: "rgba(255,255,255,0.85)",
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  heroStatsRow: {
-    flexDirection: "row",
-    gap: 16,
-    marginTop: 4,
-  },
-  heroStat: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  heroStatText: {
-    fontSize: 12,
-    color: "rgba(255,255,255,0.9)",
-    fontWeight: "500",
-  },
+  metaChipText: { fontSize: 11, color: palette.sub, fontWeight: "500" },
 
   // Cards common
   cardTitle: {
@@ -808,19 +651,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  planBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: palette.accentSoft,
-    borderWidth: 1,
-    borderColor: palette.accent,
-  },
-  planBadgeText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: palette.accent,
-  },
   progressTrack: {
     height: 6,
     borderRadius: 999,
@@ -832,178 +662,63 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   stepsContainer: {
-    gap: 8,
-  },
-  stepRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    backgroundColor: palette.bgSoft,
-    borderWidth: 1,
-    borderColor: palette.border,
-  },
-  stepCheckbox: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: palette.border,
-    backgroundColor: palette.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stepIndexText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: palette.sub,
-  },
-  stepText: {
-    flex: 1,
-    fontSize: 13,
-    color: palette.text,
-    lineHeight: 20,
-  },
-  stepTextCompleted: {
-    color: palette.sub,
-    textDecorationLine: "line-through",
+    gap: 10,
   },
 
-  // Expectations
-  expectCard: {
-    padding: 14,
-    gap: 12,
-  },
-  expectHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  expectIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "rgba(245,158,11,0.15)",
+  // Steps — itemRow, identique au motif BlockCard
+  itemRow: { flexDirection: "row", gap: 8, alignItems: "flex-start" },
+  itemMain: { flex: 1, flexDirection: "row", gap: 8, alignItems: "flex-start" },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
     alignItems: "center",
     justifyContent: "center",
+    marginTop: 2,
   },
-  expectList: {
-    gap: 10,
+  itemName: { color: palette.text, fontSize: 14, fontWeight: "600" },
+  itemNameChecked: { textDecorationLine: "line-through", color: palette.sub },
+  itemMeta: { color: palette.sub, fontSize: 12, marginTop: 2 },
+  itemNote: { color: palette.sub, fontSize: 12, marginTop: 2, lineHeight: 16 },
+
+  // Points clés — coachTipBox (fond soft + barre gauche, kicker uppercase)
+  coachTipBox: {
+    gap: 6,
+    padding: 12,
+    borderLeftWidth: 3,
+    borderTopRightRadius: theme.radius.sm,
+    borderBottomRightRadius: theme.radius.sm,
   },
-  expectRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
+  coachTipHeader: { flexDirection: "row", alignItems: "center", gap: 5 },
+  coachTipKicker: {
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
-  expectText: {
-    flex: 1,
-    color: palette.sub,
-    fontSize: 13,
-    lineHeight: 18,
-  },
+  coachTipList: { gap: 4 },
+  coachTipText: { fontSize: 12, lineHeight: 16, color: palette.text },
 
   // Timer
   timerCard: {
-    padding: 16,
-    alignItems: "center",
+    padding: 14,
     gap: 12,
   },
-  timerHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  timerIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "rgba(6,182,212,0.15)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
   timerValue: {
-    fontSize: 48,
+    fontSize: 40,
     fontWeight: "800",
     letterSpacing: 2,
     color: palette.text,
     fontVariant: ["tabular-nums"],
+    textAlign: "center",
   },
   timerActions: {
     flexDirection: "row",
     gap: 10,
-    width: "100%",
   },
-  timerStartButton: {
-    flex: 2,
-    borderRadius: 12,
-    overflow: "hidden",
-    shadowColor: "#10b981",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  timerStartGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 14,
-  },
-  timerStartText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  timerResetButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.cardSoft,
-  },
-  timerResetText: {
-    color: palette.sub,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-
-  // Tags
-  tagsSection: {
-    gap: 8,
-  },
-  tagsSectionTitle: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: palette.sub,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  tagsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  tagPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    backgroundColor: palette.bgSoft,
-  },
-  tagPillText: {
-    fontSize: 11,
-    color: palette.sub,
-    fontWeight: "500",
-  },
+  timerButton: { flex: 1 },
 
   // Bottom CTA
   bottomBar: {
@@ -1013,26 +728,5 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: palette.borderSoft,
     backgroundColor: palette.bg,
-  },
-  mainButton: {
-    borderRadius: 14,
-    overflow: "hidden",
-    shadowColor: "#ff7a1a",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  mainButtonGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    paddingVertical: 16,
-  },
-  mainButtonText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 16,
   },
 });
