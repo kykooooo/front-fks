@@ -12,6 +12,7 @@ import { minSecToSeconds, secondsToMinSec } from "../testHelpers";
 const palette = theme.colors;
 
 type Props = {
+  title?: string;
   stepIndex: number;
   steps: StepId[];
   progressRatio: number;
@@ -25,6 +26,7 @@ type Props = {
 };
 
 export function EntryFormCard({
+  title = "Batterie en cours",
   stepIndex, steps, progressRatio, form,
   onFormChange, onNext, onPrev, onSkip, onHaptic, cardAnim,
 }: Props) {
@@ -72,7 +74,7 @@ export function EntryFormCard({
         <View style={styles.entryHeader}>
           <View style={styles.entryTitleRow}>
             <Ionicons name="play-circle-outline" size={18} color={palette.accent} />
-            <Text style={styles.sectionTitle}>Batterie en cours</Text>
+            <Text style={styles.sectionTitle}>{title}</Text>
           </View>
           <Badge label={`${Math.min(stepIndex + 1, steps.length)}/${steps.length}`} />
         </View>
@@ -168,7 +170,7 @@ export function EntryFormCard({
             size="sm"
             variant="ghost"
           />
-          {!isNotesStep ? (
+          {!isNotesStep && stepIndex < steps.length - 1 ? (
             <Button
               label="Passer"
               onPress={() => { onSkip(); onHaptic(); }}

@@ -1,6 +1,6 @@
 // screens/tests/testHelpers.ts
 import { format } from "date-fns";
-import { FIELD_BY_KEY, type FieldKey } from "./testConfig";
+import { FIELD_BY_KEY, FIELD_DEFS, type FieldKey, type TestEntry } from "./testConfig";
 
 export const formatEntryTimestamp = (ts?: number, pattern: string = "dd/MM") => {
   const num = Number(ts);
@@ -62,3 +62,55 @@ export const formatStatValueForField = (key: FieldKey, value: number): string =>
 
 /** true si l'unité ne doit PAS être affichée en suffixe (mm:ss est déjà auto-descriptif). */
 export const shouldHideUnitSuffix = (key: FieldKey): boolean => key === "run1km_s";
+
+// ─────────────────────── Historique unifié (Phase C) ───────────────────────
+// Avant : les stats/l'aperçu/l'historique filtraient par `playlist`, ce qui
+// "cachait" les valeurs dès que le cycle actif changeait (comparaison cassée).
+// Maintenant : une seule timeline, toutes entrées confondues — ces helpers
+// retrouvent la/les valeur(s) la/les plus récente(s) PAR CHAMP, indépendamment
+// de quelle entrée (donc quel cycle) les portait.
+
+export type FieldSample = { value: number; ts: number };
+
+const readFieldValue = (entry: TestEntry, key: FieldKey): number | null => {
+  const raw = (entry as any)[key];
+  if (raw === undefined || raw === null || raw === "") return null;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : null;
+};
+
+/**
+ * Pour chaque clé demandée, retourne jusqu'à `limit` valeurs les plus
+ * récentes (triées desc par `ts`), tous cycles/entrées confondus. `entries`
+ * n'a pas besoin d'être pré-triée : on trie nous-mêmes en interne.
+ */
+export function pickFieldSamples(
+  entries: TestEntry[],
+  keys: FieldKey[],
+  limit: number = 2
+): Partial<Record<FieldKey, FieldSample[]>> {
+  const sorted = [...entries].sort((a, b) => (Number(b?.ts) || 0) - (Number(a?.ts) || 0));
+  const result: Partial<Record<FieldKey, FieldSample[]>> = {};
+  for (const key of keys) {
+    const samples: FieldSample[] = [];
+    for (const entry of sorted) {
+      const value = readFieldValue(entry, key);
+      if (value === null) continue;
+      samples.push({ value, ts: Number(entry.ts) || 0 });
+      if (samples.length >= limit) break;
+    }
+    if (samples.length > 0) result[key] = samples;
+  }
+  return result;
+}
+
+/** Clés (dans l'ordre de FIELD_DEFS) ayant au moins une valeur dans `entries`. */
+export function fieldKeysWithData(entries: TestEntry[]): FieldKey[] {
+  const set = new Set<FieldKey>();
+  for (const entry of entries) {
+    for (const def of FIELD_DEFS) {
+      if (readFieldValue(entry, def.key) !== null) set.add(def.key);
+    }
+  }
+  return FIELD_DEFS.map((def) => def.key).filter((key) => set.has(key));
+}

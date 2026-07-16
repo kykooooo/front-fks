@@ -1,15 +1,18 @@
 // screens/tests/__tests__/testConfig.test.ts
-// Composition de batterie selon le matériel déclaré et la catégorie d'âge —
-// fonctions pures, aucune dépendance UI.
+// Batterie unique (Phase C) : le socle est constant (3 tests, quel que soit
+// le cycle actif) ; seule la section "Aller plus loin" varie selon le
+// matériel déclaré et la catégorie d'âge — fonctions pures, aucune dépendance UI.
 
 import {
-  getPlaylistFields,
+  CORE_FIELD_KEYS,
+  CORE_FIELD_WHY,
+  OPTIONAL_FIELD_KEYS,
+  getOptionalFields,
   hasWeightsEquipment,
-  PLAYLIST_FIELDS_BASE,
-  EQUIPMENT_FIELDS,
-  SENIOR_EQUIPMENT_FIELDS,
+  EQUIPMENT_OPTIONAL_FIELD_KEYS,
+  SENIOR_EQUIPMENT_OPTIONAL_FIELD_KEYS,
   WEIGHT_EQUIPMENT_IDS,
-  type PlaylistId,
+  FIELD_DEFS,
 } from "../testConfig";
 
 describe("hasWeightsEquipment", () => {
@@ -44,84 +47,90 @@ describe("hasWeightsEquipment", () => {
   });
 });
 
-describe("getPlaylistFields", () => {
-  const playlists: PlaylistId[] = ["fondation", "force", "explosivite", "endurance", "saison"];
+describe("CORE_FIELD_KEYS — le socle est constant", () => {
+  test("exactement 3 tests, toujours les mêmes", () => {
+    expect(CORE_FIELD_KEYS).toEqual(["broadJumpCm", "sprint10s", "endurance6min_m"]);
+  });
 
-  test("sans matériel, aucune playlist n'exige de matériel de salle (= batterie socle)", () => {
-    for (const playlist of playlists) {
-      const fields = getPlaylistFields(playlist, { hasWeightsEquipment: false, ageCategory: null });
-      expect(fields).toEqual(PLAYLIST_FIELDS_BASE[playlist]);
-      expect(fields).not.toContain("gobletKg");
-      expect(fields).not.toContain("splitKg");
-      expect(fields).not.toContain("trapbar3rmKg");
+  test("aucun des 3 tests socle ne nécessite de matériel", () => {
+    const materielFields = new Set([
+      ...EQUIPMENT_OPTIONAL_FIELD_KEYS,
+      ...SENIOR_EQUIPMENT_OPTIONAL_FIELD_KEYS,
+    ]);
+    for (const key of CORE_FIELD_KEYS) {
+      expect(materielFields.has(key)).toBe(false);
     }
   });
 
-  test("le socle ne contient jamais Yo-Yo IR1 (retiré des parcours par défaut)", () => {
-    for (const playlist of playlists) {
-      const fields = getPlaylistFields(playlist, { hasWeightsEquipment: true, ageCategory: "Senior" });
-      expect(fields).not.toContain("yoYoIR1_m");
+  test("chaque test socle a une ligne 'pourquoi' non vide", () => {
+    for (const key of CORE_FIELD_KEYS) {
+      expect(CORE_FIELD_WHY[key]).toEqual(expect.any(String));
+      expect(CORE_FIELD_WHY[key].length).toBeGreaterThan(0);
     }
   });
 
-  test("avec matériel, ajoute goblet/split pour fondation et force", () => {
-    const fondation = getPlaylistFields("fondation", { hasWeightsEquipment: true, ageCategory: null });
-    expect(fondation).toEqual(
+  test("le socle n'apparaît jamais dans la liste des tests optionnels (pas de doublon)", () => {
+    for (const key of CORE_FIELD_KEYS) {
+      expect(OPTIONAL_FIELD_KEYS).not.toContain(key);
+    }
+  });
+});
+
+describe("getOptionalFields — indépendant de tout cycle/playlist", () => {
+  test("sans matériel, la section optionnelle n'exige jamais de matériel de salle", () => {
+    const fields = getOptionalFields({ hasWeightsEquipment: false, ageCategory: null });
+    expect(fields).toEqual(OPTIONAL_FIELD_KEYS);
+    expect(fields).not.toContain("gobletKg");
+    expect(fields).not.toContain("splitKg");
+    expect(fields).not.toContain("trapbar3rmKg");
+  });
+
+  test("la section optionnelle ne contient jamais Yo-Yo IR1 (retiré, Phase A)", () => {
+    const fields = getOptionalFields({ hasWeightsEquipment: true, ageCategory: "Senior" });
+    expect(fields).not.toContain("yoYoIR1_m");
+  });
+
+  test("avec matériel, ajoute le module salle (goblet + split)", () => {
+    const fields = getOptionalFields({ hasWeightsEquipment: true, ageCategory: null });
+    expect(fields).toEqual(
       expect.arrayContaining(["gobletKg", "gobletReps", "splitKg", "splitReps"])
     );
-    const force = getPlaylistFields("force", { hasWeightsEquipment: true, ageCategory: null });
-    expect(force).toEqual(expect.arrayContaining(["gobletKg", "gobletReps", "splitKg", "splitReps"]));
   });
 
   test("avec matériel mais sans catégorie senior, jamais de trap bar 3RM", () => {
     for (const ageCategory of [null, "U13", "U15", "U17", "U18"] as const) {
-      const force = getPlaylistFields("force", { hasWeightsEquipment: true, ageCategory });
-      expect(force).not.toContain("trapbar3rmKg");
-      const explo = getPlaylistFields("explosivite", { hasWeightsEquipment: true, ageCategory });
-      expect(explo).not.toContain("trapbar3rmKg");
+      const fields = getOptionalFields({ hasWeightsEquipment: true, ageCategory });
+      expect(fields).not.toContain("trapbar3rmKg");
     }
   });
 
   test("trap bar 3RM seulement si Senior ET matériel", () => {
-    expect(getPlaylistFields("force", { hasWeightsEquipment: true, ageCategory: "Senior" })).toContain(
+    expect(getOptionalFields({ hasWeightsEquipment: true, ageCategory: "Senior" })).toContain(
       "trapbar3rmKg"
     );
-    expect(getPlaylistFields("force", { hasWeightsEquipment: false, ageCategory: "Senior" })).not.toContain(
+    expect(getOptionalFields({ hasWeightsEquipment: false, ageCategory: "Senior" })).not.toContain(
       "trapbar3rmKg"
     );
   });
 
-  test("explosivité ajoute split squat (kg + reps) seulement avec matériel", () => {
-    const withEquip = getPlaylistFields("explosivite", { hasWeightsEquipment: true, ageCategory: null });
-    expect(withEquip).toEqual(expect.arrayContaining(["splitKg", "splitReps"]));
-    const withoutEquip = getPlaylistFields("explosivite", { hasWeightsEquipment: false, ageCategory: null });
-    expect(withoutEquip).not.toContain("splitKg");
-    expect(withoutEquip).not.toContain("splitReps");
+  test("la liste de base ne dépend d'aucun cycle actif (même résultat quel que soit le profil hors matériel/âge)", () => {
+    const withoutEquip = getOptionalFields({ hasWeightsEquipment: false, ageCategory: "Senior" });
+    expect(withoutEquip).toEqual(OPTIONAL_FIELD_KEYS);
   });
+});
 
-  test("endurance et saison ne gagnent jamais de champ force (pas de coloration force prévue)", () => {
-    for (const ageCategory of [null, "Senior"] as const) {
-      const endurance = getPlaylistFields("endurance", { hasWeightsEquipment: true, ageCategory });
-      expect(endurance).toEqual(PLAYLIST_FIELDS_BASE.endurance);
-      const saison = getPlaylistFields("saison", { hasWeightsEquipment: true, ageCategory });
-      expect(saison).toEqual(PLAYLIST_FIELDS_BASE.saison);
-    }
-  });
-
-  test("le socle de chaque playlist ne contient aucun champ nécessitant du matériel", () => {
-    const materielFields = new Set([
-      "gobletKg",
-      "gobletReps",
-      "splitKg",
-      "splitReps",
-      "trapbar3rmKg",
-      ...Object.values(EQUIPMENT_FIELDS).flat(),
-      ...Object.values(SENIOR_EQUIPMENT_FIELDS).flat(),
+describe("Complétude — chaque test connu est soit socle, soit dans une des listes optionnelles (ou volontairement retiré)", () => {
+  test("FIELD_DEFS = socle ∪ optionnel ∪ salle ∪ salle senior ∪ Yo-Yo (seule exception retirée)", () => {
+    const covered = new Set<string>([
+      ...CORE_FIELD_KEYS,
+      ...OPTIONAL_FIELD_KEYS,
+      ...EQUIPMENT_OPTIONAL_FIELD_KEYS,
+      ...SENIOR_EQUIPMENT_OPTIONAL_FIELD_KEYS,
     ]);
-    for (const playlist of playlists) {
-      for (const key of PLAYLIST_FIELDS_BASE[playlist]) {
-        expect(materielFields.has(key)).toBe(false);
-      }
+    const RETIRED = new Set(["yoYoIR1_m"]);
+    for (const def of FIELD_DEFS) {
+      const isCovered = covered.has(def.key) || RETIRED.has(def.key);
+      expect(isCovered).toBe(true);
     }
   });
 });

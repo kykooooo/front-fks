@@ -23,6 +23,20 @@ export const GROUP_CONFIG: Record<string, GroupConfig> = {
 export const getGroupConfig = (group: string): GroupConfig =>
   GROUP_CONFIG[group] ?? { icon: "ellipse-outline", tint: "#6b7280", tintSoft: "rgba(107,114,128,0.12)" };
 
+// Titres de section pour grouper des champs par famille (Overview + section
+// "Aller plus loin"). Un seul endroit pour ce libellé (avant dupliqué inline).
+export const GROUP_TITLES: Record<FieldConfig["group"], string> = {
+  sauts: "Sauts / Explosivité",
+  vitesse: "Vitesse linéaire",
+  endurance: "Endurance aérobie",
+  force: "Force repère",
+  agilite: "Agilité / COD",
+  power: "Puissance",
+};
+
+// PlaylistId reste utile uniquement pour taguer/lire le champ `playlist` d'une
+// entrée historique (quel cycle était actif au moment du test) — CE N'EST PLUS
+// UN FILTRE ni un sélecteur de batterie (Phase C : batterie unique pour tous).
 export type PlaylistId =
   | "fondation"
   | "force"
@@ -254,6 +268,8 @@ export const FIELD_BY_KEY = FIELD_DEFS.reduce<Record<FieldKey, FieldConfig>>((ac
   return acc;
 }, {} as Record<FieldKey, FieldConfig>);
 
+// Label de provenance pour une entrée historique (cf. `TestEntry.playlist`) —
+// affichage informatif seul (tag discret dans l'historique), plus un sélecteur.
 export const PLAYLISTS: Record<PlaylistId, { label: string; subtitle: string }> = {
   fondation: { label: "Fondation", subtitle: "Base physique / S&C + endurance" },
   force: { label: "Force", subtitle: "Force max + charges lourdes" },
@@ -262,19 +278,53 @@ export const PLAYLISTS: Record<PlaylistId, { label: string; subtitle: string }> 
   saison: { label: "Saison / Maintien", subtitle: "Maintenir la forme sans se cramer" },
 };
 
-// ─────────────────────────── Composition de batterie ───────────────────────────
-// Socle "sans matériel" : mesurable avec un téléphone + un mètre/des repères.
-// AUCUNE playlist ne doit imposer de matériel de salle par défaut (broadJump,
-// sprints, endurance 6 min sont réalisables par n'importe quel joueur, partout).
-// Chaque playlist garde sa coloration au-delà du socle (ex. explosivité ajoute
-// CMJ + sprint 30 m ; endurance ajoute le 1 km ; saison ajoute le CMJ).
-export const PLAYLIST_FIELDS_BASE: Record<PlaylistId, FieldKey[]> = {
-  fondation: ["broadJumpCm", "sprint10s", "sprint20s", "endurance6min_m"],
-  force: ["broadJumpCm", "sprint10s", "sprint20s", "endurance6min_m"],
-  explosivite: ["broadJumpCm", "cmjCm", "sprint10s", "sprint30s", "endurance6min_m"],
-  endurance: ["broadJumpCm", "sprint10s", "sprint20s", "endurance6min_m", "run1km_s"],
-  saison: ["broadJumpCm", "sprint10s", "sprint20s", "endurance6min_m", "cmjCm"],
+// ─────────────────────────── Batterie unique (Phase C) ───────────────────────────
+// Décision produit (juillet 2026) : les batteries PAR CYCLE créaient de la friction
+// et fragmentaient l'historique (changer de cycle "cachait" les anciennes valeurs).
+// Une seule batterie socle pour tous, quel que soit le cycle actif + une section
+// "Aller plus loin" optionnelle pour le reste des tests existants.
+
+/**
+ * Le socle : 3 tests, identiques pour tous, ~15 min, mesurables sans matériel.
+ * Ordre = ordre d'exécution conseillé (puissance/vitesse à froid, endurance en
+ * dernier — le test aérobie fatigue et ne doit pas polluer les deux premiers).
+ */
+export const CORE_FIELD_KEYS = [
+  "broadJumpCm",
+  "sprint10s",
+  "endurance6min_m",
+] as const satisfies readonly FieldKey[];
+
+/** Une ligne "pourquoi" par test socle — coach honnête, jamais de blabla. */
+export const CORE_FIELD_WHY: Record<(typeof CORE_FIELD_KEYS)[number], string> = {
+  broadJumpCm: "Ta puissance de jambes, mesurable sans le moindre matériel.",
+  sprint10s: "Ta vitesse, la qualité n°1 en foot — ce chrono sert de référence dans tes séances.",
+  endurance6min_m: "L'IA s'en sert pour calibrer les allures de course de tes séances (ta VMA).",
 };
+
+/** Déroulé conseillé du socle — fixe, identique pour tous (plus de variante par cycle). */
+export const CORE_PLAN: string[] = [
+  "Échauffement structuré (mobilité + activation + lignes droites) — 8-10 min",
+  "Saut en longueur : 3 essais, garde le meilleur",
+  "Sprint 10 m : 2-3 essais qualité, repos 2-3 min entre chaque",
+  "Pause 5-6 min (hydratation, récupération)",
+  "Endurance 6 min : allure la plus rapide et régulière que tu peux tenir",
+];
+
+/**
+ * Section "Aller plus loin" : tous les autres tests, repliés par défaut. Le
+ * Yo-Yo IR1 reste retiré (décision Phase A) — jamais proposé, même ici.
+ */
+export const OPTIONAL_FIELD_KEYS: FieldKey[] = [
+  "sprint20s",
+  "sprint30s",
+  "cmjCm",
+  "tripleJumpCm",
+  "lateralBoundCm",
+  "tTest_s",
+  "test505_s",
+  "run1km_s",
+];
 
 /**
  * IDs de matériel (cf. `gymEquipmentOptions` / `homeEquipmentOptions` dans
@@ -303,85 +353,41 @@ export const hasWeightsEquipment = (
   return all.some((id) => (WEIGHT_EQUIPMENT_IDS as readonly string[]).includes(id));
 };
 
-// Ajoutés SEULEMENT si le profil indique des charges disponibles (module salle optionnel).
-export const EQUIPMENT_FIELDS: Partial<Record<PlaylistId, FieldKey[]>> = {
-  fondation: ["gobletKg", "gobletReps", "splitKg", "splitReps"],
-  force: ["gobletKg", "gobletReps", "splitKg", "splitReps"],
-  explosivite: ["splitKg", "splitReps"],
-};
+// Ajoutés SEULEMENT si le profil indique des charges disponibles (module salle
+// optionnel, à l'intérieur de la section "Aller plus loin").
+export const EQUIPMENT_OPTIONAL_FIELD_KEYS: FieldKey[] = [
+  "gobletKg",
+  "gobletReps",
+  "splitKg",
+  "splitReps",
+];
 
 // Ajoutés SEULEMENT si le profil indique des charges ET la catégorie Senior.
 // Jamais U13/U15/U18, quel que soit le matériel déclaré (le moteur plafonne déjà
 // la force jeune au poids du corps — cf. AGE_CATEGORY_CAPS backend) ; jamais non
 // plus si la catégorie d'âge est inconnue (comportement conservateur).
-export const SENIOR_EQUIPMENT_FIELDS: Partial<Record<PlaylistId, FieldKey[]>> = {
-  force: ["trapbar3rmKg"],
-  explosivite: ["trapbar3rmKg"],
-};
+export const SENIOR_EQUIPMENT_OPTIONAL_FIELD_KEYS: FieldKey[] = ["trapbar3rmKg"];
 
-export type PlaylistFieldsOptions = {
+export type OptionalFieldsOptions = {
   hasWeightsEquipment: boolean;
   ageCategory: AgeCategory | null;
 };
 
-/** Compose la batterie active d'une playlist selon le matériel déclaré et l'âge. */
-export function getPlaylistFields(
-  playlist: PlaylistId,
-  opts: PlaylistFieldsOptions
-): FieldKey[] {
-  const fields = [...(PLAYLIST_FIELDS_BASE[playlist] ?? [])];
+/**
+ * Compose la section "Aller plus loin" selon le matériel déclaré et l'âge.
+ * Le socle (CORE_FIELD_KEYS) n'est JAMAIS affecté par ces options : il est
+ * constant, quel que soit le profil ou le cycle actif.
+ */
+export function getOptionalFields(opts: OptionalFieldsOptions): FieldKey[] {
+  const fields = [...OPTIONAL_FIELD_KEYS];
   if (opts.hasWeightsEquipment) {
-    fields.push(...(EQUIPMENT_FIELDS[playlist] ?? []));
+    fields.push(...EQUIPMENT_OPTIONAL_FIELD_KEYS);
     if (opts.ageCategory === "Senior") {
-      fields.push(...(SENIOR_EQUIPMENT_FIELDS[playlist] ?? []));
+      fields.push(...SENIOR_EQUIPMENT_OPTIONAL_FIELD_KEYS);
     }
   }
   return fields;
 }
-
-/**
- * Compat : batterie "par défaut" (sans matériel, âge inconnu) — pour les rares
- * call sites qui n'ont pas le contexte profil sous la main. Préférer
- * `getPlaylistFields()` partout où le profil (équipement/âge) est disponible.
- */
-export const PLAYLIST_FIELDS: Record<PlaylistId, FieldKey[]> = PLAYLIST_FIELDS_BASE;
-
-export const PLAYLIST_PLAN: Record<PlaylistId, string[]> = {
-  fondation: [
-    "Échauffement structuré (mobilité + activation + lignes droites)",
-    "Sauts : saut en longueur arrêté",
-    "Vitesse : 10-20 m",
-    "Pause 5-8 min (hydratation)",
-    "Endurance : 6 min",
-    "Si tu as des charges chez toi ou en salle : goblet squat ou split squat en repère",
-  ],
-  force: [
-    "Échauffement structuré (mobilité + activation + lignes droites)",
-    "Sauts, vitesse et endurance : socle sans matériel (comme les autres playlists)",
-    "Si tu as des charges : goblet/split squat en repère",
-    "Si tu es sénior ET as accès à une salle : trap bar 3RM (test avancé, jamais chez les jeunes)",
-  ],
-  explosivite: [
-    "Échauffement nerveux : gammes + 3 lignes droites",
-    "Sauts : CMJ + saut en longueur arrêté",
-    "Vitesse : 10-30 m (qualité max)",
-    "Pause 6-8 min",
-    "Si tu as des charges : split squat en repère (+ trap bar 3RM si sénior et salle)",
-  ],
-  endurance: [
-    "Échauffement progressif 10-12 min",
-    "Sauts, vitesse et 6 min : socle sans matériel",
-    "Récupération 6-8 min",
-    "Test principal : 1 km chrono (temps en min:sec)",
-  ],
-  saison: [
-    "Échauffement progressif 8-10 min",
-    "Test endurance : 6 min",
-    "Pause 5-6 min",
-    "Test vitesse : 10-20 m",
-    "Test puissance : CMJ",
-  ],
-};
 
 export const isPlaylistId = (value: any): value is PlaylistId =>
   value === "fondation" ||

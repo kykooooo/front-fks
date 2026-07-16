@@ -159,21 +159,32 @@ const TEST_FIELDS: {
   { key: "gobletKg", label: "Goblet Squat", unit: "kg" },
 ];
 
+/**
+ * Historique unifié (Phase C) : plus de batteries par cycle, donc plus de
+ * filtre par playlist ici. Pour CHAQUE test, on prend ses 2 valeurs les plus
+ * récentes, tous cycles/entrées confondus (avant : la comparaison se limitait
+ * aux 2 dernières entrées PARTAGEANT la playlist de la plus récente — changer
+ * de cycle actif "cassait" la comparaison avant/après).
+ */
 function computeTestComparisons(tests: TestEntry[]): TestComparison[] {
   if (tests.length < 2) return [];
   const sorted = [...tests].sort((a, b) => b.ts - a.ts);
-  const latest = sorted[0];
-  const latestPlaylist = latest.playlist ?? "fondation";
-  const previous = sorted
-    .slice(1)
-    .find((e) => (e.playlist ?? "fondation") === latestPlaylist);
-  if (!previous) return [];
   const comparisons: TestComparison[] = [];
 
   for (const field of TEST_FIELDS) {
-    const before = previous[field.key];
-    const after = latest[field.key];
-    if (typeof before === "number" && typeof after === "number" && before > 0 && after > 0) {
+    let after: number | undefined;
+    let before: number | undefined;
+    for (const entry of sorted) {
+      const raw = entry[field.key];
+      if (typeof raw !== "number" || !(raw > 0)) continue;
+      if (after === undefined) {
+        after = raw;
+      } else {
+        before = raw;
+        break;
+      }
+    }
+    if (typeof before === "number" && typeof after === "number") {
       const diff = after - before;
       const improved = field.lowerIsBetter ? diff < 0 : diff > 0;
       comparisons.push({
@@ -595,7 +606,7 @@ export default function ProgressScreen() {
               <Text style={styles.sectionTitle}>Évolution tests</Text>
             </View>
             <Text style={styles.testsSub}>
-              Deux dernières batteries du même cycle
+              Dernières valeurs connues, tous tests confondus
             </Text>
             {testComparisons.map((tc) => {
               const isMinSec = tc.special === "minsec";

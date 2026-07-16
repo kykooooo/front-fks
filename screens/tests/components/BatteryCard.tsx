@@ -1,6 +1,7 @@
 // screens/tests/components/BatteryCard.tsx
-// Langage BlockCard : itemRows (nom + protocole en note + statut en Badge),
-// barre de progression sobre, CTA via Button du design system.
+// "Ta batterie" — le socle unique (3 tests, identiques pour tous, quel que
+// soit le cycle actif). Langage BlockCard : itemRows (nom + "pourquoi" en
+// note + statut en Badge), barre de progression sobre, CTA du design system.
 import React from "react";
 import { View, Text, StyleSheet, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,17 +10,16 @@ import { Card } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
 import { Button } from "../../../components/ui/Button";
 import {
-  FIELD_BY_KEY, PLAYLISTS, PLAYLIST_PLAN, getGroupConfig,
-  type FieldKey, type PlaylistId, type TestEntry,
+  FIELD_BY_KEY, CORE_FIELD_WHY, CORE_PLAN, getGroupConfig,
+  type FieldKey, type TestEntry,
 } from "../testConfig";
 import { formatEntryValue, shouldHideUnitSuffix } from "../testHelpers";
 
 const palette = theme.colors;
 
 type Props = {
-  activeKeys: FieldKey[];
+  coreKeys: readonly FieldKey[];
   form: Partial<TestEntry>;
-  selectedPlaylist: PlaylistId;
   completedCount: number;
   totalTests: number;
   progressRatio: number;
@@ -31,7 +31,7 @@ type Props = {
 };
 
 export function BatteryCard({
-  activeKeys, form, selectedPlaylist,
+  coreKeys, form,
   completedCount, totalTests, progressRatio, hasAnyInput,
   onStart, onReset, onHaptic, cardAnim,
 }: Props) {
@@ -54,13 +54,13 @@ export function BatteryCard({
           <View style={styles.batteryTitleRow}>
             <Ionicons name="list-outline" size={16} color={palette.accent} />
             <View>
-              <Text style={styles.sectionTitle}>Batterie active</Text>
+              <Text style={styles.sectionTitle}>Ta batterie</Text>
               <Text style={styles.sectionSub}>
                 {completedCount}/{totalTests} tests renseignés
               </Text>
             </View>
           </View>
-          <Badge label={PLAYLISTS[selectedPlaylist].label} />
+          <Badge label="~15 min" />
         </View>
         <View style={styles.batteryProgressTrack}>
           <View
@@ -72,7 +72,7 @@ export function BatteryCard({
         </View>
 
         <View style={styles.batteryList}>
-          {activeKeys.map((key, idx) => {
+          {coreKeys.map((key, idx) => {
             const field = FIELD_BY_KEY[key];
             const val = (form as any)[key];
             const done =
@@ -103,7 +103,7 @@ export function BatteryCard({
                 <View style={{ flex: 1 }}>
                   <Text style={styles.itemName}>{field.label}</Text>
                   <Text style={styles.itemNote} numberOfLines={2}>
-                    {field.protocol}
+                    {(CORE_FIELD_WHY as Record<string, string>)[key] ?? field.protocol}
                   </Text>
                 </View>
                 <Badge label={statusLabel} tone={done ? "ok" : "default"} />
@@ -134,16 +134,16 @@ export function BatteryCard({
           ) : null}
         </View>
 
-        {/* Déroulé conseillé — repris de l'ex-TestPlanCard : reste utile pour
-            l'échauffement et les temps de repos entre blocs (pas redondant avec
-            le protocole par test ci-dessus, qui ne couvre que l'essai lui-même). */}
+        {/* Déroulé conseillé — fixe désormais (plus de variante par cycle) :
+            reste utile pour l'échauffement et les temps de repos entre tests
+            (pas redondant avec le protocole détaillé affiché pendant la saisie). */}
         <View style={styles.planBox}>
           <View style={styles.planHeader}>
             <Ionicons name="footsteps-outline" size={12} color={palette.accent} />
             <Text style={styles.planKicker}>Déroulé conseillé</Text>
           </View>
           <View style={styles.planList}>
-            {PLAYLIST_PLAN[selectedPlaylist].map((step) => (
+            {CORE_PLAN.map((step) => (
               <Text key={step} style={styles.planText}>
                 {'•'} {step}
               </Text>

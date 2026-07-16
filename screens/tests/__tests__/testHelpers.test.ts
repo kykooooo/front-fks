@@ -9,7 +9,10 @@ import {
   formatEntryValue,
   formatStatValueForField,
   shouldHideUnitSuffix,
+  pickFieldSamples,
+  fieldKeysWithData,
 } from "../testHelpers";
+import type { TestEntry } from "../testConfig";
 
 describe("secondsToMinSec / minSecToSeconds", () => {
   test("round-trip simple", () => {
@@ -82,5 +85,67 @@ describe("shouldHideUnitSuffix", () => {
     expect(shouldHideUnitSuffix("run1km_s")).toBe(true);
     expect(shouldHideUnitSuffix("sprint10s")).toBe(false);
     expect(shouldHideUnitSuffix("broadJumpCm")).toBe(false);
+  });
+});
+
+// ─────────────────────── Historique unifié (Phase C) ───────────────────────
+// Avant : les entrées étaient filtrées par playlist, ce qui "cachait" les
+// valeurs des autres cycles. Ces tests vérifient que pickFieldSamples /
+// fieldKeysWithData lisent bien TOUTES les entrées, quel que soit leur champ
+// `playlist` (fondation, force, ou même absent).
+
+describe("pickFieldSamples", () => {
+  const entries: TestEntry[] = [
+    { ts: 300, playlist: "force", broadJumpCm: 250 },
+    { ts: 200, playlist: "fondation", sprint10s: 1.9 },
+    { ts: 100, playlist: "endurance", broadJumpCm: 230, sprint10s: 2.0 },
+  ];
+
+  test("retourne les valeurs les plus récentes par champ, indépendamment de la playlist stockée", () => {
+    const samples = pickFieldSamples(entries, ["broadJumpCm", "sprint10s"], 2);
+    expect(samples.broadJumpCm).toEqual([
+      { value: 250, ts: 300 },
+      { value: 230, ts: 100 },
+    ]);
+    expect(samples.sprint10s).toEqual([
+      { value: 1.9, ts: 200 },
+      { value: 2.0, ts: 100 },
+    ]);
+  });
+
+  test("n'entre pas les entrées non triées en entrée (trie lui-même)", () => {
+    const shuffled = [entries[1], entries[2], entries[0]];
+    const samples = pickFieldSamples(shuffled, ["broadJumpCm"], 1);
+    expect(samples.broadJumpCm).toEqual([{ value: 250, ts: 300 }]);
+  });
+
+  test("respecte la limite demandée", () => {
+    const samples = pickFieldSamples(entries, ["broadJumpCm"], 1);
+    expect(samples.broadJumpCm).toEqual([{ value: 250, ts: 300 }]);
+  });
+
+  test("clé jamais renseignée -> absente du résultat", () => {
+    const samples = pickFieldSamples(entries, ["cmjCm"], 2);
+    expect(samples.cmjCm).toBeUndefined();
+  });
+
+  test("liste vide -> objet vide", () => {
+    expect(pickFieldSamples([], ["broadJumpCm"], 2)).toEqual({});
+  });
+});
+
+describe("fieldKeysWithData", () => {
+  test("retourne uniquement les clés ayant au moins une valeur, tous cycles confondus", () => {
+    const entries: TestEntry[] = [
+      { ts: 200, playlist: "force", gobletKg: 40 },
+      { ts: 100, playlist: "fondation", broadJumpCm: 230 },
+    ];
+    const keys = fieldKeysWithData(entries);
+    expect(keys).toEqual(expect.arrayContaining(["broadJumpCm", "gobletKg"]));
+    expect(keys).not.toContain("sprint10s");
+  });
+
+  test("liste vide -> aucune clé", () => {
+    expect(fieldKeysWithData([])).toEqual([]);
   });
 });
