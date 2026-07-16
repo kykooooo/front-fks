@@ -29,7 +29,6 @@ import { PlaylistSelector } from "./tests/components/PlaylistSelector";
 import { EntryFormCard } from "./tests/components/EntryFormCard";
 import { BatteryCard } from "./tests/components/BatteryCard";
 import { StatisticsCard, type SummaryStat } from "./tests/components/StatisticsCard";
-import { TestPlanCard } from "./tests/components/TestPlanCard";
 import { OverviewCard } from "./tests/components/OverviewCard";
 import { HistorySection } from "./tests/components/HistorySection";
 import { CycleTimingBanner } from "./tests/components/CycleTimingBanner";
@@ -67,10 +66,10 @@ export default function TestsScreen() {
     useState<PlaylistId | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
 
-  // Animations (0: bandeau cycle, 1: playlist, 2: battery/entry, 3: stats, 4: plan, 5: overview, 6: history)
+  // Animations (0: bandeau cycle, 1: playlist, 2: battery/entry, 3: stats, 4: overview, 5: history)
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
-  const cardAnims = useRef([0, 1, 2, 3, 4, 5, 6].map(() => new Animated.Value(0))).current;
+  const cardAnims = useRef([0, 1, 2, 3, 4, 5].map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -392,17 +391,12 @@ export default function TestsScreen() {
               cardAnim={cardAnims[3]}
             />
 
-            <TestPlanCard
-              selectedPlaylist={selectedPlaylist}
-              cardAnim={cardAnims[4]}
-            />
-
             {lastEntry && (
               <OverviewCard
                 lastEntry={lastEntry}
                 lastTwo={lastTwo}
                 groupedFields={groupedFields}
-                cardAnim={cardAnims[5]}
+                cardAnim={cardAnims[4]}
               />
             )}
           </>
@@ -413,7 +407,7 @@ export default function TestsScreen() {
             entriesForPlaylist={entriesForPlaylist}
             selectedPlaylist={selectedPlaylist}
             activeKeys={activeKeys}
-            cardAnim={cardAnims[6]}
+            cardAnim={cardAnims[5]}
           />
         )}
 

@@ -1,9 +1,11 @@
 // screens/tests/components/StatisticsCard.tsx
+// Langage commun : SectionHeader (hors Card) + Card surface + rangées de pills sobres.
 import React from "react";
 import { View, Text, StyleSheet, Animated } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
+import { Badge } from "../../../components/ui/Badge";
+import { SectionHeader } from "../../../components/ui/SectionHeader";
 import { formatStatValueForField, shouldHideUnitSuffix } from "../testHelpers";
 import type { FieldKey } from "../testConfig";
 
@@ -41,94 +43,49 @@ export function StatisticsCard({ stats, entriesCount, cardAnim }: Props) {
         ],
       }}
     >
-      <Card variant="surface" style={styles.summaryCard}>
-        <View style={styles.summaryHeader}>
-          <View style={styles.summaryTitleRow}>
-            <Ionicons name="stats-chart-outline" size={16} color="#06b6d4" />
-            <View>
-              <Text style={styles.sectionTitle}>Statistiques</Text>
-              <Text style={styles.sectionSub}>
-                Sur {entriesCount} batterie(s)
-              </Text>
-            </View>
-          </View>
-          <View style={styles.summaryBadge}>
-            <Text style={styles.summaryBadgeText}>Stats</Text>
-          </View>
-        </View>
-
-        <View style={styles.summaryList}>
-          {stats.map((item) => {
-            const hideUnit = shouldHideUnitSuffix(item.key);
-            return (
-              <View key={item.key} style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>{item.label}</Text>
-                <View style={styles.summaryValues}>
-                  <View style={styles.summaryPill}>
-                    <Text style={styles.summaryPillLabel}>Moy.</Text>
-                    <Text style={styles.summaryPillValue}>
-                      {formatStatValueForField(item.key, item.avg)}
-                      {item.unit && !hideUnit ? ` ${item.unit}` : ""}
-                    </Text>
-                  </View>
-                  <View style={[styles.summaryPill, styles.summaryPillBest]}>
-                    <Text style={styles.summaryPillLabel}>Meilleur</Text>
-                    <Text style={styles.summaryPillValue}>
-                      {formatStatValueForField(item.key, item.best)}
-                      {item.unit && !hideUnit ? ` ${item.unit}` : ""}
-                    </Text>
+      <View style={styles.section}>
+        <SectionHeader
+          title="Statistiques"
+          right={<Badge label={`${entriesCount} relevé${entriesCount > 1 ? "s" : ""}`} />}
+        />
+        <Card variant="surface" style={styles.summaryCard}>
+          <View style={styles.summaryList}>
+            {stats.map((item) => {
+              const hideUnit = shouldHideUnitSuffix(item.key);
+              return (
+                <View key={item.key} style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>{item.label}</Text>
+                  <View style={styles.summaryValues}>
+                    <View style={styles.summaryPill}>
+                      <Text style={styles.summaryPillLabel}>Moy.</Text>
+                      <Text style={styles.summaryPillValue}>
+                        {formatStatValueForField(item.key, item.avg)}
+                        {item.unit && !hideUnit ? ` ${item.unit}` : ""}
+                      </Text>
+                    </View>
+                    <View style={[styles.summaryPill, styles.summaryPillBest]}>
+                      <Text style={styles.summaryPillLabel}>Meilleur</Text>
+                      <Text style={styles.summaryPillValue}>
+                        {formatStatValueForField(item.key, item.best)}
+                        {item.unit && !hideUnit ? ` ${item.unit}` : ""}
+                      </Text>
+                    </View>
                   </View>
                 </View>
-              </View>
-            );
-          })}
-        </View>
-      </Card>
+              );
+            })}
+          </View>
+        </Card>
+      </View>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
+  section: { gap: 10 },
   summaryCard: {
-    borderRadius: 16,
+    borderRadius: theme.radius.lg,
     padding: 14,
-    gap: 12,
-  },
-  sectionTitle: {
-    color: palette.text,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  sectionSub: {
-    color: palette.sub,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  summaryHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 10,
-  },
-  summaryTitleRow: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-  },
-  summaryBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    backgroundColor: palette.cardSoft,
-  },
-  summaryBadgeText: {
-    color: palette.sub,
-    fontSize: 10,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
   },
   summaryList: {
     gap: 10,
@@ -149,7 +106,7 @@ const styles = StyleSheet.create({
   summaryPill: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 12,
+    borderRadius: theme.radius.md,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.cardSoft,

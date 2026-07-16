@@ -1,9 +1,11 @@
 // screens/tests/components/HistorySection.tsx
+// Langage commun : SectionHeader (hors Card) + Card surface + rangées sobres.
 import React from "react";
 import { View, Text, StyleSheet, Animated } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
+import { Badge } from "../../../components/ui/Badge";
+import { SectionHeader } from "../../../components/ui/SectionHeader";
 import { formatEntryTimestamp, formatEntryValue, getUnitForField, shouldHideUnitSuffix } from "../testHelpers";
 import {
   PLAYLISTS, FIELD_BY_KEY, SHORT_LABELS,
@@ -36,19 +38,20 @@ export function HistorySection({ entriesForPlaylist, selectedPlaylist, activeKey
         ],
       }}
     >
-      <Card variant="surface" style={styles.historyCard}>
-        <View style={styles.historyHeader}>
-          <Ionicons name="time-outline" size={16} color={palette.accent} />
-          <View>
-            <Text style={styles.sectionTitle}>Historique récent</Text>
-            <Text style={styles.sectionSub}>
-              {PLAYLISTS[selectedPlaylist].label}
-            </Text>
-          </View>
-        </View>
-        <View style={{ gap: 8, marginTop: 10 }}>
+      <View style={styles.section}>
+        <SectionHeader
+          title="Historique récent"
+          right={<Badge label={PLAYLISTS[selectedPlaylist].label} />}
+        />
+        <Card variant="surface" style={styles.historyCard}>
           {entriesForPlaylist.slice(0, 5).map((e, idx) => (
-            <View key={`${e.ts}-${idx}`} style={styles.historyRow}>
+            <View
+              key={`${e.ts}-${idx}`}
+              style={[
+                styles.historyRow,
+                idx === Math.min(entriesForPlaylist.length, 5) - 1 && styles.historyRowLast,
+              ]}
+            >
               <View>
                 <Text style={styles.historyDate}>
                   {formatEntryTimestamp(e.ts, "dd/MM/yyyy")}
@@ -72,40 +75,29 @@ export function HistorySection({ entriesForPlaylist, selectedPlaylist, activeKey
               </Text>
             </View>
           ))}
-        </View>
-      </Card>
+        </Card>
+      </View>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
+  section: { gap: 10 },
   historyCard: {
-    borderRadius: 16,
+    borderRadius: theme.radius.lg,
     padding: 14,
-  },
-  sectionTitle: {
-    color: palette.text,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  sectionSub: {
-    color: palette.sub,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  historyHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-    marginBottom: 4,
   },
   historyRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(31, 36, 48, 0.6)",
+    borderBottomColor: palette.borderSoft,
+  },
+  historyRowLast: {
+    borderBottomWidth: 0,
+    paddingBottom: 0,
   },
   historyDate: {
     color: palette.text,
