@@ -160,6 +160,14 @@ export function buildCompletedSessionFirestorePayload(s: Session): Record<string
     rpe: s.rpe,
   };
 
+  // AUDIT P1-1 : durationMin top-level DOIT survivre a l'aller-retour Firestore.
+  // estimateDurationMin (engine/dailyAggregation.ts) lit ce champ en premier ;
+  // sans lui, une seance force de 60 min rechargee depuis Firestore retombait
+  // sur la somme des durationSec des exos (fallback ~30) → charge sous-comptee.
+  if (typeof s.durationMin === "number" && Number.isFinite(s.durationMin)) {
+    completedPayload.durationMin = s.durationMin;
+  }
+
   if (s.feedback) {
     const fb: Record<string, unknown> = {
       fatigue: s.feedback.fatigue,

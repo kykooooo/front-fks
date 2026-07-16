@@ -138,6 +138,11 @@ export const completedSessionSchema = z.object({
   plannedLoad: z.number().min(0).optional().catch(undefined),
   exercises: z.array(exerciseSchema).catch([]),
   rpe: z.number().min(1).max(10).nullable().optional().catch(null),
+  // Durée effective top-level (AUDIT P1-1) : lue en premier par
+  // estimateDurationMin pour le calcul de charge. Validée explicitement pour
+  // qu'une valeur corrompue ne contamine jamais ATL/CTL/TSB (catch → absent,
+  // le fallback feedback.durationMin prend le relais).
+  durationMin: z.number().min(0).optional().catch(undefined),
   feedback: sessionFeedbackSchema,
   ai: z.record(z.string(), z.unknown()).nullable().optional().catch(null),
   // Blueprint IA complet (output backend), garde rpeTarget pour readSessionRpeTarget.

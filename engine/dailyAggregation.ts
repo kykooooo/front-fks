@@ -11,10 +11,18 @@ export function diffDays(fromDayKey: string, toDayKeyStr: string): number {
   return Number.isFinite(diff) ? diff : 0;
 }
 
-/** Durée estimée (minutes) d'une séance */
-function estimateDurationMin(session: Session): number {
+/** Durée estimée (minutes) d'une séance (exporté pour test — AUDIT P1-1) */
+export function estimateDurationMin(session: Session): number {
   if (typeof session.durationMin === 'number' && Number.isFinite(session.durationMin)) {
     return Math.max(0, session.durationMin);
+  }
+  // AUDIT P1-1 : second recours = la durée saisie au feedback. Les docs
+  // Firestore écrits avant le fix (ou par de vieux builds) n'ont pas de
+  // durationMin top-level mais portent feedback.durationMin — sans cette
+  // lecture, la charge des séances rechargées était sous-comptée (60 → ~30).
+  const fbDuration = session.feedback?.durationMin;
+  if (typeof fbDuration === 'number' && Number.isFinite(fbDuration)) {
+    return Math.max(0, fbDuration);
   }
   const sec = session.exercises.reduce(
     (acc, e) => acc + safeNum(e.durationSec, 0, "estimateDuration.durationSec"),
