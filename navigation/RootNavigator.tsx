@@ -319,6 +319,9 @@ function Splash() {
 export default function RootNavigator() {
   const [user, setUser] = useState<User | null>(null);
   const [initializing, setInitializing] = useState(true);
+  // AUDIT P0-2 : true dès que onAuthStateChanged a répondu UNE première fois.
+  // Distinct de `initializing` (qui repasse à true pendant l'attente du profil).
+  const [authResolved, setAuthResolved] = useState(false);
   const [profileCompleted, setProfileCompleted] = useState<boolean | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [welcomeDone, setWelcomeDone] = useState<boolean | null>(null);
@@ -338,6 +341,7 @@ export default function RootNavigator() {
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
+      setAuthResolved(true);
       if (!u) {
         setProfileCompleted(null);
         setRole(null);
@@ -352,10 +356,17 @@ export default function RootNavigator() {
     return unsubAuth;
   }, []);
 
-  // Nettoie l'état local quand l'utilisateur change
+  // Nettoie l'état local quand l'utilisateur change.
+  // AUDIT P0-2 : JAMAIS avant la PREMIÈRE résolution de onAuthStateChanged.
+  // Au boot, `user` vaut null par défaut alors que Firebase n'a pas encore
+  // répondu : appeler resetForUser(null) ici déclenchait un wipe "logout" sur
+  // un état indéterminé (snapshot sauvegardé puis stores vidés, restauration
+  // perdue si l'auth résolvait pendant la fenêtre). Le wipe logout n'a lieu
+  // que sur un null CONFIRMÉ par Firebase (vrai logout / session expirée).
   useEffect(() => {
+    if (!authResolved) return;
     resetTrainingStore(user?.uid ?? null);
-  }, [resetTrainingStore, user?.uid]);
+  }, [authResolved, resetTrainingStore, user?.uid]);
 
   // 1bis) Welcome local flag
   useEffect(() => {
