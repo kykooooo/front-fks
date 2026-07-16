@@ -15,7 +15,7 @@ import {
 import type { CompletedSession } from "../../repositories/sessionsRepo";
 import { savePlannedSessionToFirestore } from "../../services/plannedSessionsRepo";
 import { isClubDay } from "../../utils/dateHelpers";
-import { normalizeSessionsFromFirestore } from "./syncHelpers";
+import { normalizeSessionsFromFirestore, reconcileMicrocycleSessionIndex } from "./syncHelpers";
 import { mapIncomingPlannedSessions, mergePlannedIntoLocalSessions } from "./plannedMergeHelpers";
 import {
   buildCompletedSessionFirestorePayload,
@@ -212,6 +212,23 @@ export const useSyncStore = create<SyncState>()(
               const pathwayIndex = data.activePathwayIndex;
               if (pathwayId !== useSessionsStore.getState().activePathwayId) {
                 useSessionsStore.getState().setActivePathway(pathwayId, pathwayIndex);
+              }
+
+              // AUDIT P1-4 : relire microcycleSessionIndex (avant : write-only →
+              // réinstallation / nouveau device = progression cycle retombée à
+              // 0/12). Lu APRÈS la synchro du goal ci-dessus : un changement de
+              // cycle distant remet d'abord l'index local à 0 (setMicrocycleGoal),
+              // puis l'index distant du nouveau cycle s'applique proprement.
+              // max(local, distant) : le doc profil peut retarder, on ne
+              // rétrograde jamais une progression locale plus avancée
+              // (cf. reconcileMicrocycleSessionIndex).
+              const localMicroIdx = useSessionsStore.getState().microcycleSessionIndex;
+              const reconciledMicroIdx = reconcileMicrocycleSessionIndex(
+                localMicroIdx,
+                data.microcycleSessionIndex
+              );
+              if (reconciledMicroIdx != null && reconciledMicroIdx !== localMicroIdx) {
+                useSessionsStore.getState().setMicrocycleSessionIndex(reconciledMicroIdx);
               }
 
               const autoExternalConfig: ExternalState["autoExternalConfig"] = {
