@@ -17,6 +17,7 @@ import {
   formatItemMeta,
   cleanDisplayNote,
 } from "../sessionPreviewConfig";
+import { getItemTestReference, type TestReferenceValues } from "../testReferenceMapping";
 import { type CycleTheme } from "../../../constants/cycleTheme";
 
 const palette = theme.colors;
@@ -33,6 +34,8 @@ type Props = {
   onGoToExercise: (exerciseId: string | null) => void;
   getPulse: (key: string) => Animated.Value;
   cycleTheme: CycleTheme;
+  /** Dernieres valeurs de test terrain (par cle), pour la ligne de reference sous l'exercice. */
+  testValues?: TestReferenceValues;
 };
 
 export function BlockCard({
@@ -47,6 +50,7 @@ export function BlockCard({
   onGoToExercise,
   getPulse,
   cycleTheme,
+  testValues,
 }: Props) {
   const cfg = getBlockVisual(block);
   const items = block.items ?? [];
@@ -115,6 +119,7 @@ export function BlockCard({
                   const meta = formatItemMeta(item);
                   const exerciseId = getExerciseId(item);
                   const benefit = getExerciseBenefit(exerciseId);
+                  const testRef = getItemTestReference(item, testValues);
                   const pulse = getPulse(key);
                   return (
                     <View key={key} style={styles.itemRow}>
@@ -162,6 +167,9 @@ export function BlockCard({
                           ) : null}
                           {benefit ? (
                             <Text style={styles.itemBenefit}>{benefit}</Text>
+                          ) : null}
+                          {testRef ? (
+                            <Text style={styles.itemTestRef} numberOfLines={1}>{testRef}</Text>
                           ) : null}
                           {cleanDisplayNote(item.notes) ? (
                             <Text style={styles.itemNote}>{cleanDisplayNote(item.notes)}</Text>
@@ -277,6 +285,7 @@ const styles = StyleSheet.create({
   itemMeta: { color: palette.sub, fontSize: 12, marginTop: 2 },
   itemContext: { color: palette.text, fontSize: 11, marginTop: 2 },
   itemBenefit: { color: palette.accent, fontSize: 11, marginTop: 3, fontStyle: "italic" },
+  itemTestRef: { color: palette.sub, fontSize: 11, marginTop: 3 },
   itemNote: { color: palette.sub, fontSize: 12, marginTop: 2 },
   itemLink: {
     flexDirection: "row",

@@ -31,6 +31,8 @@ import { useNavGuard } from '../hooks/useNavGuard';
 import type { SessionTimerHandle } from '../components/session/SessionTimer';
 import { getCycleTheme } from '../constants/cycleTheme';
 import { buildResetExplain } from './newSession/resetExplain';
+import { useTestsStorage } from './tests/hooks/useTestsStorage';
+import { pickLatestTestValues } from './sessionPreview/testReferenceMapping';
 
 import {
   type Block,
@@ -84,6 +86,10 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
   const matchDays = useExternalStore((s) => s.matchDays ?? []);
   const sessions = useSessionsStore((s) => s.sessions);
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  // Références de test terrain affichées sous les exercices concernés (pur affichage,
+  // aucune logique moteur — cf. testReferenceMapping.ts).
+  const { entries: testEntries } = useTestsStorage();
+  const latestTestValues = useMemo(() => pickLatestTestValues(testEntries), [testEntries]);
   // Thème couleur de l'écran de séance, dérivé du cycle servi (sinon cycle actif → fallback Force).
   const cycleTheme = getCycleTheme(microcycleGoal);
   const currentSession = sessionId ? sessions.find((s: any) => s.id === sessionId) : null;
@@ -456,6 +462,7 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
                       onGoToExercise={goToExercise}
                       getPulse={getPulse}
                       cycleTheme={cycleTheme}
+                      testValues={latestTestValues}
                     />
                   ))}
                 </>
