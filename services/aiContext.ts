@@ -12,14 +12,17 @@ import { normalizeAgeCategory, normalizeTeamGender } from "../domain/types";
 import { canonicalizeMicrocycleGoal } from "../domain/microcycles";
 import { userProfileSchema, logValidationIssues } from "../schemas/firestoreSchemas";
 import { weekKeyOf } from "../utils/dateHelpers";
+import { readTestsRaw } from "../screens/tests/hooks/useTestsStorage";
 import {
   RECENT_FKS_COPY_LIMIT,
   RECENT_FKS_SESSION_LIMIT,
   buildRecentByFocus,
   buildRecentFksSessionsPayload,
   buildClubContextPayload,
+  buildFieldTestsPayload,
   collectActivePainConstraints,
   type ClubContextPayload,
+  type FKS_FieldTestEntry,
 } from "./aiContextHelpers";
 
 // Reexport public API (le code applicatif importe depuis "./aiContext").
@@ -28,6 +31,7 @@ export type {
   FKS_SessionFocus,
   FKS_IntensityLevel,
   FKS_RecentSessionSummary,
+  FKS_FieldTestEntry,
 } from "./aiContextHelpers";
 export {
   RECENT_FKS_SESSION_LIMIT,
@@ -35,9 +39,12 @@ export {
   normalizeFeedbackPainForBackend,
   readSessionMetrics,
   readSessionRpeTarget,
+  readSessionArchetypeId,
+  readSessionCycle,
   buildRecentFeedbackPayload,
   buildRecentFksSessionSummary,
   buildRecentFksSessionsPayload,
+  buildFieldTestsPayload,
   toFksIntensity,
   toFksFocus,
   focusFromExercises,
@@ -91,6 +98,8 @@ export interface FKS_AiContext {
   recent_by_focus?: Record<string, string[]>;
   equipment_available: string[];
   club_context?: ClubContextPayload | null;
+  /** Tests terrain recents (derniere valeur par type, <= 90 j). Absent si aucun test valide. */
+  field_tests?: FKS_FieldTestEntry[];
 }
 
 // Helper : fusionner le matos de salle + maison en une seule liste
@@ -237,6 +246,22 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
     RECENT_FKS_SESSION_LIMIT
   );
 
+  // Tests terrain (AsyncStorage, hors-hook) -> field_tests. Best-effort : une
+  // erreur de lecture/parse ne doit jamais bloquer la generation de seance.
+  let field_tests: FKS_FieldTestEntry[] = [];
+  try {
+    const rawTests = await readTestsRaw();
+    if (rawTests) {
+      const parsedTests = JSON.parse(rawTests);
+      const referenceNowMs = debugState.devNowISO
+        ? new Date(debugState.devNowISO).getTime()
+        : Date.now();
+      field_tests = buildFieldTestsPayload(parsedTests, referenceNowMs);
+    }
+  } catch (err) {
+    if (__DEV__) console.warn("[aiContext] lecture tests terrain échouée:", err);
+  }
+
   const recent_fks_badges = Array.from(
     new Set(
       recent_fks_sessions
@@ -312,6 +337,7 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
     recent_by_focus: buildRecentByFocus(sessions, 3),
     equipment_available,
     ...(clubContext ? { club_context: clubContext } : {}),
+    ...(field_tests.length > 0 ? { field_tests } : {}),
   };
 
   // debug: stocke le contexte pour inspection
