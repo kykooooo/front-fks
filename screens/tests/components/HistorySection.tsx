@@ -4,10 +4,10 @@ import { View, Text, StyleSheet, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
-import { formatEntryTimestamp, getUnitForField } from "../testHelpers";
+import { formatEntryTimestamp, formatEntryValue, getUnitForField, shouldHideUnitSuffix } from "../testHelpers";
 import {
-  PLAYLISTS, PLAYLIST_FIELDS, FIELD_BY_KEY, SHORT_LABELS,
-  type TestEntry, type PlaylistId,
+  PLAYLISTS, FIELD_BY_KEY, SHORT_LABELS,
+  type TestEntry, type PlaylistId, type FieldKey,
 } from "../testConfig";
 
 const palette = theme.colors;
@@ -15,10 +15,11 @@ const palette = theme.colors;
 type Props = {
   entriesForPlaylist: TestEntry[];
   selectedPlaylist: PlaylistId;
+  activeKeys: FieldKey[];
   cardAnim: Animated.Value;
 };
 
-export function HistorySection({ entriesForPlaylist, selectedPlaylist, cardAnim }: Props) {
+export function HistorySection({ entriesForPlaylist, selectedPlaylist, activeKeys, cardAnim }: Props) {
   if (entriesForPlaylist.length === 0) return null;
 
   return (
@@ -57,14 +58,14 @@ export function HistorySection({ entriesForPlaylist, selectedPlaylist, cardAnim 
                 </Text>
               </View>
               <Text style={styles.historyValues}>
-                {PLAYLIST_FIELDS[selectedPlaylist]
+                {activeKeys
                   .slice(0, 3)
                   .map((key) => {
                     const val = (e as any)[key];
                     if (val === undefined || val === null || val === "") return null;
-                    const unit = getUnitForField(key);
+                    const unit = shouldHideUnitSuffix(key) ? "" : getUnitForField(key);
                     const label = SHORT_LABELS[key] ?? FIELD_BY_KEY[key]?.label ?? key;
-                    return `${label} ${val}${unit ? unit : ""}`;
+                    return `${label} ${formatEntryValue(key, val)}${unit}`;
                   })
                   .filter(Boolean)
                   .join(" · ") || "--"}

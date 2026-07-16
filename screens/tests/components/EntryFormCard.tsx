@@ -7,6 +7,7 @@ import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
 import { Button } from "../../../components/ui/Button";
 import { getGroupConfig, FIELD_BY_KEY, type FieldKey, type StepId, type TestEntry } from "../testConfig";
+import { minSecToSeconds, secondsToMinSec } from "../testHelpers";
 
 const palette = theme.colors;
 
@@ -36,6 +37,22 @@ export function EntryFormCard({
     : currentField?.protocol ?? "";
   const stepUnit = isNotesStep ? "" : currentField?.unit ?? "";
   const currentFieldKey = !isNotesStep ? (currentStep as FieldKey) : null;
+
+  // Le 1 km se saisit en minutes + secondes (le stockage reste en secondes,
+  // compatible avec l'historique existant et les bornes min/max du champ).
+  const isRun1km = currentFieldKey === "run1km_s";
+  const run1kmTotalRaw = isRun1km ? Number(form.run1km_s) : NaN;
+  const hasRun1kmValue = isRun1km && Number.isFinite(run1kmTotalRaw) && run1kmTotalRaw > 0;
+  const run1kmParts = hasRun1kmValue ? secondsToMinSec(run1kmTotalRaw) : { minutes: 0, seconds: 0 };
+  const run1kmMinStr = hasRun1kmValue ? String(run1kmParts.minutes) : "";
+  const run1kmSecStr = hasRun1kmValue ? String(run1kmParts.seconds) : "";
+
+  const updateRun1km = (nextMinStr: string, nextSecStr: string) => {
+    const min = nextMinStr === "" ? 0 : parseInt(nextMinStr, 10);
+    const sec = nextSecStr === "" ? 0 : parseInt(nextSecStr, 10);
+    const total = minSecToSeconds(Number.isFinite(min) ? min : 0, Number.isFinite(sec) ? sec : 0);
+    onFormChange("run1km_s", total > 0 ? String(total) : "");
+  };
 
   return (
     <Animated.View
@@ -102,6 +119,31 @@ export function EntryFormCard({
               value={form.notes ?? ""}
               onChangeText={(txt) => onFormChange("notes", txt)}
             />
+          ) : isRun1km ? (
+            <View style={styles.entryInputRow}>
+              <TextInput
+                style={[styles.input, styles.entryInput]}
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor={palette.sub}
+                value={run1kmMinStr}
+                onChangeText={(txt) => updateRun1km(txt.replace(/[^0-9]/g, ""), run1kmSecStr)}
+              />
+              <View style={styles.entryUnitPill}>
+                <Text style={styles.entryUnitText}>min</Text>
+              </View>
+              <TextInput
+                style={[styles.input, styles.entryInput]}
+                keyboardType="numeric"
+                placeholder="00"
+                placeholderTextColor={palette.sub}
+                value={run1kmSecStr}
+                onChangeText={(txt) => updateRun1km(run1kmMinStr, txt.replace(/[^0-9]/g, ""))}
+              />
+              <View style={styles.entryUnitPill}>
+                <Text style={styles.entryUnitText}>s</Text>
+              </View>
+            </View>
           ) : (
             <View style={styles.entryInputRow}>
               <TextInput

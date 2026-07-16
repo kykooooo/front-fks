@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
-import { formatEntryTimestamp, getUnitForField, isBetterDelta } from "../testHelpers";
+import { formatEntryTimestamp, formatEntryValue, getUnitForField, isBetterDelta, shouldHideUnitSuffix } from "../testHelpers";
 import { getGroupConfig, FIELD_BY_KEY, type TestEntry, type FieldKey, type FieldConfig } from "../testConfig";
 
 const palette = theme.colors;
@@ -104,13 +104,13 @@ export function OverviewCard({ lastEntry, lastTwo, groupedFields, cardAnim }: Pr
                   {group.fields.map((f) => {
                     const val = lastEntry[f.key];
                     if (val === undefined) return null;
-                    const unit = getUnitForField(f.key);
+                    const unit = shouldHideUnitSuffix(f.key) ? "" : getUnitForField(f.key);
                     return (
                       <View key={f.key} style={styles.overviewMetricRow}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.overviewMetricLabel}>{f.label}</Text>
                           <Text style={styles.overviewMetricValue}>
-                            {val}
+                            {formatEntryValue(f.key, val)}
                             {unit ? ` ${unit}` : ""}
                           </Text>
                         </View>

@@ -234,6 +234,9 @@ export const useSyncStore = create<SyncState>()(
                 clubTrainingsPerWeek: typeof data.clubTrainingsPerWeek === "number" ? data.clubTrainingsPerWeek : null,
                 matchesPerWeek: typeof data.matchesPerWeek === "number" ? data.matchesPerWeek : null,
                 targetFksSessionsPerWeek: data.targetFksSessionsPerWeek ?? null,
+                gymEquipment: Array.isArray(data.gymEquipment) ? data.gymEquipment : [],
+                homeEquipment: Array.isArray(data.homeEquipment) ? data.homeEquipment : [],
+                hasGymAccess: data.hasGymAccess ?? null,
               });
             },
             (err: unknown) => {

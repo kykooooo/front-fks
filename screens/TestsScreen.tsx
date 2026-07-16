@@ -7,11 +7,14 @@ import { useHaptics } from "../hooks/useHaptics";
 import { theme } from "../constants/theme";
 import { showToast } from "../utils/toast";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
+import { useExternalStore } from "../state/stores/useExternalStore";
+import { isMicrocycleId } from "../domain/microcycles";
 
 import {
   isPlaylistId,
   FIELD_BY_KEY,
-  PLAYLIST_FIELDS,
+  getPlaylistFields,
+  hasWeightsEquipment,
   type PlaylistId,
   type TestEntry,
   type FieldKey,
@@ -19,6 +22,7 @@ import {
   type StepId,
 } from "./tests/testConfig";
 import { useTestsStorage } from "./tests/hooks/useTestsStorage";
+import { getTestTimingBanner } from "./tests/testTiming";
 
 import { TestHeader } from "./tests/components/TestHeader";
 import { PlaylistSelector } from "./tests/components/PlaylistSelector";
@@ -28,6 +32,7 @@ import { StatisticsCard, type SummaryStat } from "./tests/components/StatisticsC
 import { TestPlanCard } from "./tests/components/TestPlanCard";
 import { OverviewCard } from "./tests/components/OverviewCard";
 import { HistorySection } from "./tests/components/HistorySection";
+import { CycleTimingBanner } from "./tests/components/CycleTimingBanner";
 
 const palette = theme.colors;
 
@@ -47,6 +52,10 @@ export default function TestsScreen() {
   const route = useRoute<any>();
   const haptics = useHaptics();
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
+  const gymEquipment = useExternalStore((s) => s.gymEquipment);
+  const homeEquipment = useExternalStore((s) => s.homeEquipment);
+  const ageCategory = useExternalStore((s) => s.ageCategory);
 
   // Storage
   const { entries, persistEntries } = useTestsStorage();
@@ -58,10 +67,10 @@ export default function TestsScreen() {
     useState<PlaylistId | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
 
-  // Animations
+  // Animations (0: bandeau cycle, 1: playlist, 2: battery/entry, 3: stats, 4: plan, 5: overview, 6: history)
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
-  const cardAnims = useRef([0, 1, 2, 3, 4, 5].map(() => new Animated.Value(0))).current;
+  const cardAnims = useRef([0, 1, 2, 3, 4, 5, 6].map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -98,8 +107,23 @@ export default function TestsScreen() {
     return "fondation";
   }, [selectedPlaylistOverride, microcycleGoal, initialPlaylistFromRoute]);
 
-  const activeKeys = PLAYLIST_FIELDS[selectedPlaylist] ?? [];
+  // Composition de batterie : socle sans matériel + goblet/split si charges déclarées
+  // + trap bar 3RM si en plus Senior (cf. screens/tests/testConfig.ts::getPlaylistFields).
+  const activeKeys = useMemo(
+    () =>
+      getPlaylistFields(selectedPlaylist, {
+        hasWeightsEquipment: hasWeightsEquipment(gymEquipment, homeEquipment),
+        ageCategory,
+      }),
+    [selectedPlaylist, gymEquipment, homeEquipment, ageCategory]
+  );
   const steps = useMemo<StepId[]>(() => [...activeKeys, "notes"], [activeKeys]);
+
+  // Bandeau "bon moment pour tester" selon la position dans le cycle actif.
+  const timingBanner = useMemo(
+    () => getTestTimingBanner(microcycleSessionIndex, isMicrocycleId(microcycleGoal)),
+    [microcycleSessionIndex, microcycleGoal]
+  );
 
   // Derived state
   const totalTests = activeKeys.length;
@@ -182,7 +206,7 @@ export default function TestsScreen() {
 
   const save = useCallback(async () => {
     const hasAnyValue =
-      PLAYLIST_FIELDS[selectedPlaylist].some((k) => {
+      activeKeys.some((k) => {
         const val = (form as any)[k];
         if (val === undefined || val === null || val === "") return false;
         return Number.isFinite(Number(val));
@@ -191,7 +215,7 @@ export default function TestsScreen() {
       showToast({ type: "warn", title: "Batterie vide", message: "Renseigne au moins un test ou une note." });
       return;
     }
-    const outOfBoundsKey = PLAYLIST_FIELDS[selectedPlaylist].find((k) => {
+    const outOfBoundsKey = activeKeys.find((k) => {
       const val = (form as any)[k];
       if (val === undefined || val === null || val === "") return false;
       const num = Number(val);
@@ -208,7 +232,7 @@ export default function TestsScreen() {
     }
     const cleanEntry: TestEntry = { ts: Date.now() };
     cleanEntry.playlist = selectedPlaylist;
-    PLAYLIST_FIELDS[selectedPlaylist].forEach((k) => {
+    activeKeys.forEach((k) => {
       const val = (form as any)[k];
       if (val !== undefined && val !== null && val !== "") {
         const num = Number(val);
@@ -230,7 +254,7 @@ export default function TestsScreen() {
       if (__DEV__) console.warn("save tests", e);
       showToast({ type: "error", title: "Erreur", message: "Impossible de sauvegarder les tests." });
     }
-  }, [selectedPlaylist, form, entries, persistEntries]);
+  }, [selectedPlaylist, activeKeys, form, entries, persistEntries]);
 
   const goNext = useCallback(() => {
     const currentStep = steps[stepIndex] ?? steps[0];
@@ -321,12 +345,16 @@ export default function TestsScreen() {
           slideAnim={slideAnim}
         />
 
+        {timingBanner && (
+          <CycleTimingBanner banner={timingBanner} cardAnim={cardAnims[0]} />
+        )}
+
         <PlaylistSelector
           selectedPlaylist={selectedPlaylist}
           activeKeysCount={activeKeys.length}
           onSelect={selectPlaylist}
           onHaptic={impactLight}
-          cardAnim={cardAnims[0]}
+          cardAnim={cardAnims[1]}
         />
 
         {mode === "entry" ? (
@@ -340,7 +368,7 @@ export default function TestsScreen() {
             onPrev={goPrev}
             onSkip={onSkipStep}
             onHaptic={impactLight}
-            cardAnim={cardAnims[1]}
+            cardAnim={cardAnims[2]}
           />
         ) : (
           <>
@@ -355,18 +383,18 @@ export default function TestsScreen() {
               onStart={startBattery}
               onReset={resetBattery}
               onHaptic={impactLight}
-              cardAnim={cardAnims[1]}
+              cardAnim={cardAnims[2]}
             />
 
             <StatisticsCard
               stats={summaryStats}
               entriesCount={entriesForPlaylist.length}
-              cardAnim={cardAnims[2]}
+              cardAnim={cardAnims[3]}
             />
 
             <TestPlanCard
               selectedPlaylist={selectedPlaylist}
-              cardAnim={cardAnims[3]}
+              cardAnim={cardAnims[4]}
             />
 
             {lastEntry && (
@@ -374,7 +402,7 @@ export default function TestsScreen() {
                 lastEntry={lastEntry}
                 lastTwo={lastTwo}
                 groupedFields={groupedFields}
-                cardAnim={cardAnims[4]}
+                cardAnim={cardAnims[5]}
               />
             )}
           </>
@@ -384,7 +412,8 @@ export default function TestsScreen() {
           <HistorySection
             entriesForPlaylist={entriesForPlaylist}
             selectedPlaylist={selectedPlaylist}
-            cardAnim={cardAnims[5]}
+            activeKeys={activeKeys}
+            cardAnim={cardAnims[6]}
           />
         )}
 

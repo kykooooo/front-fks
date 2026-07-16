@@ -10,6 +10,7 @@ import {
   FIELD_BY_KEY, PLAYLISTS, getGroupConfig,
   type FieldKey, type PlaylistId, type TestEntry,
 } from "../testConfig";
+import { formatEntryValue, shouldHideUnitSuffix } from "../testHelpers";
 
 const palette = theme.colors;
 
@@ -101,7 +102,11 @@ export function BatteryCard({
                   <Text style={styles.batteryMeta}>{field.protocol}</Text>
                 </View>
                 <Text style={done ? [styles.batteryValue, { color: cfg.tint }] : styles.batteryPending}>
-                  {done ? `${val}${field.unit ? ` ${field.unit}` : ""}` : "À faire"}
+                  {done
+                    ? `${formatEntryValue(key, val)}${
+                        field.unit && !shouldHideUnitSuffix(key) ? ` ${field.unit}` : ""
+                      }`
+                    : "À faire"}
                 </Text>
               </View>
             );

@@ -35,6 +35,7 @@ async function saveSnapshot(uid: string): Promise<void> {
       external: extractData(useExternalStore.getState(), [
         "externalLoads", "completedRoutines", "favoriteExerciseIds", "recentExerciseIds",
         "clubTrainingDays", "matchDays", "matchDay", "autoExternalEnabled", "autoExternalConfig", "ageCategory",
+        "gymEquipment", "homeEquipment", "hasGymAccess",
       ]),
       debug: extractData(useDebugStore.getState(), ["debugLog", "devNowISO"]),
       sync: { plannedFksDays: useSyncStore.getState().plannedFksDays },

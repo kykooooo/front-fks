@@ -169,6 +169,14 @@ export type ExternalState = {
   };
   /** Catégorie d'âge du joueur (pont profil → calibre l'auto-charge jeune). null = adulte/inconnu. */
   ageCategory: AgeCategory | null;
+  /**
+   * Matériel déclaré au profil (pont profil → utilisé par ex. par la composition
+   * de batterie des Tests terrain, cf. screens/tests/testConfig.ts). Vide par défaut,
+   * jamais inventé : reflète strictement users/{uid}.gymEquipment / homeEquipment.
+   */
+  gymEquipment: string[];
+  homeEquipment: string[];
+  hasGymAccess: string | null;
 
   // actions
   addCompletedRoutine: (routine: Omit<CompletedRoutine, "id" | "dateISO">) => void;

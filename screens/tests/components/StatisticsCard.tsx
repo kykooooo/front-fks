@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
-import { formatStatValue } from "../testHelpers";
+import { formatStatValueForField, shouldHideUnitSuffix } from "../testHelpers";
 import type { FieldKey } from "../testConfig";
 
 const palette = theme.colors;
@@ -58,27 +58,30 @@ export function StatisticsCard({ stats, entriesCount, cardAnim }: Props) {
         </View>
 
         <View style={styles.summaryList}>
-          {stats.map((item) => (
-            <View key={item.key} style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>{item.label}</Text>
-              <View style={styles.summaryValues}>
-                <View style={styles.summaryPill}>
-                  <Text style={styles.summaryPillLabel}>Moy.</Text>
-                  <Text style={styles.summaryPillValue}>
-                    {formatStatValue(item.avg, item.unit)}
-                    {item.unit ? ` ${item.unit}` : ""}
-                  </Text>
-                </View>
-                <View style={[styles.summaryPill, styles.summaryPillBest]}>
-                  <Text style={styles.summaryPillLabel}>Meilleur</Text>
-                  <Text style={styles.summaryPillValue}>
-                    {formatStatValue(item.best, item.unit)}
-                    {item.unit ? ` ${item.unit}` : ""}
-                  </Text>
+          {stats.map((item) => {
+            const hideUnit = shouldHideUnitSuffix(item.key);
+            return (
+              <View key={item.key} style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>{item.label}</Text>
+                <View style={styles.summaryValues}>
+                  <View style={styles.summaryPill}>
+                    <Text style={styles.summaryPillLabel}>Moy.</Text>
+                    <Text style={styles.summaryPillValue}>
+                      {formatStatValueForField(item.key, item.avg)}
+                      {item.unit && !hideUnit ? ` ${item.unit}` : ""}
+                    </Text>
+                  </View>
+                  <View style={[styles.summaryPill, styles.summaryPillBest]}>
+                    <Text style={styles.summaryPillLabel}>Meilleur</Text>
+                    <Text style={styles.summaryPillValue}>
+                      {formatStatValueForField(item.key, item.best)}
+                      {item.unit && !hideUnit ? ` ${item.unit}` : ""}
+                    </Text>
+                  </View>
                 </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       </Card>
     </Animated.View>
