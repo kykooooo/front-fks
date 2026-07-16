@@ -2,9 +2,9 @@
 import React from "react";
 import { View, Text, StyleSheet, TextInput, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
+import { Badge } from "../../../components/ui/Badge";
 import { Button } from "../../../components/ui/Button";
 import { getGroupConfig, FIELD_BY_KEY, type FieldKey, type StepId, type TestEntry } from "../testConfig";
 import { minSecToSeconds, secondsToMinSec } from "../testHelpers";
@@ -74,36 +74,32 @@ export function EntryFormCard({
             <Ionicons name="play-circle-outline" size={18} color={palette.accent} />
             <Text style={styles.sectionTitle}>Batterie en cours</Text>
           </View>
-          <View style={styles.entryStepBadge}>
-            <Text style={styles.entryStep}>
-              {Math.min(stepIndex + 1, steps.length)}/{steps.length}
-            </Text>
-          </View>
+          <Badge label={`${Math.min(stepIndex + 1, steps.length)}/${steps.length}`} />
         </View>
         <View style={styles.entryProgressTrack}>
-          <LinearGradient
-            colors={["#ff7a1a", "#ff9a4a"]}
-            style={[styles.entryProgressFill, { width: `${progressRatio * 100}%` }]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
+          <View
+            style={[
+              styles.entryProgressFill,
+              { width: `${progressRatio * 100}%`, backgroundColor: palette.accent },
+            ]}
           />
         </View>
 
         <View style={styles.entryBody}>
           {currentField && (
             <View style={styles.entryFieldHeader}>
-              <LinearGradient
-                colors={getGroupConfig(currentField.group).colors}
-                style={styles.entryFieldIcon}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
+              <View
+                style={[
+                  styles.entryFieldIcon,
+                  { backgroundColor: getGroupConfig(currentField.group).tintSoft },
+                ]}
               >
                 <Ionicons
                   name={getGroupConfig(currentField.group).icon}
                   size={16}
-                  color="#fff"
+                  color={getGroupConfig(currentField.group).tint}
                 />
-              </LinearGradient>
+              </View>
               <Text style={styles.entryLabel}>{stepLabel}</Text>
             </View>
           )}
@@ -194,7 +190,7 @@ export function EntryFormCard({
 
 const styles = StyleSheet.create({
   entryCard: {
-    borderRadius: 16,
+    borderRadius: theme.radius.lg,
     padding: 14,
     gap: 12,
   },
@@ -213,28 +209,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  entryStepBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: palette.accentSoft,
-    borderWidth: 1,
-    borderColor: palette.accent,
-  },
-  entryStep: {
-    color: palette.accent,
-    fontSize: 12,
-    fontWeight: "700",
-  },
   entryProgressTrack: {
     height: 6,
-    borderRadius: 999,
+    borderRadius: theme.radius.pill,
     backgroundColor: palette.borderSoft,
     overflow: "hidden",
   },
   entryProgressFill: {
     height: "100%",
-    backgroundColor: palette.accent,
+    borderRadius: theme.radius.pill,
   },
   entryBody: {
     gap: 8,

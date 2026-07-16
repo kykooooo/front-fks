@@ -2,23 +2,26 @@
 import { Ionicons } from "@expo/vector-icons";
 import type { AgeCategory } from "../../domain/types";
 
+// Meme pattern que BLOCK_CONFIG (components/session/blockConfig.ts) : icone + tint
+// plein + tint "soft" pour le fond du cercle. Plus de paire de couleurs gradient
+// (langage BlockCard = teintes plates, jamais de LinearGradient decoratif).
 export type GroupConfig = {
   icon: keyof typeof Ionicons.glyphMap;
-  colors: [string, string];
   tint: string;
+  tintSoft: string;
 };
 
 export const GROUP_CONFIG: Record<string, GroupConfig> = {
-  sauts: { icon: "rocket-outline", colors: ["#8b5cf6", "#a78bfa"], tint: "#8b5cf6" },
-  vitesse: { icon: "flash-outline", colors: ["#ff7a1a", "#ff9a4a"], tint: "#ff7a1a" },
-  endurance: { icon: "heart-outline", colors: ["#06b6d4", "#22d3ee"], tint: "#06b6d4" },
-  force: { icon: "barbell-outline", colors: ["#ef4444", "#f87171"], tint: "#ef4444" },
-  agilite: { icon: "git-branch-outline", colors: ["#16a34a", "#4ade80"], tint: "#16a34a" },
-  power: { icon: "trending-up-outline", colors: ["#f59e0b", "#fbbf24"], tint: "#f59e0b" },
+  sauts: { icon: "rocket-outline", tint: "#8b5cf6", tintSoft: "rgba(139,92,246,0.12)" },
+  vitesse: { icon: "flash-outline", tint: "#ff7a1a", tintSoft: "rgba(255,122,26,0.12)" },
+  endurance: { icon: "heart-outline", tint: "#06b6d4", tintSoft: "rgba(6,182,212,0.12)" },
+  force: { icon: "barbell-outline", tint: "#ef4444", tintSoft: "rgba(239,68,68,0.12)" },
+  agilite: { icon: "git-branch-outline", tint: "#16a34a", tintSoft: "rgba(22,163,74,0.12)" },
+  power: { icon: "trending-up-outline", tint: "#f59e0b", tintSoft: "rgba(245,158,11,0.12)" },
 };
 
 export const getGroupConfig = (group: string): GroupConfig =>
-  GROUP_CONFIG[group] ?? { icon: "ellipse-outline", colors: ["#6b7280", "#9ca3af"], tint: "#6b7280" };
+  GROUP_CONFIG[group] ?? { icon: "ellipse-outline", tint: "#6b7280", tintSoft: "rgba(107,114,128,0.12)" };
 
 export type PlaylistId =
   | "fondation"

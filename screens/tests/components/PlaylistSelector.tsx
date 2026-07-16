@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated } from "
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
+import { Badge } from "../../../components/ui/Badge";
 import { PLAYLISTS, type PlaylistId } from "../testConfig";
 
 const palette = theme.colors;
@@ -46,9 +47,7 @@ export function PlaylistSelector({
               </Text>
             </View>
           </View>
-          <View style={styles.playlistBadge}>
-            <Text style={styles.playlistBadgeText}>{activeKeysCount} tests</Text>
-          </View>
+          <Badge label={`${activeKeysCount} tests`} />
         </View>
         <ScrollView
           horizontal
@@ -86,7 +85,7 @@ export function PlaylistSelector({
 
 const styles = StyleSheet.create({
   playlistCard: {
-    borderRadius: 16,
+    borderRadius: theme.radius.lg,
     padding: 14,
     gap: 10,
   },
@@ -111,20 +110,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  playlistBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    backgroundColor: palette.card,
-  },
-  playlistBadgeText: {
-    color: palette.sub,
-    fontSize: 10,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-  },
   playlistRow: {
     gap: 8,
     paddingVertical: 4,
@@ -132,7 +117,7 @@ const styles = StyleSheet.create({
   playlistChip: {
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 999,
+    borderRadius: theme.radius.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.cardSoft,

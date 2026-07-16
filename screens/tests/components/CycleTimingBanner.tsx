@@ -1,16 +1,22 @@
 // screens/tests/components/CycleTimingBanner.tsx
+// Style coachTipBox (fond soft + barre gauche 3px + kicker uppercase), même
+// motif que le "Conseil du coach" de BlockCard / "Points clés" de PrebuiltSessionDetail.
 import React from "react";
 import { View, Text, StyleSheet, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../../constants/theme";
-import { Card } from "../../../components/ui/Card";
-import type { TestTimingBanner } from "../testTiming";
+import type { TestTimingBanner, TestTimingTone } from "../testTiming";
 
 const palette = theme.colors;
 
 type Props = {
   banner: TestTimingBanner;
   cardAnim: Animated.Value;
+};
+
+const KICKER: Record<TestTimingTone, string> = {
+  start: "Début de cycle",
+  end: "Fin de cycle",
 };
 
 export function CycleTimingBanner({ banner, cardAnim }: Props) {
@@ -30,27 +36,38 @@ export function CycleTimingBanner({ banner, cardAnim }: Props) {
         ],
       }}
     >
-      <Card variant="soft" style={styles.banner}>
-        <Ionicons name={icon} size={18} color={palette.accent} />
+      <View style={styles.banner}>
+        <View style={styles.header}>
+          <Ionicons name={icon} size={12} color={palette.accent} />
+          <Text style={styles.kicker}>{KICKER[banner.tone]}</Text>
+        </View>
         <Text style={styles.message}>{banner.message}</Text>
-      </Card>
+      </View>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   banner: {
-    borderRadius: 16,
+    gap: 4,
     padding: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: palette.accent,
+    backgroundColor: palette.accentSoft,
+    borderTopRightRadius: theme.radius.sm,
+    borderBottomRightRadius: theme.radius.sm,
+  },
+  header: { flexDirection: "row", alignItems: "center", gap: 5 },
+  kicker: {
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+    color: palette.accent,
   },
   message: {
-    flex: 1,
     color: palette.text,
     fontSize: 13,
-    fontWeight: "600",
     lineHeight: 18,
   },
 });
