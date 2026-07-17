@@ -90,6 +90,14 @@ export const PRIVACY_POLICY: LegalSection[] = [
     ],
   },
   {
+    title: "Mineurs de moins de 15 ans",
+    body: [
+      "En France, un mineur de moins de 15 ans ne peut pas consentir seul au traitement de ses données personnelles.",
+      "Si tu as moins de 15 ans, ton parent ou responsable légal doit lire et accepter cette politique avant que tu utilises FKS. L'application te demande de le confirmer lors de la configuration de ton profil.",
+      "Ton parent ou responsable légal peut exercer à tout moment tes droits (accès, rectification, effacement) en écrivant à : kyllian@fks-app.com",
+    ],
+  },
+  {
     title: "Sécurité",
     body: [
       "Des mesures techniques et organisationnelles sont mises en place pour protéger les données.",
