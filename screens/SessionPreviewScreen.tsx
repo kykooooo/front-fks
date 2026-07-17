@@ -31,6 +31,7 @@ import { useNavGuard } from '../hooks/useNavGuard';
 import type { SessionTimerHandle } from '../components/session/SessionTimer';
 import { getCycleTheme } from '../constants/cycleTheme';
 import { buildResetExplain } from './newSession/resetExplain';
+import { readRecoveryTips } from './newSession/helpers';
 import { useTestsStorage } from './tests/hooks/useTestsStorage';
 import { pickLatestTestValues } from './sessionPreview/testReferenceMapping';
 
@@ -77,6 +78,9 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
   const title = v2.title || 'Séance personnalisée';
   const subtitle = v2.subtitle;
   const blocks: Block[] = Array.isArray(v2.blocks) ? v2.blocks : [];
+  // Conseils de récup : racine v2.recoveryTips (contrat backend actuel) avec
+  // compat postSession.recoveryTips — cf. readRecoveryTips.
+  const recoveryTips = readRecoveryTips(v2);
   const soundsEnabled = useSettingsStore((s) => s.soundsEnabled);
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
   const phase = useSessionsStore((s) => s.phase);
@@ -286,10 +290,6 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
     const focusRaw = v2.focusPrimary ?? v2.focusSecondary;
     const focus = typeof focusRaw === 'string' ? focusRaw : undefined;
     const location = typeof v2.location === 'string' ? v2.location : undefined;
-    const recoveryTips =
-      Array.isArray(v2.postSession?.recoveryTips) && v2.postSession!.recoveryTips!.length > 0
-        ? v2.postSession!.recoveryTips
-        : undefined;
     guardNav(() =>
       nav.navigate('SessionSummary', {
         sessionId,
@@ -515,11 +515,11 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
 
               {/* Post session */}
               {(v2.postSession?.mobility && v2.postSession.mobility.length > 0) ||
-               (v2.postSession?.recoveryTips && v2.postSession.recoveryTips.length > 0) ? (
+               (recoveryTips && recoveryTips.length > 0) ? (
                 <Card variant="soft" style={styles.coachCard}>
                   <SectionHeader title="Post-séance" />
                   <View style={{ gap: 6 }}>
-                    {v2.postSession?.recoveryTips?.map((tip: string, i: number) => (
+                    {recoveryTips?.map((tip: string, i: number) => (
                       <View key={`rec_${i}`} style={styles.recoveryTipRow}>
                         <Ionicons name="leaf-outline" size={13} color="#14b8a6" />
                         <Text style={styles.recoveryTipText}>{tip}</Text>

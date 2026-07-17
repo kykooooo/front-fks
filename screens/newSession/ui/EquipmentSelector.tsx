@@ -7,11 +7,15 @@ import type { EnvironmentSelection } from "../types";
 
 type CatalogItem = { id: string; label: string; source: "gym" | "pitch" | "home" | "both" };
 
-// Équipement spécial salle (pas dans toutes les salles)
+// Équipement spécial salle (pas dans toutes les salles).
+// NOTE contrat : la banque backend exige l'id "sled" (aucun alias "power_sled"
+// pour l'instant — alias à ajouter côté backend, ne pas renommer ici sans
+// coordination). Le toggle "landmine" a été retiré : aucun équipement backend
+// ne porte cet id (le landmine press est gaté par "barbell", déjà couvert par
+// gym_full envoyé d'office en salle).
 const GYM_SPECIAL_EQUIPMENT = [
   { id: "power_sled", label: "Traîneau / Sled", icon: "navigate", description: "Pour sprints résistés" },
   { id: "trap_bar", label: "Trap bar / Hex bar", icon: "git-commit", description: "Deadlifts, shrugs" },
-  { id: "landmine", label: "Landmine", icon: "arrow-up", description: "Rotations, presses" },
   { id: "cable_machine", label: "Poulie / Cable", icon: "swap-vertical", description: "Tirage, rotations" },
 ];
 

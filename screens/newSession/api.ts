@@ -29,9 +29,18 @@ export const buildAllowedExercisesPayload = () =>
 const SESSION_CACHE_KEY = "fks_session_cache_v1";
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-function hashContext(context: Record<string, unknown>): string {
-  // Exclure allowed_exercises (toujours identique ~20KB) et flags debug du hash
-  const { allowed_exercises, debug, debug_allow_all_exercises, ...rest } = context;
+/** Exporté pour les tests (stabilité du hash de cache). */
+export function hashContext(context: Record<string, unknown>): string {
+  // Exclure du hash : allowed_exercises (toujours identique ~20KB), flags debug,
+  // et les horloges nowISO/devNowISO — elles changent à chaque milliseconde,
+  // donc les garder rendait le cache inatteignable (chaque re-génération
+  // repayait un appel LLM alors que le contexte réel était identique).
+  const rest: Record<string, unknown> = { ...context };
+  delete rest.allowed_exercises;
+  delete rest.debug;
+  delete rest.debug_allow_all_exercises;
+  delete rest.nowISO;
+  delete rest.devNowISO;
   const str = JSON.stringify(rest);
   let h = 5381;
   for (let i = 0; i < str.length; i++) {
@@ -105,11 +114,15 @@ export function prepareBackendContext(
   selectedEquipment: string[],
   environment: string[]
 ) {
-  const normalizedEquipment = Array.from(
-    new Set(
-      selectedEquipment.flatMap((id) => [id])
-    )
-  );
+  // Salle : l'UI promet « Équipement standard inclus par défaut » (haltères,
+  // barres, bancs, machines) — le payload doit donc TOUJOURS porter gym_full,
+  // en plus des sélections explicites. Sans lui, le backend filtre strictement
+  // sur la sélection (ex: ["barbell"] seule) et la séance salle est appauvrie
+  // en silence. Côté backend, gym_full n'inclut PAS medball (zéro ballon).
+  const withGymDefaults = environment.includes("gym")
+    ? [...selectedEquipment, "gym_full", "bodyweight"]
+    : selectedEquipment;
+  const normalizedEquipment = Array.from(new Set(withGymDefaults));
   const resolvedGoal = ctx.profile?.goal ?? ctx.goal ?? "fondation";
   const constraints = ctx.constraints as Record<string, unknown> | undefined;
   const profile = ctx.profile as Record<string, unknown>;

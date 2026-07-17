@@ -6,7 +6,14 @@
 // (screens/newSession/api.ts:191 avant correctif) et un cold start iOS
 // tombait directement en fallback.
 
-import { fetchV2 } from "../api";
+import {
+  fetchV2,
+  hashContext,
+  prepareBackendContext,
+  getSessionCache,
+  setSessionCache,
+  clearSessionCache,
+} from "../api";
 
 const originalFetch = global.fetch;
 
@@ -104,5 +111,109 @@ describe("fetchV2 — reveil serveur (cold start)", () => {
     global.fetch = jest.fn().mockImplementation(() => Promise.reject(new TypeError("Failed to fetch"))) as any;
 
     await expect(fetchV2({ some: "ctx" })).rejects.toMatchObject({ code: "NETWORK_ERROR" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FIX contrat — cache séance : nowISO/devNowISO rendaient le hash instable
+// (il changeait à chaque milliseconde), donc le cache ne matchait JAMAIS et
+// chaque re-génération repayait un appel LLM.
+// ---------------------------------------------------------------------------
+
+describe("hashContext — stabilité du cache", () => {
+  const baseCtx = {
+    goal: "force",
+    phase: "playlist",
+    constraints: { equipment: ["gym_full"], pains: [] },
+  };
+
+  test("deux contextes identiques à l'horloge près donnent le MÊME hash", () => {
+    const h1 = hashContext({ ...baseCtx, nowISO: "2026-07-17T10:00:00.000Z", devNowISO: null });
+    const h2 = hashContext({ ...baseCtx, nowISO: "2026-07-17T10:00:00.937Z", devNowISO: null });
+    expect(h1).toBe(h2);
+  });
+
+  test("devNowISO (horloge virtuelle dev) est exclu aussi", () => {
+    const h1 = hashContext({ ...baseCtx, devNowISO: "2026-07-17T10:00:00.000Z" });
+    const h2 = hashContext({ ...baseCtx, devNowISO: "2026-07-18T08:30:00.000Z" });
+    expect(h1).toBe(h2);
+  });
+
+  test("un vrai changement de contexte change bien le hash", () => {
+    const h1 = hashContext({ ...baseCtx, nowISO: "2026-07-17T10:00:00.000Z" });
+    const h2 = hashContext({ ...baseCtx, goal: "endurance", nowISO: "2026-07-17T10:00:00.000Z" });
+    expect(h1).not.toBe(h2);
+  });
+
+  test("comportement conservé : allowed_exercises et flags debug restent exclus", () => {
+    const h1 = hashContext({ ...baseCtx, allowed_exercises: [{ id: "a" }], debug: true });
+    const h2 = hashContext({ ...baseCtx, allowed_exercises: [{ id: "b" }], debug: false });
+    expect(h1).toBe(h2);
+  });
+
+  test("bout en bout : un cache posé à T est retrouvé à T+quelques secondes", async () => {
+    await clearSessionCache();
+    const response = { v2: { title: "Séance force" } as any, debug: {} };
+    await setSessionCache({ ...baseCtx, nowISO: "2026-07-17T10:00:00.000Z" }, response);
+    const hit = await getSessionCache({ ...baseCtx, nowISO: "2026-07-17T10:00:03.421Z" });
+    expect(hit).not.toBeNull();
+    expect(hit!.v2).toEqual(response.v2);
+    await clearSessionCache();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FIX contrat — salle appauvrie : l'UI promet « Équipement standard inclus par
+// défaut » mais le payload ne portait que la sélection explicite (souvent
+// ["barbell"] forcé par le hook) → le backend, qui filtre strictement,
+// excluait bancs/haltères/machines. gym_full doit TOUJOURS être présent
+// quand l'environnement est la salle.
+// ---------------------------------------------------------------------------
+
+describe("prepareBackendContext — gym_full toujours présent en salle", () => {
+  const minimalCtx = {
+    version: "fks_context_v1",
+    profile: { goal: "force" },
+    goal: "force",
+    constraints: { equipment: [], pains: [] },
+  } as any;
+
+  test("salle + sélection partielle : gym_full ajouté aux sélections explicites", () => {
+    const { context } = prepareBackendContext(minimalCtx, ["power_sled"], ["gym"]);
+    expect(context.equipment_available).toEqual(
+      expect.arrayContaining(["gym_full", "bodyweight", "power_sled"])
+    );
+    expect(context.equipment_used).toEqual(expect.arrayContaining(["gym_full"]));
+    expect((context.constraints as any).equipment).toEqual(
+      expect.arrayContaining(["gym_full"])
+    );
+  });
+
+  test("salle + sélection vide : gym_full présent quand même", () => {
+    const { context } = prepareBackendContext(minimalCtx, [], ["gym"]);
+    expect(context.equipment_available).toEqual(
+      expect.arrayContaining(["gym_full", "bodyweight"])
+    );
+  });
+
+  test("pas de doublon si gym_full déjà sélectionné", () => {
+    const { context } = prepareBackendContext(minimalCtx, ["gym_full", "bodyweight"], ["gym"]);
+    const list = context.equipment_available as string[];
+    expect(list.filter((id) => id === "gym_full")).toHaveLength(1);
+  });
+
+  test("hors salle : gym_full n'est PAS injecté", () => {
+    const { context } = prepareBackendContext(minimalCtx, ["home_small"], ["home"]);
+    expect(context.equipment_available).not.toContain("gym_full");
+    const { context: pitchCtx } = prepareBackendContext(minimalCtx, ["cones"], ["pitch"]);
+    expect(pitchCtx.equipment_available).not.toContain("gym_full");
+  });
+
+  test("zéro ballon : gym_full n'entraîne aucun id ballon dans le payload", () => {
+    const { context } = prepareBackendContext(minimalCtx, [], ["gym"]);
+    const list = context.equipment_available as string[];
+    for (const banned of ["medball", "medicine_ball", "swiss_ball", "fitball"]) {
+      expect(list).not.toContain(banned);
+    }
   });
 });
