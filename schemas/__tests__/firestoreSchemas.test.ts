@@ -25,3 +25,36 @@ describe("userProfileSchema · ageCategory", () => {
     expect(res.success).toBe(true);
   });
 });
+
+describe("userProfileSchema · parentalConsent", () => {
+  test("absent (profil legacy) → pas d'erreur, valeur nulle", () => {
+    const parsed = userProfileSchema.parse({ firstName: "Léa", ageCategory: "U15" });
+    expect(parsed.parentalConsent ?? null).toBeNull();
+  });
+
+  test("preuve valide conservée telle quelle", () => {
+    const consent = {
+      accepted: true,
+      acceptedAt: "2026-07-17T10:00:00.000Z",
+      ageCategoryAtConsent: "U15",
+    };
+    const parsed = userProfileSchema.parse({ parentalConsent: consent });
+    expect(parsed.parentalConsent).toEqual(consent);
+  });
+
+  test("valeur malformée → null (catch), jamais de crash", () => {
+    const parsed = userProfileSchema.parse({ parentalConsent: "oui" });
+    expect(parsed.parentalConsent ?? null).toBeNull();
+  });
+
+  test("safeParse réussit sur un profil U15 legacy sans le champ", () => {
+    const res = userProfileSchema.safeParse({
+      firstName: "Léa",
+      ageCategory: "U15",
+      clubTrainingDays: ["mon"],
+      clubTrainingsPerWeek: 2,
+      matchesPerWeek: 1,
+    });
+    expect(res.success).toBe(true);
+  });
+});
