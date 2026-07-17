@@ -74,6 +74,9 @@ export type FKS_NextSessionV2 = {
   guardrailsApplied?: string[];
   sessionTheme?: string | null;
   coachingTips?: string[];
+  /** Émis par le backend à la RACINE de la réponse (fks/src/fksSchema.ts).
+   *  postSession.recoveryTips est conservé en compat — toujours lire les deux. */
+  recoveryTips?: string[];
   postSession?: {
     cooldownMin?: number;
     mobility?: string[];

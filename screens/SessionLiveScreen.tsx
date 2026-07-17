@@ -27,6 +27,7 @@ import { withSessionErrorBoundary } from "../components/withErrorBoundary";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { SessionTimer, type SessionTimerHandle } from "../components/session/SessionTimer";
 import { getBlockLabel } from "../components/session/blockConfig";
+import { readRecoveryTips } from "./newSession/helpers";
 import { formatDayFR } from "../utils/dateHelpers";
 import { frIntensity, frFocus, frLocation } from "../utils/frLabels";
 import { useSettingsStore } from "../state/settingsStore";
@@ -1008,10 +1009,8 @@ function SessionLiveScreen() {
     const focusRaw = v2.focusPrimary ?? v2.focusSecondary;
     const focus = typeof focusRaw === "string" ? focusRaw : undefined;
     const location = typeof v2.location === "string" ? v2.location : undefined;
-    const recoveryTips =
-      Array.isArray(v2?.postSession?.recoveryTips) && v2.postSession.recoveryTips.length > 0
-        ? v2.postSession.recoveryTips
-        : undefined;
+    // Racine v2.recoveryTips (contrat backend actuel) + compat postSession.
+    const recoveryTips = readRecoveryTips(v2);
     const summary = {
       title,
       subtitle,

@@ -1,5 +1,5 @@
 import type { Exercise, Session } from "../../domain/types";
-import type { PlannedIntensity, ResetVariant } from "./types";
+import type { FKS_NextSessionV2, PlannedIntensity, ResetVariant } from "./types";
 
 export const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() &&
@@ -11,6 +11,23 @@ export function toPlannedIntensity(x: Session["intensity"] | string): PlannedInt
   if (k.includes("hard") || k.includes("difficile") || k.includes("max")) return "hard";
   if (k.includes("mod")) return "moderate";
   return "easy";
+}
+
+/**
+ * Contrat front↔back : le backend émet `recovery_tips` à la RACINE de la
+ * réponse v2 (fks/src/fksSchema.ts) — son `post_session` ne contient que
+ * {cooldown_min, mobility}. On lit d'abord postSession.recoveryTips (compat
+ * si le backend les y remet un jour), puis la racine.
+ * Retourne undefined si aucun conseil (jamais un tableau vide).
+ */
+export function readRecoveryTips(
+  v2: Pick<FKS_NextSessionV2, "recoveryTips" | "postSession"> | null | undefined
+): string[] | undefined {
+  const fromPost = v2?.postSession?.recoveryTips;
+  if (Array.isArray(fromPost) && fromPost.length > 0) return fromPost;
+  const fromRoot = v2?.recoveryTips;
+  if (Array.isArray(fromRoot) && fromRoot.length > 0) return fromRoot;
+  return undefined;
 }
 
 export function prettifyName(name: string) {

@@ -76,6 +76,10 @@ const resetVariantSchema = z.object({
 // ---------------------------------------------------------------------------
 // Schema principal FKS_NextSessionV2
 // ---------------------------------------------------------------------------
+// .passthrough() sur la racine : même règle que blocs/items. Sans lui, z.object
+// jetait silencieusement tout champ racine non déclaré — c'est ce strip qui a
+// coûté player_context pendant des mois, puis recovery_tips (le backend les
+// émet à la RACINE, pas dans post_session — cf. fks/src/fksSchema.ts).
 
 export const sessionV2Schema = z.object({
   version: z.string().catch("v2"),
@@ -101,6 +105,9 @@ export const sessionV2Schema = z.object({
   guardrails_applied: z.array(z.string()).optional().catch([]),
   session_theme: z.string().nullable().optional().catch(null),
   coaching_tips: z.array(z.string()).optional().catch([]),
+  // Le backend (Agent B) émet recovery_tips à la racine de la réponse ;
+  // post_session.recovery_tips est gardé en compat si le backend les y remet.
+  recovery_tips: z.array(z.string()).optional().catch([]),
   post_session: postSessionSchema.optional().catch(null),
   selection_debug: z.object({
     reasons: z.array(z.string()).optional().catch([]),
@@ -115,6 +122,6 @@ export const sessionV2Schema = z.object({
   }).nullable().optional().catch(null),
   reset_variants: z.array(resetVariantSchema).optional().catch([]),
   player_context: playerContextSchema.nullable().optional().catch(null),
-});
+}).passthrough();
 
 export type SessionV2Parsed = z.infer<typeof sessionV2Schema>;
