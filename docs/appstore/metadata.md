@@ -46,7 +46,7 @@ Application de prépa physique football avec cycles personnalisés. Merci de tes
 ## Contact / éditeur
 - Nom : Le Bris Kyllian
 - Email : kyllian@fks-app.com
-- Adresse : 12 rue Julius et Ethel Rosenberg, **[CODE POSTAL ET VILLE À COMPLÉTER]**
+- Adresse : 12 rue Julius et Ethel Rosenberg, 76700 Gonfreville-l'Orcher
 
 ---
 

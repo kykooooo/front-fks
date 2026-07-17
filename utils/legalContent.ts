@@ -9,7 +9,7 @@ export const LEGAL_NOTICE: LegalSection[] = [
     body: [
       "Nom : Le Bris Kyllian",
       "Email : kyllian@fks-app.com",
-      "Adresse : 12 rue Julius et Ethel Rosenberg",
+      "Adresse : 12 rue Julius et Ethel Rosenberg, 76700 Gonfreville-l'Orcher",
       "Pays : France",
     ],
   },
@@ -39,7 +39,7 @@ export const PRIVACY_POLICY: LegalSection[] = [
     body: [
       "Nom : Le Bris Kyllian",
       "Email : kyllian@fks-app.com",
-      "Adresse : 12 rue Julius et Ethel Rosenberg",
+      "Adresse : 12 rue Julius et Ethel Rosenberg, 76700 Gonfreville-l'Orcher",
       "Pays : France",
     ],
   },

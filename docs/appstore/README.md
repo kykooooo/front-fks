@@ -9,7 +9,7 @@ Elles doivent être accessibles publiquement, idéalement sur :
 - `https://fks-app.com/privacy`
 - `https://fks-app.com/legal`
 
-⚠️ **Avant de publier** : les deux pages contiennent un marqueur `[CODE POSTAL ET VILLE À COMPLÉTER]` à la place de l'adresse complète (le fichier source `utils/legalContent.ts` a la même adresse incomplète). Complète l'adresse aux deux endroits (page HTML + fichier source) avant la mise en ligne définitive.
+✅ L'adresse complète (12 rue Julius et Ethel Rosenberg, 76700 Gonfreville-l'Orcher) est renseignée dans `privacy.html`, `legal.html` et `utils/legalContent.ts`.
 
 ## Option 1 — Firebase Hosting (recommandé, déjà dans l'écosystème du projet)
 
@@ -48,7 +48,6 @@ Si `fks-app.com` n'est pas encore prêt à héberger ces pages, une page statiqu
 ## Ce que Kyllian doit faire à la main
 
 1. Choisir une option ci-dessus (Firebase Hosting recommandé).
-2. Compléter le code postal + ville dans `privacy.html`, `legal.html` ET `utils/legalContent.ts` (marqueur `[CODE POSTAL ET VILLE À COMPLÉTER]`).
-3. Déployer/uploader les pages.
-4. Vérifier que les deux URLs publiques répondent en HTTPS.
-5. Coller ces URLs dans App Store Connect (App Privacy / Support URL) et Google Play Console (Politique de confidentialité).
+2. Déployer/uploader les pages.
+3. Vérifier que les deux URLs publiques répondent en HTTPS.
+4. Coller ces URLs dans App Store Connect (App Privacy / Support URL) et Google Play Console (Politique de confidentialité).
