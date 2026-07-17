@@ -20,6 +20,17 @@ export type Modality = 'run' | 'circuit' | 'strength' | 'plyo' | 'cod' | 'speed'
 // ===============================
 // Brique structurante : pilote (à terme) les caps de durée / familles d'exos autorisées.
 // On stocke UNE catégorie, pas de date de naissance (minimisation des données).
+//
+// ⚠️ U13 RETIRÉE DE LA SÉLECTION (décision produit, 2026-07) — l'app ne cible
+// plus les U13, MAIS 'U13' reste ICI, dans AGE_CATEGORIES/AgeCategory/
+// normalizeAgeCategory. Ne la retire JAMAIS de ce type : normalizeAgeCategory()
+// alimente directement le payload envoyé au backend (services/aiContext.ts →
+// age_category), qui pilote AGE_CATEGORY_CAPS côté moteur (plafonds durée/volume/
+// familles interdites — SEULE protection réelle d'un joueur U13). Si on neutralise
+// 'U13' ici, un profil déjà en U13 enverrait age_category: null et perdrait TOUTE
+// protection de dosage. On retire l'OPTION proposée à l'utilisateur (cf.
+// SELECTABLE_AGE_CATEGORIES ci-dessous, utilisée par le sélecteur de
+// ProfileSetupScreen), jamais la reconnaissance/défense de la valeur existante.
 export const AGE_CATEGORIES = ['U13', 'U15', 'U17', 'U18', 'Senior'] as const;
 export type AgeCategory = (typeof AGE_CATEGORIES)[number];
 
@@ -29,6 +40,16 @@ export function normalizeAgeCategory(value: unknown): AgeCategory | null {
   const v = value.trim();
   return (AGE_CATEGORIES as readonly string[]).includes(v) ? (v as AgeCategory) : null;
 }
+
+// Catégories réellement PROPOSÉES à la sélection (inscription/profil) — l'app ne
+// cible plus les U13 (moins de 13 ans = régimes Apple Kids/COPPA, hors du pilote
+// actuel U15+). Un profil déjà enregistré en 'U13' n'apparaîtra sélectionné dans
+// aucun chip (cf. ProfileSetupScreen) : il doit choisir une nouvelle catégorie
+// pour continuer — sa donnée stockée reste 'U13' (donc protégée côté moteur) tant
+// qu'il n'a pas validé un nouveau choix.
+export const SELECTABLE_AGE_CATEGORIES = AGE_CATEGORIES.filter(
+  (c): c is Exclude<AgeCategory, 'U13'> => c !== 'U13'
+);
 
 // ===============================
 // Contexte de semaine club (FKS Club — "le coach donne le terrain")

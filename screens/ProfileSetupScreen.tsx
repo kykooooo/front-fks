@@ -27,7 +27,10 @@ import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { LoadingOverlay } from "../components/ui/LoadingOverlay";
 import { findClubByInviteCode, normalizeInviteCode, setClubMembership } from "../repositories/clubsRepo";
 import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
-import { AGE_CATEGORIES } from "../domain/types";
+// Catégories proposées au sélecteur : U13 retirée (décision produit 2026-07, cf.
+// domain/types.ts). Un profil déjà en 'U13' n'apparaît sélectionné dans aucun
+// chip ci-dessous → l'étape 0 le bloque tant qu'il n'a pas repick une catégorie.
+import { SELECTABLE_AGE_CATEGORIES } from "../domain/types";
 import { recommendMicrocycle } from "../domain/recommendMicrocycle";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { showToast } from "../utils/toast";
@@ -260,7 +263,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       case 0:
         if (!firstName.trim()) { fail("Champs manquants", "Merci d'indiquer ton prénom."); return false; }
         if (!positions.includes(position as any)) { fail("Champs manquants", "Choisis ton poste."); return false; }
-        if (!AGE_CATEGORIES.includes(ageCategory as any)) { fail("Champs manquants", "Choisis ta catégorie."); return false; }
+        if (!SELECTABLE_AGE_CATEGORIES.includes(ageCategory as any)) { fail("Champs manquants", "Choisis ta catégorie."); return false; }
         if (!levels.includes(level as any)) { fail("Champs manquants", "Indique ton niveau."); return false; }
         if (!dominantFeet.includes(dominantFoot as any)) { fail("Champs manquants", "Choisis ton pied fort."); return false; }
         return true;
@@ -486,7 +489,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
             <Text style={styles.fieldLabel}>Catégorie</Text>
             <View style={styles.chipRow}>
-              {AGE_CATEGORIES.map((c) => (
+              {SELECTABLE_AGE_CATEGORIES.map((c) => (
                 <Chip key={c} label={c} selected={ageCategory === c} onPress={() => setAgeCategory(c)} />
               ))}
             </View>
