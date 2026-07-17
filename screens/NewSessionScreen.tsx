@@ -126,7 +126,6 @@ export default function NewSessionScreen() {
   const sessions = useSessionsStore((s) => s.sessions);
   const pushSession = useSessionsStore((s) => s.pushSession);
   const devNowISO = useDebugStore((s) => s.devNowISO);
-  const nextAllowedISO = useLoadStore((s) => s.nextAllowedDateISO);
   const persistPlanned = useSyncStore((s) => s.persistPlannedSession);
   const setLastAiSessionV2 = useSessionsStore(
     (s) => s.setLastAiSessionV2 ?? (() => {})
@@ -139,7 +138,6 @@ export default function NewSessionScreen() {
   const dailyApplied = useLoadStore((s) => s.dailyApplied);
   const lastAppliedDate = useLoadStore((s) => s.lastAppliedDate);
   const advanceDays = useLoadStore((s) => s.advanceDays);
-  const restUntil = useLoadStore((s) => s.restUntil);
   const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
 
   const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
@@ -200,9 +198,10 @@ export default function NewSessionScreen() {
   );
 
   const now = devNowISO ? new Date(devNowISO) : new Date();
-  const isBeforeNextAllowed = nextAllowedISO
-    ? now.getTime() < new Date(nextAllowedISO).getTime()
-    : false;
+  // NOTE (17/07) : le bouton "Repos 2 jours" et son verrou nextAllowedDateISO
+  // ont été retirés — le repos est géré par la jauge de forme + CTA intelligent.
+  // Les profils avec un verrou legacy persisté sont purgés à la réhydratation
+  // (migration v2 de useLoadStore).
   const allowSameDayInDev = DEV_FLAGS.ENABLED;
   const alreadyAppliedToday =
     !allowSameDayInDev &&
@@ -358,21 +357,6 @@ export default function NewSessionScreen() {
       if (cycleCompleted) {
         showToast({ type: "info", title: "Cycle terminé", message: "Bien joué. Choisis un nouveau cycle pour continuer." });
         nav.navigate("CycleModal", { mode: "select", origin: "newSession" });
-        return;
-      }
-
-      if (isBeforeNextAllowed) {
-        const d = nextAllowedISO ? new Date(nextAllowedISO) : null;
-        const dateLabel = d
-          ? d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-          : null;
-        showToast({
-          type: "info",
-          title: "Repos programmé",
-          message: dateLabel
-            ? `Repos jusqu'au ${dateLabel} — reviens te reposer avant ta prochaine séance !`
-            : "Une période de repos est programmée. Reviens bientôt !",
-        });
         return;
       }
 
@@ -767,14 +751,12 @@ export default function NewSessionScreen() {
           {/* Étape 2 : CTA Génération (affiché après validation) */}
 	          {setupDone && !cachePrompt ? (
 	            <GenerationActions
-	              disabled={isBeforeNextAllowed || contextLoading || generating || !storeHydrated || !!current}
+	              disabled={contextLoading || generating || !storeHydrated || !!current}
 	              generating={generating}
 	              label={generateLabel}
 	              onGenerate={handleGenerate}
 	              onAdvanceDay={() => advanceDays(1)}
-	              onRestTwoDays={() => restUntil(2)}
 	              storeHydrated={storeHydrated}
-	              nextAllowedISO={nextAllowedISO}
 	              alreadyAppliedToday={alreadyAppliedToday}
 	              advice={advice}
 	            />
@@ -787,11 +769,9 @@ export default function NewSessionScreen() {
 	          current={current}
           phaseLabel={cyclePhase?.label ?? null}
           phaseMeaning={cyclePhase?.meaning ?? null}
-          nextAllowedISO={nextAllowedISO}
           alreadyAppliedToday={alreadyAppliedToday}
           onFeedback={goFeedback}
           onAdvanceDay={() => advanceDays(1)}
-          onRestTwoDays={() => restUntil(2)}
         />
       )}
 

@@ -3,7 +3,6 @@ import { View, Text, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { palette } from "../theme";
 import type { Advice } from "../../../domain/adviceRules";
-import { formatDayFR } from "../../../utils/dateHelpers";
 
 type Props = {
   disabled: boolean;
@@ -11,9 +10,7 @@ type Props = {
   label: string;
   onGenerate: () => void;
   onAdvanceDay: () => void;
-  onRestTwoDays: () => void;
   storeHydrated: boolean;
-  nextAllowedISO?: string | null;
   alreadyAppliedToday: boolean;
   advice?: Advice | null;
 };
@@ -31,9 +28,7 @@ export function GenerationActions({
   label,
   onGenerate,
   onAdvanceDay,
-  onRestTwoDays,
   storeHydrated,
-  nextAllowedISO,
   alreadyAppliedToday,
   advice,
 }: Props) {
@@ -97,22 +92,10 @@ export function GenerationActions({
         >
           <Text style={styles.ctaSecondaryGreenText}>Jour OFF (+1j)</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.cta, styles.ctaSecondaryOrange, generating && { opacity: 0.5 }]}
-          onPress={() => guardedPress(onRestTwoDays)}
-          disabled={generating}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.ctaSecondaryOrangeText}>Repos 2 jours</Text>
-        </TouchableOpacity>
       </View>
 
       {!storeHydrated ? (
         <Text style={styles.helper}>Chargement de ton historique...</Text>
-      ) : nextAllowedISO ? (
-        <Text style={styles.helper}>
-          Prochaine séance autorisée à partir de {formatDayFR(nextAllowedISO)}
-        </Text>
       ) : null}
 
       {alreadyAppliedToday ? (
@@ -173,15 +156,6 @@ const styles = {
   },
   ctaSecondaryGreenText: {
     color: palette.text,
-    fontWeight: "700" as const,
-    fontSize: 12,
-  },
-  ctaSecondaryOrange: {
-    backgroundColor: palette.accentSoft,
-    borderColor: palette.accent,
-  },
-  ctaSecondaryOrangeText: {
-    color: palette.accent,
     fontWeight: "700" as const,
     fontSize: 12,
   },

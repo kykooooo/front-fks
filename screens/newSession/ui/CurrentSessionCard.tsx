@@ -14,22 +14,18 @@ type Props = {
   phaseLabel?: string | null;
   /** Phrase de sens de la phase courante (optionnelle). */
   phaseMeaning?: string | null;
-  nextAllowedISO?: string | null;
   alreadyAppliedToday: boolean;
   onFeedback: () => void;
   onAdvanceDay: () => void;
-  onRestTwoDays: () => void;
 };
 
 export function CurrentSessionCard({
   current,
   phaseLabel,
   phaseMeaning,
-  nextAllowedISO,
   alreadyAppliedToday,
   onFeedback,
   onAdvanceDay,
-  onRestTwoDays,
 }: Props) {
   const nav = useNavigation<any>();
   const guardNav = useNavGuard();
@@ -101,16 +97,7 @@ export function CurrentSessionCard({
         <TouchableOpacity style={[styles.cta, styles.ctaSecondaryGreen]} onPress={onAdvanceDay}>
           <Text style={styles.ctaSecondaryGreenText}>Jour OFF (+1j)</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.cta, styles.ctaSecondaryOrange]} onPress={onRestTwoDays}>
-          <Text style={styles.ctaSecondaryOrangeText}>Repos 2 jours</Text>
-        </TouchableOpacity>
       </View>
-
-      {nextAllowedISO ? (
-        <Text style={styles.helper}>
-          Prochaine séance autorisée à partir du {toDateKey(nextAllowedISO)}
-        </Text>
-      ) : null}
 
       {alreadyAppliedToday ? (
         <Text style={[styles.helper, { marginTop: 4 }]}>
@@ -203,15 +190,6 @@ const styles = {
   },
   ctaSecondaryGreenText: {
     color: palette.text,
-    fontWeight: "700" as const,
-    fontSize: 12,
-  },
-  ctaSecondaryOrange: {
-    backgroundColor: palette.accentSoft,
-    borderColor: palette.accent,
-  },
-  ctaSecondaryOrangeText: {
-    color: palette.accent,
     fontWeight: "700" as const,
     fontSize: 12,
   },
