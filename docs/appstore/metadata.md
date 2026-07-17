@@ -78,7 +78,13 @@ Application de prépa physique football avec cycles personnalisés. Merci de tes
 - **OpenAI** : génération des séances côté backend (le contenu envoyé est le contexte d'entraînement, pas l'identité directe de l'utilisateur — pas d'email/nom transmis à OpenAI).
 
 ### Suppression de compte
-Nécessaire pour Google Play (obligatoire depuis 2023) et recommandé pour Apple : prévoir un chemin de suppression de compte dans l'app (en cours sur un autre chantier — cf. Settings/functions). Ne pas soumettre sur les stores tant que cette fonctionnalité n'est pas en place, les deux stores la vérifient.
+Nécessaire pour Google Play (obligatoire depuis 2023) et recommandé pour Apple. **En place dans l'app** : Paramètres → Confidentialité → « Supprimer mon compte » (ré-authentification par mot de passe, puis Cloud Function `deleteAccount` qui purge la fiche club, `users/{uid}` et toutes ses sous-collections, et supprime le compte Auth en dernier). ⚠️ Le bouton ne fonctionne qu'une fois la Cloud Function déployée (`firebase deploy --only functions:deleteAccount` — cf. `DEPLOIEMENT_SUPPRESSION_COMPTE.md` à la racine du repo) : déployer la function AVANT de soumettre aux stores.
+
+### Mineurs & consentement parental (questionnaires « Public cible » / classification d'âge)
+- L'app ne cible pas les moins de 13 ans : la catégorie U13 n'est plus proposée à l'inscription (plus jeune catégorie sélectionnable : U15). Ne pas déclarer de tranche d'âge < 13 ans — pas de programme Apple « Kids » ni Play « Conçu pour les familles ».
+- Consentement parental obligatoire dans l'app pour les joueurs de moins de 15 ans (RGPD, droit français) : case à cocher bloquante au setup profil, preuve horodatée stockée dans le profil utilisateur (`parentalConsent` : accepted / acceptedAt / ageCategoryAtConsent).
+- La politique de confidentialité (app + `privacy.html`) contient une section « Mineurs de moins de 15 ans » : les droits du mineur (accès, rectification, effacement) s'exercent via le parent ou responsable légal à kyllian@fks-app.com.
+- Play Console (questionnaire « Public cible et contenu ») : déclarer uniquement des tranches d'âge 13 ans et plus, en cohérence avec ce qui précède.
 
 ---
 
