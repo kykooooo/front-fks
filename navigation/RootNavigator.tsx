@@ -24,6 +24,7 @@ import WelcomeScreen from "../screens/WelcomeScreen";
 import SessionLiveScreen from "../screens/SessionLiveScreen";
 import SessionSummaryScreen from "../screens/SessionSummaryScreen";
 import SettingsScreen from "../screens/SettingsScreen";
+import DeleteAccountScreen from "../screens/DeleteAccountScreen";
 import LegalNoticeScreen from "../screens/LegalNoticeScreen";
 import PrivacyPolicyScreen from "../screens/PrivacyPolicyScreen";
 import RoutineScreen from "../screens/RoutineScreen";
@@ -40,6 +41,7 @@ import { useSyncStore } from "../state/stores/useSyncStore";
 import { SwipeTabsWrapper } from "../components/SwipeTabsWrapper";
 import { setAnalyticsUserId } from "../services/analytics";
 import { setSentryUser } from "../services/monitoring";
+import { onWelcomeReset } from "../services/accountDeletion";
 
 // Firebase
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -80,6 +82,7 @@ export type AppStackParamList = {
     };
   };
   Settings: undefined;
+  DeleteAccount: undefined;
   Routine: undefined;
   GenerateSession: undefined;
   SessionHistory: undefined;
@@ -199,6 +202,7 @@ function AppNavigator() {
       <AppStack.Screen name="SessionLive" component={SessionLiveScreen} options={{ headerShown: true, title: "Séance en cours" }} />
       <AppStack.Screen name="SessionSummary" component={SessionSummaryScreen} options={{ headerShown: true, title: "Résumé" }} />
       <AppStack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: true, title: "Paramètres" }} />
+      <AppStack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ headerShown: true, title: "Supprimer mon compte" }} />
       <AppStack.Screen name="LegalNotice" component={LegalNoticeScreen} options={{ headerShown: true, title: "Mentions légales" }} />
       <AppStack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={{ headerShown: true, title: "Confidentialité" }} />
       <AppStack.Screen name="Routine" component={RoutineScreen} options={{ headerShown: true, title: "Routine" }} />
@@ -379,6 +383,12 @@ export default function RootNavigator() {
       }
     })();
   }, []);
+
+  // 1ter) Suppression de compte : la purge locale efface WELCOME_DONE dans
+  // AsyncStorage, mais `welcomeDone` (lu UNE fois au boot) resterait `true` en
+  // mémoire → l'utilisateur atterrirait sur Login au lieu de Welcome. Le
+  // service émet cet événement après la purge pour resynchroniser l'état.
+  useEffect(() => onWelcomeReset(() => setWelcomeDone(false)), []);
 
   // 2) Écoute temps réel du doc profil: users/{uid}
   useEffect(() => {

@@ -615,6 +615,19 @@ export default function SettingsScreen() {
                   onPress={() => nav.navigate("PrivacyPolicy")}
                 />
               }
+            />
+            <SettingRow
+              title="Supprimer mon compte"
+              subtitle="Effacer définitivement toutes tes données"
+              right={
+                <Button
+                  label="Supprimer"
+                  size="sm"
+                  variant="ghost"
+                  textStyle={{ color: palette.danger }}
+                  onPress={() => nav.navigate("DeleteAccount")}
+                />
+              }
               showDivider={false}
             />
           </Card>
