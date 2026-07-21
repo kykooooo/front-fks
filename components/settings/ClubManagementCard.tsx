@@ -109,8 +109,8 @@ export function ClubManagementCard() {
         return;
       }
 
-      // Ajouter le joueur au club
-      await setClubMembership({ clubId: club.id, uid, role: "player" });
+      // Ajouter le joueur au club (inviteCode = preuve d'invitation exigée par les rules)
+      await setClubMembership({ clubId: club.id, uid, role: "player", inviteCode: club.inviteCode });
 
       // Mettre à jour le profil utilisateur
       const userRef = doc(db, "users", uid);
