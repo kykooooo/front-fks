@@ -327,11 +327,14 @@ export const OPTIONAL_FIELD_KEYS: FieldKey[] = [
 ];
 
 /**
- * IDs de matériel (cf. `gymEquipmentOptions` / `homeEquipmentOptions` dans
- * screens/ProfileSetupScreen.tsx) qui représentent une charge "portable" utilisable
- * pour un goblet squat ou un split squat chargé. Les machines (presse, poulies,
+ * IDs de matériel qui représentent une charge "portable" utilisable pour un
+ * goblet squat ou un split squat chargé. Les machines (presse, poulies,
  * smith machine, rack seul, banc...) ne comptent PAS : elles ne donnent pas
  * directement une charge à tenir en main pour ces mouvements précis.
+ * Note (mai 2026) : le setup profil ne collecte plus gymEquipment/homeEquipment
+ * (docs/onboarding-design.md §4.6) — ces champs restent lus ici pour les
+ * profils déjà renseignés avant ce changement, sans jamais crasher s'ils
+ * sont vides (hasWeightsEquipment tolère [] / null).
  */
 export const WEIGHT_EQUIPMENT_IDS = [
   "barbell",

@@ -53,7 +53,12 @@ import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
 import { trackEvent } from "../services/analytics";
 
-const TOTAL_STEPS = 5;
+// 5 → 4 étapes (mai 2026) : le matériel (29 cases, ≥1 obligatoire) sort du
+// setup — cf. docs/onboarding-design.md §4.6/§4.3 (design validé par le
+// fondateur). Le lieu + le matériel se choisissent à la première génération
+// (NewSessionScreen), là où l'app a déjà les bons défauts. L'accès salle
+// reste demandé ici : il nourrit le contexte IA + la reco de lieu.
+const TOTAL_STEPS = 4;
 const palette = theme.colors;
 
 /* ─── Steps config ─── */
@@ -62,7 +67,6 @@ const STEPS: { label: string; icon: keyof typeof Ionicons.glyphMap; subtitle: st
   { label: "Objectif", icon: "flag-outline", subtitle: "Quel est ton but ?" },
   { label: "Club", icon: "people-outline", subtitle: "Tes entraînements & matchs" },
   { label: "Salle", icon: "barbell-outline", subtitle: "Ton accès salle" },
-  { label: "Matériel", icon: "home-outline", subtitle: "Ton équipement hors salle" },
 ];
 
 /* ─── Constants ─── */
@@ -92,41 +96,6 @@ const OBJECTIVE_DISPLAY_LABELS: Partial<Record<(typeof objectives)[number], stri
   "Gagner en vitesse / explosivite": "Gagner en vitesse / explosivité",
   "Reprendre apres une blessure": "Reprendre après une blessure",
 };
-
-const gymEquipmentOptions = [
-  { id: "barbell", label: "Barre + poids libres" },
-  { id: "squat_rack", label: "Rack à squat" },
-  { id: "bench", label: "Banc de musculation" },
-  { id: "dumbbells_light", label: "Haltères légers (≤ 10 kg)" },
-  { id: "dumbbells_medium", label: "Haltères moyens (10-25 kg)" },
-  { id: "dumbbells_heavy", label: "Haltères lourds (≥ 25 kg)" },
-  { id: "kettlebell", label: "Kettlebells" },
-  { id: "leg_press", label: "Presse (leg press)" },
-  { id: "cable_machine", label: "Poulies / câble" },
-  { id: "smith_machine", label: "Smith machine" },
-  { id: "pullup_bar", label: "Barre de tractions" },
-  { id: "box_plyo", label: "Box plyo" },
-  { id: "bosu", label: "BOSU" },
-  { id: "foam_roller", label: "Foam roller / rouleau" },
-  { id: "yoga_mat", label: "Tapis de sol" },
-];
-
-const homeEquipmentOptions = [
-  { id: "field", label: "Terrain herbe / synthé" },
-  { id: "street_area", label: "City / bitume / parking" },
-  { id: "indoor_small", label: "Petit espace intérieur" },
-  { id: "cones", label: "Cônes" },
-  { id: "flat_markers", label: "Plots plats" },
-  { id: "speed_ladder", label: "Échelle de rythme" },
-  { id: "mini_hurdles", label: "Petites haies" },
-  { id: "minibands", label: "Mini-bands" },
-  { id: "long_bands", label: "Élastiques longs" },
-  { id: "home_dumbbells", label: "Haltères (chez toi)" },
-  { id: "home_kettlebell", label: "Kettlebell (chez toi)" },
-  { id: "sandbag", label: "Sac de sable / sandbag" },
-  { id: "home_foam_roller", label: "Foam roller (chez toi)" },
-  { id: "home_yoga_mat", label: "Tapis de sol (chez toi)" },
-];
 
 const daysOfWeek = [
   { id: "mon", label: "Lun" }, { id: "tue", label: "Mar" }, { id: "wed", label: "Mer" },
@@ -181,6 +150,11 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   const [clubTrainingDays, setClubTrainingDays] = useState<string[]>([]);
   const [matchDays, setMatchDays] = useState<string[]>([]);
   const [hasGymAccess, setHasGymAccess] = useState<"oui" | "occasionnel" | "non" | "">("");
+  // gymEquipment/homeEquipment/hasHomeEquipment : plus de grille dans le setup
+  // (docs/onboarding-design.md §4.6, "les 29 cases de matériel disparaissent").
+  // Ces états ne sont plus modifiables ici — on les garde uniquement pour
+  // repasser sans perte au save une valeur déjà en base (édition d'un profil
+  // pré-existant). Un nouveau profil part sur des défauts sûrs ([] / false).
   const [gymEquipment, setGymEquipment] = useState<string[]>([]);
   const [hasHomeEquipment, setHasHomeEquipment] = useState<"oui" | "non" | "">("");
   const [homeEquipment, setHomeEquipment] = useState<string[]>([]);
@@ -340,12 +314,9 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
         return true;
       }
       case 3:
+        // Plus de validation matériel (docs/onboarding-design.md §4.6) : le
+        // matériel se choisit à la première génération, jamais un blocage ici.
         if (!hasGymAccess) { fail("Champs manquants", "Indique si tu as accès à une salle."); return false; }
-        if (hasGymAccess !== "non" && gymEquipment.length === 0) { fail("Champs manquants", "Sélectionne au moins un matériel en salle."); return false; }
-        return true;
-      case 4:
-        if (!hasHomeEquipment) { fail("Champs manquants", "Indique si tu as du matériel hors salle."); return false; }
-        if (hasHomeEquipment === "oui" && homeEquipment.length === 0) { fail("Champs manquants", "Sélectionne au moins un matériel."); return false; }
         return true;
       default:
         return true;
@@ -440,6 +411,9 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
         hasClubTrainings, clubTrainingDays,
         matchDay: matchDays[0] ?? null, matchDays,
         hasGymAccess: hasGymAccess === "oui" ? "regular" : hasGymAccess === "occasionnel" ? "occasional" : "none",
+        // Repasse tel quel (pas d'UI ici pour les modifier) : [] / false pour
+        // un nouveau profil, valeur prefillée inchangée pour un profil édité
+        // — jamais undefined, jamais de perte silencieuse de données existantes.
         gymEquipment,
         hasHomeEquipment: hasHomeEquipment === "oui",
         homeEquipment,
@@ -709,36 +683,12 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
               <Chip label="Non" selected={hasGymAccess === "non"} onPress={() => setHasGymAccess("non")} />
             </View>
 
-            {hasGymAccess !== "" && hasGymAccess !== "non" && (
-              <>
-                <Text style={styles.fieldLabel}>Matériel disponible en salle</Text>
-                {gymEquipmentOptions.map((o) => (
-                  <Choice key={o.id} label={o.label} selected={gymEquipment.includes(o.id)}
-                    onPress={() => toggleInList(o.id, gymEquipment, setGymEquipment)} />
-                ))}
-              </>
-            )}
-          </>
-        );
-
-      case 4:
-        return (
-          <>
-            <Text style={styles.fieldLabel}>As-tu du matériel chez toi / sur le terrain ?</Text>
-            <View style={styles.chipRow}>
-              <Chip label="Oui" selected={hasHomeEquipment === "oui"} onPress={() => setHasHomeEquipment("oui")} />
-              <Chip label="Non" selected={hasHomeEquipment === "non"} onPress={() => setHasHomeEquipment("non")} />
-            </View>
-
-            {hasHomeEquipment === "oui" && (
-              <>
-                <Text style={styles.fieldLabel}>Matériel hors salle</Text>
-                {homeEquipmentOptions.map((o) => (
-                  <Choice key={o.id} label={o.label} selected={homeEquipment.includes(o.id)}
-                    onPress={() => toggleInList(o.id, homeEquipment, setHomeEquipment)} />
-                ))}
-              </>
-            )}
+            {/* Plus de grille de matériel dans le setup : elle se choisit à la
+                première génération (NewSessionScreen), avec les bons défauts
+                selon le lieu. */}
+            <Text style={styles.hintText}>
+              Le matériel exact, tu le choisiras au moment de ta séance.
+            </Text>
           </>
         );
 
