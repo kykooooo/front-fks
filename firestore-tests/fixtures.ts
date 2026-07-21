@@ -121,7 +121,14 @@ export async function seed(testEnv: RulesTestEnvironment): Promise<void> {
       teamGender: "male",
     });
 
-    // Members
+    // Annuaire code→club (/inviteCodes/{code}, doc ID = code). Créé par
+    // createClub côté client ; seedé ici en admin (backfill pour clubs existants).
+    await setDoc(doc(db, "inviteCodes", CLUB_A_INVITE), { clubId: CLUB_A, name: "Club A" });
+    await setDoc(doc(db, "inviteCodes", CLUB_B_INVITE), { clubId: CLUB_B, name: "Club B" });
+
+    // Members — VOLONTAIREMENT sans champ inviteCode : c'est le cas réel des
+    // membres EXISTANTS (pilote) créés avant le durcissement. Les tests de
+    // compat prouvent qu'ils gardent toutes leurs lectures.
     await setDoc(doc(db, "clubs", CLUB_A, "members", COACH_A), { uid: COACH_A, role: "coach" });
     await setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A1), { uid: PLAYER_A1, role: "player" });
     await setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A2), { uid: PLAYER_A2, role: "player" });

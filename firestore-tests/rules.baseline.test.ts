@@ -31,7 +31,6 @@ import {
   COACH_B,
   STRANGER,
   WEEK_KEY,
-  CLUB_A_INVITE,
   seed,
 } from "./fixtures";
 
@@ -113,19 +112,18 @@ describe("Frontière coach-safe FERMÉE (PR-4) — anciens CURRENT VULNERABILITY
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe("Vulnérabilités HORS périmètre coach-safe (NON traitées par PR-4)", () => {
-  // ⚠️ Ces deux `assertSucceeds` restent VERTS : ce sont des fuites RÉELLES mais
-  // DISTINCTES de la frontière coach-safe (pas de données joueuse exposées au coach
-  // ici). Hors scope de PR-4 → laissées inchangées et tracées comme dette de sécu.
-  // À traiter dans une PR dédiée (durcissement clubs/inviteCode + membership par code).
+describe("Anciennes vulnérabilités HORS périmètre PR-4 — désormais FERMÉES", () => {
+  // ⚠️ Ces deux tests étaient des `assertSucceeds` volontaires (fuites réelles,
+  // documentées comme dette de sécurité). Le chantier clubs/invitation les ferme :
+  // les assertions sont INVERSÉES. La suite adversariale complète vit dans
+  // rules.clubsInvitation.test.ts.
 
-  test("HORS SCOPE: tout connecté lit clubs/{id} et donc l'inviteCode", async () => {
-    const snap = await getDoc(doc(asUser(STRANGER), "clubs", CLUB_A));
-    expect((snap.data() as Record<string, any>).inviteCode).toBe(CLUB_A_INVITE);
+  test("FERMÉ: un connecté hors club NE lit PLUS clubs/{id} (inviteCode inclus)", async () => {
+    await assertFails(getDoc(doc(asUser(STRANGER), "clubs", CLUB_A)));
   });
 
-  test("HORS SCOPE: un connecté crée son membership 'player' SANS code d'invitation", async () => {
-    await assertSucceeds(
+  test("FERMÉ: un connecté NE crée PLUS son membership 'player' sans code d'invitation", async () => {
+    await assertFails(
       setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), { uid: STRANGER, role: "player" }),
     );
   });

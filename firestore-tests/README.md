@@ -41,9 +41,10 @@ projet `demo-fks-rules` 100 % hors ligne (aucun credential Firebase).
 | `jest.config.js` | Runner Jest dédié (node + ts-jest), isolé de jest-expo. `maxWorkers: 1` : les suites partagent UN émulateur, sérialisation obligatoire (sinon `clearFirestore` d'un worker écrase un autre) |
 | `tsconfig.json` | tsconfig CommonJS/Node pour ts-jest (le tsconfig racine exclut ce dossier) |
 | `fixtures.ts` | Identifiants + seed admin (`withSecurityRulesDisabled`). Données factices. |
-| `rules.baseline.test.ts` | Tests VERTS contre les rules PR-4 (légitimes + frontière coach-safe FERMÉE + vulnérabilités hors scope documentées) |
+| `rules.baseline.test.ts` | Tests VERTS contre les rules PR-4 (légitimes + frontière coach-safe FERMÉE) ; les 2 anciens tests « HORS SCOPE » sont INVERSÉS depuis le chantier clubs/invitation |
 | `rules.target.test.ts` | 10 scénarios `TARGET` de la projection `playerSummaries` — **vraies fixtures/assertions**, désormais **actifs** (`.skip` retiré en PR-4) |
 | `rules.summaryMembership.test.ts` | Mini-hardening : `isPlayerMember` (summary lisible seulement si la joueuse est ENCORE membre player), list refusée, write false, + séquence réelle `members → get summaries` du lecteur coach |
+| `rules.clubsInvitation.test.ts` | Chantier clubs/invitation : énumération clubs FERMÉE (list interdite, get réservé membres/owner), annuaire `/inviteCodes/{code}` (get par code exact, list interdite, create owner-only cohérent), self-join GATÉ par la preuve d'invitation (inviteCode dans le doc member), compat membres existants |
 
 ## Ce qui est prouvé (PR-4, vert)
 
@@ -58,10 +59,16 @@ membre lit le weekContext ; non-membre et non-authentifié sont refusés.
 - écriture cliente d'un summary (coach OU joueuse) : refusée (`write: if false`) ;
 - la joueuse **conserve** l'accès à ses propres docs bruts.
 
-**Vulnérabilités HORS périmètre coach-safe** (restent `assertSucceeds`, **non traitées** par PR-4) :
-- tout connecté lit `clubs/{id}` → `inviteCode` exposé ;
-- un connecté crée son membership `player` **sans code d'invitation**.
-- → dette de sécurité distincte, à traiter dans une PR dédiée.
+**Anciennes vulnérabilités hors périmètre PR-4 — FERMÉES** (chantier clubs/invitation, `rules.clubsInvitation.test.ts`) :
+- l'énumération des clubs est fermée : `list` interdite pour tous (y compris pagination doc par doc
+  et l'ancienne query `where inviteCode ==`), `get` par ID réservé aux membres + owner ;
+- la découverte d'un club passe par l'annuaire `/inviteCodes/{code}` (doc ID = code) : `get` par
+  code exact pour tout connecté (le code est la capability), `list` interdite, `create` réservé à
+  l'owner du club référencé avec un code cohérent, `update`/`delete` interdits ;
+- le self-join exige la **preuve d'invitation** : `members` create/update `role: "player"` n'est
+  autorisé que si le doc porte l'`inviteCode` EXACT du club (comparé via `get()` serveur) ;
+- compat : les membres existants (docs member sans `inviteCode`, cas du pilote) conservent toutes
+  leurs lectures (club, weekContext, member doc) et peuvent toujours quitter le club.
 
 **Contrôles déjà conformes** (restent `assertFails`) :
 - coachB (autre club) ne lit ni le profil ni les sessions de playerA1.

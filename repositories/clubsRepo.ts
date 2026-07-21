@@ -8,7 +8,6 @@ import {
   query,
   serverTimestamp,
   setDoc,
-  where,
 } from "firebase/firestore";
 import { db } from "../services/firebase";
 import {
@@ -55,21 +54,28 @@ export const generateInviteCode = (clubName?: string) => {
   return `${prefix}-${randomDigits(4)}`;
 };
 
+/**
+ * Résout un code d'invitation via l'annuaire /inviteCodes/{code} (doc ID = code).
+ * Sécurité : plus AUCUNE query sur la collection clubs (les rules interdisent
+ * désormais toute list sur clubs → énumération fermée). Le get par code exact est
+ * la seule découverte possible : connaître le code EST la capability.
+ * `ownerUid` n'est volontairement pas exposé par l'annuaire → toujours "".
+ */
 export async function findClubByInviteCode(inviteCodeRaw: string): Promise<ClubDoc | null> {
   const inviteCode = normalizeInviteCode(inviteCodeRaw);
   if (!inviteCode) return null;
 
-  const q = query(collection(db, "clubs"), where("inviteCode", "==", inviteCode), limit(1));
-  const snap = await getDocs(q);
-  const first = snap.docs[0];
-  if (!first) return null;
-  const data = first.data() as any;
+  const snap = await getDoc(doc(db, "inviteCodes", inviteCode));
+  if (!snap.exists()) return null;
+  const data = snap.data() as any;
+  const clubId = typeof data?.clubId === "string" ? data.clubId.trim() : "";
+  if (!clubId) return null;
 
   return {
-    id: first.id,
+    id: clubId,
     name: typeof data?.name === "string" ? data.name : "Club",
-    inviteCode: typeof data?.inviteCode === "string" ? data.inviteCode : inviteCode,
-    ownerUid: typeof data?.ownerUid === "string" ? data.ownerUid : "",
+    inviteCode,
+    ownerUid: "",
   };
 }
 
@@ -78,34 +84,69 @@ export async function createClub(opts: { name: string; ownerUid: string }): Prom
   if (!name) throw new Error("CLUB_NAME_REQUIRED");
 
   const clubRef = doc(collection(db, "clubs"));
+  // Unicité du code via l'annuaire (doc ID = code) : un get exact remplace
+  // l'ancienne query sur clubs (interdite par les rules anti-énumération).
   let inviteCode = generateInviteCode(name);
   for (let i = 0; i < 5; i++) {
-    const q = query(collection(db, "clubs"), where("inviteCode", "==", inviteCode), limit(1));
-    const snap = await getDocs(q);
-    if (snap.empty) break;
+    const snap = await getDoc(doc(db, "inviteCodes", inviteCode));
+    if (!snap.exists()) break;
     inviteCode = generateInviteCode(name);
   }
 
-  const payload = {
-    name,
-    inviteCode,
-    ownerUid: opts.ownerUid,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  };
+  await setDoc(
+    clubRef,
+    {
+      name,
+      inviteCode,
+      ownerUid: opts.ownerUid,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
 
-  await setDoc(clubRef, payload, { merge: true });
-
-  return { id: clubRef.id, name, inviteCode, ownerUid: opts.ownerUid };
+  // Annuaire code→club. Les rules exigent : owner du club + code cohérent avec
+  // clubs/{id}.inviteCode (d'où l'ordre club PUIS annuaire). Si le code a été
+  // pris entre le check et l'écriture (setDoc sur doc existant = update → refusé),
+  // on régénère un code, on met à jour le club, et on retente.
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await setDoc(doc(db, "inviteCodes", inviteCode), {
+        clubId: clubRef.id,
+        name,
+        createdAt: serverTimestamp(),
+      });
+      return { id: clubRef.id, name, inviteCode, ownerUid: opts.ownerUid };
+    } catch (err) {
+      lastError = err;
+      inviteCode = generateInviteCode(name);
+      await setDoc(clubRef, { inviteCode, updatedAt: serverTimestamp() }, { merge: true });
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("INVITE_CODE_REGISTRATION_FAILED");
 }
 
-export async function setClubMembership(opts: { clubId: string; uid: string; role: ClubRole }) {
+/**
+ * Écrit le membership. Pour un `role: "player"`, `inviteCode` est OBLIGATOIRE :
+ * les rules ne créent/mettent à jour un membership player que si le doc porte
+ * le code d'invitation EXACT du club (preuve d'invitation — anti self-join).
+ * Le rôle coach reste réservé à l'owner du club (vérifié par les rules).
+ */
+export async function setClubMembership(opts: {
+  clubId: string;
+  uid: string;
+  role: ClubRole;
+  inviteCode?: string;
+}) {
   const memberRef = doc(db, "clubs", opts.clubId, "members", opts.uid);
+  const inviteCode = opts.inviteCode ? normalizeInviteCode(opts.inviteCode) : "";
   await setDoc(
     memberRef,
     {
       uid: opts.uid,
       role: opts.role,
+      ...(inviteCode ? { inviteCode } : {}),
       joinedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     },

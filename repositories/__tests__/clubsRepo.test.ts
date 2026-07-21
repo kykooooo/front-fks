@@ -71,6 +71,7 @@ jest.mock("firebase/firestore", () => ({
 import {
   normalizeInviteCode,
   generateInviteCode,
+  findClubByInviteCode,
   fetchClubPlayerSummaries,
   fetchClubPlayerSummary,
 } from "../clubsRepo";
@@ -122,6 +123,31 @@ describe("generateInviteCode", () => {
   test("génère un préfixe de secours si le nom est trop court", () => {
     const code = generateInviteCode("FC");
     expect(code).toMatch(/^[A-Z]{4}-\d{4}$/);
+  });
+});
+
+describe("findClubByInviteCode — résolution via l'annuaire /inviteCodes/{code} (jamais de query clubs)", () => {
+  test("code connu : get doc inviteCodes/{CODE normalisé} → clubId + name, AUCUNE lecture de la collection clubs", async () => {
+    mockFlags.summaryById["FKSF-1234"] = {
+      exists: true,
+      data: () => ({ clubId: "clubX", name: "Club X" }),
+    };
+    const club = await findClubByInviteCode("  fksf-1234 ");
+    expect(club).toEqual({ id: "clubX", name: "Club X", inviteCode: "FKSF-1234", ownerUid: "" });
+    // Preuve anti-énumération : un seul chemin lu, et c'est l'annuaire.
+    expect(mockFirestoreReads).toEqual([{ kind: "doc", path: ["inviteCodes", "FKSF-1234"] }]);
+  });
+
+  test("code inconnu (doc absent) → null ; doc sans clubId → null", async () => {
+    mockFlags.detailDoc = { exists: false, data: () => ({}) };
+    expect(await findClubByInviteCode("ZZZZ-0000")).toBeNull();
+    mockFlags.detailDoc = { exists: true, data: () => ({ name: "Sans clubId" }) };
+    expect(await findClubByInviteCode("ZZZZ-0000")).toBeNull();
+  });
+
+  test("code vide/invalide → null sans aucune lecture Firestore", async () => {
+    expect(await findClubByInviteCode("   ")).toBeNull();
+    expect(mockFirestoreReads).toHaveLength(0);
   });
 });
 
