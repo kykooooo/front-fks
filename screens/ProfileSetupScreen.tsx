@@ -425,7 +425,8 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
           return;
         }
         resolvedClubId = club.id;
-        await setClubMembership({ clubId: club.id, uid: user.uid, role: "player" });
+        // inviteCode = preuve d'invitation exigée par les rules (anti self-join).
+        await setClubMembership({ clubId: club.id, uid: user.uid, role: "player", inviteCode: club.inviteCode });
       }
 
       await setDoc(doc(db, "users", user.uid), {

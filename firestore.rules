@@ -60,8 +60,27 @@ service cloud.firestore {
       }
     }
 
+    // Preuve d'invitation (anti self-join) : le doc member écrit par le client
+    // doit porter `inviteCode`, comparé au code RÉEL du club (get() serveur,
+    // qui ignore les permissions de lecture du client). Le code = capability :
+    // sans lui, impossible de se créer un membership player.
+    function providesClubInviteCode(clubId) {
+      return ("inviteCode" in request.resource.data) &&
+        request.resource.data.inviteCode is string &&
+        request.resource.data.inviteCode ==
+          get(/databases/$(database)/documents/clubs/$(clubId)).data.inviteCode;
+    }
+
     match /clubs/{clubId} {
-      allow read: if isSignedIn();
+      // Énumération FERMÉE : plus AUCUNE lecture de collection (list). Un
+      // getDocs(clubs) — même paginé doc par doc — est refusé pour tout client.
+      // La découverte d'un club se fait par /inviteCodes/{code} (get par code
+      // exact, plus bas) : il faut CONNAÎTRE le code, on ne peut plus le récolter.
+      allow list: if false;
+      // get par ID : réservé aux membres du club (joueur OU coach) et à l'owner.
+      // `resource.data.ownerUid` (doc déjà chargé) évite un get() redondant.
+      allow get: if isClubMember(clubId) ||
+        (isSignedIn() && resource.data.ownerUid == request.auth.uid);
       allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
       allow update: if isClubOwner(clubId);
       allow delete: if false;
@@ -72,8 +91,15 @@ service cloud.firestore {
         // (même couple coach/owner) : le lecteur du roster (members → summaries)
         // doit pouvoir lister les members avant de lire chaque projection.
         allow read: if isOwner(memberId) || isCoach(clubId) || isClubOwner(clubId);
+        // Écriture de SON membership uniquement, et :
+        //  - player : exige la PREUVE de l'invitation (inviteCode exact du club
+        //    dans le doc) — ferme le self-join d'un inconnu dans l'effectif ;
+        //  - coach : réservé à l'owner du club (inchangé).
+        // update soumis à la même preuve : un membre existant ne peut pas
+        // réécrire son doc sans re-fournir le code (seul flux d'écriture légitime
+        // = rejoindre via code ; il porte toujours le code).
         allow create, update: if isOwner(memberId) && (
-          request.resource.data.role == "player" ||
+          (request.resource.data.role == "player" && providesClubInviteCode(clubId)) ||
           (request.resource.data.role == "coach" && isClubOwner(clubId))
         );
         // Un membre peut se retirer lui-même, ou le owner du club peut retirer n'importe qui
@@ -108,6 +134,30 @@ service cloud.firestore {
           isPlayerMember(clubId, playerUid);
         allow write: if false;
       }
+    }
+
+    // Annuaire code→club : l'ID du doc EST le code d'invitation (normalisé).
+    // Remplace l'ancienne query `clubs where inviteCode ==` (impossible à
+    // sécuriser : les rules ne voient pas les clauses where d'une list, donc
+    // toute list sur clubs restait énumérable par pagination).
+    //  - get par code exact : autorisé à tout connecté — il faut CONNAÎTRE le
+    //    code (capability), on ne peut pas le découvrir ;
+    //  - list : interdite → énumération impossible ;
+    //  - contenu volontairement minimal et non sensible : clubId + name
+    //    (affichage "Tu as rejoint {name}"), PAS d'ownerUid ;
+    //  - create : uniquement par l'owner du club référencé, et seulement si le
+    //    code est COHÉRENT (clubs/{clubId}.inviteCode == code) — personne ne
+    //    peut planter un faux annuaire vers un club qui n'est pas le sien ;
+    //  - update/delete : interdits (pas de rotation de code aujourd'hui ; un
+    //    setDoc sur un code existant est un update → refusé = anti-écrasement).
+    match /inviteCodes/{code} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create: if isSignedIn() &&
+        request.resource.data.clubId is string &&
+        get(/databases/$(database)/documents/clubs/$(request.resource.data.clubId)).data.ownerUid == request.auth.uid &&
+        get(/databases/$(database)/documents/clubs/$(request.resource.data.clubId)).data.inviteCode == code;
+      allow update, delete: if false;
     }
   }
 }
