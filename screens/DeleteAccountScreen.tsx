@@ -4,7 +4,7 @@
 // Cloud Function `deleteAccount`. Style destructif SOBRE (palette.danger du
 // design system, pas de rouge criard nouveau).
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -18,11 +18,12 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
+import { doc, getDoc } from "firebase/firestore";
 
 import { Screen } from "../components/ui/Screen";
 import { Card } from "../components/ui/Card";
 import { theme } from "../constants/theme";
-import { auth } from "../services/firebase";
+import { auth, db } from "../services/firebase";
 import {
   finalizeLocalAccountDeletion,
   reauthenticateWithPassword,
@@ -35,11 +36,20 @@ import { trackEvent } from "../services/analytics";
 
 const palette = theme.colors;
 
-const CONSEQUENCES = [
+const PLAYER_CONSEQUENCES = [
   "Ton profil joueur (poste, niveau, objectif, matériel)",
   "Ton historique de séances et ta progression de cycle",
   "Tes tests terrain et ta charge d'entraînement",
   "Ton lien avec ton club (ta fiche disparaît côté coach)",
+  "Ton compte de connexion (email)",
+];
+
+// Un compte coach n'a ni séances ni tests terrain : conséquences propres à
+// l'espace coach (cf. functions/src/deleteAccount.ts — la purge n'efface QUE
+// users/{uid} + son membership, jamais le club lui-même).
+const COACH_CONSEQUENCES = [
+  "Ton profil coach",
+  "Ton accès à l'espace coach (cadre de la semaine, effectif, suivi des joueurs)",
   "Ton compte de connexion (email)",
 ];
 
@@ -53,6 +63,43 @@ export default function DeleteAccountScreen() {
   // second tap pendant l'attente ne doit jamais relancer le flux.
   const runningRef = useRef(false);
 
+  // Écran partagé joueur/coach (monté dans AppStack ET CoachStack) : on lit le
+  // rôle pour adapter les conséquences affichées. Best-effort — en cas d'échec
+  // on retombe sur les conséquences joueur (comportement historique inchangé).
+  const [role, setRole] = useState<"coach" | "player">("player");
+  // Un coach qui a créé son club (ownerUid) et supprime son compte laisse le
+  // club orphelin : la purge serveur ne touche jamais clubs/{clubId} (voir
+  // functions/src/deleteAccount.ts). On le signale honnêtement à l'écran.
+  const [isCoachOwner, setIsCoachOwner] = useState(false);
+
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const userSnap = await getDoc(doc(db, "users", uid));
+        const data = userSnap.data() as { role?: unknown; clubId?: unknown } | undefined;
+        const resolvedRole = data?.role === "coach" ? "coach" : "player";
+        const clubId = typeof data?.clubId === "string" ? data.clubId : null;
+        if (cancelled) return;
+        setRole(resolvedRole);
+        if (resolvedRole === "coach" && clubId) {
+          const clubSnap = await getDoc(doc(db, "clubs", clubId));
+          if (cancelled) return;
+          const ownerUid = clubSnap.exists() ? (clubSnap.data() as { ownerUid?: unknown })?.ownerUid : null;
+          setIsCoachOwner(ownerUid === uid);
+        }
+      } catch {
+        // Best-effort : conséquences joueur par défaut déjà en place.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const consequences = role === "coach" ? COACH_CONSEQUENCES : PLAYER_CONSEQUENCES;
   const canSubmit = password.length > 0 && !busy;
 
   const performDeletion = async () => {
@@ -118,13 +165,27 @@ export default function DeleteAccountScreen() {
 
           <Card variant="soft" style={styles.card}>
             <Text style={styles.cardTitle}>Ce qui sera effacé définitivement</Text>
-            {CONSEQUENCES.map((item) => (
+            {consequences.map((item) => (
               <View key={item} style={styles.bulletRow}>
                 <Ionicons name="close-circle-outline" size={16} color={palette.danger} style={styles.bulletIcon} />
                 <Text style={styles.bulletText}>{item}</Text>
               </View>
             ))}
           </Card>
+
+          {isCoachOwner ? (
+            <Card variant="soft" style={[styles.card, styles.warnCard]}>
+              <View style={styles.bulletRow}>
+                <Ionicons name="warning-outline" size={18} color={palette.warn} style={styles.bulletIcon} />
+                <Text style={styles.warnText}>
+                  <Text style={styles.warnTextBold}>Tu es le gestionnaire de ce club. </Text>
+                  Ton club restera actif mais sans gestionnaire : les joueurs resteront inscrits, mais
+                  plus personne ne pourra régler le cadre de la semaine ni consulter leur suivi. Pour
+                  transférer la gestion avant de partir, écris-nous à kyllian@fks-app.com.
+                </Text>
+              </View>
+            </Card>
+          ) : null}
 
           <Card variant="soft" style={styles.card}>
             <Text style={styles.cardTitle}>Confirme avec ton mot de passe</Text>
@@ -193,6 +254,10 @@ const styles = StyleSheet.create({
   bulletRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
   bulletIcon: { marginTop: 1 },
   bulletText: { color: palette.sub, fontSize: 13, flex: 1 },
+
+  warnCard: { borderColor: palette.warn },
+  warnText: { color: palette.text, fontSize: 13, lineHeight: 18, flex: 1 },
+  warnTextBold: { fontWeight: "700" },
 
   inputWrap: {
     flexDirection: "row",

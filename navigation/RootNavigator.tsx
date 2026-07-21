@@ -111,6 +111,7 @@ export type CoachStackParamList = {
   // Coach-safe : on ne transmet plus de profil brut, seulement les clés de lecture
   // de la projection (clubs/{clubId}/playerSummaries/{playerUid}).
   CoachPlayerDetail: { clubId: string; playerUid: string };
+  DeleteAccount: undefined;
   LegalNotice: undefined;
   PrivacyPolicy: undefined;
 };
@@ -249,6 +250,7 @@ function CoachNavigator() {
     >
       <CoachStack.Screen name="CoachHome" component={CoachHomeScreen} />
       <CoachStack.Screen name="CoachPlayerDetail" component={CoachPlayerDetailScreen} options={{ headerShown: true, title: "Joueur" }} />
+      <CoachStack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ headerShown: true, title: "Supprimer mon compte" }} />
       <CoachStack.Screen name="LegalNotice" component={LegalNoticeScreen} options={{ headerShown: true, title: "Mentions légales" }} />
       <CoachStack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={{ headerShown: true, title: "Confidentialité" }} />
     </CoachStack.Navigator>

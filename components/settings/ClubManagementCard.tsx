@@ -181,7 +181,8 @@ export function ClubManagementCard() {
           <Badge label="Membre" tone="ok" />
         </View>
         <Text style={styles.clubDescription}>
-          Ton coach peut suivre ta progression et t'envoyer des recommandations.
+          Ton coach peut suivre ta progression et régler le cadre de vos séances (intensité, objectif
+          de la semaine).
         </Text>
         <Button
           label={leaving ? "Départ..." : "Quitter le club"}
