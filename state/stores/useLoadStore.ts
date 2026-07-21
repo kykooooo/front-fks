@@ -101,6 +101,10 @@ export const useLoadStore = create<LoadState>()(
         // Deferred: orchestrators.applyAutoExternalLoads would handle this
       },
 
+      // NOTE (17/07) : plus aucun déclencheur UI (le bouton "Repos 2 jours" a été
+      // retiré — le repos est géré par la jauge de forme + CTA intelligent).
+      // L'action reste dans l'API du store pour ne pas casser les consommateurs
+      // (ex: destructuration dans l'export SettingsScreen), mais rien ne l'appelle.
       restUntil: (days) => {
         const devNowISO = useDebugStore.getState().devNowISO;
         const baseISO = devNowISO ?? new Date().toISOString();
@@ -110,7 +114,7 @@ export const useLoadStore = create<LoadState>()(
     }),
     {
       name: "fks-load-v1",
-      version: 1,
+      version: 2,
       storage: createMigratedStorage(),
       partialize: (s) => ({
         atl: s.atl,
@@ -126,7 +130,16 @@ export const useLoadStore = create<LoadState>()(
         nextAllowedDateISO: s.nextAllowedDateISO ?? null,
       }),
       onRehydrateStorage: () => () => { onStoreHydrated(); },
-      migrate: (persisted) => persisted as LoadState,
+      // v2 (17/07) : le bouton "Repos 2 jours" est retiré. On purge tout verrou
+      // nextAllowedDateISO hérité (posé avant cette mise à jour) pour qu'aucun
+      // joueur ne reste bloqué "Repos programmé" sans moyen de débloquer.
+      migrate: (persisted) => {
+        const state = persisted as LoadState;
+        if (state && typeof state === "object" && state.nextAllowedDateISO != null) {
+          return { ...state, nextAllowedDateISO: null };
+        }
+        return state;
+      },
     }
   )
 );
