@@ -209,6 +209,53 @@ export function getPathwayById(id: string): CyclePathway | null {
   return CYCLE_PATHWAYS.find((pw) => pw.id === id) ?? null;
 }
 
+// ═══════════════════════════════════════════
+// RECOMMANDATION DE LIEU — cf. écran de choix du lieu (EnvironmentSelector)
+// ═══════════════════════════════════════════
+
+export type RecommendedLocation = {
+  location: TrainingLocation;
+  /** Phrase courte affichée sous le badge "Recommandé". */
+  reason: string;
+};
+
+/**
+ * Lieu conseillé par cycle (non bloquant : tous les lieux restent sélectionnables).
+ * `null` = pas de lieu unique idéal, les lieux du cycle se valent.
+ *
+ * Décisions (cf. brief setup-sans-materiel) :
+ *  - fondation : pas de lieu "idéal" au sens strict (les 3 conviennent), on
+ *    recommande quand même `home` par simplicité de reprise (zéro friction
+ *    pour la toute première séance après une coupure).
+ *  - force : salle idéale pour vraiment charger.
+ *  - endurance / explosivite : terrain idéal (courir / sprinter a besoin d'espace).
+ *  - saison : aucune reco, l'idée du cycle est justement "partout".
+ */
+const RECOMMENDED_LOCATIONS: Record<MicrocycleId, RecommendedLocation | null> = {
+  fondation: {
+    location: "home",
+    reason: "Facile à démarrer partout, idéal pour reprendre en douceur.",
+  },
+  force: {
+    location: "gym",
+    reason: "Idéal en salle pour charger vraiment.",
+  },
+  endurance: {
+    location: "pitch",
+    reason: "Le terrain donne l'espace pour courir et enchaîner les efforts.",
+  },
+  explosivite: {
+    location: "pitch",
+    reason: "Le terrain donne l'appui naturel pour sprinter et changer de direction.",
+  },
+  saison: null,
+};
+
+/** Retourne le lieu recommandé pour un cycle, ou `null` si aucun lieu ne se détache. */
+export function getRecommendedLocation(id: MicrocycleId): RecommendedLocation | null {
+  return RECOMMENDED_LOCATIONS[id] ?? null;
+}
+
 /** Retourne le pathway et la position du joueur dans ce parcours */
 export function suggestNextCycle(
   completedCycleId: MicrocycleId,
