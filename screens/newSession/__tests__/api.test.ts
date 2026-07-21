@@ -217,3 +217,40 @@ describe("prepareBackendContext — gym_full toujours présent en salle", () => 
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// FIX contrat — setup sans matériel : le moteur gère nativement le poids du
+// corps, donc "aucun matériel coché" ne doit plus jamais bloquer une
+// génération ni partir en payload vide (cf. EquipmentSelector, plus de
+// toast "Matériel requis"). "bodyweight" est le filet de sécurité minimal.
+// ---------------------------------------------------------------------------
+
+describe("prepareBackendContext — sans matériel = bodyweight, jamais vide", () => {
+  const minimalCtx = {
+    version: "fks_context_v1",
+    profile: { goal: "force" },
+    goal: "force",
+    constraints: { equipment: [], pains: [] },
+  } as any;
+
+  test("terrain sans sélection : equipment_available retombe sur ['bodyweight']", () => {
+    const { context } = prepareBackendContext(minimalCtx, [], ["pitch"]);
+    expect(context.equipment_available).toEqual(["bodyweight"]);
+    expect(context.equipment_used).toEqual(["bodyweight"]);
+  });
+
+  test("maison sans sélection : equipment_available retombe sur ['bodyweight']", () => {
+    const { context } = prepareBackendContext(minimalCtx, [], ["home"]);
+    expect(context.equipment_available).toEqual(["bodyweight"]);
+  });
+
+  test("aucun lieu, aucune sélection : jamais un tableau vide", () => {
+    const { context } = prepareBackendContext(minimalCtx, [], []);
+    expect(context.equipment_available).toEqual(["bodyweight"]);
+  });
+
+  test("terrain avec sélection explicite : la sélection est conservée (pas écrasée par bodyweight)", () => {
+    const { context } = prepareBackendContext(minimalCtx, ["cones"], ["pitch"]);
+    expect(context.equipment_available).toEqual(["cones"]);
+  });
+});

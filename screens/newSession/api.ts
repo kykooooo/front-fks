@@ -122,7 +122,13 @@ export function prepareBackendContext(
   const withGymDefaults = environment.includes("gym")
     ? [...selectedEquipment, "gym_full", "bodyweight"]
     : selectedEquipment;
-  const normalizedEquipment = Array.from(new Set(withGymDefaults));
+  // "Sans matériel" (terrain/maison sans coche) est un choix assumé : le
+  // moteur gère nativement le poids du corps, donc le payload ne doit
+  // jamais partir avec une liste vide — cf. EquipmentSelector (plus aucun
+  // blocage "Matériel requis" côté UI).
+  const normalizedEquipment = withGymDefaults.length > 0
+    ? Array.from(new Set(withGymDefaults))
+    : ["bodyweight"];
   const resolvedGoal = ctx.profile?.goal ?? ctx.goal ?? "fondation";
   const constraints = ctx.constraints as Record<string, unknown> | undefined;
   const profile = ctx.profile as Record<string, unknown>;

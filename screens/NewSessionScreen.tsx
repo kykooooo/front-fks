@@ -37,7 +37,7 @@ import { GenerationActions } from "./newSession/ui/GenerationActions";
 import { CurrentSessionCard } from "./newSession/ui/CurrentSessionCard";
 import { useAiContextLoader, useEnvironmentEquipment } from "./newSession/hooks";
 import { palette } from "./newSession/theme";
-import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
+import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId, getRecommendedLocation } from "../domain/microcycles";
 import { getMicrocyclePhase } from "../utils/microcycleUtils";
 import { Button } from "../components/ui/Button";
 import { trackEvent } from "../services/analytics";
@@ -177,6 +177,15 @@ export default function NewSessionScreen() {
       const next = prev.filter((loc) => allowedLocations.includes(loc));
       if (next.length === 0 && allowedLocations.length === 1) {
         return [allowedLocations[0]] as EnvironmentSelection;
+      }
+      // Rien de sélectionné : on présélectionne le lieu conseillé pour le
+      // cycle actif (si le moteur en propose un), sans jamais écraser un
+      // choix déjà fait par le joueur. Non bloquant : reste modifiable.
+      if (next.length === 0 && cycleId) {
+        const reco = getRecommendedLocation(cycleId);
+        if (reco && allowedLocations.includes(reco.location)) {
+          return [reco.location] as EnvironmentSelection;
+        }
       }
       return next as EnvironmentSelection;
     });
@@ -371,9 +380,11 @@ export default function NewSessionScreen() {
       if (!equipmentForGeneration.length && environment.includes("gym")) {
         equipmentForGeneration = ["gym_full", "bodyweight"];
       }
+      // Sans matériel ailleurs qu'en salle : choix assumé, pas un blocage.
+      // Le moteur gère nativement le poids du corps (aucune séance ne doit
+      // rester bloquée faute de coche matériel).
       if (!equipmentForGeneration.length) {
-        showToast({ type: "warn", title: "Matériel manquant", message: "Sélectionne au moins un matériel disponible." });
-        return;
+        equipmentForGeneration = ["bodyweight"];
       }
 
       if (!setupDone) {
