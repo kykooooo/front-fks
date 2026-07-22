@@ -2,18 +2,20 @@
 //
 // Abstraction audio Signal FKS basée sur expo-audio.
 //
-// IMPORTANT : la V1 ne contient encore AUCUN fichier vocal réel. Le registre est
-// donc volontairement VIDE — on ne fait aucun `require()` d'un fichier absent
-// (ce qui casserait le bundling). Quand les vrais enregistrements français seront
-// ajoutés sous `assets/audio/signal/fr/`, décommenter les lignes du registre.
+// Les enregistrements FR réels (fondateur) sont présents sous
+// `assets/audio/signal/fr/` : gauche.m4a / droite.m4a. Le registre ci-dessous
+// pointe donc dessus. Ne JAMAIS y mettre un `require()` d'un fichier absent
+// (cela casserait le bundling) — si un futur mot manque, laisser sa ligne
+// commentée comme avant.
 //
-// Format attendu des futurs fichiers (voir assets/audio/signal/README.md) :
+// Format des fichiers (voir assets/audio/signal/README.md) :
 //   - assets/audio/signal/fr/gauche.m4a
 //   - assets/audio/signal/fr/droite.m4a
-//   AAC/m4a mono, ~44.1 kHz, < 1 s, voix claire, sans silence de tête.
+//   AAC/m4a mono, ~44.1 kHz, voix claire, sans silence de tête.
 //
-// Signal FKS fonctionnera 100% hors ligne une fois ces fichiers présents
-// (assets bundlés, aucun TTS réseau).
+// Signal FKS fonctionne 100% hors ligne (assets bundlés, aucun TTS réseau).
+// Reste à passer FKS_SIGNAL_V1_ENABLED=true (app.json extra / EXPO_PUBLIC_FKS_SIGNAL_V1)
+// pour activer la feature côté produit — hors scope de ce chantier.
 
 import { createAudioPlayer, type AudioPlayer } from "expo-audio";
 import type { SignalV1Cue } from "../engine/signal/signalConfig";
@@ -25,12 +27,12 @@ export type AudioAssetSource = number;
 export type AudioPlayerFactory = (source: AudioAssetSource) => AudioPlayer;
 
 /**
- * Registre des assets vocaux FR. VIDE tant que les fichiers réels n'existent pas.
- * Ne JAMAIS y mettre un `require()` d'un fichier absent.
+ * Registre des assets vocaux FR. Ne JAMAIS y mettre un `require()` d'un fichier absent
+ * (laisser la ligne commentée tant que le fichier n'est pas bundlé).
  */
 export const SIGNAL_AUDIO_REGISTRY_FR: Partial<Record<SignalV1Cue, AudioAssetSource>> = {
-  // gauche: require("../assets/audio/signal/fr/gauche.m4a"),
-  // droite: require("../assets/audio/signal/fr/droite.m4a"),
+  gauche: require("../assets/audio/signal/fr/gauche.m4a"),
+  droite: require("../assets/audio/signal/fr/droite.m4a"),
 };
 
 export type SignalAudioLoadResult =

@@ -15,8 +15,11 @@ const mkPlayer = () => ({
 });
 
 describe("areSignalAssetsAvailable", () => {
-  it("false si le registre est vide (aucun vrai fichier vocal en V1)", () => {
-    expect(areSignalAssetsAvailable(["gauche", "droite"], SIGNAL_AUDIO_REGISTRY_FR)).toBe(false);
+  it("true : les fichiers vocaux FR gauche/droite sont bundlés (V1)", () => {
+    expect(areSignalAssetsAvailable(["gauche", "droite"], SIGNAL_AUDIO_REGISTRY_FR)).toBe(true);
+  });
+
+  it("false si le registre est vide ou incomplet", () => {
     expect(areSignalAssetsAvailable(["gauche"], {})).toBe(false);
     expect(areSignalAssetsAvailable([], { gauche: 1 })).toBe(false);
   });
