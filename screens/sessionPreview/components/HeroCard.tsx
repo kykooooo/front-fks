@@ -2,6 +2,9 @@
 // Header de séance thémé par cycle (FRONT-2) : plus de photo Pexels.
 // Bande pleine en couleur "strong" du cycle + pastille icône + kicker/titre/sous-titre.
 // Accents (chips meta, barre de progression, CTA) reprennent la couleur du cycle.
+// `title` = déjà résolu en amont (SessionPreviewScreen, via resolveSessionHeading) :
+// session_theme en priorité, title backend en repli. `themeDetail` = titre backend
+// relégué en sous-info quand session_theme a pris la place du titre principal.
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -16,7 +19,7 @@ const palette = theme.colors;
 type Props = {
   title: string;
   subtitle?: string | null;
-  sessionTheme?: string | null;
+  themeDetail?: string | null;
   plannedDateISO: string;
   intensity?: string | null;
   focusPrimary?: string | null;
@@ -36,7 +39,7 @@ type Props = {
 export function HeroCard({
   title,
   subtitle,
-  sessionTheme,
+  themeDetail,
   plannedDateISO,
   intensity,
   focusPrimary,
@@ -80,10 +83,10 @@ export function HeroCard({
 
       {/* Contenu sous la bande */}
       <View style={styles.body}>
-        {sessionTheme ? (
+        {themeDetail ? (
           <View style={styles.sessionThemeRow}>
             <Ionicons name="color-palette-outline" size={13} color={ct.textOnSoft} />
-            <Text style={[styles.sessionThemeText, { color: ct.textOnSoft }]} numberOfLines={2}>{sessionTheme}</Text>
+            <Text style={[styles.sessionThemeText, { color: ct.textOnSoft }]} numberOfLines={2}>{themeDetail}</Text>
           </View>
         ) : null}
 

@@ -32,6 +32,7 @@ import type { SessionTimerHandle } from '../components/session/SessionTimer';
 import { getCycleTheme } from '../constants/cycleTheme';
 import { buildResetExplain } from './newSession/resetExplain';
 import { readRecoveryTips } from './newSession/helpers';
+import { resolveSessionHeading } from '../utils/sessionHeading';
 import { useTestsStorage } from './tests/hooks/useTestsStorage';
 import { pickLatestTestValues } from './sessionPreview/testReferenceMapping';
 
@@ -75,7 +76,11 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
   // FeedbackScreen, corrigé à l'identique).
   const insets = useSafeAreaInsets();
   const guardNav = useNavGuard();
-  const title = v2.title || 'Séance personnalisée';
+  // Titre affiché = session_theme quand présent (résumé fidèle au contenu
+  // réel de la séance générée par Agent B), sinon v2.title (comportement
+  // historique inchangé). L'ancien title est relégué en sous-info (themeDetail)
+  // plutôt que perdu — cf. utils/sessionHeading.ts.
+  const { heading: title, detail: themeDetail } = resolveSessionHeading(v2, 'Séance personnalisée');
   const subtitle = v2.subtitle;
   const blocks: Block[] = Array.isArray(v2.blocks) ? v2.blocks : [];
   // Conseils de récup : racine v2.recoveryTips (contrat backend actuel) avec
@@ -349,7 +354,7 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
               <HeroCard
                 title={title}
                 subtitle={subtitle}
-                sessionTheme={v2.sessionTheme}
+                themeDetail={themeDetail}
                 plannedDateISO={plannedDateISO}
                 intensity={v2.intensity}
                 focusPrimary={v2.focusPrimary}
