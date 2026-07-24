@@ -1,8 +1,21 @@
 import { EXERCISE_BY_ID } from "./exerciseBank";
+import {
+  getExerciseCatalogSnapshot,
+  resolveExerciseCatalogId,
+} from "../services/exerciseCatalog";
 
 export type ExerciseVideoRef =
-  | { kind: "vetted"; url: string; label: string }
+  | { kind: "fks_hosted"; url: string; label: string }
+  | { kind: "vetted"; url: string; label: string; alternative?: boolean }
   | { kind: "search"; url: string; query: string };
+
+/**
+ * Vidéo « directe » = démonstration réelle de CET exercice (FKS ou source vérifiée
+ * directe). Une recherche YouTube ou une vidéo empruntée à une variante ne comptent
+ * pas : elles ne doivent pas afficher le badge « Vidéo ».
+ */
+export const isDirectVideo = (ref: ExerciseVideoRef): boolean =>
+  ref.kind === "fks_hosted" || (ref.kind === "vetted" && !ref.alternative);
 
 const ytSearch = (query: string) =>
   `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
@@ -34,7 +47,7 @@ addMany(
 
 addMany(
   VETTED_BY_ID,
-  ["str_nordic", "str_nordic_assisted_band", "str_eccentric_nordic_3s"],
+  ["str_nordic", "str_nordic_assisted_band", "str_eccentric_nordic_3s", "nordic_curl_partner"],
   "https://www.youtube.com/watch?v=_e9vFU9-tkc",
   "E3 Rehab - Nordic Hamstring Curl (setup + progressions)"
 );
@@ -191,7 +204,7 @@ addMany(
 
 addMany(
   VETTED_BY_ID,
-  ["str_pogo_hops_low"],
+  ["str_pogo_hops_low", "plyo_pogo_hops_low"],
   "https://www.youtube.com/watch?v=OCkmQTag-e8",
   "ALTIS - Rudiment hops / ankle stiffness"
 );
@@ -267,7 +280,7 @@ addSearch(VETTED_BY_ID, "plyo_hurdle_hop_low", "low hurdle hop plyometric tutori
 
 addMany(
   VETTED_BY_ID,
-  ["speed_accel", "spd_accel_10_20_30", "sprint_accel_5m", "sprint_accel_10m", "sprint_accel_15m", "sprint_accel_20m"],
+  ["speed_accel", "spd_accel_10_20_30", "sprint_accel_5m", "sprint_accel_10m", "sprint_accel_15m", "sprint_accel_20m", "sprint_acceleration", "protocol_acceleration_pyramid_10_20_30"],
   "https://www.youtube.com/watch?v=77YR0tOHn44",
   "Acceleration drills overview"
 );
@@ -281,7 +294,7 @@ addSearch(VETTED_BY_ID, "sprint_hill_8_10s", "hill sprint 8-10 seconds technique
 
 addMany(
   VETTED_BY_ID,
-  ["speed_wall_drill_hold", "cod_wall_drill_a_skip"],
+  ["speed_wall_drill_hold", "cod_wall_drill_a_skip", "speed_wall_drill_a_skip"],
   "https://www.youtube.com/watch?v=rZ2TpUc1I9M",
   "Wall drills - sprint positions"
 );
@@ -442,6 +455,25 @@ addSearch(VETTED_BY_ID, "mob_walking_spiderman", "walking spiderman lunge mobili
 
 // Returns either a vetted URL or a clean YouTube search link.
 export const getExerciseVideoRef = (exerciseId: string): ExerciseVideoRef => {
+  const catalog = getExerciseCatalogSnapshot();
+  const canonicalId = resolveExerciseCatalogId(exerciseId);
+  const catalogExercise = catalog.exercises.find((entry) => entry.id === canonicalId);
+  const catalogVideo = catalogExercise?.media.video;
+  if (catalogVideo?.kind === "fks_hosted") {
+    return {
+      kind: "fks_hosted",
+      url: catalogVideo.url,
+      label: "Vidéo officielle FKS",
+    };
+  }
+  if (catalogVideo?.kind === "external_vetted") {
+    return {
+      kind: "vetted",
+      url: catalogVideo.url,
+      label: catalogVideo.label,
+    };
+  }
+
   const vetted = VETTED_BY_ID[exerciseId];
   if (vetted) return vetted;
 
@@ -454,6 +486,7 @@ export const getExerciseVideoRef = (exerciseId: string): ExerciseVideoRef => {
     const originalName = ex?.name ?? exerciseId;
     return {
       kind: "vetted",
+      alternative: true,
       url: v.url,
       label: `Alternative (${variantName}) pour ${originalName} — ${v.label}`,
     };

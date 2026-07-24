@@ -34,6 +34,7 @@ import { frIntensity, frFocus, frLocation } from "../utils/frLabels";
 import { useSettingsStore } from "../state/settingsStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { getCycleTheme, type CycleTheme } from "../constants/cycleTheme";
+import { SignalEntry } from "../components/signal/SignalEntry";
 
 type BlockItem = {
   id?: string | null;
@@ -51,6 +52,12 @@ type BlockItem = {
   durationPerSetSec?: number | null;
   notes?: string | null;
   modality?: string | null;
+  signalConfig?: {
+    mode: "voice_direction" | "color_gate";
+    cues: string[];
+    minDelayMs: number;
+    maxDelayMs: number;
+  } | null;
 };
 
 type Block = {
@@ -308,6 +315,8 @@ type BlockCardProps = {
   getPulse: (key: string) => Animated.Value;
   /** Thème couleur du cycle — STATIQUE pour la séance (props stables → memo préservé). */
   cycleTheme: CycleTheme;
+  /** Version catalogue (analytics Signal FKS). */
+  catalogVersion?: string | null;
 };
 
 const BlockCard = React.memo(function BlockCard({
@@ -321,6 +330,7 @@ const BlockCard = React.memo(function BlockCard({
   onOpenExercise,
   getPulse,
   cycleTheme,
+  catalogVersion,
 }: BlockCardProps) {
   const items = block.items ?? [];
   const blockTitle =
@@ -477,6 +487,12 @@ const BlockCard = React.memo(function BlockCard({
                       {cleanDisplayNote(item.notes) ? (
                         <Text style={styles.itemNote}>{cleanDisplayNote(item.notes)}</Text>
                       ) : null}
+                      <SignalEntry
+                        exerciseId={exerciseId}
+                        signalConfig={item.signalConfig ?? null}
+                        catalogVersion={catalogVersion}
+                        repetitions={item.reps ?? undefined}
+                      />
                     </View>
                   </View>
                   {exerciseId ? (
@@ -1055,9 +1071,10 @@ function SessionLiveScreen() {
         onOpenExercise={goToExercise}
         getPulse={getPulse}
         cycleTheme={cycleTheme}
+        catalogVersion={v2.catalogVersion}
       />
     ),
-    [blockWidth, itemSize, scrollX, checkedSets, toggleSet, goToExercise, getPulse, cycleTheme]
+    [blockWidth, itemSize, scrollX, checkedSets, toggleSet, goToExercise, getPulse, cycleTheme, v2.catalogVersion]
   );
 
   return (
