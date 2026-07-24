@@ -28,6 +28,7 @@ import { SectionHeader } from "../components/ui/SectionHeader";
 import { SessionTimer, type SessionTimerHandle } from "../components/session/SessionTimer";
 import { getBlockLabel } from "../components/session/blockConfig";
 import { readRecoveryTips } from "./newSession/helpers";
+import { resolveSessionHeading } from "../utils/sessionHeading";
 import { formatDayFR } from "../utils/dateHelpers";
 import { frIntensity, frFocus, frLocation } from "../utils/frLabels";
 import { useSettingsStore } from "../state/settingsStore";
@@ -514,7 +515,9 @@ function SessionLiveScreen() {
     () => (Array.isArray(v2.blocks) ? v2.blocks : []),
     [v2.blocks]
   );
-  const title = v2.title || "Séance FKS";
+  // Titre = session_theme en priorité (Agent B, fidèle au contenu réel de la
+  // séance) sinon v2.title (comportement historique) — cf. utils/sessionHeading.ts.
+  const { heading: title, detail: themeDetail } = resolveSessionHeading(v2);
   const subtitle = v2.subtitle;
 
   const [checkedSets, setCheckedSets] = useState<Record<string, boolean[]>>({});
@@ -1077,6 +1080,9 @@ function SessionLiveScreen() {
                   <Text style={styles.kicker}>Cycle {cycleTheme.label}</Text>
                   <Text style={styles.title} numberOfLines={2}>{title}</Text>
                   {subtitle ? <Text style={styles.subtitle} numberOfLines={2}>{subtitle}</Text> : null}
+                  {themeDetail ? (
+                    <Text style={styles.themeDetail} numberOfLines={2}>{themeDetail}</Text>
+                  ) : null}
                   {plannedDateISO ? (
                     <Text style={styles.headerDate}>{formatDayFR(plannedDateISO) || plannedDateISO}</Text>
                   ) : null}
@@ -1399,6 +1405,7 @@ const styles = StyleSheet.create({
   heroBody: { padding: 16, gap: 12 },
   title: { fontSize: 18, fontWeight: "600", color: "#fff" },
   subtitle: { fontSize: 13, color: "rgba(255,255,255,0.82)", marginTop: 2 },
+  themeDetail: { fontSize: 11, color: "rgba(255,255,255,0.68)", marginTop: 2, fontStyle: "italic" },
   tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   progressWrap: { gap: 6 },
   progressLabel: { color: palette.sub, fontSize: 12 },

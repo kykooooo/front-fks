@@ -5,6 +5,7 @@ import { MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../../domain/
 import { DEV_FLAGS } from "../../config/devFlags";
 import { toDateKey } from "../../utils/dateHelpers";
 import { selectPendingSession } from "../../utils/sessionHelpers";
+import { resolveSessionHeading } from "../../utils/sessionHeading";
 import { useNavGuard } from "../useNavGuard";
 import { frFocus, frIntensity } from "../../utils/frLabels";
 import type { Session } from "../../domain/types";
@@ -52,7 +53,9 @@ export function usePrimaryCta({
     if (!pendingSession) return "Pas de séance prévue";
     const v2 = pendingSession.aiV2 ?? pendingSession.ai;
     if (v2) {
-      const title = v2.title || "Séance FKS";
+      // Titre = session_theme en priorité (résumé fidèle au contenu réel de
+      // la séance) sinon v2.title — cf. utils/sessionHeading.ts.
+      const { heading: title } = resolveSessionHeading(v2);
       const focusVal = v2.focusPrimary ?? v2.focus_primary;
       const focus = focusVal ? ` · ${frFocus(String(focusVal))}` : "";
       const intens = v2.intensity ? ` · ${frIntensity(String(v2.intensity))}` : "";

@@ -4,6 +4,7 @@ import { useNavigation } from "@react-navigation/native";
 import { palette } from "../theme";
 import type { Exercise, Session } from "../../../domain/types";
 import { toDateKey } from "../../../utils/dateHelpers";
+import { resolveSessionHeading } from "../../../utils/sessionHeading";
 import { frIntensity } from "../../../utils/frLabels";
 import { useSessionsStore } from "../../../state/stores/useSessionsStore";
 import { useNavGuard } from "../../../hooks/useNavGuard";
@@ -33,6 +34,10 @@ export function CurrentSessionCard({
   // S22 — v2 de la séance en cours (même source que usePrimaryCta) pour
   // pouvoir la rouvrir en preview, pas seulement donner le feedback.
   const pendingV2 = current.aiV2 ?? current.ai ?? lastAiSessionV2?.v2 ?? null;
+  // Titre réel de la séance générée = session_theme en priorité (fidèle au
+  // contenu réel), sinon v2.title — cf. utils/sessionHeading.ts. "Séance déjà
+  // générée" ci-dessous reste un libellé de section, pas le titre de la séance.
+  const sessionHeading = pendingV2 ? resolveSessionHeading(pendingV2).heading : null;
   const openSession = () => {
     if (!pendingV2) return;
     guardNav(() =>
@@ -50,6 +55,10 @@ export function CurrentSessionCard({
       <Text style={styles.cardSubtitle}>
         Complète-la et donne ton feedback avant de générer la suivante.
       </Text>
+
+      {sessionHeading ? (
+        <Text style={styles.sessionHeading} numberOfLines={2}>{sessionHeading}</Text>
+      ) : null}
 
       <Text style={styles.meta}>
         {phaseLabel ? `Phase : ${phaseLabel} · ` : ""}Intensité : {frIntensity(current.intensity) || "—"} · Volume : {current.volumeScore}
@@ -126,6 +135,12 @@ const styles = {
     fontSize: 13,
     marginTop: 4,
     color: palette.sub,
+  },
+  sessionHeading: {
+    fontSize: 15,
+    fontWeight: "700" as const,
+    color: palette.text,
+    marginTop: 10,
   },
   meta: {
     fontSize: 12,
