@@ -6,6 +6,15 @@ jest.mock("../../config/features", () => ({
   FKS_SIGNAL_V1_ENABLED: true,
   FKS_CATALOG_V2_ENABLED: false,
 }));
+// Les voix FR gauche/droite (fondateur) sont réellement bundlées depuis
+// l'intégration Signal (assets/audio/signal/fr/*.m4a) : le registre réel est
+// donc toujours "disponible" pour les deux seuls cues existants. Pour tester
+// le repli "assets absents" (cas d'un futur cue non encore enregistré), on
+// simule volontairement l'indisponibilité pour ce fichier de test uniquement.
+jest.mock("../../services/signalAudio", () => {
+  const actual = jest.requireActual("../../services/signalAudio");
+  return { ...actual, areSignalAssetsAvailable: jest.fn(() => false) };
+});
 
 import React from "react";
 import TestRenderer, { act } from "react-test-renderer";

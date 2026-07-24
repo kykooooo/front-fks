@@ -89,8 +89,10 @@ describe("contrat legacy_exercise_id — flag OFF (défaut prod)", () => {
     ]);
     const exo = session.exercises.find((e) => e.id === "totally_unknown_exo")!;
     expect(exo).toBeDefined();
-    // prettifyName capitalise (comportement existant) — le nom backend est conservé.
-    expect(exo.name).toBe("Exo Mystère");
+    // prettifyName force une majuscule initiale mais ne retouche pas la casse
+    // interne (fix "casse FR exos" du 13/07 : "Squat Poids Du Corps" est faux
+    // en français) — le nom backend "Exo mystère" est donc conservé tel quel.
+    expect(exo.name).toBe("Exo mystère");
   });
 });
 
@@ -176,8 +178,9 @@ describe("contrat legacy_exercise_id — flag ON", () => {
       { exercise_id: "totally_unknown_exo", name: "Exo mystère", sets: 3, reps: 8, rest_s: 60 },
     ]);
     const exo = session.exercises.find((e) => e.id === "totally_unknown_exo")!;
-    // prettifyName capitalise (comportement existant) — le nom backend est conservé.
-    expect(exo.name).toBe("Exo Mystère");
+    // prettifyName force une majuscule initiale mais ne retouche pas la casse
+    // interne (fix "casse FR exos" du 13/07) — le nom backend est conservé tel quel.
+    expect(exo.name).toBe("Exo mystère");
     expect(exo.legacyId).toBeUndefined();
   });
 });
