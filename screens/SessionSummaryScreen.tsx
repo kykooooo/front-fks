@@ -18,6 +18,11 @@ import { withSessionErrorBoundary } from "../components/withErrorBoundary";
 import { getCycleTheme } from "../constants/cycleTheme";
 import { formatDayFR } from "../utils/dateHelpers";
 import { frIntensity, frFocus, frLocation } from "../utils/frLabels";
+// ---- Boucle de suivi joueur (Lot 2) ----
+import { useExecutionStore } from "../state/stores/useExecutionStore";
+import { DEVIATION_REASON_LABELS } from "../components/session/liveTrackingHelpers";
+import { EXERCISE_BY_ID } from "../engine/exerciseBank";
+import { prettifyName } from "./sessionPreview/sessionPreviewConfig";
 
 type SummaryRoute = RouteProp<AppStackParamList, "SessionSummary">;
 
@@ -50,6 +55,34 @@ function SessionSummaryScreen() {
   const ct = getCycleTheme(microcycleGoal);
   const autoFeedbackEnabled = useSettingsStore((s) => s.autoFeedbackEnabled);
   const canAutoFeedback = !!sessionId && !sessionCompleted && autoFeedbackEnabled;
+
+  // ---- Boucle de suivi joueur (Lot 2) : realise reel (si l'execution existe) ----
+  const execution = useExecutionStore((s) => (sessionId ? s.getExecutionForSession(sessionId) : undefined));
+  const hasRealizedData = !!execution?.finishedAtISO;
+  const deviations = useMemo(() => {
+    if (!execution) return [];
+    const byKey = new Map(execution.snapshot.items.map((p) => [p.key, p]));
+    return execution.items
+      .filter((it) => it.status === "adapted" || it.status === "skipped" || it.status === "replaced")
+      .map((it) => {
+        const originalName = prettifyName(byKey.get(it.key)?.name ?? "Exercice");
+        // Fix P2-c : un item remplace affichait seulement l'original --
+        // ambigu (on ne voit pas CE PAR QUOI il a ete remplace). "Original →
+        // Remplacement" leve l'ambiguite, prettifyName sur les deux noms.
+        const name =
+          it.status === "replaced" && it.replacement
+            ? `${originalName} → ${prettifyName(
+                EXERCISE_BY_ID[it.replacement.replacementExerciseId]?.name ?? it.replacement.replacementExerciseId
+              )}`
+            : originalName;
+        return {
+          key: it.key,
+          name,
+          reasonLabel: it.reason ? DEVIATION_REASON_LABELS[it.reason] : null,
+        };
+      })
+      .slice(0, 5);
+  }, [execution]);
 
   const [countdown, setCountdown] = useState(
     canAutoFeedback ? Math.ceil(AUTO_FEEDBACK_DELAY_MS / 1000) : 0
@@ -104,14 +137,28 @@ function SessionSummaryScreen() {
     return Object.keys(next).length ? next : undefined;
   }, [rpe, durationMin]);
 
+  // Boucle de suivi (Lot 2) : l'execution "current" ne doit disparaitre du
+  // store qu'au moment ou le joueur quitte reellement le Summary (vers le
+  // feedback ou Home) — jamais avant, le feedback (Lot 4) la lit encore via
+  // getExecutionForSession (current PUIS history, finishCurrent alimente les
+  // deux). Guard sessionId : ne jamais effacer l'execution d'une autre seance.
+  const clearTrackingExecution = useCallback(() => {
+    if (!sessionId) return;
+    const store = useExecutionStore.getState();
+    if (store.current?.sessionId === sessionId) {
+      store.clearCurrent();
+    }
+  }, [sessionId]);
+
   const goHome = useCallback(() => {
+    clearTrackingExecution();
     nav.dispatch(
       CommonActions.reset({
         index: 0,
         routes: [{ name: "Tabs", params: { screen: "Home" } }],
       })
     );
-  }, [nav]);
+  }, [nav, clearTrackingExecution]);
 
   const clearAuto = useCallback(() => {
     if (autoTimeoutRef.current) clearTimeout(autoTimeoutRef.current);
@@ -125,11 +172,12 @@ function SessionSummaryScreen() {
     if (didNavigateRef.current) return;
     didNavigateRef.current = true;
     clearAuto();
+    clearTrackingExecution();
     nav.navigate("Feedback", {
       sessionId,
       prefill,
     });
-  }, [sessionId, sessionCompleted, clearAuto, nav, prefill]);
+  }, [sessionId, sessionCompleted, clearAuto, nav, prefill, clearTrackingExecution]);
 
   // Block hardware back / gesture from going back to SessionLiveScreen
   useEffect(() => {
@@ -174,6 +222,15 @@ function SessionSummaryScreen() {
     outputRange: [18, 0],
   });
 
+  // Boucle de suivi (Lot 2) : quand l'execution reelle existe, la barre de
+  // progression du hero reflete le VRAI realise (completion.pct) plutot que
+  // le seul ratio de series cochees. Vieux parcours / preview sans execution
+  // -> comportement inchange.
+  const heroProgressRatio = hasRealizedData ? execution!.completion.pct / 100 : completionRatio;
+  const heroProgressLabel = hasRealizedData
+    ? `Séance réalisée à ${execution!.completion.pct}%`
+    : `Progression : ${itemsLabel}${completionPct != null ? ` · ${completionPct}%` : ""}`;
+
   // Chip thémé par cycle pour les badges non-sémantiques (l'intensité garde son ton).
   const cycleChip = (label: string, key: string) => (
     <View key={key} style={[styles.cycleChip, { backgroundColor: ct.soft }]}>
@@ -216,18 +273,55 @@ function SessionSummaryScreen() {
                 {summary.location ? cycleChip(frLocation(summary.location), "hero-loc") : null}
               </View>
               <View style={styles.heroProgress}>
-                <Text style={styles.progressLabel}>
-                  Progression : {itemsLabel}
-                  {completionPct != null ? ` · ${completionPct}%` : ""}
+                <Text style={styles.progressLabel} numberOfLines={1}>
+                  {heroProgressLabel}
                 </Text>
                 <View style={styles.progressTrack}>
                   <View
-                    style={[styles.progressFill, { width: `${completionRatio * 100}%`, backgroundColor: ct.strong }]}
+                    style={[styles.progressFill, { width: `${heroProgressRatio * 100}%`, backgroundColor: ct.strong }]}
                   />
                 </View>
               </View>
             </View>
           </Card>
+
+          {hasRealizedData ? (
+            <Card variant="surface" style={styles.realizedCard}>
+              <SectionHeader title="Ce qui a vraiment été fait" />
+              <View style={styles.realizedCountsRow}>
+                <View style={styles.realizedCountItem}>
+                  <Text style={styles.realizedCountValue}>{execution!.completion.done}</Text>
+                  <Text style={styles.realizedCountLabel} numberOfLines={1}>Faits</Text>
+                </View>
+                <View style={styles.realizedCountItem}>
+                  <Text style={styles.realizedCountValue}>{execution!.completion.adapted}</Text>
+                  <Text style={styles.realizedCountLabel} numberOfLines={1}>Adaptés</Text>
+                </View>
+                <View style={styles.realizedCountItem}>
+                  <Text style={styles.realizedCountValue}>{execution!.completion.replacedEquivalent}</Text>
+                  <Text style={styles.realizedCountLabel} numberOfLines={2}>Remplacés (équiv.)</Text>
+                </View>
+                <View style={styles.realizedCountItem}>
+                  <Text style={styles.realizedCountValue}>{execution!.completion.replacedPartial}</Text>
+                  <Text style={styles.realizedCountLabel} numberOfLines={2}>Adaptés sans équiv.</Text>
+                </View>
+                <View style={styles.realizedCountItem}>
+                  <Text style={styles.realizedCountValue}>{execution!.completion.skipped}</Text>
+                  <Text style={styles.realizedCountLabel} numberOfLines={1}>Sautés</Text>
+                </View>
+              </View>
+              {deviations.length > 0 ? (
+                <View style={{ gap: 6 }}>
+                  {deviations.map((d) => (
+                    <Text key={d.key} style={styles.realizedDeviationText} numberOfLines={1}>
+                      • {d.name}
+                      {d.reasonLabel ? ` — ${d.reasonLabel}` : ""}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
+            </Card>
+          ) : null}
 
           <Card variant="soft" style={styles.statsCard}>
             <SectionHeader title="Stats rapides" />
@@ -443,6 +537,37 @@ const styles = StyleSheet.create({
   loadHint: {
     color: palette.sub,
     fontSize: 12,
+  },
+  realizedCard: {
+    padding: 14,
+    gap: 12,
+  },
+  realizedCountsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  realizedCountItem: {
+    minWidth: 64,
+    flexGrow: 1,
+    alignItems: "center",
+    gap: 2,
+  },
+  realizedCountValue: {
+    color: palette.text,
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  realizedCountLabel: {
+    color: palette.sub,
+    fontSize: 10,
+    textAlign: "center",
+    minHeight: 12,
+  },
+  realizedDeviationText: {
+    color: palette.sub,
+    fontSize: 12,
+    lineHeight: 17,
   },
   badgeCard: {
     padding: 12,

@@ -1,5 +1,6 @@
 // state/orchestrators/applyFeedback.ts
 // Cross-cutting orchestrator: applies session feedback across multiple stores.
+import { doc, setDoc } from "firebase/firestore";
 import { todayISO, addDaysISO } from "../../utils/virtualClock";
 import { toDateKey } from "../../utils/dateHelpers";
 import { updateTrainingLoad, decayLoadOverDays } from "../../engine/loadModel";
@@ -8,6 +9,8 @@ import { TRAINING_DEFAULTS, LOAD_CAPS } from "../../config/trainingDefaults";
 import { MICROCYCLE_TOTAL_SESSIONS_DEFAULT } from "../../domain/microcycles";
 import { computeDailyTotals, computeInterveningOffDays, pruneDailyAppliedWindow, type ExternalLoadLike } from "../computeDailyApplied";
 import type { Session, SessionFeedback, TrainingLogItem } from "../../domain/types";
+import { resolveTrackingModes } from "../../domain/tracking/modes";
+import { buildTrackingHistory, computeShadowDecision } from "./trackingShadow";
 
 function hasStructuredRun(exercises: Session["exercises"]): boolean {
   return exercises.some(
@@ -23,12 +26,16 @@ import { safeNum } from "../../engine/safeNum";
 import { retryWithBackoff } from "../../utils/errorHandler";
 import { showToast } from "../../utils/toast";
 import { markPlannedSessionCompleted } from "../../services/plannedSessionsRepo";
+import { trackEvent } from "../../services/analytics";
+import { auth, db } from "../../services/firebase";
 
 import { useLoadStore } from "../stores/useLoadStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
 import { useExternalStore } from "../stores/useExternalStore";
 import { useDebugStore } from "../stores/useDebugStore";
 import { useSyncStore } from "../stores/useSyncStore";
+import { useFeedbackStore } from "../stores/useFeedbackStore";
+import { useExecutionStore } from "../stores/useExecutionStore";
 
 export function applyFeedback(
   sessionId: string,
@@ -186,6 +193,68 @@ export function applyFeedback(
     phase: nextPhaseValue,
     phaseCount: nextPhaseCount,
   };
+
+  // 8bis. Boucle de suivi (Lot 4/5, docs/boucle-suivi-2026-07-25/) — execution
+  // finalisee + decision shadow. Best-effort strict : toute erreur ici est
+  // avalee (try/catch global) et ne doit JAMAIS empecher la charge ATL/CTL/TSB
+  // ni la persistance existante ci-dessous. Doit courir AVANT le write store
+  // (etape 9) et la persistance Firestore (etape 10) pour que execution/tracking
+  // partent dans le MEME write que le reste du feedback.
+  try {
+    const executionState = useExecutionStore.getState();
+    const currentExecution = executionState.getExecutionForSession(sessionId);
+    // "Coherente" = liee a CETTE seance et REELLEMENT finalisee (finishedAtISO
+    // pose) -- une execution encore en cours (crash/relance) ne part jamais
+    // dans le feedback (cf. brief Lot 4 §4.5.1).
+    const hasFinalizedExecution =
+      Boolean(currentExecution) &&
+      currentExecution!.sessionId === sessionId &&
+      typeof currentExecution!.fingerprint === "string" &&
+      currentExecution!.fingerprint.length > 0 &&
+      currentExecution!.finishedAtISO != null;
+
+    if (hasFinalizedExecution) {
+      updatedSession = { ...updatedSession, execution: currentExecution };
+      nextSessions[idx] = updatedSession;
+    }
+
+    // Mode shadow uniquement (defauts de resolveTrackingModes -- le wiring du
+    // remote override `users/{uid}.trackingConfig` vit dans useSyncStore.ts,
+    // hors fichiers autorises pour ce lot). Defauts pilote : collecte+shadow ON.
+    const modes = resolveTrackingModes();
+    if (modes.shadow) {
+      const dayStates = useFeedbackStore.getState().dayStates;
+      const history = buildTrackingHistory(nextSessions, dayStates);
+      const nowISOForDecision = feedback.createdAt || new Date().toISOString();
+      const { decision, signals } = computeShadowDecision(history, nowISOForDecision);
+
+      executionState.setLastDecision(decision);
+      updatedSession = { ...updatedSession, tracking: decision };
+      nextSessions[idx] = updatedSession;
+
+      // Best-effort, jamais bloquant : miroir pour Progression multi-appareil.
+      const uidForTracking = auth.currentUser?.uid ?? null;
+      if (uidForTracking) {
+        retryWithBackoff(
+          () => setDoc(doc(db, "users", uidForTracking), { lastTrackingDecision: decision }, { merge: true }),
+          { maxRetries: 1, baseDelayMs: 300, context: "lastTrackingDecisionSync" }
+        ).catch((err) => {
+          if (__DEV__) console.warn("[applyFeedback] lastTrackingDecision sync failed:", err);
+        });
+      }
+
+      trackEvent("tracking_decision_shadow", {
+        kind: decision.kind,
+        rulesVersion: decision.rulesVersion,
+        dataQuality: signals.dataQuality,
+        completionPct: hasFinalizedExecution ? currentExecution!.completion.pct : null,
+      });
+    }
+  } catch (err) {
+    if (__DEV__) {
+      console.error("[applyFeedback] tracking shadow computation failed (non-bloquant):", err);
+    }
+  }
 
   // 9. Write to stores (React 18 batches synchronous setState calls)
   useSessionsStore.setState({

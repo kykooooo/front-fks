@@ -15,7 +15,9 @@ import { resetForUser } from "../resetUser";
 import { useSyncStore, resetWatchGuard, reactivateListeners } from "../../stores/useSyncStore";
 import { useSessionsStore, getSessionsDefaults } from "../../stores/useSessionsStore";
 import { useLoadStore, getLoadDefaults } from "../../stores/useLoadStore";
+import { useExecutionStore, getExecutionDefaults } from "../../stores/useExecutionStore";
 import type { Session } from "../../../domain/types";
+import type { TrackingDecision } from "../../../domain/tracking/types";
 
 const SNAPSHOT_A = "fks-snapshot-v2-uid-A";
 const SNAPSHOT_B = "fks-snapshot-v2-uid-B";
@@ -34,6 +36,17 @@ const doneSession = (id: string): Session =>
     rpe: 7,
   } as Session);
 
+const decisionA: TrackingDecision = {
+  version: 1,
+  rulesVersion: "tracking-rules/1.0.0",
+  decidedAtISO: "2026-07-16T10:00:00.000Z",
+  kind: "continue_planned",
+  targets: [],
+  explanation: "Test fixture.",
+  signalsDigest: { completionRateAvg: 100, rpeDeltaAvg: 0, painActive: false, gapDays: 0, dataQuality: "ok" },
+  mode: "shadow",
+};
+
 /** Peuple les stores comme si uid-A était connecté avec de la progression. */
 function seedUserA() {
   useSessionsStore.setState({
@@ -43,6 +56,13 @@ function seedUserA() {
     microcycleSessionIndex: 5,
   } as any);
   useLoadStore.setState({ ...getLoadDefaults(), atl: 100, ctl: 90, tsb: -10 } as any);
+  // Boucle de suivi (Lot 4, reliquat assume du Lot 1) : execution store peuplé
+  // comme les autres — doit suivre le même snapshot/reset/restore.
+  useExecutionStore.setState({
+    ...getExecutionDefaults(),
+    lastDecision: decisionA,
+    replacementPreferences: { ex_1: { altExerciseId: "ex_1_alt", reason: "equipment", count: 2, lastAtISO: "x" } },
+  } as any);
   useSyncStore.setState({
     _currentUid: "uid-A",
     _rehydrating: false,
@@ -60,6 +80,7 @@ beforeEach(async () => {
   reactivateListeners();
   useSessionsStore.setState({ ...getSessionsDefaults() } as any);
   useLoadStore.setState({ ...getLoadDefaults() } as any);
+  useExecutionStore.setState({ ...getExecutionDefaults() } as any);
   useSyncStore.setState({
     _currentUid: null,
     _rehydrating: false,
@@ -118,7 +139,7 @@ describe("resetForUser — déroulés nominaux", () => {
     expect(await AsyncStorage.getItem(SNAPSHOT_A)).toBeNull();
   });
 
-  test("vrai logout : wipe + snapshot du sortant sauvegardé", async () => {
+  test("vrai logout : wipe + snapshot du sortant sauvegardé (execution store inclus, Lot 4)", async () => {
     seedUserA();
 
     await resetForUser(null);
@@ -126,6 +147,10 @@ describe("resetForUser — déroulés nominaux", () => {
     expect(useSyncStore.getState()._currentUid).toBeNull();
     expect(useSessionsStore.getState().sessions).toHaveLength(0);
     expect(useLoadStore.getState().atl).toBe(getLoadDefaults().atl);
+    // Purge de l'execution store : la decision shadow / preferences de A ne
+    // doivent JAMAIS fuiter vers l'utilisateur suivant (ecran vide, deconnecte).
+    expect(useExecutionStore.getState().lastDecision).toBeNull();
+    expect(useExecutionStore.getState().replacementPreferences).toEqual({});
 
     const raw = await AsyncStorage.getItem(SNAPSHOT_A);
     expect(raw).toBeTruthy();
@@ -133,6 +158,7 @@ describe("resetForUser — déroulés nominaux", () => {
     expect(snap.sessions.sessions[0].id).toBe("sA");
     expect(snap.sessions.microcycleSessionIndex).toBe(5);
     expect(snap.load.atl).toBe(100);
+    expect(snap.execution.lastDecision).toEqual(decisionA);
   });
 
   test("changement d'utilisateur : snapshot de A sauvegardé, snapshot de B restauré", async () => {
@@ -159,7 +185,7 @@ describe("resetForUser — déroulés nominaux", () => {
     expect(await AsyncStorage.getItem(SNAPSHOT_A)).toBeTruthy();
   });
 
-  test("nouvel utilisateur sans snapshot : stores aux valeurs par défaut", async () => {
+  test("nouvel utilisateur sans snapshot : stores aux valeurs par défaut (execution store inclus)", async () => {
     seedUserA();
 
     await resetForUser("uid-C");
@@ -167,5 +193,33 @@ describe("resetForUser — déroulés nominaux", () => {
     expect(useSyncStore.getState()._currentUid).toBe("uid-C");
     expect(useSessionsStore.getState().sessions).toHaveLength(0);
     expect(useSessionsStore.getState().microcycleSessionIndex).toBe(0);
+    expect(useExecutionStore.getState().lastDecision).toBeNull();
+    expect(useExecutionStore.getState().replacementPreferences).toEqual({});
+  });
+
+  test("changement d'utilisateur : execution store de A sauvegardé, execution de B restauré (Lot 4)", async () => {
+    const decisionB: TrackingDecision = { ...decisionA, decidedAtISO: "2026-07-10T08:00:00.000Z", kind: "hold_dose" };
+    await AsyncStorage.setItem(
+      SNAPSHOT_B,
+      JSON.stringify({
+        load: { atl: 55, ctl: 60, tsb: 5 },
+        sessions: { sessions: [doneSession("sB")], microcycleSessionIndex: 3, microcycleGoal: "endurance" },
+        feedback: {},
+        external: {},
+        debug: {},
+        sync: { plannedFksDays: [] },
+        execution: { lastDecision: decisionB, replacementPreferences: {}, current: null, history: [] },
+      })
+    );
+    seedUserA();
+
+    await resetForUser("uid-B");
+
+    expect(useExecutionStore.getState().lastDecision).toEqual(decisionB);
+    // Les preferences de remplacement de A n'ont pas fui chez B.
+    expect(useExecutionStore.getState().replacementPreferences).toEqual({});
+
+    const rawA = await AsyncStorage.getItem(SNAPSHOT_A);
+    expect(JSON.parse(rawA as string).execution.lastDecision).toEqual(decisionA);
   });
 });

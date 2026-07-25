@@ -3,6 +3,8 @@
 import { toRPE1to10, toRating1to5, toRating0to5 } from '../../domain/types';
 import type { SessionFeedback } from '../../domain/types';
 import { FEEDBACK_LIMITS } from '../../constants/feedback';
+import { summarizeExecution } from '../../domain/tracking/execution';
+import type { SessionExecution } from '../../domain/tracking/types';
 
 export const clamp = (v: number, min: number, max: number) =>
   Math.max(min, Math.min(max, v));
@@ -74,6 +76,13 @@ export const buildSessionFeedback = (params: {
   pain0to5: number;
   recovery: number;
   durationClamped?: number;
+  /**
+   * Execution finalisee de la seance cible (Lot 1/2, useExecutionStore), si
+   * disponible. Uniquement utilisee pour attacher `executionSummary` — ne
+   * change RIEN d'autre a la structure du feedback. Absente/non finalisee ->
+   * pas de champ ajoute (comportement identique a avant ce lot).
+   */
+  execution?: SessionExecution | null;
 }): SessionFeedback => {
   const fb: SessionFeedback = {
     rpe: toRPE1to10(params.rpe),
@@ -84,5 +93,8 @@ export const buildSessionFeedback = (params: {
     recoveryPerceived: clamp(params.recovery, FEEDBACK_LIMITS.recoveryMin, FEEDBACK_LIMITS.recoveryMax),
   };
   if (params.durationClamped != null) fb.durationMin = params.durationClamped;
+  if (params.execution && params.execution.finishedAtISO) {
+    fb.executionSummary = summarizeExecution(params.execution);
+  }
   return fb;
 };

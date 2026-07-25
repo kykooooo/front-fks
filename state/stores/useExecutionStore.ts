@@ -64,6 +64,17 @@ export const useExecutionStore = create<ExecutionState>()(
       // repart pas une seconde fois dans l'historique. finalizeExecution est
       // lui-meme idempotent ; la garde ici evite en plus de dupliquer l'entree
       // d'historique si finishCurrent est appele plusieurs fois par erreur.
+      //
+      // Fix P2-d : l'entree d'historique existante pour CE sessionId (s'il y
+      // en a une) est REMPLACEE, jamais empilee en double. Sans ce dedup, une
+      // session relancee apres une premiere finalisation (cf. P1-2 --
+      // ensureExecution ne reutilise plus une execution deja finalisee)
+      // produirait DEUX entrees pour le meme sessionId dans history : la
+      // signalisation (domain/tracking/signals.ts) et la vue Progression
+      // (buildTrackingProgress) scannent tout `history` sans deduplication
+      // cote lecture -- une session comptee deux fois fausserait completion
+      // moyenne, evolutions d'exercices, etc. Une seule verite par session :
+      // la plus recemment finalisee.
       finishCurrent: (finishedAtISO, actualDurationMin) => {
         const current = get().current;
         if (!current || current.finishedAtISO) return;
@@ -71,7 +82,10 @@ export const useExecutionStore = create<ExecutionState>()(
         const finalized = finalizeExecution(current, finishedAtISO, actualDurationMin);
         set((state) => ({
           current: finalized,
-          history: [finalized, ...state.history].slice(0, HISTORY_CAP),
+          history: [finalized, ...state.history.filter((exec) => exec.sessionId !== finalized.sessionId)].slice(
+            0,
+            HISTORY_CAP
+          ),
         }));
       },
 
@@ -95,10 +109,21 @@ export const useExecutionStore = create<ExecutionState>()(
 
       setLastDecision: (decision) => set({ lastDecision: decision }),
 
+      // Fix P1-2 : ordre volontaire -- HISTORY D'ABORD, current en filet.
+      // finishCurrent pousse TOUJOURS l'execution finalisee dans history (et
+      // la deduplique par sessionId, cf. P2-d) : une entree history pour ce
+      // sessionId est donc garantie a jour et finalisee. current ne sert de
+      // source QUE quand aucune entree history ne correspond (execution
+      // encore en cours, jamais finalisee) -- jamais l'inverse, sinon une
+      // "current" reinitialisee par une relance de la meme seance apres une
+      // premiere finalisation (cf. ensureExecution, SessionLiveScreen)
+      // masquerait a tort la version finalisee que SessionSummary/Feedback
+      // doivent lire.
       getExecutionForSession: (sessionId) => {
         const state = get();
-        if (state.current?.sessionId === sessionId) return state.current;
-        return state.history.find((exec) => exec.sessionId === sessionId);
+        const fromHistory = state.history.find((exec) => exec.sessionId === sessionId);
+        if (fromHistory) return fromHistory;
+        return state.current?.sessionId === sessionId ? state.current : undefined;
       },
 
       resetAll: () => set({ ...baseExecutionState() }),

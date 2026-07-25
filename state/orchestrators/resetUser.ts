@@ -1,5 +1,6 @@
 // state/orchestrators/resetUser.ts
-// Cross-cutting orchestrator: resets all 6 stores when switching users.
+// Cross-cutting orchestrator: resets all 7 stores when switching users
+// (6 original + useExecutionStore, boucle de suivi Lot 4 -- reliquat assume du Lot 1).
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { useLoadStore, getLoadDefaults } from "../stores/useLoadStore";
@@ -8,6 +9,7 @@ import { useFeedbackStore, getFeedbackDefaults } from "../stores/useFeedbackStor
 import { useExternalStore, getExternalDefaults } from "../stores/useExternalStore";
 import { useSyncStore, getSyncDefaults, deactivateListeners, reactivateListeners, resetWatchGuard, cleanupAllListeners } from "../stores/useSyncStore";
 import { useDebugStore, getDebugDefaults } from "../stores/useDebugStore";
+import { useExecutionStore, getExecutionDefaults } from "../stores/useExecutionStore";
 
 const SNAPSHOT_PREFIX = "fks-snapshot-v2-";
 
@@ -18,6 +20,10 @@ type AllStoresSnapshot = {
   external: Partial<ReturnType<typeof getExternalDefaults>>;
   debug: Partial<ReturnType<typeof getDebugDefaults>>;
   sync: { plannedFksDays?: string[] };
+  // Boucle de suivi (Lot 4, reliquat assume du Lot 1) : execution en cours +
+  // historique local + preferences de remplacement + derniere decision shadow
+  // suivent le MEME pattern snapshot/reset que les 6 autres stores ci-dessus.
+  execution: Partial<ReturnType<typeof getExecutionDefaults>>;
 };
 
 async function saveSnapshot(uid: string): Promise<void> {
@@ -39,6 +45,9 @@ async function saveSnapshot(uid: string): Promise<void> {
       ]),
       debug: extractData(useDebugStore.getState(), ["debugLog", "devNowISO"]),
       sync: { plannedFksDays: useSyncStore.getState().plannedFksDays },
+      execution: extractData(useExecutionStore.getState(), [
+        "current", "history", "replacementPreferences", "lastDecision",
+      ]),
     };
     await AsyncStorage.setItem(`${SNAPSHOT_PREFIX}${uid}`, JSON.stringify(snapshot));
   } catch {
@@ -124,6 +133,7 @@ async function performResetForUser(uid: string | null): Promise<void> {
   useFeedbackStore.setState({ ...getFeedbackDefaults(), ...(restored?.feedback ?? {}) });
   useExternalStore.setState({ ...getExternalDefaults(), ...(restored?.external ?? {}) });
   useDebugStore.setState({ ...getDebugDefaults(), ...(restored?.debug ?? {}) });
+  useExecutionStore.setState({ ...getExecutionDefaults(), ...(restored?.execution ?? {}) });
   useSyncStore.setState({
     ...getSyncDefaults(),
     ...(restored?.sync ?? {}),

@@ -10,10 +10,15 @@
 // 3. Le rpe_target est lu depuis aiV2 (camelCase ou snake_case).
 // 4. Le payload limite a 8 sessions et porte feedback / metrics / ai.rpe_target.
 // 5. Les anciennes sessions sans metrics / sans feedback ne plantent pas.
+// 6. Boucle de suivi (Lot 6) : le point d'intégration mode Application dans
+//    buildAIPromptContext est pass-through par défaut (apply=false) et ajuste
+//    bien le contexte quand apply=true (cf. describe tout en bas du fichier).
 
 // On importe depuis le module pur `aiContextHelpers` plutot que `aiContext`
 // pour eviter que jest charge la dependance firebase ESM (mocker firebase ici
-// serait du bruit qui n'a rien a voir avec la logique testee).
+// serait du bruit qui n'a rien a voir avec la logique testee) -- SAUF dans le
+// describe "mode Application" tout en bas, qui a besoin du flux complet et
+// mocke firebase localement (mêmes mocks que services/__tests__/painConstraints.test.ts).
 import {
   buildRecentFksSessionSummary,
   buildRecentFksSessionsPayload,
@@ -269,5 +274,104 @@ describe("buildRecentFksSessionsPayload (limite + integration)", () => {
     expect(rpeDelta).toBeCloseTo(2, 6);
     const painHigh = payload.filter((s) => (s.feedback?.pain ?? 0) >= 6).length;
     expect(painHigh).toBe(8);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// Boucle de suivi joueur (Lot 6) -- point d'intégration mode Application dans
+// buildAIPromptContext. Nécessite le flux Firestore complet -> mocks locaux
+// (identiques à services/__tests__/painConstraints.test.ts). `mockUserProfile`
+// est référencée par le nom (préfixe "mock") à l'intérieur des factories
+// jest.mock : c'est l'échappatoire documentée de babel-plugin-jest-hoist pour
+// des mocks paramétrables par test (sinon "out-of-scope variable" au hoist).
+jest.mock("firebase/auth", () => {
+  const overrides: Record<string, unknown> = {
+    __esModule: true,
+    getAuth: () => ({ currentUser: { uid: "test-user" } }),
+    initializeAuth: () => ({ currentUser: { uid: "test-user" } }),
+    getReactNativePersistence: () => ({}),
+    onAuthStateChanged: () => () => {},
+  };
+  return new Proxy(overrides, {
+    get: (target, prop: string) => (prop in target ? target[prop] : jest.fn()),
+  });
+});
+
+jest.mock("firebase/firestore", () => {
+  const overrides: Record<string, unknown> = {
+    __esModule: true,
+    getFirestore: () => ({}),
+    initializeFirestore: () => ({}),
+    connectFirestoreEmulator: () => {},
+    onSnapshot: () => () => {},
+    doc: jest.fn(() => ({})),
+    // Profil Firestore paramétrable par test via mockUserProfile (cf. beforeEach ci-dessous).
+    getDoc: jest.fn(async () => ({ exists: () => true, data: () => mockUserProfile })),
+  };
+  return new Proxy(overrides, {
+    get: (target, prop: string) => (prop in target ? target[prop] : jest.fn()),
+  });
+});
+
+// aiContext.ts require() ../services/analytics de façon différée (jamais en
+// top-level, cf. commentaire dans aiContext.ts) uniquement quand le mode
+// Application ajuste effectivement le contexte. On le mocke quand même ici :
+// le vrai module entraîne @amplitude/analytics-react-native, qui embarque sa
+// PROPRE copie imbriquée de @react-native-async-storage/async-storage que
+// jest.setup.js ne peut pas mocker (résolution imbriquée, hors de portée du
+// mock racine) -- exactement le problème documenté dans aiContext.ts.
+jest.mock("../analytics", () => ({ __esModule: true, trackEvent: jest.fn() }));
+
+import { buildAIPromptContext } from "../aiContext";
+import { useLoadStore } from "../../state/stores/useLoadStore";
+import { useSessionsStore } from "../../state/stores/useSessionsStore";
+import { useDebugStore } from "../../state/stores/useDebugStore";
+import { useFeedbackStore } from "../../state/stores/useFeedbackStore";
+import { useExecutionStore } from "../../state/stores/useExecutionStore";
+import type { TrackingDecision } from "../../domain/tracking/types";
+
+let mockUserProfile: Record<string, unknown> = {};
+
+function makeReduceVolumeDecision(): TrackingDecision {
+  return {
+    version: 1,
+    rulesVersion: "tracking-rules/1.0.0",
+    decidedAtISO: "2026-07-20T10:00:00.000Z",
+    kind: "reduce_volume_light",
+    targets: [],
+    explanation: "La dernière séance a été plus difficile que prévu.",
+    signalsDigest: { completionRateAvg: 50, rpeDeltaAvg: null, painActive: false, gapDays: null, dataQuality: "ok" },
+    mode: "shadow",
+  };
+}
+
+describe("buildAIPromptContext — mode Application (boucle de suivi, Lot 6)", () => {
+  beforeEach(() => {
+    mockUserProfile = { available_time_min: 60 };
+    useFeedbackStore.setState({ dayStates: {} } as any);
+    useLoadStore.setState({ atl: 50, ctl: 60, tsb: 10 } as any);
+    useSessionsStore.setState({ sessions: [], microcycleGoal: "fondation", microcycleSessionIndex: 0 } as any);
+    useDebugStore.setState({ devNowISO: null } as any);
+    useExecutionStore.setState({ lastDecision: null } as any);
+  });
+
+  test("pass-through par défaut (apply=false) : une décision stockée n'ajuste rien", async () => {
+    useExecutionStore.setState({ lastDecision: makeReduceVolumeDecision() } as any);
+    // mockUserProfile ne porte aucun trackingConfig -> défauts modes.ts (apply=false).
+    const ctx = await buildAIPromptContext();
+    expect(ctx.available_time_min).toBe(60);
+  });
+
+  test("apply=true + décision reduce_volume_light -> available_time_min réduit du facteur configuré (×0.9)", async () => {
+    mockUserProfile = { available_time_min: 60, trackingConfig: { apply: true } };
+    useExecutionStore.setState({ lastDecision: makeReduceVolumeDecision() } as any);
+    const ctx = await buildAIPromptContext();
+    expect(ctx.available_time_min).toBe(54);
+  });
+
+  test("apply=true mais aucune décision stockée -> pass-through (rien à appliquer)", async () => {
+    mockUserProfile = { available_time_min: 60, trackingConfig: { apply: true } };
+    const ctx = await buildAIPromptContext();
+    expect(ctx.available_time_min).toBe(60);
   });
 });
