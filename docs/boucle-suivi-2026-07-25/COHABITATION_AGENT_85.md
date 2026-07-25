@@ -43,4 +43,11 @@ Zones intégralement considérées comme appartenant à l'agent 8,5 (base `ebe34
 - Aucun `reset --hard`, `clean`, `checkout --`, stash ou restauration sur un espace partagé.
 - Aucun changement de branche dans un checkout partagé ; travail uniquement dans le worktree dédié `silly-kirch-9ea0cf`.
 - Commits limités aux fichiers de ce chantier, vérifiés un à un avant chaque commit (`git status --porcelain` + `git diff --stat --cached`).
+
+## Constat de fin de chantier (25/07, soir)
+
+- Worktree backend 8,5 (`fks-worktrees/readiness3`) : avancé de `2eac00e` à `9d47fbc` pendant ce chantier, 12 fichiers en cours — **jamais touché, jamais lu en écriture**.
+- Branche front 8,5 (`claude/fks-qualite-vague-85-cecba4`) : toujours **0 diff vs main** en fin de chantier.
+- Ce chantier : 0 fichier backend modifié ; `screens/newSession/**` intact (lecture seule) ; un seul point de contact avec la génération = le hook gated de `services/aiContext.ts` (documenté ci-dessus).
+- À revalider après le merge de la vague 8,5 : intégrité des ids du registre de remplacements (`validateRegistryIntegrity` = 0 erreur requis) ; option « mémoire anti-répétition voyante » (envoi des `exercise_id` réalisés) à décider.
 - Les fichiers non commités observés dans les checkouts principaux (lockfiles, briefings .docx, `outputs/`) sont laissés strictement intacts.
