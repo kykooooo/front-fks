@@ -29,6 +29,15 @@ export const TRACKING_CONFIG = {
     minSessionsForSignal: 3, // aligne le backend (>= 3 deltas RPE avant tout signal)
     highDelta: 2, // moyenne (rpe reel - rpe cible) >= +2 -> seance trop dure
     lowDelta: -2, // moyenne <= -2 -> marge, petit pas de progression possible
+    streakTolerance: 1, // |rpe reel - rpe cible| > ce seuil -> casse la serie "ok" (computeStreakOkSessions)
+  },
+
+  // Bornes de plausibilite des donnees declaratives (feedback.durationMin).
+  // Separe de rpe/pct ci-dessus qui restent des bornes d'ECHELLE fixes
+  // (1-10, 0-100), pas des seuils metier ajustables.
+  consistency: {
+    maxPlausibleDurationMin: 240, // duree reelle declaree > 4h -> dataQuality "inconsistent"
+    maxDurationRatio: 3, // ecretage du ratio duree reelle/prevue avant moyenne (durationRatioAvg)
   },
 
   // Nombre de seances comparables reussies requis avant d'autoriser un petit

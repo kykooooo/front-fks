@@ -165,6 +165,7 @@ export type ReplacementRequest = {
     solo: boolean;
     excludeIds: string[];             // déjà proposés (anti-boucle)
   };
+  prescribed?: { sets: number | null; reps: number | string | null; durationS: number | null; restS: number | null }; // prescription réelle de l'item live si transmise, prime sur la baseline générique par modalité
 };
 
 export type ReplacementProposal = {

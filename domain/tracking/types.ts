@@ -215,6 +215,15 @@ export type ReplacementRequest = {
     solo: boolean;
     excludeIds: string[]; // deja proposes (anti-boucle)
   };
+  // Prescription reelle de l'item live (sets/reps/durationS/restS), quand
+  // l'appelant la transmet -- priment sur la baseline generique par modalite
+  // (BASELINE_BY_MODALITY dans select.ts). Optionnel : absent -> baseline.
+  prescribed?: {
+    sets: number | null;
+    reps: number | string | null;
+    durationS: number | null;
+    restS: number | null;
+  };
 };
 
 export type ReplacementProposal = {

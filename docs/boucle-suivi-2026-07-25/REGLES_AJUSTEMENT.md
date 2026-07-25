@@ -23,6 +23,7 @@ export const TRACKING_CONFIG = {
     minSessionsForSignal: 3,   // aligné backend (≥3 deltas)
     highDelta: 2,              // moyenne ≥ +2 → trop dur
     lowDelta: -2,              // moyenne ≤ −2 → marge
+    streakTolerance: 1,        // |rpe réel − rpe cible| > ce seuil → casse la série "ok" (computeStreakOkSessions)
   },
   progression: { minStreakForSmallStep: 2 }, // séances comparables réussies avant d'autoriser un petit pas
   difficulty: { repeatThreshold: 2 },        // même exercice/famille "too_difficult" ≥ 2 → variante
@@ -30,6 +31,13 @@ export const TRACKING_CONFIG = {
   pain: {
     feedbackThreshold: 3,      // échelle app 0-5 (≥3 = douleur réelle)
     windowDays: 7,             // aligné collectActivePainConstraints
+  },
+  // Bornes de plausibilité des données déclaratives (feedback.durationMin).
+  // Séparé de rpe/pct ci-dessus qui restent des bornes d'ÉCHELLE fixes
+  // (1-10, 0-100), pas des seuils métier ajustables.
+  consistency: {
+    maxPlausibleDurationMin: 240, // durée réelle déclarée > 4h → dataQuality "inconsistent"
+    maxDurationRatio: 3,          // écrêtage du ratio durée réelle/prévue avant moyenne (durationRatioAvg)
   },
   resumption: {
     gapDaysSoft: 14,           // ≥ → reprise prudente (réduction de dose)
@@ -78,13 +86,24 @@ Une phrase-type par décision, TOUJOURS instanciée avec les données réelles (
 - `prefer_replacement` : « Tu as remplacé {exercice} N fois faute de matériel. La prochaine séance utilisera directement la variante compatible. »
 
 ## Mode Application (`apply.ts`, OFF au pilote)
+`applyDecisionToContext(context, decision, config, unavailableEquipment?, history?)` retourne TOUJOURS
+`{ context, applied }` : une COPIE de `FKS_AiContext` + la liste des ajustements réellement effectués
+(jamais de mutation de l'original). `history.previousDecisions?.[0]` (la plus récente) est l'unique
+mécanisme de persistance inter-fenêtres — **il n'existe pas de `weekly_flags.deload` dans
+`FKS_AiContext`** (vérifié), donc aucune décision n'écrit un tel champ.
+
 Mapping décision → leviers de contexte backend EXISTANTS uniquement :
-- `reduce_volume_light` → `constraints.available_time_min × 0.9` (borne config).
-- `reduce_intensity_light` → `weekly_flags.deload = true` seulement si l'écart persiste ≥2 fenêtres (sinon rien : le cap RPE backend converge seul).
-- `resume_mode` (hard) → recommandation de cycle `fondation` (via l'UI de choix de cycle, jamais de switch silencieux) + durée réduite.
-- `prefer_replacement` → retire du `constraints.equipment[]` le matériel durablement indisponible (le filtre matériel backend fait le reste).
+- `reduce_volume_light` → `available_time_min × volumeReductionFactor` (arrondi), tracé `reduce_volume_light` si une valeur était présente.
+- `reduce_intensity_light` → persistance ≥2 fenêtres via `history` (remplace `weekly_flags.deload`, inexistant) :
+  - 1er déclenchement (pas de décision précédente, ou précédente d'un autre type) → **no-op tracé** `reduce_intensity_light_noted` (le cap RPE backend converge déjà seul) ;
+  - si la décision précédente la plus récente est `reduce_intensity_light` OU `reduce_volume_light` (même tendance) → `available_time_min × volumeReductionFactor` (un seul facteur, jamais cumulé), tracé `reduce_intensity_persistent_time_reduced`.
+- `resume_mode` → sévérité lue depuis `signalsDigest.gapDays` (jamais devinée) :
+  - `gapDays ≥ gapDaysHard` (règle 2, reprise dure) → recommandation déclarative de cycle `fondation` (via l'UI de choix de cycle, jamais de switch silencieux) tracée `recommend_fondation`, **ET** `available_time_min × volumeReductionFactor` tracé `resume_hard_time_reduced` ;
+  - `gapDays < gapDaysHard` (règle 3, reprise douce) → cycle **CONSERVÉ** (pas de `recommend_fondation`), seulement `available_time_min × volumeReductionFactor` tracé `resume_soft_time_reduced` ;
+  - `gapDays` absent (`null`) dans le digest → pass-through prudent, `applied = []` (on ne devine jamais la sévérité d'une reprise sans donnée).
+- `prefer_replacement` → retire du `constraints.equipment[]` (et `equipment_available`) le matériel durablement indisponible passé via `unavailableEquipment` (le filtre matériel backend fait le reste).
 - `block_increase_pain` → s'assure que `pains[]`/`injury_max_severity` partent bien (déjà le cas) ; n'ajoute rien.
-- `continue_planned`/`hold_dose`/`keep_despite_time`/`standard_insufficient_data` → pass-through strict.
+- `continue_planned`/`hold_dose`/`keep_despite_time`/`suggest_variant`/`standard_insufficient_data` → pass-through strict.
 - Option documentée (non activée) : envoyer `blocks[].items[].exercise_id` des séances réalisées dans `recent_fks_sessions` pour rendre la mémoire anti-répétition backend « voyante » — à revalider après merge vague 8,5.
 
 ## Versionnage
