@@ -8,7 +8,7 @@
 import { onDocumentWritten, type FirestoreEvent, type Change, type DocumentSnapshot } from "firebase-functions/v2/firestore";
 import { getDb } from "./admin";
 import { COACH_ACCESS_FIELD, type CoachAccessState } from "./coachAccess";
-import { COACH_ACCESS_POLICY_FIELD } from "./coachAccessPolicy";
+import { JOIN_ACCESS_POLICY_FIELD } from "./joinAccessPolicy";
 import { ensureCoachAccessState, type MemberAccessStore } from "./coachAccessSync";
 import { MIN_INSTANCES, paths, REGION } from "./config";
 import { rebuildPlayerSummary } from "./rebuild";
@@ -43,7 +43,7 @@ function memberAccessStore(): MemberAccessStore {
     async readClubPolicy(clubId: string) {
       const snap = await db.doc(paths.club(clubId)).get();
       if (!snap.exists) return undefined;
-      return ((snap.data() ?? {}) as Record<string, unknown>)[COACH_ACCESS_POLICY_FIELD];
+      return ((snap.data() ?? {}) as Record<string, unknown>)[JOIN_ACCESS_POLICY_FIELD];
     },
     async writeCoachAccess(clubId: string, playerUid: string, state: CoachAccessState) {
       await db

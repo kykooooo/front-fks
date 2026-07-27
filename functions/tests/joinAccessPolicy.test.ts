@@ -1,4 +1,4 @@
-// functions/tests/coachAccessPolicy.test.ts
+// functions/tests/joinAccessPolicy.test.ts
 //
 // POLITIQUE D'ACCES COACH PAR CLUB — module serveur pur.
 //
@@ -12,13 +12,13 @@
 //     default-deny sur les VALEURS de `coachAccess`.
 
 import {
-  clubCoachAccessPolicy,
-  COACH_ACCESS_POLICIES,
-  COACH_ACCESS_POLICY_FIELD,
-  DEFAULT_COACH_ACCESS_POLICY,
-  normalizeCoachAccessPolicy,
-  resolveCoachAccessPolicy,
-} from "../src/coachAccessPolicy";
+  clubJoinAccessPolicy,
+  JOIN_ACCESS_POLICIES,
+  JOIN_ACCESS_POLICY_FIELD,
+  DEFAULT_JOIN_ACCESS_POLICY,
+  normalizeJoinAccessPolicy,
+  resolveJoinAccessPolicy,
+} from "../src/joinAccessPolicy";
 import {
   initialCoachAccess,
   isCoachAccessGranted,
@@ -29,14 +29,14 @@ import {
 
 describe("vocabulaire de la politique", () => {
   it("exactement deux modes, dans l'ordre arrete", () => {
-    expect(COACH_ACCESS_POLICIES).toEqual(["automatic_safe_projection", "approval_required"]);
-    expect(COACH_ACCESS_POLICY_FIELD).toBe("coachAccessPolicy");
+    expect(JOIN_ACCESS_POLICIES).toEqual(["automatic_safe_projection", "approval_required"]);
+    expect(JOIN_ACCESS_POLICY_FIELD).toBe("joinAccessPolicy");
   });
 
   it("le mode alternatif approval_required EXISTE, meme s'il n'est active nulle part", () => {
     // Il est cable et teste des maintenant : le jour ou un club le demande, il
     // n'y a rien a ecrire, juste un champ a poser.
-    expect(normalizeCoachAccessPolicy("approval_required")).toBe("approval_required");
+    expect(normalizeJoinAccessPolicy("approval_required")).toBe("approval_required");
     expect(initialCoachAccess("approval_required")).toBe("pending");
   });
 });
@@ -45,7 +45,7 @@ describe("vocabulaire de la politique", () => {
 
 describe("defaut serveur — defini ici, teste ici, sans le front", () => {
   it("le defaut est automatic_safe_projection", () => {
-    expect(DEFAULT_COACH_ACCESS_POLICY).toBe("automatic_safe_projection");
+    expect(DEFAULT_JOIN_ACCESS_POLICY).toBe("automatic_safe_projection");
   });
 
   it("toute configuration ABSENTE, vide, inconnue ou mal typee retombe sur le defaut", () => {
@@ -70,27 +70,27 @@ describe("defaut serveur — defini ici, teste ici, sans le front", () => {
       { mode: "approval_required" },
     ];
     for (const v of valeurs) {
-      expect(normalizeCoachAccessPolicy(v)).toBeNull();
-      expect(resolveCoachAccessPolicy(v)).toBe("automatic_safe_projection");
+      expect(normalizeJoinAccessPolicy(v)).toBeNull();
+      expect(resolveJoinAccessPolicy(v)).toBe("automatic_safe_projection");
     }
   });
 
   it("une valeur reconnue est respectee, espaces autour compris", () => {
-    expect(resolveCoachAccessPolicy("approval_required")).toBe("approval_required");
-    expect(resolveCoachAccessPolicy("  approval_required  ")).toBe("approval_required");
-    expect(resolveCoachAccessPolicy("automatic_safe_projection")).toBe(
+    expect(resolveJoinAccessPolicy("approval_required")).toBe("approval_required");
+    expect(resolveJoinAccessPolicy("  approval_required  ")).toBe("approval_required");
+    expect(resolveJoinAccessPolicy("automatic_safe_projection")).toBe(
       "automatic_safe_projection",
     );
   });
 
   it("document club absent, vide, ou sans le champ -> defaut", () => {
-    expect(clubCoachAccessPolicy(null)).toBe("automatic_safe_projection");
-    expect(clubCoachAccessPolicy(undefined)).toBe("automatic_safe_projection");
-    expect(clubCoachAccessPolicy({})).toBe("automatic_safe_projection");
-    expect(clubCoachAccessPolicy({ name: "AS Test", ownerUid: "c1" })).toBe(
+    expect(clubJoinAccessPolicy(null)).toBe("automatic_safe_projection");
+    expect(clubJoinAccessPolicy(undefined)).toBe("automatic_safe_projection");
+    expect(clubJoinAccessPolicy({})).toBe("automatic_safe_projection");
+    expect(clubJoinAccessPolicy({ name: "AS Test", ownerUid: "c1" })).toBe(
       "automatic_safe_projection",
     );
-    expect(clubCoachAccessPolicy({ coachAccessPolicy: "approval_required" })).toBe(
+    expect(clubJoinAccessPolicy({ joinAccessPolicy: "approval_required" })).toBe(
       "approval_required",
     );
   });

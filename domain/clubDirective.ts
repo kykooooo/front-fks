@@ -1,7 +1,29 @@
 // domain/clubDirective.ts
 //
-// DIRECTIVE D'ENTRAÎNEMENT — l'objet, distinct de la note privée, qui a le droit
-// d'influencer la préparation.
+// DIRECTIVE D'ENTRAÎNEMENT — l'objet, distinct de la note privée, DESTINÉ à
+// influencer la préparation le jour où le moteur saura la lire.
+//
+// ─── ⚠️ CE QU'ELLE NE FAIT PAS ENCORE, ET QU'AUCUN TEXTE NE DOIT PROMETTRE ──
+// Le backend de génération NE LIT PAS la directive aujourd'hui. Elle voyage bien
+// dans le contexte envoyé (services/aiContextHelpers.ts), mais rien, côté
+// moteur, ne s'en sert : aucune séance n'est adaptée parce qu'une directive
+// existe.
+//
+// Conséquence, décidée par Kyllian (lot correctif B2.2) : AUCUN texte affiché —
+// ni au coach, ni au joueur — ne doit dire ou laisser entendre qu'elle influence
+// une séance, qu'elle a été « prise en compte », ou que « FKS en tient compte ».
+// Les anciennes formulations disaient vrai sur le transport (« transmise à
+// FKS ») et faux sur l'effet : un lecteur en déduisait que sa séance avait été
+// construite avec. C'est la promesse interdite.
+//
+// La phrase honnête, la seule, est `CLUB_DIRECTIVE_PREPARATION_NOTICE`. Un test
+// balaie toutes les constantes de texte exportées d'ici et fait échouer la suite
+// si une promesse d'influence réapparaît
+// (domain/__tests__/clubDirectivePromesse.test.ts).
+//
+// Le jour où le moteur lira réellement la directive : ce sera un chantier à
+// part, avec ses propres preuves, et c'est SEULEMENT à ce moment-là que ces
+// phrases changeront.
 //
 // ─── POURQUOI UN OBJET SÉPARÉ, ET NON UN CHAMP DE PLUS ──────────────────────
 // Le cadre de semaine (`weekContexts/{weekKey}`) porte déjà trois informations
@@ -26,9 +48,10 @@
 // joue déjà ce rôle : la directive s'y branche au lieu de l'empiler.
 //
 // ─── CE QUE LA DIRECTIVE NE PEUT PAS FAIRE ──────────────────────────────────
-//  - Elle ne contourne AUCUNE règle de sécurité sportive : elle entre dans le
-//    contexte envoyé au backend comme une préférence, jamais comme un ordre.
-//    Les garde-fous (douleurs, âge, caps de durée, deload) restent devant.
+//  - Elle ne modifie AUCUNE séance aujourd'hui (cf. en-tête). Le jour où le
+//    moteur la lira, elle entrera dans le contexte comme une préférence, jamais
+//    comme un ordre : les garde-fous (douleurs, âge, caps de durée, deload)
+//    resteront devant.
 //  - Elle ne doit contenir aucune donnée médicale, ni rien qui permette d'en
 //    déduire une. C'est écrit au coach AVANT enregistrement, parce que la
 //    directive est LUE PAR LE JOUEUR : ce qu'on y met, tout l'effectif le voit.
@@ -92,9 +115,25 @@ export const CLUB_DIRECTIVE_CURRENT_ID = "current";
 /**
  * Affiché dans l'écran coach AVANT enregistrement. Il dit ce que le coach doit
  * savoir au moment où il écrit, pas après : le joueur lira ce texte.
+ *
+ * Il disait aussi « et susceptible d'influencer ses prochaines séances ». La
+ * moitié VRAIE (le joueur lit) est gardée ; la moitié FAUSSE (l'influence) est
+ * retirée, et remplacée par `CLUB_DIRECTIVE_PREPARATION_NOTICE` qui dit la
+ * situation réelle.
  */
 export const CLUB_DIRECTIVE_LABEL =
-  "Directive d'entraînement — visible par le joueur et susceptible d'influencer ses prochaines séances.";
+  "Directive d'entraînement — visible par le joueur, dans l'application, dès qu'elle est enregistrée.";
+
+/**
+ * LA phrase d'honnêteté, au caractère près (verrouillée par un test d'égalité
+ * stricte). Elle est affichée AU COACH au moment où il écrit, et AU JOUEUR au
+ * moment où il lit : les deux doivent savoir la même chose.
+ *
+ * Tant que le moteur ne lit pas la directive, c'est la seule formulation
+ * autorisée à parler de séances.
+ */
+export const CLUB_DIRECTIVE_PREPARATION_NOTICE =
+  "Fonction en préparation — cette directive n'est pas encore appliquée aux séances";
 
 /**
  * Rappel affiché juste au-dessus du champ de saisie. Le libellé ci-dessus dit
@@ -103,6 +142,33 @@ export const CLUB_DIRECTIVE_LABEL =
  */
 export const CLUB_DIRECTIVE_WRITE_WARNING =
   "Tout l'effectif peut lire cette directive. N'y mets aucune information de santé, ni rien qui permette de deviner l'état d'un joueur.";
+
+/**
+ * Fin de la fenêtre de validité, dite au coach.
+ *
+ * Elle disait « la directive cesse d'être transmise » — vrai sur le transport,
+ * mais « transmise » laissait entendre qu'elle servait à quelque chose de
+ * l'autre côté. Ce qui est OBSERVABLE, et donc ce qu'on annonce : passé le
+ * délai, les joueurs ne la voient plus.
+ */
+export const CLUB_DIRECTIVE_DURATION_HINT =
+  "À partir d'aujourd'hui. Passé ce délai, tes joueurs ne la voient plus.";
+
+/**
+ * Confirmation affichée au coach APRÈS enregistrement.
+ *
+ * Elle disait « FKS en tient compte pour leurs prochaines séances » : c'était
+ * la promesse mensongère la plus directe du chantier — annoncée au moment
+ * précis où le coach a le plus de raisons d'y croire. Elle ne parle plus que de
+ * ce qui a réellement eu lieu : le message est enregistré, et lisible.
+ *
+ * Exportée (plutôt qu'écrite dans l'écran) pour être balayée par le test
+ * anti-promesse : un texte de succès non exporté échapperait à la vérification.
+ */
+export const CLUB_DIRECTIVE_SAVED_TOAST = {
+  titre: "Directive enregistrée",
+  message: "Tes joueurs peuvent la lire depuis leur application.",
+} as const;
 
 // ─── Le contrat ─────────────────────────────────────────────────────────────
 
@@ -216,10 +282,19 @@ export type ClubDirectiveNoticeCopy = {
   instruction: string;
   /**
    * Phrase d'honnêteté affichée sous la consigne : elle dit d'où vient la
-   * directive ET ce qu'elle ne peut pas faire. Un joueur qui lit « Renfo
-   * terrain » sans cette phrase peut croire que son club a écrit sa séance.
+   * directive ET ce qu'elle ne fait pas. Un joueur qui lit « Renfo terrain »
+   * sans cette phrase peut croire que son club a écrit sa séance.
+   *
+   * Elle disait « FKS en tient compte pour tes séances » : c'était faux, le
+   * moteur ne la lit pas (cf. en-tête). Elle dit maintenant la consigne pour ce
+   * qu'elle est — un message de son club, à appliquer par lui-même.
    */
   precision: string;
+  /**
+   * L'état RÉEL de la fonction, dit au joueur avec les mêmes mots qu'au coach
+   * (`CLUB_DIRECTIVE_PREPARATION_NOTICE`).
+   */
+  preparation: string;
 };
 
 /** Rendu joueur d'une directive. `null` si elle ne s'applique pas ce jour-là. */
@@ -233,16 +308,7 @@ export function clubDirectiveNotice(
     titre: "Directive du club",
     objectif: CLUB_DIRECTIVE_OBJECTIVE_LABELS[d.objective],
     instruction: d.instruction,
-    precision:
-      "Ton club a posé cette directive. FKS en tient compte pour tes séances, sans jamais passer devant les règles de sécurité.",
+    precision: "Ton club a posé cette consigne pour toi. C'est un message de ton coach.",
+    preparation: CLUB_DIRECTIVE_PREPARATION_NOTICE,
   };
 }
-
-/**
- * Phrase à afficher sur une séance construite alors qu'une directive
- * s'appliquait. Elle énonce un FAIT (« une directive était active »), jamais un
- * effet mesuré (« ta séance a été modifiée ») : le front ne sait pas ce que le
- * moteur en a fait, et ne doit pas le prétendre.
- */
-export const CLUB_DIRECTIVE_SESSION_NOTICE =
-  "Une directive du club était active lors de la construction de cette séance et a été transmise à FKS.";

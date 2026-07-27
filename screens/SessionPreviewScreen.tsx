@@ -34,7 +34,6 @@ import { buildResetExplain } from './newSession/resetExplain';
 import { readRecoveryTips } from './newSession/helpers';
 import { useTestsStorage } from './tests/hooks/useTestsStorage';
 import { useClubDirective } from '../hooks/useClubDirective';
-import { CLUB_DIRECTIVE_SESSION_NOTICE } from '../domain/clubDirective';
 import { pickLatestTestValues } from './sessionPreview/testReferenceMapping';
 
 import {
@@ -396,9 +395,14 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
               ) : null}
 
               {/* Directive du club — la contrepartie VISIBLE de la note privée.
-                  Ce qui influence la préparation du joueur doit pouvoir être lu
-                  par lui. La note privée du coach, elle, n'arrive jamais ici :
-                  elle n'est ni lue par ce hook, ni lisible par ce compte. */}
+                  Ce que le club écrit AU joueur doit pouvoir être lu par lui. La
+                  note privée du coach, elle, n'arrive jamais ici : elle n'est ni
+                  lue par ce hook, ni lisible par ce compte.
+
+                  La carte ne dit NULLE PART que la séance affichée a été
+                  construite avec cette directive : le moteur ne la lit pas
+                  encore, et l'écran l'annonce lui-même
+                  (`preparation`, cf. domain/clubDirective.ts). */}
               {clubDirective.notice ? (
                 <Card variant="soft" style={styles.coachCard}>
                   <SectionHeader title={clubDirective.notice.titre} />
@@ -409,8 +413,12 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
                   <Text style={styles.playerContextCoachNote} numberOfLines={3}>
                     {clubDirective.notice.precision}
                   </Text>
-                  <Text style={styles.playerContextCoachNote} numberOfLines={2}>
-                    {CLUB_DIRECTIVE_SESSION_NOTICE}
+                  <Text
+                    testID="club-directive-preparation"
+                    style={styles.playerContextCoachNote}
+                    numberOfLines={2}
+                  >
+                    {clubDirective.notice.preparation}
                   </Text>
                 </Card>
               ) : null}

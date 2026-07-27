@@ -240,7 +240,7 @@ describe("9.b — joinClubWithInviteCode appelee directement", () => {
     store.seed(invitePaths.club(CLUB_A), {
       name: "Club A",
       ownerUid: COACH_A,
-      coachAccessPolicy: "approval_required",
+      joinAccessPolicy: "approval_required",
     });
     store.seed(invitePaths.user(STRANGER), { uid: STRANGER, ageCategory: "U15" });
 

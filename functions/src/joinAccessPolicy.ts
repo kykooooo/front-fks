@@ -1,13 +1,32 @@
-// functions/src/coachAccessPolicy.ts
+// functions/src/joinAccessPolicy.ts
 //
-// POLITIQUE D'ACCES COACH, PORTEE PAR LE CLUB.
+// POLITIQUE DE RATTACHEMENT, PORTEE PAR LE CLUB.
 //
 // Module SERVEUR PUR : aucun Firestore, aucune horloge, AUCUNE dependance front.
 // C'est ici, et nulle part ailleurs, que se decide quel etat d'autorisation est
 // pose sur un joueur AU MOMENT OU IL REJOINT un club.
 //
+// ─── LE NOM DIT LA PORTEE, ET C'EST VOLONTAIRE ──────────────────────────────
+//
+// Ce champ s'appelait `coachAccessPolicy`. Le nom laissait croire qu'il
+// gouvernait "l'acces du coach" en general, donc aussi celui des membres DEJA
+// rattaches. C'est faux, et ca l'a toujours ete : la politique ne decide que de
+// l'etat POSE A L'ENTREE. Un nom qui promet plus que le code ne fait est un
+// piege, pas un detail — il a donc ete renomme `joinAccessPolicy` : la politique
+// du RATTACHEMENT (join), pas la politique de l'acces.
+//
+// Formulation de reference, celle a afficher a un coach le jour ou un ecran
+// existera : « S'applique aux prochains joueurs qui rejoignent le club »
+// (constante `JOIN_ACCESS_POLICY_SCOPE_LABEL`, cote front,
+// domain/joinAccessPolicy.ts).
+//
+// AUCUN CHEMIN DE COMPATIBILITE avec l'ancien nom n'existe, et c'est DELIBERE :
+// rien n'est deploye, aucun club n'existe en base. Un repli qui relirait
+// `coachAccessPolicy` serait du code mort laissant croire a une migration qui
+// n'a jamais eu lieu.
+//
 // ─── Le champ ────────────────────────────────────────────────────────────────
-// Porte : clubs/{clubId}.coachAccessPolicy
+// Porte : clubs/{clubId}.joinAccessPolicy
 // Valeurs : "automatic_safe_projection" | "approval_required".
 //
 // ─── Les deux modes ─────────────────────────────────────────────────────────
@@ -21,6 +40,17 @@
 //     Le rattachement pose "pending" : le joueur entre bien dans l'effectif,
 //     mais son suivi n'est pas consultable tant qu'une decision humaine n'a pas
 //     ete prise (procedure documentee dans AUTORISATION_ACCES.md, §7).
+//
+// ─── CE QUE CHANGER LA POLITIQUE NE FAIT PAS ────────────────────────────────
+//
+// Elle ne touche AUCUN membre deja rattache. Ni pour ouvrir, ni pour fermer.
+// `resolveCoachAccess` (coachAccess.ts) conserve tout etat deja pose et lisible,
+// et le chemin de resynchro (`ensureCoachAccessState`, coachAccessSync.ts) ne
+// lit meme pas la politique quand un etat valide existe deja. Fermer un acces
+// existant reste un geste EXPLICITE, joueur par joueur ("revoked", §7.4 de la
+// doc). Une action groupee sur les membres existants pourra etre ajoutee plus
+// tard ; elle n'existe pas aujourd'hui, et surtout elle ne se declenchera jamais
+// en effet de bord d'un changement de politique.
 //
 // ─── POURQUOI UN DEFAUT QUI OUVRE, ET PAS UN DEFAUT QUI FERME ───────────────
 //
@@ -58,13 +88,13 @@
 // nominal ; le doute sur L'AUTORISATION D'UN JOUEUR se resout par le refus.
 
 /** Nom du champ, ecrit une seule fois ici (les fautes de frappe ouvrent des trous). */
-export const COACH_ACCESS_POLICY_FIELD = "coachAccessPolicy";
+export const JOIN_ACCESS_POLICY_FIELD = "joinAccessPolicy";
 
-export const COACH_ACCESS_POLICIES = [
+export const JOIN_ACCESS_POLICIES = [
   "automatic_safe_projection",
   "approval_required",
 ] as const;
-export type CoachAccessPolicy = (typeof COACH_ACCESS_POLICIES)[number];
+export type JoinAccessPolicy = (typeof JOIN_ACCESS_POLICIES)[number];
 
 /**
  * Valeur appliquee EN L'ABSENCE de configuration explicite.
@@ -73,14 +103,14 @@ export type CoachAccessPolicy = (typeof COACH_ACCESS_POLICIES)[number];
  * ne lit pas ce champ, il ne l'ecrit pas, et l'application pourrait etre
  * entierement remplacee sans que ce defaut change.
  */
-export const DEFAULT_COACH_ACCESS_POLICY: CoachAccessPolicy = "automatic_safe_projection";
+export const DEFAULT_JOIN_ACCESS_POLICY: JoinAccessPolicy = "automatic_safe_projection";
 
 /** Politique reconnue, ou `null` si la valeur n'en est pas une. */
-export function normalizeCoachAccessPolicy(value: unknown): CoachAccessPolicy | null {
+export function normalizeJoinAccessPolicy(value: unknown): JoinAccessPolicy | null {
   if (typeof value !== "string") return null;
   const v = value.trim();
-  return (COACH_ACCESS_POLICIES as readonly string[]).includes(v)
-    ? (v as CoachAccessPolicy)
+  return (JOIN_ACCESS_POLICIES as readonly string[]).includes(v)
+    ? (v as JoinAccessPolicy)
     : null;
 }
 
@@ -88,13 +118,13 @@ export function normalizeCoachAccessPolicy(value: unknown): CoachAccessPolicy | 
  * Politique EFFECTIVE : la valeur configuree si elle est reconnue, le defaut
  * sinon. Absente, vide, inconnue, mal typee -> defaut (cf. en-tete).
  */
-export function resolveCoachAccessPolicy(value: unknown): CoachAccessPolicy {
-  return normalizeCoachAccessPolicy(value) ?? DEFAULT_COACH_ACCESS_POLICY;
+export function resolveJoinAccessPolicy(value: unknown): JoinAccessPolicy {
+  return normalizeJoinAccessPolicy(value) ?? DEFAULT_JOIN_ACCESS_POLICY;
 }
 
 /** Meme question, en partant du document club brut (absent inclus). */
-export function clubCoachAccessPolicy(
+export function clubJoinAccessPolicy(
   club: Record<string, unknown> | null | undefined,
-): CoachAccessPolicy {
-  return resolveCoachAccessPolicy(club?.[COACH_ACCESS_POLICY_FIELD]);
+): JoinAccessPolicy {
+  return resolveJoinAccessPolicy(club?.[JOIN_ACCESS_POLICY_FIELD]);
 }

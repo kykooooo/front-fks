@@ -202,8 +202,10 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
   // LA NOTE DU COACH N'ENTRE PLUS ICI. Elle est devenue privée (document
   // coach-only, cf. domain/clubCoachNote.ts) et n'est ni lue ni envoyée : une
   // note écrite pour le staff ne doit pas modifier la séance d'un joueur. Ce
-  // qui a le droit d'influencer la préparation est désormais un objet dédié —
-  // la DIRECTIVE — lue ci-dessous, et que le joueur peut lire lui aussi.
+  // qui aura le droit de peser sur la préparation est désormais un objet dédié
+  // — la DIRECTIVE — lue ci-dessous, et que le joueur peut lire lui aussi.
+  // Elle est transmise ; elle n'est PAS encore appliquée par le moteur
+  // (cf. domain/clubDirective.ts) — aucun écran ne prétend le contraire.
   let clubContext: ClubContextPayload | null = null;
   const clubId = typeof (rawProfile as any)?.clubId === "string" ? (rawProfile as any).clubId.trim() : "";
   if (clubId) {

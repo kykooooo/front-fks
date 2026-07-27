@@ -19,7 +19,7 @@
 import { type Firestore } from "firebase-admin/firestore";
 import { getDb } from "./admin";
 import { COACH_ACCESS_FIELD, type CoachAccessState } from "./coachAccess";
-import { COACH_ACCESS_POLICY_FIELD } from "./coachAccessPolicy";
+import { JOIN_ACCESS_POLICY_FIELD } from "./joinAccessPolicy";
 import { paths } from "./config";
 import {
   runCoachAccessBackfill,
@@ -51,7 +51,7 @@ export function createBackfillStore(db: Firestore): CoachAccessBackfillStore {
     async readClubPolicy(clubId: string) {
       const snap = await db.doc(paths.club(clubId)).get();
       if (!snap.exists) return undefined;
-      return ((snap.data() ?? {}) as Record<string, unknown>)[COACH_ACCESS_POLICY_FIELD];
+      return ((snap.data() ?? {}) as Record<string, unknown>)[JOIN_ACCESS_POLICY_FIELD];
     },
     async writeCoachAccess(clubId: string, playerUid: string, state: CoachAccessState) {
       await db

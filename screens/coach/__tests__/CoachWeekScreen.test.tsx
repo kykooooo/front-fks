@@ -78,6 +78,12 @@ import {
   setClubTeamGender,
 } from "../../../repositories/clubsRepo";
 import { showToast } from "../../../utils/toast";
+import {
+  CLUB_DIRECTIVE_PREPARATION_NOTICE,
+  CLUB_DIRECTIVE_SAVED_TOAST,
+} from "../../../domain/clubDirective";
+import { COACH_FEATURES } from "../../../config/coachFeatures";
+import { promessesDInfluence } from "../../../domain/__tests__/helpers/promesseInfluence";
 import CoachWeekScreen, { COACH_SAVE_TIMEOUT_MS, semaineLisible } from "../CoachWeekScreen";
 
 const saveMock = saveClubWeekContext as jest.MockedFunction<typeof saveClubWeekContext>;
@@ -263,6 +269,29 @@ function noeuds(renderer: TestRenderer.ReactTestRenderer, testID: string): TestN
   return racine(renderer).findAll((n) => n.props.testID === testID);
 }
 
+/**
+ * Toutes les chaînes rendues SOUS un testID donné.
+ *
+ * Sert au balayage anti-promesse : on cible la carte concernée plutôt que
+ * l'écran entier, parce que le cadre de semaine (un autre objet, transmis au
+ * backend depuis bien plus longtemps) porte sa propre formulation, hors du
+ * périmètre de ce lot.
+ */
+function textesDeLaCarte(renderer: TestRenderer.ReactTestRenderer, testID: string): string[] {
+  const out: string[] = [];
+  const walk = (n: unknown): void => {
+    if (typeof n === "string") {
+      const s = n.trim();
+      if (s) out.push(s);
+      return;
+    }
+    const enfants = (n as { children?: unknown[] })?.children;
+    if (Array.isArray(enfants)) enfants.forEach(walk);
+  };
+  noeuds(renderer, testID).forEach(walk);
+  return out;
+}
+
 function exists(renderer: TestRenderer.ReactTestRenderer, testID: string): boolean {
   return noeuds(renderer, testID).length > 0;
 }
@@ -394,8 +423,28 @@ describe("CoachWeekScreen — note privée et directive sont deux objets distinc
       "Note privée — visible uniquement par l'encadrement autorisé. Cette note ne modifie pas les séances.",
     );
     expect(texte).toContain(
-      "Directive d'entraînement — visible par le joueur et susceptible d'influencer ses prochaines séances.",
+      "Directive d'entraînement — visible par le joueur, dans l'application, dès qu'elle est enregistrée.",
     );
+  });
+
+  test("la carte directive dit elle-même qu'elle n'agit pas encore sur les séances", async () => {
+    // Le moteur de génération ne lit pas la directive. Tant que c'est le cas,
+    // l'écran l'annonce AVANT la saisie, avec les mots exacts du domaine.
+    const renderer = await render();
+    const texte = flatText(renderer.toJSON());
+    expect(texte).toContain(CLUB_DIRECTIVE_PREPARATION_NOTICE);
+    expect(noeuds(renderer, "week-directive-preparation").length).toBeGreaterThan(0);
+  });
+
+  test("BALAYAGE : aucun texte de la carte directive ne promet un effet sur une séance", async () => {
+    // Même détecteur que le balayage des constantes (domain/__tests__/helpers).
+    // Il tourne ici sur le RENDU : il couvre donc aussi les libellés écrits en
+    // dur dans l'écran, que le balayage des constantes ne voit pas.
+    const renderer = await render();
+    const fautes = textesDeLaCarte(renderer, "week-directive").flatMap((t) =>
+      promessesDInfluence(t),
+    );
+    expect(fautes).toEqual([]);
   });
 
   test("l'avertissement « le joueur lit » est affiché AVANT enregistrement", async () => {
@@ -506,6 +555,68 @@ describe("CoachWeekScreen — note privée et directive sont deux objets distinc
     const champDirective = noeuds(renderer, "week-directive-instruction");
     expect(champDirective.every((n) => n.props.value === "")).toBe(true);
     expect(actionable(renderer, "week-directive-save").props.disabled).toBe(true);
+  });
+
+  test("la confirmation après enregistrement ne promet AUCUNE adaptation", async () => {
+    // C'est le moment le plus dangereux : le coach vient d'agir, il croit ce
+    // qu'on lui dit. Le message ne parle donc que de ce qui a eu lieu.
+    const renderer = await render();
+    await press(renderer, "chip-directive-objective-prevention");
+    const champ = noeuds(renderer, "week-directive-instruction")[0];
+    await act(async () => {
+      (champ.props.onChangeText as (v: string) => void)("On garde les appuis");
+    });
+    await press(renderer, "week-directive-save");
+
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "success",
+        title: CLUB_DIRECTIVE_SAVED_TOAST.titre,
+        message: CLUB_DIRECTIVE_SAVED_TOAST.message,
+      }),
+    );
+    const messages = toastMock.mock.calls.map((c) => JSON.stringify(c[0]));
+    expect(messages.flatMap((m) => promessesDInfluence(m))).toEqual([]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+describe("CoachWeekScreen — la création de directive vit derrière une capacité", () => {
+  // Le drapeau est ACTIVÉ par défaut (avec le libellé honnête). Ce qu'on teste
+  // ici, c'est qu'il est réellement branché : le couper doit retirer le bloc
+  // ENTIER, pas seulement le masquer visuellement.
+  afterEach(() => {
+    COACH_FEATURES.DIRECTIVE_CREATION = true;
+  });
+
+  test("capacité coupée : plus de carte, plus de champ, plus de bouton", async () => {
+    COACH_FEATURES.DIRECTIVE_CREATION = false;
+    const renderer = await render();
+
+    expect(exists(renderer, "week-directive")).toBe(false);
+    expect(exists(renderer, "week-directive-instruction")).toBe(false);
+    expect(exists(renderer, "week-directive-save")).toBe(false);
+    const texte = flatText(renderer.toJSON());
+    expect(texte).not.toContain(CLUB_DIRECTIVE_PREPARATION_NOTICE);
+    // Et l'écran ne renvoie plus vers un bloc qui n'existe pas.
+    expect(texte).not.toContain("utilise la directive plus bas");
+    // La note privée, elle, reste : les deux objets sont indépendants.
+    expect(exists(renderer, "week-private-note-input")).toBe(true);
+  });
+
+  test("capacité coupée : aucune écriture de directive n'est possible", async () => {
+    COACH_FEATURES.DIRECTIVE_CREATION = false;
+    const renderer = await render();
+    // Il n'y a même plus de bouton à presser ; on vérifie surtout qu'aucun
+    // chemin résiduel n'a écrit quoi que ce soit pendant le rendu.
+    expect(directiveMock).not.toHaveBeenCalled();
+    expect(exists(renderer, "week-directive-save")).toBe(false);
+  });
+
+  test("capacité active (défaut) : la carte est là, avec sa phrase d'honnêteté", async () => {
+    const renderer = await render();
+    expect(exists(renderer, "week-directive")).toBe(true);
+    expect(flatText(renderer.toJSON())).toContain(CLUB_DIRECTIVE_PREPARATION_NOTICE);
   });
 });
 

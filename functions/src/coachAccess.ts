@@ -14,14 +14,14 @@
 // Vocabulaire PRODUIT et NEUTRE, volontairement. Ce code ne pretend PAS resoudre
 // le consentement des mineurs : il n'y a ici ni "consentement", ni "parental",
 // ni "RGPD", ni "tuteur". Il y a un interrupteur d'acces, et une politique
-// portee par le club (coachAccessPolicy.ts) qui decide de sa position au
+// portee par le club (joinAccessPolicy.ts) qui decide de sa position au
 // rattachement.
 //
 // ─── Les 3 notions sont SEPAREES ────────────────────────────────────────────
 //  1. rattachement au club         = existence du document members/{playerUid} ;
 //  2. autorisation de consultation = ce champ `coachAccess` ;
 //  3. politique du club            = ce qui decide de l'etat pose en 2 quand un
-//     joueur entre (functions/src/coachAccessPolicy.ts).
+//     joueur entre (functions/src/joinAccessPolicy.ts).
 //
 // Un joueur peut donc etre MEMBRE du club sans que son suivi soit lisible par le
 // coach. Sous le mode "approval_required", c'est meme le cas NOMINAL tant qu'une
@@ -33,7 +33,7 @@
 // n'existe : le resultat n'etait pas une protection, c'etait un effectif vide
 // pour un club de jeunes. La decision produit (Kyllian, juillet 2026) l'a
 // remplace par une politique CONFIGURABLE PAR CLUB. Le raisonnement complet, et
-// le risque residuel assume, sont dans coachAccessPolicy.ts et dans
+// le risque residuel assume, sont dans joinAccessPolicy.ts et dans
 // docs/coach-pilote-2026-07/AUTORISATION_ACCES.md.
 //
 // ─── DEFAULT-DENY, INTACT ───────────────────────────────────────────────────
@@ -43,7 +43,7 @@
 // RIEN change a ce verrou-la : ce sont deux questions differentes (le premier
 // portait sur un attribut du joueur, celui-ci porte sur la valeur du champ).
 
-import { resolveCoachAccessPolicy } from "./coachAccessPolicy";
+import { resolveJoinAccessPolicy } from "./joinAccessPolicy";
 
 /** Nom du champ, ecrit une seule fois ici (les fautes de frappe ouvrent des trous). */
 export const COACH_ACCESS_FIELD = "coachAccess";
@@ -94,7 +94,7 @@ export function isMembershipCoachAccessGranted(membership: Record<string, unknow
  *  - "approval_required"                  -> "pending".
  *
  * Politique absente, vide, inconnue ou mal typee -> le defaut serveur, donc
- * "not_required" (cf. coachAccessPolicy.ts, section DEFAUT vs FAIL-CLOSED).
+ * "not_required" (cf. joinAccessPolicy.ts, section DEFAUT vs FAIL-CLOSED).
  *
  * AUCUNE autre entree. Ni l'age, ni le poste, ni le niveau, ni quoi que ce soit
  * qui vienne du profil du joueur : deux joueurs qui rejoignent le meme club avec
@@ -102,7 +102,7 @@ export function isMembershipCoachAccessGranted(membership: Record<string, unknow
  * fait entrer un mineur et un adulte dans les memes conditions.
  */
 export function initialCoachAccess(policy: unknown): CoachAccessState {
-  return resolveCoachAccessPolicy(policy) === "approval_required" ? "pending" : "not_required";
+  return resolveJoinAccessPolicy(policy) === "approval_required" ? "pending" : "not_required";
 }
 
 /**

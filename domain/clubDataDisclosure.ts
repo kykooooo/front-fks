@@ -4,7 +4,7 @@
 //
 // Depuis juillet 2026, rejoindre un club avec une invitation valide active la
 // projection coach non sensible sans validation administrative (politique
-// `automatic_safe_projection`, cf. functions/src/coachAccessPolicy.ts). La
+// `automatic_safe_projection`, cf. functions/src/joinAccessPolicy.ts). La
 // contrepartie, exigée par Kyllian : le joueur doit SAVOIR, au moment où il
 // saisit son code, quelles catégories d'informations sportives son encadrement
 // verra.

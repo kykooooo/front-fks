@@ -111,17 +111,27 @@ service cloud.firestore {
           .data.get("coachAccess", "") in ["approved", "not_required"];
     }
 
-    // ── POLITIQUE D'ACCÈS COACH DU CLUB ─────────────────────────────────────
-    // Portée : clubs/{clubId}.coachAccessPolicy
+    // ── POLITIQUE DE RATTACHEMENT DU CLUB ───────────────────────────────────
+    // Portée : clubs/{clubId}.joinAccessPolicy
     // Valeurs : "automatic_safe_projection" (défaut) | "approval_required".
     //
-    // Ce champ décide de l'état `coachAccess` posé sur un joueur AU MOMENT DE
-    // SON RATTACHEMENT (Cloud Function `joinClubWithInviteCode`). Il ne change
-    // RIEN aux règles de lecture ci-dessous : `isCoachAccessGranted` continue de
-    // ne lire QUE le membership, sans get() supplémentaire sur le club. C'est
-    // volontaire — faire dépendre chaque lecture de summary d'un second document
-    // doublerait le coût de lecture du roster, pour une information qui est déjà
-    // matérialisée dans `coachAccess`.
+    // LE NOM DIT LA PORTÉE. Ce champ décide de l'état `coachAccess` posé sur un
+    // joueur AU MOMENT DE SON RATTACHEMENT (Cloud Function
+    // `joinClubWithInviteCode`), et de rien d'autre : il ne s'applique qu'aux
+    // PROCHAINS joueurs qui rejoignent le club. Il s'appelait
+    // `coachAccessPolicy` — un nom qui laissait croire qu'il gouvernait l'accès
+    // du coach en général, membres déjà rattachés compris. C'était faux.
+    //
+    // Le changer ne rouvre ni ne ferme AUCUN accès existant : les états déjà
+    // posés sont conservés tels quels côté serveur
+    // (functions/src/coachAccess.resolveCoachAccess), et la fermeture d'un accès
+    // existant reste un geste explicite, joueur par joueur ("revoked").
+    //
+    // Il ne change RIEN aux règles de lecture ci-dessous : `isCoachAccessGranted`
+    // continue de ne lire QUE le membership, sans get() supplémentaire sur le
+    // club. C'est volontaire — faire dépendre chaque lecture de summary d'un
+    // second document doublerait le coût de lecture du roster, pour une
+    // information qui est déjà matérialisée dans `coachAccess`.
     //
     // ÉCRITURE : coach ou owner du club, et PERSONNE D'AUTRE. Un joueur ne peut
     // pas la poser, la changer, ni l'effacer — ni sur un club où il est membre,
@@ -135,10 +145,10 @@ service cloud.firestore {
     //
     // VALEUR VALIDÉE : une politique inconnue est refusée à l'écriture. Le
     // serveur, lui, retombe de toute façon sur le défaut si elle est illisible
-    // (functions/src/coachAccessPolicy.ts) — les deux protections se doublent
+    // (functions/src/joinAccessPolicy.ts) — les deux protections se doublent
     // volontairement, et la base est la plus stricte des deux.
-    function validCoachAccessPolicy() {
-      return request.resource.data.get("coachAccessPolicy", "automatic_safe_projection")
+    function validJoinAccessPolicy() {
+      return request.resource.data.get("joinAccessPolicy", "automatic_safe_projection")
         in ["automatic_safe_projection", "approval_required"];
     }
 
@@ -165,14 +175,14 @@ service cloud.firestore {
       return request.resource.data.get("ownerUid", "") != resource.data.get("ownerUid", "");
     }
 
-    function touchesCoachAccessPolicy() {
+    function touchesJoinAccessPolicy() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasAny(["coachAccessPolicy"]);
+        .hasAny(["joinAccessPolicy"]);
     }
 
-    function onlyTouchesCoachAccessPolicy() {
+    function onlyTouchesJoinAccessPolicy() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(["coachAccessPolicy"]);
+        .hasOnly(["joinAccessPolicy"]);
     }
 
     // Frontière coach-safe (PR-4) : les docs BRUTS de la joueuse (profil, séances
@@ -229,7 +239,7 @@ service cloud.firestore {
       // à cet instant précis, le prédicat complet ne peut pas encore être vrai.
       allow create: if isSignedIn() &&
         request.resource.data.ownerUid == request.auth.uid &&
-        validCoachAccessPolicy();
+        validJoinAccessPolicy();
       // Mise à jour : le propriétaire au sens du PRÉDICAT COMPLET ; le coach
       // UNIQUEMENT pour la politique d'accès et rien d'autre. Dans les deux cas,
       // si la politique est touchée elle doit être valide. Si elle ne l'est pas,
@@ -241,9 +251,9 @@ service cloud.firestore {
       // la désignation et les deux rôles ensemble (cf. `changesOwnerUid`).
       allow update: if (
           isClubOwner(clubId) ||
-          (isClubStaff(clubId) && onlyTouchesCoachAccessPolicy())
+          (isClubStaff(clubId) && onlyTouchesJoinAccessPolicy())
         ) &&
-        (!touchesCoachAccessPolicy() || validCoachAccessPolicy()) &&
+        (!touchesJoinAccessPolicy() || validJoinAccessPolicy()) &&
         !changesOwnerUid();
       allow delete: if false;
 

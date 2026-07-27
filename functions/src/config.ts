@@ -43,4 +43,13 @@ export const paths = {
   playerSummary: (clubId: string, uid: string) => `clubs/${clubId}/playerSummaries/${uid}`,
   club: (clubId: string) => `clubs/${clubId}`,
   clubs: () => `clubs`,
+  // Cadre de semaine (lisible par TOUT membre du club) et note privée du coach
+  // (coach-only). Deux collections distinctes : c'est toute la séparation.
+  weekContexts: (clubId: string) => `clubs/${clubId}/weekContexts`,
+  weekContext: (clubId: string, weekKey: string) => `clubs/${clubId}/weekContexts/${weekKey}`,
+  coachNote: (clubId: string, weekKey: string) => `clubs/${clubId}/coachNotes/${weekKey}`,
 } as const;
+
+/** Nom des deux collections, pour les requêtes de groupe (collectionGroup). */
+export const WEEK_CONTEXTS_COLLECTION = "weekContexts";
+export const COACH_NOTES_COLLECTION = "coachNotes";

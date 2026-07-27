@@ -1,10 +1,10 @@
-// firestore-tests/rules.coachAccessPolicy.test.ts
+// firestore-tests/rules.joinAccessPolicy.test.ts
 //
 // POLITIQUE D'ACCES COACH DU CLUB — permissions, contre les VRAIES regles
 // jouees par l'emulateur.
 //
 // Ce que cette suite prouve :
-//  A. un JOUEUR ne peut pas ecrire `coachAccessPolicy` — ni en creation, ni en
+//  A. un JOUEUR ne peut pas ecrire `joinAccessPolicy` — ni en creation, ni en
 //     mise a jour PARTIELLE (le piege : ne toucher QUE ce champ), ni en
 //     suppression du champ, ni en ecrasant tout le document ;
 //  B. le COACH et l'OWNER du club le peuvent ;
@@ -16,7 +16,7 @@
 //
 // Rappel de portee : ce fichier teste des PERMISSIONS. Ce que la politique
 // PRODUIT (not_required / pending) vit dans la Cloud Function et ses tests
-// unitaires (functions/tests/coachAccessPolicy.test.ts).
+// unitaires (functions/tests/joinAccessPolicy.test.ts).
 
 import { readFileSync } from "fs";
 import { resolve } from "path";
@@ -34,7 +34,7 @@ let testEnv: RulesTestEnvironment;
 /** Coach du club A qui n'en est PAS le proprietaire (COACH_A, lui, est owner). */
 const COACH_A_NON_OWNER = "coachAsecond";
 
-const POLICY = "coachAccessPolicy";
+const POLICY = "joinAccessPolicy";
 const AUTO = "automatic_safe_projection";
 const APPROVAL = "approval_required";
 

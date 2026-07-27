@@ -45,8 +45,10 @@ describe("Les libellés promis au coach sont exactement ceux du produit", () => 
   });
 
   test("la directive annonce sa visibilité joueur AVANT la saisie", () => {
+    // Elle annonçait aussi une influence sur les séances : retiré, le moteur ne
+    // la lit pas (cf. domain/__tests__/clubDirectivePromesse.test.ts).
     expect(CLUB_DIRECTIVE_LABEL).toBe(
-      "Directive d'entraînement — visible par le joueur et susceptible d'influencer ses prochaines séances.",
+      "Directive d'entraînement — visible par le joueur, dans l'application, dès qu'elle est enregistrée.",
     );
     // Le second avertissement est ce qui protège la donnée de santé : le coach
     // sait que le joueur lit, encore faut-il lui dire ce qu'il n'écrit pas.
@@ -149,9 +151,10 @@ describe("clubDirectiveNotice : ce que le JOUEUR lit", () => {
     expect(notice?.titre).toBe("Directive du club");
     expect(notice?.objectif).toBe("Appuis & freinage");
     expect(notice?.instruction).toBe("On garde les appuis");
-    // Elle dit d'où ça vient ET ce que ça ne peut pas faire : sans cette phrase,
+    // Elle dit d'où ça vient ET ce que ça ne fait pas : sans ces deux phrases,
     // un joueur croirait que son club écrit ses séances.
-    expect(notice?.precision).toContain("sécurité");
+    expect(notice?.precision).toContain("message de ton coach");
+    expect(notice?.preparation).toContain("n'est pas encore appliquée aux séances");
   });
 
   test("directive non applicable → rien à afficher (jamais un cadre vide)", () => {

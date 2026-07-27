@@ -23,7 +23,7 @@
 // Consequence a assumer, et c'est voulu : apres passage, les joueurs deja
 // rattaches a un club en mode par defaut deviennent consultables
 // ("not_required"), sans distinction d'age. C'est la decision produit de
-// juillet 2026 (cf. coachAccessPolicy.ts) : sur un club en
+// juillet 2026 (cf. joinAccessPolicy.ts) : sur un club en
 // "approval_required", le meme script pose "pending" et n'ouvre rien.
 
 import { ensureCoachAccessState, type MemberAccessStore } from "./coachAccessSync";

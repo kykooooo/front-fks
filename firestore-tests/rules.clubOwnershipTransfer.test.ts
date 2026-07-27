@@ -188,7 +188,7 @@ describe("A — clubs/{clubId}.ownerUid, fermé à tous les clients", () => {
     await assertSucceeds(
       setDoc(
         doc(asUser(COACH_A), "clubs", CLUB_A),
-        { coachAccessPolicy: "approval_required" },
+        { joinAccessPolicy: "approval_required" },
         { merge: true },
       ),
     );

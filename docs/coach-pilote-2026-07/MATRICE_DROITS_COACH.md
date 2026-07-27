@@ -369,18 +369,33 @@ _Tests qui le prouvent :_ `rules.coachPrivacy.test.ts` (13 tests + 1 témoin :
 même joueur, même seconde, refus sur la note et succès sur la directive) et
 `rules.weekContexts.test.ts`, tests 11 à 14.
 
-**Résidu assumé.** Un document écrit AVANT ce changement porte encore sa note et
-reste lisible par les membres du club : aucune règle ne peut effacer
+**Résidu — OUTILLÉ (27/07).** Un document écrit AVANT ce changement porte encore
+sa note et reste lisible par les membres du club : aucune règle ne peut effacer
 rétroactivement un champ. L'écran coach déplace ce texte vers la note privée au
-premier enregistrement du cadre (sauvetage AVANT suppression, testé), mais les
-semaines jamais rouvertes gardent leur note jusqu'à une reprise administrateur.
-_Test qui le prouve :_ `rules.weekContexts.test.ts`, test 10.
+premier enregistrement du cadre (sauvetage AVANT suppression, testé) — mais
+compter sur la réouverture manuelle de chaque semaine n'est pas une protection,
+c'est un espoir. Une **commande administrateur** existe désormais pour solder
+l'historique, avec sa commande de vérification :
+`docs/coach-pilote-2026-07/MIGRATION_NOTES.md`. Elle n'a **jamais été exécutée**.
+_Test qui le prouve (côté règles) :_ `rules.weekContexts.test.ts`, test 10.
+_Tests de la migration :_ `functions/tests/weekContextNoteMigration.test.ts`.
 
 **Effet produit assumé.** La note ne pèse plus sur les séances — c'était le but.
 C'est la directive qui reprend ce rôle, avec une visibilité joueur affichée au
 coach **avant** la saisie, et l'avertissement de n'y mettre aucune donnée de
 santé. Aucune note n'est jamais convertie en directive : ni automatiquement, ni
 par suggestion.
+
+**⚠️ La directive n'est PAS encore appliquée aux séances (27/07).** Elle est bien
+transmise au backend, mais le moteur de génération **ne la lit pas**. Aucun texte
+affiché ne prétend le contraire : le coach comme le joueur lisent « Fonction en
+préparation — cette directive n'est pas encore appliquée aux séances ». La
+création vit derrière une capacité explicite (`config/coachFeatures.ts`,
+`DIRECTIVE_CREATION`, activée par défaut) : la couper retire le bloc entier de
+l'écran. _Tests :_ `domain/__tests__/clubDirectivePromesse.test.ts` (balayage
+anti-promesse de toutes les constantes exportées) et
+`screens/coach/__tests__/CoachWeekScreen.test.tsx` (balayage du rendu + capacité
+coupée).
 
 ### Limite 3 — une semaine passée reste lisible, un document à la fois
 

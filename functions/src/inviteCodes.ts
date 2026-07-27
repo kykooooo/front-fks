@@ -66,7 +66,7 @@ import {
   normalizeCoachAccess,
   type CoachAccessState,
 } from "./coachAccess";
-import { COACH_ACCESS_POLICY_FIELD } from "./coachAccessPolicy";
+import { JOIN_ACCESS_POLICY_FIELD } from "./joinAccessPolicy";
 
 // ─── Format du code ─────────────────────────────────────────────────────────
 
@@ -840,7 +840,7 @@ export async function joinClubWithCode(
       // l'etat, meme par accident. C'est la preuve la plus simple qu'il n'y a
       // plus de verrou d'age — la donnee n'est pas dans la transaction.
       const existingAccess = normalizeCoachAccess(existingMember?.[COACH_ACCESS_FIELD]);
-      const coachAccess = existingAccess ?? initialCoachAccess(club[COACH_ACCESS_POLICY_FIELD]);
+      const coachAccess = existingAccess ?? initialCoachAccess(club[JOIN_ACCESS_POLICY_FIELD]);
 
       // Rejeu du meme joueur : on ne consomme PAS un usage supplementaire.
       // Sans ce garde-fou, un double-tap epuiserait le quota du club.

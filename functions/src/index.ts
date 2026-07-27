@@ -9,6 +9,13 @@
 // existants vers l'état d'autorisation d'accès) : script one-shot, JAMAIS
 // exécuté à ce jour, JAMAIS déployé — procédure dans
 // docs/coach-pilote-2026-07/AUTORISATION_ACCES.md.
+//
+// Et même chose, une troisième fois, pour la MIGRATION DES ANCIENNES NOTES de
+// coach hors du document lu par les joueurs, ainsi que pour sa commande de
+// vérification. Deux scripts one-shot, JAMAIS exécutés, JAMAIS déployés —
+// procédure dans docs/coach-pilote-2026-07/MIGRATION_NOTES.md. Une écriture en
+// masse ne doit avoir aucune route réseau : pas de callable, pas de drapeau
+// dans une charge utile.
 
 export {
   onMemberWritten,

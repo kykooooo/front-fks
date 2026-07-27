@@ -39,10 +39,28 @@ soudée. **Kyllian a tranché** : le verrou d'âge est retiré, et remplacé par
 ### Le champ
 
 ```
-clubs/{clubId}.coachAccessPolicy
+clubs/{clubId}.joinAccessPolicy
 ```
 
-Deux valeurs, et rien d'autre (`functions/src/coachAccessPolicy.ts`) :
+> **Renommé le 27/07 — le nom dit maintenant la portée.** Ce champ s'appelait
+> `coachAccessPolicy`. Le nom laissait croire qu'il gouvernait « l'accès du
+> coach » en général, donc **aussi celui des membres déjà rattachés**. C'est
+> faux, et ça l'a toujours été : il ne décide que de l'état posé **à l'entrée**.
+> Il s'appelle donc `joinAccessPolicy` — la politique du **rattachement**.
+>
+> **Aucun chemin de compatibilité** avec l'ancien nom n'a été écrit, et c'est
+> délibéré : rien n'est déployé, aucun club n'existe en base. Un repli qui
+> relirait l'ancien nom serait du code mort laissant croire à une migration qui
+> n'a jamais eu lieu.
+>
+> **La phrase à afficher**, au mot près, le jour où un réglage existera :
+> « S'applique aux prochains joueurs qui rejoignent le club »
+> (`domain/joinAccessPolicy.ts`, `JOIN_ACCESS_POLICY_SCOPE_LABEL`, verrouillée
+> par un test d'égalité stricte). **Il n'existe aujourd'hui aucun écran** où ce
+> réglage se change : on n'a pas fabriqué une interface pour y poser une phrase,
+> on a posé la phrase, testée, prête à l'emploi.
+
+Deux valeurs, et rien d'autre (`functions/src/joinAccessPolicy.ts`) :
 
 | Valeur | État posé au rattachement | Le coach voit le suivi ? |
 |---|---|---|
@@ -68,7 +86,7 @@ C'est le point qu'un lecteur pressé va mal lire, donc il est dit deux fois :
 
 Autrement dit : le doute sur la **configuration d'un club** se résout par le mode
 nominal ; le doute sur l'**autorisation d'un joueur** se résout par le refus.
-Vérifié des deux côtés : `functions/tests/coachAccessPolicy.test.ts`
+Vérifié des deux côtés : `functions/tests/joinAccessPolicy.test.ts`
 (« le defaut de la POLITIQUE n'assouplit pas le default-deny de l'ETAT »).
 
 ### Le verrou d'âge a réellement disparu du chemin de décision
@@ -108,6 +126,41 @@ des jours suivants — sans écran pour l'expliquer, et sans moyen de revenir en
 arrière autrement qu'en console. Ce serait la **même panne qu'on vient de
 corriger, dans l'autre sens**. Une révocation reste possible et explicite :
 c'est `revoked`, posé joueur par joueur (§7.4).
+
+**Prouvé sur le chemin réel, pas seulement sur la fonction pure.**
+`functions/tests/joinAccessPolicyScope.test.ts` monte un club dont l'effectif
+porte les quatre états (`approved`, `pending`, `revoked`, `not_required`) plus
+deux cas limites, bascule la politique, puis **rejoue le chemin de resynchro**
+— celui qu'emprunte le trigger `onUserWritten` à chaque enregistrement de
+profil, c'est-à-dire précisément celui qui aurait pu tout balayer. Le magasin de
+test **écrit réellement** dans son état : une écriture silencieuse ferait tomber
+la comparaison avant/après. Résultat : aucun état ne bouge, **zéro écriture**, et
+le script de mise à niveau lancé après la bascule ne referme rien non plus. Le
+même test prouve la contrepartie — un joueur qui rejoint **après** obtient bien
+`pending`.
+
+#### Action groupée sur les membres existants : pas maintenant, et pourquoi
+
+Fermer d'un coup les accès déjà ouverts d'un club **n'existe pas** aujourd'hui.
+Ce n'est pas un oubli :
+
+1. **ça ne doit jamais être un effet de bord.** Si changer un réglage refermait
+   l'effectif, on retomberait exactement sur la panne de juillet — un coach coche
+   une case, son effectif se vide, personne ne sait pourquoi ;
+2. **une fermeture en masse est irréversible en l'état.** Il n'existe aucun écran
+   d'approbation : ce qui passe en `pending` y reste jusqu'à une intervention en
+   console. Distribuer ça à tous les membres d'un club d'un seul geste serait
+   irresponsable tant que l'écran d'en face n'existe pas ;
+3. **le besoin n'est pas prouvé.** Aucun club pilote n'est en
+   `approval_required`, et personne n'a demandé à refermer un effectif entier.
+
+Le jour où ce sera nécessaire, ce sera une **commande administrateur nommée**, du
+même genre que la mise à niveau des membership et la migration des notes :
+simulation par défaut, double confirmation, compteurs sans identifiants, et une
+vérification à lancer après coup. Pas une case à cocher. En attendant, la
+fermeture d'un accès existant est un geste explicite, joueur par joueur (§7.4) —
+et un test vérifie qu'aucun module de ce lot n'expose une fonction d'application
+groupée.
 
 ### Ce que ça n'ouvre pas
 
@@ -488,8 +541,10 @@ normalement.
 | Couche | Fichier | Ce qui est prouvé |
 |---|---|---|
 | Règles — état | `firestore-tests/rules.coachAccess.test.ts` | absent → refus ; `pending` → refus ; `revoked` → refus ; `approved` → lecture ; `not_required` → lecture ; aucun client ne peut écrire le champ (création, mise à jour partielle, suppression, joueur / coach / owner) |
-| Règles — politique | `firestore-tests/rules.coachAccessPolicy.test.ts` | le joueur ne peut jamais l'écrire (création, mise à jour partielle, merge, suppression du champ) ; coach et owner le peuvent ; le coach ne gagne rien d'autre ; valeur inconnue refusée ; configurer la politique n'ouvre aucun droit sur `coachAccess` |
-| Politique — décision | `functions/tests/coachAccessPolicy.test.ts` | deux modes ; défaut serveur appliqué à toute valeur absente / vide / inconnue / mal typée ; `automatic_safe_projection` → `not_required` ; `approval_required` → `pending` ; le défaut de la politique n'assouplit pas le fail-closed de l'état |
+| Règles — politique | `firestore-tests/rules.joinAccessPolicy.test.ts` | le joueur ne peut jamais l'écrire (création, mise à jour partielle, merge, suppression du champ) ; coach et owner le peuvent ; le coach ne gagne rien d'autre ; valeur inconnue refusée ; configurer la politique n'ouvre aucun droit sur `coachAccess` |
+| Politique — décision | `functions/tests/joinAccessPolicy.test.ts` | deux modes ; défaut serveur appliqué à toute valeur absente / vide / inconnue / mal typée ; `automatic_safe_projection` → `not_required` ; `approval_required` → `pending` ; le défaut de la politique n'assouplit pas le fail-closed de l'état |
+| Politique — **portée** | `functions/tests/joinAccessPolicyScope.test.ts` | un effectif aux quatre états, une bascule de politique, puis le **chemin de resynchro rejoué** : aucun état ne bouge, zéro écriture ; le backfill lancé après ne referme rien ; un joueur qui rejoint après obtient bien le nouvel état ; aucun module n'expose d'action groupée |
+| Politique — **les mots** | `domain/__tests__/joinAccessPolicy.test.ts` | « S'applique aux prochains joueurs qui rejoignent le club » au caractère près ; aucune phrase affichable ne promet un effet sur les membres existants |
 | Projecteur | `functions/tests/coachAccess.test.ts` | aucune projection quand l'état refuse ; aucun symbole d'âge dans le module de décision ; mineur et adulte → même état ; `approved` jamais fabriqué ; changer la politique ne réévalue pas un membre existant |
 | Rebuild | `functions/tests/integration/rebuild.emulator.test.ts` | projection existante **supprimée** au passage en `revoked` |
 | Rattachement | `functions/tests/inviteCodes.test.ts` | état posé par la politique du club ; le profil du joueur n'est **pas lu** ; un rejeu ne réinitialise ni n'ouvre rien |

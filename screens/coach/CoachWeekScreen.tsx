@@ -78,12 +78,16 @@ import {
   COACH_PRIVATE_NOTE_MAX,
 } from "../../domain/clubCoachNote";
 import {
+  CLUB_DIRECTIVE_DURATION_HINT,
   CLUB_DIRECTIVE_INSTRUCTION_MAX,
   CLUB_DIRECTIVE_LABEL,
   CLUB_DIRECTIVE_OBJECTIVE_LABELS,
+  CLUB_DIRECTIVE_PREPARATION_NOTICE,
+  CLUB_DIRECTIVE_SAVED_TOAST,
   CLUB_DIRECTIVE_WRITE_WARNING,
   type ClubDirectiveObjective,
 } from "../../domain/clubDirective";
+import { COACH_FEATURES } from "../../config/coachFeatures";
 import {
   saveClubDirective,
   saveClubWeekContext,
@@ -570,8 +574,12 @@ export default function CoachWeekScreen() {
     }
   }, [club.clubId, club.weekKey, note, savingNote, haptics]);
 
-  // ── Directive : l'objet que le joueur LIRA ────────────────────────────────
+  // ── Directive : le message que le joueur LIRA ─────────────────────────────
   const handleSaveDirective = useCallback(async () => {
+    // Capacité coupée = AUCUNE écriture possible, même si un chemin d'appel
+    // subsistait quelque part. Le bloc n'est déjà plus rendu ; ceci ferme la
+    // porte plutôt que de compter sur le fait que personne ne la pousse.
+    if (!COACH_FEATURES.DIRECTIVE_CREATION) return;
     const uid = auth.currentUser?.uid ?? null;
     const instruction = directiveInstruction.trim();
     if (!uid || !club.clubId || !directiveObjective || !instruction || savingDirective) {
@@ -610,8 +618,8 @@ export default function CoachWeekScreen() {
       haptics.success();
       showToast({
         type: "success",
-        title: "Directive enregistrée",
-        message: "Tes joueurs peuvent la lire ; FKS en tient compte pour leurs prochaines séances.",
+        title: CLUB_DIRECTIVE_SAVED_TOAST.titre,
+        message: CLUB_DIRECTIVE_SAVED_TOAST.message,
       });
     } catch (error) {
       if (!mountedRef.current) return;
@@ -1094,10 +1102,15 @@ export default function CoachWeekScreen() {
                   ),
                 )}
               </View>
-              <Text style={styles.fieldHint} numberOfLines={2}>
-                Ces trois réponses sont transmises à FKS et peuvent influencer les séances de tes
-                joueurs. Pour écrire une consigne, utilise la directive plus bas ; pour un
-                pense-bête, la note privée.
+              {/* Le cadre (intensité / objectif / match) est un autre objet que
+                  la directive : il part vers FKS depuis bien plus longtemps, et
+                  son sort côté moteur n'est pas ce que ce lot corrige. On garde
+                  donc sa formulation d'origine, au conditionnel, et on ne
+                  renvoie vers la directive que si elle est bien affichée. */}
+              <Text style={styles.fieldHint} numberOfLines={3}>
+                {COACH_FEATURES.DIRECTIVE_CREATION
+                  ? "Ces trois réponses sont transmises à FKS et peuvent influencer les séances de tes joueurs. Pour écrire un message à tes joueurs, utilise la directive plus bas ; pour un pense-bête, la note privée."
+                  : "Ces trois réponses sont transmises à FKS et peuvent influencer les séances de tes joueurs. Pour un pense-bête, utilise la note privée."}
               </Text>
 
               <Pressable
@@ -1130,8 +1143,13 @@ export default function CoachWeekScreen() {
         </CoachSectionCard>
 
         {/* ── Directive d'entraînement ─────────────────────────────────────
-            L'objet qui a le DROIT d'influencer la préparation, et que le joueur
-            lit. Il est annoncé comme tel AVANT la saisie, pas après. */}
+            Le message que le JOUEUR lit, à la différence de la note privée.
+            Elle n'agit PAS encore sur les séances (le moteur ne la lit pas) :
+            l'écran le dit lui-même, avant la saisie, avec les mêmes mots que
+            l'écran joueur. Le bloc entier vit derrière une capacité explicite
+            (config/coachFeatures.ts) : la couper retire le champ, le bouton et
+            toute possibilité d'écriture. */}
+        {COACH_FEATURES.DIRECTIVE_CREATION ? (
         <CoachSectionCard
           testID="week-directive"
           title="Directive d'entraînement"
@@ -1142,12 +1160,15 @@ export default function CoachWeekScreen() {
                 ? "Modifications non enregistrées"
                 : directiveSaved
                   ? directiveActive
-                    ? "Directive active"
+                    ? "Directive visible par tes joueurs"
                     : "Directive levée"
                   : "Aucune directive"
           }
         >
           <View style={styles.form}>
+            <Text testID="week-directive-preparation" style={styles.warnLine} numberOfLines={3}>
+              {CLUB_DIRECTIVE_PREPARATION_NOTICE}
+            </Text>
             <Text style={styles.explain} numberOfLines={4}>
               {CLUB_DIRECTIVE_LABEL}
             </Text>
@@ -1212,7 +1233,7 @@ export default function CoachWeekScreen() {
               )}
             </View>
             <Text style={styles.fieldHint} numberOfLines={2}>
-              À partir d'aujourd'hui. Passé ce délai, la directive cesse d'être transmise.
+              {CLUB_DIRECTIVE_DURATION_HINT}
             </Text>
 
             <Text style={styles.fieldLabel}>Statut</Text>
@@ -1264,6 +1285,7 @@ export default function CoachWeekScreen() {
             ) : null}
           </View>
         </CoachSectionCard>
+        ) : null}
 
         {/* ── Note privée ──────────────────────────────────────────────────
             Volontairement APRÈS la directive, et dans sa propre carte : les deux

@@ -23,9 +23,14 @@ import type { TestEntry, FieldKey } from "../screens/tests/testConfig";
  * Directive d'entraînement transmise au backend.
  *
  * C'est le SEUL texte libre du coach qui ait le droit de sortir : il est
- * explicitement destiné à influencer la préparation, et le joueur le lit lui
- * aussi (cf. domain/clubDirective.ts). La note privée, elle, ne passe plus par
- * ici — voir le commentaire de `buildClubContextPayload`.
+ * destiné à peser un jour sur la préparation, et le joueur le lit lui aussi
+ * (cf. domain/clubDirective.ts). La note privée, elle, ne passe plus par ici —
+ * voir le commentaire de `buildClubContextPayload`.
+ *
+ * ⚠️ ÊTRE TRANSMIS N'EST PAS ÊTRE APPLIQUÉ. Le moteur de génération ne lit pas
+ * encore ce champ : rien, aujourd'hui, n'adapte une séance parce qu'une
+ * directive existe. Aucun écran ne doit donc annoncer un effet — c'est écrit
+ * en toutes lettres dans domain/clubDirective.ts, et un test le vérifie.
  */
 export type ClubDirectivePayload = {
   objective: ClubWeekGoal;

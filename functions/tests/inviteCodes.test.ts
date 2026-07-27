@@ -475,7 +475,7 @@ describe("joinClubWithInviteCode — chemin nominal", () => {
     // `coachAccess: "not_required"` = mode par DEFAUT du club (le document club
     // seede ne porte aucune politique). Le joueur est entre VOLONTAIREMENT avec
     // une invitation valide : sa projection coach NON SENSIBLE est active sans
-    // validation administrative (cf. functions/src/coachAccessPolicy.ts).
+    // validation administrative (cf. functions/src/joinAccessPolicy.ts).
     expect(result).toEqual({
       clubId: CLUB,
       clubName: "AS Test",
@@ -504,7 +504,7 @@ describe("joinClubWithInviteCode — chemin nominal", () => {
     store.seed(invitePaths.club(CLUB), {
       name: "AS Test",
       ownerUid: OWNER,
-      coachAccessPolicy: "approval_required",
+      joinAccessPolicy: "approval_required",
     });
 
     const result = await joinClubWithCode(deps(store), { uid: PLAYER, rawCode: "ABCDEFGHJK" });
@@ -519,7 +519,7 @@ describe("joinClubWithInviteCode — chemin nominal", () => {
     store.seed(invitePaths.club(CLUB), {
       name: "AS Test",
       ownerUid: OWNER,
-      coachAccessPolicy: "automatic_safe_projection",
+      joinAccessPolicy: "automatic_safe_projection",
     });
 
     const result = await joinClubWithCode(deps(store), { uid: PLAYER, rawCode: "ABCDEFGHJK" });
@@ -534,7 +534,7 @@ describe("joinClubWithInviteCode — chemin nominal", () => {
       store.seed(invitePaths.club(CLUB), {
         name: "AS Test",
         ownerUid: OWNER,
-        ...(politique === undefined ? {} : { coachAccessPolicy: politique }),
+        ...(politique === undefined ? {} : { joinAccessPolicy: politique }),
       });
 
       const result = await joinClubWithCode(deps(store), { uid: PLAYER, rawCode: "ABCDEFGHJK" });

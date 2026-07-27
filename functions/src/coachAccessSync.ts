@@ -11,7 +11,7 @@
 // membres existants dans le dos de tout le monde.
 //
 // Ce fichier ne contient AUCUNE decision : elle vit dans `resolveCoachAccess`
-// (coachAccess.ts) et `resolveCoachAccessPolicy` (coachAccessPolicy.ts), deux
+// (coachAccess.ts) et `resolveJoinAccessPolicy` (joinAccessPolicy.ts), deux
 // modules purs. Ici on lit, on compare, et on n'ecrit QUE si la valeur change.
 //
 // POURQUOI "n'ecrire que si ca change" n'est pas une micro-optimisation : une
@@ -42,7 +42,7 @@ export type MemberAccessStore = {
   /** members/{playerUid} — null si le joueur n'est pas (ou plus) rattache. */
   readMember(clubId: string, playerUid: string): Promise<MemberSnapshot | null>;
   /**
-   * clubs/{clubId}.coachAccessPolicy — `undefined` si le club ou le champ
+   * clubs/{clubId}.joinAccessPolicy — `undefined` si le club ou le champ
    * n'existe pas. Appele UNIQUEMENT quand la valeur sert reellement.
    */
   readClubPolicy(clubId: string): Promise<unknown>;
