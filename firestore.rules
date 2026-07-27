@@ -9,21 +9,67 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    // ── PRÉDICAT D'AUTORITÉ DU CLUB ─────────────────────────────────────────
+    //
+    // L'invariant, mot pour mot : « un propriétaire est autorisé uniquement si
+    // ownerUid le désigne ET s'il possède encore une appartenance active avec le
+    // rôle propriétaire ». DEUX sources, jamais une seule. Quand elles se
+    // contredisent, la règle REFUSE — elle ne choisit pas laquelle des deux ment.
+    //
+    // DUPLICATION ASSUMÉE. Ces trois fonctions sont la recopie MANUELLE de
+    // functions/src/clubAuthority.ts (les règles ne peuvent pas importer de
+    // TypeScript), exactement comme la liste des états d'accès l'est de
+    // coachAccess.COACH_ACCESS_GRANTING_STATES. Aucun verrou automatique ne les
+    // maintient égales : ce qui les tient, ce sont deux suites qui exercent les
+    // MÊMES cas — functions/tests/clubAuthority.test.ts et
+    // firestore-tests/rules.clubAuthority.test.ts. Toucher les deux, toujours.
+    //
+    // Rôles : "owner" · "coach" · "player" · "removed".
+    // "removed" est la pierre tombale posée par le retrait serveur : elle
+    // n'ouvre RIEN, nulle part — c'est ce qui ferme l'accès d'un membre retiré
+    // sans dépendre d'une suppression de document ni d'un ordre d'événements.
+
+    /** Rôle du membre courant, "" si le document n'existe pas (fail-closed). */
+    function myRole(clubId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid))
+            .data.get("role", "")
+        : "";
+    }
+
+    /** ownerUid DÉSIGNÉ par le document club. Référence rapide, jamais un droit seul. */
+    function clubOwnerUid(clubId) {
+      return exists(/databases/$(database)/documents/clubs/$(clubId))
+        ? get(/databases/$(database)/documents/clubs/$(clubId)).data.get("ownerUid", "")
+        : "";
+    }
+
+    // LE prédicat propriétaire : désignation ET appartenance, les deux.
+    // Un état incohérent (l'une sans l'autre) n'accorde donc AUCUN droit
+    // d'écriture — il est signalé côté serveur (functions/src/clubMembersApi.ts)
+    // et reste lisible côté coach (cf. `allow get` sur clubs, plus bas), pour ne
+    // pas transformer une anomalie en disparition muette du club.
     function isClubOwner(clubId) {
       return isSignedIn() &&
-        get(/databases/$(database)/documents/clubs/$(clubId)).data.ownerUid == request.auth.uid;
+        clubOwnerUid(clubId) == request.auth.uid &&
+        myRole(clubId) == "owner";
     }
 
-    function isCoach(clubId) {
-      return isSignedIn() &&
-        get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data.role == "coach";
+    // ENCADREMENT. Le propriétaire EST encadrant : sans cette ligne, poser le
+    // rôle propriétaire lui retirerait l'écriture du cadre de semaine et de la
+    // directive — un trou ouvert en en fermant un autre.
+    // Ne dépend QUE de l'appartenance : aucune incohérence possible entre deux
+    // sources, puisqu'il n'y en a qu'une.
+    function isClubStaff(clubId) {
+      return myRole(clubId) in ["owner", "coach"];
     }
 
-    // Membre du club = possède un doc members/{uid} (joueur OU coach).
-    // Tout joueur ayant rejoint via code en a un (setClubMembership).
-    function isClubMember(clubId) {
-      return isSignedIn() &&
-        exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+    // Appartenance ACTIVE au club (joueur OU encadrant). Remplace l'ancien
+    // « le document members/{uid} existe » : une pierre tombale existe aussi, et
+    // elle ne doit plus rien ouvrir. C'est ce qui rend le retrait RÉEL.
+    function isActiveMember(clubId) {
+      return myRole(clubId) in ["owner", "coach", "player"];
     }
 
     // La JOUEUSE ciblée est-elle un membre ACTIF du club, avec le rôle player ?
@@ -31,6 +77,11 @@ service cloud.firestore {
     // quitté le club (member doc supprimé) ou n'a pas le rôle player (coach/rôle
     // invalide), le summary — même encore présent — n'est plus lisible.
     // exists() protège le get() (court-circuit) contre un doc absent.
+    //
+    // C'EST AUSSI LE PREMIER DES TROIS VERROUS DU RETRAIT : une pierre tombale
+    // porte le rôle "removed", donc cette fonction est fausse, donc une
+    // projection résiduelle est illisible — même si un trigger en vol venait à
+    // la réécrire une fraction de seconde après le retrait.
     function isPlayerMember(clubId, playerUid) {
       return exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid)) &&
         get(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid)).data.role == "player";
@@ -135,35 +186,71 @@ service cloud.firestore {
       // était lisible par n'importe quel membre, donc partageable par n'importe
       // quel joueur. Plus rien de secret ne vit ici.
       allow list: if false;
-      // get par ID : réservé aux membres du club (joueur OU coach) et à l'owner.
-      // `resource.data.ownerUid` (doc déjà chargé) évite un get() redondant.
-      allow get: if isClubMember(clubId) ||
+      // get par ID : réservé aux membres ACTIFS du club et à celui que `ownerUid`
+      // désigne. `resource.data.ownerUid` (doc déjà chargé) évite un get() redondant.
+      //
+      // POURQUOI LA DÉSIGNATION SUFFIT ICI, ET NULLE PART AILLEURS. C'est une
+      // LECTURE, pas un droit : elle n'écrit rien, ne révèle rien d'un joueur, et
+      // c'est elle qui rend l'incohérence VISIBLE. Sans elle, un propriétaire dont
+      // l'appartenance a disparu verrait son club s'évaporer de l'espace coach
+      // sans un mot — exactement la « disparition muette » qu'on refuse. Avec
+      // elle, l'application lit le document, constate l'écart (ownerUid le
+      // désigne, son membership ne le dit pas) et l'affiche comme un état à
+      // réparer. Le serveur, lui, journalise (functions/src/clubMembersApi.ts).
+      // Toute ÉCRITURE reste gouvernée par le prédicat complet.
+      allow get: if isActiveMember(clubId) ||
         (isSignedIn() && resource.data.ownerUid == request.auth.uid);
       // Création : le créateur est forcément l'owner. Il peut poser la politique
-      // dès la création, mais seulement avec une valeur reconnue.
+      // dès la création, mais seulement avec une valeur reconnue. Son
+      // appartenance propriétaire est écrite juste après (cf. members, plus bas) :
+      // à cet instant précis, le prédicat complet ne peut pas encore être vrai.
       allow create: if isSignedIn() &&
         request.resource.data.ownerUid == request.auth.uid &&
         validCoachAccessPolicy();
-      // Mise à jour : l'owner comme avant ; le coach UNIQUEMENT pour la
-      // politique d'accès et rien d'autre. Dans les deux cas, si la politique
-      // est touchée elle doit être valide. Si elle ne l'est pas, on ne la
-      // valide pas — sans quoi une valeur héritée illisible bloquerait toute
-      // autre mise à jour légitime du club.
+      // Mise à jour : le propriétaire au sens du PRÉDICAT COMPLET ; le coach
+      // UNIQUEMENT pour la politique d'accès et rien d'autre. Dans les deux cas,
+      // si la politique est touchée elle doit être valide. Si elle ne l'est pas,
+      // on ne la valide pas — sans quoi une valeur héritée illisible bloquerait
+      // toute autre mise à jour légitime du club.
       allow update: if (
           isClubOwner(clubId) ||
-          (isCoach(clubId) && onlyTouchesCoachAccessPolicy())
+          (isClubStaff(clubId) && onlyTouchesCoachAccessPolicy())
         ) &&
         (!touchesCoachAccessPolicy() || validCoachAccessPolicy());
       allow delete: if false;
 
       match /members/{memberId} {
-        // Lecture : le membre lui-même, un coach du club, OU l'owner du club.
-        // `isClubOwner` est aligné EXPLICITEMENT sur la lecture de playerSummaries
-        // (même couple coach/owner) : le lecteur du roster (members → summaries)
+        // Lecture : le membre lui-même, ou l'ENCADREMENT du club (coach ou
+        // propriétaire — `isClubStaff` couvre les deux). Aligné EXACTEMENT sur la
+        // lecture de playerSummaries : le lecteur du roster (members → summaries)
         // doit pouvoir lister les members avant de lire chaque projection.
-        allow read: if isOwner(memberId) || isCoach(clubId) || isClubOwner(clubId);
-        // ÉCRITURE CLIENTE : le rôle "coach" du propriétaire à la création du
-        // club, et RIEN D'AUTRE.
+        //
+        // Le propriétaire INCOHÉRENT (désigné par ownerUid mais sans appartenance
+        // propriétaire) ne lit PAS l'effectif : c'est le refus voulu par
+        // l'invariant. Il n'est pas laissé dans le noir pour autant — le document
+        // club, lui, reste lisible, et c'est là que l'application constate l'écart.
+        allow read: if isOwner(memberId) || isClubStaff(clubId);
+        // ÉCRITURE CLIENTE : le rôle "owner" du créateur du club à l'AMORÇAGE, et
+        // RIEN D'AUTRE.
+        //
+        // ── L'AMORÇAGE EST CIRCULAIRE, ET C'EST LA SEULE EXCEPTION ───────────
+        // À la création du club, le document de membre propriétaire n'existe pas
+        // encore : le prédicat complet (`isClubOwner`) est donc FAUX, et une règle
+        // qui s'appuierait dessus refuserait l'écriture qui le rendrait vrai.
+        // Cette règle-ci se base donc sur `clubOwnerUid(clubId)` — la DÉSIGNATION
+        // lue dans le document club — et sur elle seule.
+        //
+        // L'exception est rendue AUSSI ÉTROITE QUE POSSIBLE :
+        //  - on n'écrit que SON PROPRE document (`isOwner(memberId)`) ;
+        //  - le rôle écrit est exactement "owner", aucun autre ;
+        //  - et il faut être celui que le club désigne déjà comme ownerUid.
+        // Quelqu'un qui tente de s'écrire propriétaire dans un club dont il n'est
+        // pas le ownerUid est donc refusé — c'est testé explicitement, y compris
+        // depuis un membre existant du club (rules.clubAuthority.test.ts).
+        //
+        // Un SECOND coach ne peut être créé par AUCUN client : il n'existe
+        // aujourd'hui aucun chemin produit pour cela (limite connue, assumée, et
+        // écrite ici pour qu'on ne la découvre pas en la cherchant).
         //
         // Le membership "player" n'est plus écrivable par aucun client : il est
         // posé par la Cloud Function `joinClubWithInviteCode` (Admin SDK, qui
@@ -184,15 +271,30 @@ service cloud.firestore {
         //    qui le touche (même pour y remettre la même valeur explicitement,
         //    même pour le supprimer) est refusée.
         allow create: if isOwner(memberId) &&
-          request.resource.data.role == "coach" &&
-          isClubOwner(clubId) &&
+          request.resource.data.role == "owner" &&
+          clubOwnerUid(clubId) == request.auth.uid &&
           !("coachAccess" in request.resource.data);
         allow update: if isOwner(memberId) &&
-          request.resource.data.role == "coach" &&
-          isClubOwner(clubId) &&
+          request.resource.data.role == "owner" &&
+          clubOwnerUid(clubId) == request.auth.uid &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(["coachAccess"]);
-        // Un membre peut se retirer lui-même, ou le owner du club peut retirer n'importe qui
-        allow delete: if isOwner(memberId) || isClubOwner(clubId);
+
+        // ── SUPPRESSION ─────────────────────────────────────────────────────
+        // Un membre peut se retirer lui-même (le joueur qui quitte son club
+        // depuis ses réglages). SAUF le propriétaire : sa disparition
+        // fabriquerait exactement l'état incohérent que l'invariant refuse — un
+        // club dont le ownerUid désigne quelqu'un qui n'est plus membre. Le geste
+        // à faire est de transférer la propriété d'abord ; la Cloud Function le
+        // dit avec l'échec typé OWNER_TRANSFER_REQUIRED, et la règle le rend
+        // impossible même en passant à côté de l'écran.
+        //
+        // Le retrait d'un AUTRE membre par l'encadrement ne passe plus par ici :
+        // il passe par la Cloud Function `removeClubMember`, seule capable de
+        // désactiver l'appartenance, de révoquer l'accès coach, de supprimer la
+        // projection déjà produite et de nettoyer users/{uid}.clubId dans UNE
+        // transaction. Une suppression cliente ne faisait que le premier quart du
+        // travail — et laissait la projection derrière elle.
+        allow delete: if isOwner(memberId) && clubOwnerUid(clubId) != request.auth.uid;
       }
 
       // Contexte de semaine (« cadre » posé par le coach : intensité, objectif,
@@ -243,9 +345,12 @@ service cloud.firestore {
       //
       // Écriture réservée au coach (le joueur n'écrit jamais). Delete = owner.
       match /weekContexts/{weekKey} {
-        allow get: if isClubMember(clubId) || isClubOwner(clubId);
+        // `isActiveMember` (et non plus « le document existe ») : un membre retiré
+        // ne lit plus le cadre de semaine de son ancien club. C'était l'un des
+        // trois accès que révoquer un code ne fermait pas.
+        allow get: if isActiveMember(clubId);
         allow list: if false;
-        allow create, update: if isCoach(clubId) &&
+        allow create, update: if isClubStaff(clubId) &&
           !("note" in request.resource.data);
         allow delete: if isClubOwner(clubId);
       }
@@ -264,10 +369,13 @@ service cloud.firestore {
       // Ce document n'est lu par AUCUN chemin de génération de séance : une note
       // privée ne modifie pas un entraînement (cf. services/aiContext.ts).
       match /coachNotes/{weekKey} {
-        allow get: if isCoach(clubId) || isClubOwner(clubId);
+        // « L'encadrement autorisé » = `isClubStaff` : coach ou propriétaire, une
+        // seule fonction pour les deux. C'est exactement ce que le libellé affiché
+        // au coach promet.
+        allow get: if isClubStaff(clubId);
         allow list: if false;
-        allow create, update: if isCoach(clubId);
-        allow delete: if isCoach(clubId) || isClubOwner(clubId);
+        allow create, update: if isClubStaff(clubId);
+        allow delete: if isClubStaff(clubId);
       }
 
       // ── DIRECTIVE D'ENTRAÎNEMENT ────────────────────────────────────────────
@@ -282,9 +390,11 @@ service cloud.firestore {
       // (`current`, cf. domain/clubDirective.CLUB_DIRECTIVE_CURRENT_ID), donc un
       // `get` direct suffit et l'historique ne s'aspire pas.
       match /directives/{directiveId} {
-        allow get: if isClubMember(clubId) || isClubOwner(clubId);
+        // Même durcissement que le cadre de semaine : un membre RETIRÉ ne lit plus
+        // la directive de son ancien club.
+        allow get: if isActiveMember(clubId);
         allow list: if false;
-        allow create, update: if isCoach(clubId);
+        allow create, update: if isClubStaff(clubId);
         allow delete: if isClubOwner(clubId);
       }
 
@@ -306,8 +416,13 @@ service cloud.firestore {
       // doit être "approved" ou "not_required". Un verrou visuel côté écran ne
       // suffisait pas — un profil ancien ou incohérent passait au travers. Ici le
       // refus est prononcé par la base elle-même, avant qu'aucun octet ne sorte.
+      // TROIS conditions, et le RETRAIT d'un membre en fait tomber DEUX d'un coup
+      // (rôle "removed" ⇒ `isPlayerMember` faux ; coachAccess "revoked" ⇒
+      // `isCoachAccessGranted` faux). C'est ce qui rend la fermeture insensible
+      // aux courses : même si une reprojection en vol réécrivait la projection
+      // juste après le retrait, plus personne ne pourrait la lire.
       match /playerSummaries/{playerUid} {
-        allow read: if (isCoach(clubId) || isClubOwner(clubId)) &&
+        allow read: if isClubStaff(clubId) &&
           isPlayerMember(clubId, playerUid) &&
           isCoachAccessGranted(clubId, playerUid);
         allow write: if false;

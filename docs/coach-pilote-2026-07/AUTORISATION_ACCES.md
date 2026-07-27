@@ -251,7 +251,7 @@ Un seul verrou, ça se contourne. Quatre, il faut les franchir tous.
 
 ```
 match /playerSummaries/{playerUid} {
-  allow read: if (isCoach(clubId) || isClubOwner(clubId)) &&
+  allow read: if isClubStaff(clubId) &&
     isPlayerMember(clubId, playerUid) &&
     isCoachAccessGranted(clubId, playerUid);
   allow write: if false;

@@ -22,3 +22,9 @@ export { deleteAccount } from "./deleteAccount";
 // Contrat d'invitation club : vérification 100 % serveur. Le front ne peut plus
 // résoudre un code, ni écrire un membership "player" (cf. firestore.rules).
 export { issueClubInviteCode, joinClubWithInviteCode } from "./clubInvites";
+
+// Retrait d'un membre du club : 100 % serveur également. Révoquer un code
+// n'expulse personne — l'accès repose sur l'EXISTENCE du document de membre, et
+// seule cette callable sait le désactiver, supprimer la projection déjà produite
+// et nettoyer la référence du joueur vers son club, le tout en une transaction.
+export { removeClubMember } from "./clubMembersApi";

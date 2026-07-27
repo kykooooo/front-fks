@@ -42,7 +42,7 @@ Les chemins sont ceux de la base ; `{clubId}` et `{uid}` sont des identifiants.
 | `clubs/{sonClub}/playerSummaries` — **liste** | ❌ (aucune forme) | ❌ | la règle dépend de l'identifiant du document : illisible en liste | matrice, scénario 10 |
 | `clubs/{sonClub}/weekContexts/{semaine}` (son cadre) | ✅ par clé de semaine | ✅ création/mise à jour | `firestore.rules:174` / `:176` | `rules.weekContexts.test.ts` |
 | `clubs/{sonClub}/weekContexts` — **liste** | ❌ (fermé en juillet 2026, voir §4) | — | `firestore.rules:175` | `rules.weekContexts.test.ts` |
-| `clubs/{autreClub}/…` (tout) | ❌ | ❌ | `isCoach` / `isClubOwner` portent sur le clubId du **chemin** | matrice, scénario 1 |
+| `clubs/{autreClub}/…` (tout) | ❌ | ❌ | `isClubStaff` / `isClubOwner` portent sur le clubId du **chemin** | matrice, scénario 1 |
 | `users/{joueur}` (le profil brut) | ❌ | ❌ | `firestore.rules:71` | matrice, scénario 8 |
 | `users/{joueur}/sessions` (séances faites : douleur, RPE, commentaire) | ❌ | ❌ | `firestore.rules:76` | matrice, scénario 8 |
 | `users/{joueur}/plannedSessions` | ❌ | ❌ | `firestore.rules:81` | matrice, scénario 8 |
@@ -82,12 +82,12 @@ Firestore (elles ne sont pas simulées avec un faux). Fichiers :
 
 | # | La tentative | Résultat | Ce qui l'arrête |
 |---|---|---|---|
-| 1 | **Coach d'un autre club** : coachB lit le club A (club, effectif, fiches, cadre de semaine) | ❌ tout refusé | `isCoach`/`isClubOwner` portent sur le clubId **du chemin**, jamais sur un clubId fourni par le client |
+| 1 | **Coach d'un autre club** : coachB lit le club A (club, effectif, fiches, cadre de semaine) | ❌ tout refusé | `isClubStaff`/`isClubOwner` portent sur le clubId **du chemin**, jamais sur un clubId fourni par le client |
 | 2 | **Utilisateur sans rôle Coach** : un joueur du club lit l'effectif et la fiche d'un coéquipier | ❌ tout refusé, y compris **sa propre** fiche coach | `firestore.rules:109` et `:199`. Se déclarer `role: "coach"` dans son propre profil n'ouvre rien : les règles club ne lisent jamais ce champ |
 | 3 | **Ancien coach retiré du club** : son membership est supprimé | ❌ perd tout, immédiatement, y compris les fiches déjà écrites | l'autorisation est relue à chaque requête, il n'y a rien à « expirer » — **mais voir §5, limite 1 (l'owner)** |
 | 4 | **Membre révoqué** (`coachAccess: "revoked"`) | ❌ fiche refusée, alors qu'elle existe en base | `isCoachAccessGranted` (`firestore.rules:56`), couche 2 dans `functions/src/projector.ts:341` |
 | 5 | **Mineur en attente** (`pending`, ou champ absent sur un vieux membership) | ❌ fiche refusée ; le joueur reste **visible dans l'effectif** | même règle. Être dans l'effectif et être consultable sont deux choses différentes |
-| 6 | **Identifiant de club deviné** : un inconnu connaît l'identifiant du club A | ❌ tout refusé, et **aucune différence** entre « ce club existe » et « ce club n'existe pas » | `isClubMember` exige un document de membership réel. Écrire `clubId: clubA` dans son propre profil ne rattache à rien |
+| 6 | **Identifiant de club deviné** : un inconnu connaît l'identifiant du club A | ❌ tout refusé, et **aucune différence** entre « ce club existe » et « ce club n'existe pas » | `isActiveMember` exige un document de membership réel, avec un rôle actif. Écrire `clubId: clubA` dans son propre profil ne rattache à rien |
 | 7 | **Identifiant de joueur connu mais non autorisé** : le coach connaît l'uid (il le voit dans son effectif) | ❌ fiche refusée | la décision est prise **document par document**, pas une fois pour le club |
 | 8 | **Lecture directe Firestore** : le coach vise les documents bruts (profil, séances faites, séances prévues) | ❌ tout refusé | `firestore.rules:71-82`. C'est la raison d'être de la fiche préparée par le serveur |
 | 9 | **Appel direct à une Function** (avec `curl`, sans passer par l'app) | ❌ refusé : autre club, joueur, inconnu, ancien coach ; un identifiant de club n'est jamais un paramètre ; un rattachement réussi n'ouvre pas l'accès au suivi | `functions/src/inviteCodes.ts`. Versant règles : aucun client ne peut **imiter** l'écriture que seule la Function a le droit de faire |
@@ -149,9 +149,14 @@ et tous les deux visent **un document**, par sa clé de semaine :
 **Le correctif** (`firestore.rules:173-178`) sépare les deux opérations :
 
 ```
-allow get:  if isClubMember(clubId) || isClubOwner(clubId);
+allow get:  if isActiveMember(clubId);
 allow list: if false;
 ```
+
+> `isActiveMember` a remplacé `isClubMember` en juillet 2026 : « le document de
+> membre existe » ne suffit plus, il faut un rôle d'appartenance **actif**. Une
+> pierre tombale de retrait (`role: "removed"`) existe aussi, et elle ne doit
+> rien ouvrir.
 
 La lecture de collection est fermée **à tout le monde**, coach et owner compris :
 personne ne l'utilise, et une porte que personne n'emprunte est une porte qu'on
@@ -175,19 +180,94 @@ comprises. Un test vert ne vaut que s'il aurait pu être rouge.
 Rien de ce qui suit n'est masqué par un test complaisant : chaque point a un test
 **vert qui constate ce qui est**, pas ce qu'on voudrait.
 
-### Limite 1 — retirer l'owner de l'effectif ne lui retire pas ses droits
+### Limite 1 — FERMÉE (2026-07) : le prédicat d'autorité partagé
 
-`isClubOwner` (`firestore.rules:12`) ne regarde pas le membership, mais le champ
-`ownerUid` du document club. Un coach fondateur écarté du club **garde donc tout
-accès** tant que `ownerUid` n'a pas changé — y compris les fiches des joueurs.
-C'est volontaire (l'owner ne doit pas pouvoir s'auto-exclure de son propre club
-par accident), mais cela veut dire qu'**il n'existe aujourd'hui aucune procédure
-de retrait d'un fondateur** autre que modifier `ownerUid` à la main dans la
-console Firebase.
+**Le défaut, tel qu'il était écrit ici.** `isClubOwner` ne regardait pas le
+membership, mais le seul champ `ownerUid` du document club. Un fondateur écarté
+gardait **tout accès** tant que `ownerUid` n'avait pas changé, fiches des joueurs
+comprises — et il n'existait aucune procédure de retrait autre que modifier
+`ownerUid` à la main dans la console.
 
-_Test qui le prouve :_ scénario 3, second test (« LIMITE CONNUE »).
-_Question :_ veut-on un chemin de transfert de propriété dans l'app, ou est-ce que
-la console suffit pour le pilote ?
+**Ce qui a été fait.** L'invariant posé par Kyllian : _« un propriétaire est
+autorisé uniquement si `ownerUid` le désigne ET s'il possède encore une
+appartenance active avec le rôle propriétaire »_. Deux sources, jamais une seule ;
+et quand elles se contredisent, on **refuse** au lieu de choisir arbitrairement
+laquelle des deux ment.
+
+Conséquences traitées dans le même lot :
+
+1. **Un rôle propriétaire est né.** `members/{uid}.role` ne connaissait que
+   "coach" et "player", et le créateur du club s'écrivait lui-même en "coach" :
+   sous l'invariant, **tout club existant** aurait été incohérent. La création de
+   club écrit désormais `role: "owner"` dans le même mouvement que `ownerUid`
+   (`repositories/clubsRepo.createClubAsCoach`). Coût en production : **nul**, la
+   base a été vidée le 21/07.
+2. **Le propriétaire est de fait encadrant.** `isClubStaff` accepte "owner" ET
+   "coach". Sans ça, poser le rôle propriétaire lui aurait retiré l'écriture du
+   cadre de semaine et de la directive — un trou ouvert en en fermant un autre.
+3. **L'amorçage est circulaire, et c'est la SEULE exception.** À la création, le
+   document de membre propriétaire n'existe pas encore : la règle qui autorise à
+   s'écrire "owner" se fonde sur `clubOwnerUid(clubId)` lu dans le document club,
+   pas sur le prédicat complet. Elle est bornée à « j'écris mon propre document,
+   avec le rôle owner, dans un club qui me désigne déjà ». Le cas hostile
+   (s'écrire propriétaire ailleurs) est testé explicitement, depuis un inconnu,
+   depuis un joueur du club, et depuis un coach du club.
+4. **Source unique, duplication assumée.** Le prédicat vit une fois côté serveur
+   (`functions/src/clubAuthority.ts`, module pur) et une fois dans
+   `firestore.rules` (les règles ne peuvent pas importer de TypeScript). Aucun
+   verrou automatique ne les maintient égales : ce qui les tient, ce sont deux
+   suites qui exercent les **mêmes cas** — exactement la situation, et le même
+   remède, que pour `COACH_ACCESS_GRANTING_STATES`.
+5. **Signalement d'incohérence.** Un état où `ownerUid` désigne quelqu'un sans
+   appartenance propriétaire (ou l'inverse) **refuse** l'accès et laisse une trace
+   serveur (`logger.error`, identifiants + nature de l'écart, rien d'autre). Il
+   n'est pas non plus transformé en disparition muette : le **document club reste
+   lisible** par son `ownerUid`, ce qui permet à l'application de nommer l'état
+   (`useCoachClub.ownerAuthority` → bandeau « Club à réparer »).
+
+_Ce qui reste ouvert :_ le **transfert de propriété** n'existe pas encore dans
+l'app. Il doit mettre à jour `ownerUid`, l'ancien rôle et le nouveau dans **une
+seule transaction** ; les règles refusent volontairement de promouvoir quelqu'un
+d'autre au rôle propriétaire depuis un client. Tant qu'il n'existe pas, retirer le
+propriétaire échoue avec `OWNER_TRANSFER_REQUIRED`, et la manœuvre passe par la
+console. Même remarque pour la création d'un **second coach** : aucun chemin
+client, aucun chemin serveur.
+
+_Tests qui le prouvent :_ `functions/tests/clubAuthority.test.ts`,
+`firestore-tests/rules.clubAuthority.test.ts`, et scénario 3 de cette matrice
+(« LIMITE FERMÉE »).
+
+### Limite 1 bis — FERMÉE (2026-07) : retirer réellement un membre
+
+**Le défaut.** Révoquer un code d'invitation n'expulsait personne : l'accès repose
+sur l'**existence** de `clubs/{clubId}/members/{uid}`. Aucun écran coach ne
+permettait de retirer quelqu'un.
+
+**Ce qui a été fait.** Une Cloud Function `removeClubMember` (cœur pur dans
+`functions/src/clubMembers.ts`) qui, dans **une transaction** : vérifie l'identité
+et le rôle du demandeur **avant** de toucher à la cible, vérifie que la cible
+appartient réellement à **ce** club, pose une **pierre tombale**
+(`role: "removed"`, `coachAccess: "revoked"`, `removedAt`, `removedBy`), supprime
+la projection déjà produite, et remet `users/{uid}.clubId` à `null` — uniquement
+s'il pointait encore vers ce club.
+
+Pourquoi une pierre tombale plutôt qu'une suppression : le refus doit venir de
+l'**état**, pas d'une course. Un joueur retiré continue de s'entraîner, donc les
+triggers de reprojection tournent ; ils relisent le rôle "removed", renvoient
+`null`, et **suppriment** au lieu de recréer. Et même si une reprojection en vol
+réécrivait la projection, les règles la rendent illisible par **deux** verrous
+indépendants (`isPlayerMember` et `isCoachAccessGranted`).
+
+L'action vit sur la fiche joueur, derrière une confirmation qui distingue en
+toutes lettres le retrait du club et la suppression de compte : _« Le retrait du
+club ne supprime JAMAIS le compte FKS du joueur. »_
+
+_Tests qui le prouvent :_ `functions/tests/clubMembers.test.ts` (coach autorisé ·
+coach d'un autre club · joueur ordinaire · membre absent · double retrait · accès
+coach après retrait · projection existante · trigger exécuté après retrait ·
+tentative de retrait du propriétaire), section G de
+`firestore-tests/rules.clubAuthority.test.ts`, et
+`screens/coach/__tests__/CoachPlayerScreen.test.tsx`.
 
 ### Limite 2 — TRANCHÉE (2026-07) : note privée et directive sont séparées
 

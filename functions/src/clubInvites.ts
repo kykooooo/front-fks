@@ -15,6 +15,7 @@ import * as logger from "firebase-functions/logger";
 import type { Firestore, Transaction } from "firebase-admin/firestore";
 
 import { getDb } from "./admin";
+import type { ClubAuthoritySignal } from "./clubAuthority";
 import { REGION } from "./config";
 import {
   InviteError,
@@ -107,6 +108,22 @@ const logAbuse = (action: "issue" | "join") => (signal: AbuseSignal) => {
   });
 };
 
+/**
+ * Journal de REPARATION de l'autorite du club. Meme mecanisme et meme sobriete
+ * que dans clubMembersApi.ts : identifiants + nature de l'ecart, rien de plus.
+ * Un etat incoherent (ownerUid designant quelqu'un sans appartenance
+ * proprietaire, ou l'inverse) refuse l'emission ET laisse une trace serveur —
+ * il n'est jamais absorbe en silence.
+ */
+const logInconsistency = (signal: ClubAuthoritySignal): void => {
+  logger.error("clubAuthority: etat d'autorite incoherent, reparation requise", {
+    clubId: signal.clubId,
+    uid: signal.uid,
+    authority: signal.authority,
+    action: signal.action,
+  });
+};
+
 export const issueClubInviteCode = onCall(
   { region: REGION },
   async (request: CallableRequest<{ clubId?: unknown }>) => {
@@ -115,7 +132,12 @@ export const issueClubInviteCode = onCall(
 
     try {
       const result = await issueInviteCode(
-        { store: createInviteStore(getDb()), now: Date.now, onAbuse: logAbuse("issue") },
+        {
+          store: createInviteStore(getDb()),
+          now: Date.now,
+          onAbuse: logAbuse("issue"),
+          onInconsistency: logInconsistency,
+        },
         {
           uid,
           clubId: request.data?.clubId,

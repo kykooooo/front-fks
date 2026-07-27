@@ -42,7 +42,12 @@ export type ClubDoc = {
   ownerUid: string;
 };
 
-export type ClubRole = "coach" | "player";
+/**
+ * Rôles écrivables depuis le client. "removed" n'y figure PAS : la pierre
+ * tombale du retrait est posée par le serveur seul (Cloud Function
+ * `removeClubMember`), jamais par une application.
+ */
+export type ClubRole = "owner" | "coach" | "player";
 
 /**
  * Crée le club. Il ne porte PLUS de code d'invitation.
@@ -74,8 +79,17 @@ export async function createClub(opts: { name: string; ownerUid: string }): Prom
 }
 
 /**
- * Écrit un membership depuis le client. SEUL le rôle "coach" de l'owner du club
- * passe les règles Firestore (cf. firestore.rules, match /members/{memberId}).
+ * Écrit un membership depuis le client. SEUL le rôle "owner", écrit par celui
+ * que le club désigne déjà comme `ownerUid`, passe les règles Firestore
+ * (cf. firestore.rules, match /members/{memberId} — l'amorçage).
+ *
+ * POURQUOI "owner" ET PLUS "coach" (juillet 2026). Le prédicat d'autorité exige
+ * désormais que le propriétaire porte une appartenance de rôle propriétaire :
+ * `ownerUid` seul n'accorde plus rien. Le créateur du club qui s'écrivait en
+ * "coach" fabriquait donc, dès la première seconde, l'état incohérent que
+ * l'invariant refuse. Il s'écrit "owner", et `isClubStaff` (règles) comme
+ * `CLUB_STAFF_ROLES` (serveur) font du propriétaire un encadrant à part entière :
+ * il garde l'écriture du cadre de semaine, de la note privée et de la directive.
  *
  * Le rattachement d'un JOUEUR ne passe plus par ici : il est écrit par la Cloud
  * Function `joinClubWithInviteCode`, après vérification serveur du code
@@ -111,16 +125,38 @@ export async function attachUserToClub(opts: { uid: string; clubId: string; role
   );
 }
 
+/**
+ * Départ VOLONTAIRE d'un membre : il supprime sa propre appartenance.
+ *
+ * Ce chemin ne sert QU'À CELA. Retirer QUELQU'UN D'AUTRE passe par la Cloud
+ * Function `removeClubMember` (services/clubMembers.ts) : une suppression
+ * cliente ne saurait ni supprimer la projection déjà produite, ni révoquer
+ * l'accès coach, ni nettoyer la référence du joueur — elle n'en ferait que le
+ * premier quart, et laisserait la projection derrière elle.
+ *
+ * Le PROPRIÉTAIRE ne peut pas se retirer ainsi : les règles le refusent, parce
+ * que sa disparition fabriquerait exactement l'incohérence que le prédicat
+ * d'autorité proscrit (un `ownerUid` qui désigne un non-membre).
+ */
 export async function removeClubMembership(opts: { clubId: string; uid: string }) {
   const memberRef = doc(db, "clubs", opts.clubId, "members", opts.uid);
   await deleteDoc(memberRef);
 }
 
 /**
- * Crée un club et rattache l'utilisateur comme coach en une seule opération :
- *  - clubs/{clubId}
- *  - clubs/{clubId}/members/{uid} (role: "coach")
+ * Crée un club et rattache l'utilisateur comme PROPRIÉTAIRE en une seule
+ * opération :
+ *  - clubs/{clubId}                  { ownerUid }
+ *  - clubs/{clubId}/members/{uid}    (role: "owner")  ← les DEUX sources posées
  *  - users/{uid} { clubId, role: "coach", profileCompleted: true }
+ *
+ * Les deux sources du prédicat d'autorité sont écrites dans le même mouvement :
+ * c'est la seule façon de ne pas créer un club incohérent à sa naissance.
+ *
+ * `users/{uid}.role` reste "coach" : ce champ ne gouverne AUCUN droit, il ne
+ * sert qu'à router l'application vers l'espace coach (navigation/RootNavigator).
+ * L'autorité, elle, se lit exclusivement sur le club et son appartenance.
+ *
  * Le coach n'a pas besoin du questionnaire joueur : on marque profileCompleted
  * pour qu'il atterrisse directement sur son espace coach.
  */
@@ -130,7 +166,7 @@ export async function createClubAsCoach(opts: {
   coachName?: string | null;
 }): Promise<ClubDoc> {
   const club = await createClub({ name: opts.name, ownerUid: opts.uid });
-  await setClubMembership({ clubId: club.id, uid: opts.uid, role: "coach" });
+  await setClubMembership({ clubId: club.id, uid: opts.uid, role: "owner" });
 
   const coachName = String(opts.coachName ?? "").trim();
   await setDoc(

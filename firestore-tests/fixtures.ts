@@ -223,14 +223,22 @@ export async function seed(testEnv: RulesTestEnvironment): Promise<void> {
     // "not_required". Les coachs n'ont pas de suivi à autoriser → pas de champ.
     // Les cas NON autorisés (pending / revoked / champ absent) sont seedés dans
     // rules.coachAccess.test.ts, pour ne pas déformer les autres suites.
-    await setDoc(doc(db, "clubs", CLUB_A, "members", COACH_A), { uid: COACH_A, role: "coach" });
+    // ── LES DEUX SOURCES DU PRÉDICAT D'AUTORITÉ, POSÉES ENSEMBLE ────────────
+    // COACH_A est `ownerUid` du club A, son appartenance porte donc le rôle
+    // "owner" — c'est ce qu'écrit désormais la création de club
+    // (repositories/clubsRepo.createClubAsCoach), et c'est le SEUL état cohérent
+    // au sens de l'invariant. Un `role: "coach"` ici recréerait exactement
+    // l'incohérence que les règles refusent (elle est testée pour elle-même dans
+    // rules.clubAuthority.test.ts, jamais glissée dans les fixtures communes).
+    // Le propriétaire reste ENCADRANT : `isClubStaff` accepte "owner".
+    await setDoc(doc(db, "clubs", CLUB_A, "members", COACH_A), { uid: COACH_A, role: "owner" });
     await setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A1), {
       uid: PLAYER_A1, role: "player", coachAccess: "approved",
     });
     await setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A2), {
       uid: PLAYER_A2, role: "player", coachAccess: "approved",
     });
-    await setDoc(doc(db, "clubs", CLUB_B, "members", COACH_B), { uid: COACH_B, role: "coach" });
+    await setDoc(doc(db, "clubs", CLUB_B, "members", COACH_B), { uid: COACH_B, role: "owner" });
     await setDoc(doc(db, "clubs", CLUB_B, "members", PLAYER_B), {
       uid: PLAYER_B, role: "player", coachAccess: "not_required",
     });

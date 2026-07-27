@@ -153,6 +153,10 @@ function clubReady(over: Record<string, unknown> = {}) {
     weekKey: "2026-07-27",
     weekContext: null,
     weekContextUnavailable: false,
+    // Autorité du club : cohérente par défaut. Les cas incohérents sont posés
+    // explicitement par les tests qui les concernent.
+    ownerAuthority: "authorized",
+    ownershipInconsistent: false,
     fetchedAt: 1_000,
     isRefreshing: false,
     refresh: jest.fn(),
@@ -548,6 +552,61 @@ describe("états", () => {
     mockClub.mockReturnValue(clubReady({ status: "notInClub", clubId: null }));
     const r = await render();
     expect(texte(r)).toContain("Aucun club rattaché");
+  });
+});
+
+// ── Autorité du club incohérente ────────────────────────────────────────────
+//
+// `ownerUid` désigne ce compte sans que son appartenance le confirme (ou
+// l'inverse). Les règles refusent alors la lecture de l'effectif — c'est voulu.
+// Ce qui ne l'est pas, ce serait de laisser le coach devant « aucun effectif n'a
+// pu être lu », formulation qui désigne une panne là où il s'agit d'un refus
+// délibéré, réparable, et dont on connaît précisément la cause.
+describe("autorité du club à réparer", () => {
+  test("effectif illisible + incohérence : l'état est NOMMÉ, pas présenté comme une panne", async () => {
+    mockClub.mockReturnValue(
+      clubReady({ ownerAuthority: "designation-without-membership", ownershipInconsistent: true }),
+    );
+    mockRoster.mockReturnValue(rosterReady([], { status: "unavailable" }));
+
+    const r = await render();
+    const t = texte(r);
+
+    expect(t).toContain("Club à réparer");
+    expect(t).toContain("désigne comme propriétaire");
+    expect(t).toContain("Aucune donnée n'a été perdue");
+    // Surtout PAS le message de panne générique.
+    expect(t).not.toContain("Aucun effectif n'a pu être lu");
+  });
+
+  test("effectif LISIBLE malgré l'incohérence : un bandeau, et la liste reste là", async () => {
+    // Cas réel : l'appartenance porte « owner » mais le club désigne quelqu'un
+    // d'autre. L'encadrement fonctionne (il ne dépend que de l'appartenance),
+    // seuls les gestes de propriétaire sont fermés.
+    mockClub.mockReturnValue(
+      clubReady({ ownerAuthority: "membership-without-designation", ownershipInconsistent: true }),
+    );
+
+    const r = await render();
+    const t = texte(r);
+
+    expect(t).toContain("Club à réparer");
+    expect(t).toContain("désigne quelqu'un d'autre");
+    // La liste n'a pas disparu pour autant.
+    expect(prenomsAffiches(r).sort()).toEqual(["Anna", "Gaël", "Malik", "Zoé"]);
+  });
+
+  test("autorité cohérente : AUCUN bandeau (on ne crie pas sans raison)", async () => {
+    const r = await render();
+    expect(texte(r)).not.toContain("Club à réparer");
+  });
+
+  test("coach ordinaire (non propriétaire) : aucun bandeau non plus", async () => {
+    mockClub.mockReturnValue(
+      clubReady({ ownerAuthority: "not-owner", ownershipInconsistent: false }),
+    );
+    const r = await render();
+    expect(texte(r)).not.toContain("Club à réparer");
   });
 });
 

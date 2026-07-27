@@ -16,7 +16,7 @@ beforeEach(async () => {
   await seedClubA(db);
   // Deuxième club pour vérifier le ciblage --clubId.
   await db.doc("clubs/clubB").set({ name: "Club B", ownerUid: "coachB" });
-  await db.doc("clubs/clubB/members/coachB").set({ uid: "coachB", role: "coach" });
+  await db.doc("clubs/clubB/members/coachB").set({ uid: "coachB", role: "owner" });
   // "not_required" : joueur adulte, aucune étape supplémentaire (cf. coachAccess.ts).
   await db.doc("clubs/clubB/members/playerB").set({ uid: "playerB", role: "player", coachAccess: "not_required" });
   await db.doc("users/playerB").set({ uid: "playerB", clubId: "clubB", role: "player", firstName: "Clea", profileCompleted: true });

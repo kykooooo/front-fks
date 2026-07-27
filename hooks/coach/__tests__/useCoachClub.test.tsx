@@ -44,12 +44,24 @@ const snap = (data: unknown | null) => ({
   data: () => data,
 });
 
-/** Répond selon la collection lue : users/{uid} puis clubs/{clubId}. */
-const wireDocs = (opts: { user?: unknown | null; club?: unknown | null; throwsOn?: "users" | "clubs" }) => {
+/**
+ * Répond selon le document lu : users/{uid}, clubs/{clubId}, puis
+ * clubs/{clubId}/members/{uid} — cette dernière lecture est la SECONDE source du
+ * prédicat d'autorité (le rôle porté par sa propre appartenance).
+ */
+const wireDocs = (opts: {
+  user?: unknown | null;
+  club?: unknown | null;
+  member?: unknown | null;
+  throwsOn?: "users" | "clubs" | "members";
+}) => {
   getDocMock.mockImplementation(async (ref: { path: string[] }) => {
     const collection = ref.path[0];
-    if (opts.throwsOn === collection) throw new Error("permission-denied");
+    const estMembre = ref.path[2] === "members";
+    if (opts.throwsOn === "members" && estMembre) throw new Error("permission-denied");
+    if (!estMembre && opts.throwsOn === collection) throw new Error("permission-denied");
     if (collection === "users") return snap(opts.user === undefined ? { clubId: "clubX" } : opts.user);
+    if (estMembre) return snap(opts.member === undefined ? null : opts.member);
     return snap(opts.club === undefined ? { name: "AS Test", teamGender: "female" } : opts.club);
   });
 };
@@ -249,6 +261,84 @@ describe("useCoachClub — invariant de montage (adossé à un eslint-disable)",
     expect(rendus).toBe(1);
     // Et l'état affiché est bien celui du premier rendu, pas un état réécrit.
     expect(h.current.status).toBe("loading");
+    await h.unmount();
+  });
+});
+
+// ─── PREDICAT D'AUTORITE : dire la verite, jamais accorder un droit ──────────
+//
+// Le hook lit une source de plus : sa PROPRE appartenance. Elle ne sert a rien
+// d'autre qu'a nommer un etat incoherent — sans elle, un proprietaire dont
+// l'appartenance a disparu verrait l'effectif, le cadre et la note devenir
+// illisibles un par un, sans la moindre explication.
+describe("useCoachClub — autorite du club", () => {
+  const CLUB = { name: "AS Test", teamGender: "female", ownerUid: "coach1" };
+
+  test("PREDICAT VRAI : ownerUid designe ET appartenance proprietaire", async () => {
+    wireDocs({ club: CLUB, member: { uid: "coach1", role: "owner" } });
+    const h = await renderHook(() => useCoachClub({ now }));
+
+    expect(h.current.ownerAuthority).toBe("authorized");
+    expect(h.current.ownershipInconsistent).toBe(false);
+    await h.unmount();
+  });
+
+  test("ownerUid SEUL (appartenance coach) : incoherence NOMMEE", async () => {
+    wireDocs({ club: CLUB, member: { uid: "coach1", role: "coach" } });
+    const h = await renderHook(() => useCoachClub({ now }));
+
+    expect(h.current.ownerAuthority).toBe("designation-without-membership");
+    expect(h.current.ownershipInconsistent).toBe(true);
+    // Le club reste connu : pas de disparition muette.
+    expect(h.current.clubId).toBe("clubX");
+    expect(h.current.clubName).toBe("AS Test");
+    await h.unmount();
+  });
+
+  test("appartenance SEULE (ownerUid designe un autre) : incoherence NOMMEE", async () => {
+    wireDocs({
+      club: { ...CLUB, ownerUid: "quelquUnDAutre" },
+      member: { uid: "coach1", role: "owner" },
+    });
+    const h = await renderHook(() => useCoachClub({ now }));
+
+    expect(h.current.ownerAuthority).toBe("membership-without-designation");
+    expect(h.current.ownershipInconsistent).toBe(true);
+    await h.unmount();
+  });
+
+  test("coach ordinaire : 'not-owner', et surtout AUCUN bandeau", async () => {
+    wireDocs({
+      club: { ...CLUB, ownerUid: "unAutreCoach" },
+      member: { uid: "coach1", role: "coach" },
+    });
+    const h = await renderHook(() => useCoachClub({ now }));
+
+    expect(h.current.ownerAuthority).toBe("not-owner");
+    expect(h.current.ownershipInconsistent).toBe(false);
+    await h.unmount();
+  });
+
+  test("LECTURE EN ECHEC : on n'invente pas une incoherence", async () => {
+    // « Je n'ai pas pu lire mon appartenance » et « mon appartenance ne dit pas
+    // ce qu'elle devrait » sont deux choses differentes. Accuser la base sur un
+    // incident reseau serait exactement le mensonge qu'on s'interdit ailleurs.
+    wireDocs({ club: CLUB, throwsOn: "members" });
+    const h = await renderHook(() => useCoachClub({ now }));
+
+    expect(h.current.status).toBe("ready");
+    expect(h.current.ownerAuthority).toBe("not-owner");
+    expect(h.current.ownershipInconsistent).toBe(false);
+    await h.unmount();
+  });
+
+  test("l'echec de cette lecture ne casse PAS le contexte club", async () => {
+    wireDocs({ club: CLUB, throwsOn: "members" });
+    const h = await renderHook(() => useCoachClub({ now }));
+
+    expect(h.current.clubId).toBe("clubX");
+    expect(h.current.clubName).toBe("AS Test");
+    expect(h.current.teamGender).toBe("female");
     await h.unmount();
   });
 });

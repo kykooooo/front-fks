@@ -93,10 +93,13 @@ function baseStore(): SimpleStore {
   const store = new SimpleStore();
   store.seed(invitePaths.club(CLUB_A), { name: "Club A", ownerUid: COACH_A });
   store.seed(invitePaths.club(CLUB_B), { name: "Club B", ownerUid: COACH_B });
-  store.seed(invitePaths.member(CLUB_A, COACH_A), { uid: COACH_A, role: "coach" });
+  // Les proprietaires portent le role "owner" : le PREDICAT D'AUTORITE exige que
+  // `ownerUid` et l'appartenance concordent, et c'est ce qu'ecrit la creation de
+  // club. COACH_A2 reste un coach ordinaire, non proprietaire.
+  store.seed(invitePaths.member(CLUB_A, COACH_A), { uid: COACH_A, role: "owner" });
   store.seed(invitePaths.member(CLUB_A, COACH_A2), { uid: COACH_A2, role: "coach" });
   store.seed(invitePaths.member(CLUB_A, PLAYER_A1), { uid: PLAYER_A1, role: "player" });
-  store.seed(invitePaths.member(CLUB_B, COACH_B), { uid: COACH_B, role: "coach" });
+  store.seed(invitePaths.member(CLUB_B, COACH_B), { uid: COACH_B, role: "owner" });
   return store;
 }
 

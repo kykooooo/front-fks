@@ -31,7 +31,9 @@ export async function clearFirestore(): Promise<void> {
 /** Jeu de données brut avec sensible VOLONTAIRE (preuve : ne doit jamais fuiter). */
 export async function seedClubA(db: Firestore): Promise<void> {
   await db.doc("clubs/clubA").set({ name: "Club A", ownerUid: "coachA", teamGender: "female" });
-  await db.doc("clubs/clubA/members/coachA").set({ uid: "coachA", role: "coach" });
+  // Role "owner" : ownerUid le designe, son appartenance le confirme — l'etat
+  // coherent exige par le predicat d'autorite (functions/src/clubAuthority.ts).
+  await db.doc("clubs/clubA/members/coachA").set({ uid: "coachA", role: "owner" });
   // `coachAccess` = état SERVEUR d'autorisation d'accès au suivi. Sans lui, le
   // projecteur ne produit RIEN (default-deny). Les deux joueuses sont U15 :
   // "approved" représente l'étape supplémentaire déjà faite côté procédure.

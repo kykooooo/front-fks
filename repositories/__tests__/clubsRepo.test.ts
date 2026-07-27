@@ -100,6 +100,7 @@ jest.mock("firebase/firestore", () => ({
 import { setDoc } from "firebase/firestore";
 import {
   createClub,
+  createClubAsCoach,
   setClubMembership,
   fetchClubPlayerSummaries,
   fetchClubPlayerSummary,
@@ -167,6 +168,49 @@ describe("setClubMembership — le membership ne porte plus de preuve", () => {
     expect(ref.path).toEqual(["clubs", "clubX", "members", "coachA"]);
     expect(payload).not.toHaveProperty("inviteCode");
     expect(payload).toMatchObject({ uid: "coachA", role: "coach" });
+  });
+});
+
+// ─── Création de club : les DEUX sources de l'autorité, posées ensemble ─────
+//
+// Le prédicat d'autorité exige que `ownerUid` désigne le propriétaire ET que son
+// appartenance porte le rôle propriétaire. Écrire l'un sans l'autre créerait un
+// club incohérent dès sa naissance — c'est exactement ce que faisait l'ancienne
+// séquence, qui inscrivait le créateur en « coach ».
+
+describe("createClubAsCoach — le créateur devient PROPRIÉTAIRE, pas coach", () => {
+  test("écrit ownerUid sur le club ET le rôle « owner » sur son appartenance", async () => {
+    const club = await createClubAsCoach({ name: "Club Neuf", uid: "coachA", coachName: "Kyllian" });
+
+    const ecritures = setDocMock.mock.calls.map((c: any[]) => ({
+      chemin: c[0]?.path as string[],
+      payload: c[1] as Record<string, unknown>,
+    }));
+
+    const clubDoc = ecritures.find((e) => e.chemin?.length === 2 && e.chemin[0] === "clubs");
+    expect(clubDoc?.payload).toMatchObject({ name: "Club Neuf", ownerUid: "coachA" });
+
+    const memberDoc = ecritures.find((e) => e.chemin?.[2] === "members");
+    expect(memberDoc?.chemin).toEqual(["clubs", club.id, "members", "coachA"]);
+    // LA ligne qui compte : le rôle propriétaire, pas « coach ».
+    expect(memberDoc?.payload).toMatchObject({ uid: "coachA", role: "owner" });
+    // Et jamais l'état d'accès coach : les règles refuseraient l'écriture.
+    expect(memberDoc?.payload).not.toHaveProperty("coachAccess");
+  });
+
+  test("users/{uid}.role reste « coach » : ce champ route l'app, il n'accorde RIEN", async () => {
+    await createClubAsCoach({ name: "Club Neuf", uid: "coachA" });
+
+    const userDoc = setDocMock.mock.calls
+      .map((c: any[]) => ({ chemin: c[0]?.path as string[], payload: c[1] }))
+      .find((e) => e.chemin?.[0] === "users");
+
+    expect(userDoc?.payload).toMatchObject({
+      uid: "coachA",
+      clubId: expect.any(String),
+      role: "coach",
+      profileCompleted: true,
+    });
   });
 });
 
@@ -393,6 +437,30 @@ describe("fetchClubPlayerSummaries — partition par état d'autorisation", () =
     // Aucune lecture de projection pour les non autorisés : un refus attendu ne
     // doit pas se déguiser en erreur de lecture.
     expect(summaryDocIds().sort()).toEqual(["playerLibre", "playerOk"]);
+  });
+
+  test("membre RETIRÉ : il sort de l'effectif, il ne devient pas « non consultable »", async () => {
+    // La pierre tombale du retrait serveur porte `role: "removed"` ET
+    // `coachAccess: "revoked"`. Le filtre `role === "player"` la fait sortir AVANT
+    // la partition d'autorisation : un joueur retiré ne doit pas grossir
+    // `restrictedCount`, qui annonce « des joueurs sont là mais non consultables ».
+    // Il n'est plus là du tout, et c'est ce que l'écran doit dire.
+    mockFlags.members = [
+      { id: "playerOk", role: "player", coachAccess: "approved" },
+      { id: "playerParti", role: "removed", coachAccess: "revoked" },
+    ];
+    mockFlags.summaryById = {
+      playerOk: { exists: true, data: () => validPayload({ playerUid: "playerOk" }) },
+    };
+
+    const res = await fetchClubPlayerSummaries("clubX");
+
+    expect(res.summaries.map((s) => s.playerUid)).toEqual(["playerOk"]);
+    expect(res.restrictedCount).toBe(0);
+    expect(res.pendingCount).toBe(0);
+    expect(res.unreadableCount).toBe(0);
+    // Et sa projection n'est même pas demandée.
+    expect(summaryDocIds()).toEqual(["playerOk"]);
   });
 
   test("effectif ENTIÈREMENT non autorisé : ce n'est PAS une indisponibilité", async () => {

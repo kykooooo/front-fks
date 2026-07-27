@@ -54,6 +54,7 @@ import {
   type InviteTx,
   type IssueRejectionReason,
 } from "../src/inviteCodes";
+import type { ClubAuthoritySignal } from "../src/clubAuthority";
 
 // ─── Faux magasin transactionnel ────────────────────────────────────────────
 
@@ -145,7 +146,12 @@ const bytesFrom = (values: number[]) => {
 function baseStore(): FakeStore {
   const store = new FakeStore();
   store.seed(invitePaths.club(CLUB), { name: "AS Test", ownerUid: OWNER });
-  store.seed(invitePaths.member(CLUB, OWNER), { uid: OWNER, role: "coach" });
+  // Le proprietaire porte le role "owner" : c'est ce que le PREDICAT D'AUTORITE
+  // exige (ownerUid le designe ET son appartenance le confirme), et c'est ce
+  // qu'ecrit desormais la creation de club. Un `role: "coach"` ici serait
+  // exactement l'etat incoherent que le predicat refuse — il est teste comme tel
+  // dans "autorite incoherente", plus bas.
+  store.seed(invitePaths.member(CLUB, OWNER), { uid: OWNER, role: "owner" });
   store.seed(invitePaths.member(CLUB, COACH), { uid: COACH, role: "coach" });
   return store;
 }
@@ -375,6 +381,85 @@ describe("issueClubInviteCode — emission reservee au coach, empreinte seule en
       joinClubWithCode(deps(store), { uid: PLAYER, rawCode: first.code }),
     );
     expect(err.code).toBe(INVITE_REJECTED_CODE);
+  });
+});
+
+// ─── 4 bis. Le PREDICAT D'AUTORITE gouverne aussi l'emission ────────────────
+//
+// Avant ce lot, l'emission accordait le droit sur `club.ownerUid === uid` SEUL,
+// sans jamais lire l'appartenance : une source unique decidait d'un droit. Ces
+// tests verrouillent le nouveau comportement — et surtout, ils prouvent que
+// TOUTES les Functions consomment le meme predicat.
+
+describe("issueClubInviteCode — autorite incoherente", () => {
+  test("ownerUid designe l'appelant mais son appartenance dit 'coach' : REFUS + SIGNAL", async () => {
+    const store = baseStore();
+    // L'etat historique que ce lot supprime : le createur du club s'ecrivait
+    // lui-meme en "coach". Il reste ENCADRANT (role coach), mais il n'est plus
+    // autorise en tant que PROPRIETAIRE — et l'ecart doit etre signale.
+    store.seed(invitePaths.member(CLUB, OWNER), { uid: OWNER, role: "coach" });
+
+    const signals: ClubAuthoritySignal[] = [];
+    const err = await catchInvite(
+      issueInviteCode(deps(store, { onInconsistency: (s) => signals.push(s) }), {
+        uid: OWNER,
+        clubId: CLUB,
+      }),
+    );
+
+    expect(err.code).toBe(ISSUE_REJECTED_CODE);
+    // Le message reste le refus GENERIQUE : signaler ne veut pas dire avouer.
+    expect(err.message).toBe(ISSUE_REJECTED_MESSAGE);
+    expect(signals).toEqual([
+      {
+        clubId: CLUB,
+        uid: OWNER,
+        authority: "designation-without-membership",
+        action: "issueClubInviteCode",
+      },
+    ]);
+  });
+
+  test("appartenance 'owner' mais ownerUid designe un autre : REFUS + SIGNAL", async () => {
+    const store = baseStore();
+    store.seed(invitePaths.member(CLUB, COACH), { uid: COACH, role: "owner" });
+
+    const signals: ClubAuthoritySignal[] = [];
+    const err = await catchInvite(
+      issueInviteCode(deps(store, { onInconsistency: (s) => signals.push(s) }), {
+        uid: COACH,
+        clubId: CLUB,
+      }),
+    );
+
+    expect(err.code).toBe(ISSUE_REJECTED_CODE);
+    expect(signals).toHaveLength(1);
+    expect(signals[0].authority).toBe("membership-without-designation");
+  });
+
+  test("ownerUid SANS aucune appartenance : REFUS (une source ne suffit plus)", async () => {
+    const store = baseStore();
+    store.docs.delete(invitePaths.member(CLUB, OWNER));
+
+    const signals: ClubAuthoritySignal[] = [];
+    const err = await catchInvite(
+      issueInviteCode(deps(store, { onInconsistency: (s) => signals.push(s) }), {
+        uid: OWNER,
+        clubId: CLUB,
+      }),
+    );
+
+    expect(err.code).toBe(ISSUE_REJECTED_CODE);
+    expect(signals[0]?.authority).toBe("designation-without-membership");
+  });
+
+  test("un etat COHERENT n'emet AUCUN signal (owner comme coach ordinaire)", async () => {
+    const signals: ClubAuthoritySignal[] = [];
+    const store = baseStore();
+    const d = deps(store, { onInconsistency: (s: ClubAuthoritySignal) => signals.push(s) });
+    await expect(issueInviteCode(d, { uid: OWNER, clubId: CLUB })).resolves.toBeTruthy();
+    await expect(issueInviteCode(d, { uid: COACH, clubId: CLUB })).resolves.toBeTruthy();
+    expect(signals).toEqual([]);
   });
 });
 

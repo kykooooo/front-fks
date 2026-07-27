@@ -290,8 +290,8 @@ describe("Témoin : la règle d'avant laissait vraiment passer la récolte", () 
     // La fin de ligne est laissée libre (\r\n possible selon le checkout Windows) :
     // un témoin qui dépendrait de l'historique git ne prouverait rien.
     const before = current.replace(
-      /allow get: if isClubMember\(clubId\) \|\| isClubOwner\(clubId\);\s*\r?\n\s*allow list: if false;/,
-      "allow read: if isClubMember(clubId) || isClubOwner(clubId);",
+      /allow get: if isActiveMember\(clubId\);\s*\r?\n\s*allow list: if false;/,
+      "allow read: if isActiveMember(clubId);",
     );
     expect(before).not.toBe(current); // le remplacement a bien eu lieu
 

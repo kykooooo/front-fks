@@ -200,10 +200,13 @@ describe("Scénario 3 — ancien coach retiré du club", () => {
     await assertSucceeds(getDoc(doc(db, "clubs", CLUB_A, "playerSummaries", PLAYER_A1)));
     await assertSucceeds(getDoc(doc(db, "clubs", CLUB_A, "weekContexts", WEEK_KEY)));
 
-    // L'owner le retire de l'effectif (geste réel : deleteDoc autorisé à l'owner).
-    await assertSucceeds(
-      deleteDoc(doc(asUser(COACH_A), "clubs", CLUB_A, "members", COACH_A2)),
-    );
+    // Le retrait d'un AUTRE membre n'est plus un geste client : il passe par la
+    // Cloud Function `removeClubMember` (Admin SDK, qui contourne ces règles).
+    // On rejoue donc ici ce que le SERVEUR écrit, et on mesure l'effet sur les
+    // règles — c'est exactement ce que ce fichier doit prouver.
+    await admin(async (ctx) => {
+      await deleteDoc(doc(ctx.firestore(), "clubs", CLUB_A, "members", COACH_A2));
+    });
 
     // Après : plus rien, sans aucune autre action (pas de révocation de jeton,
     // pas d'attente). Y compris les projections DÉJÀ écrites.
@@ -213,19 +216,64 @@ describe("Scénario 3 — ancien coach retiré du club", () => {
     await assertFails(getDoc(doc(db, "clubs", CLUB_A)));
   });
 
-  test("LIMITE CONNUE : retirer l'OWNER de l'effectif ne lui retire pas ses droits", async () => {
-    // `isClubOwner` ne dépend pas du membership mais de clubs/{id}.ownerUid.
-    // C'est voulu (l'owner ne doit pas pouvoir s'auto-exclure de son club par
-    // accident), mais cela veut dire qu'un fondateur écarté garde tout tant que
-    // `ownerUid` n'a pas changé. Ce test rend ce fait VISIBLE plutôt que caché ;
-    // il est repris dans la section « à trancher » du rapport.
+  test("la PIERRE TOMBALE du retrait ferme autant qu'une suppression", async () => {
+    // Le retrait serveur ne supprime pas le document : il le désactive
+    // (`role: "removed"`), pour que le refus vienne de l'ÉTAT et non de l'ordre
+    // d'arrivée des événements. Ce test vérifie que « désactivé » vaut bien
+    // « parti » du point de vue des règles — sinon la pierre tombale serait un
+    // trou déguisé en trace d'audit.
+    await admin(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "clubs", CLUB_A, "members", COACH_A2), {
+        uid: COACH_A2,
+        role: "removed",
+        coachAccess: "revoked",
+        removedAt: 1_753_600_000_000,
+        removedBy: COACH_A,
+      });
+    });
+    const db = asUser(COACH_A2);
+    await assertFails(getDocs(collection(db, "clubs", CLUB_A, "members")));
+    await assertFails(getDoc(doc(db, "clubs", CLUB_A, "playerSummaries", PLAYER_A1)));
+    await assertFails(getDoc(doc(db, "clubs", CLUB_A, "weekContexts", WEEK_KEY)));
+    await assertFails(getDoc(doc(db, "clubs", CLUB_A, "directives", "current")));
+    await assertFails(getDoc(doc(db, "clubs", CLUB_A)));
+    // Son PROPRE document reste lisible : il n'a rien à cacher, et c'est ce qui
+    // permet à l'application de comprendre son propre état.
+    await assertSucceeds(getDoc(doc(db, "clubs", CLUB_A, "members", COACH_A2)));
+  });
+
+  test("LIMITE FERMÉE : retirer le propriétaire de l'effectif lui retire bien ses droits", async () => {
+    // CE TEST AFFIRMAIT L'INVERSE JUSQU'À CE LOT, et le disait sans détour :
+    // « `isClubOwner` ne dépend pas du membership mais de clubs/{id}.ownerUid »,
+    // donc un fondateur écarté gardait TOUT tant que `ownerUid` n'avait pas
+    // changé. C'était la limite portée dans la section « à trancher » du rapport.
+    //
+    // Le prédicat d'autorité la ferme : la désignation ne suffit plus, il faut
+    // AUSSI l'appartenance propriétaire. Ce qui reste ouvert est délibéré et
+    // borné : la lecture du document club, pour que l'anomalie soit constatable
+    // au lieu de faire disparaître le club en silence.
     await admin(async (ctx) => {
       await deleteDoc(doc(ctx.firestore(), "clubs", CLUB_A, "members", COACH_A));
     });
     const db = asUser(COACH_A);
+    await assertFails(getDocs(collection(db, "clubs", CLUB_A, "members")));
+    await assertFails(getDoc(doc(db, "clubs", CLUB_A, "playerSummaries", PLAYER_A1)));
+    await assertFails(getDoc(doc(db, "clubs", CLUB_A, "coachNotes", WEEK_KEY)));
+    await assertFails(
+      setDoc(doc(db, "clubs", CLUB_A), { teamGender: "male" }, { merge: true }),
+    );
+    // Seule survivance, VOULUE : le club se lit encore.
     await assertSucceeds(getDoc(doc(db, "clubs", CLUB_A)));
-    await assertSucceeds(getDocs(collection(db, "clubs", CLUB_A, "members")));
-    await assertSucceeds(getDoc(doc(db, "clubs", CLUB_A, "playerSummaries", PLAYER_A1)));
+  });
+
+  test("le PROPRIÉTAIRE ne peut pas se retirer lui-même de l'effectif", async () => {
+    // Sa disparition fabriquerait exactement l'état incohérent que l'invariant
+    // refuse. Le geste à faire est le transfert de propriété — la Cloud Function
+    // le dit avec OWNER_TRANSFER_REQUIRED, la règle le rend impossible même en
+    // passant à côté de l'écran.
+    await assertFails(
+      deleteDoc(doc(asUser(COACH_A), "clubs", CLUB_A, "members", COACH_A)),
+    );
   });
 });
 

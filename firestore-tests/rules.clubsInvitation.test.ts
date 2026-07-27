@@ -210,14 +210,68 @@ describe("3) Membership player : plus AUCUNE écriture cliente", () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe("4) Chemins légitimes préservés", () => {
-  test("création de club par un coach + son propre membership coach (séquence createClubAsCoach)", async () => {
+  test("création de club + son propre membership PROPRIÉTAIRE (séquence createClubAsCoach)", async () => {
+    // L'AMORÇAGE. À cet instant précis, le prédicat complet ne PEUT PAS être
+    // vrai : le document de membre propriétaire n'existe pas encore. C'est la
+    // seule règle qui s'appuie sur la désignation seule, et elle est bornée à
+    // « j'écris mon propre document, avec le rôle owner, dans un club qui me
+    // désigne déjà ».
     const NEWCOACH = "newCoach";
     const db = asUser(NEWCOACH);
     const clubRef = doc(collection(db, "clubs"));
     // Le club ne porte PLUS de code d'invitation : la Function l'émet à part.
     await assertSucceeds(setDoc(clubRef, { name: "Club Neuf", ownerUid: NEWCOACH }));
     await assertSucceeds(
+      setDoc(doc(db, "clubs", clubRef.id, "members", NEWCOACH), { uid: NEWCOACH, role: "owner" }),
+    );
+    // Et le voilà encadrant : le rôle propriétaire ouvre le cadre de semaine.
+    await assertSucceeds(
+      setDoc(doc(db, "clubs", clubRef.id, "weekContexts", WEEK_KEY), {
+        weekKey: WEEK_KEY,
+        clubId: clubRef.id,
+        createdBy: NEWCOACH,
+        trainingIntensity: "normal",
+        weekGoal: "freshness",
+      }),
+    );
+  });
+
+  test("le créateur ne peut PAS s'écrire en 'coach' : ce serait un club incohérent dès sa naissance", async () => {
+    // `ownerUid` le désignerait sans que son appartenance le confirme —
+    // exactement l'état que le prédicat d'autorité refuse. La règle ferme la
+    // porte à la source plutôt que de laisser naître l'anomalie.
+    const NEWCOACH = "newCoachBis";
+    const db = asUser(NEWCOACH);
+    const clubRef = doc(collection(db, "clubs"));
+    await assertSucceeds(setDoc(clubRef, { name: "Club Neuf 2", ownerUid: NEWCOACH }));
+    await assertFails(
       setDoc(doc(db, "clubs", clubRef.id, "members", NEWCOACH), { uid: NEWCOACH, role: "coach" }),
+    );
+  });
+
+  test("TENTATIVE HOSTILE : s'écrire propriétaire dans le club d'un autre", async () => {
+    // Le cœur de l'exception d'amorçage : elle se fonde sur `ownerUid`, donc
+    // quelqu'un que le club ne désigne pas n'y entre jamais. Testé depuis un
+    // inconnu ET depuis un membre EXISTANT du club — le second est le plus
+    // tentant, puisqu'il a déjà un pied dedans.
+    await assertFails(
+      setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), {
+        uid: STRANGER,
+        role: "owner",
+      }),
+    );
+    await assertFails(
+      setDoc(doc(asUser(PLAYER_A1), "clubs", CLUB_A, "members", PLAYER_A1), {
+        uid: PLAYER_A1,
+        role: "owner",
+      }),
+    );
+    // Et on ne promeut pas non plus QUELQU'UN D'AUTRE au rôle propriétaire.
+    await assertFails(
+      setDoc(doc(asUser(COACH_A), "clubs", CLUB_A, "members", PLAYER_A1), {
+        uid: PLAYER_A1,
+        role: "owner",
+      }),
     );
   });
 
@@ -244,9 +298,15 @@ describe("4) Chemins légitimes préservés", () => {
     expect((snap as any).data()).not.toHaveProperty("inviteCode");
   });
 
-  test("un joueur peut toujours QUITTER son club ; l'owner peut retirer un membre", async () => {
+  test("un joueur peut toujours QUITTER son club ; retirer QUELQU'UN D'AUTRE est serveur-seul", async () => {
+    // Départ volontaire : inchangé, c'est le geste du joueur sur son propre doc.
     await assertSucceeds(deleteDoc(doc(asUser(PLAYER_A1), "clubs", CLUB_A, "members", PLAYER_A1)));
-    await assertSucceeds(deleteDoc(doc(asUser(COACH_A), "clubs", CLUB_A, "members", "playerA2")));
+    // Retrait d'un AUTRE membre : REFUSÉ côté client, même au propriétaire. Une
+    // suppression cliente ne saurait ni supprimer la projection déjà produite, ni
+    // révoquer l'accès coach, ni nettoyer users/{uid}.clubId — elle n'en ferait
+    // que le premier quart. Le geste complet vit dans la Cloud Function
+    // `removeClubMember` (functions/src/clubMembers.ts).
+    await assertFails(deleteDoc(doc(asUser(COACH_A), "clubs", CLUB_A, "members", "playerA2")));
   });
 
   test("coach : roster lisible, cadre de semaine écrivable, club modifiable par l'owner", async () => {

@@ -179,14 +179,15 @@ describe("D — aucun client ne peut écrire l'état d'autorisation", () => {
   });
 
   test("12) l'OWNER du club non plus, même sur son PROPRE document member", async () => {
-    // COACH_A est owner : c'est le seul client qui a le droit d'écrire un member
-    // (son propre rôle "coach"). Ce droit ne doit pas emporter `coachAccess`.
+    // COACH_A est propriétaire : c'est le seul client qui a le droit d'écrire un
+    // member (son propre rôle "owner", l'amorçage). Ce droit ne doit pas
+    // emporter `coachAccess`.
     const db = asUser(COACH_A);
     const ref = doc(db, "clubs", CLUB_A, "members", COACH_A);
     // Écriture légitime SANS le champ : toujours autorisée (non-régression).
-    await assertSucceeds(setDoc(ref, { uid: COACH_A, role: "coach" }));
+    await assertSucceeds(setDoc(ref, { uid: COACH_A, role: "owner" }));
     // La même écriture AVEC le champ : refusée.
-    await assertFails(setDoc(ref, { uid: COACH_A, role: "coach", coachAccess: "approved" }));
+    await assertFails(setDoc(ref, { uid: COACH_A, role: "owner", coachAccess: "approved" }));
     // Mise à jour partielle du seul champ : refusée.
     await assertFails(updateDoc(ref, { coachAccess: "not_required" }));
   });
@@ -195,7 +196,7 @@ describe("D — aucun client ne peut écrire l'état d'autorisation", () => {
     // Preuve que la règle interdit le champ, pas l'écriture du document.
     await admin(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "clubs", CLUB_A, "members", COACH_A), {
-        uid: COACH_A, role: "coach", coachAccess: "not_required",
+        uid: COACH_A, role: "owner", coachAccess: "not_required",
       });
     });
     const ref = doc(asUser(COACH_A), "clubs", CLUB_A, "members", COACH_A);

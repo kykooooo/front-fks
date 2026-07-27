@@ -34,6 +34,11 @@ import {
   type ClubWeekContext,
 } from "../../repositories/clubsRepo";
 import { normalizeTeamGender, type ClubTeamGender } from "../../domain/types";
+import {
+  isClubOwnerAuthorityInconsistent,
+  resolveClubOwnerAuthority,
+  type ClubOwnerAuthority,
+} from "../../domain/clubRoles";
 import type { ClubCoachNote } from "../../domain/clubCoachNote";
 import type { ClubTrainingDirective } from "../../domain/clubDirective";
 import { weekKeyOf } from "../../utils/dateHelpers";
@@ -58,6 +63,20 @@ export type CoachClubState = {
   clubId: string | null;
   clubName: string | null;
   teamGender: ClubTeamGender | null;
+  /**
+   * Verdict d'autorité PROPRIÉTAIRE du compte connecté sur ce club, calculé avec
+   * les deux mêmes sources que le serveur et que les règles : `ownerUid` du
+   * document club, et le rôle porté par sa propre appartenance.
+   *
+   * Il ne sert JAMAIS à ouvrir un droit — l'application n'en accorde aucun. Il
+   * sert à DIRE la vérité quand les deux sources se contredisent : sans lui, un
+   * propriétaire dont l'appartenance a disparu verrait l'effectif, le cadre et
+   * la note devenir illisibles un par un, sans explication. C'est exactement la
+   * « disparition muette » que l'invariant refuse.
+   */
+  ownerAuthority: ClubOwnerAuthority;
+  /** Raccourci : `ownerAuthority` décrit-il un état à réparer ? */
+  ownershipInconsistent: boolean;
   /** Lundi de la semaine courante ("YYYY-MM-DD"), horloge du coach. */
   weekKey: string;
   /** Cadre de la semaine tel qu'enregistré, ou null s'il n'a pas été renseigné. */
@@ -94,6 +113,8 @@ const EMPTY: Omit<CoachClubSnapshot, "weekKey"> = {
   clubId: null,
   clubName: null,
   teamGender: null,
+  ownerAuthority: "not-owner",
+  ownershipInconsistent: false,
   weekContext: null,
   weekContextUnavailable: false,
   coachNote: null,
@@ -185,6 +206,7 @@ export function useCoachClub(options?: UseCoachClubOptions): CoachClubState {
 
       let clubName: string | null = null;
       let teamGender: ClubTeamGender | null = null;
+      let ownerUid: unknown = null;
       try {
         const clubSnap = await getDoc(doc(db, "clubs", clubId));
         if (!clubSnap.exists()) {
@@ -197,12 +219,39 @@ export function useCoachClub(options?: UseCoachClubOptions): CoachClubState {
         const data = clubSnap.data() as Record<string, unknown>;
         clubName = typeof data?.name === "string" && data.name.trim() ? data.name.trim() : null;
         teamGender = normalizeTeamGender(data?.teamGender);
+        ownerUid = data?.ownerUid;
       } catch {
         if (!accept()) return;
         setState((prev) => ({ ...prev, status: "error" }));
         finish();
         return;
       }
+
+      // ── Sa PROPRE appartenance : la seconde source du prédicat d'autorité ──
+      // Une lecture de plus par chargement de club, et elle est assumée : sans
+      // elle, l'application ne peut pas faire la différence entre « ce club ne
+      // vous appartient pas » et « ce club vous désigne, mais votre appartenance
+      // ne le confirme pas ». Le document est TOUJOURS lisible par son
+      // propriétaire (`allow read: isOwner(memberId)`), donc un échec ici est un
+      // vrai incident réseau, pas un refus.
+      //
+      // Un échec de LECTURE ne doit surtout pas se transformer en incohérence
+      // affichée : « je n'ai pas pu lire mon appartenance » et « mon appartenance
+      // ne dit pas ce qu'elle devrait » sont deux choses différentes, et accuser
+      // la base sur un incident réseau serait exactement le genre de mensonge que
+      // le reste de l'espace coach s'interdit. En cas d'échec, on retombe donc
+      // sur « pas propriétaire », qui n'affirme rien et n'affiche aucun bandeau.
+      let myRole: unknown = null;
+      let membershipRead = true;
+      try {
+        const memberSnap = await getDoc(doc(db, "clubs", clubId, "members", uid));
+        myRole = memberSnap.exists() ? (memberSnap.data() as Record<string, unknown>)?.role : null;
+      } catch {
+        membershipRead = false;
+      }
+      const ownerAuthority: ClubOwnerAuthority = membershipRead
+        ? resolveClubOwnerAuthority({ ownerUid, myRole, uid })
+        : "not-owner";
 
       // Cadre de la semaine : best-effort. Son échec ne casse PAS le contexte club
       // (le coach doit pouvoir voir son effectif même si le cadre est illisible),
@@ -238,6 +287,8 @@ export function useCoachClub(options?: UseCoachClubOptions): CoachClubState {
         clubId,
         clubName,
         teamGender,
+        ownerAuthority,
+        ownershipInconsistent: isClubOwnerAuthorityInconsistent(ownerAuthority),
         weekKey,
         weekContext,
         weekContextUnavailable,

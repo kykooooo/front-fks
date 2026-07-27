@@ -55,6 +55,12 @@
 
 import { createHash, randomBytes as cryptoRandomBytes } from "crypto";
 import {
+  clubAuthoritySignal,
+  isClubStaff,
+  resolveOwnerAuthority,
+  type ClubAuthoritySignal,
+} from "./clubAuthority";
+import {
   COACH_ACCESS_FIELD,
   initialCoachAccess,
   normalizeCoachAccess,
@@ -250,8 +256,19 @@ export const ISSUE_REJECTED_CODE: InviteErrorCode = "permission-denied";
 export const ISSUE_REJECTED_MESSAGE =
   "Impossible d'emettre un code d'invitation pour ce club.";
 
-/** Raisons INTERNES d'un refus d'emission. Elles ne sortent JAMAIS de ce module. */
-export type IssueRejectionReason = "invalid-club-id" | "club-missing" | "not-coach";
+/**
+ * Raisons INTERNES d'un refus d'emission. Elles ne sortent JAMAIS de ce module.
+ *
+ * `authority-inconsistent` : `ownerUid` et l'appartenance proprietaire se
+ * contredisent (cf. clubAuthority.ts). On refuse au lieu de choisir une source,
+ * et on signale l'etat pour reparation — mais l'erreur RENDUE reste la meme que
+ * les autres, sans quoi le refus deviendrait un oracle sur l'etat du club.
+ */
+export type IssueRejectionReason =
+  | "invalid-club-id"
+  | "club-missing"
+  | "not-coach"
+  | "authority-inconsistent";
 
 /**
  * Traduit une raison interne d'emission en erreur publique. Comme pour le
@@ -489,6 +506,12 @@ export type InviteDeps = {
   now: () => number;
   /** Journalisation SOBRE : appelee UNIQUEMENT au franchissement d'un seuil. */
   onAbuse?: (signal: AbuseSignal) => void;
+  /**
+   * Journal de REPARATION de l'autorite du club (clubAuthority.ts). Appele
+   * uniquement quand `ownerUid` et l'appartenance proprietaire se contredisent.
+   * Distinct de `onAbuse` : ce n'est pas un abus, c'est un etat a reparer.
+   */
+  onInconsistency?: (signal: ClubAuthoritySignal) => void;
   /** Injection de l'alea (tests). */
   randomBytes?: (n: number) => Uint8Array;
 };
@@ -605,7 +628,7 @@ export type IssueResult = {
 
 type IssueTxOutcome =
   | { ok: true; result: IssueResult }
-  | { ok: false; reason: IssueRejectionReason };
+  | { ok: false; reason: IssueRejectionReason; signal?: ClubAuthoritySignal | null };
 
 /**
  * Emet un code pour un club. AUTORISATION VERIFIEE SERVEUR : owner du club, ou
@@ -655,13 +678,23 @@ export async function issueInviteCode(
       const club = await tx.get(invitePaths.club(clubId));
       if (!club) return { ok: false, reason: "club-missing" };
 
-      const isOwner = typeof club.ownerUid === "string" && club.ownerUid === uid;
-      let isCoach = false;
-      if (!isOwner) {
-        const member = await tx.get(invitePaths.member(clubId, uid));
-        isCoach = !!member && member.role === "coach";
-      }
-      if (!isOwner && !isCoach) return { ok: false, reason: "not-coach" };
+      // ── AUTORITE : LE PREDICAT PARTAGE, ET RIEN D'AUTRE ─────────────────
+      // L'ancienne version accordait l'emission sur `club.ownerUid === uid`
+      // SEUL, sans jamais lire l'appartenance. C'etait exactement ce que
+      // l'invariant interdit : une source unique, falsifiable par un etat
+      // historique abime, qui decidait d'un droit. Le membership est desormais
+      // lu dans TOUS les cas, et c'est lui qui porte l'encadrement.
+      const member = await tx.get(invitePaths.member(clubId, uid));
+      const authority = resolveOwnerAuthority(club, member, uid);
+      const signal = clubAuthoritySignal(
+        { clubId, uid, action: "issueClubInviteCode" },
+        authority,
+      );
+      // Incoherence : on refuse ET on signale, jamais l'un sans l'autre.
+      if (signal) return { ok: false, reason: "authority-inconsistent", signal };
+      // Encadrant = appartenance active portant "owner" ou "coach". Le
+      // proprietaire coherent passe par ici : "owner" est un role d'encadrement.
+      if (!isClubStaff(member)) return { ok: false, reason: "not-coach" };
 
       const meta = await tx.get(invitePaths.meta(clubId));
       const previousHash = typeof meta?.activeCodeHash === "string" ? meta.activeCodeHash : null;
@@ -707,6 +740,9 @@ export async function issueInviteCode(
   }
 
   if (!outcome.ok) {
+    // Signalement HORS transaction : un rejeu pour contention ne doit pas
+    // multiplier les lignes de journal.
+    if (outcome.signal) deps.onInconsistency?.(outcome.signal);
     await recordAttemptFailure(deps, ISSUE_ATTEMPT_POLICY, scopes, uid, now);
     throw issueRejectedError(outcome.reason);
   }

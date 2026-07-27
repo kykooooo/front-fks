@@ -77,6 +77,7 @@ import {
 } from "../../domain/coachView/identityLabels";
 import { coachStatusPrecision } from "../../domain/coachView/statusLabel";
 import { coachAccessRosterCopy } from "../../domain/coachAccess";
+import { clubOwnerInconsistencyCopy } from "../../domain/clubRoles";
 import type { CoachPlayerView } from "../../domain/coachView/types";
 import { MEMBERS_FETCH_LIMIT } from "../../repositories/clubsRepo";
 import { useCoachClub } from "../../hooks/coach/useCoachClub";
@@ -276,6 +277,13 @@ export default function CoachRosterScreen({ filtreInitial = null }: CoachRosterS
 
   const requete = query.trim();
   const genre = club.teamGender;
+
+  // Autorité du club incohérente : `ownerUid` désigne ce compte sans que son
+  // appartenance le confirme (ou l'inverse). L'effectif sera illisible — c'est le
+  // refus voulu — mais on ne laisse PAS le coach devant un écran vide sans
+  // explication : on nomme l'état et le geste. Le serveur, de son côté, journalise
+  // l'anomalie pour réparation (functions/src/clubMembersApi.ts).
+  const incoherenceClub = clubOwnerInconsistencyCopy(club.ownerAuthority);
 
   // ── Rangée de filtres : rendre le défilement VISIBLE ───────────────────────
   // La rangée de puces déborde à TOUTES les largeurs testées (510 pt masqués à
@@ -480,6 +488,14 @@ export default function CoachRosterScreen({ filtreInitial = null }: CoachRosterS
   // ── Bandeaux d'honnêteté : ce qu'on n'a pas pu lire, et depuis quand ────────
   const bandeaux = (
     <View style={styles.bandeaux}>
+      {incoherenceClub ? (
+        <Bandeau
+          icone="build-outline"
+          titre={incoherenceClub.titre}
+          corps={incoherenceClub.corps}
+          testID="coach-roster-authority"
+        />
+      ) : null}
       {roster.isStale ? (
         <Bandeau
           icone="cloud-offline-outline"
@@ -613,6 +629,24 @@ export default function CoachRosterScreen({ filtreInitial = null }: CoachRosterS
         <View style={styles.chargement}>
           <CoachSkeleton variant="list" rows={6} testID="coach-roster-skeleton" />
         </View>
+      </CoachScreen>
+    );
+  }
+
+  // AUTORITÉ INCOHÉRENTE ET EFFECTIF ILLISIBLE : l'état de premier rang. Sans
+  // cette branche, ce coach tomberait sur « Aucun effectif n'a pu être lu » —
+  // formulation qui désigne une panne alors qu'il s'agit d'un refus délibéré,
+  // réparable, et dont on connaît précisément la cause.
+  if (incoherenceClub && views.length === 0) {
+    return (
+      <CoachScreen testID="coach-roster">
+        <CoachStateBlock
+          icon="build-outline"
+          title={incoherenceClub.titre}
+          body={incoherenceClub.details}
+          action={{ label: "Réessayer", onPress: club.refresh }}
+          testID="coach-roster-authority-block"
+        />
       </CoachScreen>
     );
   }

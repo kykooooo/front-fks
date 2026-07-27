@@ -331,7 +331,14 @@ function readDeviationReasons(execution: RawDoc): string[] {
 export function projectPlayerSummary(input: ProjectorInput): CoachPlayerSummaryCore | null {
   const { playerUid, clubId, membership, profile, sessions, plannedSessions } = input;
 
-  // 1) Membership requis + role player strict.
+  // 1) Membership requis + role player STRICT.
+  //
+  // C'est aussi ce qui rend le RETRAIT d'un membre insensible aux courses : le
+  // retrait pose une pierre tombale (`role: "removed"`, cf. clubMembers.ts), et
+  // toute reprojection ulterieure — declenchee par une seance que le joueur
+  // continue d'enregistrer — relit ce role, renvoie `null`, donc SUPPRIME la
+  // projection au lieu de la recreer. Le refus vient de l'ETAT, pas de l'ordre
+  // d'arrivee des evenements.
   if (!membership || membership.role !== "player") return null;
 
   // 1 bis) AUTORISATION D'ACCÈS (default-deny). Deuxième couche de verrou, la

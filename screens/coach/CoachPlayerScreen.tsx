@@ -25,7 +25,7 @@
 // `execution` est absente : on le DIT en toutes lettres. Aucune barre à 0 %,
 // aucun compteur inventé — un zéro se lirait comme « il n'a rien fait ».
 
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
   RefreshControl,
@@ -58,6 +58,7 @@ import {
 } from "../../components/coach/coachTheme";
 import { useCoachPlayer } from "../../hooks/coach/useCoachPlayer";
 import { useCoachNowMs } from "../../hooks/coach/useCoachNowMs";
+import { useRemoveClubMember } from "../../hooks/coach/useRemoveClubMember";
 import {
   buildExecutionBreakdown,
   buildFreshness,
@@ -226,6 +227,12 @@ export default function CoachPlayerScreen() {
           <HistoriqueSection evenements={timeline} />
           <AssiduiteSection assiduite={view.assiduite} />
           <ActionsSection onBack={onBack} onRefresh={refresh} refreshing={isRefreshing} />
+          <RetraitSection
+            clubId={clubId}
+            playerUid={playerUid}
+            prenom={(view.prenom ?? "").trim()}
+            onRetireEtRevenir={onBack}
+          />
           <PiedDePage />
         </>
       )}
@@ -848,12 +855,14 @@ function ActionBouton({
   onPress,
   hint,
   disabled = false,
+  testID,
 }: {
   icone: CoachIconName;
   label: string;
   onPress: () => void;
   hint: string;
   disabled?: boolean;
+  testID?: string;
 }) {
   return (
     <Pressable
@@ -868,9 +877,183 @@ function ActionBouton({
         pressed && styles.actionPressee,
         disabled && styles.actionDesactivee,
       ]}
+      testID={testID}
     >
       <Ionicons name={icone} size={16} color={coachColors.accent} />
       <Text style={styles.actionLabel} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+// ─── 7 bis. Retrait de l'effectif ────────────────────────────────────────────
+//
+// LA SEULE ÉCRITURE DE CET ÉCRAN, et elle est irréversible côté club. Trois
+// exigences la gouvernent :
+//
+//  1. DIRE CE QUE ÇA FAIT, ET SURTOUT CE QUE ÇA NE FAIT PAS. « Retirer du club »
+//     et « supprimer le compte » sont deux gestes que rien ne distingue dans le
+//     vocabulaire courant. Le second n'existe pas ici — un joueur retiré garde
+//     son compte FKS, son historique et ses séances. C'est écrit à l'écran, en
+//     toutes lettres, AVANT la confirmation.
+//  2. CONFIRMER AVANT D'AGIR. La confirmation est un second geste explicite dans
+//     la carte, pas une boîte système : elle laisse le texte sous les yeux au
+//     moment où l'on décide, au lieu de le remplacer par deux boutons nus.
+//  3. NE JAMAIS ANTICIPER LE VERDICT. L'action est proposée à tout le monde ;
+//     c'est le serveur qui refuse, et son refus est affiché tel quel. Masquer le
+//     bouton « au cas où » aurait demandé de dupliquer le prédicat d'autorité
+//     dans l'écran — donc de le laisser dériver.
+//
+// Le cas du PROPRIÉTAIRE arrive ici par la voie normale : le serveur répond
+// l'échec typé OWNER_TRANSFER_REQUIRED, et `services/clubMembers` le traduit en
+// une phrase qui nomme le geste à faire (transférer la propriété d'abord).
+
+function RetraitSection({
+  clubId,
+  playerUid,
+  prenom,
+  onRetireEtRevenir,
+}: {
+  clubId: string | null;
+  playerUid: string | null;
+  prenom: string;
+  onRetireEtRevenir: () => void;
+}) {
+  const [confirmation, setConfirmation] = useState(false);
+  const { phase, isRemoving, remove, reset } = useRemoveClubMember(clubId, playerUid);
+  const nom = prenom || "ce joueur";
+
+  // Le retrait a abouti : on le dit ici ET on ramène le coach vers l'effectif,
+  // qui relira la liste. Le toast est le seul message qui survit à la navigation.
+  const dejaAnnonceRef = useRef(false);
+  useEffect(() => {
+    if (phase.kind !== "done" || dejaAnnonceRef.current) return;
+    dejaAnnonceRef.current = true;
+    showToast({
+      type: "success",
+      title: phase.alreadyRemoved ? "Déjà retiré" : "Membre retiré",
+      // Le rappel « le compte n'est pas supprimé » est répété ICI aussi : c'est
+      // le moment où le doute arrive, une fois le geste fait.
+      message: phase.alreadyRemoved
+        ? `${nom} ne faisait déjà plus partie de l'effectif.`
+        : `${nom} ne fait plus partie de l'effectif. Son compte FKS reste intact.`,
+    });
+  }, [phase, nom]);
+
+  if (phase.kind === "done") {
+    return (
+      <CoachSectionCard title="Effectif du club" testID="coach-player-retrait">
+        <Text style={styles.retraitTexte} numberOfLines={4}>
+          {phase.alreadyRemoved
+            ? `${nom} ne faisait déjà plus partie de l'effectif de ce club.`
+            : `${nom} a été retiré de l'effectif. Son compte FKS, ses séances et son historique personnel n'ont pas été touchés.`}
+        </Text>
+        <View style={styles.actions}>
+          <ActionBouton
+            icone="people-outline"
+            label="Revenir à l'effectif"
+            onPress={onRetireEtRevenir}
+            hint="Retourne à la liste des joueurs du club"
+          />
+        </View>
+      </CoachSectionCard>
+    );
+  }
+
+  return (
+    <CoachSectionCard title="Effectif du club" testID="coach-player-retrait">
+      {confirmation ? (
+        <>
+          <Text style={styles.retraitTitreConfirme} numberOfLines={2}>
+            {`Retirer ${nom} de l'effectif ?`}
+          </Text>
+          <Text style={styles.retraitTexte} numberOfLines={6} testID="coach-player-retrait-portee">
+            {`Ce que fait ce retrait : ${nom} ne fait plus partie de l'effectif de ce club. Vous ne verrez plus son suivi, et il ne verra plus le cadre de la semaine ni la directive.`}
+          </Text>
+          {/* La phrase que le produit doit tenir, écrite noir sur blanc. */}
+          <Text style={styles.retraitTexteFort} numberOfLines={4} testID="coach-player-retrait-compte">
+            Le retrait du club ne supprime JAMAIS le compte FKS du joueur. Son compte, ses séances et
+            son historique personnel lui appartiennent et restent intacts.
+          </Text>
+          {phase.kind === "failed" ? (
+            <Text style={styles.retraitErreur} numberOfLines={4} testID="coach-player-retrait-erreur">
+              {phase.message}
+            </Text>
+          ) : null}
+          <View style={styles.actions}>
+            <ActionBouton
+              icone="close-outline"
+              label="Annuler"
+              onPress={() => {
+                reset();
+                setConfirmation(false);
+              }}
+              hint="Ferme la confirmation sans rien changer"
+              disabled={isRemoving}
+              testID="coach-player-retrait-annuler"
+            />
+            <RetraitBouton
+              label={isRemoving ? "Retrait…" : "Confirmer le retrait"}
+              onPress={remove}
+              disabled={isRemoving}
+              testID="coach-player-retrait-confirmer"
+            />
+          </View>
+        </>
+      ) : (
+        <>
+          <Text style={styles.retraitTexte} numberOfLines={4}>
+            {`Retirer ${nom} de l'effectif met fin au suivi côté club. Son compte FKS n'est pas concerné.`}
+          </Text>
+          <View style={styles.actions}>
+            <RetraitBouton
+              label="Retirer du club"
+              onPress={() => setConfirmation(true)}
+              testID="coach-player-retrait-ouvrir"
+            />
+          </View>
+        </>
+      )}
+    </CoachSectionCard>
+  );
+}
+
+/**
+ * Bouton de retrait. Reprend EXACTEMENT la forme d'`ActionBouton` (même hauteur,
+ * même rayon, même icône à gauche) et n'en change que le ton, avec le rouge
+ * brique DÉJÀ défini dans le thème coach (`danger`) : aucune cinquième couleur
+ * n'entre dans le design system pour ce lot.
+ */
+function RetraitBouton({
+  label,
+  onPress,
+  disabled = false,
+  testID,
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  testID?: string;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint="Retire ce membre de l'effectif du club. Le compte FKS du joueur n'est pas supprimé."
+      accessibilityState={{ disabled }}
+      style={({ pressed }) => [
+        styles.action,
+        styles.actionRetrait,
+        pressed && styles.actionPressee,
+        disabled && styles.actionDesactivee,
+      ]}
+      testID={testID}
+    >
+      <Ionicons name="person-remove-outline" size={16} color={coachColors.danger} />
+      <Text style={[styles.actionLabel, styles.actionLabelRetrait]} numberOfLines={1}>
         {label}
       </Text>
     </Pressable>
@@ -1279,6 +1462,43 @@ const styles = StyleSheet.create({
     lineHeight: coachType.legende.lineHeight,
     fontWeight: "700",
     color: coachColors.accent,
+  },
+
+  // Retrait de l'effectif : même géométrie que les autres actions, ton `danger`
+  // du thème coach (aucune couleur nouvelle). Le rouge n'est JAMAIS seul à dire
+  // que l'action est à part : l'icône, le libellé et la confirmation le disent
+  // aussi, pour qui ne distingue pas les teintes.
+  actionRetrait: {
+    borderColor: coachColors.dangerBorder,
+    backgroundColor: coachColors.dangerSoft,
+  },
+  actionLabelRetrait: { color: coachColors.danger },
+  retraitTitreConfirme: {
+    fontSize: coachType.corpsFort.fontSize,
+    lineHeight: coachType.corpsFort.lineHeight,
+    fontWeight: coachType.corpsFort.fontWeight,
+    color: coachColors.text,
+    marginBottom: coachSpacing.xxs,
+  },
+  retraitTexte: {
+    fontSize: coachType.legende.fontSize,
+    lineHeight: coachType.legende.lineHeight,
+    color: coachColors.sub,
+    marginBottom: coachSpacing.xs,
+  },
+  retraitTexteFort: {
+    fontSize: coachType.legende.fontSize,
+    lineHeight: coachType.legende.lineHeight,
+    fontWeight: "700",
+    color: coachColors.text,
+    marginBottom: coachSpacing.xs,
+  },
+  retraitErreur: {
+    fontSize: coachType.legende.fontSize,
+    lineHeight: coachType.legende.lineHeight,
+    fontWeight: "600",
+    color: coachColors.danger,
+    marginBottom: coachSpacing.xs,
   },
 
   // Provenance + pied de page
