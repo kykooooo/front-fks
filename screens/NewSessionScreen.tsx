@@ -8,6 +8,7 @@ import {
   ScrollView,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getAuth } from "firebase/auth";
 import { Screen } from "../components/ui/Screen";
 import { useNavigation, NavigationProp, useFocusEffect } from "@react-navigation/native";
 import { useLoadStore } from "../state/stores/useLoadStore";
@@ -26,8 +27,12 @@ import {
 import { isSameDay, RESET_VARIANT_FALLBACKS } from "./newSession/helpers";
 import { prepareBackendContext, fetchV2, getSessionCache, setSessionCache, clearSessionCache } from "./newSession/api";
 import { processV2 } from "./newSession/orchestrator";
-import { buildFallbackSession } from "./newSession/fallback";
-import { classifyError, ErrorType, getErrorTitle } from "../utils/errorHandler";
+import {
+  creerVerrouGeneration,
+  decisionApresEchec,
+  type DecisionApresEchec,
+} from "./newSession/echecGeneration";
+import { CarteEchecGeneration } from "./newSession/ui/CarteEchecGeneration";
 import { showToast } from "../utils/toast";
 import { LoadingOverlay } from "../components/ui/LoadingOverlay";
 import { ResetVariantModal } from "./newSession/ResetVariantModal";
@@ -95,6 +100,7 @@ const EQUIPMENT_CATALOG = [
 type RootStackParamList = {
   Home: undefined;
   NewSession: undefined;
+  Tabs: { screen?: "Home" | "NewSession" | "Profile" } | undefined;
   Feedback: { sessionId?: string } | undefined;
   ExternalLoad: undefined;
   SessionPreview: {
@@ -165,6 +171,12 @@ export default function NewSessionScreen() {
   const [generating, setGenerating] = useState(false);
   const [wakingServer, setWakingServer] = useState(false);
   const [resetChoice, setResetChoice] = useState<ResetChoiceState>(null);
+  // État d'échec : une panne reste une panne. Jamais de séance fabriquée ici.
+  const [echec, setEchec] = useState<DecisionApresEchec | null>(null);
+  // Reflet UI du verrou : tant qu'une requête est en vol (même après un
+  // "Annuler", qui n'interrompt pas l'appel), on ne relance pas — ce serait
+  // une deuxième génération payante en parallèle.
+  const [requeteEnVol, setRequeteEnVol] = useState(false);
   const [cachePrompt, setCachePrompt] = useState<{
     cached: { v2: FKS_NextSessionV2; debug: Record<string, unknown> };
     preparedCtx: Record<string, unknown>;
@@ -194,6 +206,8 @@ export default function NewSessionScreen() {
   useEffect(() => {
     setSetupDone(false);
     setCachePrompt(null);
+    // Le joueur a changé son contexte : l'échec précédent ne le décrit plus.
+    setEchec(null);
   }, [environment.join("|"), selectedEquipment.join("|")]);
 
   // Même fenêtre que FeedbackScreen (aujourd'hui, J-1, J-2, demain) : une
@@ -320,13 +334,20 @@ export default function NewSessionScreen() {
   // Annulation : le fetch continue en arrière-plan mais son résultat est ignoré
   // (jeton de génération) — l'utilisateur reprend la main immédiatement.
   const generationIdRef = useRef(0);
+  // Verrou synchrone : un double-tap ne doit jamais lancer deux requêtes
+  // payantes. Il n'est rendu qu'une fois la requête réellement terminée.
+  const verrouRef = useRef(creerVerrouGeneration());
   const cancelGeneration = useCallback(() => {
     generationIdRef.current += 1;
     setGenerating(false);
     setWakingServer(false);
     setContextLoading(false);
     trackEvent("session_generate_cancelled", {});
-    showToast({ type: "info", title: "Génération annulée", message: "Tu peux relancer quand tu veux." });
+    showToast({
+      type: "info",
+      title: "Génération annulée",
+      message: "La demande en cours se termine côté serveur, tu pourras relancer juste après.",
+    });
   }, []);
 
   // Disable header back button while generating
@@ -357,6 +378,11 @@ export default function NewSessionScreen() {
    *  GÉNÉRATION DE SÉANCE
    * ------------------------------------------------------------------ */
   const handleGenerate = async () => {
+    // Anti double-clic : tant que la requête précédente n'est pas retombée,
+    // on ne relance rien (une relance = jusqu'à 4 appels payants de plus).
+    if (!verrouRef.current.prendre()) return;
+    setRequeteEnVol(true);
+    setEchec(null);
     try {
       if (!cycleId) {
         showToast({ type: "warn", title: "Choisir un cycle", message: "Choisis ton cycle avant de générer des séances." });
@@ -481,63 +507,65 @@ export default function NewSessionScreen() {
       });
       await trackFirstSessionGeneratedIfNeeded();
     } catch (err: any) {
-      if (err?.code === "AUTH_REQUIRED") {
-        showToast({ type: "error", title: "Connexion requise", message: "Connecte-toi pour enregistrer la séance." });
-        return;
-      }
-
-      // Classifier l'erreur pour obtenir un message clair
-      const appError = classifyError(err);
-      trackEvent("session_generate_error", {
-        cycleId: cycleId ?? "none",
-        code: err?.code ?? "unknown",
-        type: appError.type,
+      // AUCUNE écriture ici : pas de pushSession, pas de persistPlanned, pas de
+      // setLastAiSessionV2, pas de navigation vers la séance. Une panne ne
+      // devient pas une prescription — on rend un état d'erreur, point.
+      const decision = decisionApresEchec({
+        erreur: err,
+        sessions,
+        todayKey: toDateKey(now),
+        uid: getAuth().currentUser?.uid ?? null,
       });
 
-      // Log en mode dev pour debug
+      trackEvent("session_generate_error", {
+        cycleId: cycleId ?? "none",
+        code: decision.echec.code ?? "client",
+        categorie: decision.echec.categorie,
+        retryable: decision.echec.retryable,
+      });
+
+      // Log technique réservé au dev — jamais montré au joueur.
       if (__DEV__) {
-        console.error("Generate & persist planned session failed", {
-          type: appError.type,
-          message: appError.message,
-          technical: appError.technicalDetails,
+        console.error("Generation de seance echouee", {
+          code: decision.echec.code,
+          categorie: decision.echec.categorie,
+          message: err?.message,
         });
       }
 
-      // Si c'est une erreur réseau/serveur/timeout, on utilise le fallback
-      const shouldUseFallback =
-        appError.type === ErrorType.NETWORK ||
-        appError.type === ErrorType.SERVER ||
-        appError.type === ErrorType.TIMEOUT;
-
-      if (shouldUseFallback) {
-        const todayISO = toDateKey(now);
-        const { session, aiV2 } = buildFallbackSession(todayISO, phase as any);
-        pushSession({ ...session, aiV2 } as any);
-        showToast({ type: "warn", title: "Séance de secours", message: "Une séance cardio+mobilité de secours a été préparée pour toi." });
-        nav.navigate("SessionPreview", {
-          v2: aiV2 as any,
-          plannedDateISO: todayISO,
-          sessionId: session.id,
-        });
-      } else {
-        showToast({
-          type: appError.type === ErrorType.RATE_LIMIT ? "warn" : "error",
-          title: getErrorTitle(appError.type),
-          message: appError.userMessage,
-        });
-      }
+      setEchec(decision);
     } finally {
       setGenerating(false);
       setWakingServer(false);
       // Toujours relâcher le flag contexte : s'il reste bloqué à true, le CTA
       // "Générer" est définitivement grisé (buildAIPromptContext peut throw).
       setContextLoading(false);
+      verrouRef.current.rendre();
+      setRequeteEnVol(false);
     }
   };
 
   const goFeedback = () => {
     if (!current) return;
     nav.navigate("Feedback", { sessionId: current.id });
+  };
+
+  /**
+   * Rouvre une VRAIE séance déjà prescrite, validée et persistée.
+   * Ce n'est pas un repli : rien n'est fabriqué, rien n'est créé, aucune
+   * génération n'est présentée comme réussie. Les séances artificielles de
+   * l'ancienne "séance de secours" sont refusées en amont (chercherRepriseSeance).
+   */
+  const reprendreSeanceReelle = () => {
+    const reprise = echec?.reprise;
+    if (!reprise?.reouvrable) return;
+    const seance = reprise.seance;
+    setEchec(null);
+    nav.navigate("SessionPreview", {
+      v2: seance.aiV2 as unknown as FKS_NextSessionV2,
+      plannedDateISO: toDateKey(seance.dateISO ?? seance.date),
+      sessionId: seance.id,
+    });
   };
 
   const useCachedSession = async () => {
@@ -699,6 +727,36 @@ export default function NewSessionScreen() {
           </View>
         )}
 
+        {/* ÉCHEC DE GÉNÉRATION — état d'erreur, jamais une séance de secours.
+            Rendu hors des branches "séance en cours / pas de séance" pour
+            rester visible dans tous les cas, y compris quand une vraie séance
+            existe déjà et peut être rouverte. */}
+        {echec ? (
+          <CarteEchecGeneration
+            echec={echec.echec}
+            actions={echec.actions}
+            occupe={generating || requeteEnVol}
+            onReessayer={handleGenerate}
+            onModifierContraintes={() => {
+              setEchec(null);
+              setSetupDone(false);
+            }}
+            onChoisirCycle={() => {
+              setEchec(null);
+              nav.navigate("CycleModal", { mode: "select", origin: "newSession" });
+            }}
+            onSeReconnecter={() => {
+              setEchec(null);
+              nav.navigate("Tabs", { screen: "Profile" });
+            }}
+            onReprendreSeance={reprendreSeanceReelle}
+            onRetourAccueil={() => {
+              setEchec(null);
+              nav.navigate("Tabs", { screen: "Home" });
+            }}
+          />
+        ) : null}
+
 	      {/* SI PAS DE SÉANCE EN COURS */}
 	      {!current ? (
 	        cycleId && !cycleCompleted ? (
@@ -760,9 +818,9 @@ export default function NewSessionScreen() {
           ) : null}
 
           {/* Étape 2 : CTA Génération (affiché après validation) */}
-	          {setupDone && !cachePrompt ? (
+	          {setupDone && !cachePrompt && !echec ? (
 	            <GenerationActions
-	              disabled={contextLoading || generating || !storeHydrated || !!current}
+	              disabled={contextLoading || generating || requeteEnVol || !storeHydrated || !!current}
 	              generating={generating}
 	              label={generateLabel}
 	              onGenerate={handleGenerate}

@@ -56,10 +56,48 @@ export function getPendingSessions(sessions: Session[]): Session[] {
 }
 
 /**
+ * Marqueurs de l'ancienne "séance de secours" fabriquée côté app (supprimée le
+ * 27/07/2026). Elle n'a jamais été prescrite par le moteur : ni matériel, ni
+ * douleurs, ni cycle du joueur n'étaient pris en compte.
+ *
+ * SEUL ENDROIT du code de production où ces marqueurs ont le droit d'exister :
+ * ici, pour RECONNAÎTRE et REFUSER ces séances, jamais pour en créer.
+ * Vérifié par screens/newSession/__tests__/aucuneSeanceDeSecours.test.ts.
+ */
+const PREFIXE_ID_ARTIFICIEL = 'fallback_';
+const GARDE_FOU_ARTIFICIEL = 'fallback_safe';
+
+function lireGardeFous(source: unknown): string[] {
+  if (!source || typeof source !== 'object') return [];
+  const objet = source as Record<string, unknown>;
+  const brut = objet.guardrailsApplied ?? objet.guardrails_applied;
+  return Array.isArray(brut) ? brut.filter((v): v is string => typeof v === 'string') : [];
+}
+
+/**
+ * Une séance "artificielle" est une séance que personne n'a prescrite : elle
+ * vient de l'ancienne fabrique locale de séance de secours.
+ *
+ * On ne l'efface pas (l'historique déjà persisté reste lisible), mais elle ne
+ * doit JAMAIS être rouverte, ni comptée comme la séance du jour, ni relancée.
+ */
+export function estSeanceArtificielle(session: Session | any): boolean {
+  if (!session || typeof session !== 'object') return false;
+
+  const id = typeof session.id === 'string' ? session.id : '';
+  if (id.startsWith(PREFIXE_ID_ARTIFICIEL)) return true;
+
+  const gardeFous = [...lireGardeFous(session), ...lireGardeFous(session.aiV2)];
+  return gardeFous.includes(GARDE_FOU_ARTIFICIEL);
+}
+
+/**
  * Séance "en attente" = non complétée ET dans la fenêtre de validation
  * (aujourd'hui, J-1, J-2, demain — voir isWithinFeedbackWindow).
  * Une séance non complétée hors fenêtre est une "zombie" : elle est ignorée
  * ici pour ne jamais bloquer la génération ni le CTA du Home.
+ * Les séances artificielles (ancienne séance de secours) sont écartées de la
+ * même façon : une panne passée ne doit pas devenir la séance du jour.
  * Utilisé par usePrimaryCta, NewSessionScreen et SessionHubScreen.
  */
 export function selectPendingSession(
@@ -68,6 +106,7 @@ export function selectPendingSession(
 ): Session | undefined {
   return [...sessions]
     .filter((s) => !s.completed)
+    .filter((s) => !estSeanceArtificielle(s))
     .filter((s) => isWithinFeedbackWindow(getSessionDate(s), todayKey))
     .sort((a, b) => {
       const da = getSessionDayKey(a);
