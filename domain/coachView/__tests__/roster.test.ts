@@ -48,6 +48,9 @@ const adaptee = makeView(
       durationMin: 40,
       blockCount: 4,
     },
+    // 8 faits + 0 adapté + 0 remplacé = 8 sur 10 exercices → 80 %, la valeur
+    // transmise. Les compteurs somment ici exactement au total : aucun exercice
+    // sans statut connu.
     execution: {
       completionPct: 80,
       completionStatus: "partial",
@@ -55,6 +58,9 @@ const adaptee = makeView(
       itemsAdapted: 0,
       itemsSkipped: 2,
       itemsReplaced: 0,
+      itemsReplacedEquivalent: 0,
+      itemsReplacedPartial: 0,
+      itemsTotal: 10,
       deviationLabels: ["Manque de temps"],
     },
   },

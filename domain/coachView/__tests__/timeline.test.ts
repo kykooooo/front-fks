@@ -1,5 +1,13 @@
 // domain/coachView/__tests__/timeline.test.ts
 // « Que s'est-il passé ? » : uniquement des faits datés, du plus récent au plus ancien.
+//
+// FIXTURES D'EXÉCUTION : elles doivent rester des états que le serveur peut
+// réellement produire, sinon un test passe sur des données impossibles. La règle
+// (miroir de functions/src/projector.ts et de domain/coachView/execution.ts) :
+//   somme pondérée = faits + adaptés + remplacés équivalents + 0,5 × remplacés partiels
+//   pourcentage    = arrondi(somme pondérée ÷ nombre TOTAL d'exercices × 100)
+// Les exercices sautés ou sans statut connu comptent dans le total en pesant 0 :
+// les compteurs ne somment donc pas toujours au total, mais ne le dépassent jamais.
 
 import { buildPlayerTimeline, timelineEventDateLabel } from "../timeline";
 import { makeView } from "./fixtures";
@@ -97,13 +105,19 @@ describe("buildPlayerTimeline", () => {
           durationMin: 40,
           blockCount: 4,
         },
+        // 7 faits + 2 adaptés + 0 remplacé = 9 sur 10 exercices → 90 %.
+        // (L'ancien 70 % de cette fixture était IMPOSSIBLE avec ces compteurs :
+        // aucun total entier ne le produit — cf. note en tête du fichier.)
         execution: {
-          completionPct: 70,
+          completionPct: 90,
           completionStatus: "partial",
           itemsDone: 7,
           itemsAdapted: 2,
           itemsSkipped: 1,
           itemsReplaced: 0,
+          itemsReplacedEquivalent: 0,
+          itemsReplacedPartial: 0,
+          itemsTotal: 10,
           deviationLabels: ["Manque de temps"],
         },
       },
@@ -114,7 +128,7 @@ describe("buildPlayerTimeline", () => {
     // « des exercices réalisés » et non « réalisé » tout court : le pourcentage
     // compte des exercices, il ne mesure ni l'effort ni la qualité de la séance.
     expect(ecarts?.contexte).toBe(
-      "70 % des exercices réalisés · 7 exercices faits, 2 adaptés, 1 sauté, raison : Manque de temps",
+      "90 % des exercices réalisés · 7 exercices faits, 2 adaptés, 1 sauté, raison : Manque de temps",
     );
     expect(ecarts?.source).toBe("execution");
   });
@@ -123,6 +137,9 @@ describe("buildPlayerTimeline", () => {
     const view = makeView(
       {
         activity: { doneDateKeys: ["2026-07-26"] },
+        // Cas DÉGRADÉ voulu : le serveur ne transmet que le statut, aucun
+        // compteur. Les trois champs de détail restent donc `null` eux aussi —
+        // on ne fabrique ni total ni nuance de remplacement.
         execution: {
           completionPct: null,
           completionStatus: "full",
@@ -130,6 +147,9 @@ describe("buildPlayerTimeline", () => {
           itemsAdapted: null,
           itemsSkipped: null,
           itemsReplaced: null,
+          itemsReplacedEquivalent: null,
+          itemsReplacedPartial: null,
+          itemsTotal: null,
           deviationLabels: [],
         },
       },
@@ -180,6 +200,9 @@ describe("buildPlayerTimeline", () => {
       {
         activity: { doneDateKeys: ["2026-07-26"] },
         adaptation: { adapted: true, labels: ["Volume réduit"] },
+        // 4 faits sur 8 exercices → 50 %, la valeur transmise. 4 + 3 sautés = 7 :
+        // le 8e exercice est resté sans statut (séance abandonnée), il compte
+        // dans le total en pesant 0. Les compteurs ne somment donc pas au total.
         execution: {
           completionPct: 50,
           completionStatus: "abandoned",
@@ -187,6 +210,9 @@ describe("buildPlayerTimeline", () => {
           itemsAdapted: 0,
           itemsSkipped: 3,
           itemsReplaced: 0,
+          itemsReplacedEquivalent: 0,
+          itemsReplacedPartial: 0,
+          itemsTotal: 8,
           deviationLabels: ["Autre raison"],
         },
       },

@@ -167,8 +167,11 @@ describe("toCoachPlayerView — exécution (boucle de suivi joueur)", () => {
           durationMin: 45,
           blockCount: 5,
         },
+        // 8 faits + 2 adaptés + 0 remplacé = 10 sur 11 exercices → 91 %.
+        // (Le 72 % d'origine ne pouvait sortir d'aucun total entier avec ces
+        // compteurs : la fixture décrivait une séance impossible.)
         execution: {
-          completionPct: 72,
+          completionPct: 91,
           completionStatus: "partial",
           itemsDone: 8,
           itemsAdapted: 2,
@@ -183,7 +186,7 @@ describe("toCoachPlayerView — exécution (boucle de suivi joueur)", () => {
       TODAY,
     );
     expect(view.execution).toEqual({
-      pourcentage: 72,
+      pourcentage: 91,
       statut: "partielle",
       statutLibelle: "Séance réalisée en partie",
       fait: 8,
