@@ -99,6 +99,62 @@ export function isClubOwnerAuthorityInconsistent(authority: ClubOwnerAuthority):
   );
 }
 
+/**
+ * Ce que l'écran d'un MEMBRE dit de sa propre appartenance.
+ *
+ * Pourquoi ça existe (2026-07, lot transfert de propriété) : la carte « Mon
+ * club » des réglages proposait « Quitter le club » à tout le monde. Or les
+ * règles Firestore refusent au propriétaire de supprimer son appartenance — sa
+ * disparition fabriquerait un `ownerUid` qui désigne un non-membre, exactement
+ * l'incohérence que l'invariant proscrit. Le bouton existait donc pour quelqu'un
+ * chez qui il ne pouvait JAMAIS marcher, et l'échec s'affichait en « Réessaie »,
+ * c'est-à-dire un conseil faux.
+ *
+ * Ce n'était visible de personne avant ce lot, puisqu'un propriétaire est un
+ * coach et ne voit pas cet écran. Le transfert change ça : un JOUEUR peut
+ * désormais devenir propriétaire, et il garde l'application joueur.
+ *
+ * Cette fonction n'accorde aucun droit — elle dit la vérité, et elle enlève un
+ * bouton plutôt que de laisser une erreur l'expliquer.
+ */
+export function clubMembershipCopy(role: unknown): {
+  /** Ligne d'état sous le nom du club. */
+  statut: string;
+  /** Pastille de rôle. */
+  badge: string;
+  /** Le départ volontaire est-il possible ? (le serveur reste seul juge) */
+  peutQuitter: boolean;
+  /** Pourquoi il ne l'est pas, et quel geste faire. `null` s'il l'est. */
+  empechement: string | null;
+} {
+  switch (normalizeClubRole(role)) {
+    case CLUB_ROLE_OWNER:
+      return {
+        statut: "Propriétaire du club",
+        badge: "Propriétaire",
+        peutQuitter: false,
+        empechement:
+          "Tu es propriétaire de ce club. Pour le quitter, la propriété doit d'abord être transférée à un autre membre — contacte le support FKS.",
+      };
+    case CLUB_ROLE_COACH:
+      return {
+        statut: "Encadrant du club",
+        badge: "Encadrant",
+        peutQuitter: true,
+        empechement: null,
+      };
+    default:
+      // « player », « removed » et rôle illisible : on ne promet aucun statut
+      // particulier, et le départ volontaire reste offert (le serveur tranche).
+      return {
+        statut: "Membre de l'effectif",
+        badge: "Membre",
+        peutQuitter: true,
+        empechement: null,
+      };
+  }
+}
+
 /** Le geste, écrit une seule fois : il est identique dans les deux incohérences. */
 const REPARATION_GESTE =
   "Aucune donnée n'a été perdue. Contactez le support FKS pour rétablir votre rôle sur ce club.";

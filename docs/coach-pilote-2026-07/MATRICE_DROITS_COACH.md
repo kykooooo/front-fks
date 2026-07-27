@@ -35,7 +35,7 @@ Les chemins sont ceux de la base ; `{clubId}` et `{uid}` sont des identifiants.
 
 | Chemin | Lecture | Écriture | La règle qui le prouve | Le test qui le vérifie |
 |---|---|---|---|---|
-| `clubs/{sonClub}` | ✅ par identifiant | ✅ owner seulement | `firestore.rules:98` / `:101` | `rules.clubsInvitation.test.ts` |
+| `clubs/{sonClub}` | ✅ par identifiant | ✅ owner seulement, **sauf `ownerUid` : fermé à tous** | `firestore.rules` (`allow get` / `allow update` + `changesOwnerUid`) | `rules.clubsInvitation.test.ts`, `rules.clubOwnershipTransfer.test.ts` §A |
 | `clubs/{sonClub}` — **liste de tous les clubs** | ❌ | ❌ | `firestore.rules:95` (`allow list: if false`) | matrice, scénario 10 |
 | `clubs/{sonClub}/members` (l'effectif) | ✅ liste complète | ❌ sauf son propre doc coach | `firestore.rules:109` / `:131` | matrice, scénarios 2 et 10 |
 | `clubs/{sonClub}/playerSummaries/{joueur}` (la fiche préparée) | ✅ **seulement** si le joueur est encore membre `player` **et** que son accès est autorisé | ❌ pour tout le monde | `firestore.rules:199-202` | matrice, scénarios 4, 5, 7 |
@@ -69,6 +69,14 @@ Les chemins sont ceux de la base ; `{clubId}` et `{uid}` sont des identifiants.
 | `issueClubInviteCode` | l'owner du club, ou un membre de rôle `coach` | coach d'un autre club, joueur, inconnu, ancien coach retiré | `functions/tests/callableRights.test.ts` 9.1 → 9.4 |
 | `joinClubWithInviteCode` | tout compte connecté, **avec un code valide** | code inconnu / expiré / révoqué / épuisé, identifiant de club envoyé à la place d'un code, charge utile structurée | `functions/tests/callableRights.test.ts` 9.7 → 9.11 |
 | `deleteAccount` | l'utilisateur, **pour son propre compte uniquement** | l'uid vient du jeton d'authentification (`functions/src/deleteAccount.ts:27`), jamais de la charge utile | non couvert par un test automatisé — voir §5, limite 4 |
+| `removeClubMember` | l'**encadrement** du club (owner ou coach) | coach d'un autre club, joueur, inconnu, membre absent, et **le propriétaire** (échec typé `OWNER_TRANSFER_REQUIRED`) | `functions/tests/clubMembers.test.ts` |
+| `transferClubOwnership` | le **propriétaire actuel**, et lui seul | coach du club, joueur, propriétaire d'un autre club, inconnu, club inexistant, autorité incohérente — **tous avec le même message**. Cible non membre / retirée / soi-même : refus parlants et typés | `functions/tests/clubOwnership.test.ts` |
+
+> L'outil administrateur du transfert (`functions/src/clubOwnershipCli.ts`) n'est
+> **pas** une callable : il saute la vérification d'autorité de l'appelant, parce
+> qu'il sert précisément les clubs où personne n'est autorisé. Il n'est exporté
+> nulle part dans `index.ts`, et un test le vérifie. Procédure :
+> `docs/coach-pilote-2026-07/TRANSFERT_PROPRIETE.md`.
 
 ---
 
@@ -225,13 +233,9 @@ Conséquences traitées dans le même lot :
    lisible** par son `ownerUid`, ce qui permet à l'application de nommer l'état
    (`useCoachClub.ownerAuthority` → bandeau « Club à réparer »).
 
-_Ce qui reste ouvert :_ le **transfert de propriété** n'existe pas encore dans
-l'app. Il doit mettre à jour `ownerUid`, l'ancien rôle et le nouveau dans **une
-seule transaction** ; les règles refusent volontairement de promouvoir quelqu'un
-d'autre au rôle propriétaire depuis un client. Tant qu'il n'existe pas, retirer le
-propriétaire échoue avec `OWNER_TRANSFER_REQUIRED`, et la manœuvre passe par la
-console. Même remarque pour la création d'un **second coach** : aucun chemin
-client, aucun chemin serveur.
+_Ce qui reste ouvert :_ la création d'un **second coach** — aucun chemin client,
+aucun chemin serveur. (Le **transfert de propriété**, lui, n'est plus une limite :
+voir la limite 1 ter ci-dessous.)
 
 _Tests qui le prouvent :_ `functions/tests/clubAuthority.test.ts`,
 `firestore-tests/rules.clubAuthority.test.ts`, et scénario 3 de cette matrice
@@ -268,6 +272,73 @@ coach après retrait · projection existante · trigger exécuté après retrait
 tentative de retrait du propriétaire), section G de
 `firestore-tests/rules.clubAuthority.test.ts`, et
 `screens/coach/__tests__/CoachPlayerScreen.test.tsx`.
+
+### Limite 1 ter — FERMÉE (2026-07) : transférer la propriété du club
+
+**Le défaut.** Le lot précédent s'arrêtait net sur le propriétaire : le retirer
+aurait fabriqué exactement l'état interdit (un `ownerUid` qui désigne un
+non-membre), donc le retrait échouait avec `OWNER_TRANSFER_REQUIRED` — en
+demandant un geste **qui n'existait pas**. Un fondateur qui quittait le club
+laissait le club coincé.
+
+**Et un trou qu'on n'avait pas encore vu.** `allow update` sur le document club
+autorisait le propriétaire à écrire n'importe quel champ, **`ownerUid` compris**.
+Une seule requête cliente suffisait donc à désigner quelqu'un d'autre sans
+toucher aux rôles : les DEUX incohérences que l'invariant refuse, fabriquées à la
+main. La règle refuse désormais toute écriture cliente qui **change** `ownerUid`
+(la condition porte sur le résultat, pas sur les clés touchées : effacer le champ
+est refusé aussi). Renommer le club ou changer sa politique d'accès continue de
+marcher.
+
+**Ce qui a été fait.** Une Cloud Function `transferClubOwnership` (cœur pur dans
+`functions/src/clubOwnership.ts`) qui écrit, dans **une seule transaction** : la
+désignation, le rôle `owner` du nouveau, et un rôle **explicite** (`coach`) pour
+l'ancien. Plus deux nettoyages : la fiche coach du nouveau propriétaire est
+supprimée et son accès révoqué — un propriétaire n'est pas un joueur suivi.
+
+Quatre décisions, et leurs raisons :
+
+1. **L'ancien devient `coach`, pas `player`.** Le passer en joueur ferait
+   apparaître son propre suivi d'entraînement dans l'effectif. Céder un club
+   n'est pas consentir à être suivi. En `coach`, il garde l'encadrement complet,
+   perd exactement les gestes du propriétaire, et peut ensuite être retiré
+   **normalement** — la séquence complète est testée.
+2. **Un joueur peut recevoir la propriété.** Aujourd'hui aucun chemin ne crée un
+   second coach : exiger un coach rendrait le transfert inutilisable dans la
+   seule situation où il sert.
+3. **Le refus de cible est parlant, les refus d'autorité ne le sont pas.**
+   L'autorité est vérifiée **avant** toute lecture de la cible : seul le
+   propriétaire de ce club atteint « cette personne n'est pas dans l'effectif
+   actif », à propos d'un uid qu'il lit déjà dans son propre effectif. Il
+   n'apprend rien. Même raisonnement qu'au retrait, refait et non recopié.
+4. **Le rejeu est traité explicitement** — c'est le piège du lot. Après un
+   transfert, l'ancien propriétaire n'est plus autorisé à initier : un double
+   appui tomberait sur un refus alors que le geste a **réussi**. Une fenêtre de
+   rejeu très étroite (le club désigne déjà la cible demandée, la cible porte
+   déjà le rôle, l'appelant est exactement le sortant enregistré, et il est
+   encore membre actif) renvoie un succès **sans écrire une seule ligne**.
+
+**L'outil administrateur.** Un club dont l'autorité est incohérente n'a
+**personne** d'autorisé : le chemin normal ne peut rien y réparer. Un script
+one-shot (`clubOwnershipCli.ts`, simulation par défaut, deux mots à taper pour
+écrire) saute la vérification d'autorité et **rien d'autre**. Il n'est exporté
+nulle part dans `index.ts` — un test le vérifie, parce qu'un chemin sans
+vérification d'autorité ne doit avoir aucune route réseau.
+
+_Ce qui reste ouvert :_ **l'écran**. Le serveur est prêt, l'écran de choix du
+successeur n'existe pas, et surtout le nouveau propriétaire n'obtient pas l'espace
+coach tout seul (`users/{uid}.role` n'est jamais touché par le transfert — le
+basculer retirerait à un joueur actif sa propre app d'entraînement). Détail
+complet, procédure et avertissements :
+`docs/coach-pilote-2026-07/TRANSFERT_PROPRIETE.md`.
+
+_Tests qui le prouvent :_ `functions/tests/clubOwnership.test.ts` (47 tests :
+matrice des appelants · incohérences · admissibilité de la cible · rejeu ·
+atomicité · concurrence à deux cibles · transfert pendant un retrait et
+l'inverse · transfert pendant l'émission d'un code · séquence transfert puis
+retrait · sobriété de l'audit · mode administrateur · cloisonnement),
+`firestore-tests/rules.clubOwnershipTransfer.test.ts` (23 tests contre les vraies
+règles), `domain/__tests__/clubRoles.test.ts` (ce que l'écran dit).
 
 ### Limite 2 — TRANCHÉE (2026-07) : note privée et directive sont séparées
 
@@ -384,6 +455,26 @@ _Héritée du lot précédent, rappelée ici pour que la matrice soit complète.
 ---
 
 ## 6. Ce qui a changé dans ce lot
+
+### Lot « transfert de propriété » (juillet 2026)
+
+| Fichier | Nature |
+|---|---|
+| `functions/src/clubOwnership.ts` | **nouveau** — le cœur pur du transfert (aucune décision ailleurs) |
+| `functions/src/clubOwnershipApi.ts` | **nouveau** — l'enveloppe appelable, sans aucune décision |
+| `functions/src/clubOwnershipCli.ts` | **nouveau** — l'outil administrateur, jamais déployé, jamais exporté |
+| `functions/src/clubMembersApi.ts` | le journal d'incohérence devient partagé (`logClubAuthorityInconsistency`) |
+| `functions/src/index.ts` | export de la seule callable `transferClubOwnership` |
+| `firestore.rules` | `ownerUid` n'est plus écrivable par aucun client (`changesOwnerUid`) — seule modification de comportement |
+| `functions/tests/clubOwnership.test.ts` | **nouveau** — 47 tests |
+| `firestore-tests/rules.clubOwnershipTransfer.test.ts` | **nouveau** — 23 tests contre les vraies règles |
+| `domain/clubRoles.ts` | `clubMembershipCopy` : ce que l'écran dit d'une appartenance (n'accorde aucun droit) |
+| `components/settings/ClubManagementCard.tsx` | ne propose plus « Quitter le club » à un propriétaire |
+| `docs/coach-pilote-2026-07/TRANSFERT_PROPRIETE.md` | **nouveau** — usage, procédure administrateur, ce qui reste à faire |
+
+Aucun test existant n'a été modifié ni affaibli.
+
+### Lot précédent (matrice des droits)
 
 | Fichier | Nature |
 |---|---|

@@ -16,6 +16,7 @@ import {
   CLUB_ROLE_PLAYER,
   CLUB_ROLE_REMOVED,
   CLUB_STAFF_ROLES,
+  clubMembershipCopy,
   clubOwnerInconsistencyCopy,
   isActiveClubRole,
   isClubOwnerAuthorityInconsistent,
@@ -114,5 +115,53 @@ describe("ce que l'écran dit d'une incohérence", () => {
     const a = clubOwnerInconsistencyCopy("designation-without-membership");
     const b = clubOwnerInconsistencyCopy("membership-without-designation");
     expect(a?.corps).not.toBe(b?.corps);
+  });
+});
+
+// ─── Ce que l'écran d'un membre dit de sa propre appartenance ───────────────
+//
+// Ajouté avec le transfert de propriété : un JOUEUR peut désormais devenir
+// propriétaire, tout en gardant l'application joueur. La carte « Mon club » lui
+// proposait « Quitter le club » — un geste que les règles refusent au
+// propriétaire, et dont l'échec s'affichait en « Réessaie ». Un conseil faux.
+
+describe("appartenance affichée au membre", () => {
+  test("le PROPRIÉTAIRE ne se voit pas proposer de quitter le club, et sait pourquoi", () => {
+    const copie = clubMembershipCopy(CLUB_ROLE_OWNER);
+    expect(copie.peutQuitter).toBe(false);
+    expect(copie.badge).toBe("Propriétaire");
+    expect(copie.statut).toBe("Propriétaire du club");
+    // Le texte NOMME le geste à faire, il ne dit pas seulement « impossible ».
+    expect(copie.empechement).toContain("transférée");
+    expect(copie.empechement).toContain("support FKS");
+  });
+
+  test("l'ENCADRANT et le JOUEUR peuvent partir, sans texte d'empêchement", () => {
+    for (const role of [CLUB_ROLE_COACH, CLUB_ROLE_PLAYER]) {
+      const copie = clubMembershipCopy(role);
+      expect(copie.peutQuitter).toBe(true);
+      expect(copie.empechement).toBeNull();
+    }
+    expect(clubMembershipCopy(CLUB_ROLE_COACH).badge).toBe("Encadrant");
+    expect(clubMembershipCopy(CLUB_ROLE_PLAYER).badge).toBe("Membre");
+  });
+
+  test("un rôle ABSENT ou illisible retombe sur l'affichage neutre de membre", () => {
+    // Une lecture ratée ne doit jamais se transformer en affirmation. Le serveur
+    // reste seul juge du départ ; l'écran ne fait que ne pas mentir.
+    for (const role of [null, undefined, "", "  ", 42, { role: "owner" }, "OWNER"]) {
+      const copie = clubMembershipCopy(role);
+      expect(copie.peutQuitter).toBe(true);
+      expect(copie.badge).toBe("Membre");
+      expect(copie.empechement).toBeNull();
+    }
+  });
+
+  test("la pierre tombale n'affiche aucun statut particulier", () => {
+    // Elle ne devrait pas être visible ici (le serveur remet `clubId` à null),
+    // mais si elle l'était, elle ne doit rien promettre.
+    const copie = clubMembershipCopy(CLUB_ROLE_REMOVED);
+    expect(copie.badge).toBe("Membre");
+    expect(copie.peutQuitter).toBe(true);
   });
 });

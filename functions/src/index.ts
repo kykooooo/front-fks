@@ -28,3 +28,15 @@ export { issueClubInviteCode, joinClubWithInviteCode } from "./clubInvites";
 // seule cette callable sait le désactiver, supprimer la projection déjà produite
 // et nettoyer la référence du joueur vers son club, le tout en une transaction.
 export { removeClubMember } from "./clubMembersApi";
+
+// Transfert de propriété du club : 100 % serveur, une seule transaction pour la
+// désignation (`ownerUid`), le rôle du nouveau propriétaire et celui de l'ancien.
+// Les règles refusent volontairement de promouvoir quelqu'un d'autre depuis un
+// client — il n'existe aucune autre porte que celle-ci.
+//
+// L'OUTIL ADMINISTRATEUR (`clubOwnershipCli.ts`) n'est PAS exporté ici, et ne
+// doit jamais l'être : il saute la vérification d'autorité de l'appelant, parce
+// qu'il sert précisément les clubs où PERSONNE n'est autorisé (autorité
+// incohérente). Un tel chemin ne doit avoir aucune route réseau. Procédure dans
+// docs/coach-pilote-2026-07/TRANSFERT_PROPRIETE.md.
+export { transferClubOwnership } from "./clubOwnershipApi";

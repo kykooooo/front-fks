@@ -86,8 +86,12 @@ export function toHttpsError(err: unknown): HttpsError {
  *
  * Charge du journal : identifiants + nature de l'ecart. Ni nom de club, ni
  * donnee de membre.
+ *
+ * EXPORTE parce que le transfert de propriete (clubOwnershipApi.ts) signale les
+ * MEMES incoherences : deux journaux de formes differentes pour un meme etat
+ * rendraient l'exploitation illisible.
  */
-const logInconsistency = (signal: ClubAuthoritySignal): void => {
+export const logClubAuthorityInconsistency = (signal: ClubAuthoritySignal): void => {
   logger.error("clubAuthority: etat d'autorite incoherent, reparation requise", {
     clubId: signal.clubId,
     uid: signal.uid,
@@ -104,7 +108,11 @@ export const removeClubMember = onCall(
 
     try {
       const result = await removeClubMemberCore(
-        { store: createMemberStore(getDb()), now: Date.now, onInconsistency: logInconsistency },
+        {
+          store: createMemberStore(getDb()),
+          now: Date.now,
+          onInconsistency: logClubAuthorityInconsistency,
+        },
         {
           actorUid: uid,
           clubId: request.data?.clubId,

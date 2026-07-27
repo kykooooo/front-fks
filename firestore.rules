@@ -142,6 +142,29 @@ service cloud.firestore {
         in ["automatic_safe_projection", "approval_required"];
     }
 
+    // ── LA DÉSIGNATION N'EST PLUS ÉCRIVABLE PAR UN CLIENT ───────────────────
+    //
+    // C'était le trou laissé par le lot précédent : `allow update` autorisait le
+    // propriétaire à modifier le document club, `ownerUid` COMPRIS. Il pouvait
+    // donc, d'une seule écriture cliente, désigner quelqu'un d'autre — sans
+    // toucher aux rôles. Résultat : un club dont la désignation nomme un compte
+    // sans appartenance propriétaire, et un ancien propriétaire qui garde le
+    // rôle sans la désignation. Exactement les DEUX incohérences que l'invariant
+    // refuse, fabriquées à la main, en une requête.
+    //
+    // Le transfert n'est donc pas « une écriture Firestore côté client » : c'est
+    // la Cloud Function `transferClubOwnership`, seule capable de changer la
+    // désignation ET les deux rôles dans UNE transaction.
+    //
+    // La condition porte sur le RÉSULTAT, pas sur les clés touchées (même choix
+    // que le bannissement du champ `note`) : une écriture en merge qui laisse
+    // `ownerUid` inchangé passe, une qui le change ou l'efface est refusée —
+    // `.get(champ, "")` renvoie "" pour un champ absent, donc une suppression
+    // devient "" ≠ ancien uid, donc REFUS.
+    function changesOwnerUid() {
+      return request.resource.data.get("ownerUid", "") != resource.data.get("ownerUid", "");
+    }
+
     function touchesCoachAccessPolicy() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasAny(["coachAccessPolicy"]);
@@ -212,11 +235,16 @@ service cloud.firestore {
       // si la politique est touchée elle doit être valide. Si elle ne l'est pas,
       // on ne la valide pas — sans quoi une valeur héritée illisible bloquerait
       // toute autre mise à jour légitime du club.
+      //
+      // ET, dans TOUS les cas : `ownerUid` ne bouge pas. Le transfert de
+      // propriété passe par la Cloud Function `transferClubOwnership`, qui change
+      // la désignation et les deux rôles ensemble (cf. `changesOwnerUid`).
       allow update: if (
           isClubOwner(clubId) ||
           (isClubStaff(clubId) && onlyTouchesCoachAccessPolicy())
         ) &&
-        (!touchesCoachAccessPolicy() || validCoachAccessPolicy());
+        (!touchesCoachAccessPolicy() || validCoachAccessPolicy()) &&
+        !changesOwnerUid();
       allow delete: if false;
 
       match /members/{memberId} {

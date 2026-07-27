@@ -11,6 +11,7 @@ import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
 import { removeClubMembership } from "../../repositories/clubsRepo";
+import { clubMembershipCopy } from "../../domain/clubRoles";
 import { joinClubWithInviteCode } from "../../services/clubInvites";
 import { showToast } from "../../utils/toast";
 import { ClubDataDisclosure } from "../club/ClubDataDisclosure";
@@ -22,6 +23,9 @@ export function ClubManagementCard() {
 
   const [clubId, setClubId] = useState<string | null>(null);
   const [clubName, setClubName] = useState<string | null>(null);
+  // Son PROPRE rôle dans le club. Lu pour DIRE la vérité, jamais pour accorder
+  // un droit : l'autorité se décide côté serveur et côté règles, jamais ici.
+  const [myRole, setMyRole] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
 
   const [inputCode, setInputCode] = useState("");
@@ -52,9 +56,15 @@ export function ClubManagementCard() {
   // document club (seule son empreinte vit côté serveur). Un joueur n'a donc
   // plus aucun moyen de rediffuser le code de son club — c'était une porte
   // ouverte, ce n'est plus une fonctionnalité.
+  //
+  // Le RÔLE est lu dans le même mouvement (document toujours lisible par son
+  // propriétaire : `allow read: isOwner(memberId)`). Il ne change rien à ce qui
+  // est permis — il change ce qui est DIT, et il retire un bouton qui ne pourrait
+  // pas marcher pour un propriétaire (cf. domain/clubRoles.clubMembershipCopy).
   useEffect(() => {
-    if (!clubId) {
+    if (!clubId || !uid) {
       setClubName(null);
+      setMyRole(null);
       return;
     }
 
@@ -76,6 +86,17 @@ export function ClubManagementCard() {
         // Permissions error - on affiche quand même le clubId
         if (!cancelled) setClubName(null);
       }
+
+      try {
+        const memberSnap = await getDoc(doc(db, "clubs", clubId, "members", uid));
+        if (cancelled) return;
+        setMyRole(memberSnap.exists() ? (memberSnap.data() as any)?.role : null);
+      } catch {
+        // Lecture ratée : on ne DÉDUIT rien. Sans rôle lu, la carte reste sur son
+        // affichage neutre de membre — accuser la base sur un incident réseau
+        // serait un mensonge de plus.
+        if (!cancelled) setMyRole(null);
+      }
     };
 
     fetchClub();
@@ -83,7 +104,7 @@ export function ClubManagementCard() {
     return () => {
       cancelled = true;
     };
-  }, [clubId]);
+  }, [clubId, uid]);
 
   // Le front ne juge PLUS un code : il le transmet et affiche la réponse du
   // serveur. Plus de contrôle de longueur (qui refusait localement des codes
@@ -141,6 +162,15 @@ export function ClubManagementCard() {
             } catch {
               // Message FR maîtrisé : le message brut de Firebase est en anglais.
               showToast({ type: "error", title: "Erreur", message: "Impossible de quitter le club. Réessaie." });
+              // Le rôle a pu changer pendant que l'écran était ouvert (un
+              // transfert de propriété, par exemple) : on le relit, pour que la
+              // carte cesse de proposer un geste devenu impossible.
+              try {
+                const memberSnap = await getDoc(doc(db, "clubs", clubId, "members", uid));
+                setMyRole(memberSnap.exists() ? (memberSnap.data() as any)?.role : null);
+              } catch {
+                // Rien à conclure d'un second échec : on laisse l'affichage tel quel.
+              }
             } finally {
               setLeaving(false);
             }
@@ -160,6 +190,7 @@ export function ClubManagementCard() {
 
   // Si le joueur est dans un club
   if (clubId) {
+    const appartenance = clubMembershipCopy(myRole);
     return (
       <Card variant="soft" style={styles.card}>
         <View style={styles.clubHeader}>
@@ -168,9 +199,9 @@ export function ClubManagementCard() {
           </View>
           <View style={styles.clubInfo}>
             <Text style={styles.clubName}>{clubName ?? "Club"}</Text>
-            <Text style={styles.clubCode}>Membre de l'effectif</Text>
+            <Text style={styles.clubCode}>{appartenance.statut}</Text>
           </View>
-          <Badge label="Membre" tone="ok" />
+          <Badge label={appartenance.badge} tone="ok" />
         </View>
         <Text style={styles.clubDescription}>
           Ton coach peut suivre ta progression et régler le cadre de vos séances (intensité, objectif
@@ -179,13 +210,20 @@ export function ClubManagementCard() {
         {/* Le joueur DÉJÀ dans un club doit pouvoir relire ce que son
             encadrement voit — pas seulement au moment où il tape son code. */}
         <ClubDataDisclosure />
-        <Button
-          label={leaving ? "Départ..." : "Quitter le club"}
-          variant="ghost"
-          size="sm"
-          onPress={handleLeaveClub}
-          disabled={leaving}
-        />
+        {appartenance.peutQuitter ? (
+          <Button
+            label={leaving ? "Départ..." : "Quitter le club"}
+            variant="ghost"
+            size="sm"
+            onPress={handleLeaveClub}
+            disabled={leaving}
+          />
+        ) : (
+          // Pas de bouton grisé, pas de bouton qui échoue : la raison, et le
+          // geste. Un refus prononcé par la base ne doit pas arriver au joueur
+          // sous la forme d'un « Réessaie » qui ne marchera jamais.
+          <Text style={styles.empechement}>{appartenance.empechement}</Text>
+        )}
       </Card>
     );
   }
@@ -261,6 +299,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: palette.sub,
     lineHeight: 16,
+  },
+  // `minHeight` et jamais `height` (règle d'or du socle visuel) : ce texte est
+  // long, et il ne doit pas être coupé au milieu d'une explication.
+  empechement: {
+    fontSize: 12,
+    color: palette.sub,
+    lineHeight: 17,
+    minHeight: 17,
   },
   noClubHeader: {
     flexDirection: "row",
