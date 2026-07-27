@@ -73,7 +73,23 @@ import {
   type ClubTrainingIntensity,
   type ClubWeekGoal,
 } from "../../domain/types";
-import { saveClubWeekContext, setClubTeamGender } from "../../repositories/clubsRepo";
+import {
+  COACH_PRIVATE_NOTE_LABEL,
+  COACH_PRIVATE_NOTE_MAX,
+} from "../../domain/clubCoachNote";
+import {
+  CLUB_DIRECTIVE_INSTRUCTION_MAX,
+  CLUB_DIRECTIVE_LABEL,
+  CLUB_DIRECTIVE_OBJECTIVE_LABELS,
+  CLUB_DIRECTIVE_WRITE_WARNING,
+  type ClubDirectiveObjective,
+} from "../../domain/clubDirective";
+import {
+  saveClubDirective,
+  saveClubWeekContext,
+  saveCoachPrivateNote,
+  setClubTeamGender,
+} from "../../repositories/clubsRepo";
 import { useCoachClub } from "../../hooks/coach/useCoachClub";
 import { useClubInviteCode } from "../../hooks/coach/useClubInviteCode";
 import { useCoachRoster } from "../../hooks/coach/useCoachRoster";
@@ -98,16 +114,26 @@ const INTENSITY_LABELS: Record<ClubTrainingIntensity, string> = {
 // valide en lecture (rétrocompat des anciens documents) mais n'est pas proposée.
 const OFFERED_INTENSITIES: ClubTrainingIntensity[] = ["light", "normal", "heavy"];
 
-const GOAL_LABELS: Record<ClubWeekGoal, string> = {
-  freshness: "Fraîcheur",
-  prevention: "Appuis & freinage",
-  speed: "Vitesse contrôlée",
-  strength: "Renfo terrain",
-  comeback: "Reprise",
-};
+// Source UNIQUE des libellés d'objectif (cadre de semaine ET directive). La
+// table vivait ici en copie locale ; elle est désormais dans le domaine, parce
+// que l'écran JOUEUR lit les mêmes mots (cf. domain/clubDirective.ts).
+const GOAL_LABELS: Record<ClubWeekGoal, string> = CLUB_DIRECTIVE_OBJECTIVE_LABELS;
 
 // `comeback` reste accepté en lecture (vieux documents), plus proposé à l'écrit.
 const OFFERED_WEEK_GOALS: ClubWeekGoal[] = ["freshness", "prevention", "speed", "strength"];
+
+/**
+ * Durées de validité proposées pour une directive.
+ *
+ * Liste FERMÉE volontairement : un sélecteur de dates libre inviterait à poser
+ * des directives « jusqu'à nouvel ordre » qu'on oublie de lever, et le joueur
+ * lirait une consigne périmée sans le savoir. Une directive a une fin.
+ */
+const DIRECTIVE_DURATIONS: { id: string; label: string; days: number }[] = [
+  { id: "7", label: "1 semaine", days: 7 },
+  { id: "14", label: "2 semaines", days: 14 },
+  { id: "28", label: "4 semaines", days: 28 },
+];
 
 const TEAM_GENDER_LABELS: Record<ClubTeamGender, string> = {
   female: "Féminine",
@@ -115,7 +141,10 @@ const TEAM_GENDER_LABELS: Record<ClubTeamGender, string> = {
   mixed: "Mixte",
 };
 
-const NOTE_MAX = 200;
+// Plafond de la note privée. Repris du domaine (jamais recopié à la main) :
+// l'écran ne doit pas pouvoir promettre 200 caractères là où le repository en
+// tronque 150.
+const NOTE_MAX = COACH_PRIVATE_NOTE_MAX;
 
 /**
  * Délai au-delà duquel on cesse d'attendre une écriture Firestore.
@@ -291,13 +320,27 @@ export default function CoachWeekScreen() {
   // ── Cadre de la semaine (état local, hydraté depuis le contexte serveur) ───
   const [intensity, setIntensity] = useState<ClubTrainingIntensity | null>(null);
   const [weekGoal, setWeekGoal] = useState<ClubWeekGoal | null>(null);
-  const [note, setNote] = useState("");
   const [matchThisWeekend, setMatchThisWeekend] = useState<boolean | null>(null);
   const [cadreSaved, setCadreSaved] = useState(false);
   const [cadreDirty, setCadreDirty] = useState(false);
   const [savingContext, setSavingContext] = useState(false);
   const [teamGender, setTeamGender] = useState<ClubTeamGender | null>(null);
   const [savingTeamGender, setSavingTeamGender] = useState(false);
+
+  // ── Note PRIVÉE (document coach-only, séparé du cadre) ────────────────────
+  const [note, setNote] = useState("");
+  const [noteSaved, setNoteSaved] = useState(false);
+  const [noteDirty, setNoteDirty] = useState(false);
+  const [savingNote, setSavingNote] = useState(false);
+
+  // ── Directive d'entraînement (objet distinct, lu par le joueur) ───────────
+  const [directiveObjective, setDirectiveObjective] = useState<ClubDirectiveObjective | null>(null);
+  const [directiveInstruction, setDirectiveInstruction] = useState("");
+  const [directiveDays, setDirectiveDays] = useState<number>(DIRECTIVE_DURATIONS[0].days);
+  const [directiveActive, setDirectiveActive] = useState(true);
+  const [directiveSaved, setDirectiveSaved] = useState(false);
+  const [directiveDirty, setDirectiveDirty] = useState(false);
+  const [savingDirective, setSavingDirective] = useState(false);
 
   // Le composant peut être démonté pendant une écriture longue (hors ligne) :
   // on ne touche plus à l'état après coup.
@@ -317,18 +360,50 @@ export default function CoachWeekScreen() {
     if (wc) {
       setIntensity(wc.trainingIntensity);
       setWeekGoal(wc.weekGoal);
-      setNote(wc.note ?? "");
       setMatchThisWeekend(typeof wc.matchThisWeekend === "boolean" ? wc.matchThisWeekend : null);
       setCadreSaved(true);
     } else {
       setIntensity(null);
       setWeekGoal(null);
-      setNote("");
       setMatchThisWeekend(null);
       setCadreSaved(false);
     }
     setCadreDirty(false);
   }, [club.weekContext, club.clubId, club.weekKey]);
+
+  // Hydratation de la note PRIVÉE. Deux sources, dans cet ordre :
+  //  1. le document coach-only (la vérité depuis la séparation) ;
+  //  2. à défaut, la note HISTORIQUE encore logée dans le cadre de semaine.
+  // Le point 2 n'est PAS une conversion : le texte reste une note privée, il
+  // change seulement d'endroit, et rien ne part vers une directive. Le coach
+  // voit ce qu'il avait écrit et décide lui-même de le garder ou de l'effacer.
+  const legacyNote = club.weekContext?.legacyNote ?? "";
+  const noteAReprendre = !club.coachNote && Boolean(legacyNote);
+  useEffect(() => {
+    const stored = club.coachNote?.note ?? "";
+    setNote(stored || legacyNote);
+    setNoteSaved(Boolean(stored));
+    setNoteDirty(false);
+  }, [club.coachNote, legacyNote, club.clubId, club.weekKey]);
+
+  // Hydratation de la directive. Absente = formulaire vierge, jamais un
+  // brouillon pré-rempli à partir d'une note : la directive naît d'un geste
+  // explicite du coach, ou n'existe pas.
+  useEffect(() => {
+    const d = club.directive;
+    if (d) {
+      setDirectiveObjective(d.objective);
+      setDirectiveInstruction(d.instruction);
+      setDirectiveActive(d.active);
+      setDirectiveSaved(true);
+    } else {
+      setDirectiveObjective(null);
+      setDirectiveInstruction("");
+      setDirectiveActive(true);
+      setDirectiveSaved(false);
+    }
+    setDirectiveDirty(false);
+  }, [club.directive, club.clubId]);
 
   useEffect(() => {
     setTeamGender(club.teamGender);
@@ -389,6 +464,22 @@ export default function CoachWeekScreen() {
     }
     setSavingContext(true);
     try {
+      // SAUVETAGE AVANT SUPPRESSION. L'enregistrement du cadre efface le champ
+      // `note` du document lisible par les joueurs (c'est le but). Si une note
+      // historique s'y trouve encore, on la met D'ABORD à l'abri dans le
+      // document privé. Ordre non négociable : si cette écriture échoue, on
+      // sort par le `catch` et le cadre n'est pas enregistré — donc la note
+      // n'est pas effacée. On ne perd jamais un texte pour tenir une promesse
+      // de confidentialité.
+      if (noteAReprendre && note.trim()) {
+        await withTimeout(
+          saveCoachPrivateNote({ clubId: club.clubId, weekKey: club.weekKey, uid, note }),
+          COACH_SAVE_TIMEOUT_MS,
+        );
+        if (!mountedRef.current) return;
+        setNoteSaved(true);
+        setNoteDirty(false);
+      }
       await withTimeout(
         saveClubWeekContext({
           clubId: club.clubId,
@@ -396,7 +487,6 @@ export default function CoachWeekScreen() {
           uid,
           trainingIntensity: intensity,
           weekGoal,
-          note,
           matchThisWeekend,
         }),
         COACH_SAVE_TIMEOUT_MS,
@@ -431,7 +521,124 @@ export default function CoachWeekScreen() {
     } finally {
       if (mountedRef.current) setSavingContext(false);
     }
-  }, [club.clubId, club.weekKey, intensity, weekGoal, note, matchThisWeekend, haptics]);
+  }, [
+    club.clubId,
+    club.weekKey,
+    intensity,
+    weekGoal,
+    note,
+    noteAReprendre,
+    matchThisWeekend,
+    haptics,
+  ]);
+
+  // ── Note privée : écriture dans le document coach-only, et RIEN d'autre ───
+  // Aucune influence sur la génération, aucune conversion en directive. Le seul
+  // effet de ce bouton est d'écrire un texte que les joueurs ne peuvent pas lire.
+  const handleSavePrivateNote = useCallback(async () => {
+    const uid = auth.currentUser?.uid ?? null;
+    if (!uid || !club.clubId || savingNote) return;
+    setSavingNote(true);
+    try {
+      await withTimeout(
+        saveCoachPrivateNote({ clubId: club.clubId, weekKey: club.weekKey, uid, note }),
+        COACH_SAVE_TIMEOUT_MS,
+      );
+      if (!mountedRef.current) return;
+      setNoteSaved(Boolean(note.trim()));
+      setNoteDirty(false);
+      haptics.success();
+      showToast({
+        type: "success",
+        title: "Note privée enregistrée",
+        message: "Elle reste visible du seul encadrement et ne modifie aucune séance.",
+      });
+    } catch (error) {
+      if (!mountedRef.current) return;
+      setNoteDirty(true);
+      haptics.error();
+      const timedOut = error instanceof SaveTimeoutError;
+      showToast({
+        type: "error",
+        title: timedOut ? "Enregistrement non confirmé" : "Enregistrement impossible",
+        message: timedOut
+          ? "Ta note n'est pas confirmée. Réessaie ; si le problème persiste, ton accès au club devra peut-être être vérifié."
+          : "La note privée n'a pas pu être enregistrée.",
+      });
+    } finally {
+      if (mountedRef.current) setSavingNote(false);
+    }
+  }, [club.clubId, club.weekKey, note, savingNote, haptics]);
+
+  // ── Directive : l'objet que le joueur LIRA ────────────────────────────────
+  const handleSaveDirective = useCallback(async () => {
+    const uid = auth.currentUser?.uid ?? null;
+    const instruction = directiveInstruction.trim();
+    if (!uid || !club.clubId || !directiveObjective || !instruction || savingDirective) {
+      if (club.clubId && (!directiveObjective || !instruction)) {
+        showToast({
+          type: "warn",
+          title: "Directive incomplète",
+          message: "Choisis un objectif et écris la consigne.",
+        });
+      }
+      return;
+    }
+    // Fenêtre calculée depuis le jour du coach, bornes incluses. `validUntil`
+    // ne peut donc jamais précéder `validFrom` (le domaine refuserait de lire
+    // une telle directive).
+    const validFrom = todayKey;
+    const validUntil = addDaysToKey(todayKey, Math.max(0, directiveDays - 1)) ?? todayKey;
+
+    setSavingDirective(true);
+    try {
+      await withTimeout(
+        saveClubDirective({
+          clubId: club.clubId,
+          uid,
+          objective: directiveObjective,
+          instruction,
+          validFrom,
+          validUntil,
+          active: directiveActive,
+        }),
+        COACH_SAVE_TIMEOUT_MS,
+      );
+      if (!mountedRef.current) return;
+      setDirectiveSaved(true);
+      setDirectiveDirty(false);
+      haptics.success();
+      showToast({
+        type: "success",
+        title: "Directive enregistrée",
+        message: "Tes joueurs peuvent la lire ; FKS en tient compte pour leurs prochaines séances.",
+      });
+    } catch (error) {
+      if (!mountedRef.current) return;
+      setDirectiveSaved(false);
+      setDirectiveDirty(true);
+      haptics.error();
+      const timedOut = error instanceof SaveTimeoutError;
+      showToast({
+        type: "error",
+        title: timedOut ? "Enregistrement non confirmé" : "Enregistrement impossible",
+        message: timedOut
+          ? "Ta directive n'est pas confirmée. Réessaie ; si le problème persiste, ton accès au club devra peut-être être vérifié."
+          : "La directive n'a pas pu être enregistrée.",
+      });
+    } finally {
+      if (mountedRef.current) setSavingDirective(false);
+    }
+  }, [
+    club.clubId,
+    directiveObjective,
+    directiveInstruction,
+    directiveDays,
+    directiveActive,
+    savingDirective,
+    todayKey,
+    haptics,
+  ]);
 
   const handleIssueCode = useCallback(() => {
     haptics.impactLight();
@@ -740,6 +947,10 @@ export default function CoachWeekScreen() {
 
   const cadreEditable = weekOffset === 0;
   const saveDisabled = savingContext || !intensity || !weekGoal;
+  // Une directive sans objectif ou sans consigne n'existe pas : on n'enregistre
+  // pas une moitié de consigne que le joueur lirait quand même.
+  const directiveSaveDisabled =
+    savingDirective || !directiveObjective || !directiveInstruction.trim();
 
   const renderChip = (
     key: string,
@@ -884,24 +1095,10 @@ export default function CoachWeekScreen() {
                 )}
               </View>
               <Text style={styles.fieldHint} numberOfLines={2}>
-                Info staff ajoutée au cadre.
+                Ces trois réponses sont transmises à FKS et peuvent influencer les séances de tes
+                joueurs. Pour écrire une consigne, utilise la directive plus bas ; pour un
+                pense-bête, la note privée.
               </Text>
-
-              <Text style={styles.fieldLabel}>Note (optionnel)</Text>
-              <TextInput
-                testID="week-frame-note"
-                style={styles.noteInput}
-                placeholder="Ex : gros match dimanche, jambes lourdes"
-                placeholderTextColor={coachColors.muted}
-                value={note}
-                onChangeText={(v) => {
-                  setNote(v);
-                  setCadreDirty(true);
-                }}
-                maxLength={NOTE_MAX}
-                multiline
-                accessibilityLabel="Note pour la semaine"
-              />
 
               <Pressable
                 testID="week-frame-save"
@@ -929,6 +1126,229 @@ export default function CoachWeekScreen() {
                 </Text>
               ) : null}
             </View>
+          )}
+        </CoachSectionCard>
+
+        {/* ── Directive d'entraînement ─────────────────────────────────────
+            L'objet qui a le DROIT d'influencer la préparation, et que le joueur
+            lit. Il est annoncé comme tel AVANT la saisie, pas après. */}
+        <CoachSectionCard
+          testID="week-directive"
+          title="Directive d'entraînement"
+          subtitle={
+            club.directiveUnavailable
+              ? "Directive illisible pour le moment"
+              : directiveDirty
+                ? "Modifications non enregistrées"
+                : directiveSaved
+                  ? directiveActive
+                    ? "Directive active"
+                    : "Directive levée"
+                  : "Aucune directive"
+          }
+        >
+          <View style={styles.form}>
+            <Text style={styles.explain} numberOfLines={4}>
+              {CLUB_DIRECTIVE_LABEL}
+            </Text>
+            <Text style={styles.warnLine} numberOfLines={4}>
+              {CLUB_DIRECTIVE_WRITE_WARNING}
+            </Text>
+
+            {club.directiveUnavailable ? (
+              <Text style={styles.warnLine} numberOfLines={3}>
+                La directive déjà enregistrée n'a pas pu être lue. Ce qui s'affiche ci-dessous est
+                vide, pas forcément ce qui est enregistré côté FKS.
+              </Text>
+            ) : null}
+
+            <Text style={styles.fieldLabel}>Objectif visé</Text>
+            <View style={styles.chipRow}>
+              {OFFERED_WEEK_GOALS.map((v) =>
+                renderChip(
+                  v,
+                  GOAL_LABELS[v],
+                  directiveObjective === v,
+                  () => {
+                    haptics.impactLight();
+                    setDirectiveObjective(v);
+                    setDirectiveDirty(true);
+                  },
+                  `chip-directive-objective-${v}`,
+                ),
+              )}
+            </View>
+
+            <Text style={styles.fieldLabel}>Consigne</Text>
+            <TextInput
+              testID="week-directive-instruction"
+              style={styles.noteInput}
+              placeholder="Ex : on garde les appuis, personne ne force sur les frappes"
+              placeholderTextColor={coachColors.muted}
+              value={directiveInstruction}
+              onChangeText={(v) => {
+                setDirectiveInstruction(v);
+                setDirectiveDirty(true);
+              }}
+              maxLength={CLUB_DIRECTIVE_INSTRUCTION_MAX}
+              multiline
+              accessibilityLabel="Consigne de la directive, lue par les joueurs"
+            />
+
+            <Text style={styles.fieldLabel}>Valable</Text>
+            <View style={styles.chipRow}>
+              {DIRECTIVE_DURATIONS.map((d) =>
+                renderChip(
+                  d.id,
+                  d.label,
+                  directiveDays === d.days,
+                  () => {
+                    haptics.impactLight();
+                    setDirectiveDays(d.days);
+                    setDirectiveDirty(true);
+                  },
+                  `chip-directive-duration-${d.id}`,
+                ),
+              )}
+            </View>
+            <Text style={styles.fieldHint} numberOfLines={2}>
+              À partir d'aujourd'hui. Passé ce délai, la directive cesse d'être transmise.
+            </Text>
+
+            <Text style={styles.fieldLabel}>Statut</Text>
+            <View style={styles.chipRow}>
+              {(
+                [
+                  { value: true, label: "Active", id: "active" },
+                  { value: false, label: "Levée", id: "levee" },
+                ] as const
+              ).map(({ value, label, id }) =>
+                renderChip(
+                  id,
+                  label,
+                  directiveActive === value,
+                  () => {
+                    haptics.impactLight();
+                    setDirectiveActive(value);
+                    setDirectiveDirty(true);
+                  },
+                  `chip-directive-status-${id}`,
+                ),
+              )}
+            </View>
+
+            <Pressable
+              testID="week-directive-save"
+              onPress={handleSaveDirective}
+              disabled={directiveSaveDisabled}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: directiveSaveDisabled, busy: savingDirective }}
+              style={({ pressed }) => [
+                styles.saveBtn,
+                directiveSaveDisabled && styles.saveBtnDisabled,
+                pressed && !directiveSaveDisabled && styles.saveBtnPressed,
+              ]}
+            >
+              <Text style={styles.saveLabel} numberOfLines={1}>
+                {savingDirective
+                  ? "Enregistrement..."
+                  : directiveSaved
+                    ? "Mettre à jour la directive"
+                    : "Enregistrer la directive"}
+              </Text>
+            </Pressable>
+            {directiveSaveDisabled && !savingDirective ? (
+              <Text style={styles.fieldHint} numberOfLines={2}>
+                Choisis un objectif et écris la consigne pour pouvoir enregistrer.
+              </Text>
+            ) : null}
+          </View>
+        </CoachSectionCard>
+
+        {/* ── Note privée ──────────────────────────────────────────────────
+            Volontairement APRÈS la directive, et dans sa propre carte : les deux
+            concepts ne partagent ni le même document, ni le même bouton, ni la
+            même promesse. Ce qui s'écrit ici ne sort pas de l'encadrement. */}
+        <CoachSectionCard
+          testID="week-private-note"
+          title="Note privée"
+          subtitle={
+            !cadreEditable
+              ? "Consultation d'une semaine passée"
+              : club.coachNoteUnavailable
+                ? "Note illisible pour le moment"
+                : noteDirty
+                  ? "Modifications non enregistrées"
+                  : noteSaved
+                    ? "Note enregistrée pour cette semaine"
+                    : "Aucune note"
+          }
+        >
+          {!cadreEditable ? (
+            // La note est rattachée à UNE semaine. Sur une semaine passée, le
+            // champ afficherait la note de la semaine en cours sous un autre
+            // titre : on préfère ne rien montrer plutôt que de mentir d'un cran.
+            <Text style={styles.explain} numberOfLines={3}>
+              La note privée suit la semaine en cours. Reviens à la semaine actuelle pour la lire ou
+              la modifier.
+            </Text>
+          ) : (
+          <View style={styles.form}>
+            <Text style={styles.explain} numberOfLines={4}>
+              {COACH_PRIVATE_NOTE_LABEL}
+            </Text>
+
+            {club.coachNoteUnavailable ? (
+              <Text style={styles.warnLine} numberOfLines={3}>
+                La note déjà enregistrée n'a pas pu être lue. Ce qui s'affiche ci-dessous est vide,
+                pas forcément ce qui est enregistré côté FKS.
+              </Text>
+            ) : null}
+
+            {/* Note écrite AVANT la séparation : elle vit encore dans le cadre de
+                semaine, donc les joueurs la reçoivent toujours. On le dit, et on
+                explique le geste qui la rend privée. Aucune conversion en
+                directive n'est proposée : ce serait décider à la place du coach. */}
+            {noteAReprendre ? (
+              <Text testID="week-private-note-legacy" style={styles.warnLine} numberOfLines={4}>
+                Cette note a été écrite avant la séparation : elle est encore rattachée au cadre de
+                la semaine, donc lisible par tes joueurs. Enregistre le cadre de la semaine pour la
+                déplacer ici et la rendre privée.
+              </Text>
+            ) : null}
+
+            <TextInput
+              testID="week-private-note-input"
+              style={styles.noteInput}
+              placeholder="Ex : gros match dimanche, revoir la sortie de balle à l'entraînement"
+              placeholderTextColor={coachColors.muted}
+              value={note}
+              onChangeText={(v) => {
+                setNote(v);
+                setNoteDirty(true);
+              }}
+              maxLength={NOTE_MAX}
+              multiline
+              accessibilityLabel="Note privée de l'encadrement"
+            />
+
+            <Pressable
+              testID="week-private-note-save"
+              onPress={handleSavePrivateNote}
+              disabled={savingNote}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: savingNote, busy: savingNote }}
+              style={({ pressed }) => [
+                styles.saveBtn,
+                savingNote && styles.saveBtnDisabled,
+                pressed && !savingNote && styles.saveBtnPressed,
+              ]}
+            >
+              <Text style={styles.saveLabel} numberOfLines={1}>
+                {savingNote ? "Enregistrement..." : "Enregistrer la note privée"}
+              </Text>
+            </Pressable>
+          </View>
           )}
         </CoachSectionCard>
 

@@ -10,6 +10,7 @@
 import { toDateKey, lastNDates } from "../utils/dateHelpers";
 import type { Session, Exercise, ClubTrainingIntensity, ClubWeekGoal, ClubTeamGender, DailyFeedback, InjuryRecord } from "../domain/types";
 import { normalizeClubTrainingIntensity, normalizeClubWeekGoal } from "../domain/types";
+import { isClubDirectiveApplicable, parseClubDirective } from "../domain/clubDirective";
 import { INJURY_AREA_TO_BACKEND_PAIN, mapAreaToPain, type BackendPainToken } from "../shared/injuryMapping";
 // Import type-only : aucun cout runtime (erase par tsc/babel), evite un import
 // reel de services/ vers screens/ (testConfig.ts importe @expo/vector-icons
@@ -18,38 +19,99 @@ import type { TestEntry, FieldKey } from "../screens/tests/testConfig";
 
 // ---- Contexte club (semaine) ----------------------------------------------
 
+/**
+ * Directive d'entraînement transmise au backend.
+ *
+ * C'est le SEUL texte libre du coach qui ait le droit de sortir : il est
+ * explicitement destiné à influencer la préparation, et le joueur le lit lui
+ * aussi (cf. domain/clubDirective.ts). La note privée, elle, ne passe plus par
+ * ici — voir le commentaire de `buildClubContextPayload`.
+ */
+export type ClubDirectivePayload = {
+  objective: ClubWeekGoal;
+  instruction: string;
+  valid_from: string;
+  valid_until: string;
+};
+
 export type ClubContextPayload = {
   training_intensity?: ClubTrainingIntensity;
   week_goal?: ClubWeekGoal;
-  note?: string;
   week_key?: string;
   /** Genre d'équipe (attribut équipe, jamais individuel). Oriente le focus neuromusculaire. */
   team_gender?: ClubTeamGender;
   /** Match prévu ce week-end (trace coach). Le backend peut l'ignorer sans risque. */
   match_this_weekend?: boolean;
+  /** Directive du club, uniquement si elle est ACTIVE et valide le jour même. */
+  directive?: ClubDirectivePayload;
+};
+
+export type BuildClubContextOptions = {
+  /** Document `directives/current` brut (ou déjà parsé). Absent = aucune directive. */
+  directive?: unknown;
+  /** Jour de référence "YYYY-MM-DD" servant à tester la fenêtre de validité. */
+  todayKey?: string | null;
 };
 
 /**
  * Construit le `club_context` envoyé au backend depuis le doc weekContext brut.
  * Pur (aucune dépendance Firebase). Retourne null si rien d'exploitable —
  * on n'invente jamais de valeur et on ne casse jamais la génération.
+ *
+ * LA NOTE DU COACH N'EST PLUS LUE ICI, ET C'EST VOLONTAIRE.
+ * Elle alimentait la génération jusqu'ici. Devenue privée, elle ne doit plus
+ * peser sur aucune séance : une note qu'on écrit pour soi ne doit pas modifier
+ * l'entraînement de quelqu'un d'autre à son insu. Le champ n'est pas seulement
+ * ignoré à l'envoi — il ne peut plus être écrit dans ce document (règles
+ * Firestore), et les documents historiques qui le portent encore sont traités
+ * ici comme inexistants. C'est la DIRECTIVE qui reprend ce rôle, avec une
+ * catégorie fermée, une fenêtre de validité et une visibilité joueur assumée.
  */
 export function buildClubContextPayload(
   raw: Record<string, unknown> | null | undefined,
   weekKey?: string | null,
+  options?: BuildClubContextOptions,
 ): ClubContextPayload | null {
-  if (!raw || typeof raw !== "object") return null;
+  const directive = buildClubDirectivePayload(options?.directive, options?.todayKey);
+
+  if (!raw || typeof raw !== "object") {
+    // Pas de cadre de semaine, mais une directive active : elle vaut à elle
+    // seule un contexte club. L'inverse (cadre sans directive) marchait déjà.
+    return directive ? { directive, ...(weekKey ? { week_key: weekKey } : {}) } : null;
+  }
+
   const ti = normalizeClubTrainingIntensity((raw as any).trainingIntensity);
   const wg = normalizeClubWeekGoal((raw as any).weekGoal);
-  if (!ti && !wg) return null;
-  const noteRaw = typeof (raw as any).note === "string" ? (raw as any).note.trim() : "";
+  if (!ti && !wg && !directive) return null;
   const matchThisWeekend = (raw as any).matchThisWeekend;
   return {
     ...(ti ? { training_intensity: ti } : {}),
     ...(wg ? { week_goal: wg } : {}),
-    ...(noteRaw ? { note: noteRaw.slice(0, 200) } : {}),
     ...(weekKey ? { week_key: weekKey } : {}),
     ...(typeof matchThisWeekend === "boolean" ? { match_this_weekend: matchThisWeekend } : {}),
+    ...(directive ? { directive } : {}),
+  };
+}
+
+/**
+ * Traduit un document directive en payload backend, UNIQUEMENT s'il est
+ * applicable le jour de référence (statut actif + fenêtre de validité). Absent,
+ * incomplet, inactif ou expiré → `undefined`, jamais une valeur par défaut.
+ */
+export function buildClubDirectivePayload(
+  raw: unknown,
+  todayKey?: string | null,
+): ClubDirectivePayload | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  if (!todayKey) return undefined;
+  const parsed = parseClubDirective(raw as Record<string, unknown>);
+  if (!isClubDirectiveApplicable(parsed, todayKey)) return undefined;
+  const d = parsed as NonNullable<typeof parsed>;
+  return {
+    objective: d.objective,
+    instruction: d.instruction,
+    valid_from: d.validFrom,
+    valid_until: d.validUntil,
   };
 }
 

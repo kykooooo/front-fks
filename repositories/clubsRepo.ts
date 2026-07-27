@@ -1,6 +1,7 @@
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -20,6 +21,20 @@ import {
 } from "../domain/types";
 import { parseCoachPlayerSummary, type CoachPlayerSummary } from "../domain/coachSummary";
 import { isCoachAccessGranted } from "../domain/coachAccess";
+import {
+  COACH_NOTES_COLLECTION,
+  clampCoachPrivateNote,
+  parseCoachPrivateNote,
+  type ClubCoachNote,
+} from "../domain/clubCoachNote";
+import {
+  CLUB_DIRECTIVES_COLLECTION,
+  CLUB_DIRECTIVE_CURRENT_ID,
+  clampDirectiveInstruction,
+  parseClubDirective,
+  type ClubDirectiveObjective,
+  type ClubTrainingDirective,
+} from "../domain/clubDirective";
 
 export type ClubDoc = {
   id: string;
@@ -390,9 +405,19 @@ export type ClubWeekContext = {
   createdBy: string;
   trainingIntensity: ClubTrainingIntensity;
   weekGoal: ClubWeekGoal;
-  note?: string | null;
   /** Match prévu ce week-end (info coach). null = non renseigné. */
   matchThisWeekend?: boolean | null;
+  /**
+   * NOTE HISTORIQUE encore présente dans le document, écrite AVANT la séparation
+   * note privée / directive. Elle n'existe QUE pour être récupérée par l'écran
+   * coach et déplacée vers la note privée : elle n'est jamais renvoyée au
+   * backend de génération, jamais affichée à un joueur, jamais convertie en
+   * directive.
+   *
+   * Le nom est volontairement différent de `note` : personne ne peut le lire
+   * par distraction en croyant manipuler le champ d'origine.
+   */
+  legacyNote?: string | null;
 };
 
 /** Type d'équipe (genre) — attribut club stable, posé par le coach. Pas de donnée individuelle. */
@@ -406,18 +431,30 @@ export async function getClubTeamGender(clubId: string): Promise<ClubTeamGender 
   return snap.exists() ? normalizeTeamGender((snap.data() as any)?.teamGender) : null;
 }
 
-/** Sauvegarde (merge) le contexte de la semaine. Coach uniquement (cf. règles Firestore). */
+/**
+ * Sauvegarde (merge) le contexte de la semaine. Coach uniquement (cf. règles).
+ *
+ * PLUS AUCUNE NOTE ICI. Ce document est lisible par TOUT membre du club — une
+ * règle Firestore autorise un document, elle ne masque pas un champ. Le champ
+ * `note` est donc explicitement SUPPRIMÉ à chaque écriture (`deleteField()`),
+ * et les règles refusent désormais toute écriture qui le laisserait présent.
+ *
+ * Pourquoi une suppression et pas simplement une omission : avec `{merge: true}`,
+ * omettre un champ le CONSERVE. Un cadre enregistré sur une semaine ancienne
+ * aurait laissé la note d'origine en place, donc toujours lisible par les
+ * joueurs — et la règle aurait rejeté l'écriture. La note historique n'est pas
+ * perdue pour autant : l'écran coach la déplace vers la note privée AVANT
+ * d'appeler cette fonction (cf. CoachWeekScreen.handleSaveContext).
+ */
 export async function saveClubWeekContext(opts: {
   clubId: string;
   weekKey: string;
   uid: string;
   trainingIntensity: ClubTrainingIntensity;
   weekGoal: ClubWeekGoal;
-  note?: string | null;
   matchThisWeekend?: boolean | null;
 }): Promise<void> {
   const ref = doc(db, "clubs", opts.clubId, "weekContexts", opts.weekKey);
-  const note = typeof opts.note === "string" ? opts.note.trim().slice(0, 200) : "";
   await setDoc(
     ref,
     {
@@ -426,8 +463,8 @@ export async function saveClubWeekContext(opts: {
       createdBy: opts.uid,
       trainingIntensity: opts.trainingIntensity,
       weekGoal: opts.weekGoal,
-      note: note || null,
       matchThisWeekend: typeof opts.matchThisWeekend === "boolean" ? opts.matchThisWeekend : null,
+      note: deleteField(),
       updatedAt: serverTimestamp(),
     },
     { merge: true }
@@ -448,7 +485,116 @@ export async function getClubWeekContext(clubId: string, weekKey: string): Promi
     createdBy: typeof data?.createdBy === "string" ? data.createdBy : "",
     trainingIntensity: trainingIntensity ?? "normal",
     weekGoal: weekGoal ?? "freshness",
-    note: typeof data?.note === "string" ? data.note : null,
     matchThisWeekend: typeof data?.matchThisWeekend === "boolean" ? data.matchThisWeekend : null,
+    // Résidu à récupérer, jamais à réutiliser tel quel (cf. ClubWeekContext).
+    legacyNote: clampCoachPrivateNote(data?.note) || null,
   };
+}
+
+// ─── Note privée du coach (clubs/{clubId}/coachNotes/{weekKey}) ─────────────
+// Collection COACH-ONLY. Les règles Firestore y refusent get ET list à tout
+// joueur : la séparation est prononcée par la base, pas par un écran qui
+// s'abstient d'afficher. Ce document n'est lu par AUCUN chemin de génération.
+
+/**
+ * Écrit (ou efface) la note privée de la semaine.
+ *
+ * Une note vidée est SUPPRIMÉE plutôt que remplacée par une chaîne vide :
+ * « pas de note » ne doit pas laisser derrière lui un document résiduel dont
+ * on se demanderait s'il contient encore quelque chose.
+ */
+export async function saveCoachPrivateNote(opts: {
+  clubId: string;
+  weekKey: string;
+  uid: string;
+  note: string;
+}): Promise<void> {
+  const note = clampCoachPrivateNote(opts.note);
+  const ref = doc(db, "clubs", opts.clubId, COACH_NOTES_COLLECTION, opts.weekKey);
+  await setDoc(
+    ref,
+    {
+      weekKey: opts.weekKey,
+      clubId: opts.clubId,
+      createdBy: opts.uid,
+      note: note ? note : deleteField(),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+/** Lit la note privée d'une semaine. Null si absente/vide. */
+export async function getCoachPrivateNote(
+  clubId: string,
+  weekKey: string,
+): Promise<ClubCoachNote | null> {
+  const snap = await getDoc(doc(db, "clubs", clubId, COACH_NOTES_COLLECTION, weekKey));
+  if (!snap.exists()) return null;
+  return parseCoachPrivateNote(snap.data() as Record<string, unknown>, weekKey);
+}
+
+// ─── Directive d'entraînement (clubs/{clubId}/directives/current) ───────────
+// VISIBLE PAR LE JOUEUR (get autorisé aux membres du club), écrite par le coach
+// seul. Une seule directive à la fois, à une clé connue : le joueur la lit sans
+// jamais énumérer la collection (list reste fermée à tous).
+
+/**
+ * Enregistre LA directive en cours.
+ *
+ * `objective` est validée contre l'allowlist avant écriture : une catégorie
+ * inconnue est refusée ici, en plus de l'être à la lecture. `instruction` est
+ * bornée. Rien n'est deviné : ni la fenêtre de validité, ni le statut.
+ */
+export async function saveClubDirective(opts: {
+  clubId: string;
+  uid: string;
+  objective: ClubDirectiveObjective;
+  instruction: string;
+  validFrom: string;
+  validUntil: string;
+  active: boolean;
+}): Promise<void> {
+  const instruction = clampDirectiveInstruction(opts.instruction);
+  if (!instruction) throw new Error("DIRECTIVE_INSTRUCTION_REQUIRED");
+
+  const ref = doc(db, "clubs", opts.clubId, CLUB_DIRECTIVES_COLLECTION, CLUB_DIRECTIVE_CURRENT_ID);
+
+  // `createdAt` doit rester la date de CRÉATION. Avec un merge, le réécrire à
+  // chaque enregistrement le ferait suivre la dernière édition — le champ
+  // mentirait sur son propre nom. On ne le pose donc que si le document n'existe
+  // pas encore. Une lecture refusée/en échec ne bloque pas l'écriture : on
+  // considère alors le document comme existant (on n'écrase pas un `createdAt`
+  // qu'on n'a pas pu lire).
+  let alreadyExists = true;
+  try {
+    alreadyExists = (await getDoc(ref)).exists();
+  } catch {
+    alreadyExists = true;
+  }
+
+  await setDoc(
+    ref,
+    {
+      clubId: opts.clubId,
+      objective: opts.objective,
+      instruction,
+      validFrom: opts.validFrom,
+      validUntil: opts.validUntil,
+      active: opts.active,
+      createdBy: opts.uid,
+      ...(alreadyExists ? {} : { createdAt: serverTimestamp() }),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+/** Lit la directive en cours. Null si absente ou incomplète (fail-closed). */
+export async function getClubDirective(clubId: string): Promise<ClubTrainingDirective | null> {
+  const snap = await getDoc(
+    doc(db, "clubs", clubId, CLUB_DIRECTIVES_COLLECTION, CLUB_DIRECTIVE_CURRENT_ID),
+  );
+  if (!snap.exists()) return null;
+  return parseClubDirective(snap.data() as Record<string, unknown>);
 }

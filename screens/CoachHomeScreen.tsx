@@ -110,7 +110,6 @@ export default function CoachHomeScreen() {
   const weekKey = weekKeyOf();
   const [intensity, setIntensity] = useState<ClubTrainingIntensity | null>(null);
   const [weekGoal, setWeekGoal] = useState<ClubWeekGoal | null>(null);
-  const [note, setNote] = useState("");
   const [matchThisWeekend, setMatchThisWeekend] = useState<boolean | null>(null);
   const [cadreSaved, setCadreSaved] = useState(false);
   const [savingContext, setSavingContext] = useState(false);
@@ -122,7 +121,6 @@ export default function CoachHomeScreen() {
   const resetWeekContextState = useCallback(() => {
     setIntensity(null);
     setWeekGoal(null);
-    setNote("");
     setMatchThisWeekend(null);
     setCadreSaved(false);
   }, []);
@@ -168,7 +166,6 @@ export default function CoachHomeScreen() {
         if (wc) {
           setIntensity(wc.trainingIntensity);
           setWeekGoal(wc.weekGoal);
-          setNote(wc.note ?? "");
           setMatchThisWeekend(typeof wc.matchThisWeekend === "boolean" ? wc.matchThisWeekend : null);
           setCadreSaved(true);
         } else {
@@ -209,7 +206,7 @@ export default function CoachHomeScreen() {
     }
     setSavingContext(true);
     try {
-      await saveClubWeekContext({ clubId, weekKey, uid, trainingIntensity: intensity, weekGoal, note, matchThisWeekend });
+      await saveClubWeekContext({ clubId, weekKey, uid, trainingIntensity: intensity, weekGoal, matchThisWeekend });
       setCadreSaved(true);
       haptics.success();
       showToast({ type: "success", title: "Cadre enregistré", message: "Il s'applique aux prochaines séances générées cette semaine." });
@@ -220,7 +217,7 @@ export default function CoachHomeScreen() {
     } finally {
       setSavingContext(false);
     }
-  }, [uid, clubId, intensity, weekGoal, note, matchThisWeekend, weekKey, haptics]);
+  }, [uid, clubId, intensity, weekGoal, matchThisWeekend, weekKey, haptics]);
 
   useEffect(() => {
     load();
@@ -415,16 +412,16 @@ export default function CoachHomeScreen() {
         </View>
         <Text style={styles.fieldHint}>Info staff ajoutée au cadre.</Text>
 
-        <Text style={styles.fieldLabel}>Note (optionnel)</Text>
-        <TextInput
-          style={styles.noteInput}
-          placeholder="Ex: gros match dimanche, jambes lourdes"
-          placeholderTextColor={palette.muted}
-          value={note}
-          onChangeText={setNote}
-          maxLength={200}
-          multiline
-        />
+        {/* LE CHAMP NOTE A ÉTÉ RETIRÉ D'ICI (2026-07). Il écrivait dans un
+            document lisible par tout le club, et repartait dans le contexte de
+            génération. Les deux concepts qui l'ont remplacé — note privée
+            (coach-only) et directive d'entraînement (visible du joueur) — vivent
+            dans l'écran actif `screens/coach/CoachWeekScreen.tsx`. Cet écran-ci
+            n'est monté par aucune route : on n'y réimplémente rien. */}
+        <Text style={styles.fieldHint}>
+          La note du coach ne vit plus dans le cadre de la semaine : elle est devenue une note
+          privée, et une directive d'entraînement peut désormais être posée à part.
+        </Text>
 
         <Button
           label={

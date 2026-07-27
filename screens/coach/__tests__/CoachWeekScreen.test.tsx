@@ -39,6 +39,11 @@ jest.mock("../../../hooks/coach/useClubInviteCode", () => ({
 jest.mock("../../../repositories/clubsRepo", () => ({
   saveClubWeekContext: jest.fn(),
   setClubTeamGender: jest.fn(),
+  // Note privée et directive : DEUX écritures distinctes, vers DEUX documents
+  // distincts. Le test les capture séparément — c'est ce qui prouve qu'un texte
+  // privé ne part jamais par le canal de la directive, et réciproquement.
+  saveCoachPrivateNote: jest.fn(),
+  saveClubDirective: jest.fn(),
 }));
 
 jest.mock("../../../services/firebase", () => ({
@@ -66,12 +71,19 @@ jest.mock("../../../hooks/useHaptics", () => ({
 import { toCoachPlayerView } from "../../../domain/coachView";
 import type { CoachPlayerSummary } from "../../../domain/coachSummary";
 import type { CoachPlayerView } from "../../../domain/coachView";
-import { saveClubWeekContext, setClubTeamGender } from "../../../repositories/clubsRepo";
+import {
+  saveClubDirective,
+  saveClubWeekContext,
+  saveCoachPrivateNote,
+  setClubTeamGender,
+} from "../../../repositories/clubsRepo";
 import { showToast } from "../../../utils/toast";
 import CoachWeekScreen, { COACH_SAVE_TIMEOUT_MS, semaineLisible } from "../CoachWeekScreen";
 
 const saveMock = saveClubWeekContext as jest.MockedFunction<typeof saveClubWeekContext>;
 const genderMock = setClubTeamGender as jest.MockedFunction<typeof setClubTeamGender>;
+const noteMock = saveCoachPrivateNote as jest.MockedFunction<typeof saveCoachPrivateNote>;
+const directiveMock = saveClubDirective as jest.MockedFunction<typeof saveClubDirective>;
 const toastMock = showToast as jest.MockedFunction<typeof showToast>;
 
 // ─── États injectés dans l'écran ────────────────────────────────────────────
@@ -94,6 +106,10 @@ function makeClubState(overrides: Partial<Record<string, unknown>> = {}) {
     weekKey: WEEK_KEY,
     weekContext: null as unknown,
     weekContextUnavailable: false,
+    coachNote: null as unknown,
+    coachNoteUnavailable: false,
+    directive: null as unknown,
+    directiveUnavailable: false,
     fetchedAt: TODAY_MS as number | null,
     isRefreshing: false,
     refresh: jest.fn(),
@@ -264,6 +280,8 @@ beforeEach(() => {
   mockInviteState = makeInviteState();
   saveMock.mockResolvedValue(undefined);
   genderMock.mockResolvedValue(undefined);
+  noteMock.mockResolvedValue(undefined);
+  directiveMock.mockResolvedValue(undefined);
 });
 
 /** État de sélection d'une puce, tel qu'un lecteur d'écran l'entend. */
@@ -295,7 +313,11 @@ describe("CoachWeekScreen — cadre vide", () => {
     expect(texte).toContain("Intensité club cette semaine");
     expect(texte).toContain("Objectif FKS");
     expect(texte).toContain("Match ce week-end ?");
-    expect(texte).toContain("Note (optionnel)");
+    // La note NE VIT PLUS dans le cadre : elle a sa propre carte, et la
+    // directive aussi. Un champ « Note » dans ce bloc voudrait dire qu'on a
+    // reperdu la séparation.
+    expect(texte).not.toContain("Note (optionnel)");
+    expect(exists(renderer, "week-frame-note")).toBe(false);
     // Le code club vit toujours dans cet onglet — mais il s'y GÉNÈRE, il ne s'y
     // lit plus (le détail est couvert par le bloc « code club » plus bas).
     expect(texte).toContain("Code club");
@@ -314,16 +336,17 @@ describe("CoachWeekScreen — cadre enregistré", () => {
 
     await press(renderer, "week-frame-save");
 
-    // Métier INCHANGÉ : mêmes arguments qu'avant le portage de l'UI.
+    // Le cadre part SANS note : le document lisible par les joueurs ne porte
+    // plus de texte libre du coach.
     expect(saveMock).toHaveBeenCalledWith({
       clubId: "clubX",
       weekKey: WEEK_KEY,
       uid: "coach1",
       trainingIntensity: "normal",
       weekGoal: "speed",
-      note: "",
       matchThisWeekend: null,
     });
+    expect(saveMock.mock.calls[0][0]).not.toHaveProperty("note");
 
     const texte = flatText(renderer.toJSON());
     expect(texte).toContain("Cadre enregistré pour cette semaine");
@@ -341,7 +364,6 @@ describe("CoachWeekScreen — cadre enregistré", () => {
         createdBy: "coach1",
         trainingIntensity: "heavy",
         weekGoal: "prevention",
-        note: "gros match dimanche",
         matchThisWeekend: true,
       },
     });
@@ -351,10 +373,200 @@ describe("CoachWeekScreen — cadre enregistré", () => {
 
     expect(texte).toContain("Cadre enregistré pour cette semaine");
     expect(texte).toContain("Mettre à jour le cadre");
-    // La note vit dans la VALEUR du champ, pas dans le texte rendu.
-    const champNote = noeuds(renderer, "week-frame-note");
-    expect(champNote.some((n) => n.props.value === "gros match dimanche")).toBe(true);
     expect(actionable(renderer, "week-frame-save").props.disabled).toBe(false);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// LA SÉPARATION, VUE DE L'ÉCRAN.
+// Deux concepts = deux cartes, deux champs, deux boutons, deux documents. Le
+// test ne vérifie pas seulement que ça s'affiche : il vérifie qu'un texte saisi
+// d'un côté ne part JAMAIS par l'appel de l'autre.
+
+const NOTE_SENSIBLE = "Rachid tendinite genou droit, se plaint tout le temps";
+
+describe("CoachWeekScreen — note privée et directive sont deux objets distincts", () => {
+  test("les deux libellés promis sont affichés, au mot près", async () => {
+    const renderer = await render();
+    const texte = flatText(renderer.toJSON());
+
+    expect(texte).toContain(
+      "Note privée — visible uniquement par l'encadrement autorisé. Cette note ne modifie pas les séances.",
+    );
+    expect(texte).toContain(
+      "Directive d'entraînement — visible par le joueur et susceptible d'influencer ses prochaines séances.",
+    );
+  });
+
+  test("l'avertissement « le joueur lit » est affiché AVANT enregistrement", async () => {
+    const renderer = await render();
+    const texte = flatText(renderer.toJSON());
+    // Il est à l'écran dès l'ouverture, pas dans un toast après coup : c'est ce
+    // qui permet au coach de choisir ses mots.
+    expect(texte).toContain("Tout l'effectif peut lire cette directive.");
+    expect(texte).toContain("aucune information de santé");
+  });
+
+  test("une note sensible part par saveCoachPrivateNote, et par AUCUN autre appel", async () => {
+    const renderer = await render();
+
+    const champ = noeuds(renderer, "week-private-note-input")[0];
+    await act(async () => {
+      (champ.props.onChangeText as (v: string) => void)(NOTE_SENSIBLE);
+    });
+    await press(renderer, "week-private-note-save");
+
+    expect(noteMock).toHaveBeenCalledWith({
+      clubId: "clubX",
+      weekKey: WEEK_KEY,
+      uid: "coach1",
+      note: NOTE_SENSIBLE,
+    });
+    // Sonde hostile : le texte n'apparaît dans AUCUN argument des deux autres
+    // écritures — ni le cadre lisible par les joueurs, ni la directive.
+    expect(JSON.stringify(saveMock.mock.calls)).not.toContain("tendinite");
+    expect(JSON.stringify(directiveMock.mock.calls)).not.toContain("tendinite");
+    expect(directiveMock).not.toHaveBeenCalled();
+  });
+
+  test("enregistrer une directive n'écrit jamais dans la note privée", async () => {
+    const renderer = await render();
+
+    await press(renderer, "chip-directive-objective-prevention");
+    const champ = noeuds(renderer, "week-directive-instruction")[0];
+    await act(async () => {
+      (champ.props.onChangeText as (v: string) => void)("On garde les appuis");
+    });
+    await press(renderer, "week-directive-save");
+
+    expect(directiveMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clubId: "clubX",
+        uid: "coach1",
+        objective: "prevention",
+        instruction: "On garde les appuis",
+        active: true,
+      }),
+    );
+    expect(noteMock).not.toHaveBeenCalled();
+    // La fenêtre de validité est bornée : une directive a une fin.
+    const args = directiveMock.mock.calls[0][0];
+    expect(args.validFrom <= args.validUntil).toBe(true);
+  });
+
+  test("directive incomplète : rien ne part, et l'écran dit ce qui manque", async () => {
+    const renderer = await render();
+    expect(actionable(renderer, "week-directive-save").props.disabled).toBe(true);
+
+    // Un objectif sans consigne ne suffit pas : le joueur lirait une catégorie
+    // sans savoir ce qu'on attend de lui.
+    await press(renderer, "chip-directive-objective-speed");
+    expect(actionable(renderer, "week-directive-save").props.disabled).toBe(true);
+    expect(flatText(renderer.toJSON())).toContain(
+      "Choisis un objectif et écris la consigne pour pouvoir enregistrer.",
+    );
+    expect(directiveMock).not.toHaveBeenCalled();
+  });
+
+  test("une directive déjà posée est reprise telle quelle, jamais devinée", async () => {
+    mockClubState = makeClubState({
+      directive: {
+        objective: "strength",
+        instruction: "Renfo léger avant le derby",
+        validFrom: "2026-07-20",
+        validUntil: "2026-08-03",
+        active: false,
+        createdBy: "coach1",
+        createdAt: null,
+        updatedAt: null,
+      },
+    });
+
+    const renderer = await render();
+    const texte = flatText(renderer.toJSON());
+
+    expect(texte).toContain("Directive levée"); // le statut n'est pas maquillé
+    const champ = noeuds(renderer, "week-directive-instruction");
+    expect(champ.some((n) => n.props.value === "Renfo léger avant le derby")).toBe(true);
+    expect(chipSelected(renderer, "chip-directive-status-levee")).toBe(true);
+  });
+
+  test("AUCUNE conversion automatique : une note privée ne pré-remplit pas la directive", async () => {
+    mockClubState = makeClubState({
+      coachNote: { weekKey: WEEK_KEY, note: NOTE_SENSIBLE },
+    });
+
+    const renderer = await render();
+
+    // La note est bien reprise dans SON champ...
+    const champNote = noeuds(renderer, "week-private-note-input");
+    expect(champNote.some((n) => n.props.value === NOTE_SENSIBLE)).toBe(true);
+    // ...et nulle part ailleurs. Le champ directive reste vide, aucun objectif
+    // n'est présélectionné : le code ne décide pas à la place du coach.
+    const champDirective = noeuds(renderer, "week-directive-instruction");
+    expect(champDirective.every((n) => n.props.value === "")).toBe(true);
+    expect(actionable(renderer, "week-directive-save").props.disabled).toBe(true);
+  });
+});
+
+describe("CoachWeekScreen — note historique encore logée dans le cadre", () => {
+  const CLUB_AVEC_LEGACY = () =>
+    makeClubState({
+      weekContext: {
+        weekKey: WEEK_KEY,
+        clubId: "clubX",
+        createdBy: "coach1",
+        trainingIntensity: "heavy",
+        weekGoal: "prevention",
+        matchThisWeekend: true,
+        legacyNote: NOTE_SENSIBLE,
+      },
+    });
+
+  test("l'écran DIT que cette note est encore lisible par les joueurs", async () => {
+    mockClubState = CLUB_AVEC_LEGACY();
+    const renderer = await render();
+
+    expect(exists(renderer, "week-private-note-legacy")).toBe(true);
+    const texte = flatText(renderer.toJSON());
+    expect(texte).toContain("écrite avant la séparation");
+    expect(texte).toContain("lisible par tes joueurs");
+    // Elle est reprise dans le champ privé, sans être convertie en directive.
+    const champ = noeuds(renderer, "week-private-note-input");
+    expect(champ.some((n) => n.props.value === NOTE_SENSIBLE)).toBe(true);
+    expect(actionable(renderer, "week-directive-save").props.disabled).toBe(true);
+  });
+
+  test("enregistrer le cadre met la note à l'abri AVANT de l'effacer du document public", async () => {
+    mockClubState = CLUB_AVEC_LEGACY();
+    const ordre: string[] = [];
+    noteMock.mockImplementation(async () => {
+      ordre.push("note-privee");
+    });
+    saveMock.mockImplementation(async () => {
+      ordre.push("cadre");
+    });
+
+    const renderer = await render();
+    await press(renderer, "week-frame-save");
+
+    // L'ordre n'est pas cosmétique : le cadre SUPPRIME le champ `note`. S'il
+    // partait en premier, un échec du sauvetage perdrait le texte.
+    expect(ordre).toEqual(["note-privee", "cadre"]);
+    expect(noteMock).toHaveBeenCalledWith(
+      expect.objectContaining({ note: NOTE_SENSIBLE, weekKey: WEEK_KEY }),
+    );
+  });
+
+  test("si le sauvetage échoue, le cadre n'est PAS enregistré (donc la note n'est pas effacée)", async () => {
+    mockClubState = CLUB_AVEC_LEGACY();
+    noteMock.mockRejectedValue(new Error("permission-denied"));
+
+    const renderer = await render();
+    await press(renderer, "week-frame-save");
+
+    expect(saveMock).not.toHaveBeenCalled();
+    expect(flatText(renderer.toJSON())).not.toContain("Cadre enregistré pour cette semaine");
   });
 });
 

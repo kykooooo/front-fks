@@ -18,16 +18,26 @@ jest.mock("firebase/firestore", () => ({
 
 jest.mock("../../../repositories/clubsRepo", () => ({
   getClubWeekContext: jest.fn(),
+  // Note privée et directive : DEUX documents distincts du cadre. Le hook les
+  // lit séparément, donc le test les pilote séparément.
+  getCoachPrivateNote: jest.fn(),
+  getClubDirective: jest.fn(),
 }));
 
 const mockAuth: { currentUser: { uid: string } | null } = { currentUser: { uid: "coach1" } };
 
 import { getDoc } from "firebase/firestore";
-import { getClubWeekContext } from "../../../repositories/clubsRepo";
+import {
+  getClubDirective,
+  getClubWeekContext,
+  getCoachPrivateNote,
+} from "../../../repositories/clubsRepo";
 import { useCoachClub } from "../useCoachClub";
 
 const getDocMock = getDoc as jest.MockedFunction<any>;
 const weekContextMock = getClubWeekContext as jest.MockedFunction<typeof getClubWeekContext>;
+const privateNoteMock = getCoachPrivateNote as jest.MockedFunction<typeof getCoachPrivateNote>;
+const directiveMock = getClubDirective as jest.MockedFunction<typeof getClubDirective>;
 
 const snap = (data: unknown | null) => ({
   exists: () => data !== null,
@@ -50,6 +60,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockAuth.currentUser = { uid: "coach1" };
   weekContextMock.mockResolvedValue(null);
+  privateNoteMock.mockResolvedValue(null);
+  directiveMock.mockResolvedValue(null);
 });
 
 describe("useCoachClub — coach SANS club (l'écran ne doit plus mentir)", () => {
@@ -92,7 +104,6 @@ describe("useCoachClub — contexte club résolu", () => {
       createdBy: "coach1",
       trainingIntensity: "normal",
       weekGoal: "speed",
-      note: null,
       matchThisWeekend: true,
     });
 
@@ -118,6 +129,59 @@ describe("useCoachClub — contexte club résolu", () => {
     expect(h.current.status).toBe("ready");
     expect(h.current.weekContext).toBeNull();
     expect(h.current.weekContextUnavailable).toBe(true);
+    await h.unmount();
+  });
+
+  // ── Note privée / directive : deux documents, deux états, jamais confondus ──
+
+  test("note privée et directive lues séparément du cadre", async () => {
+    wireDocs({});
+    privateNoteMock.mockResolvedValue({ weekKey: "2026-07-20", note: "revoir la sortie de balle" });
+    directiveMock.mockResolvedValue({
+      objective: "prevention",
+      instruction: "On garde les appuis",
+      validFrom: "2026-07-20",
+      validUntil: "2026-08-10",
+      active: true,
+      createdBy: "coach1",
+      createdAt: null,
+      updatedAt: null,
+    });
+
+    const h = await renderHook(() => useCoachClub({ now }));
+
+    expect(h.current.coachNote?.note).toBe("revoir la sortie de balle");
+    expect(h.current.coachNoteUnavailable).toBe(false);
+    expect(h.current.directive?.objective).toBe("prevention");
+    expect(h.current.directiveUnavailable).toBe(false);
+    await h.unmount();
+  });
+
+  test("note privée illisible → signalée, jamais confondue avec « aucune note »", async () => {
+    wireDocs({});
+    privateNoteMock.mockRejectedValue(new Error("permission-denied"));
+
+    const h = await renderHook(() => useCoachClub({ now }));
+
+    expect(h.current.status).toBe("ready");
+    expect(h.current.coachNote).toBeNull();
+    expect(h.current.coachNoteUnavailable).toBe(true);
+    // L'échec est ISOLÉ : la directive, elle, reste lue normalement.
+    expect(h.current.directiveUnavailable).toBe(false);
+    await h.unmount();
+  });
+
+  test("directive illisible → signalée, le reste du contexte club tient debout", async () => {
+    wireDocs({});
+    directiveMock.mockRejectedValue(new Error("permission-denied"));
+
+    const h = await renderHook(() => useCoachClub({ now }));
+
+    expect(h.current.status).toBe("ready");
+    expect(h.current.clubId).toBe("clubX");
+    expect(h.current.directive).toBeNull();
+    expect(h.current.directiveUnavailable).toBe(true);
+    expect(h.current.coachNoteUnavailable).toBe(false);
     await h.unmount();
   });
 

@@ -40,7 +40,8 @@ service cloud.firestore {
     // Le rattachement au club (le doc members existe) et l'autorisation de
     // consultation (ce champ) sont DEUX choses différentes. Un joueur peut être
     // membre du club sans que son suivi soit lisible : c'est le cas nominal d'un
-    // mineur tant que l'étape supplémentaire n'a pas été faite.
+    // club configuré en "approval_required" (cf. POLITIQUE, plus bas), ou d'un
+    // accès retiré. L'ÂGE n'entre plus dans cette décision (juillet 2026).
     //
     // Valeurs : "pending" | "approved" | "revoked" | "not_required".
     // SEULES "approved" et "not_required" ouvrent la lecture — liste recopiée de
@@ -57,6 +58,47 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid)) &&
         get(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid))
           .data.get("coachAccess", "") in ["approved", "not_required"];
+    }
+
+    // ── POLITIQUE D'ACCÈS COACH DU CLUB ─────────────────────────────────────
+    // Portée : clubs/{clubId}.coachAccessPolicy
+    // Valeurs : "automatic_safe_projection" (défaut) | "approval_required".
+    //
+    // Ce champ décide de l'état `coachAccess` posé sur un joueur AU MOMENT DE
+    // SON RATTACHEMENT (Cloud Function `joinClubWithInviteCode`). Il ne change
+    // RIEN aux règles de lecture ci-dessous : `isCoachAccessGranted` continue de
+    // ne lire QUE le membership, sans get() supplémentaire sur le club. C'est
+    // volontaire — faire dépendre chaque lecture de summary d'un second document
+    // doublerait le coût de lecture du roster, pour une information qui est déjà
+    // matérialisée dans `coachAccess`.
+    //
+    // ÉCRITURE : coach ou owner du club, et PERSONNE D'AUTRE. Un joueur ne peut
+    // pas la poser, la changer, ni l'effacer — ni sur un club où il est membre,
+    // ni ailleurs (il n'a aucun droit d'update sur un document club).
+    //
+    // Le coach non-owner obtient ici un droit d'écriture EXACTEMENT borné à ce
+    // champ (`hasOnly`) : il ne gagne aucun autre pouvoir sur le document club
+    // (ni renommage, ni changement d'ownerUid). Sans ce chemin, seul le
+    // propriétaire pourrait configurer la politique, ce qui n'est pas ce que la
+    // décision produit demande.
+    //
+    // VALEUR VALIDÉE : une politique inconnue est refusée à l'écriture. Le
+    // serveur, lui, retombe de toute façon sur le défaut si elle est illisible
+    // (functions/src/coachAccessPolicy.ts) — les deux protections se doublent
+    // volontairement, et la base est la plus stricte des deux.
+    function validCoachAccessPolicy() {
+      return request.resource.data.get("coachAccessPolicy", "automatic_safe_projection")
+        in ["automatic_safe_projection", "approval_required"];
+    }
+
+    function touchesCoachAccessPolicy() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(["coachAccessPolicy"]);
+    }
+
+    function onlyTouchesCoachAccessPolicy() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(["coachAccessPolicy"]);
     }
 
     // Frontière coach-safe (PR-4) : les docs BRUTS de la joueuse (profil, séances
@@ -97,8 +139,21 @@ service cloud.firestore {
       // `resource.data.ownerUid` (doc déjà chargé) évite un get() redondant.
       allow get: if isClubMember(clubId) ||
         (isSignedIn() && resource.data.ownerUid == request.auth.uid);
-      allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
-      allow update: if isClubOwner(clubId);
+      // Création : le créateur est forcément l'owner. Il peut poser la politique
+      // dès la création, mais seulement avec une valeur reconnue.
+      allow create: if isSignedIn() &&
+        request.resource.data.ownerUid == request.auth.uid &&
+        validCoachAccessPolicy();
+      // Mise à jour : l'owner comme avant ; le coach UNIQUEMENT pour la
+      // politique d'accès et rien d'autre. Dans les deux cas, si la politique
+      // est touchée elle doit être valide. Si elle ne l'est pas, on ne la
+      // valide pas — sans quoi une valeur héritée illisible bloquerait toute
+      // autre mise à jour légitime du club.
+      allow update: if (
+          isClubOwner(clubId) ||
+          (isCoach(clubId) && onlyTouchesCoachAccessPolicy())
+        ) &&
+        (!touchesCoachAccessPolicy() || validCoachAccessPolicy());
       allow delete: if false;
 
       match /members/{memberId} {
@@ -141,7 +196,7 @@ service cloud.firestore {
       }
 
       // Contexte de semaine (« cadre » posé par le coach : intensité, objectif,
-      // match, et une note libre de 200 caractères).
+      // match). LA NOTE LIBRE N'Y VIT PLUS — voir le bloc `coachNotes` plus bas.
       //
       // POURQUOI `get` ET `list` SONT SÉPARÉS ICI (2026-07) — c'était une fuite.
       // Un seul `allow read` couvre les DEUX opérations. Or cette règle ne dépend
@@ -164,13 +219,69 @@ service cloud.firestore {
       // LIMITE ASSUMÉE, à ne pas maquiller : une weekKey est une date de lundi,
       // donc devinable. Un membre peut encore relire une semaine passée document
       // par document. Ce qui est fermé ici, c'est la récolte en masse ; ce qui
-      // reste ouvert, c'est la lecture unitaire d'un cadre par un membre du club
-      // — y compris la note libre, qu'aucune règle Firestore ne peut masquer
-      // champ par champ (cf. docs/coach-pilote-2026-07/MATRICE_DROITS_COACH.md,
-      // section « à trancher »).
+      // reste ouvert, c'est la lecture unitaire d'un cadre par un membre du club.
+      //
+      // ── LE CHAMP `note` EST BANNI DE CE DOCUMENT (2026-07) ─────────────────
+      // Il y vivait, et il était lu par TOUT membre du club — une règle autorise
+      // un DOCUMENT, elle ne masque pas un CHAMP. La note du coach arrivait donc
+      // sur le téléphone de chaque joueur, et repartait dans le contexte envoyé
+      // au backend de génération. Masquer le champ dans l'écran ne protégeait
+      // rien : la donnée était bien là.
+      //
+      // La condition porte sur le RÉSULTAT de l'écriture (`request.resource.data`),
+      // pas sur les clés touchées. C'est ce qui la rend infranchissable : une
+      // écriture partielle en merge qui LAISSERAIT une note ancienne en place est
+      // refusée elle aussi. Le client doit donc supprimer explicitement le champ
+      // (`deleteField()`, cf. repositories/clubsRepo.saveClubWeekContext), et
+      // l'écran coach déplace d'abord la note historique vers la note privée :
+      // rien n'est perdu, rien ne reste exposé.
+      //
+      // RÉSIDU CONNU, écrit noir sur blanc : un document ancien JAMAIS réenregistré
+      // depuis ce changement porte encore sa note et reste lisible par les membres.
+      // Cette règle empêche toute NOUVELLE exposition ; solder l'historique demande
+      // une reprise administrateur, hors de portée d'une règle Firestore.
       //
       // Écriture réservée au coach (le joueur n'écrit jamais). Delete = owner.
       match /weekContexts/{weekKey} {
+        allow get: if isClubMember(clubId) || isClubOwner(clubId);
+        allow list: if false;
+        allow create, update: if isCoach(clubId) &&
+          !("note" in request.resource.data);
+        allow delete: if isClubOwner(clubId);
+      }
+
+      // ── NOTE PRIVÉE DU COACH ────────────────────────────────────────────────
+      // Le pense-bête d'encadrement, déplacé hors du cadre de semaine. C'est LA
+      // séparation demandée, et elle est prononcée ICI, par la base : aucun
+      // joueur ne peut lire ce document, ni par `get` ni par `list`. Un écran qui
+      // s'abstient d'afficher n'aurait rien protégé ; un refus serveur, si.
+      //
+      // Lecture : coach du club ou owner — « l'encadrement autorisé », exactement
+      // ce que le libellé affiché au coach promet. Écriture : coach seul.
+      // `list` fermée à tous, comme pour les cadres : personne n'énumère cette
+      // collection, et une porte que nul n'emprunte est une porte qu'on ferme.
+      //
+      // Ce document n'est lu par AUCUN chemin de génération de séance : une note
+      // privée ne modifie pas un entraînement (cf. services/aiContext.ts).
+      match /coachNotes/{weekKey} {
+        allow get: if isCoach(clubId) || isClubOwner(clubId);
+        allow list: if false;
+        allow create, update: if isCoach(clubId);
+        allow delete: if isCoach(clubId) || isClubOwner(clubId);
+      }
+
+      // ── DIRECTIVE D'ENTRAÎNEMENT ────────────────────────────────────────────
+      // L'objet DISTINCT, explicitement destiné à influencer la préparation —
+      // et par conséquent VISIBLE PAR LE JOUEUR. C'est le pendant assumé de la
+      // note privée : ce qui pèse sur l'entraînement de quelqu'un doit pouvoir
+      // être lu par lui.
+      //
+      // Lecture : tout membre du club (le joueur en fait partie) + owner.
+      // Écriture : coach seul — un joueur ne se prescrit pas une directive.
+      // `list` fermée : la directive en cours vit à une clé connue d'avance
+      // (`current`, cf. domain/clubDirective.CLUB_DIRECTIVE_CURRENT_ID), donc un
+      // `get` direct suffit et l'historique ne s'aspire pas.
+      match /directives/{directiveId} {
         allow get: if isClubMember(clubId) || isClubOwner(clubId);
         allow list: if false;
         allow create, update: if isCoach(clubId);

@@ -189,25 +189,47 @@ _Test qui le prouve :_ scénario 3, second test (« LIMITE CONNUE »).
 _Question :_ veut-on un chemin de transfert de propriété dans l'app, ou est-ce que
 la console suffit pour le pilote ?
 
-### Limite 2 — la note libre du coach arrive sur le téléphone de chaque joueur
+### Limite 2 — TRANCHÉE (2026-07) : note privée et directive sont séparées
 
-Une règle Firestore autorise ou refuse **un document entier** ; elle ne masque pas
-un champ. Le joueur lit donc le cadre de la semaine **avec** la note libre du
-coach, et cette note part ensuite dans le contexte envoyé au backend de
-génération (`services/aiContextHelpers.ts:45-50`).
+**Le défaut.** Une règle Firestore autorise ou refuse **un document entier** ; elle
+ne masque pas un champ. Le joueur lisait donc le cadre de la semaine **avec** la
+note libre du coach, et cette note repartait dans le contexte envoyé au backend
+de génération. L'écran joueur ne l'affichait jamais — **mais ne rien afficher
+n'est pas une protection** : la donnée était bien sur l'appareil.
 
-L'écran joueur ne l'affiche jamais. **Mais ne rien afficher n'est pas une
-protection** : la donnée est bien sur l'appareil, et n'importe qui inspectant le
-trafic la verrait. Or l'écran coach présente ce champ comme une note de travail
-(« Ex : gros match dimanche, jambes lourdes ») et le champ voisin est même
-annoncé comme une « info staff » : un coach peut légitimement croire qu'il écrit
-pour son staff, alors qu'il écrit pour tout le vestiaire.
+**Ce qui a été fait.** L'option (b) a été retenue, et complétée par le concept qui
+manquait. Deux objets distincts, dans deux collections distinctes :
 
+| | Note privée | Directive d'entraînement |
+|---|---|---|
+| Document | `clubs/{clubId}/coachNotes/{weekKey}` | `clubs/{clubId}/directives/current` |
+| Lecture joueur | **refusée** (`get` et `list`) | **autorisée** (`get`) |
+| Lecture coach / owner | oui | oui |
+| Écriture | coach seul | coach seul |
+| Envoyée au backend | **jamais** | oui, si active et dans sa fenêtre |
+| Contenu | texte libre, 200 car. | catégorie fermée + consigne 160 car. + `validFrom`/`validUntil` + statut |
+
+Le champ `note` est en outre **banni du cadre de semaine** : la règle refuse toute
+écriture cliente dont le résultat le contiendrait. La contrainte porte sur le
+RÉSULTAT (`request.resource.data`), pas sur les clés touchées — un merge qui
+laisserait une note ancienne en place est refusé lui aussi.
+
+_Tests qui le prouvent :_ `rules.coachPrivacy.test.ts` (13 tests + 1 témoin :
+même joueur, même seconde, refus sur la note et succès sur la directive) et
+`rules.weekContexts.test.ts`, tests 11 à 14.
+
+**Résidu assumé.** Un document écrit AVANT ce changement porte encore sa note et
+reste lisible par les membres du club : aucune règle ne peut effacer
+rétroactivement un champ. L'écran coach déplace ce texte vers la note privée au
+premier enregistrement du cadre (sauvetage AVANT suppression, testé), mais les
+semaines jamais rouvertes gardent leur note jusqu'à une reprise administrateur.
 _Test qui le prouve :_ `rules.weekContexts.test.ts`, test 10.
-_Options :_ (a) l'assumer et **le dire au coach dans l'écran** (« visible par tes
-joueurs ») ; (b) déplacer la note dans un document séparé, lisible du seul coach,
-et la retirer du contexte de génération. L'option (b) change le produit : la note
-ne pèserait plus sur les séances.
+
+**Effet produit assumé.** La note ne pèse plus sur les séances — c'était le but.
+C'est la directive qui reprend ce rôle, avec une visibilité joueur affichée au
+coach **avant** la saisie, et l'avertissement de n'y mettre aucune donnée de
+santé. Aucune note n'est jamais convertie en directive : ni automatiquement, ni
+par suggestion.
 
 ### Limite 3 — une semaine passée reste lisible, un document à la fois
 

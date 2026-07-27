@@ -16,11 +16,20 @@
 //
 // Ce qui reste ouvert, et pourquoi. Le `get` d'UN cadre par un membre du club :
 // c'est le geste dont la génération de séance a besoin (le cadre du coach entre
-// dans le contexte envoyé au backend). La note libre y reste lisible : une règle
-// Firestore autorise ou refuse un DOCUMENT, elle ne masque pas un champ. Cette
-// limite est écrite noir sur blanc dans la section « à trancher » de
-// docs/coach-pilote-2026-07/MATRICE_DROITS_COACH.md — elle n'est pas maquillée
-// par un test complaisant : le dernier test de ce fichier la PROUVE.
+// dans le contexte envoyé au backend).
+//
+// ─── SUITE (2026-07) : LE CHAMP `note` EST BANNI DE CE DOCUMENT ─────────────
+// Une règle Firestore autorise ou refuse un DOCUMENT, elle ne masque pas un
+// champ. Tant que la note vivait ici, elle arrivait sur le téléphone de chaque
+// joueur — quoi qu'en dise l'écran. On ne l'a donc pas « masquée » : on l'a
+// SORTIE. La règle refuse désormais toute écriture cliente dont le RÉSULTAT
+// contiendrait `note`, et la note privée vit dans `clubs/{clubId}/coachNotes`
+// (cf. rules.coachPrivacy.test.ts).
+//
+// Résidu assumé, prouvé plus bas et non maquillé : un document ancien jamais
+// réenregistré porte encore sa note et reste lisible par les membres. Aucune
+// règle ne peut effacer rétroactivement un champ ; ce que la règle garantit,
+// c'est qu'il n'en entrera plus JAMAIS de nouveau.
 
 import { readFileSync } from "fs";
 import { resolve } from "path";
@@ -32,6 +41,7 @@ import {
 } from "@firebase/rules-unit-testing";
 import {
   collection,
+  deleteField,
   doc,
   documentId,
   getDoc,
@@ -192,12 +202,76 @@ describe("Ce qui RESTE ouvert — prouvé, pas masqué", () => {
     await assertSucceeds(getDoc(weekRef(asUser(PLAYER_A1), WEEK_PAST_1)));
   });
 
-  test("10) la note libre du coach est lisible par le joueur (une règle ne masque pas un champ)", async () => {
+  test("10) RÉSIDU : une note ANCIENNE reste lisible par le joueur tant qu'elle est là", async () => {
     const snap = await assertSucceeds(getDoc(weekRef(asUser(PLAYER_A1), WEEK_PAST_1)));
-    // Fait mesuré, pas souhaité : la note écrite par le coach arrive telle quelle
-    // sur l'appareil du joueur. L'écran joueur ne l'affiche pas — mais ne rien
-    // afficher n'est PAS une protection (cf. section « à trancher » du rapport).
+    // Fait mesuré, pas souhaité. WEEK_PAST_1 a été seedée en admin (donc hors
+    // règles), exactement comme un document écrit AVANT le bannissement du champ.
+    // Aucune règle ne peut masquer un champ déjà présent : la seule sortie est
+    // de le supprimer (l'écran coach le fait au premier enregistrement du cadre,
+    // après avoir mis le texte à l'abri dans la note privée).
     expect((snap as any).data()?.note).toBe(NOTE_STAFF);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LE CHAMP `note` NE PEUT PLUS ENTRER. C'est la partie qu'une règle SAIT faire,
+// et c'est là que la séparation devient serveur plutôt que cosmétique.
+describe("Le champ `note` est banni du cadre de semaine (écriture)", () => {
+  const NOUVELLE_SEMAINE = "2026-07-27";
+
+  test("11) le COACH ne peut pas créer un cadre portant une note", async () => {
+    await assertFails(
+      setDoc(weekRef(asUser(COACH_A), NOUVELLE_SEMAINE), {
+        weekKey: NOUVELLE_SEMAINE,
+        clubId: CLUB_A,
+        createdBy: COACH_A,
+        trainingIntensity: "normal",
+        weekGoal: "freshness",
+        note: NOTE_STAFF,
+      }),
+    );
+  });
+
+  test("12) même une note VIDE ou nulle est refusée (c'est la clé qui est bannie)", async () => {
+    for (const valeur of ["", null]) {
+      await assertFails(
+        setDoc(
+          weekRef(asUser(COACH_A), NOUVELLE_SEMAINE),
+          { trainingIntensity: "light", weekGoal: "speed", note: valeur },
+          { merge: true },
+        ),
+      );
+    }
+  });
+
+  test("13) un merge qui LAISSE une note ancienne en place est refusé lui aussi", async () => {
+    // Le piège que la formulation par `affectedKeys()` aurait laissé passer :
+    // ne pas toucher au champ, c'est le CONSERVER. La condition porte donc sur
+    // le RÉSULTAT de l'écriture, pas sur les clés modifiées.
+    await assertFails(
+      setDoc(
+        weekRef(asUser(COACH_A), WEEK_PAST_1),
+        { trainingIntensity: "light" },
+        { merge: true },
+      ),
+    );
+  });
+
+  test("14) supprimer explicitement la note est ACCEPTÉ, et elle disparaît vraiment", async () => {
+    // Le geste que fait `saveClubWeekContext` : deleteField() sur `note`. C'est
+    // la seule façon de réenregistrer un cadre ancien — et elle solde le résidu.
+    await assertSucceeds(
+      setDoc(
+        weekRef(asUser(COACH_A), WEEK_PAST_1),
+        { trainingIntensity: "light", note: deleteField() },
+        { merge: true },
+      ),
+    );
+    const relu = await assertSucceeds(getDoc(weekRef(asUser(PLAYER_A1), WEEK_PAST_1)));
+    expect((relu as any).data()?.note).toBeUndefined();
+    // Le reste du cadre est intact : on n'a pas troqué la confidentialité
+    // contre la perte du cadre de semaine.
+    expect((relu as any).data()?.trainingIntensity).toBe("light");
   });
 });
 
@@ -210,7 +284,7 @@ describe("Ce qui RESTE ouvert — prouvé, pas masqué", () => {
 describe("Témoin : la règle d'avant laissait vraiment passer la récolte", () => {
   const WITNESS_PROJECT = "demo-fks-rules-temoin-weekcontexts";
 
-  test("11) avec l'ancien `allow read`, un joueur aspirait TOUTES les semaines d'un coup", async () => {
+  test("15) avec l'ancien `allow read`, un joueur aspirait TOUTES les semaines d'un coup", async () => {
     const current = readFileSync(resolve(__dirname, "..", "firestore.rules"), "utf8");
     // On restaure LITTÉRALEMENT la formulation d'avant sur ce seul bloc.
     // La fin de ligne est laissée libre (\r\n possible selon le checkout Windows) :

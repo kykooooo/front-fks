@@ -27,8 +27,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 
 import { auth, db } from "../../services/firebase";
-import { getClubWeekContext, type ClubWeekContext } from "../../repositories/clubsRepo";
+import {
+  getClubDirective,
+  getClubWeekContext,
+  getCoachPrivateNote,
+  type ClubWeekContext,
+} from "../../repositories/clubsRepo";
 import { normalizeTeamGender, type ClubTeamGender } from "../../domain/types";
+import type { ClubCoachNote } from "../../domain/clubCoachNote";
+import type { ClubTrainingDirective } from "../../domain/clubDirective";
 import { weekKeyOf } from "../../utils/dateHelpers";
 
 /**
@@ -57,6 +64,18 @@ export type CoachClubState = {
   weekContext: ClubWeekContext | null;
   /** true si la lecture du cadre a échoué (le reste du contexte reste valide). */
   weekContextUnavailable: boolean;
+  /**
+   * Note PRIVÉE de la semaine (document coach-only). Lue séparément du cadre,
+   * parce qu'elle vit dans une autre collection — c'est tout l'intérêt : aucun
+   * joueur n'a le droit de la lire, et aucun chemin de génération ne la voit.
+   */
+  coachNote: ClubCoachNote | null;
+  /** true si la lecture de la note privée a échoué (jamais confondu avec « pas de note »). */
+  coachNoteUnavailable: boolean;
+  /** Directive d'entraînement en cours (visible par le joueur), ou null. */
+  directive: ClubTrainingDirective | null;
+  /** true si la lecture de la directive a échoué. */
+  directiveUnavailable: boolean;
   /** ms epoch de la dernière lecture aboutie, null tant qu'aucune n'a abouti. */
   fetchedAt: number | null;
   isRefreshing: boolean;
@@ -77,6 +96,10 @@ const EMPTY: Omit<CoachClubSnapshot, "weekKey"> = {
   teamGender: null,
   weekContext: null,
   weekContextUnavailable: false,
+  coachNote: null,
+  coachNoteUnavailable: false,
+  directive: null,
+  directiveUnavailable: false,
   fetchedAt: null,
 };
 
@@ -192,6 +215,23 @@ export function useCoachClub(options?: UseCoachClubOptions): CoachClubState {
         weekContextUnavailable = true;
       }
 
+      // Note privée et directive : DEUX documents distincts du cadre, lus à part
+      // et en parallèle. Chaque échec est isolé — « pas de note » et « note
+      // illisible » ne se confondent jamais, pas plus qu'ils ne cassent le reste
+      // du contexte club.
+      let coachNote: ClubCoachNote | null = null;
+      let coachNoteUnavailable = false;
+      let directive: ClubTrainingDirective | null = null;
+      let directiveUnavailable = false;
+      const [noteRes, directiveRes] = await Promise.all([
+        getCoachPrivateNote(clubId, weekKey).catch(() => "unavailable" as const),
+        getClubDirective(clubId).catch(() => "unavailable" as const),
+      ]);
+      if (noteRes === "unavailable") coachNoteUnavailable = true;
+      else coachNote = noteRes;
+      if (directiveRes === "unavailable") directiveUnavailable = true;
+      else directive = directiveRes;
+
       if (!accept()) return;
       setState({
         status: "ready",
@@ -201,6 +241,10 @@ export function useCoachClub(options?: UseCoachClubOptions): CoachClubState {
         weekKey,
         weekContext,
         weekContextUnavailable,
+        coachNote,
+        coachNoteUnavailable,
+        directive,
+        directiveUnavailable,
         fetchedAt: now(),
       });
       finish();

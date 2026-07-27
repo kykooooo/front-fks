@@ -33,6 +33,8 @@ import { getCycleTheme } from '../constants/cycleTheme';
 import { buildResetExplain } from './newSession/resetExplain';
 import { readRecoveryTips } from './newSession/helpers';
 import { useTestsStorage } from './tests/hooks/useTestsStorage';
+import { useClubDirective } from '../hooks/useClubDirective';
+import { CLUB_DIRECTIVE_SESSION_NOTICE } from '../domain/clubDirective';
 import { pickLatestTestValues } from './sessionPreview/testReferenceMapping';
 
 import {
@@ -86,6 +88,9 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
   const phase = useSessionsStore((s) => s.phase);
   const tsb = useLoadStore((s) => s.tsb);
   const profile = useSessionsStore((s) => s.lastAiContext?.profile ?? null);
+  // Directive du club, lue par le JOUEUR lui-même (pas reçue du backend) : ce
+  // qu'il voit est exactement ce que son club a écrit.
+  const clubDirective = useClubDirective();
   const clubDays = useExternalStore((s) => s.clubTrainingDays ?? []);
   const matchDays = useExternalStore((s) => s.matchDays ?? []);
   const sessions = useSessionsStore((s) => s.sessions);
@@ -387,6 +392,26 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
                   {v2.playerContext.coachNote ? (
                     <Text style={styles.playerContextCoachNote} numberOfLines={3}>{v2.playerContext.coachNote}</Text>
                   ) : null}
+                </Card>
+              ) : null}
+
+              {/* Directive du club — la contrepartie VISIBLE de la note privée.
+                  Ce qui influence la préparation du joueur doit pouvoir être lu
+                  par lui. La note privée du coach, elle, n'arrive jamais ici :
+                  elle n'est ni lue par ce hook, ni lisible par ce compte. */}
+              {clubDirective.notice ? (
+                <Card variant="soft" style={styles.coachCard}>
+                  <SectionHeader title={clubDirective.notice.titre} />
+                  <Badge label={clubDirective.notice.objectif} style={styles.playerContextBadge} />
+                  <Text style={styles.body} numberOfLines={4}>
+                    {clubDirective.notice.instruction}
+                  </Text>
+                  <Text style={styles.playerContextCoachNote} numberOfLines={3}>
+                    {clubDirective.notice.precision}
+                  </Text>
+                  <Text style={styles.playerContextCoachNote} numberOfLines={2}>
+                    {CLUB_DIRECTIVE_SESSION_NOTICE}
+                  </Text>
                 </Card>
               ) : null}
 
