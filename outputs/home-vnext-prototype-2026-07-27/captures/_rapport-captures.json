@@ -1,0 +1,29 @@
+{
+  "ok": [
+    "etat-01-nouveau-joueur",
+    "etat-02-seance-prevue-aujourdhui",
+    "etat-03-seance-a-reprendre",
+    "etat-04-seance-terminee",
+    "etat-05-jour-recuperation",
+    "etat-06-jour-sans-seance",
+    "etat-07-reprise-longue-interruption",
+    "etat-08-tendance-indisponible",
+    "etat-09-tendance-disponible",
+    "etat-10-erreur-generation",
+    "etat-11-hors-ligne",
+    "etat-12-directive-club-absente",
+    "etat-13-directive-club-non-appliquee",
+    "etat-14-joueur-autonome-sans-club",
+    "comparaison-nouveau-joueur",
+    "comparaison-seance-prevue-aujourdhui",
+    "comparaison-seance-terminee",
+    "comparaison-reprise-longue-interruption",
+    "largeur-320",
+    "largeur-390",
+    "largeur-768",
+    "texte-x1.3-seance-prevue",
+    "texte-x1.3-stress",
+    "visualiseur"
+  ],
+  "echecs": []
+}
