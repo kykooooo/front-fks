@@ -27,8 +27,12 @@
 import {
   INVITE_CODE_MAX_USES,
   INVITE_CODE_TTL_MS,
+  INVITE_RATE_LIMITED_CODE,
   INVITE_REJECTED_CODE,
   INVITE_REJECTED_MESSAGE,
+  ISSUE_ATTEMPT_MAX_PER_USER,
+  ISSUE_REJECTED_CODE,
+  ISSUE_REJECTED_MESSAGE,
   InviteError,
   hashInviteCode,
   invitePaths,
@@ -167,10 +171,15 @@ describe("9.a — issueClubInviteCode appelee directement", () => {
     // c'est `clubId` — et lui seul. On le prouve en envoyant un objet complet
     // « comme si » le client pouvait choisir son identite : le clubId non-chaine
     // est refuse, et aucune usurpation n'a lieu.
+    //
+    // Le code d'erreur n'est plus `invalid-argument` mais le refus UNIQUE de
+    // l'emission : une charge utile malformee et un club interdit doivent etre
+    // indiscernables (cf. 9.12).
     const store = baseStore();
     const forge = { clubId: CLUB_A, uid: COACH_A, role: "coach" } as unknown;
     const err = await catchInvite(issueInviteCode(deps(store), { uid: STRANGER, clubId: forge }));
-    expect(err.code).toBe("invalid-argument");
+    expect(err.code).toBe(ISSUE_REJECTED_CODE);
+    expect(err.message).toBe(ISSUE_REJECTED_MESSAGE);
     expect(store.read(invitePaths.meta(CLUB_A))).toBeNull();
   });
 
@@ -261,41 +270,43 @@ describe("9.b — joinClubWithInviteCode appelee directement", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 9.c — FAIBLESSES MESUREES. Ces tests sont VERTS parce qu'ils constatent ce
-// qui EST, pas ce qu'on voudrait. Les masquer serait pire que la faiblesse.
-// Elles sont reprises dans la section « a trancher » du rapport.
+// 9.c — LES DEUX FAIBLESSES DE LA PORTE D'EMISSION, MAINTENANT FERMEES.
+//
+// Ces deux tests etaient verts EN CONSTATANT LE DEFAUT (l'emission distinguait
+// un club inexistant d'un club interdit, et n'etait bornee par rien). Ils sont
+// conserves au meme numero, retournes : ils constatent desormais la fermeture.
+// L'historique de ce qui etait mesure reste ecrit ici, pour qu'une regression
+// se lise comme un retour en arriere et pas comme une nouveaute.
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("9.c — faiblesses connues de la porte d'emission", () => {
-  it("9.12 FAIBLESSE : l'emission distingue un club inexistant d'un club dont on n'est pas coach", async () => {
+describe("9.c — porte d'emission : oracle ferme, tentatives bornees", () => {
+  it("9.12 l'emission ne distingue PLUS un club inexistant d'un club dont on n'est pas coach", async () => {
     const store = baseStore();
     const clubReel = await catchInvite(
       issueInviteCode(deps(store), { uid: STRANGER, clubId: CLUB_A }),
     );
     const clubFantome = await catchInvite(
-      issueInviteCode(deps(store), { uid: STRANGER, clubId: CLUB_INEXISTANT }),
+      issueInviteCode(deps(store), { uid: "stranger2", clubId: CLUB_INEXISTANT }),
     );
 
-    // Deux reponses DIFFERENTES : un appelant apprend donc si un identifiant de
-    // club existe. Portee reelle : les identifiants de club sont des chaines
-    // aleatoires de 20 caracteres generees par Firestore — on ne les devine pas.
-    // L'oracle ne sert qu'a quelqu'un qui possede DEJA un identifiant (un ancien
-    // membre, par exemple) et veut savoir si le club vit encore.
-    expect(clubReel.code).toBe("permission-denied");
-    expect(clubFantome.code).toBe("not-found");
-    expect(clubReel.code).not.toBe(clubFantome.code);
+    // AVANT : permission-denied vs not-found — un appelant apprenait si un
+    // identifiant de club existait. MAINTENANT : reponse strictement identique,
+    // objet compare en entier (pas seulement le code).
+    expect({ code: clubReel.code, message: clubReel.message }).toEqual({
+      code: clubFantome.code,
+      message: clubFantome.message,
+    });
+    expect(clubReel.code).toBe(ISSUE_REJECTED_CODE);
+    expect(clubReel.message).toBe(ISSUE_REJECTED_MESSAGE);
 
-    // Ce qui est deja garanti, et qui borne la portee : aucune donnee du club ne
-    // fuit dans le message, dans les deux cas.
+    // Et toujours : aucune donnee du club ne fuit dans le message.
     expect(clubReel.message).not.toContain("Club A");
-    expect(clubFantome.message).not.toContain("Club A");
+    expect(clubReel.message).not.toContain(CLUB_A);
   });
 
-  it("9.13 FAIBLESSE : l'emission n'est pas soumise a la limitation de tentatives", async () => {
-    // Le rattachement compte les echecs (par utilisateur ET par origine) ; pas
-    // l'emission. Un compte peut donc sonder l'existence de clubs en rafale.
-    // Cout d'exploitation : 1 lecture Firestore par essai, sur des identifiants
-    // impossibles a deviner — nuisance de facturation, pas fuite de donnees.
+  it("9.13 l'emission EST soumise a la limitation de tentatives (plus de rafale)", async () => {
+    // AVANT : 50 essais consecutifs passaient, aucun compteur ecrit. On rejoue
+    // exactement ce scenario : il doit maintenant se solder par un blocage.
     const store = baseStore();
     const codes: string[] = [];
     for (let i = 0; i < 50; i++) {
@@ -304,8 +315,30 @@ describe("9.c — faiblesses connues de la porte d'emission", () => {
       );
       codes.push(err.code);
     }
-    // 50 tentatives, 50 fois la meme reponse : jamais de blocage.
-    expect(new Set(codes)).toEqual(new Set(["permission-denied"]));
-    expect([...store.docs.keys()].some((k) => k.startsWith("inviteAttempts/"))).toBe(false);
+
+    // Les premiers essais sont des refus, les suivants un blocage.
+    expect(codes.slice(0, ISSUE_ATTEMPT_MAX_PER_USER)).toEqual(
+      new Array(ISSUE_ATTEMPT_MAX_PER_USER).fill(ISSUE_REJECTED_CODE),
+    );
+    expect(codes[ISSUE_ATTEMPT_MAX_PER_USER]).toBe(INVITE_RATE_LIMITED_CODE);
+    expect(new Set(codes.slice(ISSUE_ATTEMPT_MAX_PER_USER))).toEqual(
+      new Set([INVITE_RATE_LIMITED_CODE]),
+    );
+
+    // Un compteur a bien ete ecrit, dans l'espace de nom PROPRE a l'emission.
+    const keys = [...store.docs.keys()].filter((k) => k.startsWith("inviteAttempts/"));
+    expect(keys).toEqual([invitePaths.attempt(`issue_uid_${STRANGER}`)]);
+  });
+
+  it("9.14 un coach legitime n'est PAS puni par le sondage d'un autre compte", async () => {
+    // La limitation porte sur l'utilisateur (et l'origine), pas sur le club :
+    // saturer le compteur de STRANGER ne doit pas fermer la porte de COACH_A.
+    const store = baseStore();
+    for (let i = 0; i < ISSUE_ATTEMPT_MAX_PER_USER + 2; i++) {
+      await catchInvite(issueInviteCode(deps(store), { uid: STRANGER, clubId: CLUB_A }));
+    }
+    await expect(
+      issueInviteCode(deps(store), { uid: COACH_A, clubId: CLUB_A }),
+    ).resolves.toBeTruthy();
   });
 });

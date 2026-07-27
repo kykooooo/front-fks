@@ -34,9 +34,24 @@
 //     `inviteCodes`. La seule porte d'entree est la callable qui appelle ce
 //     coeur.
 //
-//  4. AUCUN ORACLE. Code inconnu, expire, revoque, epuise, ou club disparu
-//     produisent EXACTEMENT la meme erreur (meme code, meme message) — voir
-//     `inviteRejectedError`, verrouille par un test d'egalite stricte.
+//  4. AUCUN ORACLE, DES DEUX COTES DE LA PORTE.
+//     - Au RATTACHEMENT : code inconnu, expire, revoque, epuise, ou club disparu
+//       produisent EXACTEMENT la meme erreur (meme code, meme message) — voir
+//       `inviteRejectedError`, verrouille par un test d'egalite stricte.
+//     - A l'EMISSION : identifiant de club malforme, club inexistant, et club
+//       existant dont l'appelant n'est pas coach produisent eux aussi la meme
+//       erreur — voir `issueRejectedError`. Avant, l'emission repondait
+//       `not-found` sur un club inexistant et `permission-denied` sur un club
+//       existant : c'etait un oracle d'existence de club. Sa portee etait
+//       faible (un identifiant Firestore est une chaine aleatoire de 20
+//       caracteres, on ne le devine pas) mais c'etait le MEME defaut de
+//       conception que celui deja ferme au rattachement, et il ne subsiste pas.
+//
+//  5. LIMITATION DES TENTATIVES SUR LES DEUX PORTES. Le rattachement etait
+//     borne, pas l'emission (50 essais consecutifs passaient sans qu'aucun
+//     compteur soit ecrit). Les deux partagent desormais le MEME mecanisme
+//     (fenetre glissante, portees utilisateur et origine, fail-closed), avec des
+//     seuils DISTINCTS et des compteurs SEPARES — voir `AttemptPolicy`.
 
 import { createHash, randomBytes as cryptoRandomBytes } from "crypto";
 import {
@@ -92,6 +107,82 @@ export const INVITE_ATTEMPT_BLOCK_MS = 60 * 60 * 1000;
 /** Borne dure de la liste d'horodatages conservee (anti-doc qui enfle). */
 const ATTEMPT_HISTORY_CAP = 64;
 
+// ─── Limitation de tentatives A L'EMISSION ──────────────────────────────────
+// Seuils DISTINCTS de ceux du rattachement, et assumes comme tels : emettre est
+// un geste de coach, rare et delibere (quelques fois par saison), alors que
+// saisir un code est un geste de joueur, frequent et faillible.
+//
+// Ce qui est compte : les REFUS. Un coach legitime n'obtient jamais un refus
+// depuis l'application — l'identifiant de club qu'elle envoie vient de son
+// propre rattachement. Un refus repete signifie donc soit une application dans
+// un etat perime, soit quelqu'un qui sonde des identifiants de club.
+//
+// Ce qui n'est PAS compte : les emissions REUSSIES. Elles sont le geste
+// autorise lui-meme, elles n'apprennent rien a personne sur un autre club, et
+// chacune revoque la precedente (le nombre de codes vivants reste de 1 par
+// club). Les compter reviendrait a rationner un coach qui fait son travail.
+
+/**
+ * Fenetre d'observation des refus d'emission : 1 heure, soit QUATRE FOIS plus
+ * large qu'au rattachement. Sonder des identifiants de club est un jeu patient,
+ * pas une rafale ; une fenetre courte se contournerait en espacant les essais.
+ */
+export const ISSUE_ATTEMPT_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * Refus toleres dans la fenetre pour UN utilisateur. Plus haut que les 5 du
+ * rattachement : un coach dont l'ecran est perime peut re-tenter de bonne foi
+ * plusieurs fois avant de comprendre, et le bloquer trop vite lui couperait
+ * l'unique moyen de faire entrer son effectif.
+ */
+export const ISSUE_ATTEMPT_MAX_PER_USER = 8;
+
+/**
+ * Refus toleres dans la fenetre pour UNE origine reseau. Le wifi d'un club
+ * abrite plusieurs comptes coach : la marge couvre ce cas sans laisser de place
+ * a un balayage.
+ */
+export const ISSUE_ATTEMPT_MAX_PER_ORIGIN = 24;
+
+/** Duree du blocage d'emission une fois le seuil franchi. */
+export const ISSUE_ATTEMPT_BLOCK_MS = 60 * 60 * 1000;
+
+/**
+ * Politique de limitation d'un geste. Les deux portes partagent le MEME code
+ * (une seule fenetre glissante, un seul fail-closed, un seul chemin de
+ * journalisation) et se distinguent uniquement par ces valeurs.
+ */
+export type AttemptPolicy = {
+  /**
+   * Prefixe des documents compteurs. Il SEPARE les gestes, et ce n'est pas un
+   * detail : sans lui, un joueur qui se trompe cinq fois de code sur le wifi du
+   * club bloquerait l'emission de son propre coach.
+   */
+  keyPrefix: string;
+  windowMs: number;
+  blockMs: number;
+  maxPerUser: number;
+  maxPerOrigin: number;
+};
+
+/** Rattachement. Prefixe VIDE : les compteurs deja en base gardent leur nom. */
+export const JOIN_ATTEMPT_POLICY: AttemptPolicy = {
+  keyPrefix: "",
+  windowMs: INVITE_ATTEMPT_WINDOW_MS,
+  blockMs: INVITE_ATTEMPT_BLOCK_MS,
+  maxPerUser: INVITE_ATTEMPT_MAX_PER_USER,
+  maxPerOrigin: INVITE_ATTEMPT_MAX_PER_ORIGIN,
+};
+
+/** Emission. */
+export const ISSUE_ATTEMPT_POLICY: AttemptPolicy = {
+  keyPrefix: "issue_",
+  windowMs: ISSUE_ATTEMPT_WINDOW_MS,
+  blockMs: ISSUE_ATTEMPT_BLOCK_MS,
+  maxPerUser: ISSUE_ATTEMPT_MAX_PER_USER,
+  maxPerOrigin: ISSUE_ATTEMPT_MAX_PER_ORIGIN,
+};
+
 // ─── Erreurs ────────────────────────────────────────────────────────────────
 
 /** Codes d'erreur transportables tels quels vers une HttpsError callable. */
@@ -145,6 +236,47 @@ export type InviteRejectionReason =
  */
 export function inviteRejectedError(_reason: InviteRejectionReason): InviteError {
   return new InviteError(INVITE_REJECTED_CODE, INVITE_REJECTED_MESSAGE);
+}
+
+/**
+ * REPONSE UNIQUE de tout refus d'EMISSION.
+ *
+ * `permission-denied` est retenu plutot que `not-found` parce que c'est le cas
+ * de tres loin le plus frequent en pratique (quelqu'un qui n'est pas coach du
+ * club vise), et parce qu'il ne suggere rien sur l'existence de la cible.
+ */
+export const ISSUE_REJECTED_CODE: InviteErrorCode = "permission-denied";
+export const ISSUE_REJECTED_MESSAGE =
+  "Impossible d'emettre un code d'invitation pour ce club.";
+
+/** Raisons INTERNES d'un refus d'emission. Elles ne sortent JAMAIS de ce module. */
+export type IssueRejectionReason = "invalid-club-id" | "club-missing" | "not-coach";
+
+/**
+ * Traduit une raison interne d'emission en erreur publique. Comme pour le
+ * rattachement, `reason` est volontairement IGNORE : la signature l'exige pour
+ * que l'appelant nomme ce qu'il refuse, mais toutes les raisons produisent le
+ * meme objet. Separer ces trois cas rouvrirait l'oracle d'existence de club.
+ */
+export function issueRejectedError(_reason: IssueRejectionReason): InviteError {
+  return new InviteError(ISSUE_REJECTED_CODE, ISSUE_REJECTED_MESSAGE);
+}
+
+/**
+ * Borne de forme d'un identifiant de club. Un identifiant Firestore fait 20
+ * caracteres ; tout ce qui depasse largement, ou qui contient un separateur de
+ * chemin, est une saisie forgee — refusee AVANT toute lecture, donc sans meme
+ * couter une requete.
+ */
+export const MAX_CLUB_ID_LENGTH = 128;
+
+/** Forme acceptable d'un identifiant de club (jamais un verdict d'existence). */
+export function isPlausibleClubId(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_CLUB_ID_LENGTH) return false;
+  // Un "/" transformerait `clubs/{id}` en un autre chemin que celui prevu.
+  return !trimmed.includes("/") && !trimmed.includes("..");
 }
 
 // ─── Normalisation / format / hachage ───────────────────────────────────────
@@ -206,14 +338,18 @@ export function generateInviteCode(
   return out;
 }
 
-/** Cle de portee "origine" : l'IP n'est jamais stockee en clair. */
-export function originScopeKey(origin: string): string {
-  return `ip_${createHash("sha256").update(origin, "utf8").digest("hex").slice(0, 32)}`;
+/**
+ * Cle de portee "origine" : l'IP n'est jamais stockee en clair.
+ * Le prefixe vient de la politique du geste (vide pour le rattachement, afin de
+ * ne pas renommer les compteurs deja en base).
+ */
+export function originScopeKey(origin: string, prefix = ""): string {
+  return `${prefix}ip_${createHash("sha256").update(origin, "utf8").digest("hex").slice(0, 32)}`;
 }
 
-/** Cle de portee "utilisateur". */
-export function userScopeKey(uid: string): string {
-  return `uid_${uid}`;
+/** Cle de portee "utilisateur". Meme regle de prefixe. */
+export function userScopeKey(uid: string, prefix = ""): string {
+  return `${prefix}uid_${uid}`;
 }
 
 // ─── Etat d'un code stocke ──────────────────────────────────────────────────
@@ -356,6 +492,105 @@ export type InviteDeps = {
   randomBytes?: (n: number) => Uint8Array;
 };
 
+// ─── Garde de limitation, PARTAGEE par les deux portes ──────────────────────
+// Un seul mecanisme, deux politiques. Ecrire un second compteur en parallele
+// aurait garanti qu'ils divergent : c'est exactement ce qu'on evite ici.
+
+type AttemptScopeState = {
+  key: string;
+  scope: "user" | "origin";
+  max: number;
+  state: AttemptState;
+};
+
+/**
+ * Lit les compteurs des deux portees et REFUSE tout de suite si l'une est
+ * bloquee.
+ *
+ * FAIL-CLOSED : un compteur illisible leve `unavailable`. Une panne de la
+ * limitation ne vaut JAMAIS permission d'essayer a l'infini — c'est le seul
+ * comportement acceptable pour un garde-fou anti-enumeration.
+ */
+async function loadAttemptScopes(
+  deps: InviteDeps,
+  policy: AttemptPolicy,
+  uid: string,
+  originKey: unknown,
+  now: number,
+): Promise<AttemptScopeState[]> {
+  const planned: { key: string; scope: "user" | "origin"; max: number }[] = [
+    { key: userScopeKey(uid, policy.keyPrefix), scope: "user", max: policy.maxPerUser },
+  ];
+
+  const origin = typeof originKey === "string" ? originKey.trim() : "";
+  if (origin) {
+    planned.push({
+      key: originScopeKey(origin, policy.keyPrefix),
+      scope: "origin",
+      max: policy.maxPerOrigin,
+    });
+  }
+
+  const states: AttemptScopeState[] = [];
+  for (const s of planned) {
+    let raw: DocData | null;
+    try {
+      raw = await deps.store.get(invitePaths.attempt(s.key));
+    } catch {
+      throw new InviteError(INVITE_UNAVAILABLE_CODE, INVITE_UNAVAILABLE_MESSAGE);
+    }
+    states.push({ ...s, state: readAttemptState(raw) });
+  }
+
+  if (states.some((s) => isAttemptBlocked(s.state, now))) {
+    throw new InviteError(INVITE_RATE_LIMITED_CODE, INVITE_RATE_LIMITED_MESSAGE);
+  }
+
+  return states;
+}
+
+/**
+ * Incremente les compteurs des deux portees et signale UNE FOIS le
+ * franchissement de seuil.
+ *
+ * Journalisation sobre : le signal ne porte que la portee, l'uid et l'instant.
+ * JAMAIS le code tente, JAMAIS son empreinte, JAMAIS l'identifiant de club
+ * vise — un journal qui contiendrait ces valeurs serait exactement
+ * l'enumeration qu'on vient de fermer, ecrite de notre propre main. Le geste
+ * concerne (emission ou rattachement) est connu de l'APPELANT, qui choisit son
+ * callback : il n'a pas besoin de transiter par le signal.
+ *
+ * Une ecriture de compteur qui echoue ne renvoie PAS l'utilisateur vers un
+ * succes : on est deja sur le chemin du refus, l'erreur generique est levee par
+ * l'appelant quoi qu'il arrive.
+ */
+async function recordAttemptFailure(
+  deps: InviteDeps,
+  policy: AttemptPolicy,
+  scopes: AttemptScopeState[],
+  uid: string,
+  now: number,
+): Promise<void> {
+  for (const s of scopes) {
+    const { next, thresholdReached } = registerAttemptFailure(s.state, now, s.max, {
+      windowMs: policy.windowMs,
+      blockMs: policy.blockMs,
+    });
+    try {
+      await deps.store.set(invitePaths.attempt(s.key), {
+        failures: next.failures,
+        blockedUntil: next.blockedUntil,
+        updatedAt: now,
+      });
+    } catch {
+      // Compteur non ecrit : on continue vers le refus. Rien n'est ouvert.
+    }
+    if (thresholdReached) {
+      deps.onAbuse?.({ scope: s.scope, uid, at: now });
+    }
+  }
+}
+
 // ─── Emission d'un code (coach / owner) ─────────────────────────────────────
 
 export type IssueResult = {
@@ -367,78 +602,115 @@ export type IssueResult = {
   replacedPrevious: boolean;
 };
 
+type IssueTxOutcome =
+  | { ok: true; result: IssueResult }
+  | { ok: false; reason: IssueRejectionReason };
+
 /**
  * Emet un code pour un club. AUTORISATION VERIFIEE SERVEUR : owner du club, ou
  * membre portant le role "coach". Un joueur, meme membre, ne peut pas emettre.
  *
  * Emettre revoque le code precedent du meme club (un seul code vivant a la
  * fois) — c'est aussi le chemin de secours quand le coach a perdu son code.
+ *
+ * Sequence, dans cet ordre exact :
+ *   1. limitation de tentatives (utilisateur ET origine) — fail-closed ;
+ *   2. forme de l'identifiant de club, sans aucune lecture ;
+ *   3. transaction : club, autorisation, tirage, ecritures ;
+ *   4. tout refus incremente les compteurs et renvoie la MEME erreur.
+ *
+ * `unauthenticated` reste distinct des trois refus : il parle de la session de
+ * l'appelant, pas de la cible. Il n'apprend donc rien sur l'existence d'un club.
  */
 export async function issueInviteCode(
   deps: InviteDeps,
-  params: { uid: string; clubId: unknown },
+  params: { uid: string; clubId: unknown; originKey?: string | null },
 ): Promise<IssueResult> {
   const uid = String(params.uid ?? "").trim();
   if (!uid) throw new InviteError("unauthenticated", "Connexion requise.");
 
-  const clubId = typeof params.clubId === "string" ? params.clubId.trim() : "";
-  if (!clubId) throw new InviteError("invalid-argument", "Club inconnu.");
-
   const now = deps.now();
 
-  return deps.store.runTransaction(async (tx) => {
-    // ── Lectures d'abord (contrainte Firestore) ──────────────────────────
-    const club = await tx.get(invitePaths.club(clubId));
-    if (!club) throw new InviteError("not-found", "Club introuvable.");
+  // 1. Limitation AVANT toute lecture de club : un balayage ne doit pas pouvoir
+  //    s'acheter une requete Firestore par essai.
+  const scopes = await loadAttemptScopes(deps, ISSUE_ATTEMPT_POLICY, uid, params.originKey, now);
 
-    const isOwner = typeof club.ownerUid === "string" && club.ownerUid === uid;
-    let isCoach = false;
-    if (!isOwner) {
-      const member = await tx.get(invitePaths.member(clubId, uid));
-      isCoach = !!member && member.role === "coach";
-    }
-    if (!isOwner && !isCoach) {
-      throw new InviteError(
-        "permission-denied",
-        "Seul le coach du club peut emettre un code d'invitation.",
-      );
-    }
+  // 2. Forme de l'identifiant. Un identifiant vide, non-chaine, structure ou
+  //    demesure est refuse EXACTEMENT comme un club inexistant.
+  if (!isPlausibleClubId(params.clubId)) {
+    await recordAttemptFailure(deps, ISSUE_ATTEMPT_POLICY, scopes, uid, now);
+    throw issueRejectedError("invalid-club-id");
+  }
+  const clubId = params.clubId.trim();
 
-    const meta = await tx.get(invitePaths.meta(clubId));
-    const previousHash = typeof meta?.activeCodeHash === "string" ? meta.activeCodeHash : null;
+  // 3. Transaction. Comme au rattachement, elle ne LEVE pas sur un refus
+  //    metier : elle renvoie la raison, pour que l'increment des compteurs se
+  //    fasse HORS transaction (un rejeu pour contention ne doit pas compter
+  //    plusieurs echecs).
+  let outcome: IssueTxOutcome;
+  try {
+    outcome = await deps.store.runTransaction<IssueTxOutcome>(async (tx) => {
+      // ── Lectures d'abord (contrainte Firestore) ──────────────────────────
+      const club = await tx.get(invitePaths.club(clubId));
+      if (!club) return { ok: false, reason: "club-missing" };
 
-    // Le tirage est fait DANS la transaction : si celle-ci est rejouee pour
-    // cause de contention, le code renvoye est toujours celui reellement
-    // commite (jamais un code fantome tire avant un rejeu).
-    const canonical = generateInviteCode(deps.randomBytes);
-    const hash = hashInviteCode(canonical);
-    const expiresAt = now + INVITE_CODE_TTL_MS;
+      const isOwner = typeof club.ownerUid === "string" && club.ownerUid === uid;
+      let isCoach = false;
+      if (!isOwner) {
+        const member = await tx.get(invitePaths.member(clubId, uid));
+        isCoach = !!member && member.role === "coach";
+      }
+      if (!isOwner && !isCoach) return { ok: false, reason: "not-coach" };
 
-    // ── Ecritures ────────────────────────────────────────────────────────
-    const replacedPrevious = previousHash !== null && previousHash !== hash;
-    if (replacedPrevious) {
-      tx.set(invitePaths.code(previousHash as string), { revokedAt: now }, { merge: true });
-    }
+      const meta = await tx.get(invitePaths.meta(clubId));
+      const previousHash = typeof meta?.activeCodeHash === "string" ? meta.activeCodeHash : null;
 
-    tx.set(invitePaths.code(hash), {
-      clubId,
-      createdBy: uid,
-      createdAt: now,
-      expiresAt,
-      maxUses: INVITE_CODE_MAX_USES,
-      uses: 0,
-      revokedAt: null,
+      // Le tirage est fait DANS la transaction : si celle-ci est rejouee pour
+      // cause de contention, le code renvoye est toujours celui reellement
+      // commite (jamais un code fantome tire avant un rejeu).
+      const canonical = generateInviteCode(deps.randomBytes);
+      const hash = hashInviteCode(canonical);
+      const expiresAt = now + INVITE_CODE_TTL_MS;
+
+      // ── Ecritures ────────────────────────────────────────────────────────
+      const replacedPrevious = previousHash !== null && previousHash !== hash;
+      if (replacedPrevious) {
+        tx.set(invitePaths.code(previousHash as string), { revokedAt: now }, { merge: true });
+      }
+
+      tx.set(invitePaths.code(hash), {
+        clubId,
+        createdBy: uid,
+        createdAt: now,
+        expiresAt,
+        maxUses: INVITE_CODE_MAX_USES,
+        uses: 0,
+        revokedAt: null,
+      });
+
+      tx.set(invitePaths.meta(clubId), { activeCodeHash: hash, updatedAt: now });
+
+      return {
+        ok: true,
+        result: {
+          code: formatInviteCode(canonical),
+          expiresAt,
+          maxUses: INVITE_CODE_MAX_USES,
+          replacedPrevious,
+        },
+      };
     });
+  } catch (err) {
+    if (err instanceof InviteError) throw err;
+    throw new InviteError(INVITE_UNAVAILABLE_CODE, INVITE_UNAVAILABLE_MESSAGE);
+  }
 
-    tx.set(invitePaths.meta(clubId), { activeCodeHash: hash, updatedAt: now });
+  if (!outcome.ok) {
+    await recordAttemptFailure(deps, ISSUE_ATTEMPT_POLICY, scopes, uid, now);
+    throw issueRejectedError(outcome.reason);
+  }
 
-    return {
-      code: formatInviteCode(canonical),
-      expiresAt,
-      maxUses: INVITE_CODE_MAX_USES,
-      replacedPrevious,
-    };
-  });
+  return outcome.result;
 }
 
 // ─── Rattachement d'un joueur ───────────────────────────────────────────────
@@ -484,40 +756,14 @@ export async function joinClubWithCode(
   if (!uid) throw new InviteError("unauthenticated", "Connexion requise.");
 
   const now = deps.now();
-  const scopes: { key: string; scope: "user" | "origin"; max: number }[] = [
-    { key: userScopeKey(uid), scope: "user", max: INVITE_ATTEMPT_MAX_PER_USER },
-  ];
-  const origin = typeof params.originKey === "string" ? params.originKey.trim() : "";
-  if (origin) {
-    scopes.push({
-      key: originScopeKey(origin),
-      scope: "origin",
-      max: INVITE_ATTEMPT_MAX_PER_ORIGIN,
-    });
-  }
 
-  // 1. Etat des compteurs. FAIL-CLOSED : si on n'arrive pas a lire la
-  //    limitation, on REFUSE l'acces. Une panne de compteur ne doit jamais
-  //    valoir permission d'essayer a l'infini.
-  const states: { key: string; scope: "user" | "origin"; max: number; state: AttemptState }[] = [];
-  for (const s of scopes) {
-    let raw: DocData | null;
-    try {
-      raw = await deps.store.get(invitePaths.attempt(s.key));
-    } catch {
-      throw new InviteError(INVITE_UNAVAILABLE_CODE, INVITE_UNAVAILABLE_MESSAGE);
-    }
-    states.push({ ...s, state: readAttemptState(raw) });
-  }
-
-  if (states.some((s) => isAttemptBlocked(s.state, now))) {
-    throw new InviteError(INVITE_RATE_LIMITED_CODE, INVITE_RATE_LIMITED_MESSAGE);
-  }
+  // 1. Etat des compteurs (lecture + blocage), mecanisme PARTAGE avec l'emission.
+  const states = await loadAttemptScopes(deps, JOIN_ATTEMPT_POLICY, uid, params.originKey, now);
 
   // 2. Normalisation serveur : la saisie du joueur n'est jamais crue telle quelle.
   const canonical = normalizeInviteCode(params.rawCode);
   if (!canonical) {
-    await recordFailure(deps, states, uid, now);
+    await recordAttemptFailure(deps, JOIN_ATTEMPT_POLICY, states, uid, now);
     throw inviteRejectedError("malformed");
   }
   const hash = hashInviteCode(canonical);
@@ -588,44 +834,9 @@ export async function joinClubWithCode(
   }
 
   if (!outcome.ok) {
-    await recordFailure(deps, states, uid, now);
+    await recordAttemptFailure(deps, JOIN_ATTEMPT_POLICY, states, uid, now);
     throw inviteRejectedError(outcome.reason);
   }
 
   return outcome.result;
-}
-
-/**
- * Incremente les compteurs des deux portees et signale UNE FOIS le
- * franchissement de seuil.
- *
- * Journalisation sobre : le signal ne porte que la portee, l'uid et l'instant.
- * JAMAIS le code tente, JAMAIS son empreinte — un journal qui contiendrait les
- * empreintes essayees serait exactement l'enumeration qu'on vient de fermer.
- *
- * Une ecriture de compteur qui echoue ne renvoie PAS l'utilisateur vers un
- * succes : on est deja sur le chemin du refus, l'erreur generique est levee par
- * l'appelant quoi qu'il arrive.
- */
-async function recordFailure(
-  deps: InviteDeps,
-  states: { key: string; scope: "user" | "origin"; max: number; state: AttemptState }[],
-  uid: string,
-  now: number,
-): Promise<void> {
-  for (const s of states) {
-    const { next, thresholdReached } = registerAttemptFailure(s.state, now, s.max);
-    try {
-      await deps.store.set(invitePaths.attempt(s.key), {
-        failures: next.failures,
-        blockedUntil: next.blockedUntil,
-        updatedAt: now,
-      });
-    } catch {
-      // Compteur non ecrit : on continue vers le refus. Rien n'est ouvert.
-    }
-    if (thresholdReached) {
-      deps.onAbuse?.({ scope: s.scope, uid, at: now });
-    }
-  }
 }

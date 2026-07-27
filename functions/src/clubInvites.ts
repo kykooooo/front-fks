@@ -89,10 +89,18 @@ export function toHttpsError(err: unknown): HttpsError {
   return new HttpsError("internal", "Une erreur est survenue. Reessaie.");
 }
 
-const logAbuse = (signal: AbuseSignal) => {
-  // SOBRE et DELIBERE : portee + uid + instant. Ni le code tente, ni son
-  // empreinte, ni le club vise — un journal enumerable serait une regression.
+/**
+ * Journal d'abus. SOBRE et DELIBERE : geste + portee + uid + instant. Ni le
+ * code tente, ni son empreinte, ni le club vise — un journal enumerable serait
+ * une regression, ecrite de notre propre main.
+ *
+ * Le geste (`action`) n'est PAS porte par le signal : il est connu ici, puisque
+ * chaque callable choisit son propre callback. Cote coeur, la charge du signal
+ * reste donc minimale par construction.
+ */
+const logAbuse = (action: "issue" | "join") => (signal: AbuseSignal) => {
   logger.warn("clubInvites: seuil de tentatives franchi", {
+    action,
     scope: signal.scope,
     uid: signal.uid,
     at: new Date(signal.at).toISOString(),
@@ -107,9 +115,15 @@ export const issueClubInviteCode = onCall(
 
     try {
       const result = await issueInviteCode(
-        { store: createInviteStore(getDb()), now: Date.now },
-        { uid, clubId: request.data?.clubId },
+        { store: createInviteStore(getDb()), now: Date.now, onAbuse: logAbuse("issue") },
+        {
+          uid,
+          clubId: request.data?.clubId,
+          originKey: readOriginKey(request.rawRequest),
+        },
       );
+      // Trace d'exploitation volontairement pauvre : qui a emis, et si un code
+      // precedent a saute. PAS le club, PAS le code, PAS son empreinte.
       logger.info("clubInvites: code emis", {
         uid,
         replacedPrevious: result.replacedPrevious,
@@ -129,7 +143,7 @@ export const joinClubWithInviteCode = onCall(
 
     try {
       return await joinClubWithCode(
-        { store: createInviteStore(getDb()), now: Date.now, onAbuse: logAbuse },
+        { store: createInviteStore(getDb()), now: Date.now, onAbuse: logAbuse("join") },
         {
           uid,
           originKey: readOriginKey(request.rawRequest),

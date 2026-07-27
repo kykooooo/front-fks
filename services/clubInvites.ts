@@ -44,8 +44,8 @@ export type InviteFailureReason =
   | "rejected" // le serveur refuse le code, sans dire pourquoi (par conception)
   | "rateLimited" // trop de tentatives
   | "unauthenticated" // session perdue
-  | "forbidden" // pas coach du club (émission)
-  | "notFound" // club introuvable (émission)
+  | "forbidden" // émission refusée, sans dire pourquoi (par conception)
+  | "notFound" // callable absente / non déployée
   | "unavailable"; // réseau / fonction indisponible
 
 export type JoinClubOutcome =
@@ -67,13 +67,28 @@ const JOIN_MESSAGES: Record<InviteFailureReason, string> = {
   unavailable: "Impossible de joindre le serveur. Vérifie ta connexion et réessaie.",
 };
 
-/** Messages coach (émission). */
+/**
+ * Messages coach (émission).
+ *
+ * `forbidden` COUVRE PLUSIEURS CAS, ET C'EST VOULU. Le serveur répond
+ * désormais la même chose qu'on ne soit pas coach du club, que le club ait
+ * disparu, ou que l'identifiant envoyé soit malformé — sans quoi n'importe quel
+ * compte pourrait demander au serveur « ce club existe-t-il ? » et se faire
+ * répondre.
+ *
+ * Conséquence assumée sur cet écran : un coach dont le club aurait disparu lit
+ * un message de droits et non « club introuvable ». La phrase ci-dessous est
+ * donc écrite pour ne mentir dans AUCUN des cas — elle n'affirme pas la cause,
+ * elle donne le seul geste utile (actualiser, et regarder si le club est
+ * toujours là) au lieu d'envoyer le coach chercher au mauvais endroit.
+ */
 const ISSUE_MESSAGES: Record<InviteFailureReason, string> = {
   rejected: "Le code n'a pas pu être généré. Réessaie.",
   rateLimited: "Trop de demandes d'affilée. Réessaie dans un moment.",
   unauthenticated: "Ta session a expiré. Reconnecte-toi puis réessaie.",
-  forbidden: "Seul le coach du club peut générer un code d'invitation.",
-  notFound: "Ton club est introuvable. Actualise l'écran puis réessaie.",
+  forbidden:
+    "Impossible de générer un code pour ce club. Actualise l'écran : si le club n'apparaît plus, c'est qu'il n'est plus accessible avec ce compte.",
+  notFound: "Le service d'invitation ne répond pas. Réessaie dans un moment.",
   unavailable: "Impossible de joindre le serveur. Vérifie ta connexion et réessaie.",
 };
 
@@ -185,8 +200,10 @@ export async function issueClubInviteCode(clubId: string): Promise<IssueCodeOutc
     };
   } catch (err) {
     let reason = readFailureReason(err);
-    // Côté coach, un refus de permission est un VRAI refus de droits (il n'y a
-    // pas de code à deviner ici) : on peut le nommer.
+    // Côté coach, `permission-denied` est le refus UNIQUE de l'émission : droits
+    // manquants, club disparu et identifiant malformé arrivent tous ici, sans
+    // qu'on puisse les distinguer — c'est précisément ce qui ferme l'oracle
+    // d'existence de club. La phrase affichée en tient compte (ISSUE_MESSAGES).
     if (reason === "rejected") reason = "forbidden";
     return { ok: false, reason, message: ISSUE_MESSAGES[reason] };
   }

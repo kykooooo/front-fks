@@ -134,7 +134,12 @@ describe("issueClubInviteCode", () => {
     expect(mockCall).toHaveBeenCalledWith({ clubId: "clubX" });
   });
 
-  test("refus de droits : message coach explicite (ici, il n'y a rien à deviner)", async () => {
+  // Le serveur répond désormais `permission-denied` pour TROIS causes qu'il
+  // refuse de distinguer (pas coach / club disparu / identifiant malformé) :
+  // les distinguer rouvrirait l'oracle d'existence de club fermé côté
+  // Functions. La contrepartie est ici : le message affiché ne doit affirmer
+  // AUCUNE des trois causes, et doit quand même donner un geste utile.
+  test("refus d'émission : un seul message, qui n'affirme aucune cause", async () => {
     mockCall.mockRejectedValue(callableError("functions/permission-denied"));
 
     const res = await issueClubInviteCode("clubX");
@@ -142,16 +147,31 @@ describe("issueClubInviteCode", () => {
     expect(res.ok).toBe(false);
     if (res.ok) throw new Error("inattendu");
     expect(res.reason).toBe("forbidden");
-    expect(res.message).toContain("Seul le coach");
+    // Le geste utile est donné…
+    expect(res.message).toContain("Actualise l'écran");
+    // …et aucune cause n'est affirmée : ni « tu n'es pas coach », ni « le club
+    // n'existe pas ». Le coach dont le club a disparu ne doit pas être envoyé
+    // chercher au mauvais endroit, et l'inverse non plus.
+    expect(res.message).not.toContain("Seul le coach");
+    expect(res.message).not.toMatch(/club est introuvable/i);
+    // Et toujours : rien de la phrase Firebase n'atteint l'écran.
+    expect(res.message).not.toContain("permissions");
+    expect(res.message).not.toMatch(/[Mm]issing/);
   });
 
-  test("fonction indisponible / non déployée : message FR, aucune exception", async () => {
+  test("callable absente / non déployée : message FR honnête, aucune exception", async () => {
     mockCall.mockRejectedValue(callableError("functions/not-found", "NOT_FOUND"));
 
     const res = await issueClubInviteCode("clubX");
 
     expect(res.ok).toBe(false);
     if (res.ok) throw new Error("inattendu");
-    expect(res.message).toContain("introuvable");
+    expect(res.reason).toBe("notFound");
+    // `not-found` ne peut plus vouloir dire « club introuvable » côté émission :
+    // le serveur ne le renvoie plus jamais pour ça. Le message ne doit donc pas
+    // accuser le club, sinon il ment dans le seul cas qui reste (fonction
+    // absente ou route inconnue).
+    expect(res.message).not.toMatch(/club/i);
+    expect(res.message).toContain("service d'invitation");
   });
 });

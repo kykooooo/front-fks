@@ -23,6 +23,15 @@ import {
   INVITE_REJECTED_CODE,
   INVITE_REJECTED_MESSAGE,
   INVITE_UNAVAILABLE_CODE,
+  ISSUE_ATTEMPT_BLOCK_MS,
+  ISSUE_ATTEMPT_MAX_PER_ORIGIN,
+  ISSUE_ATTEMPT_MAX_PER_USER,
+  ISSUE_ATTEMPT_POLICY,
+  ISSUE_ATTEMPT_WINDOW_MS,
+  ISSUE_REJECTED_CODE,
+  ISSUE_REJECTED_MESSAGE,
+  JOIN_ATTEMPT_POLICY,
+  MAX_CLUB_ID_LENGTH,
   InviteError,
   evaluateInviteRecord,
   formatInviteCode,
@@ -31,7 +40,9 @@ import {
   inviteRejectedError,
   invitePaths,
   isAttemptBlocked,
+  isPlausibleClubId,
   issueInviteCode,
+  issueRejectedError,
   joinClubWithCode,
   normalizeInviteCode,
   readAttemptState,
@@ -41,6 +52,7 @@ import {
   type InviteRejectionReason,
   type InviteStore,
   type InviteTx,
+  type IssueRejectionReason,
 } from "../src/inviteCodes";
 
 // ─── Faux magasin transactionnel ────────────────────────────────────────────
@@ -318,17 +330,30 @@ describe("issueClubInviteCode — emission reservee au coach, empreinte seule en
     expect(err.code).toBe("permission-denied");
   });
 
-  test("inconnu du club, club absent, clubId vide : refus explicites", async () => {
+  test("inconnu du club, club absent, clubId vide : refus INDISCERNABLES", async () => {
+    // Trois causes distinctes, une seule reponse. Le detail de cette egalite est
+    // verrouille dans la section 6bis ; ici on constate juste qu'aucun des trois
+    // chemins ne se singularise.
     const store = baseStore();
-    expect((await catchInvite(issueInviteCode(deps(store), { uid: "etranger", clubId: CLUB }))).code).toBe(
-      "permission-denied",
-    );
-    expect((await catchInvite(issueInviteCode(deps(store), { uid: OWNER, clubId: "nope" }))).code).toBe(
-      "not-found",
-    );
-    expect((await catchInvite(issueInviteCode(deps(store), { uid: OWNER, clubId: "" }))).code).toBe(
-      "invalid-argument",
-    );
+    for (const attempt of [
+      { uid: "etranger", clubId: CLUB },
+      { uid: OWNER, clubId: "nope" },
+      { uid: OWNER, clubId: "" },
+    ]) {
+      const err = await catchInvite(issueInviteCode(deps(store), attempt));
+      expect(err.code).toBe(ISSUE_REJECTED_CODE);
+      expect(err.message).toBe(ISSUE_REJECTED_MESSAGE);
+    }
+  });
+
+  test("une emission REUSSIE n'ecrit aucun compteur de tentatives", async () => {
+    // Le coach qui fait son travail n'est jamais rationne : seuls les REFUS
+    // comptent. Emettre plusieurs fois d'affilee reste possible.
+    const store = baseStore();
+    for (let i = 0; i < 5; i++) {
+      await expect(issueInviteCode(deps(store), { uid: OWNER, clubId: CLUB })).resolves.toBeTruthy();
+    }
+    expect([...store.docs.keys()].some((k) => k.startsWith("inviteAttempts/"))).toBe(false);
   });
 
   test("emettre un nouveau code REVOQUE le precedent (un seul code vivant par club)", async () => {
@@ -544,6 +569,120 @@ describe("joinClubWithInviteCode — reponse d'erreur STRICTEMENT identique", ()
   });
 });
 
+// ─── 6bis. AUCUN ORACLE A L'EMISSION ────────────────────────────────────────
+//
+// Le pendant, cote coach, de la section 6. L'emission repondait `not-found` sur
+// un club inexistant et `permission-denied` sur un club existant : elle disait
+// donc si un identifiant de club existait. Les trois causes de refus doivent
+// maintenant produire un objet d'erreur INDISCERNABLE.
+
+describe("issueClubInviteCode — refus STRICTEMENT identique (oracle d'existence de club ferme)", () => {
+  test("issueRejectedError renvoie le meme objet quelle que soit la raison interne", () => {
+    const reasons: IssueRejectionReason[] = ["invalid-club-id", "club-missing", "not-coach"];
+    const shapes = reasons.map((r) => {
+      const e = issueRejectedError(r);
+      return { code: e.code, message: e.message };
+    });
+    for (const shape of shapes) expect(shape).toEqual(shapes[0]);
+    expect(shapes[0]).toEqual({ code: ISSUE_REJECTED_CODE, message: ISSUE_REJECTED_MESSAGE });
+  });
+
+  test("forme d'identifiant : ce qui est ecarte AVANT toute lecture", () => {
+    expect(isPlausibleClubId(CLUB)).toBe(true);
+    for (const bad of [
+      "",
+      "   ",
+      null,
+      undefined,
+      42,
+      {},
+      [],
+      "A".repeat(MAX_CLUB_ID_LENGTH + 1),
+      `${CLUB}/members/${OWNER}`,
+      "../clubs/autre",
+    ]) {
+      expect(isPlausibleClubId(bad)).toBe(false);
+    }
+  });
+
+  test("de bout en bout : club inexistant / club interdit / identifiant invalide → MEME code ET meme message", async () => {
+    // Chaque cas part d'un magasin NEUF : sans cela, la limitation de tentatives
+    // (qui est bien active, cf. section 8bis) transformerait les derniers refus
+    // en blocages et le test mesurerait autre chose que l'egalite voulue.
+    const cases: { label: string; uid: string; clubId: unknown }[] = [
+      { label: "club existant, appelant sans lien", uid: "etranger", clubId: CLUB },
+      { label: "club existant, appelant joueur du club", uid: PLAYER, clubId: CLUB },
+      { label: "club inexistant, appelant coach ailleurs", uid: OWNER, clubId: "clubFantome" },
+      { label: "club inexistant, appelant sans lien", uid: "etranger", clubId: "clubFantome" },
+      { label: "identifiant vide", uid: OWNER, clubId: "" },
+      { label: "identifiant blanc", uid: OWNER, clubId: "   " },
+      { label: "identifiant null", uid: OWNER, clubId: null },
+      { label: "identifiant absent", uid: OWNER, clubId: undefined },
+      { label: "identifiant nombre", uid: OWNER, clubId: 42 },
+      { label: "identifiant objet", uid: OWNER, clubId: { clubId: CLUB } },
+      { label: "identifiant tableau", uid: OWNER, clubId: [CLUB] },
+      { label: "identifiant booleen", uid: OWNER, clubId: true },
+      { label: "identifiant demesure", uid: OWNER, clubId: "A".repeat(MAX_CLUB_ID_LENGTH + 1) },
+      { label: "identifiant portant un chemin", uid: OWNER, clubId: `${CLUB}/members/${OWNER}` },
+    ];
+
+    for (const c of cases) {
+      const store = baseStore();
+      store.seed(invitePaths.member(CLUB, PLAYER), { uid: PLAYER, role: "player" });
+      const err = await catchInvite(issueInviteCode(deps(store), { uid: c.uid, clubId: c.clubId }));
+      expect({ label: c.label, code: err.code, message: err.message }).toEqual({
+        label: c.label,
+        code: ISSUE_REJECTED_CODE,
+        message: ISSUE_REJECTED_MESSAGE,
+      });
+    }
+  });
+
+  test("l'egalite porte sur l'OBJET d'erreur, pas seulement sur son code", async () => {
+    const build = async (uid: string, clubId: unknown) => {
+      const store = baseStore();
+      return catchInvite(issueInviteCode(deps(store), { uid, clubId }));
+    };
+    const interdit = await build("etranger", CLUB);
+    const fantome = await build("etranger", "clubFantome");
+    const malforme = await build("etranger", { clubId: CLUB });
+
+    const shape = (e: InviteError) => ({
+      constructeur: e.constructor.name,
+      name: e.name,
+      code: e.code,
+      message: e.message,
+      // Un champ supplementaire porteur d'indice serait un oracle deguise.
+      champs: Object.keys(e).sort(),
+    });
+
+    expect(shape(fantome)).toEqual(shape(interdit));
+    expect(shape(malforme)).toEqual(shape(interdit));
+  });
+
+  test("un refus n'ecrit RIEN : ni code, ni pointeur de code actif, et ne nomme pas le club", async () => {
+    const store = baseStore();
+    const err = await catchInvite(issueInviteCode(deps(store), { uid: "etranger", clubId: CLUB }));
+
+    expect(err.message).not.toContain(CLUB);
+    expect(err.message).not.toContain("AS Test");
+    expect(store.read(invitePaths.meta(CLUB))).toBeNull();
+    expect([...store.docs.keys()].some((k) => k.startsWith("inviteCodes/"))).toBe(false);
+  });
+
+  test("`unauthenticated` reste distinct : il parle de la session, jamais de la cible", async () => {
+    const store = baseStore();
+    const err = await catchInvite(issueInviteCode(deps(store), { uid: "", clubId: CLUB }));
+    expect(err.code).toBe("unauthenticated");
+    // Et il ne depend pas du club vise : meme reponse sur un club inexistant.
+    const err2 = await catchInvite(issueInviteCode(deps(store), { uid: "", clubId: "clubFantome" }));
+    expect({ code: err2.code, message: err2.message }).toEqual({
+      code: err.code,
+      message: err.message,
+    });
+  });
+});
+
 // ─── 7. Quota : increment transactionnel concurrent ─────────────────────────
 
 describe("quota d'usages — increment transactionnel", () => {
@@ -715,6 +854,168 @@ describe("limitation de tentatives — de bout en bout", () => {
   });
 });
 
+// ─── 8bis. Limitation de tentatives A L'EMISSION ────────────────────────────
+
+describe("politiques de limitation — seuils distincts et compteurs separes", () => {
+  test("les deux gestes ne partagent NI les seuils NI l'espace de nom des compteurs", () => {
+    // Recycler les valeurs du rattachement serait de la paresse : emettre est un
+    // geste de coach, rare et delibere ; saisir un code est un geste de joueur,
+    // frequent et faillible.
+    expect(ISSUE_ATTEMPT_POLICY.keyPrefix).not.toBe(JOIN_ATTEMPT_POLICY.keyPrefix);
+    expect(ISSUE_ATTEMPT_POLICY.keyPrefix).toBe("issue_");
+    // Le rattachement garde le prefixe VIDE : les compteurs deja en base ne sont
+    // pas renommes par ce lot.
+    expect(JOIN_ATTEMPT_POLICY.keyPrefix).toBe("");
+
+    expect(ISSUE_ATTEMPT_MAX_PER_USER).not.toBe(INVITE_ATTEMPT_MAX_PER_USER);
+    expect(ISSUE_ATTEMPT_MAX_PER_ORIGIN).not.toBe(INVITE_ATTEMPT_MAX_PER_ORIGIN);
+    expect(ISSUE_ATTEMPT_WINDOW_MS).not.toBe(INVITE_ATTEMPT_WINDOW_MS);
+    // Fenetre d'emission plus LARGE : sonder des identifiants de club est un jeu
+    // patient, une fenetre courte se contournerait en espacant les essais.
+    expect(ISSUE_ATTEMPT_WINDOW_MS).toBeGreaterThan(INVITE_ATTEMPT_WINDOW_MS);
+  });
+
+  test("les echecs de rattachement ne bloquent PAS l'emission (et reciproquement)", async () => {
+    // Sans compteurs separes, un joueur qui se trompe cinq fois de code sur le
+    // wifi du club fermerait la porte d'emission de son propre coach.
+    const store = baseStore();
+    for (let i = 0; i < INVITE_ATTEMPT_MAX_PER_USER + 1; i++) {
+      await catchInvite(joinClubWithCode(deps(store), { uid: OWNER, rawCode: "ZZZZZZZZZZ" }));
+    }
+    await expect(issueInviteCode(deps(store), { uid: OWNER, clubId: CLUB })).resolves.toBeTruthy();
+
+    // Sens inverse : saturer l'emission n'empeche pas de rejoindre un club.
+    const store2 = baseStore();
+    seedCode(store2, "ABCDEFGHJK");
+    for (let i = 0; i < ISSUE_ATTEMPT_MAX_PER_USER + 1; i++) {
+      await catchInvite(issueInviteCode(deps(store2), { uid: PLAYER, clubId: "clubFantome" }));
+    }
+    const joined = await joinClubWithCode(deps(store2), { uid: PLAYER, rawCode: "ABCDEFGHJK" });
+    expect(joined.clubId).toBe(CLUB);
+  });
+});
+
+describe("limitation de tentatives a l'emission — de bout en bout", () => {
+  test("apres le seuil utilisateur, meme une demande LEGITIME est bloquee (blocage, pas oracle)", async () => {
+    const store = baseStore();
+
+    for (let i = 0; i < ISSUE_ATTEMPT_MAX_PER_USER; i++) {
+      const err = await catchInvite(
+        issueInviteCode(deps(store), { uid: OWNER, clubId: `fantome${i}` }),
+      );
+      expect(err.code).toBe(ISSUE_REJECTED_CODE);
+    }
+
+    const blocked = await catchInvite(issueInviteCode(deps(store), { uid: OWNER, clubId: CLUB }));
+    expect(blocked.code).toBe(INVITE_RATE_LIMITED_CODE);
+    // Rien n'a ete emis pendant le blocage.
+    expect(store.read(invitePaths.meta(CLUB))).toBeNull();
+  });
+
+  test("le blocage EXPIRE : passe la duree, le coach emet de nouveau", async () => {
+    const store = baseStore();
+    for (let i = 0; i < ISSUE_ATTEMPT_MAX_PER_USER; i++) {
+      await catchInvite(issueInviteCode(deps(store), { uid: OWNER, clubId: `fantome${i}` }));
+    }
+
+    const later = NOW + ISSUE_ATTEMPT_BLOCK_MS + 1;
+    const result = await issueInviteCode(
+      { store, now: () => later },
+      { uid: OWNER, clubId: CLUB },
+    );
+    expect(result.code).toMatch(/^[A-Z2-9]{5}-[A-Z2-9]{5}$/);
+  });
+
+  test("les refus HORS fenetre ne s'additionnent pas (fenetre glissante)", async () => {
+    const store = baseStore();
+    // Un premier paquet de refus, puis un saut au-dela de la fenetre : le
+    // compteur repart, le coach n'est pas bloque par une histoire ancienne.
+    for (let i = 0; i < ISSUE_ATTEMPT_MAX_PER_USER - 1; i++) {
+      await catchInvite(issueInviteCode(deps(store), { uid: OWNER, clubId: `fantome${i}` }));
+    }
+    const later = NOW + ISSUE_ATTEMPT_WINDOW_MS + 1;
+    const d = { store, now: () => later };
+    for (let i = 0; i < ISSUE_ATTEMPT_MAX_PER_USER - 1; i++) {
+      const err = await catchInvite(issueInviteCode(d, { uid: OWNER, clubId: `tardif${i}` }));
+      expect(err.code).toBe(ISSUE_REJECTED_CODE);
+    }
+    await expect(issueInviteCode(d, { uid: OWNER, clubId: CLUB })).resolves.toBeTruthy();
+  });
+
+  test("portee ORIGINE : changer de compte a chaque essai ne contourne rien", async () => {
+    const store = baseStore();
+    const ip = "203.0.113.7";
+
+    for (let i = 0; i < ISSUE_ATTEMPT_MAX_PER_ORIGIN; i++) {
+      const err = await catchInvite(
+        issueInviteCode(deps(store), { uid: `jetable${i}`, originKey: ip, clubId: CLUB }),
+      );
+      expect(err.code).toBe(ISSUE_REJECTED_CODE);
+    }
+
+    const blocked = await catchInvite(
+      issueInviteCode(deps(store), { uid: "jetableNeuf", originKey: ip, clubId: CLUB }),
+    );
+    expect(blocked.code).toBe(INVITE_RATE_LIMITED_CODE);
+
+    // Une AUTRE origine n'est pas punie : le vrai coach passe toujours.
+    await expect(
+      issueInviteCode(deps(store), { uid: OWNER, originKey: "198.51.100.2", clubId: CLUB }),
+    ).resolves.toBeTruthy();
+  });
+
+  test("l'IP n'est jamais stockee en clair (cle de compteur hachee, prefixee)", async () => {
+    const store = baseStore();
+    const ip = "203.0.113.7";
+    await catchInvite(
+      issueInviteCode(deps(store), { uid: "etranger", originKey: ip, clubId: CLUB }),
+    );
+
+    const keys = [...store.docs.keys()].filter((k) => k.startsWith("inviteAttempts/"));
+    expect(keys).toHaveLength(2);
+    expect(keys.every((k) => k.startsWith("inviteAttempts/issue_"))).toBe(true);
+    expect(JSON.stringify([...store.docs.entries()])).not.toContain(ip);
+  });
+
+  test("FAIL-CLOSED : compteur illisible → emission REFUSEE, jamais ouverte", async () => {
+    const store = baseStore();
+    store.failReads.add(invitePaths.attempt(`issue_uid_${OWNER}`));
+
+    const err = await catchInvite(issueInviteCode(deps(store), { uid: OWNER, clubId: CLUB }));
+    expect(err.code).toBe(INVITE_UNAVAILABLE_CODE);
+    // Aucun code n'a ete cree : une panne de compteur n'ouvre pas la porte.
+    expect(store.read(invitePaths.meta(CLUB))).toBeNull();
+    expect([...store.docs.keys()].some((k) => k.startsWith("inviteCodes/"))).toBe(false);
+  });
+
+  test("FAIL-CLOSED : compteur non ecrivable → le refus reste un refus", async () => {
+    const store = baseStore();
+    store.failWrites.add(invitePaths.attempt(`issue_uid_${OWNER}`));
+
+    const err = await catchInvite(
+      issueInviteCode(deps(store), { uid: OWNER, clubId: "clubFantome" }),
+    );
+    expect({ code: err.code, message: err.message }).toEqual({
+      code: ISSUE_REJECTED_CODE,
+      message: ISSUE_REJECTED_MESSAGE,
+    });
+    expect([...store.docs.keys()].some((k) => k.startsWith("inviteCodes/"))).toBe(false);
+  });
+
+  test("la limitation s'applique AVANT la lecture du club (un balayage ne s'achete pas de requetes)", async () => {
+    const store = baseStore();
+    for (let i = 0; i < ISSUE_ATTEMPT_MAX_PER_USER; i++) {
+      await catchInvite(issueInviteCode(deps(store), { uid: "sonde", clubId: `fantome${i}` }));
+    }
+    const attemptsAvant = store.transactionAttempts;
+
+    // Une fois bloque, plus AUCUNE transaction n'est ouverte : le refus est
+    // rendu sur la seule lecture du compteur.
+    await catchInvite(issueInviteCode(deps(store), { uid: "sonde", clubId: CLUB }));
+    expect(store.transactionAttempts).toBe(attemptsAvant);
+  });
+});
+
 // ─── 9. Journalisation ──────────────────────────────────────────────────────
 
 describe("journalisation d'abus — sobre par construction", () => {
@@ -732,5 +1033,61 @@ describe("journalisation d'abus — sobre par construction", () => {
     expect(signals).toHaveLength(1);
     expect(Object.keys(signals[0]).sort()).toEqual(["at", "scope", "uid"]);
     expect(signals[0]).toEqual({ scope: "user", uid: PLAYER, at: NOW });
+  });
+
+  test("l'EMISSION journalise de la meme facon : seuil franchi, rien d'autre", async () => {
+    const store = baseStore();
+    const signals: AbuseSignal[] = [];
+    const d = { store, now: () => NOW, onAbuse: (s: AbuseSignal) => signals.push(s) };
+
+    for (let i = 0; i < ISSUE_ATTEMPT_MAX_PER_USER - 1; i++) {
+      await catchInvite(issueInviteCode(d, { uid: "sonde", clubId: CLUB }));
+    }
+    expect(signals).toHaveLength(0);
+
+    await catchInvite(issueInviteCode(d, { uid: "sonde", clubId: CLUB }));
+    expect(signals).toHaveLength(1);
+    expect(Object.keys(signals[0]).sort()).toEqual(["at", "scope", "uid"]);
+    expect(signals[0]).toEqual({ scope: "user", uid: "sonde", at: NOW });
+
+    // Le GESTE (emission / rattachement) n'est volontairement pas porte par le
+    // signal : chaque callable choisit son propre callback et l'ecrit elle-meme
+    // (cf. clubInvites.ts). La charge du signal reste minimale par construction.
+  });
+
+  test("AUCUN SECRET dans le journal : ni code emis, ni code tente, ni empreinte, ni club, ni IP", async () => {
+    const store = baseStore();
+    const signals: AbuseSignal[] = [];
+    const d = { store, now: () => NOW, onAbuse: (s: AbuseSignal) => signals.push(s) };
+    const ip = "203.0.113.42";
+
+    // Un VRAI code est emis : c'est le secret le plus sensible du systeme.
+    const issued = await issueInviteCode(d, { uid: OWNER, clubId: CLUB });
+    const canonical = normalizeInviteCode(issued.code);
+    const empreinte = hashInviteCode(canonical);
+
+    // Puis on sature les deux portes pour declencher plusieurs signaux.
+    for (let i = 0; i < ISSUE_ATTEMPT_MAX_PER_USER; i++) {
+      await catchInvite(issueInviteCode(d, { uid: "sonde", originKey: ip, clubId: CLUB }));
+    }
+    for (let i = 0; i < INVITE_ATTEMPT_MAX_PER_USER; i++) {
+      await catchInvite(
+        joinClubWithCode(d, { uid: "sonde2", originKey: ip, rawCode: "ZZZZZZZZZZ" }),
+      );
+    }
+    expect(signals.length).toBeGreaterThanOrEqual(2);
+
+    const journal = JSON.stringify(signals);
+    for (const secret of [
+      canonical, // le code emis, forme canonique
+      issued.code, // le code emis, forme affichee
+      empreinte, // son empreinte SHA-256
+      "ZZZZZZZZZZ", // un code TENTE (journaliser les essais = enumeration offerte)
+      CLUB, // l'identifiant du club vise
+      "AS Test", // son nom
+      ip, // l'origine reseau en clair
+    ]) {
+      expect(journal).not.toContain(secret);
+    }
   });
 });
