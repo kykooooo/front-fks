@@ -233,6 +233,19 @@ commune `724c062`, plus les fichiers non encore commités de la branche coach.
 
 **Un seul fichier est modifié des deux côtés : `screens/ProfileSetupScreen.tsx`.**
 
+> **Re-vérifié le 27/07 à HEAD `7f625b2`** — l'affirmation n'a pas bougé :
+> 132 fichiers touchés côté coach, 71 côté boucle, **intersection = 1**.
+> ```bash
+> MB=$(git merge-base HEAD claude/player-tracking-loop-559906)   # 724c062
+> comm -12 <(git diff --name-only $MB HEAD | sort) \
+>          <(git diff --name-only $MB claude/player-tracking-loop-559906 | sort)
+> # -> screens/ProfileSetupScreen.tsx
+> ```
+> Les fichiers encore non commités du chantier coach au moment de cette
+> re-vérification (`functions/src/clubInvites.ts`, `functions/src/inviteCodes.ts`,
+> `services/clubInvites.ts`) ont été contrôlés un par un : **aucun** n'est touché
+> par la boucle. L'intersection reste donc bien de un.
+
 ### Les quatre fichiers que la branche coach avait interdiction de toucher
 
 | Fichier | Touché par la boucle | Touché par le coach | Conflit attendu |
@@ -279,9 +292,11 @@ Doit renvoyer **3 lignes** : la relecture du profil existant, l'écriture, et
 (indirectement) les options. Si le résultat est vide ou incomplet, la
 résolution est fausse.
 
-### Le piège qui ne produira AUCUN conflit — et qui casse quand même
+### Le piège qui ne produit AUCUN conflit — **RÉSOLU le 27/07**
 
-C'est la trouvaille la plus utile de cette analyse.
+C'était la trouvaille la plus utile de cette analyse. Elle est maintenant traitée.
+
+#### Le piège, rappelé
 
 Les deux branches ajoutent, **dans deux fichiers différents**, une déclaration
 de types pour `react-test-renderer` :
@@ -291,29 +306,78 @@ de types pour `react-test-renderer` :
 - coach : `types/react-test-renderer.d.ts` (forme `export =`, celle du vrai
   paquet).
 
-Git les fusionnera **sans un seul marqueur de conflit** — ce sont deux fichiers
-distincts. Mais TypeScript, lui, voit deux déclarations du même module qui se
-contredisent.
+Git les fusionne **sans un seul marqueur de conflit** — ce sont deux fichiers
+distincts. Mais TypeScript voit deux déclarations du même module qui se
+contredisent, et le style `export default` détruit l'accès aux types via
+`TestRenderer.ReactTestRenderer`.
 
-**Mesuré, pas supposé** : j'ai copié temporairement le fichier de la boucle dans
-ce worktree et relancé les vérifications.
+#### Ce que ça coûte, mesuré à HEAD `7f625b2`
 
-| Vérification | Résultat avec la collision |
+| Vérification | Résultat avec les deux fichiers présents |
 |---|---|
-| `npx tsc --noEmit` | **46 erreurs** (« Cannot find namespace 'TestRenderer' » dans tous les tests de rendu du chantier coach) |
+| `npx tsc --noEmit` (typecheck honnête) | **46 erreurs** : 35 × `TS2503 Cannot find namespace 'TestRenderer'` + 11 × `TS7006` (paramètre implicitement `any`, conséquence directe), réparties sur **10 fichiers de test** du chantier coach |
 | `npx jest --config jest.coach.config.js` | **75 suites vertes, 1470 tests verts** |
 
-Autrement dit : **la suite de tests ne voit rien** (Jest passe par Babel, qui
-ignore les types). Seul `tsc` le voit. Un merge « qui a l'air propre et dont les
-tests passent » peut donc laisser 46 erreurs de typage derrière lui.
+**La suite de tests ne voit rien** (Jest passe par Babel, qui ignore les types).
+Seul `tsc` le voit. Un merge « propre et vert » peut donc laisser 46 erreurs de
+typage derrière lui.
 
-Fichier temporaire supprimé, état actuel revérifié : **0 erreur**.
+#### La résolution : UNE seule déclaration canonique
 
-**Résolution recommandée** : supprimer
-`screens/feedback/__tests__/react-test-renderer.d.ts` et garder
-`types/react-test-renderer.d.ts`, qui est **plus complet** (il déclare `root`,
-`find*`, l'arbre d'instances) et couvre les besoins des deux branches. À faire
-**dans la branche d'intégration**, pas dans les branches d'origine.
+`types/react-test-renderer.d.ts` est désormais **la déclaration canonique
+unique du dépôt**, et le fichier le dit lui-même en tête (encadré
+« DÉCLARATION CANONIQUE — UNE SEULE DANS LE DÉPÔT »).
+
+Elle est un **sur-ensemble strict des deux shims** :
+
+| Besoin | Qui l'a | Couvert par la canonique |
+|---|---|---|
+| `import TestRenderer, { act } from "react-test-renderer"` | **les deux branches, à l'identique** | oui — `esModuleInterop: true` (`tsconfig.json`) synthétise le `default` à partir du `export =` |
+| `TestRenderer.create(element)` | boucle + coach | oui |
+| `act(async () => { … })`, `act(() => { … })` | boucle + coach | oui |
+| `act` avec un callback qui **renvoie** une valeur | forme générique du shim boucle | oui — signature élargie en `act<T = void>(callback: () => T \| Promise<T>): Promise<void>` |
+| `TestRenderer.ReactTestRenderer`, `ReactTestRendererJSON`, `ReactTestInstance` (types nommés) | coach uniquement | oui — impossible en `export default`, d'où le choix du `export =` |
+| `renderer.root`, `findAllByType`, `findByProps`, `update`, `unmount`, `toJSON` | coach uniquement | oui |
+| `TestRendererInstance` (interface du shim boucle) | **personne** — déclarée mais jamais importée (vérifié : `git grep TestRendererInstance` sur la branche boucle ne remonte que sa propre déclaration) | sans objet |
+
+**Aucune ligne des tests de la boucle n'est à modifier.** Son test
+(`screens/feedback/__tests__/useFeedbackSave.test.tsx`) écrit exactement la même
+forme d'import que les tests coach.
+
+#### Le geste à faire au merge — une suppression, rien d'autre
+
+```bash
+git rm screens/feedback/__tests__/react-test-renderer.d.ts
+```
+
+À faire **dans la branche d'intégration**, pas dans les branches d'origine.
+
+#### La preuve, par simulation locale
+
+Trois mesures enchaînées dans ce worktree, arbre remis propre après chaque étape :
+
+1. **État de départ** — canonique seule : `npx tsc --noEmit --typeRoots ../../../node_modules/@types` → **0 erreur**.
+2. **Collision reproduite** — le shim de la boucle copié à son emplacement
+   (`git show claude/player-tracking-loop-559906:screens/feedback/__tests__/react-test-renderer.d.ts`) :
+   **46 erreurs**, chiffre identique à celui de l'audit initial.
+3. **Résolution prouvée** — shim de la boucle retiré, et une sonde temporaire
+   transcrivant **la consommation exacte du test de la boucle** (import par
+   défaut + `act` nommé, `create()` dans un `act` async, `act` sur un
+   `Promise.all`, `act` avec valeur de retour, `act` synchrone) ajoutée au
+   projet : **0 erreur**. Sonde supprimée ensuite.
+
+> **Point d'honnêteté** : la coexistence des deux fichiers **ne peut pas** être
+> ramenée à 0 erreur. Un module ambiant ne se déclare qu'une fois avec un style
+> d'export donné ; `export =` et `export default` ne fusionnent pas. Le passage
+> par 0 exige la suppression de l'un des deux — c'est la suppression du shim de
+> la boucle, parce qu'elle ne coûte **aucune modification de code de test**,
+> alors que l'inverse en coûterait 35 (tous les sites `TestRenderer.<Type>` du
+> chantier coach).
+>
+> La sonde de l'étape 3 **transcrit** le test de la boucle, elle ne l'exécute
+> pas : le vrai fichier importe `domain/tracking/*`, `useExecutionStore` et
+> `useFeedbackSave`, qui n'existent pas sur cette branche. La vérification
+> définitive reste l'étape 4 du plan, après merge réel.
 
 ### Le reste : aucun croisement
 
@@ -329,6 +393,59 @@ Fichier temporaire supprimé, état actuel revérifié : **0 erreur**.
 
 > Rappel : **c'est toi qui déclenches chaque merge et chaque déploiement.**
 > Les commandes ci-dessous sont à exécuter, pas à faire exécuter par un agent.
+
+### 4.0 L'ordre cible, imposé par Kyllian
+
+Cet ordre n'est pas une suggestion de rédaction : c'est la décision. Il prime sur
+toute autre séquence proposée ailleurs dans ce document.
+
+1. **boucle joueur**
+2. **résolution des conflits**
+3. **typecheck et tests**
+4. **espace Coach**
+5. **tests d'intégration**
+6. **validation sur téléphone réel**
+7. **seulement ensuite décision de merge et de déploiement**
+
+Ce que cet ordre verrouille, en clair :
+
+- la boucle joueur entre **en premier** — c'est elle qui produit la donnée, le
+  coach ne fait que la recopier ; l'inverse ferait entrer un lecteur avant que
+  la chose à lire existe ;
+- **la décision de merge et de déploiement arrive en dernier**, après la
+  validation téléphone. Tant que l'étape 6 n'est pas verte, il n'y a pas de
+  décision à prendre — pas de « on merge et on verra ».
+
+Correspondance avec les étapes détaillées ci-dessous : ordre 1 → étape 1 ;
+ordre 2 → étapes 2 et 3 ; ordre 3 et 5 → étape 4 ; ordre 4 → étape 3 ;
+ordre 6 → étape 5 ; ordre 7 → étape 6 et §5.
+
+### 4.0 bis Les preuves obligatoires après simulation locale de l'intégration
+
+Exigées par Kyllian. **Toutes** doivent être produites, avec le chiffre exact,
+avant qu'une décision de merge soit seulement envisagée. Une preuve manquante
+vaut preuve rouge.
+
+| # | Preuve exigée | Comment on la produit | Ce qui la rend fausse |
+|---|---|---|---|
+| **P1** | **Typecheck complet à zéro** | `npx tsc --noEmit` → **aucune sortie** | Toute erreur, y compris dans les tests. C'est exactement ce que le piège `react-test-renderer` rendait invisible. |
+| **P2** | **Jest complet vert** | `npx jest` → 0 échec, et le nombre de suites **augmente** par rapport aux 75 de la branche coach seule | Une suite qui disparaît silencieusement (fichier perdu au merge) compte comme un échec. |
+| **P3** | **Tests Functions verts** | `cd functions && yarn install && npx jest` | Un `install` sauté : les tests d'intégration émulateur n'ont **jamais** tourné dans le worktree coach. |
+| **P4** | **Règles Firestore vertes** | `npm run test:rules` (émulateur, Java requis) | Un émulateur non démarré rend la suite verte par vide. Vérifier le nombre de tests. |
+| **P5** | **Aucune donnée sensible ajoutée au coach** | `npx jest sensitiveIsolation` **et** `cd functions && npx jest sensitiveIsolation` | Un champ de santé (`pain`, `fatigue`) qui arriverait jusqu'à la projection — y compris **par son absence**, cf. §1.4. |
+| **P6** | **Aucune donnée manquante transformée en faux zéro** | `npx jest domain/coachView/__tests__/trackingLoopContract.test.ts` → intitulé **« boucle PRÉSENTE »** et **9** tests, pas 8 ; plus `npx jest projector` côté Functions | Un `0 %` ou un `0/12` affiché là où la donnée est simplement absente. Un compteur absent doit rester `null`. |
+| **P7** | **Aucune dépendance envers une validation manuelle de l'âge** | relecture ciblée : aucun écran joueur, aucune génération, aucune exécution de séance ne doit être bloquée par un état d'autorisation d'accès | Un chemin où le joueur attend une action du club pour s'entraîner. La décision produit est ferme : le club ne valide **jamais** l'âge, et rien du parcours joueur n'en dépend. L'autorisation d'accès ne gouverne **que la visibilité côté coach**. |
+
+Deux vérifications de merge s'ajoutent à ces sept preuves :
+
+```bash
+# la question "reprise" de la boucle est toujours enregistree
+grep -n "selfReportedGapDays" screens/ProfileSetupScreen.tsx   # attendu : 3 lignes
+
+# une SEULE declaration de react-test-renderer subsiste
+git ls-files | grep react-test-renderer
+# attendu : types/react-test-renderer.d.ts, et rien d'autre
+```
 
 ### Étape 1 — Merger la boucle de suivi joueur dans `main`
 
@@ -532,9 +649,13 @@ native de `package.json`, ni `eas.json`, ni `ios/`, ni `android/`). L'OTA suffit
    comparaison des diffs (`git diff --name-only`, positions de hunks). Le seul
    fichier en intersection est certain ; la position exacte du conflit est très
    probable, pas prouvée par une fusion réelle.
-2. **La collision `react-test-renderer`, elle, est mesurée** (46 erreurs `tsc`,
-   suite Jest verte malgré tout), en reproduisant le fichier de la boucle dans ce
-   worktree puis en le supprimant.
+2. **La collision `react-test-renderer` est RÉSOLUE, et la résolution est
+   mesurée** (§3) : 46 erreurs `tsc` avec les deux fichiers, suite Jest verte
+   malgré tout, **0 erreur** avec la seule déclaration canonique et la
+   consommation de la boucle transcrite. Ce qui reste non prouvé ici : la
+   sonde transcrit le test de la boucle, elle ne l'exécute pas — le vrai
+   fichier ne peut pas compiler sur cette branche (il importe
+   `domain/tracking/*`, absent). La preuve définitive est P1 à l'étape 4.
 3. **Les tests d'intégration émulateur des Functions n'ont jamais été joués** ici
    (`functions/node_modules` absent de ce worktree). Ils sont à l'étape 4.
 4. **Le script de migration des accès n'a jamais été exécuté.** Aucune donnée
