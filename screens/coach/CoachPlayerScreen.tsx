@@ -195,6 +195,17 @@ export default function CoachPlayerScreen() {
           action={{ onPress: refresh, accessibilityHint: "Relance la lecture de la fiche" }}
           footnote={fraicheur.libelle}
         />
+      ) : status === "restricted" ? (
+        // DÉCISION SERVEUR : l'accès au suivi de ce joueur n'est pas autorisé.
+        // Ni une erreur (rien n'est cassé), ni une attente (rien n'arrivera tout
+        // seul) : deux états déjà pris par les branches voisines. Aucune donnée
+        // de suivi n'est rendue ici — il n'y en a d'ailleurs aucune à rendre, le
+        // serveur n'ayant même pas produit de projection.
+        <CoachEmptyState
+          variant="accessRestricted"
+          footnote={fraicheur.libelle}
+          testID="coach-player-restricted"
+        />
       ) : status === "notFound" || !view ? (
         // Le club connaît ce joueur, mais aucune projection n'existe encore :
         // ce n'est ni une erreur, ni un refus d'accès.

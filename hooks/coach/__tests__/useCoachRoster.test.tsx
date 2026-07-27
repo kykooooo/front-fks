@@ -54,6 +54,7 @@ const summary = (playerUid: string, firstName: string): CoachPlayerSummary => ({
 
 const result = (over: Partial<Awaited<ReturnType<typeof fetchClubPlayerSummaries>>> = {}) => ({
   summaries: [] as CoachPlayerSummary[],
+  restrictedCount: 0,
   pendingCount: 0,
   unreadableCount: 0,
   unavailable: false,
@@ -72,10 +73,11 @@ beforeEach(() => {
 });
 
 describe("useCoachRoster — chargement et cohérence", () => {
-  test("charge l'effectif au montage et expose les 3 compteurs distincts", async () => {
+  test("charge l'effectif au montage et expose les 4 compteurs distincts", async () => {
     fetchMock.mockResolvedValue(
       result({
         summaries: [summary("p1", "Anna"), summary("p2", "Bea")],
+        restrictedCount: 3,
         pendingCount: 1,
         unreadableCount: 2,
         fetchedAt: 1_234,
@@ -87,10 +89,23 @@ describe("useCoachRoster — chargement et cohérence", () => {
     expect(h.current.status).toBe("ready");
     expect(h.current.views.map((v) => v.playerUid)).toEqual(["p1", "p2"]);
     expect(h.current.readyCount).toBe(2);
+    // QUATRE sémantiques, jamais confondues : prêt / non autorisé par le serveur
+    // / pas encore projeté / non lu.
+    expect(h.current.restrictedCount).toBe(3);
     expect(h.current.pendingCount).toBe(1); // pas encore projeté par le serveur
     expect(h.current.unreadableCount).toBe(2); // non lu — sémantique DIFFÉRENTE
-    expect(h.current.memberCount).toBe(5); // effectif réel = 2 + 1 + 2
+    expect(h.current.memberCount).toBe(8); // effectif réel = 2 + 3 + 1 + 2
     expect(h.current.fetchedAt).toBe(1_234);
+    await h.unmount();
+  });
+
+  test("un effectif entièrement non autorisé reste 'ready' (décision serveur, pas panne)", async () => {
+    fetchMock.mockResolvedValue(result({ summaries: [], restrictedCount: 4 }));
+    const h = await renderHook(() => useCoachRoster("clubX", { now }));
+    expect(h.current.status).toBe("ready");
+    expect(h.current.readyCount).toBe(0);
+    expect(h.current.restrictedCount).toBe(4);
+    expect(h.current.memberCount).toBe(4);
     await h.unmount();
   });
 

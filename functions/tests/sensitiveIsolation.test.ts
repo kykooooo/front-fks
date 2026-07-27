@@ -219,7 +219,9 @@ const plannedSensible = () => {
 const input = (sensible: boolean): ProjectorInput => ({
   playerUid: "playerA1",
   clubId: "clubA",
-  membership: { uid: "playerA1", role: "player" },
+  // Acces autorise : cette sonde teste ce qui SORT d'une projection produite.
+  // Le verrou d'autorisation lui-meme est couvert par coachAccess.test.ts.
+  membership: { uid: "playerA1", role: "player", coachAccess: "approved" },
   profile: sensible
     ? { ...PROFILE, pains: [{ zone: "SENTINEL_ZONE_PROFIL", level: 4 }], injuryNote: "SENTINEL_NOTE_PROFIL" }
     : { ...PROFILE },

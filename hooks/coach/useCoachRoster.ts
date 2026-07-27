@@ -37,11 +37,16 @@ export type CoachRosterState = {
   status: CoachRosterStatus;
   /** Projections lisibles (= views.length). */
   readyCount: number;
+  /**
+   * Membres player dont l'ACCÈS AU SUIVI n'est pas autorisé par le serveur.
+   * Ni une erreur, ni une attente technique : une décision, à dire telle quelle.
+   */
+  restrictedCount: number;
   /** Membres player dont la projection n'est pas encore produite par le serveur. */
   pendingCount: number;
   /** Membres player dont la LECTURE a échoué (à annoncer : "N profils non lus"). */
   unreadableCount: number;
-  /** Effectif réel = prêts + en préparation + non lus. */
+  /** Effectif réel = prêts + non consultables + en préparation + non lus. */
   memberCount: number;
   /** ms epoch de la dernière lecture RÉUSSIE, null tant qu'aucune n'a abouti. */
   fetchedAt: number | null;
@@ -60,6 +65,7 @@ export type UseCoachRosterOptions = {
 
 type RosterSnapshot = {
   summaries: CoachPlayerSummary[];
+  restrictedCount: number;
   pendingCount: number;
   unreadableCount: number;
   unavailable: boolean;
@@ -70,6 +76,7 @@ type RosterSnapshot = {
 
 const EMPTY_SNAPSHOT: RosterSnapshot = {
   summaries: [],
+  restrictedCount: 0,
   pendingCount: 0,
   unreadableCount: 0,
   unavailable: false,
@@ -147,6 +154,7 @@ export function useCoachRoster(
         // un imprévu et le traite comme une indisponibilité globale honnête.
         res = {
           summaries: [],
+          restrictedCount: 0,
           pendingCount: 0,
           unreadableCount: 0,
           unavailable: true,
@@ -181,6 +189,7 @@ export function useCoachRoster(
       } else {
         const next: RosterSnapshot = {
           summaries: res.summaries,
+          restrictedCount: res.restrictedCount,
           pendingCount: res.pendingCount,
           unreadableCount: res.unreadableCount,
           unavailable: res.unavailable,
@@ -263,9 +272,11 @@ export function useCoachRoster(
     views,
     status,
     readyCount: views.length,
+    restrictedCount: snapshot.restrictedCount,
     pendingCount: snapshot.pendingCount,
     unreadableCount: snapshot.unreadableCount,
-    memberCount: views.length + snapshot.pendingCount + snapshot.unreadableCount,
+    memberCount:
+      views.length + snapshot.restrictedCount + snapshot.pendingCount + snapshot.unreadableCount,
     fetchedAt: snapshot.fetchedAt,
     isStale,
     isRefreshing,

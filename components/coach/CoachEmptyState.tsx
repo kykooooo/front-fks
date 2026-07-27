@@ -27,6 +27,7 @@ export const COACH_EMPTY_VARIANTS = [
   "playerWithoutSession", // joueur inscrit, aucune séance terminée
   "noRecentData", // rien sur la période affichée (l'historique existe peut-être)
   "syncPending", // projections en cours de préparation côté serveur
+  "accessRestricted", // le serveur n'autorise pas l'accès au suivi de ce joueur
 ] as const;
 export type CoachEmptyVariant = (typeof COACH_EMPTY_VARIANTS)[number];
 
@@ -81,6 +82,22 @@ const EMPTY_COPY: Record<CoachEmptyVariant, EmptyCopy> = {
       "Les données de certains joueurs sont en cours de préparation. Elles apparaissent d'elles-mêmes dès qu'elles sont prêtes, sans rien faire de votre côté.",
     level: "watch",
     actionLabel: "Actualiser",
+  },
+  // Décision SERVEUR, pas un incident : le suivi de ce joueur n'est pas ouvert.
+  // Trois choses que cette copie doit faire, et qu'elle fait :
+  //  1. ne pas alarmer (niveau `unknown`, le neutre de la hiérarchie à 4 statuts,
+  //     aucune 5e couleur inventée) ;
+  //  2. ne JAMAIS laisser croire que le joueur ne s'entraîne pas — c'est
+  //     l'affichage qui est fermé, pas l'entraînement ;
+  //  3. rester dans un vocabulaire produit : aucune mention juridique, médicale,
+  //     ni d'un tiers. Le coach n'a pas de bouton parce qu'il n'a rien à cliquer :
+  //     l'état se pose côté serveur (cf. AUTORISATION_ACCES.md).
+  accessRestricted: {
+    icon: "lock-closed-outline",
+    title: "Suivi non accessible",
+    body:
+      "Une étape reste à faire avant que le suivi de ce joueur soit consultable. Il fait partie de l'effectif et peut s'entraîner normalement : seul l'affichage de ses données est en attente.",
+    level: "unknown",
   },
 };
 

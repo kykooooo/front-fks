@@ -32,7 +32,19 @@ import { toDateKey } from "../../utils/dateHelpers";
 /** Même anti-rebond que l'effectif : une relecture au focus par minute au plus. */
 export const PLAYER_MIN_REFETCH_INTERVAL_MS = 60_000;
 
-export type CoachPlayerStatus = "loading" | "ready" | "unavailable" | "notFound";
+/**
+ * `restricted` = le SERVEUR n'autorise pas l'accès au suivi de ce joueur.
+ * TROIS états bien distincts, jamais confondus :
+ *   restricted  → décision serveur (rien ne sera lu, et c'est normal) ;
+ *   notFound    → projection pas encore préparée (elle arrivera d'elle-même) ;
+ *   unavailable → la lecture a échoué (droits inattendus, réseau).
+ */
+export type CoachPlayerStatus =
+  | "loading"
+  | "ready"
+  | "restricted"
+  | "unavailable"
+  | "notFound";
 
 export type CoachPlayerState = {
   /** Résumé brut (projection bornée), pour les écrans qui en ont besoin tel quel. */
@@ -118,7 +130,7 @@ export function useCoachPlayer(
         // JAMAIS de fallback : on ne lit QUE la projection coach-safe.
         incoming = await fetchClubPlayerSummary(clubId, playerUid);
       } catch {
-        incoming = { summary: null, unavailable: true };
+        incoming = { summary: null, unavailable: true, restricted: false };
       } finally {
         inFlightRef.current = false;
       }
@@ -192,13 +204,20 @@ export function useCoachPlayer(
     [summary, todayKey],
   );
 
+  // ORDRE VOLONTAIRE. `restricted` passe AVANT `notFound` : quand le serveur
+  // n'autorise pas l'accès, il n'y a par construction aucune projection à lire —
+  // annoncer "synchronisation en cours" serait une attente qui ne finira jamais.
+  // Il passe APRÈS `unavailable` : si on n'a pas réussi à lire l'effectif, on ne
+  // sait rien, et on ne prétend pas savoir.
   const status: CoachPlayerStatus = loading
     ? "loading"
     : view.unavailable
       ? "unavailable"
-      : summary
-        ? "ready"
-        : "notFound"; // projection absente / malformée / incohérente — pas une erreur de lecture
+      : view.restricted === true
+        ? "restricted"
+        : summary
+          ? "ready"
+          : "notFound"; // projection absente / malformée / incohérente — pas une erreur de lecture
 
   return {
     summary,

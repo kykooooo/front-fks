@@ -4,6 +4,11 @@
 // callables du contrat d'invitation club (émission / rattachement). Le backfill
 // (backfill.ts) est un script Admin one-shot, volontairement NON exporté ici
 // (jamais déployé comme fonction).
+//
+// Même chose pour `coachAccessBackfillCli.ts` (mise à niveau des membership
+// existants vers l'état d'autorisation d'accès) : script one-shot, JAMAIS
+// exécuté à ce jour, JAMAIS déployé — procédure dans
+// docs/coach-pilote-2026-07/AUTORISATION_ACCES.md.
 
 export {
   onMemberWritten,

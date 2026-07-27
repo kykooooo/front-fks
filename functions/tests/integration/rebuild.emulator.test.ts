@@ -171,6 +171,45 @@ describe("rebuildPlayerSummary — membership / club", () => {
     expect(data.lastActivity).toEqual({ dateKey: "2026-07-12", durationMin: 30 });
   });
 
+  // ── Autorisation d'accès aux données de suivi (default-deny) ──────────────
+  it("état d'accès non autorisant → AUCUNE projection écrite", async () => {
+    for (const etat of ["pending", "revoked", "APPROVED"]) {
+      await db.doc("clubs/clubA/members/playerA1").update({ coachAccess: etat });
+      const res = await rebuildPlayerSummary(
+        { clubId: "clubA", playerUid: "playerA1", watermark: wm(1000) },
+        db,
+      );
+      expect(res.action).toBe("noop-absent");
+      expect((await summaryRef().get()).exists).toBe(false);
+    }
+  });
+
+  it("champ d'accès ABSENT (membership ancien) → AUCUNE projection écrite", async () => {
+    await db.doc("clubs/clubA/members/playerA1").set({ uid: "playerA1", role: "player" });
+    const res = await rebuildPlayerSummary(
+      { clubId: "clubA", playerUid: "playerA1", watermark: wm(1000) },
+      db,
+    );
+    expect(res.action).toBe("noop-absent");
+    expect((await summaryRef().get()).exists).toBe(false);
+  });
+
+  it("bascule approved → revoked : la projection DÉJÀ ÉCRITE est SUPPRIMÉE", async () => {
+    // C'est le point qui distingue un verrou d'un simple filtre d'affichage :
+    // retirer l'accès doit retirer la donnée déjà projetée, pas seulement cesser
+    // d'en produire de nouvelle.
+    await rebuildPlayerSummary({ clubId: "clubA", playerUid: "playerA1", watermark: wm(1000) }, db);
+    expect((await summaryRef().get()).exists).toBe(true);
+
+    await db.doc("clubs/clubA/members/playerA1").update({ coachAccess: "revoked" });
+    const res = await rebuildPlayerSummary(
+      { clubId: "clubA", playerUid: "playerA1", watermark: wm(2000) },
+      db,
+    );
+    expect(res.action).toBe("deleted");
+    expect((await summaryRef().get()).exists).toBe(false);
+  });
+
   it("changement de club → ancienne projection supprimée quand le profil pointe ailleurs", async () => {
     await rebuildPlayerSummary({ clubId: "clubA", playerUid: "playerA1", watermark: wm(1000) }, db);
     expect((await summaryRef().get()).exists).toBe(true);

@@ -12,20 +12,35 @@ jest.mock("../../services/firebase", () => ({ db: {}, auth: {} }));
 const mockFirestoreReads: { kind: "collection" | "doc"; path: string[] }[] = [];
 
 type SummaryEntry = { exists: boolean; data: () => any; throws?: boolean };
+// `coachAccess` = état SERVEUR d'autorisation d'accès au suivi. Non précisé dans
+// une fixture, il vaut "approved" : ces tests-là portent sur la lecture, pas sur
+// l'autorisation. `null` signifie CHAMP ABSENT (membership ancien) — c'est le
+// cas fail-closed, testé explicitement plus bas.
+type MemberEntry = { id: string; role: string; coachAccess?: string | null };
 const mockFlags: {
   membersThrows: boolean;
-  members: { id: string; role: string }[];
+  members: MemberEntry[];
   summaryById: Record<string, SummaryEntry>;
   // Repli lecture doc unique (tests fetchClubPlayerSummary).
   getDocThrows: boolean;
   detailDoc: { exists: boolean; data: () => any };
+  // Membership lu par fetchClubPlayerSummary (fiche joueur).
+  memberDoc: { exists: boolean; data: () => any; throws?: boolean };
 } = {
   membersThrows: false,
   members: [],
   summaryById: {},
   getDocThrows: false,
   detailDoc: { exists: false, data: () => ({}) },
+  memberDoc: { exists: true, data: () => ({ uid: "playerA1", role: "player", coachAccess: "approved" }) },
 };
+
+/** Document member tel que le serveur l'écrit (champ omis si `coachAccess === null`). */
+const memberData = (m: MemberEntry) => ({
+  uid: m.id,
+  role: m.role,
+  ...(m.coachAccess === null ? {} : { coachAccess: m.coachAccess ?? "approved" }),
+});
 
 const validPayload = (over: Record<string, unknown> = {}) => ({
   playerUid: "playerA1",
@@ -60,12 +75,17 @@ jest.mock("firebase/firestore", () => ({
     const last = ref.path[ref.path.length - 1];
     if (last === "members") {
       if (mockFlags.membersThrows) throw new Error("permission-denied");
-      return { docs: mockFlags.members.map((m) => ({ id: m.id, data: () => ({ uid: m.id, role: m.role }) })) };
+      return { docs: mockFlags.members.map((m) => ({ id: m.id, data: () => memberData(m) })) };
     }
     return { docs: [] };
   }),
   getDoc: jest.fn(async (ref: any) => {
     mockFirestoreReads.push({ kind: "doc", path: ref.path });
+    // Lecture du membership (fiche joueur) : porte l'état d'autorisation.
+    if (ref.path[2] === "members") {
+      if (mockFlags.memberDoc.throws) throw new Error("permission-denied");
+      return { exists: () => mockFlags.memberDoc.exists, data: mockFlags.memberDoc.data };
+    }
     const id = ref.path[ref.path.length - 1];
     const entry = mockFlags.summaryById[id];
     if (entry) {
@@ -96,6 +116,11 @@ beforeEach(() => {
   mockFlags.getDocThrows = false;
   // Défaut lecture doc unique : un doc valide dont l'id === payload.playerUid.
   mockFlags.detailDoc = { exists: true, data: () => validPayload() };
+  // Défaut membership : joueur rattaché ET autorisé.
+  mockFlags.memberDoc = {
+    exists: true,
+    data: () => ({ uid: "playerA1", role: "player", coachAccess: "approved" }),
+  };
 });
 
 // Helpers de lecture des chemins capturés.
@@ -299,12 +324,17 @@ describe("fetchClubPlayerSummaries — roster via members → summaries (coach-s
 });
 
 describe("fetchClubPlayerSummary — lecture coach-safe (doc unique)", () => {
-  test("lit UNIQUEMENT clubs/{clubId}/playerSummaries/{playerUid}", async () => {
+  test("lit le membership (état d'accès) PUIS la projection, et rien d'autre", async () => {
     const res = await fetchClubPlayerSummary("clubX", "playerA1");
     expect(res.unavailable).toBe(false);
+    expect(res.restricted).toBe(false);
     expect(res.summary?.playerUid).toBe("playerA1");
-    expect(mockFirestoreReads).toHaveLength(1);
-    expect(mockFirestoreReads[0]).toEqual({ kind: "doc", path: ["clubs", "clubX", "playerSummaries", "playerA1"] });
+    // DEUX lectures, dans cet ordre : l'état d'autorisation d'abord (il vit sur
+    // l'effectif, pas sur les données de suivi), la projection ensuite.
+    expect(mockFirestoreReads).toEqual([
+      { kind: "doc", path: ["clubs", "clubX", "members", "playerA1"] },
+      { kind: "doc", path: ["clubs", "clubX", "playerSummaries", "playerA1"] },
+    ]);
   });
 
   test("lecture refusée → indisponible, pas de fallback brut", async () => {
@@ -330,5 +360,110 @@ describe("fetchClubPlayerSummary — lecture coach-safe (doc unique)", () => {
     const res = await fetchClubPlayerSummary("clubX", "playerA1");
     expect(res.summary).toBeNull();
     expect(res.unavailable).toBe(false);
+  });
+});
+
+// ─── Autorisation d'accès : TROIS états, jamais confondus ───────────────────
+// non autorisé (décision serveur) ≠ pas encore prête (attente) ≠ erreur (panne).
+// Ce sont trois messages différents à l'écran : la distinction se joue ici.
+
+describe("fetchClubPlayerSummaries — partition par état d'autorisation", () => {
+  test("joueurs non autorisés : comptés à part, leur projection n'est même PAS demandée", async () => {
+    mockFlags.members = [
+      { id: "playerOk", role: "player", coachAccess: "approved" },
+      { id: "playerLibre", role: "player", coachAccess: "not_required" },
+      { id: "playerAttente", role: "player", coachAccess: "pending" },
+      { id: "playerRetire", role: "player", coachAccess: "revoked" },
+      { id: "playerAncien", role: "player", coachAccess: null }, // champ ABSENT
+      { id: "playerBizarre", role: "player", coachAccess: "APPROVED" }, // valeur inconnue
+    ];
+    mockFlags.summaryById = {
+      playerOk: { exists: true, data: () => validPayload({ playerUid: "playerOk" }) },
+      playerLibre: { exists: true, data: () => validPayload({ playerUid: "playerLibre" }) },
+    };
+
+    const res = await fetchClubPlayerSummaries("clubX");
+
+    expect(res.summaries.map((s) => s.playerUid).sort()).toEqual(["playerLibre", "playerOk"]);
+    expect(res.restrictedCount).toBe(4);
+    // Ni une attente, ni une panne : les deux autres compteurs restent à zéro.
+    expect(res.pendingCount).toBe(0);
+    expect(res.unreadableCount).toBe(0);
+    expect(res.unavailable).toBe(false);
+    // Aucune lecture de projection pour les non autorisés : un refus attendu ne
+    // doit pas se déguiser en erreur de lecture.
+    expect(summaryDocIds().sort()).toEqual(["playerLibre", "playerOk"]);
+  });
+
+  test("effectif ENTIÈREMENT non autorisé : ce n'est PAS une indisponibilité", async () => {
+    mockFlags.members = [
+      { id: "p1", role: "player", coachAccess: "pending" },
+      { id: "p2", role: "player", coachAccess: null },
+    ];
+    const res = await fetchClubPlayerSummaries("clubX");
+    expect(res.unavailable).toBe(false); // rien n'est cassé
+    expect(res.restrictedCount).toBe(2);
+    expect(res.summaries).toEqual([]);
+    expect(summaryDocIds()).toEqual([]);
+  });
+
+  test("les trois états coexistent sans se contaminer", async () => {
+    mockFlags.members = [
+      { id: "pret", role: "player", coachAccess: "approved" },
+      { id: "attente", role: "player", coachAccess: "approved" },
+      { id: "illisible", role: "player", coachAccess: "approved" },
+      { id: "nonAutorise", role: "player", coachAccess: "pending" },
+    ];
+    mockFlags.summaryById = {
+      pret: { exists: true, data: () => validPayload({ playerUid: "pret" }) },
+      attente: { exists: false, data: () => ({}) },
+      illisible: { exists: false, data: () => ({}), throws: true },
+    };
+    const res = await fetchClubPlayerSummaries("clubX");
+    expect(res.summaries.map((s) => s.playerUid)).toEqual(["pret"]);
+    expect(res.pendingCount).toBe(1);
+    expect(res.unreadableCount).toBe(1);
+    expect(res.restrictedCount).toBe(1);
+  });
+});
+
+describe("fetchClubPlayerSummary — la fiche distingue les trois états", () => {
+  test("état non autorisant → restricted, aucune lecture de projection", async () => {
+    for (const coachAccess of ["pending", "revoked", "APPROVED", "", undefined]) {
+      mockFirestoreReads.length = 0;
+      mockFlags.memberDoc = {
+        exists: true,
+        data: () => ({ uid: "playerA1", role: "player", ...(coachAccess === undefined ? {} : { coachAccess }) }),
+      };
+      const res = await fetchClubPlayerSummary("clubX", "playerA1");
+      expect(res.restricted).toBe(true);
+      expect(res.unavailable).toBe(false); // décision, pas panne
+      expect(res.summary).toBeNull();
+      expect(summaryDocIds()).toEqual([]); // la projection n'est jamais demandée
+    }
+  });
+
+  test("membership absent → non consultable (default-deny), pas une erreur", async () => {
+    mockFlags.memberDoc = { exists: false, data: () => ({}) };
+    const res = await fetchClubPlayerSummary("clubX", "playerA1");
+    expect(res.restricted).toBe(true);
+    expect(res.unavailable).toBe(false);
+    expect(res.summary).toBeNull();
+  });
+
+  test("lecture du membership en échec → indisponible (on ne SAIT pas, on ne prétend pas)", async () => {
+    mockFlags.memberDoc = { exists: true, data: () => ({}), throws: true };
+    const res = await fetchClubPlayerSummary("clubX", "playerA1");
+    expect(res.unavailable).toBe(true);
+    expect(res.restricted).toBe(false); // surtout PAS "non autorisé" : ce serait un mensonge
+    expect(res.summary).toBeNull();
+  });
+
+  test("autorisé + projection absente → ni restricted, ni erreur : pas encore prête", async () => {
+    mockFlags.detailDoc = { exists: false, data: () => ({}) };
+    const res = await fetchClubPlayerSummary("clubX", "playerA1");
+    expect(res.restricted).toBe(false);
+    expect(res.unavailable).toBe(false);
+    expect(res.summary).toBeNull();
   });
 });

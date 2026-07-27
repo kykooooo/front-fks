@@ -39,6 +39,12 @@
 //     `inviteRejectedError`, verrouille par un test d'egalite stricte.
 
 import { createHash, randomBytes as cryptoRandomBytes } from "crypto";
+import {
+  COACH_ACCESS_FIELD,
+  initialCoachAccess,
+  normalizeCoachAccess,
+  type CoachAccessState,
+} from "./coachAccess";
 
 // ─── Format du code ─────────────────────────────────────────────────────────
 
@@ -442,6 +448,18 @@ export type JoinResult = {
   clubName: string | null;
   /** true si l'utilisateur etait DEJA membre (rejeu) : aucun usage consomme. */
   alreadyMember: boolean;
+  /**
+   * Etat d'autorisation d'acces AU MOMENT du rattachement.
+   *
+   * Renvoye au joueur pour que l'app puisse lui dire honnetement ce qui se passe
+   * ("ton coach verra ton suivi" vs "une etape reste a faire"). Ce n'est PAS une
+   * valeur que le client peut choisir : elle est calculee et ecrite ici, cote
+   * serveur, et aucun client ne peut la modifier ensuite.
+   *
+   * Sur un rejeu (`alreadyMember`), c'est l'etat DEJA en base qui est renvoye :
+   * rejoindre deux fois ne remet jamais une autorisation a zero.
+   */
+  coachAccess: CoachAccessState;
 };
 
 type JoinTxOutcome =
@@ -518,9 +536,23 @@ export async function joinClubWithCode(
       const existingMember = await tx.get(invitePaths.member(record.clubId, uid));
       const club = await tx.get(invitePaths.club(record.clubId));
       if (!club) return { ok: false, reason: "club-missing" };
+      // Profil du joueur : SEULE source de la categorie d'age. Lu DANS la
+      // transaction (toutes les lectures avant toute ecriture).
+      const profile = await tx.get(invitePaths.user(uid));
 
       const clubName = typeof club.name === "string" ? club.name : null;
       const alreadyMember = !!existingMember;
+
+      // ── Etat d'autorisation d'acces (default-deny) ──────────────────────
+      // Le rattachement (ce membership) et l'autorisation de consultation sont
+      // DEUX choses distinctes : entrer dans le club n'ouvre rien.
+      //  - membre deja present avec un etat VALIDE -> on le conserve tel quel
+      //    (un rejeu ne doit jamais annuler une autorisation deja accordee, ni
+      //    reveiller un acces revoque) ;
+      //  - sinon -> etat initial calcule depuis la categorie d'age, avec
+      //    "pending" quand celle-ci est inconnue ou absente.
+      const existingAccess = normalizeCoachAccess(existingMember?.[COACH_ACCESS_FIELD]);
+      const coachAccess = existingAccess ?? initialCoachAccess(profile?.ageCategory);
 
       // Rejeu du meme joueur : on ne consomme PAS un usage supplementaire.
       // Sans ce garde-fou, un double-tap epuiserait le quota du club.
@@ -535,6 +567,9 @@ export async function joinClubWithCode(
           role: "player",
           joinedAt: now,
           updatedAt: now,
+          // ECRIT UNIQUEMENT ICI, cote serveur. Les regles Firestore interdisent
+          // a tout client de poser ou de modifier ce champ.
+          [COACH_ACCESS_FIELD]: coachAccess,
         },
         { merge: true },
       );
@@ -545,7 +580,7 @@ export async function joinClubWithCode(
         { merge: true },
       );
 
-      return { ok: true, result: { clubId: record.clubId, clubName, alreadyMember } };
+      return { ok: true, result: { clubId: record.clubId, clubName, alreadyMember, coachAccess } };
     });
   } catch (err) {
     if (err instanceof InviteError) throw err;

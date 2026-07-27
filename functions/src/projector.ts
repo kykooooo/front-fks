@@ -5,6 +5,7 @@
 // (`CoachPlayerSummaryCore`) ou `null`. Construit chaque champ EXPLICITEMENT :
 // aucun spread de source, aucune clé inconnue recopiée.
 
+import { isMembershipCoachAccessGranted } from "./coachAccess";
 import {
   boundBlockCount,
   boundDurationMin,
@@ -320,13 +321,24 @@ function readDeviationReasons(execution: RawDoc): string[] {
 
 /**
  * Projette un joueur en `CoachPlayerSummaryCore`, ou `null` si le membre ne doit
- * pas apparaître (non-player, club incohérent, membership absent).
+ * pas apparaître (non-player, club incohérent, membership absent, ou accès non
+ * autorisé).
+ *
+ * `null` n'est jamais un "on saute" silencieux : l'appelant (`rebuildPlayerSummary`)
+ * SUPPRIME la projection existante. C'est ce qui fait qu'un passage en "revoked"
+ * retire réellement la donnée déjà projetée, au lieu de la laisser traîner.
  */
 export function projectPlayerSummary(input: ProjectorInput): CoachPlayerSummaryCore | null {
   const { playerUid, clubId, membership, profile, sessions, plannedSessions } = input;
 
   // 1) Membership requis + role player strict.
   if (!membership || membership.role !== "player") return null;
+
+  // 1 bis) AUTORISATION D'ACCÈS (default-deny). Deuxième couche de verrou, la
+  // première étant les règles Firestore. On la met AVANT toute lecture du profil
+  // ou des séances : rien de ce joueur n'est même calculé tant que l'état n'est
+  // pas autorisant. Un membership ANCIEN, sans le champ, ne passe pas.
+  if (!isMembershipCoachAccessGranted(membership)) return null;
 
   // 2) Cohérence membership/profil (P0.3) : le profil DOIT exister, pointer vers
   //    CE club, et ne pas être coach. Sinon aucune projection (l'appelant supprime).

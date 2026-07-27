@@ -76,6 +76,7 @@ import {
   coachPositionLabel,
 } from "../../domain/coachView/identityLabels";
 import { coachStatusPrecision } from "../../domain/coachView/statusLabel";
+import { coachAccessRosterCopy } from "../../domain/coachAccess";
 import type { CoachPlayerView } from "../../domain/coachView/types";
 import { MEMBERS_FETCH_LIMIT } from "../../repositories/clubsRepo";
 import { useCoachClub } from "../../hooks/coach/useCoachClub";
@@ -487,6 +488,17 @@ export default function CoachRosterScreen({ filtreInitial = null }: CoachRosterS
           testID="coach-roster-stale"
         />
       ) : null}
+      {roster.restrictedCount > 0 ? (
+        // TROISIÈME état, distinct des deux suivants : le serveur n'ouvre pas
+        // l'accès. On le dit sans dramatiser et SANS laisser croire que ces
+        // joueurs ne s'entraînent pas — ils ne sont simplement pas affichables.
+        <Bandeau
+          icone="lock-closed-outline"
+          titre={coachAccessRosterCopy(roster.restrictedCount).titre}
+          corps={coachAccessRosterCopy(roster.restrictedCount).corps}
+          testID="coach-roster-restricted"
+        />
+      ) : null}
       {roster.pendingCount > 0 ? (
         <Bandeau
           icone="sync-outline"
@@ -636,7 +648,27 @@ export default function CoachRosterScreen({ filtreInitial = null }: CoachRosterS
   }
 
   // Club réellement sans joueur lisible : vide expliqué (jamais une erreur).
+  //
+  // TROIS vides différents, et surtout PAS le même message :
+  //  - des projections arrivent  → "Synchronisation en cours" (attendre suffit) ;
+  //  - l'effectif existe mais n'est pas consultable → on le DIT. Afficher ici
+  //    "Aucun joueur dans l'effectif" serait un mensonge : les joueurs sont bien
+  //    là, et ils s'entraînent peut-être très bien ;
+  //  - personne n'a rejoint     → le vrai club vide.
   if (views.length === 0) {
+    if (roster.pendingCount === 0 && roster.restrictedCount > 0) {
+      const copie = coachAccessRosterCopy(roster.restrictedCount);
+      return (
+        <CoachScreen testID="coach-roster">
+          <CoachStateBlock
+            icon="lock-closed-outline"
+            title={copie.titre}
+            body={copie.corps}
+            testID="coach-roster-empty-restricted"
+          />
+        </CoachScreen>
+      );
+    }
     return (
       <CoachScreen testID="coach-roster">
         <CoachEmptyState

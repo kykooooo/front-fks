@@ -362,16 +362,84 @@ describe("joinClubWithInviteCode — chemin nominal", () => {
 
     const result = await joinClubWithCode(deps(store), { uid: PLAYER, rawCode: "abcde-fghjk" });
 
-    expect(result).toEqual({ clubId: CLUB, clubName: "AS Test", alreadyMember: false });
+    // `coachAccess: "pending"` = DEFAULT-DENY : le profil seede n'a pas de
+    // categorie d'age, donc le rattachement N'OUVRE PAS l'acces au suivi. Etre
+    // membre du club et etre consultable par le coach sont deux choses
+    // distinctes (cf. functions/src/coachAccess.ts).
+    expect(result).toEqual({
+      clubId: CLUB,
+      clubName: "AS Test",
+      alreadyMember: false,
+      coachAccess: "pending",
+    });
     expect(store.read(invitePaths.member(CLUB, PLAYER))).toMatchObject({
       uid: PLAYER,
       role: "player",
+      coachAccess: "pending",
     });
     // Le membership NE PORTE PLUS de code : la preuve d'invitation n'est plus
     // un champ client, c'est l'ecriture serveur elle-meme.
     expect(store.read(invitePaths.member(CLUB, PLAYER))).not.toHaveProperty("inviteCode");
     expect(store.read(invitePaths.user(PLAYER))).toMatchObject({ clubId: CLUB });
     expect(store.read(invitePaths.code(hash))?.uses).toBe(1);
+  });
+
+  // ── Etat d'autorisation d'acces pose AU RATTACHEMENT ──────────────────────
+  // Rattachement au club et autorisation de consultation sont SEPARES : entrer
+  // dans le club n'ouvre jamais l'acces au suivi a lui seul.
+
+  test("categorie exigeant une etape supplementaire (U15) -> pending", async () => {
+    const store = baseStore();
+    seedCode(store, "ABCDEFGHJK");
+    store.seed(invitePaths.user(PLAYER), { uid: PLAYER, ageCategory: "U15" });
+
+    const result = await joinClubWithCode(deps(store), { uid: PLAYER, rawCode: "ABCDEFGHJK" });
+
+    expect(result.coachAccess).toBe("pending");
+    expect(store.read(invitePaths.member(CLUB, PLAYER))?.coachAccess).toBe("pending");
+  });
+
+  test("categorie sans etape supplementaire (Senior) -> not_required", async () => {
+    const store = baseStore();
+    seedCode(store, "ABCDEFGHJK");
+    store.seed(invitePaths.user(PLAYER), { uid: PLAYER, ageCategory: "Senior" });
+
+    const result = await joinClubWithCode(deps(store), { uid: PLAYER, rawCode: "ABCDEFGHJK" });
+
+    expect(result.coachAccess).toBe("not_required");
+  });
+
+  test("categorie INCONNUE ou profil absent -> pending (on ne devine jamais un age)", async () => {
+    for (const profil of [undefined, {}, { ageCategory: "U11" }, { ageCategory: 15 }]) {
+      const store = baseStore();
+      seedCode(store, "ABCDEFGHJK");
+      if (profil) store.seed(invitePaths.user(PLAYER), { uid: PLAYER, ...profil });
+
+      const result = await joinClubWithCode(deps(store), { uid: PLAYER, rawCode: "ABCDEFGHJK" });
+      expect(result.coachAccess).toBe("pending");
+    }
+  });
+
+  test("rejeu : un acces DEJA accorde n'est jamais remis a zero, un acces retire jamais reveille", async () => {
+    // approved conserve…
+    const store = baseStore();
+    seedCode(store, "ABCDEFGHJK");
+    store.seed(invitePaths.user(PLAYER), { uid: PLAYER, ageCategory: "U15" });
+    store.seed(invitePaths.member(CLUB, PLAYER), {
+      uid: PLAYER, role: "player", coachAccess: "approved",
+    });
+    const rejeu = await joinClubWithCode(deps(store), { uid: PLAYER, rawCode: "ABCDEFGHJK" });
+    expect(rejeu.coachAccess).toBe("approved");
+    expect(store.read(invitePaths.member(CLUB, PLAYER))?.coachAccess).toBe("approved");
+
+    // …et revoked aussi : rejoindre a nouveau ne rouvre RIEN.
+    const store2 = baseStore();
+    seedCode(store2, "ABCDEFGHJK");
+    store2.seed(invitePaths.member(CLUB, PLAYER), {
+      uid: PLAYER, role: "player", coachAccess: "revoked",
+    });
+    const rejeu2 = await joinClubWithCode(deps(store2), { uid: PLAYER, rawCode: "ABCDEFGHJK" });
+    expect(rejeu2.coachAccess).toBe("revoked");
   });
 
   test("rejeu du MEME joueur : aucun usage supplementaire consomme", async () => {

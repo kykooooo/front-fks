@@ -9,7 +9,11 @@ const NOW = new Date("2026-06-30T12:00:00.000Z");
 const baseInput = (over: Partial<ProjectorInput> = {}): ProjectorInput => ({
   playerUid: "playerA1",
   clubId: "clubA",
-  membership: { uid: "playerA1", role: "player" },
+  // `coachAccess: "approved"` = etat SERVEUR d'autorisation d'acces au suivi.
+  // Sans lui, le projecteur ne produit RIEN (default-deny, cf. coachAccess.test.ts).
+  // Il est pose ici pour que ces tests portent sur ce qu'ils testent : le contenu
+  // de la projection, une fois l'acces autorise.
+  membership: { uid: "playerA1", role: "player", coachAccess: "approved" },
   profile: {
     uid: "playerA1",
     clubId: "clubA",

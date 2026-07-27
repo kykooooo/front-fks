@@ -330,9 +330,22 @@ export function coachSessionStatusLabel(status: CoachSessionStatus): string {
 export type CoachDetailView = {
   summary: CoachPlayerSummary | null;
   unavailable: boolean;
+  /**
+   * true si le SERVEUR n'autorise pas l'accès au suivi de ce joueur
+   * (clubs/{clubId}/members/{uid}.coachAccess, cf. domain/coachAccess.ts).
+   *
+   * Volontairement SÉPARÉ de `unavailable` : "le serveur refuse d'ouvrir" et
+   * "je n'ai pas réussi à lire" ne se disent pas de la même façon à un coach.
+   * Optionnel pour rester compatible avec les appelants existants.
+   */
+  restricted?: boolean;
 };
 
-export const EMPTY_COACH_DETAIL_VIEW: CoachDetailView = { summary: null, unavailable: false };
+export const EMPTY_COACH_DETAIL_VIEW: CoachDetailView = {
+  summary: null,
+  unavailable: false,
+  restricted: false,
+};
 
 /**
  * @param prev  vue actuellement affichée (dernier résultat commit).
@@ -355,7 +368,14 @@ export function nextCoachDetailView(
   }
   // Premier chargement, succès, doc absent, ou refresh raté sans contenu
   // conservable → on applique le résultat entrant tel quel (y compris indisponible).
-  return { view: { summary: incoming.summary, unavailable: incoming.unavailable }, keptStale: false };
+  return {
+    view: {
+      summary: incoming.summary,
+      unavailable: incoming.unavailable,
+      restricted: incoming.restricted === true,
+    },
+    keptStale: false,
+  };
 }
 
 // ─── Garde anti réponse tardive / concurrente (PUR, testable) ────────────────

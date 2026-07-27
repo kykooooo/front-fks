@@ -165,6 +165,7 @@ function rosterReady(views: CoachPlayerView[], over: Record<string, unknown> = {
     views,
     status: "ready",
     readyCount: views.length,
+    restrictedCount: 0,
     pendingCount: 0,
     unreadableCount: 0,
     memberCount: views.length,
@@ -446,6 +447,36 @@ describe("liste vide", () => {
     mockRoster.mockReturnValue(rosterReady([], { pendingCount: 3, memberCount: 3 }));
     const r = await render();
     expect(texte(r)).toContain("Synchronisation en cours");
+  });
+
+  // L'effectif EXISTE mais n'est pas consultable : dire « aucun joueur dans
+  // l'effectif » serait faux, et laisserait croire que personne n'a rejoint le
+  // club. C'est une décision serveur, pas un vide.
+  test("un effectif entièrement non consultable ne se déguise PAS en club vide", async () => {
+    mockRoster.mockReturnValue(rosterReady([], { restrictedCount: 2, memberCount: 2 }));
+    const r = await render();
+    const t = texte(r);
+    expect(t).toContain("2 joueurs non consultables");
+    expect(t).not.toContain("Aucun joueur dans l'effectif");
+    expect(t).not.toContain("Synchronisation en cours");
+    expect(t.toLowerCase()).not.toContain("erreur");
+    // Ni alarmant, ni juridique, ni médical.
+    for (const mot of ["consentement", "parental", "rgpd", "tuteur", "mineur"]) {
+      expect(t.toLowerCase()).not.toContain(mot);
+    }
+  });
+
+  test("mixte : les joueurs lisibles restent affichés, les non consultables sont annoncés à part", async () => {
+    mockRoster.mockReturnValue(
+      rosterReady([anna], { restrictedCount: 1, pendingCount: 1, unreadableCount: 1, memberCount: 4 }),
+    );
+    const r = await render();
+    const t = texte(r);
+    expect(prenomsAffiches(r)).toEqual(["Anna"]);
+    // TROIS bandeaux, TROIS phrases différentes : jamais de fusion des états.
+    expect(t).toContain("1 joueur non consultable");
+    expect(t).toContain("1 profil en préparation");
+    expect(t).toContain("1 profil non lu");
   });
 });
 

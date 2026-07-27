@@ -387,7 +387,7 @@ describe("nextCoachDetailView — refresh défensif fiche joueuse", () => {
       isRefresh: false,
       prevMatchesRoute: false,
     });
-    expect(r.view).toEqual({ summary: null, unavailable: true });
+    expect(r.view).toEqual({ summary: null, unavailable: true, restricted: false });
     expect(r.keptStale).toBe(false);
   });
 
@@ -421,7 +421,7 @@ describe("nextCoachDetailView — refresh défensif fiche joueuse", () => {
 
   test("refresh en échec mais route CHANGÉE → applique 'indisponible' (jamais garder un autre joueur)", () => {
     const r = nextCoachDetailView(withSummary, unavailableRes, { isRefresh: true, prevMatchesRoute: false });
-    expect(r.view).toEqual({ summary: null, unavailable: true });
+    expect(r.view).toEqual({ summary: null, unavailable: true, restricted: false });
     expect(r.keptStale).toBe(false);
   });
 
@@ -430,14 +430,26 @@ describe("nextCoachDetailView — refresh défensif fiche joueuse", () => {
       isRefresh: true,
       prevMatchesRoute: true,
     });
-    expect(r.view).toEqual({ summary: null, unavailable: true });
+    expect(r.view).toEqual({ summary: null, unavailable: true, restricted: false });
     expect(r.keptStale).toBe(false);
   });
 
   test("refresh renvoyant un doc absent (succès, summary null) → reflète l'absence, pas de conservation", () => {
     const r = nextCoachDetailView(withSummary, absentRes, { isRefresh: true, prevMatchesRoute: true });
-    expect(r.view).toEqual({ summary: null, unavailable: false });
+    expect(r.view).toEqual({ summary: null, unavailable: false, restricted: false });
     expect(r.keptStale).toBe(false);
+  });
+
+  // L'autorisation d'accès traverse le helper SANS se confondre avec les deux
+  // autres états : "non autorisé" n'est ni une absence de projection, ni un échec.
+  test("accès non autorisé → restricted propagé, jamais transformé en indisponible", () => {
+    const restrictedRes: CoachDetailView = { summary: null, unavailable: false, restricted: true };
+    const r = nextCoachDetailView(withSummary, restrictedRes, {
+      isRefresh: true,
+      prevMatchesRoute: true,
+    });
+    expect(r.view).toEqual({ summary: null, unavailable: false, restricted: true });
+    expect(r.keptStale).toBe(false); // on ne conserve PAS l'ancien contenu d'un joueur devenu non consultable
   });
 });
 

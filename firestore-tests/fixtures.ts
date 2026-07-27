@@ -215,11 +215,25 @@ export async function seed(testEnv: RulesTestEnvironment): Promise<void> {
     // plus aucune preuve côté client (c'est l'écriture serveur qui fait foi).
     // Les tests de compat prouvent que les membres EXISTANTS gardent toutes
     // leurs lectures.
+    //
+    // `coachAccess` = état SERVEUR d'autorisation d'accès aux données de suivi
+    // (cf. functions/src/coachAccess.ts). Il est posé ici comme la Cloud Function
+    // le ferait. Les deux joueuses du club A sont U15 : leur état "approved"
+    // représente l'étape supplémentaire déjà faite. PLAYER_B est U18 :
+    // "not_required". Les coachs n'ont pas de suivi à autoriser → pas de champ.
+    // Les cas NON autorisés (pending / revoked / champ absent) sont seedés dans
+    // rules.coachAccess.test.ts, pour ne pas déformer les autres suites.
     await setDoc(doc(db, "clubs", CLUB_A, "members", COACH_A), { uid: COACH_A, role: "coach" });
-    await setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A1), { uid: PLAYER_A1, role: "player" });
-    await setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A2), { uid: PLAYER_A2, role: "player" });
+    await setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A1), {
+      uid: PLAYER_A1, role: "player", coachAccess: "approved",
+    });
+    await setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A2), {
+      uid: PLAYER_A2, role: "player", coachAccess: "approved",
+    });
     await setDoc(doc(db, "clubs", CLUB_B, "members", COACH_B), { uid: COACH_B, role: "coach" });
-    await setDoc(doc(db, "clubs", CLUB_B, "members", PLAYER_B), { uid: PLAYER_B, role: "player" });
+    await setDoc(doc(db, "clubs", CLUB_B, "members", PLAYER_B), {
+      uid: PLAYER_B, role: "player", coachAccess: "not_required",
+    });
 
     // Users (le profil brut porte clubId → utilisé par isCoachOfUser dans les rules)
     await setDoc(doc(db, "users", COACH_A), {

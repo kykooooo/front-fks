@@ -36,6 +36,29 @@ service cloud.firestore {
         get(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid)).data.role == "player";
     }
 
+    // ── AUTORISATION D'ACCÈS AUX DONNÉES DE SUIVI (default-deny) ─────────────
+    // Le rattachement au club (le doc members existe) et l'autorisation de
+    // consultation (ce champ) sont DEUX choses différentes. Un joueur peut être
+    // membre du club sans que son suivi soit lisible : c'est le cas nominal d'un
+    // mineur tant que l'étape supplémentaire n'a pas été faite.
+    //
+    // Valeurs : "pending" | "approved" | "revoked" | "not_required".
+    // SEULES "approved" et "not_required" ouvrent la lecture — liste recopiée de
+    // functions/src/coachAccess.COACH_ACCESS_GRANTING_STATES (les règles ne
+    // peuvent pas importer de TypeScript ; un test verrouille l'accord).
+    //
+    // FAIL-CLOSED SUR CHAMP ABSENT : `.get(champ, "")` renvoie "" quand le champ
+    // n'existe pas, et "" n'est pas dans la liste → REFUS. C'est ce qui protège
+    // les membership ANCIENS, écrits avant l'existence de ce champ : ils
+    // n'ouvrent rien. `exists()` garde le `get()` (court-circuit) contre un doc
+    // absent. Le coût reste d'un seul accès document : les appels get()/exists()
+    // sur le MÊME chemin sont mutualisés dans une évaluation de règle.
+    function isCoachAccessGranted(clubId, playerUid) {
+      return exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid)) &&
+        get(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid))
+          .data.get("coachAccess", "") in ["approved", "not_required"];
+    }
+
     // Frontière coach-safe (PR-4) : les docs BRUTS de la joueuse (profil, séances
     // faites, séances planifiées) sont STRICTEMENT privés — seule la propriétaire
     // y accède. Le coach ne lit JAMAIS ces docs : sa seule surface de lecture est
@@ -95,18 +118,61 @@ service cloud.firestore {
         // fermées. Un joueur qui écrirait lui-même son membership court-
         // circuiterait expiration, révocation, quota d'usages ET limitation de
         // tentatives : c'est exactement ce que cette règle empêche.
-        allow create, update: if isOwner(memberId) &&
+        //
+        // Le champ `coachAccess` est ÉCRIT UNIQUEMENT PAR LE SERVEUR (Admin SDK,
+        // qui contourne ces règles). Aucun client ne le pose, ne le change, ni ne
+        // l'efface — ni le joueur, ni le coach, ni l'owner du club :
+        //  - à la création : le champ doit être ABSENT de la requête ;
+        //  - à la mise à jour : le champ ne doit pas figurer dans les clés
+        //    affectées. `diff().affectedKeys()` compare l'AVANT et l'APRÈS, donc
+        //    une mise à jour PARTIELLE qui ne touche pas le champ passe, et une
+        //    qui le touche (même pour y remettre la même valeur explicitement,
+        //    même pour le supprimer) est refusée.
+        allow create: if isOwner(memberId) &&
           request.resource.data.role == "coach" &&
-          isClubOwner(clubId);
+          isClubOwner(clubId) &&
+          !("coachAccess" in request.resource.data);
+        allow update: if isOwner(memberId) &&
+          request.resource.data.role == "coach" &&
+          isClubOwner(clubId) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(["coachAccess"]);
         // Un membre peut se retirer lui-même, ou le owner du club peut retirer n'importe qui
         allow delete: if isOwner(memberId) || isClubOwner(clubId);
       }
 
-      // Contexte de semaine : lecture réservée aux MEMBRES du club (joueur ou
-      // coach) + owner. Un utilisateur connecté hors du club ne peut pas lire.
+      // Contexte de semaine (« cadre » posé par le coach : intensité, objectif,
+      // match, et une note libre de 200 caractères).
+      //
+      // POURQUOI `get` ET `list` SONT SÉPARÉS ICI (2026-07) — c'était une fuite.
+      // Un seul `allow read` couvre les DEUX opérations. Or cette règle ne dépend
+      // ni du contenu du document ni de la weekKey : la lecture de COLLECTION
+      // était donc autorisée, et n'importe quel membre pouvait aspirer d'un seul
+      // getDocs TOUTES les notes hebdomadaires du coach, semaines passées
+      // comprises. Un besoin d'UN document devenait un accès à l'historique
+      // entier.
+      //
+      // Ce dont l'application a RÉELLEMENT besoin (vérifié : aucun getDocs sur
+      // cette collection nulle part dans le code) :
+      //  - le joueur lit UN document, celui de la semaine courante, par sa clé
+      //    exacte, pour que la génération de séance tienne compte du cadre du
+      //    coach (services/aiContext.ts) ;
+      //  - le coach lit et écrit UN document, celui de la semaine affichée
+      //    (repositories/clubsRepo.ts).
+      // On borne donc au geste réel : `get` autorisé, `list` FERMÉE À TOUS —
+      // coach et owner compris, puisque personne n'énumère cette collection.
+      //
+      // LIMITE ASSUMÉE, à ne pas maquiller : une weekKey est une date de lundi,
+      // donc devinable. Un membre peut encore relire une semaine passée document
+      // par document. Ce qui est fermé ici, c'est la récolte en masse ; ce qui
+      // reste ouvert, c'est la lecture unitaire d'un cadre par un membre du club
+      // — y compris la note libre, qu'aucune règle Firestore ne peut masquer
+      // champ par champ (cf. docs/coach-pilote-2026-07/MATRICE_DROITS_COACH.md,
+      // section « à trancher »).
+      //
       // Écriture réservée au coach (le joueur n'écrit jamais). Delete = owner.
       match /weekContexts/{weekKey} {
-        allow read: if isClubMember(clubId) || isClubOwner(clubId);
+        allow get: if isClubMember(clubId) || isClubOwner(clubId);
+        allow list: if false;
         allow create, update: if isCoach(clubId);
         allow delete: if isClubOwner(clubId);
       }
@@ -125,9 +191,14 @@ service cloud.firestore {
       // évaluable en list. Seules les lectures DIRECTES par playerUid d'une joueuse
       // ENCORE membre player sont autorisées (le lecteur front liste members, puis
       // lit chaque summary par son ID).
+      // TROISIÈME condition (2026-07) : l'AUTORISATION D'ACCÈS du joueur ciblé
+      // doit être "approved" ou "not_required". Un verrou visuel côté écran ne
+      // suffisait pas — un profil ancien ou incohérent passait au travers. Ici le
+      // refus est prononcé par la base elle-même, avant qu'aucun octet ne sorte.
       match /playerSummaries/{playerUid} {
         allow read: if (isCoach(clubId) || isClubOwner(clubId)) &&
-          isPlayerMember(clubId, playerUid);
+          isPlayerMember(clubId, playerUid) &&
+          isCoachAccessGranted(clubId, playerUid);
         allow write: if false;
       }
     }

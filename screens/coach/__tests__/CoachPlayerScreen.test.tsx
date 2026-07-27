@@ -480,6 +480,40 @@ describe("CoachPlayerScreen — états d'exception distingués", () => {
     expect(texte).not.toContain("Chargement impossible");
   });
 
+  // TROIS états, TROIS rendus différents. Le troisième — l'accès non autorisé —
+  // est une DÉCISION serveur : ni une panne (rien n'est cassé), ni une attente
+  // (rien n'arrivera tout seul). Les confondre ferait dire à l'écran une chose
+  // fausse dans les deux sens.
+  test("accès non autorisé : message dédié, ni erreur ni synchronisation", async () => {
+    fetchMock.mockResolvedValue({ summary: null, unavailable: false, restricted: true });
+
+    const tree = await render();
+    const texte = flatText(tree);
+    expect(texte).toContain("Suivi non accessible");
+    expect(texte).not.toContain("Chargement impossible");
+    expect(texte).not.toContain("Synchronisation en cours");
+  });
+
+  test("accès non autorisé : aucune donnée de suivi, et jamais 'ne s'entraîne pas'", async () => {
+    fetchMock.mockResolvedValue({ summary: null, unavailable: false, restricted: true });
+
+    const tree = await render();
+    const texte = flatText(tree);
+    const bas = texte.toLowerCase();
+    // Le joueur reste dans l'effectif : on ne laisse pas croire qu'il a disparu
+    // ni qu'il ne s'entraîne pas.
+    expect(bas).toContain("fait partie de l'effectif");
+    expect(bas).toContain("peut s'entraîner normalement");
+    // Aucun contenu de suivi ne fuit dans cet état.
+    expect(texte).not.toContain("Séance prévue");
+    expect(texte).not.toContain("Séance faite");
+    expect(texte).not.toContain("Assiduité");
+    // Vocabulaire produit NEUTRE : rien de juridique, rien de médical.
+    for (const mot of ["consentement", "parental", "rgpd", "tuteur", "légal", "mineur", "santé"]) {
+      expect(bas).not.toContain(mot);
+    }
+  });
+
   test("le pied de page rappelle la lecture seule et l'absence de donnée de santé", async () => {
     fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
 

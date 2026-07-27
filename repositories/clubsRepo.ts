@@ -19,6 +19,7 @@ import {
   type ClubTeamGender,
 } from "../domain/types";
 import { parseCoachPlayerSummary, type CoachPlayerSummary } from "../domain/coachSummary";
+import { isCoachAccessGranted } from "../domain/coachAccess";
 
 export type ClubDoc = {
   id: string;
@@ -169,6 +170,14 @@ const SUMMARY_READ_CONCURRENCY = 8;
 
 export type CoachSummariesResult = {
   summaries: CoachPlayerSummary[]; // projections prêtes & valides (playerUid === memberId)
+  // Nombre de membres player dont l'ACCÈS AUX DONNÉES DE SUIVI n'est pas autorisé
+  // côté serveur (clubs/{clubId}/members/{uid}.coachAccess ∉ {approved, not_required},
+  // champ absent inclus). SÉMANTIQUE ENCORE DIFFÉRENTE des deux compteurs
+  // ci-dessous : "le serveur refuse d'ouvrir" ≠ "le serveur n'a pas fini de
+  // préparer" ≠ "je n'ai pas réussi à lire". Leur projection n'est même PAS
+  // demandée : la lecture serait refusée par les règles, et un refus attendu
+  // n'est pas une erreur à compter comme telle.
+  restrictedCount: number;
   // Nombre de membres player actifs SANS summary prêt (projection non prête). On
   // expose un COMPTEUR, jamais les UIDs : aucun identifiant technique côté UI.
   pendingCount: number;
@@ -190,6 +199,10 @@ export type CoachSummariesResult = {
 export type CoachSummaryResult = {
   summary: CoachPlayerSummary | null; // null = absent, malformé, OU doc-id/playerUid incohérent
   unavailable: boolean; // true si la lecture du doc a échoué (permissions/réseau)
+  // true si le SERVEUR n'autorise pas l'accès au suivi de ce joueur. Distinct de
+  // `unavailable` : ce n'est pas un échec, c'est une décision. Toujours false
+  // quand l'appelant ne fournit pas l'état (lecture d'un summary seul).
+  restricted?: boolean;
 };
 
 /**
@@ -240,17 +253,31 @@ export async function fetchClubPlayerSummaries(
 
   // 1–2. Effectif player actif (source de vérité du roster). Échec → indisponible global :
   //      sans `members`, on ne connaît même pas la liste des joueurs à lire.
+  //
+  //      Le document member porte AUSSI l'état serveur d'autorisation
+  //      (`coachAccess`). On le lit ici, dans la requête qu'on faisait déjà :
+  //      zéro lecture supplémentaire, et la décision d'accès arrive en même temps
+  //      que l'effectif.
   let playerMemberIds: string[];
+  let restrictedCount = 0;
   try {
     const snap = await getDocs(
       query(collection(db, "clubs", clubId, "members"), limit(MEMBERS_FETCH_LIMIT)),
     );
-    playerMemberIds = snap.docs
-      .filter((d) => (d.data() as { role?: unknown })?.role === "player")
-      .map((d) => d.id);
+    const players = snap.docs.filter((d) => (d.data() as { role?: unknown })?.role === "player");
+    // Partition SERVEUR : autorisé / non autorisé. On ne demande la projection
+    // que des joueurs autorisés — demander les autres produirait un refus des
+    // règles, qu'on compterait à tort comme une erreur de lecture.
+    playerMemberIds = [];
+    for (const d of players) {
+      const access = (d.data() as { coachAccess?: unknown })?.coachAccess;
+      if (isCoachAccessGranted(access)) playerMemberIds.push(d.id);
+      else restrictedCount += 1;
+    }
   } catch {
     return {
       summaries: [],
+      restrictedCount: 0,
       pendingCount: 0,
       unreadableCount: 0,
       unavailable: true,
@@ -258,9 +285,11 @@ export async function fetchClubPlayerSummaries(
     };
   }
 
-  // 3. Une lecture directe de summary par membre actif (parallélisme borné).
+  // 3. Une lecture directe de summary par membre actif AUTORISÉ (parallélisme borné).
+  //    `fetchClubPlayerSummaryDoc` lit le seul document de projection : l'état
+  //    d'autorisation est déjà tranché ci-dessus, inutile de relire le membership.
   const reads = await mapWithConcurrency(playerMemberIds, SUMMARY_READ_CONCURRENCY, (memberId) =>
-    fetchClubPlayerSummary(clubId, memberId).then((res) => ({ memberId, ...res })),
+    fetchClubPlayerSummaryDoc(clubId, memberId).then((res) => ({ memberId, ...res })),
   );
 
   const summaries: CoachPlayerSummary[] = [];
@@ -281,13 +310,19 @@ export async function fetchClubPlayerSummaries(
 
   // 6. Tout l'effectif illisible = état global honnête. Un effectif VIDE (0 membre
   //    player) n'est pas une indisponibilité : c'est un vrai club sans joueur.
+  //    Les joueurs NON AUTORISÉS ne comptent pas ici : leur absence de données
+  //    est une décision serveur assumée, jamais un symptôme de panne.
   const unavailable = playerMemberIds.length > 0 && unreadableCount === playerMemberIds.length;
 
-  return { summaries, pendingCount, unreadableCount, unavailable, fetchedAt: now() };
+  return { summaries, restrictedCount, pendingCount, unreadableCount, unavailable, fetchedAt: now() };
 }
 
-/** Lit le résumé d'un seul joueur (doc unique). */
-export async function fetchClubPlayerSummary(
+/**
+ * Lit le document de projection d'un joueur, SANS vérifier l'autorisation.
+ * Réservé à l'appelant qui l'a déjà tranchée (le roster ci-dessus).
+ * Le chemin public reste `fetchClubPlayerSummary`.
+ */
+async function fetchClubPlayerSummaryDoc(
   clubId: string,
   playerUid: string,
 ): Promise<CoachSummaryResult> {
@@ -302,6 +337,47 @@ export async function fetchClubPlayerSummary(
   } catch {
     return { summary: null, unavailable: true };
   }
+}
+
+/**
+ * Lit le résumé d'UN joueur (fiche joueur).
+ *
+ * DEUX lectures, dans cet ordre, et c'est volontaire :
+ *  1. le membership `clubs/{clubId}/members/{playerUid}` — il porte l'état
+ *     serveur d'autorisation, et il est lisible par le coach (c'est l'effectif,
+ *     pas de la donnée de suivi) ;
+ *  2. la projection, UNIQUEMENT si l'état autorise.
+ *
+ * POURQUOI ne pas se contenter de tenter la lecture : un refus des règles
+ * remonte en `permission-denied`, strictement indiscernable d'une coupure
+ * réseau. L'écran afficherait "on n'arrive pas à lire" là où la vérité est
+ * "ce joueur n'est pas consultable". Ce sont trois états distincts — non
+ * autorisé / pas encore préparé / erreur de lecture — et l'écran les dit
+ * différemment.
+ *
+ * Membership ABSENT → non consultable : sans rattachement, il n'y a aucune
+ * autorisation à invoquer (default-deny, même raisonnement que le serveur).
+ */
+export async function fetchClubPlayerSummary(
+  clubId: string,
+  playerUid: string,
+): Promise<CoachSummaryResult> {
+  let access: unknown;
+  try {
+    const memberSnap = await getDoc(doc(db, "clubs", clubId, "members", playerUid));
+    if (!memberSnap.exists()) return { summary: null, unavailable: false, restricted: true };
+    access = (memberSnap.data() as { coachAccess?: unknown })?.coachAccess;
+  } catch {
+    // Échec de lecture de l'effectif : on ne SAIT pas, donc on ne prétend pas.
+    return { summary: null, unavailable: true, restricted: false };
+  }
+
+  if (!isCoachAccessGranted(access)) {
+    return { summary: null, unavailable: false, restricted: true };
+  }
+
+  const res = await fetchClubPlayerSummaryDoc(clubId, playerUid);
+  return { ...res, restricted: false };
 }
 
 // ─── Contexte de semaine club ──────────────────────────────────────────────

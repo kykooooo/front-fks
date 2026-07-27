@@ -211,7 +211,11 @@ describe("Séquence réelle members → summaries (chemin du lecteur coach)", ()
     await admin(async (ctx) => {
       const fdb = ctx.firestore();
       await setDoc(doc(fdb, "clubs", CLUB), { name: "Club C", ownerUid: OWNER });
-      await setDoc(doc(fdb, "clubs", CLUB, "members", PLAYER), { uid: PLAYER, role: "player" });
+      // `coachAccess` autorisant : ce test porte sur l'OWNER sans membership coach,
+      // pas sur l'autorisation d'accès (couverte par rules.coachAccess.test.ts).
+      await setDoc(doc(fdb, "clubs", CLUB, "members", PLAYER), {
+        uid: PLAYER, role: "player", coachAccess: "not_required",
+      });
       await setDoc(doc(fdb, "clubs", CLUB, "playerSummaries", PLAYER), { ...SUMMARY, playerUid: PLAYER });
     });
     const db = asUser(OWNER);
