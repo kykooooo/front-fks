@@ -1,0 +1,53 @@
+// prototype/home-vnext/tsconfig.proto.json
+// =============================================================================
+// TYPE-CHECK CIBLE DU PROTOTYPE
+// =============================================================================
+// Pourquoi ce fichier existe :
+//
+// `npx tsc --noEmit` lance depuis ce worktree produit ~1500 fausses erreurs. La
+// cause n'est PAS le code : c'est le `tsconfig.json` de la racine qui pointe
+// `typeRoots: ["./node_modules/@types"]`. Ce dossier n'existe pas ici — le
+// worktree partage le `node_modules` du depot principal, deux niveaux plus
+// haut. TypeScript ne trouve donc plus AUCUNE definition (react, react-native,
+// jest…) et signale chaque import comme introuvable.
+//
+// Ce fichier corrige deux choses, et rien d'autre :
+//   1. il repointe `typeRoots` et `paths` vers le vrai `node_modules` ;
+//   2. il limite le perimetre aux trois dossiers du prototype.
+//
+// Aucune regle de compilation n'est assouplie : `strict` reste actif, herite du
+// tsconfig de la racine. Une erreur qui sort d'ici est une VRAIE erreur.
+//
+//   node prototype/home-vnext/verifier.js typescript
+//   ou : npx tsc --noEmit -p prototype/home-vnext/tsconfig.proto.json
+// =============================================================================
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Racine du worktree.
+    "baseUrl": "../..",
+    // ATTENTION : `typeRoots` se resout par rapport au DOSSIER DE CE FICHIER,
+    // pas par rapport a `baseUrl`. Cinq niveaux pour remonter de
+    // `prototype/home-vnext/` jusqu'a `front-fks/`, qui porte le vrai
+    // `node_modules`. C'est cette seule ligne qui faisait les ~1500 fausses
+    // erreurs : sans elle TypeScript ne trouve ni @types/react ni @types/jest.
+    "typeRoots": ["../../../../../node_modules/@types"],
+    // La resolution des modules eux-memes n'a pas besoin d'aide : TypeScript
+    // remonte les dossiers parents comme Node et trouve front-fks/node_modules.
+    // On ne pose donc AUCUN `paths` — un mapping ici masquerait les @types.
+    "types": ["jest", "node", "react"]
+  },
+  "include": [
+    // Declaration locale pour `react-test-renderer` (paquet @types absent du
+    // depot, installation interdite). Voir l'en-tete du fichier.
+    "./types/**/*.d.ts",
+    "../../screens/homeVNext/**/*.ts",
+    "../../screens/homeVNext/**/*.tsx",
+    "../../components/homeVNext/**/*.ts",
+    "../../components/homeVNext/**/*.tsx",
+    "../../__tests__/homeVNext/**/*.ts",
+    "../../__tests__/homeVNext/**/*.tsx"
+  ],
+  "exclude": []
+}
