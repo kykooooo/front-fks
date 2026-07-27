@@ -212,7 +212,9 @@ describe("contrat boucle -> coach : la forme brute de `execution`", () => {
 /** Charge domain/tracking/config.ts s'il existe. `null` avant le merge. */
 function chargerConfigBoucle(): Record<string, unknown> | null {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
+    // `require` et non `import` : le module peut ne pas exister (boucle non
+    // mergee), et seul un chargement a l'execution permet d'en faire un fait
+    // verifiable plutot qu'une erreur de compilation.
     return require("../../tracking/config") as Record<string, unknown>;
   } catch {
     return null;

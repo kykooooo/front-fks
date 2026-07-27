@@ -348,6 +348,13 @@ export function generateInviteCode(
     }
     const chunk = randomBytes(INVITE_CODE_LENGTH * 2);
     for (let i = 0; i < chunk.length && out.length < INVITE_CODE_LENGTH; i++) {
+      // Masque de 5 bits sur un octet aleatoire : ce n'est PAS une micro-optimisation
+      // remplacant un modulo, c'est l'operation exacte que demande l'echantillonnage
+      // a rejet. `& 0b11111` prend les 5 bits de poids faible tels quels, donc 32
+      // valeurs equiprobables ; `% 31` replierait 31 sur 0 et rendrait le premier
+      // symbole de l'alphabet deux fois plus probable. Le rejet ci-dessous s'occupe
+      // de la 32e valeur.
+      // eslint-disable-next-line no-bitwise
       const index = chunk[i] & 0b11111;
       if (index >= INVITE_CODE_ALPHABET.length) continue;
       out += INVITE_CODE_ALPHABET[index];

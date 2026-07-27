@@ -16,6 +16,15 @@
 //
 // Une seule garde technique : un geste à la fois, et aucune écriture d'état
 // après démontage (le coach quitte souvent la fiche juste après le retrait).
+//
+// COMMENT L'ÉTAT RESTE ATTACHÉ À SA CIBLE. L'état d'un retrait ne vaut que pour
+// le membre sur lequel le geste a été fait : un « retiré » affiché sur le mauvais
+// joueur serait le pire mensonge possible de cet écran. Plutôt que de remettre
+// l'état à zéro APRÈS COUP dans un effet (une remise à zéro qui arrive toujours
+// un rendu trop tard, et qui n'attrape pas une réponse revenue entre-temps),
+// l'état PORTE la cible à laquelle il appartient et le rendu ne montre que ce
+// qui correspond à la cible affichée. Un état qui n'est pas le sien n'a donc
+// jamais l'occasion d'être vu, même une fraction de seconde.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -37,15 +46,35 @@ export type UseRemoveClubMemberState = {
   isRemoving: boolean;
   /** Lance le retrait. Ne lève jamais. Sans effet si un geste est déjà en cours. */
   remove: () => void;
-  /** Remet l'état à zéro (fermeture de la confirmation, changement de fiche). */
+  /**
+   * Remet l'état à zéro (fermeture de la confirmation). Un changement de fiche,
+   * lui, n'a rien à appeler : l'état est filtré par cible au rendu.
+   */
   reset: () => void;
 };
+
+/** Phase affichée par défaut. Constante de module : son identité est stable, un
+ *  retour à l'état neutre ne provoque donc aucun rendu inutile chez l'appelant. */
+const IDLE: RemoveMemberPhase = { kind: "idle" };
+
+/**
+ * État interne : une phase ET la cible à laquelle elle appartient.
+ * `key` à `null` = phase qui n'appartient à personne (état neutre).
+ */
+type PhaseEntry = { key: string | null; phase: RemoveMemberPhase };
+
+const NEUTRAL: PhaseEntry = { key: null, phase: IDLE };
+
+/** Cible sous forme de clé. "/" est interdit dans un doc-id / un UID : pas de collision. */
+function targetKeyOf(clubId: string | null, memberUid: string | null): string | null {
+  return clubId && memberUid ? `${clubId}/${memberUid}` : null;
+}
 
 export function useRemoveClubMember(
   clubId: string | null,
   memberUid: string | null,
 ): UseRemoveClubMemberState {
-  const [phase, setPhase] = useState<RemoveMemberPhase>({ kind: "idle" });
+  const [entry, setEntry] = useState<PhaseEntry>(NEUTRAL);
 
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -55,28 +84,31 @@ export function useRemoveClubMember(
     };
   }, []);
 
-  // Changement de cible : l'état d'un retrait ne doit JAMAIS survivre au passage
-  // d'une fiche à une autre — un « retiré » affiché sur le mauvais joueur serait
-  // le pire mensonge possible de cet écran.
-  useEffect(() => {
-    setPhase({ kind: "idle" });
-  }, [clubId, memberUid]);
+  const targetKey = targetKeyOf(clubId, memberUid);
+  // Le filtre par cible, AU RENDU. Changer de fiche suffit à rendre l'état
+  // précédent invisible — il n'y a rien à remettre à zéro, donc rien qui puisse
+  // arriver en retard. Une réponse revenue après le changement de fiche est
+  // enregistrée sous SA cible et ne s'affiche pas sur une autre.
+  const phase = entry.key !== null && entry.key === targetKey ? entry.phase : IDLE;
 
   const inFlightRef = useRef(false);
 
   const remove = useCallback(() => {
     if (!clubId || !memberUid || inFlightRef.current) return;
+    // Clé capturée au moment du geste : c'est elle qui datera la réponse.
+    const key = `${clubId}/${memberUid}`;
     inFlightRef.current = true;
-    setPhase({ kind: "pending" });
+    setEntry({ key, phase: { kind: "pending" } });
 
     removeClubMemberCall(clubId, memberUid)
       .then((outcome) => {
         if (!mountedRef.current) return;
-        setPhase(
-          outcome.ok
+        setEntry({
+          key,
+          phase: outcome.ok
             ? { kind: "done", alreadyRemoved: outcome.alreadyRemoved }
             : { kind: "failed", reason: outcome.reason, message: outcome.message },
-        );
+        });
       })
       .finally(() => {
         inFlightRef.current = false;
@@ -85,7 +117,7 @@ export function useRemoveClubMember(
 
   const reset = useCallback(() => {
     if (inFlightRef.current) return;
-    setPhase({ kind: "idle" });
+    setEntry(NEUTRAL);
   }, []);
 
   return { phase, isRemoving: phase.kind === "pending", remove, reset };
