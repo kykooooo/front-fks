@@ -20,7 +20,9 @@ const toneMap = {
 export function ToastHost() {
   const [toast, setToast] = useState<ToastPayload | null>(null);
   const anim = useRef(new Animated.Value(0)).current;
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // Type portable : en React Native setTimeout renvoie un identifiant numerique,
+  // pas un objet Timeout de Node. ReturnType<typeof setTimeout> suit la plateforme.
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const reduceMotionRef = useRef(false);
   useEffect(() => {
