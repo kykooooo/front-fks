@@ -20,7 +20,14 @@ export const CLUB_A = "clubA";
 export const COACH_A = "coachA"; // owner ET coach du club A
 export const PLAYER_A1 = "playerA1";
 export const PLAYER_A2 = "playerA2";
-export const CLUB_A_INVITE = "CLBA-1234";
+
+// Empreinte d'un code d'invitation (contrat serveur : l'ID du doc inviteCodes
+// EST le SHA-256 du code normalisé, le code en clair n'existe nulle part en
+// base). Valeur factice de longueur réaliste : les tests Rules ne vérifient que
+// des PERMISSIONS, jamais la validité d'un code — celle-ci vit dans la Cloud
+// Function et ses tests unitaires (functions/tests/inviteCodes.test.ts).
+export const CLUB_A_CODE_HASH =
+  "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
 
 // Cas STALE / edge pour le durcissement isPlayerMember (PR-4 mini-hardening) :
 //  - PLAYER_A_GONE : une projection existe encore sous club A mais la joueuse n'a
@@ -34,7 +41,6 @@ export const BADROLE_A = "badroleA";
 export const CLUB_B = "clubB";
 export const COACH_B = "coachB"; // owner ET coach du club B
 export const PLAYER_B = "playerB";
-export const CLUB_B_INVITE = "CLBB-9999";
 
 // ── Utilisateur authentifié SANS club ───────────────────────────────────────
 export const STRANGER = "stranger";
@@ -169,28 +175,46 @@ export async function seed(testEnv: RulesTestEnvironment): Promise<void> {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
 
-    // Clubs (avec inviteCode volontairement lisible)
+    // Clubs — PLUS AUCUN champ `inviteCode` : le code ne vit plus dans le
+    // document club (n'importe quel membre le lisait, donc pouvait le
+    // rediffuser). Seule son empreinte existe, dans une collection fermée.
     await setDoc(doc(db, "clubs", CLUB_A), {
       name: "Club A",
-      inviteCode: CLUB_A_INVITE,
       ownerUid: COACH_A,
       teamGender: "female",
     });
     await setDoc(doc(db, "clubs", CLUB_B), {
       name: "Club B",
-      inviteCode: CLUB_B_INVITE,
       ownerUid: COACH_B,
       teamGender: "male",
     });
 
-    // Annuaire code→club (/inviteCodes/{code}, doc ID = code). Créé par
-    // createClub côté client ; seedé ici en admin (backfill pour clubs existants).
-    await setDoc(doc(db, "inviteCodes", CLUB_A_INVITE), { clubId: CLUB_A, name: "Club A" });
-    await setDoc(doc(db, "inviteCodes", CLUB_B_INVITE), { clubId: CLUB_B, name: "Club B" });
+    // Surfaces 100 % serveur du contrat d'invitation. Elles sont seedées en
+    // admin UNIQUEMENT pour prouver qu'aucun client ne peut les lire : un
+    // document ABSENT rendrait le test complaisant (un refus de lecture sur un
+    // doc inexistant ne prouve rien).
+    await setDoc(doc(db, "inviteCodes", CLUB_A_CODE_HASH), {
+      clubId: CLUB_A,
+      createdBy: COACH_A,
+      createdAt: 1_753_600_000_000,
+      expiresAt: 4_102_444_800_000,
+      maxUses: 30,
+      uses: 0,
+      revokedAt: null,
+    });
+    await setDoc(doc(db, "clubInviteMeta", CLUB_A), {
+      activeCodeHash: CLUB_A_CODE_HASH,
+      updatedAt: 1_753_600_000_000,
+    });
+    await setDoc(doc(db, "inviteAttempts", `uid_${STRANGER}`), {
+      failures: [1_753_600_000_000],
+      blockedUntil: null,
+    });
 
-    // Members — VOLONTAIREMENT sans champ inviteCode : c'est le cas réel des
-    // membres EXISTANTS (pilote) créés avant le durcissement. Les tests de
-    // compat prouvent qu'ils gardent toutes leurs lectures.
+    // Members — VOLONTAIREMENT sans champ inviteCode : le membership ne porte
+    // plus aucune preuve côté client (c'est l'écriture serveur qui fait foi).
+    // Les tests de compat prouvent que les membres EXISTANTS gardent toutes
+    // leurs lectures.
     await setDoc(doc(db, "clubs", CLUB_A, "members", COACH_A), { uid: COACH_A, role: "coach" });
     await setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A1), { uid: PLAYER_A1, role: "player" });
     await setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A2), { uid: PLAYER_A2, role: "player" });

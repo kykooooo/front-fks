@@ -98,13 +98,21 @@ const zoe = makeView({
     blockCount: 3,
   },
   activity: { doneDateKeys: ["2026-07-26"] },
+  // Séance de 12 exercices arrêtée en cours de route : 5 faits + 2 adaptés = 7
+  // sur 12 → 58 %. Les 5 exercices restants n'ont aucun statut (le joueur s'est
+  // arrêté, il n'a rien déclaré) : ils comptent dans le total en pesant 0, et ne
+  // sont PAS des exercices sautés. L'ancien 60 % était impossible avec ces
+  // compteurs — aucun total entier ne le produit.
   execution: {
-    completionPct: 60,
+    completionPct: 58,
     completionStatus: "partial",
     itemsDone: 5,
     itemsAdapted: 2,
     itemsSkipped: 0,
     itemsReplaced: 0,
+    itemsReplacedEquivalent: 0,
+    itemsReplacedPartial: 0,
+    itemsTotal: 12,
     deviationLabels: ["Manque de temps"],
   },
 });
@@ -141,7 +149,6 @@ function clubReady(over: Record<string, unknown> = {}) {
     status: "ready",
     clubId: "club-1",
     clubName: "US Test",
-    inviteCode: "ABC123",
     teamGender: null,
     weekKey: "2026-07-27",
     weekContext: null,
@@ -184,16 +191,12 @@ async function render(): Promise<TestRenderer.ReactTestRenderer> {
 
 // `toJSON()` ne rend que des composants hôtes : le `onPress` d'un Pressable n'y
 // apparaît jamais (il devient des gestionnaires de responder). Pour déclencher un
-// vrai appui il faut l'arbre d'instances, donc `renderer.root` — que la
-// déclaration locale `types/react-test-renderer.d.ts` (propriété d'un autre lot)
-// ne décrit pas. On la complète ICI, au strict minimum, sans toucher à ce fichier.
-type TestNode = {
-  props: Record<string, unknown>;
-  findAll(predicate: (node: TestNode) => boolean): TestNode[];
-};
+// vrai appui il faut l'arbre d'instances, donc `renderer.root`, désormais décrit
+// par la déclaration locale `types/react-test-renderer.d.ts` — plus aucun cast.
+type TestNode = TestRenderer.ReactTestInstance;
 
 function racine(renderer: TestRenderer.ReactTestRenderer): TestNode {
-  return (renderer as unknown as { root: TestNode }).root;
+  return renderer.root;
 }
 
 /** Gestionnaire d'un nœud, ou `null` s'il n'en porte pas. */
@@ -666,7 +669,7 @@ describe("Effectif — un statut qui ne dit que ce qu'il sait", () => {
   test("le lecteur d'écran entend la nuance, pas seulement le raccourci", async () => {
     mockRoster.mockReturnValue(rosterReady([anna]));
     const r = await render();
-    const labels = (r.root as unknown as TestNode)
+    const labels = racine(r)
       .findAll((n) => typeof n.props.accessibilityLabel === "string")
       .map((n) => String(n.props.accessibilityLabel));
 
@@ -715,7 +718,7 @@ describe("Effectif — les libellés d'identité s'affichent accentués", () => 
   test("la recherche continue de fonctionner avec ou sans accent", async () => {
     mockRoster.mockReturnValue(rosterReady([brut, anna]));
     const r = await render();
-    const champ = (r.root as unknown as TestNode)
+    const champ = racine(r)
       .findAll((n) => n.props.testID === "coach-roster-search")[0];
 
     await act(async () => {

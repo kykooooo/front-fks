@@ -40,21 +40,24 @@ type EmptyCopy = {
 };
 
 const EMPTY_COPY: Record<CoachEmptyVariant, EmptyCopy> = {
+  // NB : le libellé d'action ne dit plus « partager le code », mais
+  // « générer » — un code n'existe plus tant que le coach ne l'a pas demandé,
+  // et il n'est affiché qu'à ce moment-là.
   firstLogin: {
     icon: "clipboard-outline",
     title: "Bienvenue dans votre espace",
     body:
-      "Votre club est créé. Partagez le code d'invitation à vos joueurs : dès qu'ils rejoignent et terminent une séance, leur suivi apparaît ici.",
+      "Votre club est créé. Générez un code d'invitation et partagez-le à vos joueurs : dès qu'ils rejoignent et terminent une séance, leur suivi apparaît ici.",
     level: "unknown",
-    actionLabel: "Partager le code d'invitation",
+    actionLabel: "Générer un code d'invitation",
   },
   clubWithoutPlayers: {
     icon: "people-outline",
     title: "Aucun joueur dans l'effectif",
     body:
-      "Personne n'a encore rejoint le club avec le code d'invitation. L'effectif se remplit tout seul au fur et à mesure des inscriptions.",
+      "Personne n'a encore rejoint le club. Générez un code d'invitation, partagez-le, et l'effectif se remplit au fur et à mesure des inscriptions.",
     level: "unknown",
-    actionLabel: "Partager le code d'invitation",
+    actionLabel: "Générer un code d'invitation",
   },
   playerWithoutSession: {
     icon: "calendar-outline",

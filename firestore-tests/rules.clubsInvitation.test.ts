@@ -1,22 +1,26 @@
 // firestore-tests/rules.clubsInvitation.test.ts
 //
-// Chantier sécurité clubs/invitation : ferme les deux trous laissés "hors scope"
-// par PR-4, désormais inacceptables (pilote = club de MINEURES) :
-//   1. Énumération des clubs : `allow read: if isSignedIn()` sur clubs/{clubId}
-//      permettait un getDocs(clubs) → noms + inviteCodes + ownerUids récoltables.
-//   2. Self-join : n'importe quel connecté créait SON membership "player" dans
-//      n'importe quel club dont il avait l'ID — sans code d'invitation.
+// NOUVEAU CONTRAT D'INVITATION CLUB — vérification 100 % serveur.
 //
-// Design retenu (rules pures, pas de Cloud Function) :
-//   - clubs : list interdite pour TOUS ; get par ID réservé membres + owner ;
-//   - /inviteCodes/{code} : annuaire code→club (doc ID = code), get exact
-//     autorisé aux connectés (connaître le code = capability), list interdite ;
-//   - members create/update player : exige inviteCode EXACT du club dans le doc
-//     (comparé via get() serveur au club réel) — preuve d'invitation.
+// Ce fichier remplace intégralement la version précédente, qui prouvait la
+// sécurité d'un contrat désormais abandonné (annuaire code→club lisible par
+// tout compte connecté + membership "player" écrit par le client avec le code
+// comme preuve). Ce que ce contrat-là ne pouvait pas faire, faute de serveur :
+// compter les tentatives, cacher l'existence d'un club, expirer, révoquer,
+// borner les usages.
 //
-// POURQUOI pas une query gatée sur clubs : les rules Firestore ne voient PAS les
-// clauses `where` d'une list (seulement limit/offset/orderBy) — toute list
-// autorisée resterait paginable doc par doc, donc énumérable. D'où l'annuaire.
+// Ce qui est prouvé ici, côté RÈGLES uniquement :
+//   1. les trois collections du contrat (inviteCodes, clubInviteMeta,
+//      inviteAttempts) sont TOTALEMENT fermées aux clients — l'oracle
+//      « ce code existe / n'existe pas » n'a plus de surface ;
+//   2. un client ne peut PLUS créer ni modifier un membership "player" ;
+//   3. les chemins légitimes existants ne sont pas cassés : le coach crée son
+//      club et son propre membership coach, les membres lisent ce qu'ils
+//      lisaient, un joueur peut toujours quitter son club.
+//
+// La validité d'un code (expiration, révocation, quota, limitation de
+// tentatives, égalité des messages d'erreur) N'EST PAS testable ici : elle vit
+// dans la Cloud Function. Ses tests sont dans functions/tests/inviteCodes.test.ts.
 
 import { readFileSync } from "fs";
 import { resolve } from "path";
@@ -35,7 +39,6 @@ import {
   deleteDoc,
   collection,
   query,
-  where,
   orderBy,
   limit,
   documentId,
@@ -43,13 +46,12 @@ import {
 import {
   PROJECT_ID,
   CLUB_A,
+  CLUB_A_CODE_HASH,
   COACH_A,
   PLAYER_A1,
-  CLUB_A_INVITE,
   CLUB_B,
   COACH_B,
   PLAYER_B,
-  CLUB_B_INVITE,
   STRANGER,
   WEEK_KEY,
   seed,
@@ -81,226 +83,195 @@ beforeEach(async () => {
 const asUser = (uid: string) => testEnv.authenticatedContext(uid).firestore();
 const asAnon = () => testEnv.unauthenticatedContext().firestore();
 
-// Doc membership player tel que produit par setClubMembership (client réel).
-const memberDoc = (uid: string, inviteCode?: string) => ({
+const playerMemberDoc = (uid: string, extra: Record<string, unknown> = {}) => ({
   uid,
   role: "player",
-  ...(inviteCode ? { inviteCode } : {}),
+  ...extra,
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe("1) Énumération des clubs FERMÉE (list interdite pour tous)", () => {
-  test("stranger : getDocs(clubs) REFUSÉ", async () => {
-    await assertFails(getDocs(collection(asUser(STRANGER), "clubs")));
+describe("1) inviteCodes : FERMÉE à tous les clients (l'oracle disparaît)", () => {
+  // Le doc seedé EXISTE : un refus prouve donc bien la règle, pas l'absence.
+  test("get d'une empreinte EXISTANTE refusé : connecté, membre, coach, owner, anonyme", async () => {
+    for (const db of [asUser(STRANGER), asUser(PLAYER_A1), asUser(COACH_A), asAnon()]) {
+      await assertFails(getDoc(doc(db, "inviteCodes", CLUB_A_CODE_HASH)));
+    }
   });
 
-  test("stranger : pagination doc par doc (orderBy id + limit 1) REFUSÉE", async () => {
-    // La technique d'énumération lente qu'une rule `list` laxiste laisserait
-    // passer : une page d'un seul doc à la fois. Doit être refusée aussi.
+  test("get d'une empreinte INEXISTANTE refusé aussi — aucune différence observable", async () => {
+    // C'était LE trou : l'ancien contrat répondait exists()=false sans erreur,
+    // ce qui distinguait « code inconnu » de « code connu ». Les deux chemins
+    // renvoient désormais la même chose : un refus.
+    await assertFails(getDoc(doc(asUser(STRANGER), "inviteCodes", "0".repeat(64))));
+  });
+
+  test("list refusée (aucune récolte d'empreintes, même paginée)", async () => {
+    await assertFails(getDocs(collection(asUser(STRANGER), "inviteCodes")));
     await assertFails(
-      getDocs(query(collection(asUser(STRANGER), "clubs"), orderBy(documentId()), limit(1))),
+      getDocs(query(collection(asUser(COACH_A), "inviteCodes"), orderBy(documentId()), limit(1))),
     );
   });
 
-  test("stranger : query where inviteCode == (ancien chemin client) REFUSÉE, même avec le BON code", async () => {
-    // L'ancien findClubByInviteCode. Les rules ne savent pas distinguer cette
-    // query d'une énumération → refusée en bloc. (Casse les VIEUX builds tant
-    // que l'OTA n'est pas adopté — assumé et documenté dans le séquencement.)
+  test("create / update / delete refusés, y compris à l'owner du club", async () => {
     await assertFails(
-      getDocs(
-        query(collection(asUser(STRANGER), "clubs"), where("inviteCode", "==", CLUB_A_INVITE), limit(1)),
+      setDoc(doc(asUser(COACH_A), "inviteCodes", "f".repeat(64)), { clubId: CLUB_A, uses: 0 }),
+    );
+    await assertFails(updateDoc(doc(asUser(COACH_A), "inviteCodes", CLUB_A_CODE_HASH), { uses: 0 }));
+    await assertFails(deleteDoc(doc(asUser(COACH_A), "inviteCodes", CLUB_A_CODE_HASH)));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("2) clubInviteMeta / inviteAttempts : fermées elles aussi", () => {
+  test("clubInviteMeta illisible et non écrivable (l'empreinte active reste hors de portée)", async () => {
+    await assertFails(getDoc(doc(asUser(COACH_A), "clubInviteMeta", CLUB_A)));
+    await assertFails(getDoc(doc(asUser(PLAYER_A1), "clubInviteMeta", CLUB_A)));
+    await assertFails(
+      setDoc(doc(asUser(COACH_A), "clubInviteMeta", CLUB_A), { activeCodeHash: "x" }),
+    );
+  });
+
+  test("inviteAttempts illisible et non écrivable, y compris par le compte concerné", async () => {
+    // Sinon un attaquant lirait son propre quota (« combien d'essais me
+    // reste-t-il ? ») et pourrait remettre son compteur à zéro.
+    await assertFails(getDoc(doc(asUser(STRANGER), "inviteAttempts", `uid_${STRANGER}`)));
+    await assertFails(
+      setDoc(doc(asUser(STRANGER), "inviteAttempts", `uid_${STRANGER}`), {
+        failures: [],
+        blockedUntil: null,
+      }),
+    );
+    await assertFails(deleteDoc(doc(asUser(STRANGER), "inviteAttempts", `uid_${STRANGER}`)));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("3) Membership player : plus AUCUNE écriture cliente", () => {
+  test("self-join refusé, avec ou sans champ inviteCode résiduel", async () => {
+    const db = asUser(STRANGER);
+    await assertFails(
+      setDoc(doc(db, "clubs", CLUB_A, "members", STRANGER), playerMemberDoc(STRANGER)),
+    );
+    // Un vieux build qui enverrait encore un code est refusé de la même façon :
+    // le champ n'est plus une preuve, il n'est plus rien.
+    await assertFails(
+      setDoc(
+        doc(db, "clubs", CLUB_A, "members", STRANGER),
+        playerMemberDoc(STRANGER, { inviteCode: "CLBA-1234" }),
       ),
     );
   });
 
-  test("même un MEMBRE ne liste pas la collection clubs", async () => {
-    await assertFails(getDocs(collection(asUser(PLAYER_A1), "clubs")));
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-describe("2) get clubs/{id} : réservé membres + owner", () => {
-  test("membre player EXISTANT (doc member SANS inviteCode — cas pilote) lit son club", async () => {
-    const snap = await assertSucceeds(getDoc(doc(asUser(PLAYER_A1), "clubs", CLUB_A)));
-    expect((snap as any).data()?.name).toBe("Club A");
+  test("un membre player EXISTANT ne peut plus réécrire son propre membership", async () => {
+    // Écriture serveur seulement : le seul geste client qui reste sur son
+    // membership, c'est de le supprimer (quitter le club).
+    const ref = doc(asUser(PLAYER_A1), "clubs", CLUB_A, "members", PLAYER_A1);
+    await assertFails(updateDoc(ref, { updatedAt: "2026-07-27" }));
+    await assertFails(setDoc(ref, playerMemberDoc(PLAYER_A1), { merge: true }));
   });
 
-  test("coach (membre) lit son club", async () => {
-    await assertSucceeds(getDoc(doc(asUser(COACH_A), "clubs", CLUB_A)));
-  });
-
-  test("owner SANS doc member lit son club (resource.data.ownerUid)", async () => {
-    const OWNER = "ownerNoMember";
-    const CLUB = "clubOwnerOnly";
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), "clubs", CLUB), {
-        name: "Club C",
-        ownerUid: OWNER,
-        inviteCode: "CLBC-0001",
-      });
-    });
-    await assertSucceeds(getDoc(doc(asUser(OWNER), "clubs", CLUB)));
-  });
-
-  test("connecté hors club REFUSÉ ; membre d'un AUTRE club REFUSÉ ; anonyme REFUSÉ", async () => {
-    await assertFails(getDoc(doc(asUser(STRANGER), "clubs", CLUB_A)));
-    await assertFails(getDoc(doc(asUser(PLAYER_B), "clubs", CLUB_A)));
-    await assertFails(getDoc(doc(asAnon(), "clubs", CLUB_A)));
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-describe("3) Annuaire /inviteCodes/{code} : get par code exact, jamais de list", () => {
-  test("connecté qui CONNAÎT le code résout le club (chemin du flux 'rejoindre')", async () => {
-    const snap = await assertSucceeds(getDoc(doc(asUser(STRANGER), "inviteCodes", CLUB_A_INVITE)));
-    expect((snap as any).data()?.clubId).toBe(CLUB_A);
-  });
-
-  test("get d'un code INEXISTANT autorisé (exists=false) — nécessaire au check d'unicité de createClub", async () => {
-    const snap = await assertSucceeds(getDoc(doc(asUser(STRANGER), "inviteCodes", "ZZZZ-0000")));
-    expect((snap as any).exists()).toBe(false);
-  });
-
-  test("anonyme REFUSÉ même avec le bon code", async () => {
-    await assertFails(getDoc(doc(asAnon(), "inviteCodes", CLUB_A_INVITE)));
-  });
-
-  test("list de l'annuaire REFUSÉE (pas de récolte de codes)", async () => {
-    await assertFails(getDocs(collection(asUser(STRANGER), "inviteCodes")));
+  test("écrire le membership de QUELQU'UN D'AUTRE reste refusé", async () => {
     await assertFails(
-      getDocs(query(collection(asUser(STRANGER), "inviteCodes"), orderBy(documentId()), limit(1))),
+      setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", "victime"), playerMemberDoc("victime")),
     );
   });
 
-  test("create : owner du club avec code cohérent OK (séquence createClub réelle)", async () => {
-    const NEWCOACH = "newCoach";
-    const dbC = asUser(NEWCOACH);
-    // 1. le coach crée son club (rule create clubs inchangée)…
-    const clubRef = doc(collection(dbC, "clubs"));
-    await assertSucceeds(
-      setDoc(clubRef, { name: "Club Neuf", inviteCode: "NEUF-1234", ownerUid: NEWCOACH }),
-    );
-    // 2. …puis enregistre le code dans l'annuaire.
-    await assertSucceeds(
-      setDoc(doc(dbC, "inviteCodes", "NEUF-1234"), { clubId: clubRef.id, name: "Club Neuf" }),
-    );
-  });
-
-  test("create REFUSÉ : non-owner, code incohérent, écrasement d'un code existant", async () => {
-    // Un stranger ne peut pas planter un annuaire vers le club d'un autre.
-    await assertFails(
-      setDoc(doc(asUser(STRANGER), "inviteCodes", "FAKE-0001"), { clubId: CLUB_A, name: "Piège" }),
-    );
-    // L'owner lui-même ne peut pas enregistrer un code ≠ clubs/{id}.inviteCode.
-    await assertFails(
-      setDoc(doc(asUser(COACH_A), "inviteCodes", "AUTRE-9999"), { clubId: CLUB_A, name: "Club A" }),
-    );
-    // Un code déjà pris ne peut être ni écrasé (update interdit) ni supprimé.
-    await assertFails(
-      setDoc(doc(asUser(COACH_B), "inviteCodes", CLUB_A_INVITE), { clubId: CLUB_B, name: "Club B" }),
-    );
-    await assertFails(deleteDoc(doc(asUser(COACH_A), "inviteCodes", CLUB_A_INVITE)));
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-describe("4) Self-join GATÉ par la preuve d'invitation", () => {
-  test("join AVEC le bon code : membership créé, puis le nouveau membre lit club + weekContext", async () => {
-    const dbS = asUser(STRANGER);
-    await assertSucceeds(
-      setDoc(doc(dbS, "clubs", CLUB_A, "members", STRANGER), memberDoc(STRANGER, CLUB_A_INVITE)),
-    );
-    // Devenu membre, il obtient les lectures d'un membre légitime.
-    await assertSucceeds(getDoc(doc(dbS, "clubs", CLUB_A)));
-    await assertSucceeds(getDoc(doc(dbS, "clubs", CLUB_A, "weekContexts", WEEK_KEY)));
-  });
-
-  test("join SANS code REFUSÉ (l'ancien trou)", async () => {
-    await assertFails(
-      setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), memberDoc(STRANGER)),
-    );
-  });
-
-  test("join avec un code FAUX ou celui d'un AUTRE club REFUSÉ", async () => {
-    await assertFails(
-      setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), memberDoc(STRANGER, "XXXX-0000")),
-    );
-    await assertFails(
-      setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), memberDoc(STRANGER, CLUB_B_INVITE)),
-    );
-  });
-
-  test("join avec code mais type invalide (non-string) REFUSÉ", async () => {
-    await assertFails(
-      setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), {
-        uid: STRANGER,
-        role: "player",
-        inviteCode: 1234,
-      }),
-    );
-  });
-
-  test("écrire le membership de QUELQU'UN D'AUTRE reste refusé, même avec le bon code", async () => {
-    await assertFails(
-      setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", "victime"), memberDoc("victime", CLUB_A_INVITE)),
-    );
-  });
-
-  test("s'auto-promouvoir coach avec le code REFUSÉ (coach = owner only, inchangé)", async () => {
+  test("s'auto-promouvoir coach reste refusé (coach = owner du club uniquement)", async () => {
     await assertFails(
       setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), {
         uid: STRANGER,
         role: "coach",
-        inviteCode: CLUB_A_INVITE,
+      }),
+    );
+    // Même un membre player du club ne peut pas se promouvoir.
+    await assertFails(
+      setDoc(doc(asUser(PLAYER_A1), "clubs", CLUB_A, "members", PLAYER_A1), {
+        uid: PLAYER_A1,
+        role: "coach",
       }),
     );
   });
 
-  test("update legacy sans preuve REFUSÉ ; re-join avec code OK ; la preuve STOCKÉE couvre les updates suivants", async () => {
-    const ref = doc(asUser(PLAYER_A1), "clubs", CLUB_A, "members", PLAYER_A1);
-    // Doc member LEGACY (seedé sans inviteCode, cas pilote) : une réécriture sans
-    // fournir la preuve est refusée (l'état futur fusionné ne porte aucun code).
-    await assertFails(updateDoc(ref, { uid: PLAYER_A1 }));
-    // Re-join via le flux normal (le client envoie toujours le code) : accepté.
-    await assertSucceeds(setDoc(ref, memberDoc(PLAYER_A1, CLUB_A_INVITE), { merge: true }));
-    // Sémantique ASSUMÉE : request.resource.data (update) = état FUTUR fusionné.
-    // La preuve étant désormais stockée dans le doc, un update qui la CONSERVE
-    // passe — le code reste exigé à l'ENTRÉE, un membre déjà prouvé le reste.
-    await assertSucceeds(updateDoc(ref, { updatedAt: "2026-07-21" }));
-    // Mais corrompre la preuve (code faux dans l'état futur) est refusé.
-    await assertFails(updateDoc(ref, { inviteCode: "XXXX-0000" }));
+  test("le membership écrit par le SERVEUR ouvre bien les lectures du membre", async () => {
+    // Simule ce que fait la Cloud Function (Admin SDK, hors règles).
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "clubs", CLUB_A, "members", STRANGER), {
+        uid: STRANGER,
+        role: "player",
+        joinedAt: 1_753_600_000_000,
+      });
+    });
+    const db = asUser(STRANGER);
+    await assertSucceeds(getDoc(doc(db, "clubs", CLUB_A)));
+    await assertSucceeds(getDoc(doc(db, "clubs", CLUB_A, "weekContexts", WEEK_KEY)));
+    await assertSucceeds(getDoc(doc(db, "clubs", CLUB_A, "members", STRANGER)));
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe("5) Compat membres/coach EXISTANTS (pilote) — rien ne bouge", () => {
-  test("membre existant (doc member sans inviteCode) : club + weekContext + son member doc lisibles", async () => {
-    const dbP = asUser(PLAYER_A1);
-    await assertSucceeds(getDoc(doc(dbP, "clubs", CLUB_A)));
-    await assertSucceeds(getDoc(doc(dbP, "clubs", CLUB_A, "weekContexts", WEEK_KEY)));
-    await assertSucceeds(getDoc(doc(dbP, "clubs", CLUB_A, "members", PLAYER_A1)));
+describe("4) Chemins légitimes préservés", () => {
+  test("création de club par un coach + son propre membership coach (séquence createClubAsCoach)", async () => {
+    const NEWCOACH = "newCoach";
+    const db = asUser(NEWCOACH);
+    const clubRef = doc(collection(db, "clubs"));
+    // Le club ne porte PLUS de code d'invitation : la Function l'émet à part.
+    await assertSucceeds(setDoc(clubRef, { name: "Club Neuf", ownerUid: NEWCOACH }));
+    await assertSucceeds(
+      setDoc(doc(db, "clubs", clubRef.id, "members", NEWCOACH), { uid: NEWCOACH, role: "coach" }),
+    );
   });
 
-  test("membre existant peut toujours QUITTER le club (delete de son member doc)", async () => {
+  test("un non-owner ne peut pas se créer un membership coach dans le club d'un autre", async () => {
+    await assertFails(
+      setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), {
+        uid: STRANGER,
+        role: "coach",
+      }),
+    );
+  });
+
+  test("membre existant : club, cadre de semaine et son propre membership lisibles", async () => {
+    const db = asUser(PLAYER_A1);
+    await assertSucceeds(getDoc(doc(db, "clubs", CLUB_A)));
+    await assertSucceeds(getDoc(doc(db, "clubs", CLUB_A, "weekContexts", WEEK_KEY)));
+    await assertSucceeds(getDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A1)));
+  });
+
+  test("le document club ne transporte plus de code d'invitation", async () => {
+    // Vérifie le CONTRAT DE DONNÉES : ce qu'un membre lit ne contient aucun
+    // secret partageable. Avant, tout joueur pouvait recopier le code du club.
+    const snap = await assertSucceeds(getDoc(doc(asUser(PLAYER_A1), "clubs", CLUB_A)));
+    expect((snap as any).data()).not.toHaveProperty("inviteCode");
+  });
+
+  test("un joueur peut toujours QUITTER son club ; l'owner peut retirer un membre", async () => {
     await assertSucceeds(deleteDoc(doc(asUser(PLAYER_A1), "clubs", CLUB_A, "members", PLAYER_A1)));
+    await assertSucceeds(deleteDoc(doc(asUser(COACH_A), "clubs", CLUB_A, "members", "playerA2")));
   });
 
-  test("coach : roster members lisible, weekContext écrivable, club doc (code à partager) lisible", async () => {
-    const dbC = asUser(COACH_A);
-    await assertSucceeds(getDocs(collection(dbC, "clubs", CLUB_A, "members")));
-    await assertSucceeds(getDoc(doc(dbC, "clubs", CLUB_A)));
+  test("coach : roster lisible, cadre de semaine écrivable, club modifiable par l'owner", async () => {
+    const db = asUser(COACH_A);
+    await assertSucceeds(getDocs(collection(db, "clubs", CLUB_A, "members")));
     await assertSucceeds(
       setDoc(
-        doc(dbC, "clubs", CLUB_A, "weekContexts", "2026-07-20"),
-        { weekKey: "2026-07-20", clubId: CLUB_A, createdBy: COACH_A, trainingIntensity: "normal", weekGoal: "freshness" },
+        doc(db, "clubs", CLUB_A, "weekContexts", "2026-07-20"),
+        {
+          weekKey: "2026-07-20",
+          clubId: CLUB_A,
+          createdBy: COACH_A,
+          trainingIntensity: "normal",
+          weekGoal: "freshness",
+        },
         { merge: true },
       ),
     );
+    await assertSucceeds(setDoc(doc(db, "clubs", CLUB_A), { teamGender: "female" }, { merge: true }));
   });
 
-  test("owner met à jour son club (teamGender) comme avant", async () => {
-    await assertSucceeds(
-      setDoc(doc(asUser(COACH_A), "clubs", CLUB_A), { teamGender: "female" }, { merge: true }),
-    );
+  test("cloisonnement inter-clubs inchangé : membre du club B refusé sur le club A", async () => {
+    await assertFails(getDoc(doc(asUser(PLAYER_B), "clubs", CLUB_A)));
+    await assertFails(getDoc(doc(asUser(COACH_B), "clubs", CLUB_A, "weekContexts", WEEK_KEY)));
+    await assertFails(getDocs(collection(asUser(STRANGER), "clubs")));
+    await assertFails(getDoc(doc(asAnon(), "clubs", CLUB_B)));
   });
 });

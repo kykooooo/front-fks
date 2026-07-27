@@ -75,6 +75,7 @@ import {
 } from "../../domain/types";
 import { saveClubWeekContext, setClubTeamGender } from "../../repositories/clubsRepo";
 import { useCoachClub } from "../../hooks/coach/useCoachClub";
+import { useClubInviteCode } from "../../hooks/coach/useClubInviteCode";
 import { useCoachRoster } from "../../hooks/coach/useCoachRoster";
 import { useCoachNowMs } from "../../hooks/coach/useCoachNowMs";
 import { useHaptics } from "../../hooks/useHaptics";
@@ -195,10 +196,28 @@ function memberMetricLabels(teamGender: ClubTeamGender | null) {
   return { actifs: "Membres actifs", sansSeance: "Membres sans séance" };
 }
 
+/**
+ * Date de fin de validité, en clair ("10 août"). Écrite à la main plutôt que
+ * via Intl : la casse et le vocabulaire restent identiques sur tous les
+ * appareils, y compris ceux dont la locale n'est pas le français.
+ */
+const MOIS_FR = [
+  "janvier", "février", "mars", "avril", "mai", "juin",
+  "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+];
+
+export function formatExpiry(ms: number): string {
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getDate()} ${MOIS_FR[d.getMonth()]}`;
+}
+
 export default function CoachWeekScreen() {
   const haptics = useHaptics();
   const club = useCoachClub();
   const roster = useCoachRoster(club.clubId);
+  // Code d'invitation : émis à la demande, gardé UNIQUEMENT en mémoire d'écran.
+  const invite = useClubInviteCode(club.clubId);
 
   // Instant courant lu HORS RENDU et rafraîchi périodiquement. Il servait à deux
   // endroits sous forme de `Date.now()` en plein corps de rendu : le rendu n'était
@@ -414,15 +433,22 @@ export default function CoachWeekScreen() {
     }
   }, [club.clubId, club.weekKey, intensity, weekGoal, note, matchThisWeekend, haptics]);
 
+  const handleIssueCode = useCallback(() => {
+    haptics.impactLight();
+    invite.issue();
+  }, [haptics, invite]);
+
+  // Le partage n'existe QUE tant que le code est à l'écran : il n'est plus
+  // relisible ailleurs, ni par cet écran après un retour en arrière.
   const handleShareCode = useCallback(async () => {
-    if (!club.inviteCode) return;
+    if (!invite.code) return;
     haptics.impactLight();
     try {
-      await Share.share({ message: `Rejoins notre club sur FKS avec le code : ${club.inviteCode}` });
+      await Share.share({ message: `Rejoins notre club sur FKS avec le code : ${invite.code}` });
     } catch {
       // Partage annulé par l'utilisateur : rien à signaler.
     }
-  }, [club.inviteCode, haptics]);
+  }, [invite.code, haptics]);
 
   // ── États globaux de l'écran ──────────────────────────────────────────────
   // NOTE : l'accès légal (`CoachLegalFooter`) est répété dans CHAQUE branche, y
@@ -574,7 +600,7 @@ export default function CoachWeekScreen() {
       return (
         <CoachEmptyState
           variant="clubWithoutPlayers"
-          action={club.inviteCode ? { onPress: handleShareCode } : null}
+          action={club.clubId ? { onPress: handleIssueCode } : null}
         />
       );
     }
@@ -906,37 +932,84 @@ export default function CoachWeekScreen() {
           )}
         </CoachSectionCard>
 
+        {/* ── Code club ────────────────────────────────────────────────────
+            Le code n'est plus stocké en clair : il s'affiche À L'ÉMISSION et
+            nulle part ailleurs. On l'écrit noir sur blanc au coach, avant et
+            après, plutôt que de le laisser découvrir qu'il a disparu. */}
         <CoachSectionCard
           testID="week-invite"
           title="Code club"
-          subtitle="À partager pour que tes joueurs rejoignent le club"
+          subtitle="À générer puis partager pour que tes joueurs rejoignent le club"
         >
-          <View style={styles.inviteRow}>
-            <Text style={styles.inviteCode} numberOfLines={1}>
-              {club.inviteCode ?? "—"}
-            </Text>
-            <Pressable
-              testID="week-invite-share"
-              onPress={handleShareCode}
-              disabled={!club.inviteCode}
-              accessibilityRole="button"
-              accessibilityLabel="Partager le code club"
-              accessibilityState={{ disabled: !club.inviteCode }}
-              style={({ pressed }) => [
-                styles.shareBtn,
-                !club.inviteCode && styles.shareBtnDisabled,
-                pressed && club.inviteCode ? styles.shareBtnPressed : null,
-              ]}
-            >
-              <Ionicons name="share-outline" size={16} color={coachColors.accent} />
-              <Text style={styles.shareLabel} numberOfLines={1}>
-                Partager
+          {invite.code ? (
+            <>
+              <View style={styles.inviteRow}>
+                <Text style={styles.inviteCode} numberOfLines={1} selectable>
+                  {invite.code}
+                </Text>
+                <Pressable
+                  testID="week-invite-share"
+                  onPress={handleShareCode}
+                  accessibilityRole="button"
+                  accessibilityLabel="Partager le code club"
+                  style={({ pressed }) => [styles.shareBtn, pressed ? styles.shareBtnPressed : null]}
+                >
+                  <Ionicons name="share-outline" size={16} color={coachColors.accent} />
+                  <Text style={styles.shareLabel} numberOfLines={1}>
+                    Partager
+                  </Text>
+                </Pressable>
+              </View>
+              <Text style={styles.fieldHint}>
+                {[
+                  "Note-le ou partage-le maintenant : il ne sera plus affiché.",
+                  invite.expiresAt ? `Valable jusqu'au ${formatExpiry(invite.expiresAt)}.` : null,
+                  invite.maxUses ? `${invite.maxUses} utilisations maximum.` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
               </Text>
-            </Pressable>
-          </View>
-          {!club.inviteCode ? (
-            <Text style={styles.fieldHint} numberOfLines={2}>
-              Aucun code d'invitation n'est disponible pour ce club.
+              {invite.replacedPrevious ? (
+                <Text style={styles.fieldHint} numberOfLines={2}>
+                  L'ancien code ne fonctionne plus. Les joueurs déjà dans l'effectif y restent.
+                </Text>
+              ) : null}
+            </>
+          ) : (
+            <Text style={styles.fieldHint}>
+              Aucun code affiché. Un code n'est visible qu'au moment où tu le génères : s'il est
+              perdu, génère-en un nouveau — l'ancien cessera alors de fonctionner, sans retirer
+              personne de l'effectif.
+            </Text>
+          )}
+
+          <Pressable
+            testID="week-invite-issue"
+            onPress={handleIssueCode}
+            disabled={!club.clubId || invite.isIssuing}
+            accessibilityRole="button"
+            accessibilityLabel={invite.code ? "Générer un nouveau code club" : "Générer un code club"}
+            accessibilityState={{ disabled: !club.clubId || invite.isIssuing }}
+            style={({ pressed }) => [
+              styles.shareBtn,
+              styles.issueBtn,
+              (!club.clubId || invite.isIssuing) && styles.shareBtnDisabled,
+              pressed && club.clubId && !invite.isIssuing ? styles.shareBtnPressed : null,
+            ]}
+          >
+            <Ionicons name="key-outline" size={16} color={coachColors.accent} />
+            <Text style={styles.shareLabel} numberOfLines={1}>
+              {invite.isIssuing
+                ? "Génération..."
+                : invite.code
+                  ? "Générer un nouveau code"
+                  : "Générer un code"}
+            </Text>
+          </Pressable>
+
+          {invite.error ? (
+            <Text style={styles.fieldHint} numberOfLines={3}>
+              {invite.error}
             </Text>
           ) : null}
         </CoachSectionCard>
@@ -1163,6 +1236,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: coachColors.accentBorder,
     backgroundColor: coachColors.accentSoft,
+  },
+  issueBtn: {
+    alignSelf: "flex-start",
+    marginTop: coachSpacing.sm,
   },
   shareBtnPressed: { opacity: 0.75 },
   shareBtnDisabled: { opacity: 0.45 },

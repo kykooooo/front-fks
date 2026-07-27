@@ -31,6 +31,11 @@ jest.mock("../../../hooks/coach/useCoachRoster", () => ({
   useCoachRoster: () => mockRosterState,
 }));
 
+// Émission du code d'invitation : appel serveur, piloté par le test.
+jest.mock("../../../hooks/coach/useClubInviteCode", () => ({
+  useClubInviteCode: () => mockInviteState,
+}));
+
 jest.mock("../../../repositories/clubsRepo", () => ({
   saveClubWeekContext: jest.fn(),
   setClubTeamGender: jest.fn(),
@@ -85,7 +90,6 @@ function makeClubState(overrides: Partial<Record<string, unknown>> = {}) {
     status: "ready" as string,
     clubId: "clubX",
     clubName: "AS Test" as string | null,
-    inviteCode: "TEST-0001" as string | null,
     teamGender: null as unknown,
     weekKey: WEEK_KEY,
     weekContext: null as unknown,
@@ -113,8 +117,23 @@ function makeRosterState(views: CoachPlayerView[], overrides: Partial<Record<str
   };
 }
 
+/** État du hook d'émission de code (aucun code affiché par défaut). */
+function makeInviteState(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    code: null as string | null,
+    expiresAt: null as number | null,
+    maxUses: null as number | null,
+    replacedPrevious: false,
+    error: null as string | null,
+    isIssuing: false,
+    issue: jest.fn(),
+    ...overrides,
+  };
+}
+
 let mockClubState: ClubState = makeClubState();
 let mockRosterState: RosterState = makeRosterState([]);
+let mockInviteState: ReturnType<typeof makeInviteState> = makeInviteState();
 
 // ─── Fabrique de vues joueur (vrai pipeline domaine, pas un objet bricolé) ──
 
@@ -193,27 +212,39 @@ function flatText(node: unknown): string {
   return out.join(" | ");
 }
 
+type TestNode = TestRenderer.ReactTestInstance;
+
 /**
- * Racine de l'arbre d'instances. Le shim de types local (types/react-test-renderer.d.ts)
- * ne déclare que `toJSON/update/unmount` : on caste ici plutôt que d'élargir un
- * fichier de types qui appartient à un autre lot.
+ * Racine de l'arbre d'instances (`renderer.root`), décrite par la déclaration
+ * locale `types/react-test-renderer.d.ts` : aucun cast n'est nécessaire.
  */
-function racine(renderer: TestRenderer.ReactTestRenderer): any {
-  return (renderer as any).root;
+function racine(renderer: TestRenderer.ReactTestRenderer): TestNode {
+  return renderer.root;
+}
+
+/**
+ * Gestionnaire porté par un nœud. Les props d'une instance sont typées
+ * `unknown` : on VÉRIFIE que c'en est bien une fonction avant de l'appeler,
+ * plutôt que de l'affirmer par un cast.
+ */
+function gestionnaire(node: TestNode, nom: string): (...args: unknown[]) => unknown {
+  const h = node.props[nom];
+  if (typeof h !== "function") throw new Error(`Le nœud ne porte pas de ${nom}`);
+  return h as (...args: unknown[]) => unknown;
 }
 
 /** Le nœud actionnable portant ce testID (le composant, pas la vue hôte). */
-function actionable(renderer: TestRenderer.ReactTestRenderer, testID: string) {
+function actionable(renderer: TestRenderer.ReactTestRenderer, testID: string): TestNode {
   const nodes = racine(renderer).findAll(
-    (n: any) => n.props?.testID === testID && typeof n.props?.onPress === "function"
+    (n) => n.props.testID === testID && typeof n.props.onPress === "function"
   );
   if (!nodes.length) throw new Error(`Aucun élément actionnable "${testID}"`);
   return nodes[0];
 }
 
 /** Tous les nœuds portant ce testID, quelle que soit leur nature. */
-function noeuds(renderer: TestRenderer.ReactTestRenderer, testID: string): any[] {
-  return racine(renderer).findAll((n: any) => n.props?.testID === testID);
+function noeuds(renderer: TestRenderer.ReactTestRenderer, testID: string): TestNode[] {
+  return racine(renderer).findAll((n) => n.props.testID === testID);
 }
 
 function exists(renderer: TestRenderer.ReactTestRenderer, testID: string): boolean {
@@ -221,22 +252,24 @@ function exists(renderer: TestRenderer.ReactTestRenderer, testID: string): boole
 }
 
 async function press(renderer: TestRenderer.ReactTestRenderer, testID: string) {
-  const node = actionable(renderer, testID);
+  const onPress = gestionnaire(actionable(renderer, testID), "onPress");
   await act(async () => {
-    await node.props.onPress();
+    await onPress();
   });
 }
 
 beforeEach(() => {
   mockClubState = makeClubState();
   mockRosterState = makeRosterState([vueSansFenetre()]);
+  mockInviteState = makeInviteState();
   saveMock.mockResolvedValue(undefined);
   genderMock.mockResolvedValue(undefined);
 });
 
 /** État de sélection d'une puce, tel qu'un lecteur d'écran l'entend. */
 function chipSelected(renderer: TestRenderer.ReactTestRenderer, testID: string): boolean {
-  return actionable(renderer, testID).props.accessibilityState?.selected === true;
+  const etat = actionable(renderer, testID).props.accessibilityState;
+  return !!etat && typeof etat === "object" && (etat as { selected?: unknown }).selected === true;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -263,9 +296,9 @@ describe("CoachWeekScreen — cadre vide", () => {
     expect(texte).toContain("Objectif FKS");
     expect(texte).toContain("Match ce week-end ?");
     expect(texte).toContain("Note (optionnel)");
-    // Le code club vit toujours dans cet onglet.
+    // Le code club vit toujours dans cet onglet — mais il s'y GÉNÈRE, il ne s'y
+    // lit plus (le détail est couvert par le bloc « code club » plus bas).
     expect(texte).toContain("Code club");
-    expect(texte).toContain("TEST-0001");
   });
 });
 
@@ -355,9 +388,9 @@ describe("CoachWeekScreen — échec d'enregistrement", () => {
     await press(renderer, "chip-intensity-normal");
     await press(renderer, "chip-goal-freshness");
 
-    const bouton = actionable(renderer, "week-frame-save");
+    const bouton = gestionnaire(actionable(renderer, "week-frame-save"), "onPress");
     await act(async () => {
-      bouton.props.onPress();
+      bouton();
     });
     // Pendant l'attente, l'écran assume qu'il attend.
     expect(flatText(renderer.toJSON())).toContain("Enregistrement...");
@@ -471,13 +504,19 @@ describe("CoachWeekScreen — adaptations : moteur ≠ joueur", () => {
       toCoachPlayerView(
         makeSummary({
           activity: { doneDateKeys: ["2026-07-21"] },
+          // 5 faits + 1 adapté = 6 sur 8 exercices → 75 %. Les compteurs somment
+          // ici exactement au total (5 + 1 + 2 sautés = 8). L'ancien 70 % était
+          // impossible avec ces compteurs : aucun total entier ne le produit.
           execution: {
-            completionPct: 70,
+            completionPct: 75,
             completionStatus: "partial",
             itemsDone: 5,
             itemsAdapted: 1,
             itemsSkipped: 2,
             itemsReplaced: 0,
+            itemsReplacedEquivalent: 0,
+            itemsReplacedPartial: 0,
+            itemsTotal: 8,
             deviationLabels: ["Manque de temps", "Autre raison"],
           },
         }),
@@ -551,7 +590,6 @@ describe("CoachWeekScreen — états globaux", () => {
       status: "notInClub",
       clubId: null,
       clubName: null,
-      inviteCode: null,
     });
     mockRosterState = makeRosterState([]);
 
@@ -589,5 +627,67 @@ describe("CoachWeekScreen — états globaux", () => {
     for (const interdit of ["rpe", "tsb", "atl", "ctl", "fatigue", "douleur", "sommeil"]) {
       expect(texte).not.toContain(interdit);
     }
+  });
+});
+
+// ─── Code club : émis à la demande, affiché une seule fois ──────────────────
+// Le contrat a changé : le code n'est plus stocké en clair, donc plus relisible.
+// Ces tests protègent la seule chose qui compte pour le coach — savoir qu'il ne
+// le reverra pas, et savoir qu'en régénérer un annule le précédent.
+
+describe("CoachWeekScreen — code club", () => {
+  test("sans code émis : aucun code affiché, et l'écran dit pourquoi", async () => {
+    const renderer = await render();
+    const texte = flatText(renderer.toJSON());
+
+    expect(texte).toContain("Code club");
+    expect(texte).toContain("Aucun code affiché");
+    expect(texte).toContain("génère-en un nouveau");
+    // Aucun tiret muet à la place d'un code : on explique, on n'affiche pas « — ».
+    expect(actionable(renderer, "week-invite-issue")).toBeTruthy();
+    expect(() => actionable(renderer, "week-invite-share")).toThrow();
+  });
+
+  test("le bouton déclenche l'émission serveur (jamais un tirage local)", async () => {
+    const renderer = await render();
+    await press(renderer, "week-invite-issue");
+    expect(mockInviteState.issue).toHaveBeenCalledTimes(1);
+  });
+
+  test("code émis : affiché, partageable, avec validité, quota et avertissement", async () => {
+    mockInviteState = makeInviteState({
+      code: "ABCDE-FGHJK",
+      expiresAt: new Date(2026, 7, 10, 12, 0, 0).getTime(),
+      maxUses: 30,
+    });
+    const renderer = await render();
+    const texte = flatText(renderer.toJSON());
+
+    expect(texte).toContain("ABCDE-FGHJK");
+    expect(texte).toContain("il ne sera plus affiché");
+    expect(texte).toContain("10 août");
+    expect(texte).toContain("30 utilisations maximum");
+    expect(actionable(renderer, "week-invite-share")).toBeTruthy();
+  });
+
+  test("nouveau code : l'écran DIT que l'ancien ne marche plus, et que personne n'est exclu", async () => {
+    mockInviteState = makeInviteState({ code: "ABCDE-FGHJK", replacedPrevious: true });
+    const renderer = await render();
+    const texte = flatText(renderer.toJSON());
+
+    expect(texte).toContain("L'ancien code ne fonctionne plus");
+    expect(texte).toContain("restent");
+  });
+
+  test("échec d'émission : message FR du service, jamais une phrase Firebase", async () => {
+    mockInviteState = makeInviteState({
+      error: "Impossible de joindre le serveur. Vérifie ta connexion et réessaie.",
+    });
+    const renderer = await render();
+    const texte = flatText(renderer.toJSON());
+
+    expect(texte).toContain("Impossible de joindre le serveur.");
+    expect(texte.toLowerCase()).not.toContain("permission");
+    expect(texte.toLowerCase()).not.toContain("insufficient");
   });
 });

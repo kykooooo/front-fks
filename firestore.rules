@@ -60,22 +60,15 @@ service cloud.firestore {
       }
     }
 
-    // Preuve d'invitation (anti self-join) : le doc member écrit par le client
-    // doit porter `inviteCode`, comparé au code RÉEL du club (get() serveur,
-    // qui ignore les permissions de lecture du client). Le code = capability :
-    // sans lui, impossible de se créer un membership player.
-    function providesClubInviteCode(clubId) {
-      return ("inviteCode" in request.resource.data) &&
-        request.resource.data.inviteCode is string &&
-        request.resource.data.inviteCode ==
-          get(/databases/$(database)/documents/clubs/$(clubId)).data.inviteCode;
-    }
-
     match /clubs/{clubId} {
       // Énumération FERMÉE : plus AUCUNE lecture de collection (list). Un
       // getDocs(clubs) — même paginé doc par doc — est refusé pour tout client.
-      // La découverte d'un club se fait par /inviteCodes/{code} (get par code
-      // exact, plus bas) : il faut CONNAÎTRE le code, on ne peut plus le récolter.
+      // Un club ne se découvre plus du tout côté client : le rattachement passe
+      // par la Cloud Function `joinClubWithInviteCode`, qui ne révèle le nom du
+      // club qu'APRÈS un rattachement réussi.
+      // NB : le champ `inviteCode` en clair a disparu du document club — il y
+      // était lisible par n'importe quel membre, donc partageable par n'importe
+      // quel joueur. Plus rien de secret ne vit ici.
       allow list: if false;
       // get par ID : réservé aux membres du club (joueur OU coach) et à l'owner.
       // `resource.data.ownerUid` (doc déjà chargé) évite un get() redondant.
@@ -91,17 +84,20 @@ service cloud.firestore {
         // (même couple coach/owner) : le lecteur du roster (members → summaries)
         // doit pouvoir lister les members avant de lire chaque projection.
         allow read: if isOwner(memberId) || isCoach(clubId) || isClubOwner(clubId);
-        // Écriture de SON membership uniquement, et :
-        //  - player : exige la PREUVE de l'invitation (inviteCode exact du club
-        //    dans le doc) — ferme le self-join d'un inconnu dans l'effectif ;
-        //  - coach : réservé à l'owner du club (inchangé).
-        // update soumis à la même preuve : un membre existant ne peut pas
-        // réécrire son doc sans re-fournir le code (seul flux d'écriture légitime
-        // = rejoindre via code ; il porte toujours le code).
-        allow create, update: if isOwner(memberId) && (
-          (request.resource.data.role == "player" && providesClubInviteCode(clubId)) ||
-          (request.resource.data.role == "coach" && isClubOwner(clubId))
-        );
+        // ÉCRITURE CLIENTE : le rôle "coach" du propriétaire à la création du
+        // club, et RIEN D'AUTRE.
+        //
+        // Le membership "player" n'est plus écrivable par aucun client : il est
+        // posé par la Cloud Function `joinClubWithInviteCode` (Admin SDK, qui
+        // contourne ces règles) après vérification serveur du code. L'ancienne
+        // preuve `providesClubInviteCode` reposait sur un code lisible dans
+        // clubs/{id} et sur un annuaire interrogeable — deux surfaces désormais
+        // fermées. Un joueur qui écrirait lui-même son membership court-
+        // circuiterait expiration, révocation, quota d'usages ET limitation de
+        // tentatives : c'est exactement ce que cette règle empêche.
+        allow create, update: if isOwner(memberId) &&
+          request.resource.data.role == "coach" &&
+          isClubOwner(clubId);
         // Un membre peut se retirer lui-même, ou le owner du club peut retirer n'importe qui
         allow delete: if isOwner(memberId) || isClubOwner(clubId);
       }
@@ -136,28 +132,37 @@ service cloud.firestore {
       }
     }
 
-    // Annuaire code→club : l'ID du doc EST le code d'invitation (normalisé).
-    // Remplace l'ancienne query `clubs where inviteCode ==` (impossible à
-    // sécuriser : les rules ne voient pas les clauses where d'une list, donc
-    // toute list sur clubs restait énumérable par pagination).
-    //  - get par code exact : autorisé à tout connecté — il faut CONNAÎTRE le
-    //    code (capability), on ne peut pas le découvrir ;
-    //  - list : interdite → énumération impossible ;
-    //  - contenu volontairement minimal et non sensible : clubId + name
-    //    (affichage "Tu as rejoint {name}"), PAS d'ownerUid ;
-    //  - create : uniquement par l'owner du club référencé, et seulement si le
-    //    code est COHÉRENT (clubs/{clubId}.inviteCode == code) — personne ne
-    //    peut planter un faux annuaire vers un club qui n'est pas le sien ;
-    //  - update/delete : interdits (pas de rotation de code aujourd'hui ; un
-    //    setDoc sur un code existant est un update → refusé = anti-écrasement).
-    match /inviteCodes/{code} {
-      allow get: if isSignedIn();
-      allow list: if false;
-      allow create: if isSignedIn() &&
-        request.resource.data.clubId is string &&
-        get(/databases/$(database)/documents/clubs/$(request.resource.data.clubId)).data.ownerUid == request.auth.uid &&
-        get(/databases/$(database)/documents/clubs/$(request.resource.data.clubId)).data.inviteCode == code;
-      allow update, delete: if false;
+    // ── Contrat d'invitation : 100 % SERVEUR ────────────────────────────────
+    //
+    // Les trois collections ci-dessous sont écrites et lues EXCLUSIVEMENT par
+    // les Cloud Functions `issueClubInviteCode` / `joinClubWithInviteCode`
+    // (Admin SDK, qui contourne ces règles). Aucun client n'y touche, jamais.
+    //
+    // inviteCodes/{hash} : l'ID du document est le SHA-256 du code normalisé —
+    //   le code en clair n'est stocké NULLE PART. `read: if false` supprime
+    //   l'ORACLE de l'ancien contrat : un `get` sur un code deviné répondait
+    //   exists()=true/false à tout compte connecté, et livrait clubId + nom du
+    //   club sans rien écrire ni laisser de trace. Une lecture cliente n'est
+    //   d'ailleurs plus d'aucune utilité : sans code en clair en base, il n'y a
+    //   plus rien à résoudre côté front.
+    //
+    // clubInviteMeta/{clubId} : pointeur vers l'empreinte du code ACTIF (sert à
+    //   révoquer le précédent lors d'une nouvelle émission). Fermé aussi : une
+    //   empreinte lisible par un membre offrirait une cible d'attaque hors ligne.
+    //
+    // inviteAttempts/{scope} : compteurs de la limitation de tentatives (portée
+    //   utilisateur et portée origine, l'origine étant hachée). Lisibles par un
+    //   client, ils diraient à un attaquant où il en est de son quota.
+    match /inviteCodes/{codeHash} {
+      allow read, write: if false;
+    }
+
+    match /clubInviteMeta/{clubId} {
+      allow read, write: if false;
+    }
+
+    match /inviteAttempts/{scopeKey} {
+      allow read, write: if false;
     }
   }
 }

@@ -210,7 +210,7 @@ describe("Séquence réelle members → summaries (chemin du lecteur coach)", ()
     const PLAYER = "playerC1";
     await admin(async (ctx) => {
       const fdb = ctx.firestore();
-      await setDoc(doc(fdb, "clubs", CLUB), { name: "Club C", ownerUid: OWNER, inviteCode: "CLBC-0001" });
+      await setDoc(doc(fdb, "clubs", CLUB), { name: "Club C", ownerUid: OWNER });
       await setDoc(doc(fdb, "clubs", CLUB, "members", PLAYER), { uid: PLAYER, role: "player" });
       await setDoc(doc(fdb, "clubs", CLUB, "playerSummaries", PLAYER), { ...SUMMARY, playerUid: PLAYER });
     });

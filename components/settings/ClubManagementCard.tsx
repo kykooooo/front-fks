@@ -10,12 +10,8 @@ import { theme } from "../../constants/theme";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
-import {
-  findClubByInviteCode,
-  normalizeInviteCode,
-  setClubMembership,
-  removeClubMembership,
-} from "../../repositories/clubsRepo";
+import { removeClubMembership } from "../../repositories/clubsRepo";
+import { joinClubWithInviteCode } from "../../services/clubInvites";
 import { showToast } from "../../utils/toast";
 
 const palette = theme.colors;
@@ -25,7 +21,6 @@ export function ClubManagementCard() {
 
   const [clubId, setClubId] = useState<string | null>(null);
   const [clubName, setClubName] = useState<string | null>(null);
-  const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [inputCode, setInputCode] = useState("");
@@ -51,11 +46,14 @@ export function ClubManagementCard() {
     );
   }, [uid]);
 
-  // Récupérer les infos du club (une seule fois, pas de listener)
+  // Récupérer les infos du club (une seule fois, pas de listener).
+  // Le code d'invitation n'est PLUS lisible ici : il n'existe plus dans le
+  // document club (seule son empreinte vit côté serveur). Un joueur n'a donc
+  // plus aucun moyen de rediffuser le code de son club — c'était une porte
+  // ouverte, ce n'est plus une fonctionnalité.
   useEffect(() => {
     if (!clubId) {
       setClubName(null);
-      setInviteCode(null);
       return;
     }
 
@@ -70,17 +68,12 @@ export function ClubManagementCard() {
         if (snap.exists()) {
           const data = snap.data() as any;
           setClubName(typeof data?.name === "string" ? data.name : null);
-          setInviteCode(typeof data?.inviteCode === "string" ? data.inviteCode : null);
         } else {
           setClubName(null);
-          setInviteCode(null);
         }
       } catch {
         // Permissions error - on affiche quand même le clubId
-        if (!cancelled) {
-          setClubName(null);
-          setInviteCode(null);
-        }
+        if (!cancelled) setClubName(null);
       }
     };
 
@@ -91,38 +84,35 @@ export function ClubManagementCard() {
     };
   }, [clubId]);
 
+  // Le front ne juge PLUS un code : il le transmet et affiche la réponse du
+  // serveur. Plus de contrôle de longueur (qui refusait localement des codes
+  // parfaitement valides), plus de "Club introuvable" décidé ici, et surtout
+  // plus de `e?.message` brut — un joueur français ne doit jamais lire
+  // "Missing or insufficient permissions".
   const handleJoinClub = async () => {
     if (!uid) return;
+    if (!inputCode.trim()) return;
 
-    const code = normalizeInviteCode(inputCode);
-    if (!code || code.length < 4) {
-      showToast({ type: "warn", title: "Code invalide", message: "Entre un code d'invitation valide." });
+    setJoining(true);
+    const outcome = await joinClubWithInviteCode(inputCode);
+    setJoining(false);
+
+    if (!outcome.ok) {
+      showToast({ type: "warn", title: "Club non rejoint", message: outcome.message });
       return;
     }
 
-    setJoining(true);
-    try {
-      const club = await findClubByInviteCode(code);
-      if (!club) {
-        showToast({ type: "warn", title: "Club introuvable", message: "Aucun club ne correspond à ce code." });
-        setJoining(false);
-        return;
-      }
-
-      // Ajouter le joueur au club (inviteCode = preuve d'invitation exigée par les rules)
-      await setClubMembership({ clubId: club.id, uid, role: "player", inviteCode: club.inviteCode });
-
-      // Mettre à jour le profil utilisateur
-      const userRef = doc(db, "users", uid);
-      await updateDoc(userRef, { clubId: club.id });
-
-      showToast({ type: "success", title: "Bienvenue !", message: `Tu as rejoint le club "${club.name}".` });
-      setInputCode("");
-    } catch (e: any) {
-      showToast({ type: "error", title: "Erreur", message: e?.message ?? "Impossible de rejoindre le club." });
-    } finally {
-      setJoining(false);
-    }
+    // Le clubId du profil est écrit par le serveur ; le listener onSnapshot
+    // ci-dessus le reflète. On ne le réécrit pas ici : ce serait une seconde
+    // source de vérité, et elle pourrait mentir.
+    showToast({
+      type: "success",
+      title: "Bienvenue !",
+      message: outcome.clubName
+        ? `Tu as rejoint le club "${outcome.clubName}".`
+        : "Tu as rejoint ton club.",
+    });
+    setInputCode("");
   };
 
   const handleLeaveClub = async () => {
@@ -147,8 +137,9 @@ export function ClubManagementCard() {
               await updateDoc(userRef, { clubId: null });
 
               showToast({ type: "success", title: "C'est fait", message: "Tu as quitté le club." });
-            } catch (e: any) {
-              showToast({ type: "error", title: "Erreur", message: e?.message ?? "Impossible de quitter le club." });
+            } catch {
+              // Message FR maîtrisé : le message brut de Firebase est en anglais.
+              showToast({ type: "error", title: "Erreur", message: "Impossible de quitter le club. Réessaie." });
             } finally {
               setLeaving(false);
             }
@@ -176,7 +167,7 @@ export function ClubManagementCard() {
           </View>
           <View style={styles.clubInfo}>
             <Text style={styles.clubName}>{clubName ?? "Club"}</Text>
-            <Text style={styles.clubCode}>Code: {inviteCode ?? "—"}</Text>
+            <Text style={styles.clubCode}>Membre de l'effectif</Text>
           </View>
           <Badge label="Membre" tone="ok" />
         </View>
@@ -209,11 +200,14 @@ export function ClubManagementCard() {
         <TextInput
           value={inputCode}
           onChangeText={setInputCode}
-          placeholder="Ex: FKSF1234"
+          placeholder="Ex: ABCDE-FGHJK"
           placeholderTextColor={palette.sub}
           style={styles.input}
           autoCapitalize="characters"
-          maxLength={10}
+          autoCorrect={false}
+          // Pas de maxLength serré : le format du code appartient au serveur.
+          // L'ancien plafond de 10 caractères aurait tronqué le code actuel.
+          maxLength={24}
         />
         <Button
           label={joining ? "..." : "Rejoindre"}

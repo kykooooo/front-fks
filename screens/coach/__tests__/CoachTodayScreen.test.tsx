@@ -75,7 +75,6 @@ function baseClub() {
     status: "ready" as "loading" | "ready" | "notInClub" | "error",
     clubId: "club-1" as string | null,
     clubName: "US Terrain" as string | null,
-    inviteCode: "FKS123" as string | null,
     teamGender: null as null | "female" | "male" | "mixed",
     weekKey: WEEK,
     weekContext: null,
@@ -404,12 +403,14 @@ describe("États — un vide n'est pas une panne", () => {
     expect(texte).not.toContain("Aujourd'hui dans le groupe");
   });
 
-  test("club sans joueur : le code d'invitation est mis en avant", async () => {
+  test("club sans joueur : on renvoie vers la génération du code, sans jamais l'afficher ici", async () => {
+    // Le code n'est plus relisible : le dupliquer sur cet écran obligerait à en
+    // émettre un second, qui révoquerait le premier. On oriente, on n'affiche pas.
     mockRoster.value = rosterReady([]);
     const texte = await renderText();
     expect(texte).toContain("Aucun joueur dans l'effectif");
-    expect(texte).toContain("Code d'invitation : FKS123");
-    expect(texte).toContain("Partager le code d'invitation");
+    expect(texte).toContain("Générer un code d'invitation");
+    expect(texte).not.toContain("Code d'invitation :");
   });
 });
 

@@ -40,7 +40,7 @@ const wireDocs = (opts: { user?: unknown | null; club?: unknown | null; throwsOn
     const collection = ref.path[0];
     if (opts.throwsOn === collection) throw new Error("permission-denied");
     if (collection === "users") return snap(opts.user === undefined ? { clubId: "clubX" } : opts.user);
-    return snap(opts.club === undefined ? { name: "AS Test", inviteCode: "TEST-0001", teamGender: "female" } : opts.club);
+    return snap(opts.club === undefined ? { name: "AS Test", teamGender: "female" } : opts.club);
   });
 };
 
@@ -60,7 +60,6 @@ describe("useCoachClub — coach SANS club (l'écran ne doit plus mentir)", () =
     expect(h.current.status).toBe("notInClub");
     expect(h.current.clubId).toBeNull();
     expect(h.current.clubName).toBeNull();
-    expect(h.current.inviteCode).toBeNull();
     await h.unmount();
   });
 
@@ -102,7 +101,6 @@ describe("useCoachClub — contexte club résolu", () => {
     expect(h.current.status).toBe("ready");
     expect(h.current.clubId).toBe("clubX");
     expect(h.current.clubName).toBe("AS Test");
-    expect(h.current.inviteCode).toBe("TEST-0001");
     expect(h.current.teamGender).toBe("female");
     expect(h.current.weekContext?.weekGoal).toBe("speed");
     // weekKey = lundi de la semaine, calculé avec l'HORLOGE DU COACH.

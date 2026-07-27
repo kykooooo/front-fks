@@ -1,7 +1,12 @@
 // hooks/coach/useCoachClub.ts
 //
-// Résolution du CONTEXTE CLUB du coach : identité du club (nom, code
-// d'invitation, type d'équipe) + cadre de la semaine courante.
+// Résolution du CONTEXTE CLUB du coach : identité du club (nom, type d'équipe)
+// + cadre de la semaine courante.
+//
+// Le CODE D'INVITATION n'est plus lu ici, et pour cause : il n'existe plus en
+// base sous forme lisible (seule son empreinte est stockée, dans une collection
+// fermée à tous les clients). Il est émis à la demande par la Cloud Function
+// `issueClubInviteCode` et affiché une seule fois — voir hooks/coach/useClubInviteCode.
 //
 // POURQUOI un hook dédié : aujourd'hui CoachHomeScreen fait ces lectures à la
 // main dans un gros `load()`, et surtout il n'a AUCUN état "coach sans club" —
@@ -11,7 +16,7 @@
 //
 // Le hook ne lit QUE des documents autorisés au coach :
 //   users/{uid}                          → son propre doc (clubId)
-//   clubs/{clubId}                       → nom, code d'invitation, type d'équipe
+//   clubs/{clubId}                       → nom, type d'équipe
 //   clubs/{clubId}/weekContexts/{weekKey} → cadre de la semaine (écrit par le coach)
 // Jamais users/{autre uid}, jamais sessions, jamais plannedSessions.
 //
@@ -35,7 +40,7 @@ import { weekKeyOf } from "../../utils/dateHelpers";
  *  - "error"     : lecture refusée / réseau — on ne devine rien.
  *
  * Sur un REFRESH raté, on passe en "error" mais on CONSERVE le contexte club
- * déjà lu (clubId, nom, code) : perdre le club sous les pieds du coach parce
+ * déjà lu (clubId, nom) : perdre le club sous les pieds du coach parce
  * qu'une requête a échoué serait plus faux que d'annoncer "mise à jour impossible".
  * `fetchedAt` reste alors l'horodatage de la dernière lecture RÉUSSIE.
  */
@@ -45,7 +50,6 @@ export type CoachClubState = {
   status: CoachClubStatus;
   clubId: string | null;
   clubName: string | null;
-  inviteCode: string | null;
   teamGender: ClubTeamGender | null;
   /** Lundi de la semaine courante ("YYYY-MM-DD"), horloge du coach. */
   weekKey: string;
@@ -70,7 +74,6 @@ const EMPTY: Omit<CoachClubSnapshot, "weekKey"> = {
   status: "loading",
   clubId: null,
   clubName: null,
-  inviteCode: null,
   teamGender: null,
   weekContext: null,
   weekContextUnavailable: false,
@@ -158,7 +161,6 @@ export function useCoachClub(options?: UseCoachClubOptions): CoachClubState {
       }
 
       let clubName: string | null = null;
-      let inviteCode: string | null = null;
       let teamGender: ClubTeamGender | null = null;
       try {
         const clubSnap = await getDoc(doc(db, "clubs", clubId));
@@ -171,7 +173,6 @@ export function useCoachClub(options?: UseCoachClubOptions): CoachClubState {
         }
         const data = clubSnap.data() as Record<string, unknown>;
         clubName = typeof data?.name === "string" && data.name.trim() ? data.name.trim() : null;
-        inviteCode = typeof data?.inviteCode === "string" ? data.inviteCode : null;
         teamGender = normalizeTeamGender(data?.teamGender);
       } catch {
         if (!accept()) return;
@@ -196,7 +197,6 @@ export function useCoachClub(options?: UseCoachClubOptions): CoachClubState {
         status: "ready",
         clubId,
         clubName,
-        inviteCode,
         teamGender,
         weekKey,
         weekContext,

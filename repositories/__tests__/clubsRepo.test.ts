@@ -38,7 +38,16 @@ const validPayload = (over: Record<string, unknown> = {}) => ({
 
 jest.mock("firebase/firestore", () => ({
   collection: (_db: unknown, ...path: string[]) => ({ __kind: "collection", path }),
-  doc: (_db: unknown, ...path: string[]) => ({ __kind: "doc", path }),
+  // Deux formes réelles : doc(db, ...segments) et doc(collectionRef) (ID auto,
+  // utilisé par createClub). La seconde doit produire un id, sinon le test ne
+  // verrait pas la différence entre "club créé" et "club sans identité".
+  doc: (dbOrRef: any, ...path: string[]) => {
+    if (dbOrRef && dbOrRef.__kind === "collection") {
+      const id = "autoId1";
+      return { __kind: "doc", path: [...dbOrRef.path, id], id };
+    }
+    return { __kind: "doc", path, id: path[path.length - 1] };
+  },
   query: (ref: any) => ref, // limit/orderBy passent au travers, la ref garde son path
   limit: () => ({ __clause: "limit" }),
   orderBy: () => ({ __clause: "orderBy" }),
@@ -68,15 +77,18 @@ jest.mock("firebase/firestore", () => ({
   }),
 }));
 
+import { setDoc } from "firebase/firestore";
 import {
-  normalizeInviteCode,
-  generateInviteCode,
-  findClubByInviteCode,
+  createClub,
+  setClubMembership,
   fetchClubPlayerSummaries,
   fetchClubPlayerSummary,
 } from "../clubsRepo";
 
+const setDocMock = setDoc as unknown as jest.Mock;
+
 beforeEach(() => {
+  setDocMock.mockClear();
   mockFirestoreReads.length = 0;
   mockFlags.membersThrows = false;
   mockFlags.members = [];
@@ -92,62 +104,44 @@ const summaryDocIds = () =>
 const memberCollectionReads = () =>
   mockFirestoreReads.filter((r) => r.kind === "collection" && r.path[r.path.length - 1] === "members");
 
-describe("normalizeInviteCode", () => {
-  test("met en majuscules et retire les espaces", () => {
-    expect(normalizeInviteCode("  fksf-1234 ")).toBe("FKSF-1234");
-    expect(normalizeInviteCode("ab cd 12")).toBe("ABCD12");
-  });
+// ─── Contrat d'invitation : ce que le repository ne fait PLUS ───────────────
+// La génération, la résolution et la preuve d'invitation ont quitté le front.
+// Ces tests verrouillent l'absence : si quelqu'un remet un code dans le
+// document club ou dans le membership, ils tombent.
 
-  test("retire les caractères non alphanumériques (hors tiret)", () => {
-    expect(normalizeInviteCode("fk@s#f_1234!")).toBe("FKSF1234");
-    expect(normalizeInviteCode("ABC-123")).toBe("ABC-123");
-  });
+describe("createClub — plus aucun code d'invitation côté client", () => {
+  test("n'écrit AUCUN champ inviteCode et ne lit jamais la collection inviteCodes", async () => {
+    const club = await createClub({ name: "Club X", ownerUid: "coachA" });
 
-  test("chaîne vide ou invalide → vide", () => {
-    expect(normalizeInviteCode("")).toBe("");
-    expect(normalizeInviteCode("   ")).toBe("");
-  });
-});
-
-describe("generateInviteCode", () => {
-  test("respecte le format PREFIX-DDDD", () => {
-    const code = generateInviteCode("FC Exemple");
-    expect(code).toMatch(/^[A-Z]{1,4}-\d{4}$/);
-  });
-
-  test("utilise le début du nom du club comme préfixe quand possible", () => {
-    const code = generateInviteCode("Lille");
-    expect(code.startsWith("LILL-")).toBe(true);
-  });
-
-  test("génère un préfixe de secours si le nom est trop court", () => {
-    const code = generateInviteCode("FC");
-    expect(code).toMatch(/^[A-Z]{4}-\d{4}$/);
-  });
-});
-
-describe("findClubByInviteCode — résolution via l'annuaire /inviteCodes/{code} (jamais de query clubs)", () => {
-  test("code connu : get doc inviteCodes/{CODE normalisé} → clubId + name, AUCUNE lecture de la collection clubs", async () => {
-    mockFlags.summaryById["FKSF-1234"] = {
-      exists: true,
-      data: () => ({ clubId: "clubX", name: "Club X" }),
-    };
-    const club = await findClubByInviteCode("  fksf-1234 ");
-    expect(club).toEqual({ id: "clubX", name: "Club X", inviteCode: "FKSF-1234", ownerUid: "" });
-    // Preuve anti-énumération : un seul chemin lu, et c'est l'annuaire.
-    expect(mockFirestoreReads).toEqual([{ kind: "doc", path: ["inviteCodes", "FKSF-1234"] }]);
-  });
-
-  test("code inconnu (doc absent) → null ; doc sans clubId → null", async () => {
-    mockFlags.detailDoc = { exists: false, data: () => ({}) };
-    expect(await findClubByInviteCode("ZZZZ-0000")).toBeNull();
-    mockFlags.detailDoc = { exists: true, data: () => ({ name: "Sans clubId" }) };
-    expect(await findClubByInviteCode("ZZZZ-0000")).toBeNull();
-  });
-
-  test("code vide/invalide → null sans aucune lecture Firestore", async () => {
-    expect(await findClubByInviteCode("   ")).toBeNull();
+    expect(club).toEqual({ id: expect.any(String), name: "Club X", ownerUid: "coachA" });
+    // Aucune lecture : l'ancien contrôle d'unicité du code a disparu avec le code.
     expect(mockFirestoreReads).toHaveLength(0);
+
+    expect(setDocMock).toHaveBeenCalledTimes(1);
+    const payload = setDocMock.mock.calls[0][1];
+    expect(payload).not.toHaveProperty("inviteCode");
+    expect(payload).toMatchObject({ name: "Club X", ownerUid: "coachA" });
+    // Et surtout : rien n'est écrit dans l'annuaire (collection fermée).
+    expect(
+      setDocMock.mock.calls.some((c: any[]) => c[0]?.path?.[0] === "inviteCodes"),
+    ).toBe(false);
+  });
+
+  test("nom vide → erreur explicite, aucune écriture", async () => {
+    await expect(createClub({ name: "   ", ownerUid: "coachA" })).rejects.toThrow("CLUB_NAME_REQUIRED");
+    expect(setDocMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("setClubMembership — le membership ne porte plus de preuve", () => {
+  test("écrit uid/role sans champ inviteCode (la preuve est l'écriture serveur elle-même)", async () => {
+    await setClubMembership({ clubId: "clubX", uid: "coachA", role: "coach" });
+
+    expect(setDocMock).toHaveBeenCalledTimes(1);
+    const [ref, payload] = setDocMock.mock.calls[0];
+    expect(ref.path).toEqual(["clubs", "clubX", "members", "coachA"]);
+    expect(payload).not.toHaveProperty("inviteCode");
+    expect(payload).toMatchObject({ uid: "coachA", role: "coach" });
   });
 });
 

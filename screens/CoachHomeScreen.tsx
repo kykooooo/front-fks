@@ -1,6 +1,11 @@
 // screens/CoachHomeScreen.tsx
-// Espace coach minimal : nom du club, code d'invitation à partager, liste des joueurs.
+// Espace coach minimal : nom du club, liste des joueurs.
 // Lecture seule : le coach observe, il ne modifie ni les profils ni les séances.
+//
+// ÉCRAN HÉRITÉ : plus monté par aucune route (navigation/CoachTabs.tsx ne charge
+// que screens/coach/*). Il compile encore, donc il est maintenu au niveau du
+// contrat de données — le code d'invitation en a été retiré, puisqu'il n'existe
+// plus dans le document club.
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -9,7 +14,6 @@ import {
   TextInput,
   StyleSheet,
   ActivityIndicator,
-  Share,
   TouchableOpacity,
   RefreshControl,
 } from "react-native";
@@ -93,7 +97,6 @@ export default function CoachHomeScreen() {
 
   const [clubId, setClubId] = useState<string | null>(null);
   const [clubName, setClubName] = useState<string | null>(null);
-  const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [summaries, setSummaries] = useState<CoachPlayerSummary[]>([]);
   const [summariesUnavailable, setSummariesUnavailable] = useState(false);
   // Nb de membres player dont la projection n'est pas encore prête (compteur only,
@@ -135,7 +138,6 @@ export default function CoachHomeScreen() {
       if (!resolvedClubId || typeof resolvedClubId !== "string") {
         setClubId(null);
         setClubName(null);
-        setInviteCode(null);
         setSummaries([]);
         setSummariesUnavailable(false);
         setSummariesPending(0);
@@ -148,7 +150,6 @@ export default function CoachHomeScreen() {
       if (clubSnap.exists()) {
         const data = clubSnap.data() as any;
         setClubName(typeof data?.name === "string" ? data.name : "Mon club");
-        setInviteCode(typeof data?.inviteCode === "string" ? data.inviteCode : null);
         setTeamGender(normalizeTeamGender(data?.teamGender));
       }
 
@@ -230,18 +231,6 @@ export default function CoachHomeScreen() {
     await load(); // relit la collection playerSummaries (pull-to-refresh)
     setRefreshing(false);
   }, [load]);
-
-  const handleShareCode = async () => {
-    if (!inviteCode) return;
-    haptics.impactLight();
-    try {
-      await Share.share({
-        message: `Rejoins notre club sur FKS avec le code : ${inviteCode}`,
-      });
-    } catch {
-      // L'utilisateur a annulé le partage : rien à signaler.
-    }
-  };
 
   const handleSignOut = async () => {
     try {
@@ -345,27 +334,14 @@ export default function CoachHomeScreen() {
     );
   };
 
-  // ── Onglet "Semaine" : code club compact + cadre ──
+  // ── Onglet "Semaine" : cadre de la semaine ──
+  // ÉCRAN HÉRITÉ, plus monté par aucune route (navigation/CoachTabs ne charge
+  // que screens/coach/*). Le bloc « code club » y a été retiré : le code n'est
+  // plus stocké dans le document club, il est émis à la demande par une Cloud
+  // Function et affiché une seule fois (cf. screens/coach/CoachWeekScreen).
+  // Le laisser afficherait un tiret permanent avec un bouton mort.
   const renderSemaine = () => (
     <>
-      <Card variant="soft" style={styles.codeCardCompact}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.codeLabel}>Code club</Text>
-          <Text style={styles.codeValueCompact} numberOfLines={1}>{inviteCode ?? "—"}</Text>
-        </View>
-        <TouchableOpacity
-          style={[styles.shareBtn, !inviteCode && styles.shareBtnDisabled]}
-          onPress={handleShareCode}
-          disabled={!inviteCode}
-          accessibilityLabel="Partager le code"
-          hitSlop={8}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="share-outline" size={16} color={palette.accent} />
-          <Text style={styles.shareBtnText}>Partager</Text>
-        </TouchableOpacity>
-      </Card>
-
       <Card variant="soft" style={styles.contextCard}>
         <View style={styles.weekHead}>
           <Text style={styles.weekRange}>{formatCoachWeekLabel(weekKey)}</Text>

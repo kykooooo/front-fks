@@ -22,7 +22,7 @@
 // l'horloge du coach, et injectable via la prop `now` (tests, horloge virtuelle).
 
 import React, { useMemo } from "react";
-import { Pressable, RefreshControl, Share, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 
@@ -95,8 +95,6 @@ export type CoachTodayScreenProps = {
   onOpenRoster?: (filter: CoachRosterFilter, clubId: string) => void;
   /** Ouvre l'écran Semaine. Défaut : navigation vers `CoachWeek`. */
   onOpenWeek?: (clubId: string) => void;
-  /** Partage du code d'invitation. Défaut : feuille de partage système. */
-  onShareInviteCode?: (code: string) => void;
   /** Horloge injectable (tests / horloge virtuelle de dev). */
   now?: () => number;
 };
@@ -105,7 +103,6 @@ export default function CoachTodayScreen({
   onOpenPlayer,
   onOpenRoster,
   onOpenWeek,
-  onShareInviteCode,
   now,
 }: CoachTodayScreenProps) {
   const haptics = useHaptics();
@@ -213,18 +210,9 @@ export default function CoachTodayScreen({
     go(COACH_TODAY_ROUTES.week, { clubId: club.clubId });
   };
 
-  const shareInviteCode = () => {
-    const code = club.inviteCode;
-    if (!code) return;
-    haptics.impactLight();
-    if (onShareInviteCode) {
-      onShareInviteCode(code);
-      return;
-    }
-    Share.share({ message: `Rejoins notre club sur FKS avec le code : ${code}` }).catch(() => {
-      // Partage annulé par l'utilisateur : rien à signaler.
-    });
-  };
+  // Le code d'invitation ne vit plus qu'à UN endroit : l'écran Semaine, au
+  // moment où il est généré. Le dupliquer ici obligerait à en émettre un second
+  // — qui révoquerait le premier. Un club vide renvoie donc vers Semaine.
 
   // ── En-tête : deux lignes, pas une de plus ────────────────────────────────
   // Le club, le jour, la fraîcheur, un bouton d'actualisation. Tout ce qui
@@ -358,18 +346,18 @@ export default function CoachTodayScreen({
   }
 
   if (roster.memberCount === 0) {
-    // Club vide : le code d'invitation est LA sortie utile, on le met en avant
-    // au lieu d'obliger le coach à aller le chercher dans un autre écran.
+    // Club vide : la sortie utile est d'inviter, et l'invitation se génère dans
+    // l'écran Semaine. On y emmène le coach au lieu d'afficher un code qu'on
+    // n'a plus le droit de relire.
     return screen(
       <View style={styles.blockCard}>
         <CoachEmptyState
           variant="clubWithoutPlayers"
           action={
-            club.inviteCode
-              ? { onPress: shareInviteCode, accessibilityHint: "Ouvre le partage du code d'invitation" }
+            club.clubId
+              ? { onPress: openWeek, accessibilityHint: "Ouvre l'écran Semaine pour générer un code" }
               : null
           }
-          footnote={club.inviteCode ? `Code d'invitation : ${club.inviteCode}` : null}
           testID="coach-today-empty-club"
         />
       </View>,
