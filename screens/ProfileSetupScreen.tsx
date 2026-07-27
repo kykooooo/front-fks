@@ -33,6 +33,7 @@ import {
   normalizeInviteCodeInput,
 } from "../services/clubInvites";
 import { saveProfileThenAttachClub } from "./profileSetup/attachClub";
+import { ClubDataDisclosure } from "../components/club/ClubDataDisclosure";
 import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
 // Catégories proposées au sélecteur : U13 retirée (décision produit 2026-07, cf.
 // domain/types.ts). Un profil déjà en 'U13' n'apparaît sélectionné dans aucun
@@ -552,6 +553,10 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
             <Text style={styles.fieldHelp}>
               Ton coach te le donne. Tu peux aussi le renseigner plus tard depuis ton profil.
             </Text>
+            {/* Divulgation : quelles catégories d'infos le club verra. Elle
+                INFORME, elle ne demande rien et ne bloque rien — ni le champ
+                ci-dessus, ni le bouton « Continuer ». */}
+            <ClubDataDisclosure style={styles.disclosure} />
 
             <Text style={styles.fieldLabel}>Poste</Text>
             {positions.map((p) => (
@@ -1029,6 +1034,9 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     color: palette.muted,
     marginTop: 6,
+  },
+  disclosure: {
+    marginTop: 10,
   },
 
   /* Choice */

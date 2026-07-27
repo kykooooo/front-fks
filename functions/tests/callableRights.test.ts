@@ -227,16 +227,36 @@ describe("9.b — joinClubWithInviteCode appelee directement", () => {
     expect(store.read(invitePaths.member(CLUB_A, STRANGER))).toBeNull();
   });
 
-  it("9.9 un rattachement REUSSI n'ouvre pas l'acces au suivi (mineur -> en attente)", async () => {
-    // Franchir la porte du club et devenir consultable par le coach sont deux
-    // choses differentes. C'est le serveur qui pose l'etat, pas le client.
+  it("9.9 l'etat d'acces pose au rattachement vient du SERVEUR, jamais du client", async () => {
+    // Franchir la porte du club et devenir consultable par le coach restent
+    // deux choses differentes. Ce qui les relie est la POLITIQUE DU CLUB, posee
+    // cote serveur : un club en "approval_required" laisse entrer sans ouvrir.
+    // Le client ne peut ni choisir cet etat, ni le suggerer.
     const store = baseStore();
     seedCodeClubA(store, "ABCDEFGHJK");
+    store.seed(invitePaths.club(CLUB_A), {
+      name: "Club A",
+      ownerUid: COACH_A,
+      coachAccessPolicy: "approval_required",
+    });
     store.seed(invitePaths.user(STRANGER), { uid: STRANGER, ageCategory: "U15" });
 
     const result = await joinClubWithCode(deps(store), { uid: STRANGER, rawCode: "ABCDEFGHJK" });
     expect(result.coachAccess).toBe("pending");
     expect(store.read(invitePaths.member(CLUB_A, STRANGER))?.coachAccess).toBe("pending");
+  });
+
+  it("9.9b sur un club en mode par defaut, un rattachement volontaire ouvre la projection non sensible", async () => {
+    // Le pendant du test precedent : sans configuration explicite, le club du
+    // pilote laisse entrer ET rend le joueur consultable. Ce qui reste ferme,
+    // ce sont les donnees sensibles — c'est la frontiere coach-safe qui s'en
+    // charge (functions/src/dto.ts), pas cet interrupteur.
+    const store = baseStore();
+    seedCodeClubA(store, "ABCDEFGHJK");
+    store.seed(invitePaths.user(STRANGER), { uid: STRANGER, ageCategory: "U15" });
+
+    const result = await joinClubWithCode(deps(store), { uid: STRANGER, rawCode: "ABCDEFGHJK" });
+    expect(result.coachAccess).toBe("not_required");
   });
 
   it("9.10 la reponse de rattachement ne transporte aucune donnee d'un autre joueur", async () => {

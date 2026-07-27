@@ -13,12 +13,13 @@
 //     possible (le magasin d'ecriture est remplace, pas conditionne) ;
 //  2. `--apply` seul ne suffit pas : il faut AUSSI `--je-confirme`. Deux mots a
 //     taper, c'est le minimum pour une commande qui touche une base ;
-//  3. la sortie ne contient AUCUN identifiant, AUCUN prenom, AUCUNE categorie
-//     d'age : uniquement des compteurs.
+//  3. la sortie ne contient AUCUN identifiant, AUCUN prenom : uniquement des
+//     compteurs.
 
 import { type Firestore } from "firebase-admin/firestore";
 import { getDb } from "./admin";
 import { COACH_ACCESS_FIELD, type CoachAccessState } from "./coachAccess";
+import { COACH_ACCESS_POLICY_FIELD } from "./coachAccessPolicy";
 import { paths } from "./config";
 import {
   runCoachAccessBackfill,
@@ -47,10 +48,10 @@ export function createBackfillStore(db: Firestore): CoachAccessBackfillStore {
       const data = (snap.data() ?? {}) as Record<string, unknown>;
       return { role: data.role, coachAccess: data[COACH_ACCESS_FIELD] };
     },
-    async readAgeCategory(playerUid: string) {
-      const snap = await db.doc(paths.user(playerUid)).get();
+    async readClubPolicy(clubId: string) {
+      const snap = await db.doc(paths.club(clubId)).get();
       if (!snap.exists) return undefined;
-      return ((snap.data() ?? {}) as Record<string, unknown>).ageCategory;
+      return ((snap.data() ?? {}) as Record<string, unknown>)[COACH_ACCESS_POLICY_FIELD];
     },
     async writeCoachAccess(clubId: string, playerUid: string, state: CoachAccessState) {
       await db

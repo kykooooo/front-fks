@@ -8,7 +8,8 @@
 import { onDocumentWritten, type FirestoreEvent, type Change, type DocumentSnapshot } from "firebase-functions/v2/firestore";
 import { getDb } from "./admin";
 import { COACH_ACCESS_FIELD, type CoachAccessState } from "./coachAccess";
-import { syncCoachAccessFromProfile, type MemberAccessStore } from "./coachAccessSync";
+import { COACH_ACCESS_POLICY_FIELD } from "./coachAccessPolicy";
+import { ensureCoachAccessState, type MemberAccessStore } from "./coachAccessSync";
 import { MIN_INSTANCES, paths, REGION } from "./config";
 import { rebuildPlayerSummary } from "./rebuild";
 import { watermarkFromEvent } from "./watermark";
@@ -39,10 +40,10 @@ function memberAccessStore(): MemberAccessStore {
       const data = (snap.data() ?? {}) as Record<string, unknown>;
       return { role: data.role, coachAccess: data[COACH_ACCESS_FIELD] };
     },
-    async readAgeCategory(playerUid: string) {
-      const snap = await db.doc(paths.user(playerUid)).get();
+    async readClubPolicy(clubId: string) {
+      const snap = await db.doc(paths.club(clubId)).get();
       if (!snap.exists) return undefined;
-      return ((snap.data() ?? {}) as Record<string, unknown>).ageCategory;
+      return ((snap.data() ?? {}) as Record<string, unknown>)[COACH_ACCESS_POLICY_FIELD];
     },
     async writeCoachAccess(clubId: string, playerUid: string, state: CoachAccessState) {
       await db
@@ -85,18 +86,24 @@ export const onUserWritten = onDocumentWritten(
     if (afterClub) clubIds.add(afterClub);
     const watermark = watermarkFromEvent(event);
 
-    // AVANT de reprojeter : réaligner l'état d'autorisation sur le profil courant.
-    // C'est ici, et NULLE PART AILLEURS, que la catégorie d'âge peut changer.
-    // Ce recalcul ne peut que resserrer, ou lever le doute d'une catégorie
-    // devenue connue — il ne produit JAMAIS "approved" (cf. resolveCoachAccess).
-    // Une écriture effective redéclenche `onMemberWritten`, donc une seconde
-    // reconstruction avec un watermark plus récent : c'est voulu, et borné (le
-    // second passage ne réécrit rien puisque la valeur est alors stable).
+    // AVANT de reprojeter : RÉPARER l'état d'autorisation s'il manque.
+    //
+    // Ce n'est plus un recalcul lié au profil — la catégorie d'âge n'entre plus
+    // dans la décision (cf. coachAccess.ts). Ce qui reste ici est un filet :
+    // un membership écrit avant l'existence du champ, ou porteur d'une valeur
+    // illisible, se voit poser l'état initial de la politique de son club. Un
+    // état déjà valide n'est JAMAIS retouché, donc changer la politique d'un
+    // club ne redistribue rien en silence au prochain enregistrement de profil.
+    //
+    // Coût : dans le cas courant (état déjà posé), AUCUNE lecture du club n'est
+    // faite. Une écriture effective redéclenche `onMemberWritten`, donc une
+    // seconde reconstruction avec un watermark plus récent : c'est voulu, et
+    // borné (le second passage ne réécrit rien, la valeur est alors stable).
     const accessStore = memberAccessStore();
     await Promise.all(
       [...clubIds].map(async (clubId) => {
         try {
-          await syncCoachAccessFromProfile(accessStore, clubId, playerUid);
+          await ensureCoachAccessState(accessStore, clubId, playerUid);
         } catch {
           // Échec du recalcul : on NE bloque pas la reconstruction. L'état déjà
           // en base reste en vigueur — et il est fail-closed par construction.

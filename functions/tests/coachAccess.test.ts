@@ -5,12 +5,16 @@
 //
 // Ce que cette suite verrouille :
 //  1. la decision elle-meme (default-deny sur toute valeur non autorisante) ;
-//  2. l'etat INITIAL au rattachement, dont le cas "age inconnu -> pending" ;
+//  2. l'etat INITIAL au rattachement, gouverne par la SEULE politique du club —
+//     et l'absence totale de verrou d'age dans ce chemin ;
 //  3. le fait que le PROJECTEUR ne produit RIEN quand l'etat refuse — donc que
 //     rebuild supprime la projection existante (chemin `null` deja teste) ;
-//  4. le recalcul serveur : il ne fabrique jamais un "approved", il ne pietine
-//     jamais une decision humaine, et il n'ecrit que s'il change quelque chose.
+//  4. la reparation serveur : elle ne fabrique jamais un "approved", ne
+//     reevalue jamais un etat deja pose, et n'ecrit que si elle change quelque
+//     chose.
 
+import { readFileSync } from "fs";
+import { resolve } from "path";
 import {
   COACH_ACCESS_FIELD,
   COACH_ACCESS_GRANTING_STATES,
@@ -19,11 +23,10 @@ import {
   isCoachAccessGranted,
   isMembershipCoachAccessGranted,
   normalizeCoachAccess,
-  requiresExtraStep,
   resolveCoachAccess,
 } from "../src/coachAccess";
 import {
-  syncCoachAccessFromProfile,
+  ensureCoachAccessState,
   type MemberAccessStore,
   type MemberSnapshot,
 } from "../src/coachAccessSync";
@@ -80,25 +83,43 @@ describe("isCoachAccessGranted — default-deny", () => {
   });
 });
 
-// ─── 2. Etat initial au rattachement ────────────────────────────────────────
+// ─── 2. Etat initial au rattachement : la politique, PAS l'age ──────────────
 
-describe("initialCoachAccess — l'age inconnu vaut refus", () => {
-  it("U13 et U15 exigent une etape supplementaire -> pending", () => {
-    expect(initialCoachAccess("U13")).toBe("pending");
-    expect(initialCoachAccess("U15")).toBe("pending");
-    expect(requiresExtraStep("U15")).toBe(true);
+describe("initialCoachAccess — plus AUCUN verrou d'age", () => {
+  it("le mode par defaut ouvre la projection non sensible", () => {
+    expect(initialCoachAccess("automatic_safe_projection")).toBe("not_required");
+    expect(initialCoachAccess(undefined)).toBe("not_required");
   });
 
-  it("U17 / U18 / Senior -> not_required (aucune friction ajoutee)", () => {
-    expect(initialCoachAccess("U17")).toBe("not_required");
-    expect(initialCoachAccess("U18")).toBe("not_required");
-    expect(initialCoachAccess("Senior")).toBe("not_required");
-    expect(requiresExtraStep("Senior")).toBe(false);
+  it("le mode approval_required pose pending", () => {
+    expect(initialCoachAccess("approval_required")).toBe("pending");
   });
 
-  it("categorie ABSENTE, vide ou non reconnue -> pending (on ne devine jamais un age)", () => {
-    for (const v of [undefined, null, "", "  ", "U11", "u15", "adulte", 15, {}]) {
-      expect(initialCoachAccess(v)).toBe("pending");
+  it("une CATEGORIE D'AGE passee ici n'est pas une politique : elle vaut le defaut", () => {
+    // Temoin explicite de la suppression du verrou. Avant, "U15" produisait
+    // "pending" et "Senior" produisait "not_required". Desormais, aucune de ces
+    // chaines n'est une politique reconnue : elles retombent toutes sur le
+    // defaut, donc sur le MEME etat. Un mineur et un adulte sont indiscernables
+    // pour cette fonction.
+    for (const age of ["U13", "U15", "U17", "U18", "Senior", "u15", "adulte", 15, {}]) {
+      expect(initialCoachAccess(age)).toBe("not_required");
+    }
+  });
+
+  it("le fichier de decision ne contient plus AUCUN symbole d'age", () => {
+    // Verrou de non-regression lisible : reintroduire normalizeAgeCategory ou
+    // une liste de categories dans le chemin de decision fait echouer ce test.
+    // On ne juge que le CODE (les commentaires, eux, ont le droit d'expliquer
+    // pourquoi le verrou d'age a ete retire).
+    const code = readFileSync(resolve(__dirname, "..", "src", "coachAccess.ts"), "utf8")
+      .split("\n")
+      .filter((l) => {
+        const t = l.trimStart();
+        return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*");
+      })
+      .join("\n");
+    for (const symbole of ["normalizeAgeCategory", "ageCategory", "AgeCategory", "coachLabels"]) {
+      expect(code).not.toContain(symbole);
     }
   });
 });
@@ -161,30 +182,46 @@ describe("projectPlayerSummary — verrou d'autorisation (couche 2)", () => {
   });
 });
 
-// ─── 4. Recalcul serveur ────────────────────────────────────────────────────
+// ─── 4. Reparation serveur ──────────────────────────────────────────────────
 
-describe("resolveCoachAccess — ne fabrique jamais une autorisation", () => {
-  it("approved et revoked sont des decisions humaines : jamais ecrasees", () => {
-    expect(resolveCoachAccess("approved", "U15")).toBe("approved");
-    expect(resolveCoachAccess("approved", undefined)).toBe("approved");
-    expect(resolveCoachAccess("revoked", "Senior")).toBe("revoked");
+describe("resolveCoachAccess — ne fabrique ni ne retire jamais une autorisation", () => {
+  it("TOUT etat deja pose est conserve, dans les deux modes", () => {
+    for (const politique of ["automatic_safe_projection", "approval_required", undefined]) {
+      expect(resolveCoachAccess("approved", politique)).toBe("approved");
+      expect(resolveCoachAccess("revoked", politique)).toBe("revoked");
+      expect(resolveCoachAccess("pending", politique)).toBe("pending");
+      expect(resolveCoachAccess("not_required", politique)).toBe("not_required");
+    }
   });
 
-  it("leve le doute quand la categorie devient connue et hors etape supplementaire", () => {
-    expect(resolveCoachAccess("pending", "Senior")).toBe("not_required");
-    expect(resolveCoachAccess(undefined, "U18")).toBe("not_required");
+  it("changer la politique NE REEVALUE PAS un membre existant", () => {
+    // Un club qui bascule en approval_required ne perd pas la visibilite sur
+    // ses membres deja rattaches : leur "not_required" reste tel quel.
+    expect(resolveCoachAccess("not_required", "approval_required")).toBe("not_required");
+    // Et l'inverse est vrai aussi : repasser en mode par defaut n'ouvre pas
+    // d'un coup les acces laisses en attente.
+    expect(resolveCoachAccess("pending", "automatic_safe_projection")).toBe("pending");
   });
 
-  it("RESSERRE quand la categorie devient une categorie a etape supplementaire", () => {
-    expect(resolveCoachAccess("not_required", "U15")).toBe("pending");
+  it("une valeur ILLISIBLE est reparee selon la politique du club", () => {
+    expect(resolveCoachAccess(undefined, "approval_required")).toBe("pending");
+    expect(resolveCoachAccess("APPROVED", "approval_required")).toBe("pending");
+    expect(resolveCoachAccess(undefined, "automatic_safe_projection")).toBe("not_required");
+    expect(resolveCoachAccess("", undefined)).toBe("not_required");
   });
 
   it("ne produit JAMAIS approved, quelle que soit l'entree", () => {
-    const etats: unknown[] = ["pending", "not_required", "", undefined, null, "bidon"];
-    const ages: unknown[] = ["U13", "U15", "U17", "U18", "Senior", undefined, "inconnu"];
+    const etats: unknown[] = ["pending", "not_required", "revoked", "", undefined, null, "bidon"];
+    const politiques: unknown[] = [
+      "automatic_safe_projection",
+      "approval_required",
+      undefined,
+      "inconnu",
+      {},
+    ];
     for (const e of etats) {
-      for (const a of ages) {
-        expect(resolveCoachAccess(e, a)).not.toBe("approved");
+      for (const p of politiques) {
+        expect(resolveCoachAccess(e, p)).not.toBe("approved");
       }
     }
   });
@@ -192,87 +229,121 @@ describe("resolveCoachAccess — ne fabrique jamais une autorisation", () => {
 
 type FakeState = {
   members: Record<string, MemberSnapshot | null>;
-  ages: Record<string, unknown>;
+  policies: Record<string, unknown>;
   writes: { clubId: string; playerUid: string; state: string }[];
+  /** Clubs dont la politique a REELLEMENT ete lue (mesure du cout). */
+  policyReads: string[];
 };
 
 const fakeStore = (state: FakeState): MemberAccessStore => ({
   async readMember(clubId, playerUid) {
     return state.members[`${clubId}/${playerUid}`] ?? null;
   },
-  async readAgeCategory(playerUid) {
-    return state.ages[playerUid];
+  async readClubPolicy(clubId) {
+    state.policyReads.push(clubId);
+    return state.policies[clubId];
   },
   async writeCoachAccess(clubId, playerUid, s) {
     state.writes.push({ clubId, playerUid, state: s });
   },
 });
 
-describe("syncCoachAccessFromProfile — recalcul au changement de profil", () => {
+describe("ensureCoachAccessState — reparation, jamais reevaluation", () => {
   const mk = (over: Partial<FakeState> = {}): FakeState => ({
     members: {},
-    ages: {},
+    policies: {},
     writes: [],
+    policyReads: [],
     ...over,
   });
 
-  it("age inconnu au rattachement, puis profil Senior renseigne -> not_required", async () => {
-    const state = mk({
-      members: { "clubA/p1": { role: "player", coachAccess: "pending" } },
-      ages: { p1: "Senior" },
-    });
-    const res = await syncCoachAccessFromProfile(fakeStore(state), "clubA", "p1");
-    expect(res).toEqual({ action: "updated", from: "pending", to: "not_required" });
+  it("membership ANCIEN sans le champ, club en mode par defaut -> not_required", async () => {
+    const state = mk({ members: { "clubA/p1": { role: "player", coachAccess: undefined } } });
+    const res = await ensureCoachAccessState(fakeStore(state), "clubA", "p1");
+    expect(res).toEqual({ action: "updated", from: undefined, to: "not_required" });
     expect(state.writes).toEqual([{ clubId: "clubA", playerUid: "p1", state: "not_required" }]);
   });
 
-  it("profil passe a U15 -> RESSERRE en pending", async () => {
+  it("membership ANCIEN sans le champ, club en approval_required -> pending", async () => {
     const state = mk({
-      members: { "clubA/p1": { role: "player", coachAccess: "not_required" } },
-      ages: { p1: "U15" },
+      members: { "clubA/p1": { role: "player", coachAccess: undefined } },
+      policies: { clubA: "approval_required" },
     });
-    const res = await syncCoachAccessFromProfile(fakeStore(state), "clubA", "p1");
-    expect(res).toEqual({ action: "updated", from: "not_required", to: "pending" });
+    const res = await ensureCoachAccessState(fakeStore(state), "clubA", "p1");
+    expect(res).toEqual({ action: "updated", from: undefined, to: "pending" });
+  });
+
+  it("valeur ILLISIBLE -> reparee, jamais laissee telle quelle", async () => {
+    const state = mk({ members: { "clubA/p1": { role: "player", coachAccess: "APPROVED" } } });
+    const res = await ensureCoachAccessState(fakeStore(state), "clubA", "p1");
+    expect(res).toEqual({ action: "updated", from: "APPROVED", to: "not_required" });
   });
 
   it("un approved n'est JAMAIS retouche (aucune ecriture, donc aucun re-declenchement)", async () => {
     const state = mk({
       members: { "clubA/p1": { role: "player", coachAccess: "approved" } },
-      ages: { p1: "U15" },
+      policies: { clubA: "approval_required" },
     });
-    const res = await syncCoachAccessFromProfile(fakeStore(state), "clubA", "p1");
+    const res = await ensureCoachAccessState(fakeStore(state), "clubA", "p1");
     expect(res).toEqual({ action: "unchanged", state: "approved" });
     expect(state.writes).toHaveLength(0);
   });
 
-  it("valeur deja correcte -> aucune ecriture (pas de boucle de triggers)", async () => {
+  it("un revoked n'est JAMAIS reveille, meme en mode par defaut", async () => {
     const state = mk({
-      members: { "clubA/p1": { role: "player", coachAccess: "pending" } },
-      ages: { p1: "U15" },
+      members: { "clubA/p1": { role: "player", coachAccess: "revoked" } },
+      policies: { clubA: "automatic_safe_projection" },
     });
-    const res = await syncCoachAccessFromProfile(fakeStore(state), "clubA", "p1");
-    expect(res).toEqual({ action: "unchanged", state: "pending" });
+    const res = await ensureCoachAccessState(fakeStore(state), "clubA", "p1");
+    expect(res).toEqual({ action: "unchanged", state: "revoked" });
     expect(state.writes).toHaveLength(0);
   });
 
-  it("membership ANCIEN sans le champ -> le champ est pose (default-deny si age inconnu)", async () => {
-    const state = mk({ members: { "clubA/p1": { role: "player", coachAccess: undefined } } });
-    const res = await syncCoachAccessFromProfile(fakeStore(state), "clubA", "p1");
-    expect(res).toEqual({ action: "updated", from: undefined, to: "pending" });
-    expect(state.writes).toEqual([{ clubId: "clubA", playerUid: "p1", state: "pending" }]);
+  it("un not_required n'est PAS resserre quand le club passe en approval_required", async () => {
+    const state = mk({
+      members: { "clubA/p1": { role: "player", coachAccess: "not_required" } },
+      policies: { clubA: "approval_required" },
+    });
+    const res = await ensureCoachAccessState(fakeStore(state), "clubA", "p1");
+    expect(res).toEqual({ action: "unchanged", state: "not_required" });
+    expect(state.writes).toHaveLength(0);
+  });
+
+  it("etat deja pose -> la politique du club n'est meme PAS lue (cout nul)", async () => {
+    const state = mk({ members: { "clubA/p1": { role: "player", coachAccess: "pending" } } });
+    await ensureCoachAccessState(fakeStore(state), "clubA", "p1");
+    expect(state.policyReads).toHaveLength(0);
   });
 
   it("aucun membership -> rien a autoriser, aucune ecriture (jamais de creation)", async () => {
     const state = mk();
-    const res = await syncCoachAccessFromProfile(fakeStore(state), "clubA", "p1");
+    const res = await ensureCoachAccessState(fakeStore(state), "clubA", "p1");
     expect(res).toEqual({ action: "no-member" });
     expect(state.writes).toHaveLength(0);
+    expect(state.policyReads).toHaveLength(0);
   });
 
   it("un coach n'a pas d'etat d'acces a son propre suivi -> ignore", async () => {
     const state = mk({ members: { "clubA/c1": { role: "coach", coachAccess: undefined } } });
-    const res = await syncCoachAccessFromProfile(fakeStore(state), "clubA", "c1");
+    const res = await ensureCoachAccessState(fakeStore(state), "clubA", "c1");
     expect(res).toEqual({ action: "not-player" });
     expect(state.writes).toHaveLength(0);
+  });
+
+  it("MINEUR et ADULTE, memes conditions -> MEME etat (aucune lecture d'age)", async () => {
+    // Le magasin n'expose meme plus de canal pour l'age : le port
+    // `MemberAccessStore` ne sait plus lire un profil. Ce test le prouve par le
+    // resultat, la signature du port le prouve par la compilation.
+    const state = mk({
+      members: {
+        "clubA/mineur": { role: "player", coachAccess: undefined },
+        "clubA/adulte": { role: "player", coachAccess: undefined },
+      },
+    });
+    const store = fakeStore(state);
+    const a = await ensureCoachAccessState(store, "clubA", "mineur");
+    const b = await ensureCoachAccessState(store, "clubA", "adulte");
+    expect(a).toEqual({ action: "updated", from: undefined, to: "not_required" });
+    expect(b).toEqual({ action: "updated", from: undefined, to: "not_required" });
   });
 });

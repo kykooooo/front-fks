@@ -13,25 +13,37 @@
 //
 // Vocabulaire PRODUIT et NEUTRE, volontairement. Ce code ne pretend PAS resoudre
 // le consentement des mineurs : il n'y a ici ni "consentement", ni "parental",
-// ni "RGPD", ni "tuteur". Il y a un interrupteur d'acces, et une procedure
-// humaine (documentee dans docs/coach-pilote-2026-07/AUTORISATION_ACCES.md) qui
-// decide de le mettre sur "approved".
+// ni "RGPD", ni "tuteur". Il y a un interrupteur d'acces, et une politique
+// portee par le club (coachAccessPolicy.ts) qui decide de sa position au
+// rattachement.
 //
 // ─── Les 3 notions sont SEPAREES ────────────────────────────────────────────
-//  1. rattachement au club       = existence du document members/{playerUid} ;
+//  1. rattachement au club         = existence du document members/{playerUid} ;
 //  2. autorisation de consultation = ce champ `coachAccess` ;
-//  3. etape supplementaire mineur = ce qui fait passer de "pending" a "approved".
+//  3. politique du club            = ce qui decide de l'etat pose en 2 quand un
+//     joueur entre (functions/src/coachAccessPolicy.ts).
 //
 // Un joueur peut donc etre MEMBRE du club sans que son suivi soit lisible par le
-// coach. C'est le cas NOMINAL d'un mineur tant que l'etape n'a pas ete faite —
-// pas une anomalie, pas une erreur, pas un bug a corriger.
+// coach. Sous le mode "approval_required", c'est meme le cas NOMINAL tant qu'une
+// decision humaine n'a pas ete prise — pas une anomalie, pas un bug a corriger.
 //
-// ─── DEFAULT-DENY ───────────────────────────────────────────────────────────
+// ─── AUCUN VERROU D'AGE ICI ────────────────────────────────────────────────
+// Ce module NE LIT PAS la categorie d'age, et ne doit jamais la relire. L'ancien
+// mecanisme posait "pending" a tout U13/U15, alors qu'aucun ecran d'approbation
+// n'existe : le resultat n'etait pas une protection, c'etait un effectif vide
+// pour un club de jeunes. La decision produit (Kyllian, juillet 2026) l'a
+// remplace par une politique CONFIGURABLE PAR CLUB. Le raisonnement complet, et
+// le risque residuel assume, sont dans coachAccessPolicy.ts et dans
+// docs/coach-pilote-2026-07/AUTORISATION_ACCES.md.
+//
+// ─── DEFAULT-DENY, INTACT ───────────────────────────────────────────────────
 // Toute valeur absente, vide, inconnue, mal typee ou non listee ci-dessous
 // REFUSE l'acces. C'est ce qui protege les documents ANCIENS, ecrits avant
-// l'existence de ce champ : ils n'ouvrent rien.
+// l'existence de ce champ : ils n'ouvrent rien. Retirer le verrou d'age n'a
+// RIEN change a ce verrou-la : ce sont deux questions differentes (le premier
+// portait sur un attribut du joueur, celui-ci porte sur la valeur du champ).
 
-import { normalizeAgeCategory, type AgeCategory } from "./coachLabels";
+import { resolveCoachAccessPolicy } from "./coachAccessPolicy";
 
 /** Nom du champ, ecrit une seule fois ici (les fautes de frappe ouvrent des trous). */
 export const COACH_ACCESS_FIELD = "coachAccess";
@@ -51,15 +63,6 @@ export type CoachAccessState = (typeof COACH_ACCESS_STATES)[number];
  * refuser — fail-closed, donc sans danger, mais silencieux : reporte toujours.
  */
 export const COACH_ACCESS_GRANTING_STATES: readonly CoachAccessState[] = ["approved", "not_required"];
-
-/**
- * Categories d'age qui declenchent une etape supplementaire avant consultation.
- *
- * Miroir de `domain/parentalConsent.CATEGORIES_REQUIRING_PARENTAL_CONSENT` cote
- * front. Volontairement des chaines litterales : le retrait eventuel de U13 dans
- * `domain/types.ts` ne doit rien casser ici.
- */
-export const AGE_CATEGORIES_REQUIRING_EXTRA_STEP: readonly AgeCategory[] = ["U13", "U15"];
 
 /** Etat reconnu, ou `null` si la valeur n'est pas un etat connu (default-deny). */
 export function normalizeCoachAccess(value: unknown): CoachAccessState | null {
@@ -83,53 +86,50 @@ export function isMembershipCoachAccessGranted(membership: Record<string, unknow
   return isCoachAccessGranted(membership[COACH_ACCESS_FIELD]);
 }
 
-/** true si la categorie d'age impose une etape supplementaire AVANT consultation. */
-export function requiresExtraStep(ageCategory: unknown): boolean {
-  const cat = normalizeAgeCategory(ageCategory);
-  if (!cat) return false; // "inconnu" n'est pas "mineur" : cf. initialCoachAccess
-  return AGE_CATEGORIES_REQUIRING_EXTRA_STEP.includes(cat);
+/**
+ * Etat pose au RATTACHEMENT (joinClubWithInviteCode), en fonction de la SEULE
+ * politique du club :
+ *
+ *  - "automatic_safe_projection" (defaut) -> "not_required" ;
+ *  - "approval_required"                  -> "pending".
+ *
+ * Politique absente, vide, inconnue ou mal typee -> le defaut serveur, donc
+ * "not_required" (cf. coachAccessPolicy.ts, section DEFAUT vs FAIL-CLOSED).
+ *
+ * AUCUNE autre entree. Ni l'age, ni le poste, ni le niveau, ni quoi que ce soit
+ * qui vienne du profil du joueur : deux joueurs qui rejoignent le meme club avec
+ * le meme code obtiennent le meme etat, point. C'est verifie par un test qui
+ * fait entrer un mineur et un adulte dans les memes conditions.
+ */
+export function initialCoachAccess(policy: unknown): CoachAccessState {
+  return resolveCoachAccessPolicy(policy) === "approval_required" ? "pending" : "not_required";
 }
 
 /**
- * Etat pose au RATTACHEMENT (joinClubWithInviteCode).
+ * Etat a appliquer quand on (re)passe sur un membership : trigger de profil,
+ * script de mise a niveau. Recalcul SERVEUR, jamais demande par un client.
  *
- * - categorie exigeant une etape supplementaire  -> "pending" ;
- * - categorie connue et sans etape supplementaire -> "not_required" ;
- * - categorie INCONNUE ou ABSENTE                 -> "pending".
+ * UNE SEULE REGLE, et elle est volontairement plus stricte qu'avant :
+ *  1. tout etat DEJA POSE et VALIDE est conserve tel quel — "pending",
+ *     "approved", "revoked" ET "not_required" ;
+ *  2. c'est seulement quand il n'y a PAS d'etat valide (champ absent, vide, mal
+ *     type, valeur inconnue) qu'on pose l'etat initial de la politique.
  *
- * Ce dernier cas EST le default-deny. On ne devine JAMAIS un age : un profil
- * incomplet, ancien, ou dont la categorie n'est pas reconnue est traite comme
- * s'il pouvait s'agir d'un mineur.
+ * POURQUOI CONSERVER MEME "pending" ET "not_required" (c'est le point delicat).
+ * La politique gouverne le RATTACHEMENT, pas la vie du membership. Si ce
+ * recalcul reappliquait la politique a chaque passage, alors changer la
+ * politique d'un club reevaluerait EN SILENCE tous ses membres deja rattaches,
+ * au premier evenement venu (une simple sauvegarde de profil). Un club qui
+ * bascule en "approval_required" verrait son effectif disparaitre sans que
+ * personne n'ait rien demande — exactement la panne qu'on vient de corriger,
+ * a l'envers. Consequence assumee et documentee : changer la politique n'agit
+ * que sur les joueurs qui rejoignent APRES le changement.
+ *
+ * Ce recalcul ne peut donc JAMAIS produire "approved" tout seul, ni retirer un
+ * acces, ni en ouvrir un qui avait ete ferme.
  */
-export function initialCoachAccess(ageCategory: unknown): CoachAccessState {
-  const cat = normalizeAgeCategory(ageCategory);
-  if (!cat) return "pending";
-  return AGE_CATEGORIES_REQUIRING_EXTRA_STEP.includes(cat) ? "pending" : "not_required";
-}
-
-/**
- * Etat apres un changement de profil (la categorie d'age a pu apparaitre ou
- * changer). Recalcul SERVEUR, jamais demande par un client.
- *
- * DEUX REGLES, et seulement deux :
- *  1. "approved" et "revoked" sont des DECISIONS HUMAINES : elles ne sont jamais
- *     ecrasees par un recalcul automatique. Seule la procedure documentee les
- *     modifie.
- *  2. Depuis tout autre etat (y compris absent/inconnu), on applique
- *     `initialCoachAccess`. Consequence voulue : ce recalcul peut RESSERRER
- *     ("not_required" -> "pending" si la categorie devient U15) et peut lever le
- *     doute initial ("pending" -> "not_required" quand la categorie devient
- *     connue et hors etape supplementaire). Il ne peut JAMAIS produire
- *     "approved" tout seul.
- *
- * POURQUOI lever le doute automatiquement : sans cela, un joueur majeur qui
- * rejoint le club AVANT d'avoir renseigne son profil resterait invisible pour
- * toujours. La categorie d'age est declarative (elle l'etait deja au setup) :
- * ce mecanisme donne une garantie TECHNIQUE d'interrupteur, pas une preuve
- * d'identite.
- */
-export function resolveCoachAccess(current: unknown, ageCategory: unknown): CoachAccessState {
+export function resolveCoachAccess(current: unknown, policy: unknown): CoachAccessState {
   const state = normalizeCoachAccess(current);
-  if (state === "approved" || state === "revoked") return state;
-  return initialCoachAccess(ageCategory);
+  if (state !== null) return state;
+  return initialCoachAccess(policy);
 }

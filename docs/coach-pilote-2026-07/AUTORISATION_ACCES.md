@@ -5,7 +5,157 @@ _Pour Kyllian : français simple, analogies foot, et à chaque affirmation le fi
 
 ---
 
-## 1. Le problème, en une phrase
+## 0. Ce qui a changé (27 juillet 2026) — À LIRE EN PREMIER
+
+Le mécanisme décrit dans les sections suivantes posait `pending` à **tout joueur
+U13 / U15** au moment où il rejoignait un club. Sur le papier, c'était prudent.
+Dans la réalité du pilote, c'était **une panne** :
+
+> **Il n'existe aucun écran d'approbation dans l'application.** Le seul moyen de
+> lever un `pending` est d'ouvrir la console Firebase et de modifier le document
+> à la main. Un club U15 qui distribue FKS à ses joueuses sans suivi
+> administratif voyait donc un **effectif entièrement vide** — c'est exactement
+> le pilote de Laurent.
+
+Un verrou dont personne n'a la clé n'est pas une protection : c'est une porte
+soudée. **Kyllian a tranché** : le verrou d'âge est retiré, et remplacé par une
+**politique portée par le club, configurable, décidée côté serveur**.
+
+### La doctrine du pilote, en clair
+
+| Point | Décision |
+|---|---|
+| Mode par défaut | `automatic_safe_projection` |
+| Un joueur rejoint volontairement avec un code **valide** | sa projection coach **non sensible** s'active, sans validation administrative |
+| Confirmation d'âge par le coach | **aucune** |
+| Blocage de l'onboarding, des séances, de l'usage autonome | **aucun** |
+| `revoked` | refuse **toujours** l'accès, dans tous les modes |
+| Valeur d'état inconnue ou invalide | **refuse toujours** (fail-closed inchangé) |
+| Mode alternatif `approval_required` | **existe, câblé et testé** — activé pour aucun club pilote |
+| Politique absente ou illisible | défaut serveur, **défini et testé sans le front** |
+| Le joueur peut-il changer la politique ? | **non**, les règles Firestore le refusent |
+| Le joueur est-il informé ? | **oui**, au moment où il saisit son code |
+
+### Le champ
+
+```
+clubs/{clubId}.coachAccessPolicy
+```
+
+Deux valeurs, et rien d'autre (`functions/src/coachAccessPolicy.ts`) :
+
+| Valeur | État posé au rattachement | Le coach voit le suivi ? |
+|---|---|---|
+| `automatic_safe_projection` (**défaut**) | `not_required` | oui |
+| `approval_required` | `pending` | non, tant qu'une décision humaine n'est pas prise |
+
+> **Analogie foot.** Avant, le règlement disait : « tout joueur de moins de 15
+> ans doit passer devant la commission ». Sauf que la commission n'existait pas
+> et ne s'était jamais réunie. Résultat : aucun jeune sur la feuille de match.
+> Maintenant, **chaque club choisit son règlement**. Par défaut : le joueur qui
+> présente une licence valable (le code d'invitation) entre. Le club qui veut une
+> commission peut en avoir une — le bouton existe, il n'est juste allumé nulle part.
+
+### Défaut ≠ fail-closed : ne pas confondre les deux verrous
+
+C'est le point qu'un lecteur pressé va mal lire, donc il est dit deux fois :
+
+- **la POLITIQUE d'un club** — absente, vide, inconnue, mal typée → **défaut**
+  (`automatic_safe_projection`). C'est un arbitrage produit : 99 % des clubs
+  n'ont jamais entendu parler de ce champ, ils obtiennent le mode pilote ;
+- **l'ÉTAT d'un joueur** (`coachAccess`) — absent, vide, `"APPROVED"`, `true`,
+  `1`, `{}` → **REFUS**. Ça, c'est fail-closed, et **rien n'a bougé**.
+
+Autrement dit : le doute sur la **configuration d'un club** se résout par le mode
+nominal ; le doute sur l'**autorisation d'un joueur** se résout par le refus.
+Vérifié des deux côtés : `functions/tests/coachAccessPolicy.test.ts`
+(« le defaut de la POLITIQUE n'assouplit pas le default-deny de l'ETAT »).
+
+### Le verrou d'âge a réellement disparu du chemin de décision
+
+Pas « neutralisé », pas « désactivé par un drapeau » : **retiré**.
+
+- `initialCoachAccess` ne prend plus qu'une politique
+  (`functions/src/coachAccess.ts`) ;
+- le module de décision n'importe plus rien de `coachLabels` — un test lit le
+  fichier et échoue si `ageCategory` / `AgeCategory` / `normalizeAgeCategory`
+  y réapparaissent ;
+- au rattachement, **le document `users/{uid}` n'est plus lu du tout**
+  (`functions/src/inviteCodes.ts`, transaction de `joinClubWithCode`). La donnée
+  n'entre pas dans la transaction : elle ne peut donc pas peser sur la décision,
+  même par accident. Un test instrumente les lectures pour le prouver ;
+- un mineur et un adulte, mêmes conditions, obtiennent le **même état** — testé
+  au niveau du module, du rattachement et du script de mise à niveau.
+
+### Changer la politique ne redistribue PAS les accès existants
+
+Décision explicite, et c'est le point le plus délicat du lot.
+
+`resolveCoachAccess` conserve désormais **tout état déjà posé et valide** —
+`pending`, `approved`, `revoked` **et** `not_required`. La politique ne joue que
+quand il n'y a **aucun** état lisible (membership ancien, valeur corrompue).
+
+**Conséquence assumée** : un club qui bascule en `approval_required` **ne perd
+pas** la visibilité sur ses membres déjà rattachés ; elle ne s'applique qu'aux
+joueurs qui rejoignent **après** le changement. Symétriquement, repasser en mode
+par défaut **n'ouvre pas** d'un coup les accès laissés en attente.
+
+**Pourquoi ce sens-là et pas l'inverse.** Le trigger `onUserWritten` s'exécute à
+chaque enregistrement de profil. Si la politique était réappliquée à chaque
+passage, un coach qui coche « approbation requise » un mardi soir verrait son
+effectif se vider tout seul, joueur par joueur, au fil des sauvegardes de profil
+des jours suivants — sans écran pour l'expliquer, et sans moyen de revenir en
+arrière autrement qu'en console. Ce serait la **même panne qu'on vient de
+corriger, dans l'autre sens**. Une révocation reste possible et explicite :
+c'est `revoked`, posé joueur par joueur (§7.4).
+
+### Ce que ça n'ouvre pas
+
+La projection reste **coach-safe**. Douleur, fatigue, zone corporelle,
+commentaire libre, ressenti, RPE, ATL/CTL/TSB ne sont **jamais** transmis, quel
+que soit le mode (`functions/src/dto.ts` : `FORBIDDEN_KEYS`,
+`SENSITIVE_KEY_ROOTS`, garde-fou `assertCoachSafe`). Ce lot déplace un
+interrupteur d'affichage ; il ne touche pas à la frontière des données sensibles.
+
+### Ce que le joueur voit maintenant
+
+Là où il saisit son code — setup de profil (`screens/ProfileSetupScreen.tsx`,
+étape 0) et carte « Mon club » (`components/settings/ClubManagementCard.tsx`) —
+un encart liste **ce que son encadrement verra** et **ce qu'il ne verra jamais**
+(`domain/clubDataDisclosure.ts`, `components/club/ClubDataDisclosure.tsx`).
+
+Il **informe** : aucune case à cocher, aucun bouton, aucune condition. Il ne peut
+pas empêcher de rejoindre un club, ni retarder l'onboarding. Son contenu est
+arrimé au contrat réel par un test : ajouter un champ à la projection sans
+l'annoncer au joueur fait échouer la suite.
+
+### Le risque restant, sans le noyer
+
+Il faut le dire franchement, parce que c'est la contrepartie du choix :
+
+1. **L'âge reste déclaratif, et plus rien ne s'en sert.** Avant, une catégorie
+   `U15` déclarée déclenchait au moins une friction. Maintenant, elle ne
+   déclenche rien. Ce n'est pas une perte de garantie réelle — la garantie
+   n'existait pas, puisque la friction était infranchissable et que l'âge était
+   de toute façon saisi par le joueur lui-même — mais **la friction affichée a
+   disparu**. Assumons-le tel quel.
+2. **Ce mécanisme ne règle RIEN juridiquement.** Il ne prouve aucun consentement,
+   ne dit pas qui a autorisé quoi, ne conserve aucune trace opposable, et ne
+   remplace ni un document signé, ni une information des familles, ni une
+   politique de confidentialité, ni un registre de traitement. La question du
+   consentement des mineurs reste **entièrement ouverte** (§6, §9).
+3. **Le mode `approval_required` reste sans écran.** Un club qui l'active
+   condamne ses joueurs à `pending` jusqu'à une intervention en console. C'est
+   documenté (§7.3), et c'est précisément pourquoi il n'est le défaut de
+   personne.
+
+---
+
+## 1. Le problème d'origine, en une phrase
+
+> **Historique.** Cette section décrit la situation **avant** le 27 juillet 2026.
+> Le mécanisme d'interrupteur qu'elle motive existe toujours ; c'est seulement
+> ce qui décide de sa position à l'entrée qui a changé (§0).
 
 Le pilote compte des U15. Jusqu'ici, **rien côté serveur** n'empêchait un coach de
 voir le suivi d'un joueur mineur. Le seul garde-fou vivait sur **l'écran de setup
@@ -78,15 +228,16 @@ C'est ce qui protège les **membership anciens** : ceux écrits avant l'existenc
 du champ n'ouvrent **rien**. Sans cette règle, tout le pilote actuel serait passé
 au travers du nouveau verrou le jour de son déploiement.
 
-Même logique au rattachement (`functions/src/coachAccess.ts:100`,
-`initialCoachAccess`) :
+**Ce verrou-là n'a pas bougé le 27 juillet.** Ce qui a changé, c'est ce qui
+décide de l'état posé **à l'entrée** — voir §0. Au rattachement
+(`functions/src/coachAccess.ts`, `initialCoachAccess`) :
 
-- catégorie U13 / U15 → `pending` ;
-- catégorie U17 / U18 / Senior → `not_required` ;
-- **catégorie inconnue ou absente → `pending`**.
+- club en `automatic_safe_projection` (défaut) → `not_required` ;
+- club en `approval_required` → `pending` ;
+- politique absente ou illisible → **défaut serveur**, donc `not_required`.
 
-> On ne devine **jamais** un âge. Un profil incomplet est traité comme s'il
-> pouvait être celui d'un mineur.
+> L'âge n'entre plus dans cette décision, et le profil du joueur n'est même plus
+> lu pendant le rattachement.
 
 ---
 
@@ -128,23 +279,28 @@ revoked : la projection DÉJÀ ÉCRITE est SUPPRIMÉE »).
 
 ### Verrou 3 — Les Cloud Functions (qui pose l'état, et qui ne peut pas)
 
-- **Au rattachement** : `functions/src/inviteCodes.ts:555` — la seule porte
-  d'entrée dans un club (`joinClubWithInviteCode`) calcule et écrit l'état
-  initial, dans la même transaction que le membership.
-- **Au changement de profil** : `functions/src/triggers.ts:95` — quand la
-  catégorie d'âge apparaît ou change, l'état est recalculé côté serveur.
+- **Au rattachement** : `functions/src/inviteCodes.ts` — la seule porte d'entrée
+  dans un club (`joinClubWithInviteCode`) lit la politique **sur le document
+  club déjà chargé** et écrit l'état initial, dans la même transaction que le
+  membership. Aucune lecture supplémentaire, aucune lecture du profil joueur.
+- **Réparation** : `functions/src/triggers.ts` (`onUserWritten`) →
+  `ensureCoachAccessState` (`functions/src/coachAccessSync.ts`). Ce n'est **plus
+  un recalcul** : c'est un filet qui pose l'état **s'il manque**, rien de plus.
 
-Ce recalcul (`resolveCoachAccess`, `functions/src/coachAccess.ts:127`) obéit à
-**deux règles seulement** :
+`resolveCoachAccess` (`functions/src/coachAccess.ts`) obéit à **une seule
+règle** :
 
-1. `approved` et `revoked` sont des **décisions humaines** : jamais écrasées ;
-2. sinon, on applique la règle initiale. Il peut donc **resserrer**
-   (`not_required` → `pending` si la catégorie devient U15) et **lever le doute**
-   (`pending` → `not_required` quand la catégorie devient connue et adulte).
+1. tout état **déjà posé et valide** est conservé — `pending`, `approved`,
+   `revoked` **et** `not_required` ;
+2. seul un champ **absent ou illisible** reçoit l'état initial de la politique.
 
-**Il ne peut JAMAIS produire `approved` tout seul.** C'est vérifié par un test
-qui essaie toutes les combinaisons possibles d'entrées
-(`functions/tests/coachAccess.test.ts`, « ne produit JAMAIS approved »).
+**Il ne peut JAMAIS produire `approved` tout seul**, ni retirer un accès, ni en
+rouvrir un qui avait été fermé. Vérifié par un test qui essaie toutes les
+combinaisons d'entrées (`functions/tests/coachAccess.test.ts`, « ne produit
+JAMAIS approved »).
+
+**Coût** : dans le cas courant (état déjà posé), la politique du club n'est même
+**pas lue**. Un test compte les lectures pour le prouver.
 
 ### Verrou 4 — Les requêtes de lecture (l'app dit la vérité)
 
@@ -216,9 +372,10 @@ Sois clair là-dessus, Kyllian, parce que c'est là que ça compte :
 - **Ce n'est pas une preuve de consentement.** Le champ dit qu'un interrupteur a
   été mis sur « ouvert ». Il ne dit pas **qui** l'a demandé, **qui** l'a autorisé,
   ni si cette personne en avait le droit.
-- **L'âge est déclaratif.** La catégorie vient du joueur lui-même, au setup. Rien
-  ne la vérifie. Un joueur de 14 ans qui coche « Senior » obtient `not_required`.
-  Le mécanisme donne une garantie **d'interrupteur**, pas **d'identité**.
+- **L'âge est déclaratif — et depuis le 27 juillet, il ne sert plus à rien ici.**
+  La catégorie vient du joueur lui-même, au setup, et rien ne la vérifie. Elle
+  n'entre plus du tout dans la décision d'accès (§0). Le mécanisme donne une
+  garantie **d'interrupteur**, jamais **d'identité** ni **d'âge**.
 - **Ça ne dit rien sur les données de santé.** Le fait que le coach ne voie ni
   douleur, ni fatigue, ni RPE relève d'un autre chantier (la frontière
   coach-safe). Ce verrou-ci ne le remplace pas.
@@ -262,18 +419,19 @@ Le script est écrit et testé sur données inventées, **jamais exécuté** :
 `functions/src/coachAccessBackfill.ts` (cœur) et
 `functions/src/coachAccessBackfillCli.ts` (ligne de commande).
 
-Ce qu'il fait : pour chaque membership `role=player` sans champ, il applique
-**exactement la même décision** que le serveur en production. Il produit donc
-`not_required` (joueur adulte déclaré) ou `pending` (mineur, ou âge inconnu).
-**Il ne produit jamais `approved`.**
+Ce qu'il fait : pour chaque membership `role=player` **sans état valide**, il
+applique **exactement la même décision** que le serveur en production. Il produit
+donc `not_required` (club en mode par défaut) ou `pending` (club en
+`approval_required`). **Il ne produit jamais `approved`**, et il ne touche
+**aucun** membership qui porte déjà un état lisible.
 
 Trois garde-fous :
 
 1. **simulation par défaut** — sans `--apply`, le chemin d'écriture est
    physiquement remplacé, pas seulement désactivé par un `if` ;
 2. `--apply` **seul ne suffit pas** : il faut aussi `--je-confirme` ;
-3. la sortie ne contient **aucun identifiant, aucun prénom, aucune catégorie
-   d'âge** — uniquement des compteurs.
+3. la sortie ne contient **aucun identifiant, aucun prénom** — uniquement des
+   compteurs.
 
 Ordre à respecter :
 
@@ -329,36 +487,47 @@ normalement.
 
 | Couche | Fichier | Ce qui est prouvé |
 |---|---|---|
-| Règles | `firestore-tests/rules.coachAccess.test.ts` | absent → refus ; `pending` → refus ; `revoked` → refus ; `approved` → lecture ; `not_required` → lecture ; aucun client ne peut écrire le champ (création, mise à jour partielle, suppression, joueur / coach / owner) |
-| Projecteur | `functions/tests/coachAccess.test.ts` | aucune projection quand l'état refuse ; état initial `pending` si l'âge est inconnu ; `approved` jamais fabriqué |
+| Règles — état | `firestore-tests/rules.coachAccess.test.ts` | absent → refus ; `pending` → refus ; `revoked` → refus ; `approved` → lecture ; `not_required` → lecture ; aucun client ne peut écrire le champ (création, mise à jour partielle, suppression, joueur / coach / owner) |
+| Règles — politique | `firestore-tests/rules.coachAccessPolicy.test.ts` | le joueur ne peut jamais l'écrire (création, mise à jour partielle, merge, suppression du champ) ; coach et owner le peuvent ; le coach ne gagne rien d'autre ; valeur inconnue refusée ; configurer la politique n'ouvre aucun droit sur `coachAccess` |
+| Politique — décision | `functions/tests/coachAccessPolicy.test.ts` | deux modes ; défaut serveur appliqué à toute valeur absente / vide / inconnue / mal typée ; `automatic_safe_projection` → `not_required` ; `approval_required` → `pending` ; le défaut de la politique n'assouplit pas le fail-closed de l'état |
+| Projecteur | `functions/tests/coachAccess.test.ts` | aucune projection quand l'état refuse ; aucun symbole d'âge dans le module de décision ; mineur et adulte → même état ; `approved` jamais fabriqué ; changer la politique ne réévalue pas un membre existant |
 | Rebuild | `functions/tests/integration/rebuild.emulator.test.ts` | projection existante **supprimée** au passage en `revoked` |
-| Rattachement | `functions/tests/inviteCodes.test.ts` | état posé à l'entrée dans le club ; un rejeu ne réinitialise ni n'ouvre rien |
-| Script | `functions/tests/coachAccessBackfill.test.ts` | simulation n'écrit rien ; idempotent ; ne fabrique jamais `approved` |
+| Rattachement | `functions/tests/inviteCodes.test.ts` | état posé par la politique du club ; le profil du joueur n'est **pas lu** ; un rejeu ne réinitialise ni n'ouvre rien |
+| Callables | `functions/tests/callableRights.test.ts` | `approval_required` laisse entrer sans ouvrir ; mode par défaut ouvre la projection non sensible |
+| Script | `functions/tests/coachAccessBackfill.test.ts` | simulation n'écrit rien ; idempotent ; suit la politique du club ; ne fabrique jamais `approved` |
 | Lecture front | `repositories/__tests__/clubsRepo.test.ts` | les trois états ne se contaminent pas |
 | Écrans | `screens/coach/__tests__/CoachPlayerScreen.test.tsx`, `CoachRosterScreen.test.tsx` | trois rendus différents ; jamais « aucun joueur » quand il y en a |
-| Copie | `domain/__tests__/coachAccess.test.ts` | aucun mot juridique ou médical ; jamais « ne s'entraîne pas » |
+| Copie coach | `domain/__tests__/coachAccess.test.ts` | aucun mot juridique ou médical ; jamais « ne s'entraîne pas » |
+| Divulgation joueur | `domain/__tests__/clubDataDisclosure.test.ts` | le texte couvre **exactement** les champs réellement projetés ; douleur / fatigue / zone corporelle / commentaire / ressenti / note nommés comme non transmis ; ton non juridique, non médical, sans case à cocher |
+| Divulgation — écrans | `components/club/__tests__/clubDataDisclosure.test.tsx`, `clubDisclosureWiring.test.ts` | tout le contenu est rendu ; aucun contrôle interactif ; branchée dans le setup ET les réglages, sans condition ; ne bloque aucune validation |
 
 ---
 
 ## 9. Limites connues, dites franchement
 
-1. **L'âge reste déclaratif** (§6). Le mécanisme ne peut pas faire mieux : c'est
-   une limite de conception, pas un oubli.
-2. **Le recalcul automatique peut lever un `pending`** quand la catégorie passe à
-   « Senior ». C'est nécessaire — sans ça, un joueur qui rejoint avant d'avoir
-   rempli son profil resterait invisible pour toujours — mais ça signifie qu'un
-   mineur qui déclare un âge adulte se rend consultable. Une seule chose ne peut
-   pas être obtenue ainsi : `approved`.
-3. **Deux lectures au lieu d'une** sur la fiche joueur (membership puis
+1. **L'âge reste déclaratif, et n'est plus consulté du tout** (§0, §6). Le
+   mécanisme ne prétend plus rien à ce sujet : c'est un choix, pas un oubli.
+2. **Le mode `approval_required` n'a aucun écran.** Un club qui l'active
+   condamne ses nouveaux joueurs à `pending` jusqu'à une intervention manuelle
+   en console (§7.3). C'est exactement le piège dont on vient de sortir : ne
+   l'active pour personne tant qu'un écran d'approbation n'existe pas.
+3. **Changer la politique ne réévalue pas les membres déjà rattachés** (§0).
+   Voulu, argumenté, et testé — mais ça veut dire qu'un club qui resserre sa
+   politique doit révoquer **joueur par joueur** s'il veut fermer des accès déjà
+   ouverts.
+4. **Ce lot ne règle rien juridiquement** (§6). Le consentement des mineurs
+   reste entièrement à trancher hors du code.
+5. **Deux lectures au lieu d'une** sur la fiche joueur (membership puis
    projection). C'est le prix de la distinction honnête entre « non autorisé » et
    « erreur ». Sur l'effectif, le coût est **nul** : le champ voyage dans la
    requête `members` qu'on faisait déjà.
-4. **Deux écrans hérités non branchés** (`screens/CoachHomeScreen.tsx`,
+6. **Deux écrans hérités non branchés** (`screens/CoachHomeScreen.tsx`,
    `screens/CoachPlayerDetailScreen.tsx`) n'affichent pas ce nouvel état. Ils ne
    sont référencés par aucune route (`navigation/RootNavigator.tsx`,
    `navigation/CoachTabs.tsx`) : aucun utilisateur ne peut les atteindre. À
    supprimer un jour, sur une branche dédiée.
-5. **La callable de rattachement renvoie désormais `coachAccess`** au joueur
-   (`functions/src/inviteCodes.ts:462`). **Aucun écran ne l'utilise encore.** Le
-   jour où on voudra dire au joueur « ton coach ne verra pas encore ton suivi »,
-   l'information est déjà là — mais elle n'a pas été inventée un écran pour elle.
+7. **La callable de rattachement renvoie `coachAccess`** au joueur
+   (`functions/src/inviteCodes.ts`). **Aucun écran ne l'utilise encore.** Le jour
+   où on voudra dire au joueur « ton coach ne verra pas encore ton suivi »,
+   l'information est déjà là — mais on n'a pas inventé un écran pour elle. Sous
+   le mode par défaut, elle vaut de toute façon `not_required`.

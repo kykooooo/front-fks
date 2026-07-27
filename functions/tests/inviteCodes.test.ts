@@ -387,20 +387,20 @@ describe("joinClubWithInviteCode — chemin nominal", () => {
 
     const result = await joinClubWithCode(deps(store), { uid: PLAYER, rawCode: "abcde-fghjk" });
 
-    // `coachAccess: "pending"` = DEFAULT-DENY : le profil seede n'a pas de
-    // categorie d'age, donc le rattachement N'OUVRE PAS l'acces au suivi. Etre
-    // membre du club et etre consultable par le coach sont deux choses
-    // distinctes (cf. functions/src/coachAccess.ts).
+    // `coachAccess: "not_required"` = mode par DEFAUT du club (le document club
+    // seede ne porte aucune politique). Le joueur est entre VOLONTAIREMENT avec
+    // une invitation valide : sa projection coach NON SENSIBLE est active sans
+    // validation administrative (cf. functions/src/coachAccessPolicy.ts).
     expect(result).toEqual({
       clubId: CLUB,
       clubName: "AS Test",
       alreadyMember: false,
-      coachAccess: "pending",
+      coachAccess: "not_required",
     });
     expect(store.read(invitePaths.member(CLUB, PLAYER))).toMatchObject({
       uid: PLAYER,
       role: "player",
-      coachAccess: "pending",
+      coachAccess: "not_required",
     });
     // Le membership NE PORTE PLUS de code : la preuve d'invitation n'est plus
     // un champ client, c'est l'ecriture serveur elle-meme.
@@ -410,13 +410,17 @@ describe("joinClubWithInviteCode — chemin nominal", () => {
   });
 
   // ── Etat d'autorisation d'acces pose AU RATTACHEMENT ──────────────────────
-  // Rattachement au club et autorisation de consultation sont SEPARES : entrer
-  // dans le club n'ouvre jamais l'acces au suivi a lui seul.
+  // C'est la POLITIQUE DU CLUB, et elle seule, qui decide de cet etat. Le profil
+  // du joueur n'est meme pas lu sur ce chemin.
 
-  test("categorie exigeant une etape supplementaire (U15) -> pending", async () => {
+  test("club en approval_required -> pending (le joueur entre, son suivi attend)", async () => {
     const store = baseStore();
     seedCode(store, "ABCDEFGHJK");
-    store.seed(invitePaths.user(PLAYER), { uid: PLAYER, ageCategory: "U15" });
+    store.seed(invitePaths.club(CLUB), {
+      name: "AS Test",
+      ownerUid: OWNER,
+      coachAccessPolicy: "approval_required",
+    });
 
     const result = await joinClubWithCode(deps(store), { uid: PLAYER, rawCode: "ABCDEFGHJK" });
 
@@ -424,32 +428,79 @@ describe("joinClubWithInviteCode — chemin nominal", () => {
     expect(store.read(invitePaths.member(CLUB, PLAYER))?.coachAccess).toBe("pending");
   });
 
-  test("categorie sans etape supplementaire (Senior) -> not_required", async () => {
+  test("club en automatic_safe_projection (explicite) -> not_required", async () => {
     const store = baseStore();
     seedCode(store, "ABCDEFGHJK");
-    store.seed(invitePaths.user(PLAYER), { uid: PLAYER, ageCategory: "Senior" });
+    store.seed(invitePaths.club(CLUB), {
+      name: "AS Test",
+      ownerUid: OWNER,
+      coachAccessPolicy: "automatic_safe_projection",
+    });
 
     const result = await joinClubWithCode(deps(store), { uid: PLAYER, rawCode: "ABCDEFGHJK" });
 
     expect(result.coachAccess).toBe("not_required");
   });
 
-  test("categorie INCONNUE ou profil absent -> pending (on ne devine jamais un age)", async () => {
-    for (const profil of [undefined, {}, { ageCategory: "U11" }, { ageCategory: 15 }]) {
+  test("politique ABSENTE, vide ou inconnue -> defaut serveur, donc not_required", async () => {
+    for (const politique of [undefined, "", "   ", "APPROVAL_REQUIRED", "strict", 1, {}]) {
       const store = baseStore();
       seedCode(store, "ABCDEFGHJK");
-      if (profil) store.seed(invitePaths.user(PLAYER), { uid: PLAYER, ...profil });
+      store.seed(invitePaths.club(CLUB), {
+        name: "AS Test",
+        ownerUid: OWNER,
+        ...(politique === undefined ? {} : { coachAccessPolicy: politique }),
+      });
 
       const result = await joinClubWithCode(deps(store), { uid: PLAYER, rawCode: "ABCDEFGHJK" });
-      expect(result.coachAccess).toBe("pending");
+      expect(result.coachAccess).toBe("not_required");
     }
+  });
+
+  test("AUCUN VERROU D'AGE : mineur et adulte obtiennent le MEME etat", async () => {
+    // Memes conditions, seule la categorie d'age declaree change. Avant ce lot,
+    // "U15" donnait "pending" et "Senior" donnait "not_required" — c'est
+    // exactement ce qui vidait l'effectif d'un club de jeunes.
+    const etats: string[] = [];
+    for (const age of ["U13", "U15", "U17", "Senior", undefined]) {
+      const store = baseStore();
+      seedCode(store, "ABCDEFGHJK");
+      store.seed(invitePaths.user(PLAYER), { uid: PLAYER, ...(age ? { ageCategory: age } : {}) });
+
+      const result = await joinClubWithCode(deps(store), { uid: PLAYER, rawCode: "ABCDEFGHJK" });
+      etats.push(result.coachAccess);
+    }
+    expect(new Set(etats).size).toBe(1);
+    expect(etats[0]).toBe("not_required");
+  });
+
+  test("le profil du joueur n'est meme PAS LU pendant le rattachement", async () => {
+    // Preuve la plus forte de l'absence de verrou d'age : la donnee n'entre pas
+    // dans la transaction. Le profil EXISTE et porte "U13" — s'il etait lu, il
+    // pourrait peser sur la decision. Il ne l'est pas.
+    const store = baseStore();
+    seedCode(store, "ABCDEFGHJK");
+    store.seed(invitePaths.user(PLAYER), { uid: PLAYER, ageCategory: "U13" });
+
+    const lectures: string[] = [];
+    store.onTxRead = (path) => {
+      lectures.push(path);
+    };
+
+    const result = await joinClubWithCode(deps(store), { uid: PLAYER, rawCode: "ABCDEFGHJK" });
+
+    expect(lectures).not.toContain(invitePaths.user(PLAYER));
+    // Temoin positif : le club, lui, EST bien lu (c'est de la que vient la
+    // politique). Sans ce temoin, l'assertion ci-dessus passerait meme si plus
+    // rien n'etait lu du tout.
+    expect(lectures).toContain(invitePaths.club(CLUB));
+    expect(result.coachAccess).toBe("not_required");
   });
 
   test("rejeu : un acces DEJA accorde n'est jamais remis a zero, un acces retire jamais reveille", async () => {
     // approved conserve…
     const store = baseStore();
     seedCode(store, "ABCDEFGHJK");
-    store.seed(invitePaths.user(PLAYER), { uid: PLAYER, ageCategory: "U15" });
     store.seed(invitePaths.member(CLUB, PLAYER), {
       uid: PLAYER, role: "player", coachAccess: "approved",
     });

@@ -41,5 +41,6 @@ export const paths = {
   member: (clubId: string, uid: string) => `clubs/${clubId}/members/${uid}`,
   members: (clubId: string) => `clubs/${clubId}/members`,
   playerSummary: (clubId: string, uid: string) => `clubs/${clubId}/playerSummaries/${uid}`,
+  club: (clubId: string) => `clubs/${clubId}`,
   clubs: () => `clubs`,
 } as const;

@@ -12,20 +12,21 @@
 // CE QU'IL FAIT, ET CE QU'IL NE FAIT PAS
 //  - il POSE le champ manquant sur les membership qui ne l'ont pas ;
 //  - il utilise EXACTEMENT la meme decision que le serveur en production
-//    (`resolveCoachAccess`), donc il ne peut produire que "pending" ou
-//    "not_required" ;
+//    (`ensureCoachAccessState`), donc il ne peut produire que "not_required"
+//    (politique par defaut) ou "pending" (club en "approval_required") ;
 //  - il ne produit JAMAIS "approved" : aucune autorisation ne peut naitre d'un
 //    script. Approuver reste un geste humain, un joueur a la fois ;
-//  - il ne touche JAMAIS un membership qui porte deja "approved" ou "revoked" ;
+//  - il ne touche JAMAIS un membership qui porte deja un etat valide, quel
+//    qu'il soit — "approved" et "revoked" compris ;
 //  - en mode simulation (defaut), il n'ecrit RIEN et se contente de compter.
 //
-// Consequence a assumer, et c'est voulu : apres passage, un joueur adulte deja
-// rattache devient consultable (not_required), et TOUT joueur dont la categorie
-// d'age est inconnue devient NON consultable (pending) — y compris s'il l'etait
-// de fait avant, puisqu'avant il n'y avait aucun verrou. C'est le prix du
-// default-deny, et c'est la bonne direction pour un pilote qui compte des U15.
+// Consequence a assumer, et c'est voulu : apres passage, les joueurs deja
+// rattaches a un club en mode par defaut deviennent consultables
+// ("not_required"), sans distinction d'age. C'est la decision produit de
+// juillet 2026 (cf. coachAccessPolicy.ts) : sur un club en
+// "approval_required", le meme script pose "pending" et n'ouvre rien.
 
-import { syncCoachAccessFromProfile, type MemberAccessStore } from "./coachAccessSync";
+import { ensureCoachAccessState, type MemberAccessStore } from "./coachAccessSync";
 
 /** Reference d'un membership joueur a traiter. */
 export type MemberRef = { clubId: string; playerUid: string };
@@ -69,7 +70,7 @@ export type CoachAccessBackfillOptions = {
 function readOnly(store: CoachAccessBackfillStore): MemberAccessStore {
   return {
     readMember: (clubId, playerUid) => store.readMember(clubId, playerUid),
-    readAgeCategory: (playerUid) => store.readAgeCategory(playerUid),
+    readClubPolicy: (clubId) => store.readClubPolicy(clubId),
     async writeCoachAccess() {
       /* simulation : aucune ecriture, jamais */
     },
@@ -96,7 +97,7 @@ export async function runCoachAccessBackfill(
   for (const { clubId, playerUid } of membres) {
     stats.scanned += 1;
     try {
-      const res = await syncCoachAccessFromProfile(cible, clubId, playerUid);
+      const res = await ensureCoachAccessState(cible, clubId, playerUid);
       if (res.action === "updated") {
         stats.updated += 1;
         stats.parEtat[res.to] = (stats.parEtat[res.to] ?? 0) + 1;
@@ -109,7 +110,7 @@ export async function runCoachAccessBackfill(
       }
     } catch {
       // AUCUNE donnee journalisee : un journal de migration qui contiendrait des
-      // identifiants ou des categories d'age serait exactement ce qu'on protege.
+      // identifiants de joueurs serait exactement ce qu'on protege.
       stats.errors += 1;
     }
   }

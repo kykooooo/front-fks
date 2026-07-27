@@ -60,6 +60,7 @@ import {
   normalizeCoachAccess,
   type CoachAccessState,
 } from "./coachAccess";
+import { COACH_ACCESS_POLICY_FIELD } from "./coachAccessPolicy";
 
 // ─── Format du code ─────────────────────────────────────────────────────────
 
@@ -782,23 +783,28 @@ export async function joinClubWithCode(
       const existingMember = await tx.get(invitePaths.member(record.clubId, uid));
       const club = await tx.get(invitePaths.club(record.clubId));
       if (!club) return { ok: false, reason: "club-missing" };
-      // Profil du joueur : SEULE source de la categorie d'age. Lu DANS la
-      // transaction (toutes les lectures avant toute ecriture).
-      const profile = await tx.get(invitePaths.user(uid));
 
       const clubName = typeof club.name === "string" ? club.name : null;
       const alreadyMember = !!existingMember;
 
-      // ── Etat d'autorisation d'acces (default-deny) ──────────────────────
-      // Le rattachement (ce membership) et l'autorisation de consultation sont
-      // DEUX choses distinctes : entrer dans le club n'ouvre rien.
+      // ── Etat d'autorisation d'acces ────────────────────────────────────
+      // Le rattachement (ce membership) et l'autorisation de consultation
+      // restent DEUX choses distinctes ; c'est la POLITIQUE DU CLUB qui decide
+      // de la position de l'interrupteur a l'entree :
       //  - membre deja present avec un etat VALIDE -> on le conserve tel quel
       //    (un rejeu ne doit jamais annuler une autorisation deja accordee, ni
       //    reveiller un acces revoque) ;
-      //  - sinon -> etat initial calcule depuis la categorie d'age, avec
-      //    "pending" quand celle-ci est inconnue ou absente.
+      //  - sinon -> etat initial de la politique du club : "not_required" en
+      //    mode par defaut (automatic_safe_projection), "pending" en mode
+      //    approval_required.
+      //
+      // AUCUNE LECTURE DU PROFIL DU JOUEUR sur ce chemin. Le document
+      // users/{uid} n'est plus lu du tout ici (il n'est qu'ECRIT, plus bas,
+      // pour poser le clubId) : la categorie d'age ne peut donc pas influencer
+      // l'etat, meme par accident. C'est la preuve la plus simple qu'il n'y a
+      // plus de verrou d'age — la donnee n'est pas dans la transaction.
       const existingAccess = normalizeCoachAccess(existingMember?.[COACH_ACCESS_FIELD]);
-      const coachAccess = existingAccess ?? initialCoachAccess(profile?.ageCategory);
+      const coachAccess = existingAccess ?? initialCoachAccess(club[COACH_ACCESS_POLICY_FIELD]);
 
       // Rejeu du meme joueur : on ne consomme PAS un usage supplementaire.
       // Sans ce garde-fou, un double-tap epuiserait le quota du club.

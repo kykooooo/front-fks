@@ -13,6 +13,7 @@ import { Badge } from "../ui/Badge";
 import { removeClubMembership } from "../../repositories/clubsRepo";
 import { joinClubWithInviteCode } from "../../services/clubInvites";
 import { showToast } from "../../utils/toast";
+import { ClubDataDisclosure } from "../club/ClubDataDisclosure";
 
 const palette = theme.colors;
 
@@ -175,6 +176,9 @@ export function ClubManagementCard() {
           Ton coach peut suivre ta progression et régler le cadre de vos séances (intensité, objectif
           de la semaine).
         </Text>
+        {/* Le joueur DÉJÀ dans un club doit pouvoir relire ce que son
+            encadrement voit — pas seulement au moment où il tape son code. */}
+        <ClubDataDisclosure />
         <Button
           label={leaving ? "Départ..." : "Quitter le club"}
           variant="ghost"
@@ -196,6 +200,9 @@ export function ClubManagementCard() {
       <Text style={styles.noClubDescription}>
         Entre le code d'invitation de ton coach pour rejoindre ton club et bénéficier d'un suivi personnalisé.
       </Text>
+      {/* Divulgation AVANT la saisie : le joueur sait ce qu'il partage avant de
+          taper son code. Elle n'exige rien et ne désactive pas le bouton. */}
+      <ClubDataDisclosure />
       <View style={styles.inputRow}>
         <TextInput
           value={inputCode}
