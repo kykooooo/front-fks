@@ -10,6 +10,7 @@ import {
   boundDurationMin,
   collectAdaptationTokens,
   focusTitle,
+  isSensitiveDeviationReason,
   normalizeAgeCategory,
   normalizeLevel,
   normalizePosition,
@@ -283,21 +284,36 @@ function readItemsTotal(execution: RawDoc, completion: RawDoc): number | null {
 }
 
 /**
- * Extrait UNIQUEMENT les tokens de raison (jamais `comment`, `actual`, `snapshot`).
- * Priorité aux raisons dominantes calculées par la boucle ; à défaut, on relit les
- * items un par un — en ne lisant que leur champ `reason`.
+ * Extrait UNIQUEMENT les tokens de raison (jamais `comment`, `actual`, `snapshot`),
+ * et UNIQUEMENT les raisons NON sensibles.
+ *
+ * ⚠️ LE FILTRAGE A LIEU ICI, AVANT LA DÉCISION « mainReasons ou repli sur items ».
+ * Ce n'est pas un détail d'implémentation, c'est ce qui ferme un canal réel,
+ * trouvé par la sonde hostile : la boucle classe `mainReasons` par poids, donc
+ * une douleur DOMINANTE occupait la liste et empêchait le repli sur les items.
+ * Résultat, `mainReasons = ["pain"]` donnait une liste de raisons VIDE là où
+ * `mainReasons = ["time"]`, sur exactement les mêmes items, donnait « Manque de
+ * temps » : le vide désignait la douleur. En filtrant d'abord, les trois cas
+ * (`["pain"]`, `["pain","time"]`, `[]`) convergent vers la même sortie.
+ *
+ * Rappel du contrat : une liste vide signifie « raisons non calculées » (et non
+ * « aucun écart ») → on relit les items, eux aussi filtrés.
  */
 function readDeviationReasons(execution: RawDoc): string[] {
   const main = obj(execution.completion).mainReasons;
-  // Liste vide = raisons non calculées (et non "aucun écart") → on relit les items.
-  if (Array.isArray(main) && main.length) return main.filter((r): r is string => typeof r === "string");
+  if (Array.isArray(main)) {
+    const principales = main.filter((r): r is string => typeof r === "string" && !isSensitiveDeviationReason(r));
+    if (principales.length) return principales;
+  }
 
   const items = Array.isArray(execution.items) ? execution.items : [];
   const out: string[] = [];
   for (const item of items) {
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
     const reason = (item as RawDoc).reason;
-    if (typeof reason === "string" && reason.trim()) out.push(reason);
+    if (typeof reason !== "string" || !reason.trim()) continue;
+    if (isSensitiveDeviationReason(reason)) continue;
+    out.push(reason);
   }
   return out;
 }

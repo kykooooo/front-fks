@@ -207,12 +207,31 @@ describe("projectPlayerSummary — adaptation", () => {
     expect(out!.adaptation.labels).toEqual([]);
   });
 
-  it("détail médical (pain token) → label neutre, jamais le détail", () => {
+  it("garde-fou d'origine sensible → AUCUN label (même sort qu'un token inconnu)", () => {
+    // Avant le sujet 4, ce cas produisait « Adaptation sécurité appliquée » : la
+    // valeur ne sortait pas, mais la ligne prouvait qu'un problème physique
+    // avait été déclaré, en face d'un joueur nommé. Le signal disparaît.
     const out = projectPlayerSummary(
       baseInput({ plannedSessions: [plannedRaw({ ai: { blocks: [{}], guardrailsApplied: ["injury:knee_left_severe"] }, clientGuardrailsApplied: [] })] }),
     );
-    expect(out!.adaptation.labels).toEqual(["Adaptation sécurité appliquée"]);
+    expect(out!.adaptation).toEqual({ adapted: false, labels: [] });
     expect(JSON.stringify(out)).not.toContain("knee");
+  });
+
+  it("séance dont TOUS les garde-fous étaient sensibles → adaptation vide (comportement voulu)", () => {
+    const out = projectPlayerSummary(
+      baseInput({
+        sessions: [
+          completedRaw({
+            aiV2: {
+              blocks: [{}],
+              guardrailsApplied: ["tier:easy_plus", "gate:cap_easy", "feedback:rpe_high_reduce", "metrics:clamped:tsb:-31->-25"],
+            },
+          }),
+        ],
+      }),
+    );
+    expect(out!.adaptation).toEqual({ adapted: false, labels: [] });
   });
 });
 
@@ -550,7 +569,9 @@ describe("projectPlayerSummary — execution (boucle de suivi)", () => {
       itemsReplacedEquivalent: 1,
       itemsReplacedPartial: 1,
       itemsTotal: 3, // = execution.items.length (dénominateur du pourcentage)
-      deviationLabels: ["Manque de temps", "Autre raison"],
+      // mainReasons vaut ["time", "pain"] : la raison sensible est RETIRÉE,
+      // elle ne devient pas « Autre raison ».
+      deviationLabels: ["Manque de temps"],
     });
   });
 
@@ -655,24 +676,33 @@ describe("projectPlayerSummary — execution (boucle de suivi)", () => {
     expect(() => assertCoachSafe(out)).not.toThrow();
   });
 
-  it("NON INVERSIBILITÉ de bout en bout : douleur, fatigue et autre → MÊME projection", () => {
-    const build = (reason: string) =>
+  it("raison sensible de bout en bout : douleur/fatigue = AUCUNE raison du tout", () => {
+    const build = (reasons: string[]) =>
       projectPlayerSummary(
-        baseInput({ sessions: [completedRaw({ execution: executionRaw({ completion: { mainReasons: [reason] } }) })] }),
+        baseInput({ sessions: [completedRaw({ execution: executionRaw({ completion: { mainReasons: reasons } }) })] }),
       );
-    const withPain = build("pain");
-    const withFatigue = build("fatigue");
-    const withOther = build("other");
+    const withPain = build(["pain"]);
+    const withFatigue = build(["fatigue"]);
+    const withNothing = build([]);
+    const withBoth = build(["pain", "time"]);
+    // Une raison dominante sensible produit exactement la projection d'une
+    // séance dont les raisons dominantes n'ont pas été calculées : ni libellé
+    // propre (fuite), ni libellé fourre-tout (signal qui traverse), ni liste
+    // vide révélatrice (elle retombe sur les raisons NON sensibles des items).
     expect(withPain!.execution).toEqual(withFatigue!.execution);
-    expect(withPain!.execution).toEqual(withOther!.execution);
-    expect(withPain!.execution!.deviationLabels).toEqual(["Autre raison"]);
+    expect(withPain!.execution).toEqual(withNothing!.execution);
+    expect(withPain!.execution).toEqual(withBoth!.execution);
+    expect(withPain!.execution!.deviationLabels).toEqual(["Manque de temps"]);
+    // …tandis qu'une raison banale reste nommée : rien n'a été stérilisé.
+    expect(build(["other"])!.execution!.deviationLabels).toEqual(["Autre raison"]);
   });
 
   it("sans mainReasons, retombe sur items[].reason — en ne lisant QUE `reason`", () => {
     const ex = executionRaw();
     delete (ex.completion as Record<string, unknown>).mainReasons;
     const out = projectPlayerSummary(baseInput({ sessions: [completedRaw({ execution: ex })] }));
-    expect(out!.execution!.deviationLabels).toEqual(["Manque de temps", "Autre raison"]);
+    // items = [done/null, adapted/"time", skipped/"pain"] → seule "time" survit.
+    expect(out!.execution!.deviationLabels).toEqual(["Manque de temps"]);
     expect(JSON.stringify(out)).not.toContain("SENTINEL_COMMENT_LIBRE");
   });
 
@@ -680,7 +710,7 @@ describe("projectPlayerSummary — execution (boucle de suivi)", () => {
     const out = projectPlayerSummary(
       baseInput({ sessions: [completedRaw({ execution: executionRaw({ completion: { mainReasons: [] } }) })] }),
     );
-    expect(out!.execution!.deviationLabels).toEqual(["Manque de temps", "Autre raison"]);
+    expect(out!.execution!.deviationLabels).toEqual(["Manque de temps"]);
   });
 
   it("aucun écart nulle part → deviationLabels vide", () => {
