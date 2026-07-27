@@ -14,6 +14,10 @@ import {
   sanitizeFirstName,
   toDateKey,
   toCoachAdaptationLabels,
+  COACH_DEVIATION_LABELS_MAX,
+  COACH_DEVIATION_OTHER_LABEL,
+  deviationReasonToCoachLabel,
+  toCoachDeviationLabels,
 } from "../src/coachLabels";
 
 describe("guardrailToCoachLabel (allowlist)", () => {
@@ -131,5 +135,85 @@ describe("pickCoachSessionToDisplay", () => {
       id: "x",
       dateKey: "2026-06-28",
     });
+  });
+});
+
+// ─── Raisons d'écart joueur (boucle de suivi) ───────────────────────────────
+describe("deviationReasonToCoachLabel — allowlist fermée", () => {
+  it("traduit les raisons NON sensibles", () => {
+    expect(deviationReasonToCoachLabel("time")).toBe("Manque de temps");
+    expect(deviationReasonToCoachLabel("equipment")).toBe("Matériel indisponible");
+    expect(deviationReasonToCoachLabel("too_difficult")).toBe("Exercice trop difficile");
+    expect(deviationReasonToCoachLabel("technical")).toBe("Difficulté technique");
+    expect(deviationReasonToCoachLabel("space")).toBe("Espace insuffisant");
+    expect(deviationReasonToCoachLabel("no_partner")).toBe("Pas de partenaire");
+  });
+
+  it("tolère casse et espaces (le token vient d'un client)", () => {
+    expect(deviationReasonToCoachLabel("  TIME ")).toBe("Manque de temps");
+  });
+});
+
+describe("NON INVERSIBILITÉ — santé indéductible par élimination", () => {
+  // Cœur de la règle : si `pain` avait un libellé distinct, il fuiterait ; s'il
+  // était simplement supprimé, le coach le déduirait du trou. Il doit donc être
+  // STRICTEMENT indiscernable de raisons banales.
+  it("pain, fatigue, other et un token inconnu donnent EXACTEMENT le même libellé", () => {
+    const pain = deviationReasonToCoachLabel("pain");
+    const fatigue = deviationReasonToCoachLabel("fatigue");
+    const other = deviationReasonToCoachLabel("other");
+    const unknown = deviationReasonToCoachLabel("token_jamais_vu_v42");
+
+    expect(pain).toBe(COACH_DEVIATION_OTHER_LABEL);
+    expect(fatigue).toBe(pain);
+    expect(other).toBe(pain);
+    expect(unknown).toBe(pain);
+    expect(new Set([pain, fatigue, other, unknown]).size).toBe(1);
+  });
+
+  it("les valeurs non-chaînes retombent sur le même libellé (jamais de crash, jamais de fuite)", () => {
+    expect(deviationReasonToCoachLabel(null)).toBe(COACH_DEVIATION_OTHER_LABEL);
+    expect(deviationReasonToCoachLabel(42)).toBe(COACH_DEVIATION_OTHER_LABEL);
+    expect(deviationReasonToCoachLabel({ pain: 3 })).toBe(COACH_DEVIATION_OTHER_LABEL);
+  });
+
+  it("aucun libellé ne contient de vocabulaire médical", () => {
+    const all = ["time", "equipment", "too_difficult", "technical", "space", "no_partner", "pain", "fatigue", "other"]
+      .map(deviationReasonToCoachLabel)
+      .join(" | ")
+      .toLowerCase();
+    for (const mot of ["douleur", "pain", "blessure", "fatigue", "mal ", "genou"]) {
+      expect(all).not.toContain(mot);
+    }
+  });
+
+  it("une liste de 4 douleurs ne se distingue pas d'une liste de 4 'autre'", () => {
+    expect(toCoachDeviationLabels(["pain", "pain", "pain", "pain"])).toEqual(
+      toCoachDeviationLabels(["other", "other", "other", "other"]),
+    );
+  });
+});
+
+describe("toCoachDeviationLabels", () => {
+  it("non-tableau → []", () => {
+    expect(toCoachDeviationLabels(null)).toEqual([]);
+    expect(toCoachDeviationLabels("time")).toEqual([]);
+  });
+
+  it("ignore les entrées vides / non-chaînes (absence de raison ≠ raison inconnue)", () => {
+    expect(toCoachDeviationLabels([null, "", "   ", 7, "time"])).toEqual(["Manque de temps"]);
+  });
+
+  it("déduplique", () => {
+    expect(toCoachDeviationLabels(["time", "time", "pain", "fatigue"])).toEqual([
+      "Manque de temps",
+      COACH_DEVIATION_OTHER_LABEL,
+    ]);
+  });
+
+  it("borne la liste à COACH_DEVIATION_LABELS_MAX", () => {
+    const out = toCoachDeviationLabels(["time", "equipment", "space", "technical", "no_partner"]);
+    expect(out).toHaveLength(COACH_DEVIATION_LABELS_MAX);
+    expect(COACH_DEVIATION_LABELS_MAX).toBe(3);
   });
 });

@@ -10,6 +10,8 @@
 
 import { doc, setDoc } from "firebase/firestore";
 import type { RulesTestEnvironment } from "@firebase/rules-unit-testing";
+// Source de vérité de la liste interdite (cf. FORBIDDEN_SUMMARY_KEYS plus bas).
+import { FORBIDDEN_KEYS } from "../functions/src/dto";
 
 export const PROJECT_ID = "demo-fks-rules";
 
@@ -84,6 +86,43 @@ export const SUMMARY = {
     adapted: true,
     labels: ["Contrôle appuis et alignement"],
   },
+  // Extension v2 : prévu ET fait coexistent, dates d'activité brutes, exécution
+  // réelle. Rien de sensible — les raisons d'écart sont déjà traduites par
+  // l'allowlist fermée du serveur (douleur/fatigue/inconnu → "Autre raison").
+  activity: {
+    doneDateKeys: ["2026-06-28", "2026-06-25", "2026-06-23"],
+  },
+  lastPlanned: {
+    dateKey: "2026-07-02",
+    title: "Séance vitesse",
+    focusLabel: "Vitesse",
+    intensityLabel: "Intense",
+    durationMin: 35,
+    blockCount: 3,
+  },
+  lastDone: {
+    dateKey: "2026-06-28",
+    title: "Séance renfo / force",
+    focusLabel: "Renfo / Force",
+    intensityLabel: "Modérée",
+    durationMin: 40,
+    blockCount: 4,
+  },
+  // Bloc RECALCULABLE : (9 faits + 1 adapté + 0 remplacé) / 12 exercices = 83 %.
+  // Le 12e exercice est resté sans statut connu : il compte dans le total et pèse
+  // 0 — c'est pourquoi les compteurs ne somment pas au total.
+  execution: {
+    completionPct: 83,
+    completionStatus: "partial",
+    itemsDone: 9,
+    itemsAdapted: 1,
+    itemsSkipped: 1,
+    itemsReplaced: 0,
+    itemsReplacedEquivalent: 0,
+    itemsReplacedPartial: 0,
+    itemsTotal: 12,
+    deviationLabels: ["Manque de temps", "Autre raison"],
+  },
   // Enveloppe watermark (idempotence/ordre). En prod `updatedAt` = serverTimestamp() ;
   // ici valeurs fixes pour le déterminisme des tests Rules (TARGET, skip en PR-4).
   sourceEventAt: 1751133600000,
@@ -94,7 +133,30 @@ export const SUMMARY = {
 
 // Champs STRICTEMENT interdits dans la projection — servent d'assertion négative
 // (aucune de ces clés ne doit exister dans un summary).
-export const FORBIDDEN_SUMMARY_KEYS = ["pain", "comment", "fatigue", "recovery", "tsb", "atl", "ctl", "metrics", "feedback", "aiV2", "ai", "rpe", "selection_debug"];
+//
+// RESYNCHRONISÉ sur `functions/src/dto.FORBIDDEN_KEYS` : les deux listes étaient
+// censées être LE MÊME contrat, mais elles avaient divergé (13 entrées ici contre
+// 31 côté serveur — donc `severity`, `menstruation`, `guardrails`, `prompt`… n'étaient
+// pas testés côté Rules). On importe désormais la source de vérité au lieu de la
+// recopier : la liste ne peut plus dériver en silence.
+//
+// On y ajoute les variantes camelCase réellement écrites par le client (la liste
+// serveur est normalisée en minuscules pour son propre comparateur, alors qu'ici
+// on teste des noms de clés Firestore tels quels).
+
+const CAMEL_CASE_VARIANTS = [
+  "aiV2",
+  "painZone",
+  "painZones",
+  "recoveryPerceived",
+  "guardrailsApplied",
+  "clientGuardrailsApplied",
+  "selectionDebug",
+];
+
+export const FORBIDDEN_SUMMARY_KEYS: string[] = [
+  ...new Set([...FORBIDDEN_KEYS, ...CAMEL_CASE_VARIANTS]),
+];
 
 // Seed de la projection coach-safe (règles désactivées). À appeler APRÈS seed().
 export async function seedPlayerSummary(testEnv: RulesTestEnvironment): Promise<void> {

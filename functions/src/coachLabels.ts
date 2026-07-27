@@ -137,6 +137,63 @@ export function toCoachAdaptationLabels(tokens: unknown): string[] {
   return out;
 }
 
+// ─── Raisons d'écart joueur → label coach (allowlist FERMÉE, non inversible) ──
+//
+// Source : `DeviationReason` de la boucle de suivi joueur (domain/tracking/types.ts)
+// = time | equipment | too_difficult | fatigue | pain | technical | space |
+//   no_partner | other.
+//
+// RÈGLE DE SÉCURITÉ CENTRALE — NON INVERSIBILITÉ.
+// `pain`, `fatigue`, `other` ET tout token inconnu produisent EXACTEMENT le même
+// libellé ("Autre raison"). Ce n'est pas de la paresse de traduction : si la
+// douleur avait son propre libellé, elle fuiterait ; et si elle était simplement
+// SUPPRIMÉE de la liste, le coach pourrait la déduire par élimination (« il a
+// sauté 3 exos, aucune raison affichée → il a mal quelque part »). Le seul moyen
+// de rendre l'info non déductible est de la NOYER dans un libellé partagé avec
+// des raisons banales. Un test verrouille cette égalité stricte.
+
+/** Libellé fourre-tout. Partagé par douleur, fatigue, "autre" et inconnu. */
+export const COACH_DEVIATION_OTHER_LABEL = "Autre raison";
+
+/** Raisons NON sensibles, seules à mériter un libellé propre. */
+const DEVIATION_LABELS: Record<string, string> = {
+  time: "Manque de temps",
+  equipment: "Matériel indisponible",
+  too_difficult: "Exercice trop difficile",
+  technical: "Difficulté technique",
+  space: "Espace insuffisant",
+  no_partner: "Pas de partenaire",
+};
+
+/**
+ * Nombre max de raisons affichées au coach. Aligné sur `completion.mainReasons`
+ * de la boucle de suivi (max 3) : au-delà, ce n'est plus une explication, c'est
+ * du bruit dans un écran qui doit se lire en quelques secondes.
+ */
+export const COACH_DEVIATION_LABELS_MAX = 3;
+
+/** Traduit UNE raison d'écart. Toujours une chaîne : jamais de token brut. */
+export function deviationReasonToCoachLabel(raw: unknown): string {
+  if (typeof raw !== "string") return COACH_DEVIATION_OTHER_LABEL;
+  return DEVIATION_LABELS[raw.trim().toLowerCase()] ?? COACH_DEVIATION_OTHER_LABEL;
+}
+
+/**
+ * Traduit une liste de raisons : entrées vides/non-chaînes ignorées (absence de
+ * raison ≠ raison inconnue), reste dédupliqué et borné.
+ */
+export function toCoachDeviationLabels(reasons: unknown): string[] {
+  if (!Array.isArray(reasons)) return [];
+  const out: string[] = [];
+  for (const r of reasons) {
+    if (typeof r !== "string" || !r.trim()) continue;
+    const label = deviationReasonToCoachLabel(r);
+    if (!out.includes(label)) out.push(label);
+    if (out.length >= COACH_DEVIATION_LABELS_MAX) break;
+  }
+  return out;
+}
+
 /** Intensité technique → mot coach (port de readableIntensity). `null` si inconnu. */
 export function readableIntensity(intensity: unknown): string | null {
   switch (String(intensity ?? "").toLowerCase()) {

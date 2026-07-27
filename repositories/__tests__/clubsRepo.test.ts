@@ -201,7 +201,7 @@ describe("fetchClubPlayerSummaries — roster via members → summaries (coach-s
     expect(summaryDocIds()).not.toContain("playerGone");
   });
 
-  test("départ ENTRE members et get summary → unavailable, roster vide (pas de fuite)", async () => {
+  test("départ ENTRE members et get summary → échec PARTIEL non destructeur (compté, jamais silencieux)", async () => {
     mockFlags.members = [
       { id: "playerA1", role: "player" },
       { id: "playerLeaving", role: "player" },
@@ -212,9 +212,42 @@ describe("fetchClubPlayerSummaries — roster via members → summaries (coach-s
       playerLeaving: { exists: false, data: () => ({}), throws: true },
     };
     const res = await fetchClubPlayerSummaries("clubX");
+    // Un seul échec ne vide PLUS tout l'effectif : les projections lisibles restent.
+    expect(res.unavailable).toBe(false);
+    expect(res.summaries.map((s) => s.playerUid)).toEqual(["playerA1"]);
+    expect(res.unreadableCount).toBe(1);
+    expect(res.pendingCount).toBe(0); // "non lu" n'est jamais confondu avec "pas encore projeté"
+  });
+
+  test("TOUTES les lectures summary refusées → indisponible global (rien de lisible)", async () => {
+    mockFlags.members = [
+      { id: "playerA1", role: "player" },
+      { id: "playerA2", role: "player" },
+    ];
+    mockFlags.summaryById = {
+      playerA1: { exists: false, data: () => ({}), throws: true },
+      playerA2: { exists: false, data: () => ({}), throws: true },
+    };
+    const res = await fetchClubPlayerSummaries("clubX");
     expect(res.unavailable).toBe(true);
-    expect(res.summaries).toEqual([]); // jamais de roster partiel présenté comme complet
+    expect(res.summaries).toEqual([]);
+    expect(res.unreadableCount).toBe(2);
+  });
+
+  test("club sans joueur → vide honnête, jamais 'indisponible'", async () => {
+    mockFlags.members = [{ id: "coachA", role: "coach" }];
+    const res = await fetchClubPlayerSummaries("clubX");
+    expect(res.unavailable).toBe(false);
+    expect(res.summaries).toEqual([]);
     expect(res.pendingCount).toBe(0);
+    expect(res.unreadableCount).toBe(0);
+  });
+
+  test("fetchedAt horodate la lecture (horloge injectable, jamais de calcul temporel serveur)", async () => {
+    mockFlags.members = [{ id: "playerA1", role: "player" }];
+    mockFlags.summaryById = { playerA1: { exists: true, data: () => validPayload({ playerUid: "playerA1" }) } };
+    const res = await fetchClubPlayerSummaries("clubX", { now: () => 1_700_000_000_000 });
+    expect(res.fetchedAt).toBe(1_700_000_000_000);
   });
 
   test("membre actif sans summary / payload malformé → pending, jamais dropé en silence", async () => {

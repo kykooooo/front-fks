@@ -212,8 +212,10 @@ export async function createClubAsCoach(opts: {
 // users/{uid}/sessions ni /plannedSessions. La projection est produite serveur
 // (Cloud Function, PR-2) : labels déjà traduits, aucune donnée médicale / RPE /
 // TSB / token brut. Un doc malformé/absent → "projection non prête" (pending),
-// jamais dropé en silence ; une lecture refusée (permissions/réseau) → état
-// "indisponible" honnête, sans crash ni fallback vers les lectures brutes.
+// jamais dropé en silence ; une lecture refusée (permissions/réseau) → comptée
+// dans `unreadableCount` et annoncée telle quelle, sans crash ni fallback vers
+// les lectures brutes. Trois compteurs DISTINCTS, jamais confondus :
+//   prêt (summaries) · pas encore projeté (pendingCount) · non lu (unreadableCount).
 //
 // POURQUOI members → summaries (et pas un getDocs de collection) : la règle
 // Firestore de playerSummaries exige que la JOUEUSE ciblée soit ENCORE membre
@@ -229,7 +231,12 @@ export async function createClubAsCoach(opts: {
 // lu ; SUMMARY_READ_CONCURRENCY borne le parallélisme (pas de rafale simultanée).
 
 // Garde-fou anti-scan : un effectif club reste raisonnable. Borne haute large.
-const MEMBERS_FETCH_LIMIT = 200;
+//
+// EXPORTÉE parce que l'écran Effectif ANNONCE ce plafond en pied de liste
+// ("seuls les 200 premiers membres sont lus"). Recopié à la main, ce nombre
+// mentirait au premier changement de valeur ici : le plafond affiché doit être
+// le plafond réellement appliqué, jamais un jumeau.
+export const MEMBERS_FETCH_LIMIT = 200;
 // Parallélisme borné des lectures de summary (évite N getDoc simultanés).
 const SUMMARY_READ_CONCURRENCY = 8;
 
@@ -238,7 +245,19 @@ export type CoachSummariesResult = {
   // Nombre de membres player actifs SANS summary prêt (projection non prête). On
   // expose un COMPTEUR, jamais les UIDs : aucun identifiant technique côté UI.
   pendingCount: number;
-  unavailable: boolean; // true si members OU une lecture summary a échoué (permissions/réseau)
+  // Nombre de membres player actifs dont la LECTURE a échoué (permissions/réseau,
+  // ou départ du club pendant le refresh). SÉMANTIQUE DISTINCTE de pendingCount :
+  // "pas encore préparé par le serveur" ≠ "je n'ai pas réussi à lire". L'écran
+  // annonce explicitement "N profils non lus" → l'honnêteté est préservée sans
+  // vider tout l'effectif pour un seul échec.
+  unreadableCount: number;
+  // true UNIQUEMENT si l'effectif est globalement illisible : échec de la lecture
+  // de `members` (on ne connaît même pas le roster), ou échec de TOUTES les
+  // lectures de summary. Un échec PARTIEL ne bascule plus l'écran en vide.
+  unavailable: boolean;
+  // Horodatage (ms epoch) de fin de lecture — sert l'affichage de fraîcheur et
+  // l'anti-rebond côté hook. Injectable (`opts.now`) pour rester testable.
+  fetchedAt: number;
 };
 
 export type CoachSummaryResult = {
@@ -273,11 +292,27 @@ async function mapWithConcurrency<T, R>(
  *  3. lit CHAQUE clubs/{clubId}/playerSummaries/{memberId} directement (concurrence bornée),
  *     via le lecteur doc unique (intégrité playerUid === memberId, parse défensif, zéro fallback) ;
  *  4. membre sans summary / payload malformé → compté dans `pendingCount` (projection non prête, jamais dropé) ;
- *  5. échec members OU d'une lecture summary → `unavailable=true` et roster VIDE
- *     (on ne présente JAMAIS un roster partiel comme complet).
+ *  5. lecture d'un summary refusée → compté dans `unreadableCount`, les AUTRES sont conservés ;
+ *  6. `unavailable` (roster globalement illisible) UNIQUEMENT si `members` échoue,
+ *     ou si TOUTES les lectures de summary échouent.
+ *
+ * POURQUOI on ne vide plus tout au premier échec : avec N+1 requêtes sur un réseau
+ * de stade, et le cas NORMAL d'un joueur qui quitte le club pendant le refresh
+ * (la rule refuse alors son summary), la règle "un échec = roster vide" transformait
+ * 29 projections lisibles sur 30 en écran vide. L'honnêteté n'est pas sacrifiée :
+ * elle est déplacée dans un compteur explicite (`unreadableCount`) que l'écran
+ * annonce ("N profils non lus"), au lieu d'un silence total.
  */
-export async function fetchClubPlayerSummaries(clubId: string): Promise<CoachSummariesResult> {
-  // 1–2. Effectif player actif (source de vérité du roster). Échec → indisponible global.
+export async function fetchClubPlayerSummaries(
+  clubId: string,
+  opts?: { now?: () => number },
+): Promise<CoachSummariesResult> {
+  // Horloge injectable : le repository ne décide de rien de temporel, il HORODATE
+  // seulement sa lecture (le calcul de fraîcheur reste côté front, avec l'horloge du coach).
+  const now = opts?.now ?? Date.now;
+
+  // 1–2. Effectif player actif (source de vérité du roster). Échec → indisponible global :
+  //      sans `members`, on ne connaît même pas la liste des joueurs à lire.
   let playerMemberIds: string[];
   try {
     const snap = await getDocs(
@@ -287,7 +322,13 @@ export async function fetchClubPlayerSummaries(clubId: string): Promise<CoachSum
       .filter((d) => (d.data() as { role?: unknown })?.role === "player")
       .map((d) => d.id);
   } catch {
-    return { summaries: [], pendingCount: 0, unavailable: true };
+    return {
+      summaries: [],
+      pendingCount: 0,
+      unreadableCount: 0,
+      unavailable: true,
+      fetchedAt: now(),
+    };
   }
 
   // 3. Une lecture directe de summary par membre actif (parallélisme borné).
@@ -297,16 +338,25 @@ export async function fetchClubPlayerSummaries(clubId: string): Promise<CoachSum
 
   const summaries: CoachPlayerSummary[] = [];
   let pendingCount = 0;
+  let unreadableCount = 0;
   for (const r of reads) {
-    // 5. Une lecture refusée (permissions/réseau, ex: départ entre members et get)
-    //    → indisponible global, roster vide (jamais de demi-liste trompeuse).
-    if (r.unavailable) return { summaries: [], pendingCount: 0, unavailable: true };
+    // 5. Lecture refusée (permissions/réseau, ex: départ entre members et get) :
+    //    on la COMPTE et on continue — les autres projections restent affichables.
+    if (r.unavailable) {
+      unreadableCount += 1;
+      continue;
+    }
     // 4. Prêt & valide vs projection non prête (absent/malformé/mismatch → null).
     //    On ne garde que le COMPTEUR (jamais l'UID) → rien de technique à l'écran.
     if (r.summary) summaries.push(r.summary);
     else pendingCount += 1;
   }
-  return { summaries, pendingCount, unavailable: false };
+
+  // 6. Tout l'effectif illisible = état global honnête. Un effectif VIDE (0 membre
+  //    player) n'est pas une indisponibilité : c'est un vrai club sans joueur.
+  const unavailable = playerMemberIds.length > 0 && unreadableCount === playerMemberIds.length;
+
+  return { summaries, pendingCount, unreadableCount, unavailable, fetchedAt: now() };
 }
 
 /** Lit le résumé d'un seul joueur (doc unique). */

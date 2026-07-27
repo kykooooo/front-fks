@@ -30,9 +30,10 @@ import PrivacyPolicyScreen from "../screens/PrivacyPolicyScreen";
 import RoutineScreen from "../screens/RoutineScreen";
 import CycleModalScreen from "../screens/CycleModalScreen";
 import ProgressScreen from "../screens/ProgressScreen";
-import CoachHomeScreen from "../screens/CoachHomeScreen";
 import CoachOnboardingScreen from "../screens/CoachOnboardingScreen";
-import CoachPlayerDetailScreen from "../screens/CoachPlayerDetailScreen";
+import CoachTabs, { type CoachTabsParamList } from "./CoachTabs";
+import CoachPlayerScreen from "../screens/coach/CoachPlayerScreen";
+import { coachColors } from "../components/coach/coachTheme";
 import { theme } from "../constants/theme";
 import { STORAGE_KEYS } from "../constants/storage";
 import { DEV_FLAGS } from "../config/devFlags";
@@ -107,7 +108,8 @@ export type AuthStackParamList = {
 };
 
 export type CoachStackParamList = {
-  CoachHome: undefined;
+  /** Les 3 onglets coach (Aujourd'hui / Effectif / Semaine). */
+  CoachHome: NavigatorScreenParams<CoachTabsParamList> | undefined;
   // Coach-safe : on ne transmet plus de profil brut, seulement les clés de lecture
   // de la projection (clubs/{clubId}/playerSummaries/{playerUid}).
   CoachPlayerDetail: { clubId: string; playerUid: string };
@@ -240,16 +242,33 @@ function CoachNavigator() {
     <CoachStack.Navigator
       screenOptions={{
         headerShown: false,
-        headerStyle: { backgroundColor: theme.colors.background },
-        headerTintColor: theme.colors.text,
+        // RUPTURE VISUELLE CORRIGÉE. Ce stack posait la palette JOUEUR
+        // (`theme.colors.background`, sombre et dépendante du themeMode) sur ses
+        // en-têtes : « Mentions légales », « Confidentialité » et « Supprimer mon
+        // compte » s'ouvraient avec une barre de titre sombre au milieu d'un
+        // espace coach clair — et devenaient carrément noires en thème sombre.
+        // Les couleurs coach sont désormais posées ICI, une seule fois, pour
+        // tous les écrans du stack (y compris les écrans partagés avec le joueur,
+        // dont seul le CORPS reste en thème joueur — hors périmètre de ce lot).
+        headerStyle: { backgroundColor: coachColors.card },
+        headerTintColor: coachColors.text,
+        headerTitleStyle: { color: coachColors.text },
+        headerShadowVisible: false,
         animation: "slide_from_right",
         gestureEnabled: true,
         gestureDirection: "horizontal",
         headerBackTitle: "Retour",
       }}
     >
-      <CoachStack.Screen name="CoachHome" component={CoachHomeScreen} />
-      <CoachStack.Screen name="CoachPlayerDetail" component={CoachPlayerDetailScreen} options={{ headerShown: true, title: "Joueur" }} />
+      {/* Écran d'atterrissage = la tab bar coach (Aujourd'hui / Effectif / Semaine). */}
+      <CoachStack.Screen name="CoachHome" component={CoachTabs} options={{ gestureEnabled: false }} />
+      {/* Titre par défaut neutre : la fiche le remplace par le prénom dès qu'elle
+          l'a lu (useLayoutEffect), et n'a plus à repeindre l'en-tête elle-même. */}
+      <CoachStack.Screen
+        name="CoachPlayerDetail"
+        component={CoachPlayerScreen}
+        options={{ headerShown: true, title: "Fiche joueur" }}
+      />
       <CoachStack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ headerShown: true, title: "Supprimer mon compte" }} />
       <CoachStack.Screen name="LegalNotice" component={LegalNoticeScreen} options={{ headerShown: true, title: "Mentions légales" }} />
       <CoachStack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={{ headerShown: true, title: "Confidentialité" }} />

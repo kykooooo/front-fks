@@ -39,6 +39,65 @@ export type CoachAdaptation = {
   labels: string[];
 };
 
+// ─── Contrat v2 : faits à DATE ABSOLUE, tous OPTIONNELS ──────────────────────
+// Le projecteur serveur est VOLONTAIREMENT SANS HORLOGE : il n'envoie que des
+// faits datés ("YYYY-MM-DD"), jamais de "récent"/"en retard"/"il y a N jours".
+// Tout ce qui dépend de l'instant présent est calculé côté front (domain/coachView).
+// Ces champs sont ABSENTS aujourd'hui (la boucle de suivi joueur n'est pas encore
+// mergée) : leur absence est le cas NOMINAL, jamais une anomalie.
+
+/** Dates des séances FKS réellement terminées (fait brut, max 14, tri décroissant). */
+export type CoachActivityWindow = {
+  doneDateKeys: string[];
+};
+
+/** Référence de séance = CoachLatestSession SANS `status` (le slot dit déjà prévue/faite). */
+export type CoachSessionRef = {
+  dateKey: string | null;
+  title: string | null;
+  focusLabel: string | null; // déjà traduit serveur
+  intensityLabel: string | null; // déjà traduit serveur
+  durationMin: number | null;
+  blockCount: number | null;
+};
+
+export const COACH_EXECUTION_STATUSES = ["full", "partial", "abandoned"] as const;
+export type CoachExecutionStatus = (typeof COACH_EXECUTION_STATUSES)[number];
+
+/**
+ * Exécution RÉELLE de la dernière séance faite (ce que le joueur a fait, adapté,
+ * sauté, remplacé). Vient de la boucle de suivi joueur.
+ * `deviationLabels` arrive d'une allowlist serveur NON INVERSIBLE : douleur,
+ * fatigue et "autre" y produisent tous le MÊME libellé "Autre raison", pour
+ * qu'aucune information de santé ne soit déductible par élimination.
+ */
+export type CoachExecutionSummary = {
+  completionPct: number | null; // 0..100
+  completionStatus: CoachExecutionStatus | null;
+  itemsDone: number | null;
+  itemsAdapted: number | null;
+  itemsSkipped: number | null;
+  /** Somme équivalent + partiel, pour un affichage compact. */
+  itemsReplaced: number | null;
+  /**
+   * Les deux natures de remplacement, SÉPARÉES parce qu'elles n'ont pas le même
+   * poids dans le pourcentage (1 pour un équivalent, 0,5 pour un partiel).
+   * Sans elles, le coach ne peut pas refaire le calcul qu'on lui affiche.
+   * `null` = nuance non transmise (projection ancienne, ou compteur déjà agrégé
+   * côté source) → on n'invente rien.
+   */
+  itemsReplacedEquivalent: number | null;
+  itemsReplacedPartial: number | null;
+  /**
+   * Total d'exercices de la séance = dénominateur du pourcentage. Les exercices
+   * sans statut connu comptent dans ce total en pesant 0 : les compteurs ne
+   * somment donc pas toujours au total. `null` = total inconnu → l'écran doit
+   * dire qu'il ne peut pas détailler le calcul, jamais fabriquer un total.
+   */
+  itemsTotal: number | null;
+  deviationLabels: string[];
+};
+
 export type CoachPlayerSummary = {
   playerUid: string;
   firstName: string | null;
@@ -49,6 +108,15 @@ export type CoachPlayerSummary = {
   latestSession: CoachLatestSession | null;
   lastActivity: CoachLastActivity | null;
   adaptation: CoachAdaptation;
+  // ── v2 (optionnels côté serveur → toujours présents ici, à null si absents) ──
+  /** Fenêtre d'activité brute. `null` = le serveur ne la projette pas encore. */
+  activity: CoachActivityWindow | null;
+  /** Dernière séance PLANIFIÉE. COEXISTE avec `lastDone` (deux slots distincts). */
+  lastPlanned: CoachSessionRef | null;
+  /** Dernière séance FAITE. COEXISTE avec `lastPlanned`. */
+  lastDone: CoachSessionRef | null;
+  /** Exécution réelle de cette dernière séance faite. */
+  execution: CoachExecutionSummary | null;
 };
 
 // ─── Bornes défensives (ALIGNÉES sur le serveur functions/src/coachLabels.ts) ─
@@ -57,6 +125,13 @@ const MAX_STR = 80; // titre / focus / intensité / poste / niveau
 const MAX_NAME = 40; // = FIRST_NAME_MAX serveur
 const MAX_LABEL_LEN = 160;
 const MAX_LABELS = 12;
+/** Fenêtre d'activité : 14 dates max (borne serveur). Au-delà = tronqué, jamais complété. */
+const MAX_ACTIVITY_DAYS = 14;
+/**
+ * Borne DÉFENSIVE des compteurs d'exécution : une séance ne contient jamais
+ * 100 exercices. On refuse une valeur aberrante plutôt que de l'afficher au coach.
+ */
+const MAX_EXEC_ITEMS = 100;
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object" && !Array.isArray(v);
@@ -129,6 +204,85 @@ function parseAdaptation(raw: unknown): CoachAdaptation {
   return { adapted: raw.adapted === true && labels.length > 0, labels };
 }
 
+// ─── Parseurs v2 (absence = cas nominal → null / [], jamais une valeur inventée) ─
+
+/**
+ * Fenêtre d'activité : on ne fait CONFIANCE ni à l'ordre ni à l'unicité côté
+ * serveur. On borne chaque date, on déduplique, on trie décroissant, on coupe à 14.
+ * Aucun compteur ici : compter, c'est déjà interpréter, et interpréter demande
+ * une horloge (donc le front, pas ce parseur).
+ */
+function parseActivityWindow(raw: unknown): CoachActivityWindow | null {
+  if (!isObj(raw)) return null;
+  if (!Array.isArray(raw.doneDateKeys)) return null;
+  const keys: string[] = [];
+  for (const item of raw.doneDateKeys) {
+    const key = bDateKey(item);
+    if (key && !keys.includes(key)) keys.push(key);
+  }
+  keys.sort((a, b) => (a < b ? 1 : a > b ? -1 : 0)); // décroissant (plus récent d'abord)
+  return { doneDateKeys: keys.slice(0, MAX_ACTIVITY_DAYS) };
+}
+
+/** Référence de séance : mêmes bornes que `latestSession`, sans `status`. */
+function parseSessionRef(raw: unknown): CoachSessionRef | null {
+  if (!isObj(raw)) return null;
+  return {
+    dateKey: bDateKey(raw.dateKey),
+    title: bStr(raw.title, MAX_STR),
+    focusLabel: bStr(raw.focusLabel, MAX_STR),
+    intensityLabel: bStr(raw.intensityLabel, MAX_STR),
+    durationMin: bDurationMin(raw.durationMin),
+    blockCount: bBlockCount(raw.blockCount),
+  };
+}
+
+/** Pourcentage de réalisation : nombre fini 0..100, arrondi entier, sinon null. */
+const bCompletionPct = (v: unknown): number | null =>
+  typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100 ? Math.round(v) : null;
+
+/** Compteur d'items : ENTIER 0..MAX_EXEC_ITEMS (aucun arrondi), sinon null. */
+const bItemCount = (v: unknown): number | null =>
+  typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= MAX_EXEC_ITEMS ? v : null;
+
+const bExecutionStatus = (v: unknown): CoachExecutionStatus | null =>
+  typeof v === "string" && (COACH_EXECUTION_STATUSES as readonly string[]).includes(v)
+    ? (v as CoachExecutionStatus)
+    : null;
+
+/**
+ * Exécution réelle. Les libellés d'écart sont pris TELS QUELS (allowlist serveur
+ * non inversible) : on ne les re-traduit pas, on ne les re-catégorise pas — toute
+ * tentative de « deviner » la raison derrière "Autre raison" casserait la
+ * non-inversibilité qui protège la donnée de santé.
+ */
+function parseExecution(raw: unknown): CoachExecutionSummary | null {
+  if (!isObj(raw)) return null;
+  const deviationLabels: string[] = [];
+  if (Array.isArray(raw.deviationLabels)) {
+    for (const item of raw.deviationLabels) {
+      if (deviationLabels.length >= MAX_LABELS) break;
+      const s = bStr(item, MAX_LABEL_LEN);
+      if (s && !deviationLabels.includes(s)) deviationLabels.push(s);
+    }
+  }
+  // Le total est le DÉNOMINATEUR du pourcentage : un 0 ne serait pas un total
+  // "vide" mais un dénominateur impossible → traité comme inconnu (null).
+  const itemsTotalBorne = bItemCount(raw.itemsTotal);
+  return {
+    completionPct: bCompletionPct(raw.completionPct),
+    completionStatus: bExecutionStatus(raw.completionStatus),
+    itemsDone: bItemCount(raw.itemsDone),
+    itemsAdapted: bItemCount(raw.itemsAdapted),
+    itemsSkipped: bItemCount(raw.itemsSkipped),
+    itemsReplaced: bItemCount(raw.itemsReplaced),
+    itemsReplacedEquivalent: bItemCount(raw.itemsReplacedEquivalent),
+    itemsReplacedPartial: bItemCount(raw.itemsReplacedPartial),
+    itemsTotal: itemsTotalBorne !== null && itemsTotalBorne > 0 ? itemsTotalBorne : null,
+    deviationLabels,
+  };
+}
+
 /**
  * Parseur DÉFENSIF PUR : document brut Firestore → contrat frontend borné, ou
  * null si le document est inutilisable (pas d'objet / pas de playerUid).
@@ -155,6 +309,10 @@ export function parseCoachPlayerSummary(raw: unknown): CoachPlayerSummary | null
     latestSession: parseLatestSession(raw.latestSession),
     lastActivity: parseLastActivity(raw.lastActivity),
     adaptation: parseAdaptation(raw.adaptation),
+    activity: parseActivityWindow(raw.activity),
+    lastPlanned: parseSessionRef(raw.lastPlanned),
+    lastDone: parseSessionRef(raw.lastDone),
+    execution: parseExecution(raw.execution),
   };
 }
 

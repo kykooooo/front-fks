@@ -61,6 +61,11 @@ describe("parseCoachPlayerSummary — DTO valide", () => {
       },
       lastActivity: { dateKey: "2026-06-28", durationMin: 40 },
       adaptation: { adapted: true, labels: ["Contrôle appuis et alignement"] },
+      // Champs v2 absents du DTO serveur actuel → null (cas NOMINAL aujourd'hui).
+      activity: null,
+      lastPlanned: null,
+      lastDone: null,
+      execution: null,
     });
   });
 
@@ -99,6 +104,10 @@ describe("parseCoachPlayerSummary — robustesse", () => {
     expect(s.latestSession).toBeNull();
     expect(s.lastActivity).toBeNull();
     expect(s.adaptation).toEqual({ adapted: false, labels: [] });
+    expect(s.activity).toBeNull();
+    expect(s.lastPlanned).toBeNull();
+    expect(s.lastDone).toBeNull();
+    expect(s.execution).toBeNull();
   });
 
   test("types invalides → null / défaut", () => {
@@ -244,6 +253,11 @@ const mk = (over: Partial<CoachPlayerSummary> & { playerUid: string }): CoachPla
   latestSession: over.latestSession ?? null,
   lastActivity: over.lastActivity ?? null,
   adaptation: over.adaptation ?? { adapted: false, labels: [] },
+  // Champs v2 : absents par défaut, comme dans la projection serveur actuelle.
+  activity: over.activity ?? null,
+  lastPlanned: over.lastPlanned ?? null,
+  lastDone: over.lastDone ?? null,
+  execution: over.execution ?? null,
 });
 
 const session = (status: "planned" | "done", dateKey: string) => ({
@@ -476,5 +490,190 @@ describe("coachRosterDisplay — jamais 'Aucun membre' si des projections sont e
   test("au moins une projection prête → 'list'", () => {
     expect(coachRosterDisplay({ readyCount: 3, pendingCount: 0, unavailable: false })).toBe("list");
     expect(coachRosterDisplay({ readyCount: 3, pendingCount: 2, unavailable: false })).toBe("list");
+  });
+});
+
+// ─── Contrat v2 : faits datés de la boucle de suivi joueur ───────────────────
+// Rappel : ces champs sont ABSENTS du DTO serveur AUJOURD'HUI. Le parseur doit
+// donc traiter leur absence comme un état NORMAL, et leur présence future sans
+// modification de code côté écrans.
+describe("parseCoachPlayerSummary — activity (fenêtre d'activité)", () => {
+  test("dates dédupliquées, triées du plus récent au plus ancien, bornées à 14", () => {
+    const brut = Array.from({ length: 20 }, (_, i) => `2026-07-${String(i + 1).padStart(2, "0")}`);
+    const s = parseCoachPlayerSummary({
+      playerUid: "u1",
+      activity: { doneDateKeys: [...brut, "2026-07-05"] },
+    })!;
+    expect(s.activity!.doneDateKeys).toHaveLength(14);
+    expect(s.activity!.doneDateKeys[0]).toBe("2026-07-20");
+    expect(s.activity!.doneDateKeys[13]).toBe("2026-07-07");
+  });
+
+  test("dates invalides ignorées, jamais remplacées", () => {
+    const s = parseCoachPlayerSummary({
+      playerUid: "u1",
+      activity: { doneDateKeys: ["2026-02-30", 42, null, "2026-07-04"] },
+    })!;
+    expect(s.activity!.doneDateKeys).toEqual(["2026-07-04"]);
+  });
+
+  test("activity absente ou malformée → null (pas de fenêtre vide inventée)", () => {
+    expect(parseCoachPlayerSummary({ playerUid: "u1" })!.activity).toBeNull();
+    expect(parseCoachPlayerSummary({ playerUid: "u1", activity: "nope" })!.activity).toBeNull();
+    expect(
+      parseCoachPlayerSummary({ playerUid: "u1", activity: { doneDateKeys: "nope" } })!.activity,
+    ).toBeNull();
+  });
+
+  test("tableau présent mais vide → fenêtre vide (le serveur affirme : rien de fait)", () => {
+    const s = parseCoachPlayerSummary({ playerUid: "u1", activity: { doneDateKeys: [] } })!;
+    expect(s.activity).toEqual({ doneDateKeys: [] });
+  });
+});
+
+describe("parseCoachPlayerSummary — lastPlanned / lastDone", () => {
+  test("les deux slots coexistent, mêmes bornes que latestSession", () => {
+    const s = parseCoachPlayerSummary({
+      playerUid: "u1",
+      lastPlanned: {
+        dateKey: "2026-07-27",
+        title: "Force bas du corps",
+        focusLabel: "Renfo / Force",
+        intensityLabel: "Élevée",
+        durationMin: 45.4,
+        blockCount: 5,
+      },
+      lastDone: {
+        dateKey: "2026-07-25",
+        title: "Explosivité",
+        focusLabel: "Vitesse",
+        intensityLabel: "Modérée",
+        durationMin: 35,
+        blockCount: 4,
+      },
+    })!;
+    expect(s.lastPlanned).toEqual({
+      dateKey: "2026-07-27",
+      title: "Force bas du corps",
+      focusLabel: "Renfo / Force",
+      intensityLabel: "Élevée",
+      durationMin: 45, // arrondi, comme boundDurationMin serveur
+      blockCount: 5,
+    });
+    expect(s.lastDone!.dateKey).toBe("2026-07-25");
+  });
+
+  test("aucun champ `status` n'est introduit (le slot dit déjà prévue/faite)", () => {
+    const s = parseCoachPlayerSummary({
+      playerUid: "u1",
+      lastDone: { dateKey: "2026-07-25", status: "done" },
+    })!;
+    expect(Object.keys(s.lastDone!)).not.toContain("status");
+  });
+
+  test("valeurs hors bornes → null, jamais une valeur voisine", () => {
+    const s = parseCoachPlayerSummary({
+      playerUid: "u1",
+      lastPlanned: { dateKey: "2026-13-01", durationMin: 9999, blockCount: 0 },
+    })!;
+    expect(s.lastPlanned).toEqual({
+      dateKey: null,
+      title: null,
+      focusLabel: null,
+      intensityLabel: null,
+      durationMin: null,
+      blockCount: null,
+    });
+  });
+});
+
+describe("parseCoachPlayerSummary — execution", () => {
+  test("bloc complet parsé et borné", () => {
+    const s = parseCoachPlayerSummary({
+      playerUid: "u1",
+      execution: {
+        completionPct: 72.6,
+        completionStatus: "partial",
+        itemsDone: 8,
+        itemsAdapted: 2,
+        itemsSkipped: 1,
+        itemsReplaced: 0,
+        deviationLabels: ["Manque de temps", "Autre raison", "Manque de temps"],
+      },
+    })!;
+    expect(s.execution).toEqual({
+      completionPct: 73,
+      completionStatus: "partial",
+      itemsDone: 8,
+      itemsAdapted: 2,
+      itemsSkipped: 1,
+      itemsReplaced: 0,
+      // Détail du calcul non transmis par cette projection → null, jamais 0 :
+      // une absence de nuance n'est pas une preuve d'absence de remplacement.
+      itemsReplacedEquivalent: null,
+      itemsReplacedPartial: null,
+      itemsTotal: null,
+      deviationLabels: ["Manque de temps", "Autre raison"], // dédupliqués
+    });
+  });
+
+  test("statut hors allowlist → null (jamais deviné)", () => {
+    const s = parseCoachPlayerSummary({
+      playerUid: "u1",
+      execution: { completionStatus: "en_cours" },
+    })!;
+    expect(s.execution!.completionStatus).toBeNull();
+  });
+
+  test("compteurs : entiers 0..100, sinon null", () => {
+    const items = (v: unknown) =>
+      parseCoachPlayerSummary({ playerUid: "u1", execution: { itemsSkipped: v } })!.execution!
+        .itemsSkipped;
+    expect(items(0)).toBe(0);
+    expect(items(12)).toBe(12);
+    expect(items(2.5)).toBeNull();
+    expect(items(-1)).toBeNull();
+    expect(items(1000)).toBeNull();
+    expect(items("2")).toBeNull();
+  });
+
+  test("pourcentage : 0..100 arrondi, sinon null", () => {
+    const pct = (v: unknown) =>
+      parseCoachPlayerSummary({ playerUid: "u1", execution: { completionPct: v } })!.execution!
+        .completionPct;
+    expect(pct(0)).toBe(0);
+    expect(pct(100)).toBe(100);
+    expect(pct(101)).toBeNull();
+    expect(pct(-5)).toBeNull();
+    expect(pct(Number.NaN)).toBeNull();
+  });
+
+  test("libellés d'écart : bornés à 12, tronqués, jamais ré-interprétés", () => {
+    const s = parseCoachPlayerSummary({
+      playerUid: "u1",
+      execution: {
+        deviationLabels: [
+          ...Array.from({ length: 15 }, (_, i) => `Raison ${i}`),
+          "x".repeat(400),
+        ],
+      },
+    })!;
+    expect(s.execution!.deviationLabels).toHaveLength(12);
+    expect(s.execution!.deviationLabels.every((l) => l.length <= 160)).toBe(true);
+  });
+
+  test("le front ne tente JAMAIS de deviner ce que cache « Autre raison »", () => {
+    // La non-inversibilité est garantie côté serveur ; ici on vérifie qu'aucune
+    // ré-écriture ne la casse : le libellé ressort à l'identique.
+    const s = parseCoachPlayerSummary({
+      playerUid: "u1",
+      execution: { deviationLabels: ["Autre raison"] },
+    })!;
+    expect(s.execution!.deviationLabels).toEqual(["Autre raison"]);
+  });
+
+  test("execution absente ou malformée → null", () => {
+    expect(parseCoachPlayerSummary({ playerUid: "u1" })!.execution).toBeNull();
+    expect(parseCoachPlayerSummary({ playerUid: "u1", execution: 7 })!.execution).toBeNull();
   });
 });

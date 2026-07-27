@@ -18,10 +18,18 @@ import {
   readableIntensity,
   sanitizeFirstName,
   toCoachAdaptationLabels,
+  toCoachDeviationLabels,
   toDateKey,
   type DisplayableSession,
 } from "./coachLabels";
-import type { CoachLatestSession, CoachPlayerSummaryCore, SessionStatus } from "./dto";
+import type {
+  CoachActivityWindow,
+  CoachExecutionSummary,
+  CoachLatestSession,
+  CoachPlayerSummaryCore,
+  CoachSessionRef,
+  SessionStatus,
+} from "./dto";
 
 export type RawDoc = Record<string, unknown>;
 /** Doc brut + son id Firestore (posé sous `__id`). */
@@ -121,6 +129,179 @@ function toLatestSession(c: SessionCandidate): CoachLatestSession {
   };
 }
 
+/** Même chose SANS `status` : le nom du champ (lastPlanned/lastDone) le porte. */
+function toSessionRef(c: SessionCandidate): CoachSessionRef {
+  return {
+    dateKey: c.dateKey,
+    title: c.title,
+    focusLabel: c.focusLabel,
+    intensityLabel: c.intensityLabel,
+    durationMin: c.durationMin,
+    blockCount: c.blockCount,
+  };
+}
+
+// ─── Fenêtre d'activité : faits bruts à date absolue ─────────────────────────
+/**
+ * Deux semaines de dates suffisent au front pour parler de "cette semaine" et de
+ * "la semaine dernière" avec l'horloge du coach. Au-delà, la projection grossit
+ * sans rien apporter à une lecture de 30 secondes.
+ */
+export const ACTIVITY_MAX_DATES = 14;
+
+/**
+ * Dates des séances RÉELLEMENT faites : décroissantes, dédupliquées, bornées.
+ * Aucun compteur, aucun delta, aucune notion de "récent" — le serveur n'a pas
+ * d'horloge métier (cf. en-tête de fichier), c'est le front qui date.
+ */
+function projectActivity(sessions: RawSessionDoc[]): CoachActivityWindow {
+  const seen = new Set<string>();
+  for (const doc of sessions) {
+    const key = dateKeyOf(doc);
+    // Une séance sans date exploitable n'est PAS un fait datable : on l'ignore
+    // plutôt que d'inventer une date (qui deviendrait un mensonge affiché).
+    if (key) seen.add(key);
+  }
+  const doneDateKeys = [...seen].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0)).slice(0, ACTIVITY_MAX_DATES);
+  return { doneDateKeys };
+}
+
+// ─── Exécution réelle (boucle de suivi joueur) ───────────────────────────────
+/** Bornes réalistes d'un compteur d'exercices dans une séance. */
+function boundItemCount(n: number | null): number | null {
+  if (n == null || !Number.isFinite(n)) return null;
+  return Number.isInteger(n) && n >= 0 && n <= 200 ? n : null;
+}
+
+/** Pourcentage borné 0..100 et arrondi (une estimation reste lisible en entier). */
+function boundPct(n: number | null): number | null {
+  if (n == null || !Number.isFinite(n)) return null;
+  if (n < 0 || n > 100) return null;
+  return Math.round(n);
+}
+
+function normalizeCompletionStatus(v: unknown): CoachExecutionSummary["completionStatus"] {
+  const s = String(v ?? "").toLowerCase();
+  return s === "full" || s === "partial" || s === "abandoned" ? s : null;
+}
+
+/**
+ * Somme de deux compteurs éventuellement absents. `null + 3 = 3`, `null + null = null` :
+ * on ne transforme pas une absence de donnée en 0 (un 0 affiché est une affirmation).
+ */
+function addCounts(a: number | null, b: number | null): number | null {
+  if (a == null && b == null) return null;
+  return (a ?? 0) + (b ?? 0);
+}
+
+/**
+ * Résume l'exécution réelle portée par `doc.execution` (écrit par la boucle de
+ * suivi joueur sur `users/{uid}/sessions/{id}`).
+ *
+ * ⚠️ LECTURE DÉFENSIVE OBLIGATOIRE : ce champ N'EXISTE PAS tant que la boucle
+ * n'est pas mergée — son absence est le cas NOMINAL, jamais une erreur.
+ *
+ * ⚠️ CONSTRUCTION EXPLICITE, JAMAIS DE SPREAD : `execution` porte `snapshot`
+ * (toute la prescription), `items[].comment` (texte libre du joueur) et
+ * `items[].reason === "pain"`. Un seul `...execution` ferait fuiter tout ça vers
+ * le coach. On ne recopie donc QUE les champs listés ci-dessous.
+ */
+function projectExecution(doc: RawSessionDoc | null): CoachExecutionSummary | null {
+  if (!doc) return null;
+  const raw = doc.execution;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+
+  const execution = raw as RawDoc;
+  const completion = obj(execution.completion);
+
+  const completionPct = boundPct(num(completion.pct));
+  const completionStatus = normalizeCompletionStatus(completion.status);
+  const itemsDone = boundItemCount(num(completion.done));
+  const itemsAdapted = boundItemCount(num(completion.adapted));
+  const itemsSkipped = boundItemCount(num(completion.skipped));
+  // Les deux natures de remplacement sont exposées SÉPARÉMENT : elles n'ont pas
+  // le même poids dans le pourcentage (1 pour un équivalent, 0,5 pour un
+  // partiel). Les écraser rendrait le pourcentage non recalculable par le coach.
+  const itemsReplacedEquivalent = boundItemCount(num(completion.replacedEquivalent));
+  const itemsReplacedPartial = boundItemCount(num(completion.replacedPartial));
+  // Somme, gardée pour les affichages compacts. Variante `completion.replaced`
+  // (compteur déjà agrégé) acceptée en repli : dans ce cas la nuance est
+  // réellement inconnue et les deux champs ci-dessus restent `null`.
+  const itemsReplaced = boundItemCount(
+    addCounts(itemsReplacedEquivalent, itemsReplacedPartial) ?? num(completion.replaced),
+  );
+  const itemsTotal = readItemsTotal(execution, completion);
+
+  const deviationLabels = toCoachDeviationLabels(readDeviationReasons(execution));
+
+  // Champ `execution` présent mais vide de tout signal exploitable → `null`
+  // plutôt qu'un objet de `null` : côté coach, "pas de donnée" est un état franc.
+  // `itemsTotal` est VOLONTAIREMENT absent de ce test : un total seul ne dit rien
+  // au coach (il ne détaille aucun calcul), ce n'est donc pas un signal.
+  const hasSignal =
+    completionPct !== null ||
+    completionStatus !== null ||
+    itemsDone !== null ||
+    itemsAdapted !== null ||
+    itemsSkipped !== null ||
+    itemsReplaced !== null ||
+    deviationLabels.length > 0;
+  if (!hasSignal) return null;
+
+  return {
+    completionPct,
+    completionStatus,
+    itemsDone,
+    itemsAdapted,
+    itemsSkipped,
+    itemsReplaced,
+    itemsReplacedEquivalent,
+    itemsReplacedPartial,
+    itemsTotal,
+    deviationLabels,
+  };
+}
+
+/**
+ * Total d'exercices de la séance = DÉNOMINATEUR du pourcentage. Lecture
+ * défensive, dans l'ordre : un total explicite s'il existe, sinon la longueur de
+ * la liste d'items.
+ *
+ * Une liste VIDE ne produit jamais `0` : un total de 0 serait un dénominateur
+ * impossible (le pourcentage annoncé ne pourrait pas en venir), donc un chiffre
+ * faux affiché au coach. Dans ce cas on renvoie `null` = "total inconnu".
+ */
+function readItemsTotal(execution: RawDoc, completion: RawDoc): number | null {
+  const explicite = num(completion.total) ?? num(completion.itemsTotal) ?? num(execution.total);
+  if (explicite !== null) {
+    const borne = boundItemCount(explicite);
+    if (borne !== null && borne > 0) return borne;
+  }
+  const items = Array.isArray(execution.items) ? execution.items.length : null;
+  if (items === null || items <= 0) return null;
+  return boundItemCount(items);
+}
+
+/**
+ * Extrait UNIQUEMENT les tokens de raison (jamais `comment`, `actual`, `snapshot`).
+ * Priorité aux raisons dominantes calculées par la boucle ; à défaut, on relit les
+ * items un par un — en ne lisant que leur champ `reason`.
+ */
+function readDeviationReasons(execution: RawDoc): string[] {
+  const main = obj(execution.completion).mainReasons;
+  // Liste vide = raisons non calculées (et non "aucun écart") → on relit les items.
+  if (Array.isArray(main) && main.length) return main.filter((r): r is string => typeof r === "string");
+
+  const items = Array.isArray(execution.items) ? execution.items : [];
+  const out: string[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const reason = (item as RawDoc).reason;
+    if (typeof reason === "string" && reason.trim()) out.push(reason);
+  }
+  return out;
+}
+
 /**
  * Projette un joueur en `CoachPlayerSummaryCore`, ou `null` si le membre ne doit
  * pas apparaître (non-player, club incohérent, membership absent).
@@ -160,6 +341,14 @@ export function projectPlayerSummary(input: ProjectorInput): CoachPlayerSummaryC
     ? { dateKey: completedCand.dateKey, durationMin: completedCand.durationMin }
     : null;
 
+  // 6) Extension v2 — prévu ET fait coexistent (le coach doit pouvoir comparer),
+  //    plus les dates d'activité brutes et l'exécution réelle si elle existe.
+  //    `latestSession` reste tel quel : les lecteurs déjà déployés continuent.
+  const activity = projectActivity(sessions);
+  const lastPlanned = plannedCand ? toSessionRef(plannedCand) : null;
+  const lastDone = completedCand ? toSessionRef(completedCand) : null;
+  const execution = projectExecution(latestCompletedDoc);
+
   return {
     playerUid,
     firstName,
@@ -170,5 +359,9 @@ export function projectPlayerSummary(input: ProjectorInput): CoachPlayerSummaryC
     latestSession,
     lastActivity,
     adaptation: { adapted: adaptationLabels.length > 0, labels: adaptationLabels },
+    activity,
+    lastPlanned,
+    lastDone,
+    execution,
   };
 }

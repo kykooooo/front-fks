@@ -114,20 +114,17 @@ function parseArgs(argv: string[]): { apply: boolean; clubId?: string } {
 async function main(): Promise<void> {
   const { apply, clubId } = parseArgs(process.argv.slice(2));
   const usingEmulator = !!process.env.FIRESTORE_EMULATOR_HOST;
-  // eslint-disable-next-line no-console
   console.log(
     `[backfill] mode=${apply ? "APPLY" : "DRY-RUN"} clubId=${clubId ?? "ALL"} target=${usingEmulator ? "emulator" : "default-credentials"}`,
   );
   // getDb() respecte FIRESTORE_EMULATOR_HOST (émulateur) ou les credentials par défaut.
   const stats = await runBackfill({ apply, clubId, db: getDb() });
-  // eslint-disable-next-line no-console
   console.log(`[backfill] done ${JSON.stringify(stats)}`);
 }
 
 // Exécuté uniquement si lancé directement (`node lib/backfill.js`), pas à l'import.
 if (require.main === module) {
   main().catch((err) => {
-    // eslint-disable-next-line no-console
     console.error("[backfill] fatal", err instanceof Error ? err.message : String(err));
     process.exitCode = 1;
   });
