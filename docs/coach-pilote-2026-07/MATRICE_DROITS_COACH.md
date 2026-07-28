@@ -320,8 +320,9 @@ Quatre décisions, et leurs raisons :
 
 **L'outil administrateur.** Un club dont l'autorité est incohérente n'a
 **personne** d'autorisé : le chemin normal ne peut rien y réparer. Un script
-one-shot (`clubOwnershipCli.ts`, simulation par défaut, deux mots à taper pour
-écrire) saute la vérification d'autorité et **rien d'autre**. Il n'est exporté
+one-shot (`clubOwnershipCli.ts` — cible obligatoire et vérifiée, simulation par
+défaut, confirmation qui doit répéter le couple `projet/club` pour écrire) saute
+la vérification d'autorité et **rien d'autre**. Il n'est exporté
 nulle part dans `index.ts` — un test le vérifie, parce qu'un chemin sans
 vérification d'autorité ne doit avoir aucune route réseau.
 

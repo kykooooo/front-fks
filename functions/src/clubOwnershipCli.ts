@@ -22,38 +22,61 @@
 // ne peut donc, par construction, rien reparer. C'est exactement le cas que cet
 // outil existe pour debloquer.
 //
-// ─── TROIS GARDE-FOUS, dans cet ordre (memes que le backfill) ───────────────
-//  1. SIMULATION PAR DEFAUT : sans `--apply`, le magasin d'ecriture est REMPLACE
+// ─── CINQ GARDE-FOUS, dans cet ordre (LE MEME VERROU que la migration) ──────
+//  1. CIBLE OBLIGATOIRE, et ici elle vaut DEUX choses : `--projet=<projectId>`
+//     ET `--clubId=<id>`. Cet outil n'ecrit pas "quelque part dans une base" :
+//     il agit sur UN club. Sa cible est donc le COUPLE — se tromper de club dans
+//     la bonne base est exactement l'accident que le nom du projet, seul,
+//     n'attrape pas ;
+//  2. CIBLE VERIFIEE : le projet nomme doit correspondre a celui de
+//     l'environnement. Le terminal ouvert la veille sur un autre projet est
+//     rattrape ici (cf. migrationCible.ts) ;
+//  3. SIMULATION PAR DEFAUT : sans `--apply`, le magasin d'ecriture est REMPLACE
 //     par un magasin qui n'ecrit rien — aucune ecriture n'est meme possible ;
-//  2. `--apply` seul ne suffit pas : il faut AUSSI `--je-confirme` ;
-//  3. la sortie ne contient que des identifiants et des roles. Aucun nom de
+//  4. CONFIRMATION NOMINATIVE : `--apply` exige `--je-confirme=<projet>/<club>`,
+//     et une cible qui ressemble a de la production exige EN PLUS
+//     `--oui-je-vise-la-production` ;
+//  5. la sortie ne contient que des identifiants et des roles. Aucun nom de
 //     club, aucun prenom, aucune donnee de suivi.
-
-import type { Firestore } from "firebase-admin/firestore";
+//
+// Le magasin Firestore n'est CONSTRUIT qu'apres un feu vert complet : un refus
+// n'a physiquement pas de quoi ecrire. Un test le compte.
+//
+// Usage :
+//   node lib/clubOwnershipCli.js --projet=<id> --clubId=<club> --nouveauProprietaire=<uid>
+//   ... puis, pour ecrire :
+//     --apply --je-confirme=<id>/<club>
+//   ... et sur une cible de production, ajouter --oui-je-vise-la-production
 
 import { getDb } from "./admin";
 import { createMemberStore } from "./clubMembersApi";
 import { adminTransferClubOwnership } from "./clubOwnership";
+import { analyserCible, argValue, libelleCible } from "./migrationCible";
 import type { MemberStore, MemberTx } from "./clubMembers";
+
+const ETIQUETTE = "[transfertPropriete]";
 
 /**
  * Magasin de SIMULATION : il lit la vraie base, et jette toutes les ecritures.
  * La transaction se deroule donc entierement (donc tous les refus metier sont
  * reellement prononces), et rien n'est ecrit. C'est un remplacement, pas une
  * condition posee sur chaque ecriture : on ne peut pas oublier un `if`.
+ *
+ * Il enveloppe un MAGASIN (et non plus un `Firestore`) : c'est ce qui permet de
+ * le tester en memoire, et ce qui garde la construction du magasin reel
+ * PARESSEUSE — la simulation ne fabrique rien toute seule.
  */
-export function createDryRunStore(db: Firestore): MemberStore {
-  const real = createMemberStore(db);
+export function createDryRunStore(reel: MemberStore, log: (message: string) => void): MemberStore {
   return {
     runTransaction(fn) {
-      return real.runTransaction((tx: MemberTx) => {
+      return reel.runTransaction((tx: MemberTx) => {
         const dry: MemberTx = {
           get: (path) => tx.get(path),
           set: (path) => {
-            console.log(`[transfertPropriete] (simulation) ecriture ignoree : ${path}`);
+            log(`${ETIQUETTE} (simulation) ecriture ignoree : ${path}`);
           },
           delete: (path) => {
-            console.log(`[transfertPropriete] (simulation) suppression ignoree : ${path}`);
+            log(`${ETIQUETTE} (simulation) suppression ignoree : ${path}`);
           },
         };
         return fn(dry);
@@ -62,67 +85,117 @@ export function createDryRunStore(db: Firestore): MemberStore {
   };
 }
 
-function argValue(argv: string[], name: string): string | undefined {
-  const prefix = `--${name}=`;
-  const found = argv.find((a) => a.startsWith(prefix));
-  return found ? found.slice(prefix.length) : undefined;
-}
+export type TransfertCliDeps = {
+  argv: string[];
+  env: NodeJS.ProcessEnv;
+  /** Construit le magasin REEL. N'est appele QU'APRES le feu vert : c'est le test. */
+  creerStore: () => MemberStore;
+  log: (message: string) => void;
+  erreur: (message: string) => void;
+  now?: () => number;
+};
 
-async function main(): Promise<void> {
-  const argv = process.argv.slice(2);
-  const clubId = argValue(argv, "clubId");
-  const newOwnerUid = argValue(argv, "nouveauProprietaire");
-  const demoteUid = argValue(argv, "retrograde");
-  const grantCoachSpace = argv.includes("--espace-coach");
-  const demandeApply = argv.includes("--apply");
-  const confirme = argv.includes("--je-confirme");
+/**
+ * Le corps de la commande, sans `process` ni Firestore : c'est ce qui la rend
+ * testable, et donc ce qui rend le test negatif possible (un magasin instrumente
+ * compte les ecritures ; l'absence d'ecriture est PROUVEE, pas supposee).
+ *
+ * Retourne le CODE DE SORTIE : 0 = fait, 1 = refuse ou echec.
+ */
+export async function executerTransfertCli(deps: TransfertCliDeps): Promise<number> {
+  const decision = analyserCible(deps.argv, deps.env, {
+    peutEcrire: true,
+    etiquette: ETIQUETTE,
+    portee: "projet-et-club",
+  });
 
-  if (!clubId || !newOwnerUid) {
-    console.error(
-      "[transfertPropriete] usage : --clubId=<id> --nouveauProprietaire=<uid> " +
-        "[--retrograde=<uid>] [--espace-coach] [--apply --je-confirme]",
-    );
-    process.exitCode = 1;
-    return;
+  if (!decision.ok) {
+    deps.erreur(decision.message);
+    return 1;
   }
 
-  if (demandeApply && !confirme) {
-    console.error(
-      "[transfertPropriete] REFUS : --apply exige aussi --je-confirme. Rien n'a ete ecrit.",
+  // Le SUJET de l'operation, lu apres la cible : un successeur sans cible n'a
+  // aucun sens, et on ne veut surtout pas que l'operateur corrige un oubli de
+  // successeur pour decouvrir ensuite qu'il visait la mauvaise base.
+  const newOwnerUid = argValue(deps.argv, "nouveauProprietaire");
+  if (!newOwnerUid) {
+    deps.erreur(
+      `${ETIQUETTE} REFUS : aucun successeur nomme. --nouveauProprietaire=<uid> est ` +
+        "obligatoire. Rien n'a ete lu.",
     );
-    process.exitCode = 1;
-    return;
+    return 1;
   }
 
-  const apply = demandeApply && confirme;
-  const db = getDb();
-  console.log(
-    `[transfertPropriete] mode=${apply ? "APPLY" : "SIMULATION"} clubId=${clubId} ` +
+  const demoteUid = argValue(deps.argv, "retrograde");
+  const grantCoachSpace = deps.argv.includes("--espace-coach");
+  const cible = libelleCible(decision.projet, decision.clubId);
+
+  deps.log(
+    `${ETIQUETTE} mode=${decision.apply ? "APPLY" : "SIMULATION"} cible=${cible} ` +
       `nouveauProprietaire=${newOwnerUid} retrograde=${demoteUid ?? "aucun"} ` +
-      `espaceCoach=${grantCoachSpace ? "OUI" : "non"} cible=${
-        process.env.FIRESTORE_EMULATOR_HOST ? "emulateur" : "credentials par defaut"
+      `espaceCoach=${grantCoachSpace ? "OUI" : "non"} base=${
+        decision.emulateur
+          ? "emulateur"
+          : decision.production
+            ? "PRODUCTION PRESUMEE"
+            : "bac a sable"
       }`,
   );
 
-  const result = await adminTransferClubOwnership(
-    {
-      store: apply ? createMemberStore(db) : createDryRunStore(db),
-      now: Date.now,
-      // Aucun signalement a brancher : l'outil sert justement a REPARER les
-      // incoherences, il n'a pas a en journaliser une de plus a chaque passage.
-    },
-    { clubId, newOwnerUid, demoteUid, grantCoachSpace },
-  );
+  // Construction PARESSEUSE, ici et pas plus haut : tous les refus ci-dessus se
+  // sont prononces sans qu'aucun objet capable d'ecrire n'ait existe.
+  const reel = deps.creerStore();
+  const store = decision.apply ? reel : createDryRunStore(reel, deps.log);
 
-  console.log(`[transfertPropriete] termine ${JSON.stringify(result)}`);
+  try {
+    const result = await adminTransferClubOwnership(
+      {
+        store,
+        now: deps.now ?? Date.now,
+        // Aucun signalement a brancher : l'outil sert justement a REPARER les
+        // incoherences, il n'a pas a en journaliser une de plus a chaque passage.
+      },
+      {
+        clubId: decision.clubId,
+        newOwnerUid,
+        ...(demoteUid !== undefined ? { demoteUid } : {}),
+        grantCoachSpace,
+      },
+    );
+
+    deps.log(`${ETIQUETTE} termine ${JSON.stringify(result)}`);
+  } catch (err) {
+    deps.erreur(`${ETIQUETTE} echec : ${err instanceof Error ? err.message : String(err)}`);
+    return 1;
+  }
+
+  if (!decision.apply) {
+    deps.log(
+      `${ETIQUETTE} SIMULATION : rien n'a ete ecrit. Relis la sortie, puis relance avec ` +
+        `--apply --je-confirme=${cible}` +
+        (decision.production ? " --oui-je-vise-la-production" : "") +
+        " si le resultat te convient.",
+    );
+  }
+
+  return 0;
 }
 
 if (require.main === module) {
-  main().catch((err) => {
-    console.error(
-      "[transfertPropriete] echec",
-      err instanceof Error ? err.message : String(err),
-    );
-    process.exitCode = 1;
-  });
+  executerTransfertCli({
+    argv: process.argv.slice(2),
+    env: process.env,
+    // Fonction paresseuse : aucun acces Firestore n'existe tant que la cible n'a
+    // pas ete acceptee.
+    creerStore: () => createMemberStore(getDb()),
+    log: (m) => console.log(m),
+    erreur: (m) => console.error(m),
+  })
+    .then((code) => {
+      process.exitCode = code;
+    })
+    .catch((err) => {
+      console.error(`${ETIQUETTE} echec`, err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    });
 }

@@ -478,26 +478,60 @@ donc `not_required` (club en mode par défaut) ou `pending` (club en
 `approval_required`). **Il ne produit jamais `approved`**, et il ne touche
 **aucun** membership qui porte déjà un état lisible.
 
-Trois garde-fous :
+Cinq garde-fous. **C'est exactement le même verrou que la migration des notes**
+(`MIGRATION_NOTES.md`) et que le transfert de propriété
+(`TRANSFERT_PROPRIETE.md`) : un seul module (`functions/src/migrationCible.ts`),
+lu par les trois outils. Une règle de sécurité recopiée trois fois est une règle
+qui dérive.
 
-1. **simulation par défaut** — sans `--apply`, le chemin d'écriture est
+1. **cible obligatoire** — sans `--projet=<projectId>`, la commande ne fait rien
+   et ne se connecte même pas. On ne devine pas la base sur laquelle on travaille ;
+2. **cible vérifiée** — le projet nommé doit correspondre à celui vers lequel
+   pointent les identifiants du terminal (`GCLOUD_PROJECT` /
+   `GOOGLE_CLOUD_PROJECT` / `FIREBASE_CONFIG`). Le terminal ouvert la veille sur
+   un autre projet est rattrapé ici ;
+3. **simulation par défaut** — sans `--apply`, le chemin d'écriture est
    physiquement remplacé, pas seulement désactivé par un `if` ;
-2. `--apply` **seul ne suffit pas** : il faut aussi `--je-confirme` ;
-3. la sortie ne contient **aucun identifiant, aucun prénom** — uniquement des
+4. `--apply` exige `--je-confirme=<le même projet>` — la valeur exacte, pas un
+   `--je-confirme` nu (qui se copie-colle sans relire ce qu'on vise). Une cible
+   de production exige **en plus** `--oui-je-vise-la-production` ;
+5. la sortie ne contient **aucun identifiant, aucun prénom** — uniquement des
    compteurs.
+
+**Aucun objet capable d'écrire n'existe avant que ces contrôles soient passés :**
+le magasin Firestore n'est construit qu'après le feu vert. Un refus n'a donc
+physiquement pas de quoi écrire — et un test le compte
+(`functions/tests/outilsAdministrateurCible.test.ts`). Chaque refus sort avec un
+**code non nul**.
+
+> **Pourquoi la confirmation nomme ici le projet SEUL**, alors que le transfert
+> de propriété exige `projet/club` : cet outil **parcourt** une base, il n'agit
+> pas sur un club. `--clubId` y est une **borne** (sans lui, la commande passe
+> sur toute la base) et non la cible. Confirmer le projet, c'est donc confirmer
+> exactement ce que la commande peut toucher au maximum.
 
 Ordre à respecter :
 
 ```
 # 1. Simulation. N'écrit rien. Lire les compteurs et vérifier qu'ils
 #    ressemblent à l'effectif réel avant d'aller plus loin.
-node lib/coachAccessBackfillCli.js --clubId=<idDuClubPilote>
+node lib/coachAccessBackfillCli.js --projet=<leProjet> --clubId=<idDuClubPilote>
 
 # 2. Si et seulement si les compteurs sont cohérents :
-node lib/coachAccessBackfillCli.js --clubId=<idDuClubPilote> --apply --je-confirme
+node lib/coachAccessBackfillCli.js --projet=<leProjet> --clubId=<idDuClubPilote> \
+  --apply --je-confirme=<leProjet>
+
+# 3. Et si <leProjet> est la production (aucun marqueur demo/test/staging/
+#    preprod/sandbox/local/dev, aucun émulateur), il faut EN PLUS :
+#      --oui-je-vise-la-production
 ```
 
-**Toujours un club à la fois** (`--clubId`), jamais toute la base d'un coup.
+**Toujours un club à la fois** (`--clubId`), jamais toute la base d'un coup. Le
+verrou ne l'impose pas — c'est la procédure qui l'impose, et c'est à toi de la
+tenir.
+
+Si tu ne sais plus quoi taper, **lance la simulation** : sa dernière ligne écrit
+la commande d'application exacte, option production comprise.
 
 ### 7.3 Étape 2 — Approuver un joueur (geste humain, un par un)
 

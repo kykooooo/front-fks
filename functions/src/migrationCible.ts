@@ -27,6 +27,24 @@
 // Et pour ecrire : une confirmation qui NOMME la cible (`--je-confirme=<projet>`).
 // Un `--je-confirme` nu se copie-colle sans reflechir ; un `--je-confirme=fks-apps`
 // oblige a relire le nom qu'on est en train de viser.
+//
+// ─── UN SEUL VERROU POUR LES TROIS OUTILS ADMINISTRATEUR ────────────────────
+// Ce module est consomme par les TROIS commandes qui peuvent ecrire hors des
+// regles Firestore : la migration des notes, le transfert de propriete et la
+// mise a niveau des acces coach. Une regle de securite recopiee trois fois est
+// une regle qui derive : quand l'une des trois a un besoin de plus, on ETEND ce
+// module, on ne le duplique pas.
+//
+// ─── DEUX PORTEES DE CIBLE, ET POURQUOI ─────────────────────────────────────
+// Les trois outils ne visent pas la meme chose :
+//  . la migration et le backfill PARCOURENT une base. Le club n'y est qu'une
+//    BORNE facultative : sans lui, la commande porte sur tout. La cible, c'est
+//    donc le projet ("projet") ;
+//  . le transfert de propriete AGIT sur un club nomme, et sur lui seul. La cible
+//    y est le COUPLE base + club ("projet-et-club") : le club devient
+//    obligatoire, et la confirmation doit repeter `projet/club`. Confirmer le
+//    seul projet ne dirait rien du club vise — or c'est precisement la ou une
+//    erreur de doigt se paierait, la bonne base restant la bonne base.
 
 /** Motifs de refus. Des etiquettes stables : les tests s'appuient dessus. */
 export type MotifRefus =
@@ -37,23 +55,34 @@ export type MotifRefus =
   | "confirmation-absente"
   | "confirmation-non-correspondante"
   | "production-non-assumee"
+  | "club-absent"
   | "club-mal-forme";
 
-export type DecisionCible =
-  | { ok: false; motif: MotifRefus; message: string }
-  | {
-      ok: true;
-      /** Projet vise, verifie identique a celui de l'environnement. */
-      projet: string;
-      /** true = la commande va ecrire (`--apply` + confirmation nominative). */
-      apply: boolean;
-      /** Borne facultative a un seul club. */
-      clubId?: string;
-      /** L'ecriture partirait vers un emulateur local. */
-      emulateur: boolean;
-      /** La cible est traitee comme de la production (voir `ressembleAProduction`). */
-      production: boolean;
-    };
+export type RefusCible = { ok: false; motif: MotifRefus; message: string };
+
+export type CibleAcceptee = {
+  ok: true;
+  /** Projet vise, verifie identique a celui de l'environnement. */
+  projet: string;
+  /** true = la commande va ecrire (`--apply` + confirmation nominative). */
+  apply: boolean;
+  /** Borne facultative a un seul club. */
+  clubId?: string;
+  /** L'ecriture partirait vers un emulateur local. */
+  emulateur: boolean;
+  /** La cible est traitee comme de la production (voir `ressembleAProduction`). */
+  production: boolean;
+};
+
+/**
+ * Meme chose, avec le club GARANTI present : c'est ce que rend `analyserCible`
+ * en portee "projet-et-club". L'appelant n'a donc aucune branche morte a ecrire
+ * pour un cas que la portee interdit deja.
+ */
+export type CibleAccepteeAvecClub = Omit<CibleAcceptee, "clubId"> & { clubId: string };
+
+export type DecisionCible = RefusCible | CibleAcceptee;
+export type DecisionCibleAvecClub = RefusCible | CibleAccepteeAvecClub;
 
 /** Identifiant de projet Firebase : 6 a 30 caracteres, minuscules, chiffres, tirets. */
 const FORME_PROJET = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
@@ -109,6 +138,9 @@ export function ressembleAProduction(projet: string, env: NodeJS.ProcessEnv): bo
   return !MARQUEURS_BAC_A_SABLE.test(projet.toLowerCase());
 }
 
+/** De quoi la cible est faite. Voir l'en-tete de fichier. */
+export type PorteeCible = "projet" | "projet-et-club";
+
 export type OptionsAnalyse = {
   /**
    * true : la commande peut ecrire (migration) — `--apply` est lu, la
@@ -119,7 +151,23 @@ export type OptionsAnalyse = {
   peutEcrire: boolean;
   /** Prefixe des messages, pour que l'operateur sache qui parle. */
   etiquette: string;
+  /**
+   * "projet" (defaut) : la commande parcourt une base, `--clubId` n'est qu'une
+   * borne facultative, et la confirmation nomme le projet.
+   * "projet-et-club" : la commande AGIT sur un club nomme. `--clubId` devient
+   * OBLIGATOIRE, et la confirmation doit repeter `projet/club`.
+   */
+  portee?: PorteeCible;
 };
+
+/**
+ * Le nom EXACT que la confirmation doit repeter. Une seule fonction pour les
+ * trois outils : le message de refus et la procedure ecrite ne peuvent donc pas
+ * dire deux choses differentes.
+ */
+export function libelleCible(projet: string, clubId?: string): string {
+  return clubId ? `${projet}/${clubId}` : projet;
+}
 
 /**
  * Repond OUI ou NON, AVANT toute connexion.
@@ -131,9 +179,20 @@ export type OptionsAnalyse = {
 export function analyserCible(
   argv: string[],
   env: NodeJS.ProcessEnv,
+  opts: OptionsAnalyse & { portee: "projet-et-club" },
+): DecisionCibleAvecClub;
+export function analyserCible(
+  argv: string[],
+  env: NodeJS.ProcessEnv,
+  opts: OptionsAnalyse,
+): DecisionCible;
+export function analyserCible(
+  argv: string[],
+  env: NodeJS.ProcessEnv,
   opts: OptionsAnalyse,
 ): DecisionCible {
   const p = opts.etiquette;
+  const portee: PorteeCible = opts.portee ?? "projet";
   const projet = argValue(argv, "projet");
   const clubId = argValue(argv, "clubId");
 
@@ -162,6 +221,16 @@ export function analyserCible(
       ok: false,
       motif: "club-mal-forme",
       message: `${p} REFUS : --clubId invalide. Rien n'a ete lu.`,
+    };
+  }
+
+  if (portee === "projet-et-club" && clubId === undefined) {
+    return {
+      ok: false,
+      motif: "club-absent",
+      message:
+        `${p} REFUS : aucun club nomme. Cette commande AGIT sur un club precis, ` +
+        "pas sur une base entiere : --clubId=<id>. Rien n'a ete lu.",
     };
   }
 
@@ -199,6 +268,10 @@ export function analyserCible(
     return { ok: true, projet, apply: false, clubId, emulateur, production };
   }
 
+  // Ce que la confirmation doit repeter, MOT POUR MOT : le projet seul, ou le
+  // couple projet/club quand la commande agit sur un club nomme.
+  const attendu = portee === "projet-et-club" ? libelleCible(projet, clubId) : projet;
+
   const confirmation = argValue(argv, "je-confirme");
   if (confirmation === undefined) {
     return {
@@ -206,18 +279,18 @@ export function analyserCible(
       motif: "confirmation-absente",
       message:
         `${p} REFUS : --apply exige une confirmation qui NOMME la cible : ` +
-        `--je-confirme=${projet}. (Un --je-confirme nu ne suffit plus : il se ` +
+        `--je-confirme=${attendu}. (Un --je-confirme nu ne suffit plus : il se ` +
         "copie-colle sans relire ce qu'on vise.) Rien n'a ete ecrit.",
     };
   }
 
-  if (confirmation !== projet) {
+  if (confirmation !== attendu) {
     return {
       ok: false,
       motif: "confirmation-non-correspondante",
       message:
         `${p} REFUS : la confirmation ne correspond pas a la cible ` +
-        `(--je-confirme=${confirmation} contre --projet=${projet}). Rien n'a ete ecrit.`,
+        `(--je-confirme=${confirmation} au lieu de --je-confirme=${attendu}). Rien n'a ete ecrit.`,
     };
   }
 

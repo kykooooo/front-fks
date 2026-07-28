@@ -132,6 +132,10 @@ Une personne qui est **déjà membre actif de ce club** — joueur ou coach.
 
 Dans la console Firebase (Firestore), noter :
 
+0. **L'identifiant du projet Firebase** — celui qui s'affiche en haut de la
+   console. C'est la **cible** : la commande refusera de tourner si tu ne le
+   nommes pas, et elle refusera aussi s'il ne correspond pas au projet vers
+   lequel pointent les identifiants du terminal (voir « Les garde-fous ») ;
 1. **L'identifiant du club** — `clubs/{clubId}` ;
 2. **Le propriétaire actuel** — le champ `ownerUid` du document club, ET le rôle
    porté par `clubs/{clubId}/members/{ownerUid}`. **Les deux.** S'ils ne
@@ -147,11 +151,25 @@ compte de service configuré :
 
 ```bash
 # 1. SIMULATION (par défaut) — ne modifie RIEN, affiche ce qui serait écrit
-node lib/clubOwnershipCli.js --clubId=LE_CLUB --nouveauProprietaire=LE_SUCCESSEUR
+node lib/clubOwnershipCli.js --projet=LE_PROJET --clubId=LE_CLUB \
+  --nouveauProprietaire=LE_SUCCESSEUR
 
-# 2. POUR DE VRAI — les deux mots sont obligatoires
-node lib/clubOwnershipCli.js --clubId=LE_CLUB --nouveauProprietaire=LE_SUCCESSEUR --apply --je-confirme
+# 2. POUR DE VRAI — la confirmation doit RÉPÉTER le couple projet/club
+node lib/clubOwnershipCli.js --projet=LE_PROJET --clubId=LE_CLUB \
+  --nouveauProprietaire=LE_SUCCESSEUR --apply --je-confirme=LE_PROJET/LE_CLUB
+
+# 3. Et si LE_PROJET est la production (aucun marqueur demo/test/staging/
+#    preprod/sandbox/local/dev, aucun émulateur), il faut EN PLUS :
+#      --oui-je-vise-la-production
 ```
+
+> **Le couple `projet/club` n'est pas une coquetterie.** Cet outil n'écrit pas
+> « quelque part dans une base » : il change le propriétaire d'**un club précis**.
+> Nommer le seul projet laisserait passer l'accident le plus vraisemblable — la
+> bonne base, le mauvais club. La confirmation te fait donc relire les deux.
+>
+> Si tu ne sais plus quoi taper, **lance la simulation** : sa dernière ligne
+> écrit la commande d'application exacte, option production comprise.
 
 Options supplémentaires :
 
@@ -175,11 +193,31 @@ Options supplémentaires :
 
 ### Les garde-fous
 
-1. sans `--apply`, **aucune écriture n'est possible** — le magasin d'écriture est
+**C'est exactement le même verrou que la migration des notes** (`MIGRATION_NOTES.md`)
+et que la mise à niveau des accès (`AUTORISATION_ACCES.md`) : un seul module
+(`functions/src/migrationCible.ts`), lu par les trois outils. Une règle de
+sécurité recopiée trois fois est une règle qui dérive.
+
+1. **cible obligatoire, et ici elle vaut deux choses** : sans `--projet=` **et**
+   `--clubId=`, la commande ne fait rien — elle ne se connecte même pas ;
+2. **cible vérifiée** : le projet nommé doit correspondre à celui vers lequel
+   pointent les identifiants du terminal (`GCLOUD_PROJECT` /
+   `GOOGLE_CLOUD_PROJECT` / `FIREBASE_CONFIG`). Le terminal ouvert la veille sur
+   un autre projet est rattrapé ici ;
+3. sans `--apply`, **aucune écriture n'est possible** — le magasin d'écriture est
    remplacé, pas conditionné : on ne peut pas « oublier un si » ;
-2. `--apply` seul ne suffit pas, il faut aussi `--je-confirme` ;
-3. la sortie n'affiche que des identifiants, des rôles et des dates. Aucun nom de
+4. `--apply` exige `--je-confirme=LE_PROJET/LE_CLUB` — la valeur exacte, pas un
+   `--je-confirme` nu (qui se copie-colle sans relire ce qu'on vise). Une cible
+   de production exige **en plus** `--oui-je-vise-la-production` ;
+5. la sortie n'affiche que des identifiants, des rôles et des dates. Aucun nom de
    club, aucun prénom, aucune donnée d'entraînement.
+
+**Aucun objet capable d'écrire n'existe avant que ces contrôles soient passés :**
+le magasin Firestore n'est construit qu'après le feu vert. Un refus n'a donc
+physiquement pas de quoi écrire — et un test le compte
+(`functions/tests/outilsAdministrateurCible.test.ts`).
+
+Chaque refus sort avec un **code non nul** : un script enchaîné s'arrête là.
 
 ### Après — les trois vérifications de sortie
 
@@ -287,7 +325,8 @@ administrateur existe.
 transférer la propriété :
 
 ```bash
-node lib/clubOwnershipCli.js --clubId=LE_CLUB --nouveauProprietaire=UN_MEMBRE_ACTIF --apply --je-confirme
+node lib/clubOwnershipCli.js --projet=LE_PROJET --clubId=LE_CLUB \
+  --nouveauProprietaire=UN_MEMBRE_ACTIF --apply --je-confirme=LE_PROJET/LE_CLUB
 ```
 
 L'ancien désigné n'a rien à rétrograder (il ne portait pas le rôle) : l'outil ne
@@ -297,7 +336,9 @@ lui écrit rien. Le champ `previousOwnerRole` sort à `null`, et c'est normal.
 à rétrograder :
 
 ```bash
-node lib/clubOwnershipCli.js --clubId=LE_CLUB --nouveauProprietaire=UN_MEMBRE_ACTIF --retrograde=LE_ROLE_ORPHELIN --apply --je-confirme
+node lib/clubOwnershipCli.js --projet=LE_PROJET --clubId=LE_CLUB \
+  --nouveauProprietaire=UN_MEMBRE_ACTIF --retrograde=LE_ROLE_ORPHELIN \
+  --apply --je-confirme=LE_PROJET/LE_CLUB
 ```
 
 L'appartenance nommée repasse en `coach`. Elle n'accordait **aucun** droit de
@@ -329,6 +370,8 @@ par la console.
 | `functions/src/clubOwnership.ts` | **le cœur** : toute la décision, module pur, testable sans émulateur |
 | `functions/src/clubOwnershipApi.ts` | l'enveloppe appelable (identité depuis le jeton, journal, traduction d'erreur) |
 | `functions/src/clubOwnershipCli.ts` | **l'outil administrateur**, jamais déployé, jamais exporté dans `index.ts` |
+| `functions/src/migrationCible.ts` | **le verrou de cible**, partagé par les trois outils administrateur (portée `projet-et-club` pour celui-ci) |
+| `functions/tests/outilsAdministrateurCible.test.ts` | le test négatif par comptage : sur chaque refus, **zéro** écriture, zéro lecture, magasin jamais construit |
 | `functions/src/clubAuthority.ts` | **le prédicat partagé** — consommé, jamais dupliqué |
 | `functions/src/clubMembers.ts` | le retrait ; le transfert lui emprunte ses chemins, son port de stockage et son type d'erreur |
 | `firestore.rules` | ferme l'écriture cliente de `ownerUid` et du rôle propriétaire d'autrui |
