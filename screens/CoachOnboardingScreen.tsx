@@ -76,8 +76,9 @@ export default function CoachOnboardingScreen() {
         title: "Club créé !",
         message: "Génère ton code d'invitation depuis l'onglet Semaine.",
       });
-      // Le listener du profil (RootNavigator) détecte role="coach" et bascule
-      // automatiquement vers l'espace coach. Rien d'autre à faire ici.
+      // Le RootNavigator bascule tout seul : il lit `users/{uid}.clubId`, s'abonne
+      // à l'appartenance `clubs/{clubId}/members/{uid}` (écrite juste avant avec
+      // le rôle propriétaire) et en dérive l'espace coach. Rien d'autre à faire ici.
     } catch (error) {
       if (__DEV__) console.error("[CoachOnboarding] create club failed:", error);
       haptics.error();

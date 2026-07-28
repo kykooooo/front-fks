@@ -43,6 +43,7 @@ import { SwipeTabsWrapper } from "../components/SwipeTabsWrapper";
 import { setAnalyticsUserId } from "../services/analytics";
 import { setSentryUser } from "../services/monitoring";
 import { onWelcomeReset } from "../services/accountDeletion";
+import { useAppSpace } from "../hooks/useAppSpace";
 
 // Firebase
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -348,11 +349,28 @@ export default function RootNavigator() {
   // Distinct de `initializing` (qui repasse à true pendant l'attente du profil).
   const [authResolved, setAuthResolved] = useState(false);
   const [profileCompleted, setProfileCompleted] = useState<boolean | null>(null);
-  const [role, setRole] = useState<string | null>(null);
+  // `users/{uid}.clubId` : OÙ regarder, jamais QUI on est. L'espace affiché est
+  // dérivé de l'appartenance elle-même (cf. hooks/useAppSpace).
+  const [clubId, setClubId] = useState<string | null>(null);
   const [welcomeDone, setWelcomeDone] = useState<boolean | null>(null);
   const startFirestoreWatch = useSyncStore((s) => s.startFirestoreWatch);
   const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
   const resetTrainingStore = useSyncStore((s) => s.resetForUser);
+
+  // ── QUEL ESPACE AFFICHER (coach ou joueur) ────────────────────────────────
+  // DÉRIVÉ de l'appartenance au club — `clubs/{clubId}/members/{uid}.role` —,
+  // c'est-à-dire de l'autorité que le serveur contrôle seul et que les règles
+  // Firestore interdisent à tout client d'écrire.
+  //
+  // AVANT, on lisait `users/{uid}.role === "coach"`. Deux défauts, tous deux
+  // corrigés ici : ce champ est écrivable par l'utilisateur lui-même (les règles
+  // l'autorisent à écrire tout son document `users/{uid}`), et le transfert de
+  // propriété ne le touche jamais — un joueur devenu propriétaire restait donc
+  // enfermé dans l'espace joueur. Voir domain/appSpace.ts pour le raisonnement
+  // complet, et docs/coach-pilote-2026-07/ESPACE_ET_ROLES.md pour ce que ça
+  // change côté produit.
+  const appSpace = useAppSpace({ uid: user?.uid ?? null, clubId });
+
   // 0) DEV: force welcome screen (déconnecte + reset flag)
   useEffect(() => {
     if (!DEV_FLAGS.FORCE_WELCOME) return;
@@ -369,7 +387,10 @@ export default function RootNavigator() {
       setAuthResolved(true);
       if (!u) {
         setProfileCompleted(null);
-        setRole(null);
+        // Déconnexion : le pointeur de club tombe AVEC le compte. C'est ce qui
+        // démonte l'abonnement à l'appartenance (cf. useAppSpace), sans quoi
+        // l'espace du compte précédent survivrait à sa propre session.
+        setClubId(null);
         setInitializing(false);
       } else {
         // Nouveau user (login/register) → attendre le profile listener Firestore
@@ -420,7 +441,8 @@ export default function RootNavigator() {
       (snap) => {
         const data = snap.data();
         setProfileCompleted(!!data?.profileCompleted);
-        setRole(typeof data?.role === "string" ? data.role : null);
+        const rawClubId = data?.clubId;
+        setClubId(typeof rawClubId === "string" && rawClubId.trim() ? rawClubId.trim() : null);
         setInitializing(false);
       },
       (err) => {
@@ -428,7 +450,7 @@ export default function RootNavigator() {
           console.warn("Erreur lors du check profil:", err);
         }
         setProfileCompleted(false);
-        setRole(null);
+        setClubId(null);
         setInitializing(false);
       }
     );
@@ -461,8 +483,17 @@ export default function RootNavigator() {
     );
   }
 
-  // 6bis) Coach → espace coach (pas de questionnaire joueur, pas de tab bar joueur)
-  if (role === "coach") {
+  // 5ter) Appartenance au club pas encore lue → Splash.
+  //    Même raison que le check `initializing` juste au-dessus : tant qu'on ne
+  //    SAIT pas, on n'affiche pas. Parier sur l'espace joueur ferait clignoter
+  //    l'app joueur devant un coach à chaque démarrage à froid.
+  //    Ce temps d'attente ne concerne QUE les comptes rattachés à un club : sans
+  //    `clubId`, il n'y a rien à lire et la décision est immédiate.
+  if (appSpace.decision === "en-attente") return <Splash />;
+
+  // 6bis) Encadrant (propriétaire ou coach du club) → espace coach.
+  //    Pas de questionnaire joueur, pas de tab bar joueur.
+  if (appSpace.space === "coach") {
     return <CoachNavigator />;
   }
 

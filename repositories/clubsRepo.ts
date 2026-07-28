@@ -111,14 +111,24 @@ export async function setClubMembership(opts: { clubId: string; uid: string; rol
   );
 }
 
-export async function attachUserToClub(opts: { uid: string; clubId: string; role: ClubRole }) {
+/**
+ * Rattache un compte à un club côté `users/{uid}`.
+ *
+ * AUCUN APPELANT AUJOURD'HUI (juillet 2026) : le rattachement d'un joueur est
+ * écrit par la Cloud Function `joinClubWithInviteCode`, et la création de club
+ * passe par `createClubAsCoach`. La fonction est conservée telle quelle, mais
+ * son ancien paramètre `role` a disparu : il écrivait `users/{uid}.role`, un
+ * champ qui ne décide plus de rien depuis que l'espace affiché est dérivé de
+ * l'appartenance (cf. domain/appSpace.ts). Le garder aurait rouvert, pour un
+ * futur appelant, exactement le piège que ce lot ferme.
+ */
+export async function attachUserToClub(opts: { uid: string; clubId: string }) {
   const userRef = doc(db, "users", opts.uid);
   await setDoc(
     userRef,
     {
       uid: opts.uid,
       clubId: opts.clubId,
-      role: opts.role,
       updatedAt: serverTimestamp(),
     },
     { merge: true }
@@ -148,14 +158,21 @@ export async function removeClubMembership(opts: { clubId: string; uid: string }
  * opération :
  *  - clubs/{clubId}                  { ownerUid }
  *  - clubs/{clubId}/members/{uid}    (role: "owner")  ← les DEUX sources posées
- *  - users/{uid} { clubId, role: "coach", profileCompleted: true }
+ *  - users/{uid} { clubId, profileCompleted: true }
  *
  * Les deux sources du prédicat d'autorité sont écrites dans le même mouvement :
  * c'est la seule façon de ne pas créer un club incohérent à sa naissance.
  *
- * `users/{uid}.role` reste "coach" : ce champ ne gouverne AUCUN droit, il ne
- * sert qu'à router l'application vers l'espace coach (navigation/RootNavigator).
- * L'autorité, elle, se lit exclusivement sur le club et son appartenance.
+ * `users/{uid}.role` N'EST PLUS ÉCRIT (juillet 2026, lot « espace du nouveau
+ * propriétaire »). Ce champ servait à router l'application vers l'espace coach ;
+ * or il est écrivable par l'utilisateur lui-même (firestore.rules autorise
+ * chacun à écrire tout son document `users/{uid}`), et le transfert de propriété
+ * ne le touchait jamais. L'espace affiché est désormais DÉRIVÉ de l'appartenance
+ * ci-dessus — la seule source que le serveur contrôle (cf. domain/appSpace.ts).
+ * Continuer à écrire un champ qui ne décide plus rien aurait laissé un piège :
+ * il ressemblait à une autorité.
+ *
+ * `clubId` reste écrit : il dit OÙ lire l'appartenance, pas QUI est encadrant.
  *
  * Le coach n'a pas besoin du questionnaire joueur : on marque profileCompleted
  * pour qu'il atterrisse directement sur son espace coach.
@@ -174,7 +191,6 @@ export async function createClubAsCoach(opts: {
     {
       uid: opts.uid,
       clubId: club.id,
-      role: "coach",
       ...(coachName ? { firstName: coachName } : {}),
       profileCompleted: true,
       updatedAt: serverTimestamp(),

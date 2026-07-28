@@ -110,6 +110,10 @@ function makeClubState(overrides: Partial<Record<string, unknown>> = {}) {
     clubName: "AS Test" as string | null,
     teamGender: null as unknown,
     weekKey: WEEK_KEY,
+    // Autorité propriétaire : par défaut le cas nominal d'un encadrant ordinaire
+    // (ni désigné, ni porteur du rôle propriétaire) — aucun état à réparer.
+    ownerAuthority: "not-owner" as string,
+    ownershipInconsistent: false,
     weekContext: null as unknown,
     weekContextUnavailable: false,
     coachNote: null as unknown,
@@ -1000,6 +1004,42 @@ describe("CoachWeekScreen — code club", () => {
 
     expect(texte).toContain("L'ancien code ne fonctionne plus");
     expect(texte).toContain("restent");
+  });
+
+  // ── L'INTERFACE NE PROPOSE PAS UN GESTE QUE LE SERVEUR REFUSERA ───────────
+  // Quand l'autorité du club est incohérente (`ownerUid` et l'appartenance se
+  // contredisent), la Cloud Function `issueClubInviteCode` refuse AVANT même de
+  // regarder si l'appelant est encadrant (functions/src/inviteCodes.ts). Le
+  // bouton restait pourtant proposé : le coach appuyait, et récoltait un refus
+  // qu'aucun geste de sa part ne peut lever.
+  test.each(["designation-without-membership", "membership-without-designation"])(
+    "autorité incohérente (%s) : l'émission de code est fermée, et l'écran dit pourquoi",
+    async (authority) => {
+      mockClubState = makeClubState({ ownerAuthority: authority, ownershipInconsistent: true });
+      const renderer = await render();
+      const texte = flatText(renderer.toJSON());
+
+      // Le bouton existe encore (on n'escamote pas la fonction), mais il est
+      // désactivé et n'appelle plus le serveur.
+      const bouton = noeuds(renderer, "week-invite-issue")[0];
+      expect(bouton.props.disabled).toBe(true);
+      expect(bouton.props.accessibilityState).toMatchObject({ disabled: true });
+      await press(renderer, "week-invite-issue");
+      expect(mockInviteState.issue).not.toHaveBeenCalled();
+
+      // L'état est NOMMÉ : ni bouton mort, ni échec inexpliqué.
+      expect(texte).toContain("Les actions d'encadrement sont fermées");
+      expect(noeuds(renderer, "week-invite-incoherence").length).toBeGreaterThan(0);
+    },
+  );
+
+  test("autorité saine : l'émission reste ouverte (on ne ferme rien 'au cas où')", async () => {
+    const renderer = await render();
+    const bouton = noeuds(renderer, "week-invite-issue")[0];
+    expect(bouton.props.disabled).toBe(false);
+    expect(noeuds(renderer, "week-invite-incoherence")).toHaveLength(0);
+    await press(renderer, "week-invite-issue");
+    expect(mockInviteState.issue).toHaveBeenCalledTimes(1);
   });
 
   test("échec d'émission : message FR du service, jamais une phrase Firebase", async () => {

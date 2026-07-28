@@ -103,8 +103,11 @@ Une personne qui est **déjà membre actif de ce club** — joueur ou coach.
 1. **L'écran n'existe pas encore.** C'est une fonction serveur, appelable par
    l'application, mais aucun écran ne permet aujourd'hui de choisir un
    successeur. Voir §5.
-2. **Le nouveau propriétaire n'obtient pas l'espace coach tout seul.** Voir §5,
-   c'est le point le plus important de ce qui reste.
+2. ~~**Le nouveau propriétaire n'obtient pas l'espace coach tout seul.**~~
+   **CORRIGÉ (juillet 2026).** Il l'obtient désormais tout seul, immédiatement,
+   sans reconnexion : l'application ne lit plus `users/{uid}.role` mais son
+   appartenance au club — celle-là même que le transfert écrit. Voir §5.1 et le
+   document dédié `ESPACE_ET_ROLES.md`.
 3. **La couche d'enveloppe des Cloud Functions n'est pas testée** — comme pour
    toutes les autres callables : `firebase-functions` et `firebase-admin` ne sont
    installés nulle part dans ce dépôt. Les fichiers `clubOwnershipApi.ts` et
@@ -155,14 +158,20 @@ Options supplémentaires :
 | Option | Ce qu'elle fait | Quand s'en servir |
 |---|---|---|
 | `--retrograde=UID` | rétrograde en `coach` une appartenance qui porte le rôle `owner` **sans être désignée** | réparation §6, cas 2 |
-| `--espace-coach` | met `users/{successeur}.role = "coach"`, ce qui fait basculer son application sur l'espace coach | **⚠️ lire l'avertissement ci-dessous** |
+| `--espace-coach` | met `users/{successeur}.role = "coach"` | **DEVENUE INUTILE** — voir ci-dessous |
 
-> **⚠️ `--espace-coach` retire au successeur son application joueur.**
-> Dans FKS, un compte voit soit l'espace joueur, soit l'espace coach — jamais les
-> deux. Basculer un joueur qui s'entraîne encore lui enlève **son propre
-> entraînement**. Ne l'utilise que si le successeur ne se sert plus de l'app
-> joueur, et **préviens-le avant**. C'est précisément pour ça que le transfert
-> normal n'y touche jamais tout seul (voir §5).
+> **⚠️ `--espace-coach` ne sert plus à rien (juillet 2026).**
+> L'application ne lit plus `users/{uid}.role` : elle dérive l'espace affiché de
+> l'appartenance au club, que le transfert écrit déjà. Le successeur obtient donc
+> l'espace coach **tout seul**, et cette option n'a plus d'effet visible. Elle est
+> conservée le temps qu'un lot dédié la retire proprement (elle est branchée à des
+> tests serveur). N'y touche pas : elle ne fait ni bien ni mal.
+>
+> **Ce qui reste vrai, et important :** dans FKS, un compte voit soit l'espace
+> joueur, soit l'espace coach — jamais les deux. Un successeur qui s'entraînait
+> encore **perd l'accès à son propre entraînement** en devenant propriétaire.
+> Rien n'est supprimé, mais il ne peut plus l'ouvrir. **Préviens-le avant.**
+> Le cas complet, avec ses options de résolution : `ESPACE_ET_ROLES.md` §4.
 
 ### Les garde-fous
 
@@ -194,20 +203,34 @@ Bonus, si tu veux la trace : le document club porte `ownershipTransferredAt`,
 C'est la partie honnête du document. **Le serveur est prêt, l'écran n'existe
 pas.** Voilà exactement ce qui manque, par ordre d'importance.
 
-### 5.1 — L'espace coach du successeur (le vrai manque)
+### 5.1 — L'espace coach du successeur — **RÉGLÉ (juillet 2026)**
 
-Aujourd'hui, `users/{uid}.role` décide de l'espace affiché par l'application :
-`"coach"` → espace coach, sinon → espace joueur. **Le transfert n'y touche
-jamais.** Conséquence concrète : un joueur qui reçoit la propriété a tous les
-droits côté serveur, mais **continue de voir l'application joueur**. Il ne peut
-pas ouvrir son effectif.
+Ce paragraphe décrivait le vrai manque du lot précédent. Il est comblé.
 
-C'est un choix, pas un oubli : basculer son espace automatiquement lui retirerait
-sa propre app d'entraînement, sans qu'il ait rien demandé.
+**Ce qui se passait :** `users/{uid}.role` décidait de l'espace affiché, et le
+transfert n'y touchait jamais. Le successeur avait tous les droits côté serveur
+et continuait de voir l'application joueur.
 
-**Ce qu'il faut construire :** un écran où le successeur **confirme**, en sachant
-qu'il changera d'espace. En attendant, l'administrateur le fait avec
-`--espace-coach`, après l'avoir prévenu.
+**Ce qui a changé :** l'application ne lit plus ce champ. Elle **dérive** l'espace
+de l'appartenance au club (`clubs/{clubId}/members/{uid}.role`), qu'elle suit en
+temps réel — donc de l'autorité que le transfert écrit déjà, et que le serveur
+contrôle seul. Le successeur bascule sur l'espace coach dès que la transaction
+passe : sans reconnexion, sans redémarrage. L'ancien propriétaire, devenu `coach`,
+garde le sien.
+
+Bénéfice au passage : ce champ était écrivable par son titulaire. N'importe quel
+joueur pouvait s'y déclarer coach et ouvrir l'espace coach (vide, mais ouvert).
+Ce n'est plus possible.
+
+> **Conséquence sur l'option `--espace-coach` de l'outil administrateur :** elle
+> est devenue **inutile** pour un transfert normal — l'espace suit désormais le
+> rôle tout seul. Elle continue d'écrire `users/{uid}.role`, un champ que plus
+> rien ne lit : sur ce chemin, elle ne produit plus aucun effet visible.
+
+**Ce qui reste à construire :** l'écran de choix du successeur (§5.2), et la
+décision produit sur le successeur qui est **aussi joueur** — il gagne l'espace
+coach et perd l'accès à son propre entraînement. Ce cas est décrit en entier,
+avec ses options, dans `ESPACE_ET_ROLES.md` §4.
 
 ### 5.2 — L'écran de choix du successeur
 

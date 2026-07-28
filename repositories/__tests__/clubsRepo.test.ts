@@ -198,7 +198,14 @@ describe("createClubAsCoach — le créateur devient PROPRIÉTAIRE, pas coach", 
     expect(memberDoc?.payload).not.toHaveProperty("coachAccess");
   });
 
-  test("users/{uid}.role reste « coach » : ce champ route l'app, il n'accorde RIEN", async () => {
+  test("users/{uid} ne porte QUE le pointeur de club : plus aucun rôle applicatif", async () => {
+    // CHANGEMENT DE CONTRAT (juillet 2026). Ce document portait `role: "coach"`,
+    // et c'est ce champ que la navigation lisait pour ouvrir l'espace coach. Or
+    // les règles Firestore autorisent chacun à écrire tout son document
+    // `users/{uid}` : n'importe quel joueur pouvait donc s'y déclarer coach.
+    // L'espace affiché est désormais DÉRIVÉ de l'appartenance au club
+    // (domain/appSpace.ts). Continuer à écrire ce champ aurait laissé un piège :
+    // il ressemblait à une autorité.
     await createClubAsCoach({ name: "Club Neuf", uid: "coachA" });
 
     const userDoc = setDocMock.mock.calls
@@ -208,9 +215,10 @@ describe("createClubAsCoach — le créateur devient PROPRIÉTAIRE, pas coach", 
     expect(userDoc?.payload).toMatchObject({
       uid: "coachA",
       clubId: expect.any(String),
-      role: "coach",
       profileCompleted: true,
     });
+    // LA ligne qui compte : aucun rôle applicatif n'est posé.
+    expect(userDoc?.payload).not.toHaveProperty("role");
   });
 });
 

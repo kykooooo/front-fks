@@ -538,12 +538,21 @@ async function runOwnershipTransfer(
       }
 
       // 6. ESPACE APPLICATIF (mode administrateur, sur demande explicite).
-      //    `users/{uid}.role` decide de l'espace affiche par l'app — coach ou
-      //    joueur. Le transfert ne le touche JAMAIS tout seul : basculer un
-      //    joueur actif sur l'espace coach lui retire SA PROPRE app
-      //    d'entrainement. C'est une decision produit, pas une consequence
-      //    technique, et c'est l'ecran qui manque encore (cf.
-      //    docs/coach-pilote-2026-07/TRANSFERT_PROPRIETE.md).
+      //
+      //    ATTENTION : DEVENUE SANS EFFET (juillet 2026), laissee en place a dessein.
+      //    `users/{uid}.role` ne decide PLUS de l'espace affiche par l'app :
+      //    celui-ci est desormais DERIVE de l'appartenance ecrite juste au-dessus
+      //    (front : domain/appSpace.ts, hooks/useAppSpace.ts). Le successeur
+      //    obtient donc l'espace coach tout seul, immediatement, et cette
+      //    ecriture ne produit plus aucun effet visible.
+      //    On ne la retire pas ICI : ce serait toucher au comportement et aux
+      //    tests du transfert dans un lot qui n'a pas ce mandat. Un lot dedie
+      //    peut la solder (cf. docs/coach-pilote-2026-07/ESPACE_ET_ROLES.md).
+      //
+      //    Ce qui reste VRAI et important : un compte voit un seul espace. Un
+      //    joueur qui devient proprietaire perd l'acces a sa propre app
+      //    d'entrainement — decision produit non tranchee, documentee, jamais
+      //    masquee.
       if (grantCoachSpace) {
         tx.set(memberPaths.user(newOwnerUid), { role: "coach", updatedAt: now }, { merge: true });
       }

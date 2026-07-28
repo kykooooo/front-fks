@@ -67,6 +67,7 @@ import {
   type CoachPlayerView,
 } from "../../domain/coachView";
 import { formatCoachWeekLabel } from "../../domain/coachLabels";
+import { clubOwnerInconsistencyCopy } from "../../domain/clubRoles";
 import {
   CLUB_TEAM_GENDERS,
   type ClubTeamGender,
@@ -648,10 +649,24 @@ export default function CoachWeekScreen() {
     haptics,
   ]);
 
+  // ── ÉMISSION DE CODE ET AUTORITÉ INCOHÉRENTE ──────────────────────────────
+  // Le serveur REFUSE d'émettre un code quand l'autorité du club est incohérente
+  // (functions/src/inviteCodes.ts : `clubAuthoritySignal` non nul → refus, avant
+  // même le test « est-ce un encadrant ? »). L'écran, lui, proposait le bouton :
+  // le coach appuyait, et récoltait un refus qu'aucun geste de sa part ne peut
+  // lever — la réparation passe par l'outil administrateur.
+  //
+  // On ferme donc le geste ICI, avec le MÊME verdict que le serveur, calculé par
+  // le même prédicat d'affichage (`domain/clubRoles`, miroir de
+  // `functions/src/clubAuthority`). L'écran n'accorde toujours rien : il refuse
+  // de promettre. Et il dit pourquoi, plutôt que de laisser un bouton mort.
+  const incoherenceClub = clubOwnerInconsistencyCopy(club.ownerAuthority);
+  const emissionCodeFermee = incoherenceClub !== null;
   const handleIssueCode = useCallback(() => {
+    if (emissionCodeFermee) return;
     haptics.impactLight();
     invite.issue();
-  }, [haptics, invite]);
+  }, [emissionCodeFermee, haptics, invite]);
 
   // Le partage n'existe QUE tant que le code est à l'écran : il n'est plus
   // relisible ailleurs, ni par cet écran après un retour en arrière.
@@ -815,7 +830,7 @@ export default function CoachWeekScreen() {
       return (
         <CoachEmptyState
           variant="clubWithoutPlayers"
-          action={club.clubId ? { onPress: handleIssueCode } : null}
+          action={club.clubId && !emissionCodeFermee ? { onPress: handleIssueCode } : null}
         />
       );
     }
@@ -1425,18 +1440,28 @@ export default function CoachWeekScreen() {
             </Text>
           )}
 
+          {/* Autorité incohérente : on annonce l'état AVANT le bouton, parce que
+              c'est lui qui explique pourquoi il est fermé. */}
+          {incoherenceClub ? (
+            <Text style={styles.fieldHint} numberOfLines={3} testID="week-invite-incoherence">
+              {incoherenceClub.corps}
+            </Text>
+          ) : null}
+
           <Pressable
             testID="week-invite-issue"
             onPress={handleIssueCode}
-            disabled={!club.clubId || invite.isIssuing}
+            disabled={!club.clubId || invite.isIssuing || emissionCodeFermee}
             accessibilityRole="button"
             accessibilityLabel={invite.code ? "Générer un nouveau code club" : "Générer un code club"}
-            accessibilityState={{ disabled: !club.clubId || invite.isIssuing }}
+            accessibilityState={{ disabled: !club.clubId || invite.isIssuing || emissionCodeFermee }}
             style={({ pressed }) => [
               styles.shareBtn,
               styles.issueBtn,
-              (!club.clubId || invite.isIssuing) && styles.shareBtnDisabled,
-              pressed && club.clubId && !invite.isIssuing ? styles.shareBtnPressed : null,
+              (!club.clubId || invite.isIssuing || emissionCodeFermee) && styles.shareBtnDisabled,
+              pressed && club.clubId && !invite.isIssuing && !emissionCodeFermee
+                ? styles.shareBtnPressed
+                : null,
             ]}
           >
             <Ionicons name="key-outline" size={16} color={coachColors.accent} />
