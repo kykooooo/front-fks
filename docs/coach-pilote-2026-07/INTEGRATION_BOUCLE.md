@@ -24,7 +24,8 @@ Ce document répond à trois questions :
 1. le tableau d'affichage attend-il des cases qui existent vraiment sur la
    feuille de match ? (§1)
 2. le tableau recalcule-t-il des chiffres au lieu de recopier ? (§2)
-3. dans quel ordre fusionner les deux, et comment revenir en arrière ? (§3 à §6)
+3. dans quel ordre fusionner les deux, et comment revenir en arrière ? (§3 à §5)
+4. que peut réellement écrire le joueur dans son document, valeur par valeur ? (§6)
 
 ---
 
@@ -740,7 +741,223 @@ native de `package.json`, ni `eas.json`, ni `ios/`, ni `android/`). L'OTA suffit
 
 ---
 
-## 6. Ce que ce document ne garantit pas
+## 6. Les deux champs que la boucle écrit dans `users/{uid}` — contrat de VALEURS
+
+> Ajouté le 28 juillet 2026. **Inventorier un champ ne signifie pas autoriser
+> n'importe quelle valeur pour ce champ.** Le lot du 27 juillet (`23b7579`) a posé
+> une liste blanche de **noms de champs** sur `users/{uid}`. Elle laissait
+> `selfReportedGapDays` et `lastTrackingDecision` accepter **n'importe quoi**.
+> C'est maintenant fermé, et voici avec quoi exactement.
+
+### 6.1 Pourquoi ces deux-là ne se traitent pas pareil
+
+| | `selfReportedGapDays` | `lastTrackingDecision` |
+|---|---|---|
+| Nature | **Signal déclaré par le joueur** — « depuis quand n'as-tu pas eu d'entraînement régulier ? » | **Décision dérivée** par le moteur de règles du téléphone, destinée à influencer la suite |
+| Écrit par | `screens/ProfileSetupScreen.tsx` (setup profil) | `state/orchestrators/applyFeedback.ts` (après chaque feedback) |
+| Ce qu'on valide | **type, bornes, suppression** — pas la véracité | **contrat fermé** : structure versionnée, énumérations closes |
+| Règle | `validSelfReportedGapDays()` | `validTrackingDecisionMap()` + `validTrackingDigest()` |
+
+### 6.2 Le danger de ce lot, et comment il est neutralisé
+
+Ces deux écritures sont **« best-effort »** : un refus de règle est avalé par un
+`catch` et **ne produit aucun message pour le joueur**. Un contrat trop strict
+n'aurait donc pas cassé bruyamment — il aurait fait **disparaître la donnée en
+silence**, après le merge, en production.
+
+D'où la méthode : **le contrat est recopié de la structure réelle**, jamais
+inventé, et un test le **rejoue à l'identique** contre l'émulateur
+(`firestore-tests/rules.userDocument.test.ts`, section J : les onze positions de
+`RULE_ORDER`, plus l'objet complet du setup profil).
+
+**Preuve que ce filet est portant** — deux mutations volontaires jouées puis
+annulées :
+
+| Mutation | Résultat |
+|---|---|
+| `ruleIndex` retiré des clés tolérées (le piège du §6.4) | **27 tests rouges**, dont **la section J entière** |
+| contrat remplacé par `return true` (permissif) | **74 tests rouges** |
+
+Les deux sens mordent. Un contrat qui refuserait tout, comme un contrat qui
+accepterait tout, se voit ici.
+
+### 6.3 `selfReportedGapDays` — ce qui est accepté, et ce qui ne l'est pas
+
+- **Accepté** : un **entier** de **0 à 3650** jours, ou **`null`** (« je n'ai pas
+  répondu » — la valeur réellement écrite quand la question est passée).
+- **Refusé** : chaîne, flottant, booléen, map, liste, négatif, au-delà de 3650.
+- **Suppression (`deleteField()`) : PERMISE.** C'est une décision, pas un oubli.
+  Le joueur écrit déjà `null`, et le lecteur (`hooks/useSelfReportedGapDays.ts`)
+  traite « absent » et « null » de la même façon : refuser la suppression tout en
+  acceptant `null` serait une distinction sans différence — **zéro protection
+  gagnée**, et un futur chemin de réinitialisation cassé en silence. Retirer une
+  déclaration qu'on a faite soi-même est par ailleurs légitime.
+- **Pourquoi un intervalle et pas la liste des quatre options de l'écran**
+  (0 / 21 / 60 / 120) : cette liste appartient à l'UI et changera. Une liste close
+  ici ferait disparaître la réponse **le jour où une cinquième option apparaît** —
+  exactement la panne qu'on cherche à empêcher. Un test vérifie tout de même que
+  **toutes** les options de l'écran tombent dans les bornes (armé au merge).
+
+### 6.4 `lastTrackingDecision` — le contrat fermé, champ par champ
+
+| Champ | Contrainte |
+|---|---|
+| `version` | littéralement `1` |
+| `rulesVersion` | forme `tracking-rules/X.Y.Z` — **la forme, jamais un numéro figé** : le moteur bumpe cette valeur à chaque changement de seuil (`domain/tracking/config.ts`) |
+| `decidedAtISO` | forme ISO 8601 (`AAAA-MM-JJ`, partie heure facultative) |
+| `kind` | **liste fermée de 10 valeurs** = `TrackingDecisionKind` |
+| `targets` | liste, taille ≤ 50 |
+| `explanation` | chaîne, ≤ 1000 caractères — **voir §6.5** |
+| `signalsDigest` | map à **exactement** 5 clés (`completionRateAvg`, `rpeDeltaAvg`, `painActive`, `gapDays`, `dataQuality`), chacune typée, `dataQuality` en liste fermée de 3 |
+| `mode` | `"shadow"` ou `"applied"` — **les deux valeurs du type**, pas seulement celle que le pilote produit |
+| `ruleIndex` | facultatif, entier 1 à 99 |
+
+Les **huit premiers champs sont EXIGÉS** (un objet vide ou amputé est refusé) et
+**aucune autre clé** n'est tolérée.
+
+#### Le piège trouvé en lisant le code — `ruleIndex`
+
+`ruleIndex` **n'est pas dans le type `TrackingDecision`**, et il **arrive pourtant
+en base**. `decideAdjustment` (`domain/tracking/rulesEngine.ts`) construit un
+`TrackingDecisionWithRule` — le numéro de la règle qui a matché, 1 à 11 — et le
+retourne derrière une signature annotée `TrackingDecision` : **l'annotation
+efface le champ pour le compilateur, pas à l'exécution**. `decorateDecision` fait
+ensuite `{ ...decision, explanation }`, et l'objet part tel quel dans `setDoc`.
+
+Un contrat écrit depuis le **type** (huit clés) aurait donc refusé **chaque
+décision réelle**, sans un message. C'est exactement la panne que ce lot devait
+éviter, et elle n'a été vue qu'en lisant la branche.
+
+#### Pourquoi `mode: "applied"` est accepté alors que le pilote n'écrit que `"shadow"`
+
+La liste fermée est **celle du type**, pas le sous-ensemble produit aujourd'hui.
+Fermer sur `"shadow"` seul ferait disparaître les décisions **le jour où le mode
+Application s'active** — et ce champ **ne donne aucun droit** : le véritable
+interrupteur est `trackingConfig`, gelé côté serveur (§6.6).
+
+#### Pourquoi les deux moyennes du digest ne sont PAS bornées
+
+`completionRateAvg` et `rpeDeltaAvg` sont recopiées **sans écrêtage** par la
+boucle : quand une valeur source sort de son échelle, elle est **signalée**
+(`dataQuality: "inconsistent"`) et **non corrigée** (`domain/tracking/signals.ts`).
+Les borner à 0-100 et ±10 refuserait précisément les décisions qui **portent
+l'anomalie** — donc effacerait la trace de l'anomalie. On valide le **type**, et
+la borne manquante est **nommée** ci-dessous comme un reste.
+
+#### La suppression du miroir est permise
+
+`lastTrackingDecision` est un **miroir multi-appareil**, pas la source : la vérité
+vit dans les séances et l'exécution locale. L'effacer ne retire aucun droit à
+personne et n'en donne aucun. Suppression **testée**.
+
+### 6.5 ⚠️ ARBITRAGE À RENDRE — « aucun texte libre » vs `explanation`
+
+**L'exigence produit dit « AUCUN TEXTE LIBRE ». La structure réelle en porte un.**
+
+`explanation` est une **phrase en français**, construite par
+`domain/tracking/explain.ts` à partir de gabarits dans lesquels sont interpolés
+des nombres et des identifiants d'exercices. Exemple réellement écrit en base :
+
+> « Tu as trouvé split_squat_bulgare trop difficile au moins 2 fois. La prochaine
+> séance proposera une variante plus accessible, sans réduire le reste du
+> programme. »
+
+Une règle Firestore **ne peut pas** vérifier qu'une phrase sort bien d'un gabarit.
+Trois options, et une seule est appliquée aujourd'hui :
+
+| Option | Ce que ça donne | Coût |
+|---|---|---|
+| **A. Interdire le sous-champ** | honore l'exigence à la lettre | **fait tomber CHAQUE décision réelle, en silence**. Inapplicable en l'état |
+| **B. Le BORNER** *(appliqué)* | chaîne, ≤ 1000 caractères | la porte n'est plus un espace de stockage libre, mais **elle n'est pas fermée** |
+| **C. Que la boucle cesse de l'écrire** | honore l'exigence **et** ne casse rien : l'explication se **reconstruit à la lecture** depuis `kind` + `signalsDigest`, qui sont déjà validés | touche `state/orchestrators/applyFeedback.ts` — **fichier réservé à la branche boucle**, donc **lot post-merge** |
+
+**Ce lot a retenu B pour ne rien casser, et ne tranche pas.** La décision est à
+Kyllian. Si c'est C, le passage se fait en deux gestes dans la même fenêtre :
+retirer `explanation` de l'objet écrit par la boucle, et retirer le sous-champ
+des clés exigées/tolérées des règles.
+
+### 6.6 Ce qu'une règle Firestore ne sait PAS vérifier — les restes, nommés
+
+Ce qui suit n'est **pas** couvert. C'est écrit ici pour que personne ne le
+découvre en le cherchant.
+
+1. **Le contenu d'une liste.** `targets` est vérifié comme *liste de taille ≤ 50*.
+   Une règle ne sait pas boucler : **les éléments ne sont pas typés**. Un
+   `targets: [42, {}, null]` passe.
+2. **La validité d'une date.** `decidedAtISO` est vérifié comme *forme* ISO.
+   `2026-02-31` passe. Rien ne garantit non plus que la date soit **récente** ni
+   cohérente avec `request.time`.
+3. **Les deux moyennes du digest** (§6.4) : type seulement, pas de borne — choix
+   délibéré, pas un oubli.
+4. **Le contenu d'`explanation`** (§6.5) : longueur seulement.
+5. **La véracité du signal déclaré.** `selfReportedGapDays` reste une
+   **déclaration** : rien ne dit qu'elle est vraie, et ce n'est pas le rôle d'une
+   règle.
+6. **Une valeur non conforme déposée par l'Admin SDK** resterait en base. La
+   validation porte sur les clés **touchées** par le client (et non sur le
+   résultat) : c'est ce qui évite de rendre **inécrivable** un document portant
+   déjà une valeur non conforme — le titulaire ne pourrait plus jamais modifier
+   son profil, et **ça ne casserait qu'en production**. Ce qui est fermé ici,
+   c'est qu'un **client** en introduise une. Deux tests le prouvent dans les deux
+   sens.
+7. **Aucun champ d'autorité ne passe au passage** : une décision parfaitement
+   valide accompagnée de `role: "coach"` ou de `trackingConfig` est refusée —
+   c'est la liste blanche du lot précédent qui s'en charge, et c'est **testé
+   explicitement** ici pour que le couplage soit visible.
+
+### 6.7 HORS PÉRIMÈTRE de ce lot — le volet à faire APRÈS le merge de la boucle
+
+Kyllian a aussi demandé que **ces écritures cessent d'être silencieusement
+best-effort**. **Ce n'est pas fait, et c'est délibéré** : ce volet vit dans
+`state/orchestrators/applyFeedback.ts`, l'un des quatre fichiers **réservés à la
+branche boucle** (§3). Le faire ici créerait un conflit sur exactement le fichier
+qu'on protège depuis le début du chantier coach.
+
+**Ce que le lot post-merge devra faire — à ne pas perdre :**
+
+| # | À faire | Pourquoi |
+|---|---|---|
+| 1 | **Conserver localement en « non synchronisé »** quand l'écriture est refusée | aujourd'hui la décision est simplement perdue |
+| 2 | **Reprendre via la queue hors-ligne existante** (`utils/offlineQueue.ts`) | le mécanisme existe déjà pour le feedback ; il n'est pas branché ici |
+| 3 | **Ne pas prétendre que la prochaine adaptation utilisera la décision** si elle n'a pas été enregistrée | honnêteté d'affichage |
+| 4 | **Journaliser sans donnée sensible** | aujourd'hui : un `console.warn` en dev, **rien** en production |
+
+**Quelles écritures deviennent refusables** (elles ne l'étaient pas avant ce lot,
+puisque n'importe quelle valeur passait) :
+
+- `setDoc(users/{uid}, { lastTrackingDecision }, { merge: true })`
+  (`applyFeedback.ts`, bloc « 8bis ») — refusée si la décision ne satisfait pas
+  le contrat §6.4 ;
+- `setDoc(users/{uid}, { …profil, selfReportedGapDays }, { merge: true })`
+  (`ProfileSetupScreen.tsx`) — refusée si la valeur sort du §6.3. **Celle-ci
+  emporte tout l'enregistrement du profil**, pas seulement le champ : c'est le
+  cas le plus visible, et il est déjà couvert par le message d'erreur de l'écran.
+
+**Pourquoi leur échec est aujourd'hui invisible** : le bloc « 8bis » de
+`applyFeedback.ts` est entouré d'un `try/catch` global qui avale tout, et
+l'écriture elle-même passe par `retryWithBackoff(...).catch(...)` avec un
+`console.warn` **conditionné à `__DEV__`**. En production : **aucune trace,
+aucun message, aucune donnée**.
+
+**Tant que ce volet n'est pas fait**, le filet reste la suite de tests : si le
+contrat et la boucle divergent, c'est le rejeu (section J) qui rougit — au merge,
+sur un poste de dev, et pas sur le téléphone d'un joueur.
+
+### 6.8 Verrous ajoutés à la suite de règles
+
+- les trois énumérations des règles (`trackingDecisionKinds`,
+  `trackingDataQualities`, `trackingDecisionRequiredKeys`) sont **comparées à
+  l'inventaire tenu dans le test** — elles ne peuvent plus dériver en silence ;
+- **armé au merge** : dès que `domain/tracking/types.ts` et
+  `domain/tracking/config.ts` existent, deux tests comparent la liste des `kind`
+  et la forme de `rulesVersion` **au code réel**. Tant que la boucle n'est pas
+  mergée, un test l'**annonce** (« la boucle est ABSENTE (non mergée) ») — ce
+  n'est pas un `skip` masqué.
+
+
+---
+
+## 7. Ce que ce document ne garantit pas
 
 1. **Je n'ai pas exécuté le merge.** Les conflits décrits sont déduits de la
    comparaison des diffs (`git diff --name-only`, positions de hunks). Le seul
@@ -771,3 +988,15 @@ native de `package.json`, ni `eas.json`, ni `ios/`, ni `android/`). L'OTA suffit
    règles, une **troisième fois à la main** dans `firestore.rules` pour la liste
    des états autorisants. Ce sont des tests qui tiennent ces accords, pas le
    compilateur.
+8. **Le contrat de valeurs du §6 a été écrit et testé contre une branche NON
+   MERGÉE.** Il est dérivé de la lecture de `claude/player-tracking-loop-559906`
+   à son état du 28 juillet, et rejoué contre l'émulateur — mais **la boucle
+   elle-même n'a jamais tourné contre ces règles**. La preuve définitive est le
+   passage téléphone après merge : ouvrir une séance, la terminer, remplir le
+   feedback, puis vérifier dans la console Firebase que
+   `users/{uid}.lastTrackingDecision` **existe et est à jour**. S'il est absent,
+   le contrat est trop strict — et il n'y aura **aucun message** pour le dire.
+9. **Le volet « ne plus être silencieusement best-effort » n'est PAS fait**
+   (§6.7). Il est décrit, pas exécuté, et il attend le merge de la boucle parce
+   qu'il touche un fichier réservé. Tant qu'il n'est pas fait, une décision
+   refusée reste **perdue sans trace en production**.

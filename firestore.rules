@@ -408,6 +408,238 @@ service cloud.firestore {
             isActiveMember(request.resource.data.clubId)));
     }
 
+    // ══ INVENTORIER UN CHAMP N'EST PAS AUTORISER N'IMPORTE QUELLE VALEUR ════
+    //
+    // La liste blanche ci-dessus dit QUELS champs le titulaire peut écrire. Elle
+    // ne dit RIEN de ce qu'il peut y mettre. Deux champs de la boucle de suivi
+    // joueur (branche claude/player-tracking-loop-559906, à merger AVANT nous)
+    // ne peuvent pas rester à ce niveau-là, et pas pour la même raison :
+    //
+    //  . `selfReportedGapDays` est un SIGNAL DÉCLARÉ PAR LE JOUEUR — « depuis
+    //    quand n'as-tu pas eu d'entraînement régulier ? ». Le joueur a le droit
+    //    de le déclarer ; on valide donc le TYPE, les BORNES et la SUPPRESSION,
+    //    pas la véracité.
+    //  . `lastTrackingDecision` est une DÉCISION DÉRIVÉE, produite par le moteur
+    //    de règles du téléphone, et destinée à influencer la suite. Contrat
+    //    FERMÉ : structure versionnée, énumérations closes, aucun objet
+    //    arbitraire.
+    //
+    // ── LE CONTRAT EST RECOPIÉ DE LA STRUCTURE RÉELLE, PAS INVENTÉ ──────────
+    // Ces deux écritures sont « best-effort » côté application : un refus de
+    // règle est avalé par un `catch` et ne produit AUCUN message pour le joueur
+    // (`state/orchestrators/applyFeedback.ts`). Un contrat trop strict ne casse
+    // donc pas bruyamment — il fait disparaître la donnée en silence. Chaque
+    // ligne ci-dessous vient d'une lecture champ par champ de la branche :
+    //   domain/tracking/types.ts        → TrackingDecision, TrackingDecisionKind
+    //   domain/tracking/rulesEngine.ts  → l'objet réellement construit
+    //   domain/tracking/explain.ts      → l'explication FR ajoutée ensuite
+    //   domain/tracking/config.ts       → rulesVersion "tracking-rules/1.0.0"
+    //   screens/ProfileSetupScreen.tsx  → les valeurs réellement déclarables
+    // Et un test REJOUE ces écritures à l'identique contre l'émulateur
+    // (firestore-tests/rules.userDocument.test.ts, section J) : si le contrat
+    // dérivait de la réalité, il tomberait ICI et pas en production.
+    //
+    // ── CE QUI EST VALIDÉ QUAND, ET POURQUOI PAS SUR LE RÉSULTAT ────────────
+    // À la CRÉATION : si le champ est posé, il doit être conforme.
+    // En MISE À JOUR : la conformité n'est exigée que si le champ est TOUCHÉ
+    // (`userTouches`). Juger le RÉSULTAT — comme pour `note` ou `ownerUid` —
+    // serait plus fort, mais rendrait INÉCRIVABLE tout document portant déjà une
+    // valeur non conforme : le titulaire ne pourrait plus jamais modifier son
+    // profil, et ça ne casserait qu'en production. Ces deux champs n'existent
+    // encore chez PERSONNE (la branche n'est pas mergée), donc le risque est nul
+    // aujourd'hui — mais l'Admin SDK contourne ces règles et pourrait en écrire
+    // une demain. On garde donc le mécanisme qui ne peut pas bricker un compte.
+    // Conséquence assumée, écrite noir sur blanc : une valeur non conforme
+    // déposée par le serveur RESTERAIT en base ; ce qui est fermé ici, c'est
+    // qu'un CLIENT en introduise une.
+    //
+    // ── LA SUPPRESSION EST PERMISE POUR LES DEUX, ET C'EST UNE DÉCISION ─────
+    // `selfReportedGapDays` : le joueur écrit déjà `null` quand il ne répond pas
+    // (ProfileSetupScreen), et le lecteur traite « absent » et « null » de la
+    // même façon (`hooks/useSelfReportedGapDays.ts` : tout ce qui n'est pas un
+    // nombre ≥ 0 devient `null`). Refuser `deleteField()` tout en acceptant
+    // `null` serait une distinction sans différence — zéro protection gagnée, et
+    // un futur chemin de réinitialisation cassé en silence. Retirer une
+    // déclaration qu'on a faite soi-même est par ailleurs légitime.
+    // `lastTrackingDecision` : c'est un MIROIR multi-appareil, pas la source —
+    // la vérité vit dans les séances et l'exécution locale. L'effacer ne retire
+    // aucun droit à personne et n'en donne aucun.
+    // Les deux suppressions sont testées.
+
+    /** Le champ nommé fait-il partie des clés RÉELLEMENT touchées par l'écriture ? */
+    function userTouches(champ) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([champ]);
+    }
+
+    /**
+     * `selfReportedGapDays` — coupure d'entraînement AUTO-DÉCLARÉE.
+     *
+     * TYPE : entier, ou `null` (« pas répondu » — valeur réellement écrite par
+     * le setup profil quand la question est passée). Un flottant, une chaîne, un
+     * booléen ou une map sont refusés.
+     * BORNES : 0 à 3650 jours (dix ans). L'écran ne propose aujourd'hui que
+     * quatre valeurs (0, 21, 60, 120 — SELF_REPORTED_GAP_OPTIONS), mais la règle
+     * borne un INTERVALLE plutôt que de recopier cette liste : elle appartient à
+     * l'UI et changera. Une liste close ici ferait disparaître la réponse en
+     * silence le jour où une cinquième option apparaît — exactement la panne
+     * qu'on cherche à empêcher. Au-delà de 28 jours le moteur se comporte déjà
+     * de façon identique (`resumption.gapDaysHard`) : la borne haute ne sert
+     * qu'à refuser l'absurde, pas à discriminer du plausible.
+     */
+    function validSelfReportedGapDays() {
+      return !("selfReportedGapDays" in request.resource.data) ||
+        request.resource.data.selfReportedGapDays == null ||
+        (request.resource.data.selfReportedGapDays is int &&
+          request.resource.data.selfReportedGapDays >= 0 &&
+          request.resource.data.selfReportedGapDays <= 3650);
+    }
+
+    /**
+     * Les DIX décisions possibles — recopie EXACTE de `TrackingDecisionKind`
+     * (domain/tracking/types.ts). Aucune autre valeur n'entre en base.
+     */
+    function trackingDecisionKinds() {
+      return [
+        "continue_planned", "hold_dose", "reduce_volume_light",
+        "reduce_intensity_light", "suggest_variant", "prefer_replacement",
+        "resume_mode", "keep_despite_time", "block_increase_pain",
+        "standard_insufficient_data"
+      ];
+    }
+
+    /** Les TROIS qualités de données possibles (`TrackingSignals.dataQuality`). */
+    function trackingDataQualities() {
+      return ["ok", "insufficient", "inconsistent"];
+    }
+
+    /**
+     * Clés EXIGÉES de la décision : les huit champs du type `TrackingDecision`.
+     * Une décision amputée est refusée — un contrat fermé l'est dans les deux
+     * sens, sinon `{}` passerait.
+     */
+    function trackingDecisionRequiredKeys() {
+      return [
+        "version", "rulesVersion", "decidedAtISO", "kind",
+        "targets", "explanation", "signalsDigest", "mode"
+      ];
+    }
+
+    /**
+     * Clés TOLÉRÉES : les huit exigées, plus `ruleIndex`.
+     *
+     * `ruleIndex` N'EST PAS dans le type `TrackingDecision` — et il arrive
+     * pourtant en base. `decideAdjustment` construit un
+     * `TrackingDecisionWithRule` (numéro de la règle qui a matché, 1 à 11) et le
+     * retourne derrière une signature annotée `TrackingDecision` : l'annotation
+     * efface le champ pour le compilateur, pas à l'exécution. `decorateDecision`
+     * fait ensuite `{ ...decision, explanation }`, et l'objet part tel quel dans
+     * `setDoc`. Une liste close sur les seuls huit champs du type aurait donc
+     * refusé CHAQUE décision réelle, sans un message.
+     */
+    function trackingDecisionAllowedKeys() {
+      return trackingDecisionRequiredKeys().concat(["ruleIndex"]);
+    }
+
+    /**
+     * `signalsDigest` — la trace compacte des signaux qui ont produit la
+     * décision. Cinq clés, ni plus ni moins.
+     *
+     * DEUX MOYENNES NON BORNÉES, ET C'EST DÉLIBÉRÉ. `completionRateAvg` et
+     * `rpeDeltaAvg` sont recopiées SANS écrêtage par la boucle : quand une
+     * valeur source sort de son échelle, elle est signalée
+     * (`dataQuality: "inconsistent"`) et non corrigée
+     * (domain/tracking/signals.ts). Les borner à 0-100 et -10/+10 ici
+     * refuserait précisément les décisions qui portent l'anomalie — donc
+     * effacerait la trace de l'anomalie. On valide le TYPE, on nomme la borne
+     * manquante comme un reste (docs/coach-pilote-2026-07/INTEGRATION_BOUCLE.md).
+     */
+    function validTrackingDigest(digest) {
+      return digest is map &&
+        digest.keys().hasAll(["completionRateAvg", "rpeDeltaAvg", "painActive", "gapDays", "dataQuality"]) &&
+        digest.keys().hasOnly(["completionRateAvg", "rpeDeltaAvg", "painActive", "gapDays", "dataQuality"]) &&
+        (digest.completionRateAvg == null || digest.completionRateAvg is number) &&
+        (digest.rpeDeltaAvg == null || digest.rpeDeltaAvg is number) &&
+        digest.painActive is bool &&
+        (digest.gapDays == null ||
+          (digest.gapDays is int && digest.gapDays >= 0 && digest.gapDays <= 36500)) &&
+        digest.dataQuality in trackingDataQualities();
+    }
+
+    /**
+     * LE CONTRAT FERMÉ de `lastTrackingDecision`, champ par champ.
+     *
+     *  . `version`      : littéralement 1 (versionnée, donc évolutive par
+     *                     décision explicite — pas par dérive) ;
+     *  . `rulesVersion` : « tracking-rules/X.Y.Z ». Le moteur BUMPE cette valeur
+     *                     à chaque changement de seuil (config.ts) : la règle
+     *                     valide la FORME, jamais un numéro figé, sinon le
+     *                     prochain bump ferait disparaître les décisions ;
+     *  . `decidedAtISO` : date VALIDE au sens de la forme ISO 8601. La partie
+     *                     heure est optionnelle : la valeur vient de
+     *                     `feedback.createdAt` (`new Date().toISOString()`) avec
+     *                     repli sur l'horloge, et accepter aussi « AAAA-MM-JJ »
+     *                     coûte zéro sécurité alors que le refuser coûterait une
+     *                     décision perdue en silence. Une règle Firestore ne sait
+     *                     PAS vérifier qu'une date existe (le 31 février passe),
+     *                     ni qu'elle est récente : reste nommé ;
+     *  . `kind`         : LISTE FERMÉE de dix valeurs ;
+     *  . `targets`      : liste d'identifiants d'exercices, taille bornée. Une
+     *                     règle ne sait pas typer les ÉLÉMENTS d'une liste (pas
+     *                     de boucle) : reste nommé ;
+     *  . `explanation`  : voir l'encadré ci-dessous ;
+     *  . `signalsDigest`: contrat imbriqué, cinq clés closes ;
+     *  . `mode`         : « shadow » ou « applied » — les DEUX valeurs du type,
+     *                     pas seulement celle que le pilote produit aujourd'hui.
+     *                     Fermer sur « shadow » seul ferait disparaître les
+     *                     décisions le jour où le mode Application s'active, et
+     *                     ce champ ne DONNE aucun droit : le véritable
+     *                     interrupteur est `trackingConfig`, gelé côté serveur.
+     *
+     * ── « AUCUN TEXTE LIBRE » : LE POINT EN CONFLIT, ARBITRAGE À RENDRE ─────
+     * L'exigence produit est « aucun texte libre ». Or la structure réelle
+     * PORTE un texte libre : `explanation`, une phrase en français construite
+     * par `domain/tracking/explain.ts` à partir de gabarits dans lesquels sont
+     * interpolés des nombres et des identifiants d'exercices. Une règle
+     * Firestore ne peut pas vérifier qu'une phrase sort bien d'un gabarit.
+     *
+     * Interdire le sous-champ ferait tomber CHAQUE décision réelle, en silence.
+     * La règle le BORNE donc (chaîne, 1000 caractères au plus) au lieu de
+     * l'interdire : la porte n'est plus un espace de stockage libre, mais elle
+     * n'est pas fermée. LA DÉCISION DÉFINITIVE APPARTIENT À KYLLIAN — les trois
+     * options et leur coût sont posés dans
+     * docs/coach-pilote-2026-07/INTEGRATION_BOUCLE.md. La seule qui honore
+     * l'exigence à la lettre demande que la boucle CESSE d'écrire ce
+     * sous-champ ; elle touche `state/orchestrators/applyFeedback.ts`, fichier
+     * réservé à la branche boucle, donc un lot POST-MERGE.
+     */
+    function validTrackingDecisionMap(d) {
+      return d is map &&
+        d.keys().hasAll(trackingDecisionRequiredKeys()) &&
+        d.keys().hasOnly(trackingDecisionAllowedKeys()) &&
+        d.version == 1 &&
+        d.rulesVersion is string &&
+        d.rulesVersion.matches("tracking-rules/[0-9]+[.][0-9]+[.][0-9]+") &&
+        d.decidedAtISO is string &&
+        d.decidedAtISO.matches(
+          "[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})?)?"
+        ) &&
+        d.kind in trackingDecisionKinds() &&
+        d.targets is list &&
+        d.targets.size() <= 50 &&
+        d.explanation is string &&
+        d.explanation.size() <= 1000 &&
+        d.mode in ["shadow", "applied"] &&
+        validTrackingDigest(d.signalsDigest) &&
+        (!("ruleIndex" in d) ||
+          (d.ruleIndex is int && d.ruleIndex >= 1 && d.ruleIndex <= 99));
+    }
+
+    /** Absence tolérée (suppression, écriture qui ne le concerne pas) ; sinon contrat. */
+    function validLastTrackingDecision() {
+      return !("lastTrackingDecision" in request.resource.data) ||
+        validTrackingDecisionMap(request.resource.data.lastTrackingDecision);
+    }
+
     function touchesJoinAccessPolicy() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasAny(["joinAccessPolicy"]);
@@ -439,7 +671,11 @@ service cloud.firestore {
           .hasOnly(userMutableFields().concat(userCreateOnlyFields())) &&
         !request.resource.data.keys().hasAny(userServerOnlyFields()) &&
         userUidIsSelf(userId) &&
-        userClubIdIsLegitimate();
+        userClubIdIsLegitimate() &&
+        // Les deux champs de la boucle de suivi : si posés, ils doivent être
+        // conformes. Absents, ils ne gênent rien (les deux fonctions le tolèrent).
+        validSelfReportedGapDays() &&
+        validLastTrackingDecision();
 
       // MISE À JOUR — setup et édition de profil, réglages, cycle, parcours,
       // trace d'activité, départ de club. On juge les clés RÉELLEMENT TOUCHÉES
@@ -455,7 +691,13 @@ service cloud.firestore {
         !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(userServerOnlyFields()) &&
         userUidIsSelf(userId) &&
-        userClubIdIsLegitimate();
+        userClubIdIsLegitimate() &&
+        // VALEURS des deux champs de la boucle de suivi — exigées seulement si
+        // l'écriture les TOUCHE (cf. le long commentaire au-dessus de
+        // `userTouches`) : une écriture de profil ordinaire ne paie rien, et un
+        // document portant déjà une valeur non conforme reste modifiable.
+        (!userTouches("selfReportedGapDays") || validSelfReportedGapDays()) &&
+        (!userTouches("lastTrackingDecision") || validLastTrackingDecision());
 
       // Suppression : Cloud Function `deleteAccount` uniquement (Admin SDK,
       // recursiveDelete du document ET de ses sous-collections).
