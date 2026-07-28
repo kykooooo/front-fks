@@ -14,15 +14,14 @@
 // l'erreur). Le coeur ne connait ni Firestore ni le runtime : il est donc
 // interrogeable sans emulateur, avec un faux magasin.
 //
-// CE QUI N'EST PAS TESTE ICI, ET POURQUOI. La couche d'enveloppe elle-meme
-// (`request.auth?.uid` comme SEULE source d'identite, cf. clubInvites.ts:105 et
-// :127, deleteAccount.ts:27) n'est pas exercee : `firebase-functions` et
-// `firebase-admin` ne sont installes nulle part dans ce depot, aucun test ne
-// peut donc importer ces fichiers. C'est une limite reelle, ecrite comme telle
-// dans docs/coach-pilote-2026-07/MATRICE_DROITS_COACH.md. Elle est bornee : ces
-// trois lignes ne contiennent aucune logique metier, et aucune callable ne lit
-// un identifiant d'utilisateur dans `request.data` (verifiable a l'oeil sur
-// 3 fichiers courts).
+// CE QUI N'EST PAS TESTE ICI, ET OU CA L'EST. La couche d'enveloppe elle-meme
+// (`request.auth` comme SEULE source d'identite, la traduction des erreurs)
+// n'est pas exercee dans ce fichier — ce n'est plus une limite : elle a son
+// propre banc, functions/tests/callableEnvelope.test.ts, qui interroge les
+// callables DEPLOYEES via `.run` et prouve par instrumentation que l'uid remis
+// au coeur est exactement celui du jeton. L'ancienne limite (« firebase-functions
+// n'est installe nulle part, donc l'enveloppe n'est pas testable ») a disparu
+// avec l'installation des dependances de functions/.
 
 import {
   INVITE_CODE_MAX_USES,

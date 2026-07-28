@@ -5,16 +5,17 @@
 // branche l'Admin SDK sur le port `MemberStore` de clubMembers.ts, journalise
 // sobrement, et traduit l'erreur interne en HttpsError.
 //
-// Meme decoupage que clubInvites.ts / inviteCodes.ts, et pour la meme raison :
-// `firebase-functions` et `firebase-admin` ne sont installes nulle part dans ce
-// depot, donc ce fichier n'est pas testable ici. Tout ce qui decide vit dans le
-// coeur pur, qui l'est integralement.
+// Meme decoupage que clubInvites.ts / inviteCodes.ts : tout ce qui decide vit
+// dans le coeur pur. L'enveloppe elle-meme (lecture de `request.auth`,
+// traduction des erreurs) EST desormais testee — voir
+// functions/tests/callableEnvelope.test.ts.
 
 import { HttpsError, onCall, type CallableRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import type { Firestore, Transaction } from "firebase-admin/firestore";
 
 import { getDb } from "./admin";
+import { readCallerUid } from "./callableIdentity";
 import type { ClubAuthoritySignal } from "./clubAuthority";
 import {
   ClubMemberError,
@@ -100,37 +101,49 @@ export const logClubAuthorityInconsistency = (signal: ClubAuthoritySignal): void
   });
 };
 
-export const removeClubMember = onCall(
-  { region: REGION },
-  async (request: CallableRequest<{ clubId?: unknown; memberUid?: unknown }>) => {
-    const uid = request.auth?.uid;
-    if (!uid) throw new HttpsError("unauthenticated", "Connexion requise.");
+/**
+ * LE TRAITEMENT, extrait du wrapper `onCall` pour etre interrogeable par les
+ * tests d'enveloppe (functions/tests/callableEnvelope.test.ts). Rien d'autre n'a
+ * bouge : `onCall` recoit CETTE fonction, et la callable deployee expose le meme
+ * traitement via `.run` — les tests exercent les DEUX chemins, sur la meme
+ * matrice, pour qu'aucun ne puisse deriver de l'autre.
+ *
+ * L'identite reste lue ICI, depuis `request.auth`. Aucun parametre d'identite
+ * n'a ete ajoute : la fonction prend une requete, et une seule (verrouille par
+ * un test sur son arite).
+ */
+export const removeClubMemberHandler = async (
+  request: CallableRequest<{ clubId?: unknown; memberUid?: unknown }>,
+) => {
+  const uid = readCallerUid(request);
+  if (!uid) throw new HttpsError("unauthenticated", "Connexion requise.");
 
-    try {
-      const result = await removeClubMemberCore(
-        {
-          store: createMemberStore(getDb()),
-          now: Date.now,
-          onInconsistency: logClubAuthorityInconsistency,
-        },
-        {
-          actorUid: uid,
-          clubId: request.data?.clubId,
-          memberUid: request.data?.memberUid,
-        },
-      );
-      // Trace d'exploitation volontairement pauvre : qui a retire qui, et si le
-      // geste etait un rejeu. Aucune donnee de suivi, aucun nom.
-      logger.info("clubMembers: membre retire", {
-        clubId: result.clubId,
+  try {
+    const result = await removeClubMemberCore(
+      {
+        store: createMemberStore(getDb()),
+        now: Date.now,
+        onInconsistency: logClubAuthorityInconsistency,
+      },
+      {
         actorUid: uid,
-        memberUid: result.memberUid,
-        alreadyRemoved: result.alreadyRemoved,
-        clearedUserClub: result.clearedUserClub,
-      });
-      return result;
-    } catch (err) {
-      throw toHttpsError(err);
-    }
-  },
-);
+        clubId: request.data?.clubId,
+        memberUid: request.data?.memberUid,
+      },
+    );
+    // Trace d'exploitation volontairement pauvre : qui a retire qui, et si le
+    // geste etait un rejeu. Aucune donnee de suivi, aucun nom.
+    logger.info("clubMembers: membre retire", {
+      clubId: result.clubId,
+      actorUid: uid,
+      memberUid: result.memberUid,
+      alreadyRemoved: result.alreadyRemoved,
+      clearedUserClub: result.clearedUserClub,
+    });
+    return result;
+  } catch (err) {
+    throw toHttpsError(err);
+  }
+};
+
+export const removeClubMember = onCall({ region: REGION }, removeClubMemberHandler);

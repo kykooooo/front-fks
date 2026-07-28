@@ -15,6 +15,7 @@ import * as logger from "firebase-functions/logger";
 import type { Firestore, Transaction } from "firebase-admin/firestore";
 
 import { getDb } from "./admin";
+import { readCallerUid } from "./callableIdentity";
 import type { ClubAuthoritySignal } from "./clubAuthority";
 import { REGION } from "./config";
 import {
@@ -124,56 +125,68 @@ const logInconsistency = (signal: ClubAuthoritySignal): void => {
   });
 };
 
-export const issueClubInviteCode = onCall(
-  { region: REGION },
-  async (request: CallableRequest<{ clubId?: unknown }>) => {
-    const uid = request.auth?.uid;
-    if (!uid) throw new HttpsError("unauthenticated", "Connexion requise.");
+/**
+ * LE TRAITEMENT de l'emission, extrait du wrapper `onCall` pour les tests
+ * d'enveloppe. Identite lue ici depuis `request.auth`, aucun parametre
+ * d'identite ajoute.
+ */
+export const issueClubInviteCodeHandler = async (
+  request: CallableRequest<{ clubId?: unknown }>,
+) => {
+  const uid = readCallerUid(request);
+  if (!uid) throw new HttpsError("unauthenticated", "Connexion requise.");
 
-    try {
-      const result = await issueInviteCode(
-        {
-          store: createInviteStore(getDb()),
-          now: Date.now,
-          onAbuse: logAbuse("issue"),
-          onInconsistency: logInconsistency,
-        },
-        {
-          uid,
-          clubId: request.data?.clubId,
-          originKey: readOriginKey(request.rawRequest),
-        },
-      );
-      // Trace d'exploitation volontairement pauvre : qui a emis, et si un code
-      // precedent a saute. PAS le club, PAS le code, PAS son empreinte.
-      logger.info("clubInvites: code emis", {
+  try {
+    const result = await issueInviteCode(
+      {
+        store: createInviteStore(getDb()),
+        now: Date.now,
+        onAbuse: logAbuse("issue"),
+        onInconsistency: logInconsistency,
+      },
+      {
         uid,
-        replacedPrevious: result.replacedPrevious,
-      });
-      return result;
-    } catch (err) {
-      throw toHttpsError(err);
-    }
-  },
-);
+        clubId: request.data?.clubId,
+        originKey: readOriginKey(request.rawRequest),
+      },
+    );
+    // Trace d'exploitation volontairement pauvre : qui a emis, et si un code
+    // precedent a saute. PAS le club, PAS le code, PAS son empreinte.
+    logger.info("clubInvites: code emis", {
+      uid,
+      replacedPrevious: result.replacedPrevious,
+    });
+    return result;
+  } catch (err) {
+    throw toHttpsError(err);
+  }
+};
 
-export const joinClubWithInviteCode = onCall(
-  { region: REGION },
-  async (request: CallableRequest<{ code?: unknown }>) => {
-    const uid = request.auth?.uid;
-    if (!uid) throw new HttpsError("unauthenticated", "Connexion requise.");
+export const issueClubInviteCode = onCall({ region: REGION }, issueClubInviteCodeHandler);
 
-    try {
-      return await joinClubWithCode(
-        { store: createInviteStore(getDb()), now: Date.now, onAbuse: logAbuse("join") },
-        {
-          uid,
-          originKey: readOriginKey(request.rawRequest),
-          rawCode: request.data?.code,
-        },
-      );
-    } catch (err) {
-      throw toHttpsError(err);
-    }
-  },
-);
+/**
+ * LE TRAITEMENT du rattachement, extrait du wrapper `onCall` pour les tests
+ * d'enveloppe. Identite lue ici depuis `request.auth`, aucun parametre
+ * d'identite ajoute.
+ */
+export const joinClubWithInviteCodeHandler = async (
+  request: CallableRequest<{ code?: unknown }>,
+) => {
+  const uid = readCallerUid(request);
+  if (!uid) throw new HttpsError("unauthenticated", "Connexion requise.");
+
+  try {
+    return await joinClubWithCode(
+      { store: createInviteStore(getDb()), now: Date.now, onAbuse: logAbuse("join") },
+      {
+        uid,
+        originKey: readOriginKey(request.rawRequest),
+        rawCode: request.data?.code,
+      },
+    );
+  } catch (err) {
+    throw toHttpsError(err);
+  }
+};
+
+export const joinClubWithInviteCode = onCall({ region: REGION }, joinClubWithInviteCodeHandler);
