@@ -27,7 +27,12 @@ import { executerTransfertCli } from "../src/clubOwnershipCli";
 import { executerBackfillCli } from "../src/coachAccessBackfillCli";
 import { analyserCible, libelleCible } from "../src/migrationCible";
 import type { MemberDocData, MemberStore, MemberTx } from "../src/clubMembers";
-import type { CoachAccessBackfillStore, MemberRef } from "../src/coachAccessBackfill";
+import {
+  comparerMemberRefs,
+  type CoachAccessBackfillStore,
+  type MemberRef,
+  type ParcoursMembres,
+} from "../src/coachAccessBackfill";
 import type { MemberSnapshot } from "../src/coachAccessSync";
 
 const PROJET_BAC_A_SABLE = "demo-fks";
@@ -397,14 +402,17 @@ function magasinBackfill(): {
   const creerStore = (): CoachAccessBackfillStore => {
     compteurs.constructions += 1;
     return {
-      async listPlayerMembers(clubId?: string): Promise<MemberRef[]> {
+      async listPlayerMembers({ clubId, apres, max }: ParcoursMembres): Promise<MemberRef[]> {
         compteurs.lectures += 1;
         return Object.keys(base)
           .map((cle) => {
             const [c, p] = cle.split("/");
             return { clubId: c, playerUid: p };
           })
-          .filter((m) => !clubId || m.clubId === clubId);
+          .filter((m) => !clubId || m.clubId === clubId)
+          .filter((m) => !apres || comparerMemberRefs(m, apres) > 0)
+          .sort(comparerMemberRefs)
+          .slice(0, max);
       },
       async readMember(clubId, playerUid) {
         compteurs.lectures += 1;
@@ -536,9 +544,13 @@ describe("ACCES COACH : sans autorisation explicite, ZERO ecriture", () => {
 });
 
 describe("ACCES COACH : simulation acceptee, mais toujours ZERO ecriture", () => {
+  // Le PLAFOND (`--limite`) est desormais obligatoire, y compris en simulation.
+  // Le detail de ce bornage a son propre fichier :
+  // functions/tests/coachAccessBackfillBornes.test.ts. Ici il est juste fourni,
+  // assez large pour ne pas mordre — ce fichier parle du verrou de CIBLE.
   it("cible correcte, sans --apply : on LIT, on n'ecrit pas", async () => {
     const { code, compteurs, base, sorties } = await lancerBackfill(
-      [`--projet=${PROJET_BAC_A_SABLE}`, `--clubId=${CLUB}`],
+      [`--projet=${PROJET_BAC_A_SABLE}`, `--clubId=${CLUB}`, "--limite=10"],
       { GCLOUD_PROJECT: PROJET_BAC_A_SABLE },
     );
 
@@ -555,9 +567,10 @@ describe("ACCES COACH : simulation acceptee, mais toujours ZERO ecriture", () =>
   });
 
   it("simulation sur la PRODUCTION : autorisee, et annoncee comme telle", async () => {
-    const { code, compteurs, sorties } = await lancerBackfill([`--projet=${PROJET_PRODUCTION}`], {
-      GCLOUD_PROJECT: PROJET_PRODUCTION,
-    });
+    const { code, compteurs, sorties } = await lancerBackfill(
+      [`--projet=${PROJET_PRODUCTION}`, "--limite=10"],
+      { GCLOUD_PROJECT: PROJET_PRODUCTION },
+    );
 
     expect(code).toBe(0);
     expect(compteurs.ecritures).toBe(0);
@@ -572,6 +585,8 @@ describe("ACCES COACH — TEMOIN POSITIF : le compteur sait compter", () => {
       [
         `--projet=${PROJET_BAC_A_SABLE}`,
         `--clubId=${CLUB}`,
+        "--limite=10",
+        "--attendu=2",
         "--apply",
         `--je-confirme=${PROJET_BAC_A_SABLE}`,
       ],
@@ -589,6 +604,8 @@ describe("ACCES COACH — TEMOIN POSITIF : le compteur sait compter", () => {
     const { code, compteurs } = await lancerBackfill(
       [
         `--projet=${PROJET_PRODUCTION}`,
+        "--limite=10",
+        "--attendu=2",
         "--apply",
         `--je-confirme=${PROJET_PRODUCTION}`,
         "--oui-je-vise-la-production",
@@ -605,6 +622,8 @@ describe("ACCES COACH — TEMOIN POSITIF : le compteur sait compter", () => {
       [
         `--projet=${PROJET_BAC_A_SABLE}`,
         "--clubId=clubB",
+        "--limite=10",
+        "--attendu=0",
         "--apply",
         `--je-confirme=${PROJET_BAC_A_SABLE}`,
       ],

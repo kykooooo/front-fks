@@ -478,7 +478,9 @@ donc `not_required` (club en mode par défaut) ou `pending` (club en
 `approval_required`). **Il ne produit jamais `approved`**, et il ne touche
 **aucun** membership qui porte déjà un état lisible.
 
-Cinq garde-fous. **C'est exactement le même verrou que la migration des notes**
+#### Les garde-fous : d'abord **où**, ensuite **combien**
+
+**Où** — c'est exactement le même verrou que la migration des notes
 (`MIGRATION_NOTES.md`) et que le transfert de propriété
 (`TRANSFERT_PROPRIETE.md`) : un seul module (`functions/src/migrationCible.ts`),
 lu par les trois outils. Une règle de sécurité recopiée trois fois est une règle
@@ -494,15 +496,35 @@ qui dérive.
    physiquement remplacé, pas seulement désactivé par un `if` ;
 4. `--apply` exige `--je-confirme=<le même projet>` — la valeur exacte, pas un
    `--je-confirme` nu (qui se copie-colle sans relire ce qu'on vise). Une cible
-   de production exige **en plus** `--oui-je-vise-la-production` ;
-5. la sortie ne contient **aucun identifiant, aucun prénom** — uniquement des
-   compteurs.
+   de production exige **en plus** `--oui-je-vise-la-production`.
 
-**Aucun objet capable d'écrire n'existe avant que ces contrôles soient passés :**
-le magasin Firestore n'est construit qu'après le feu vert. Un refus n'a donc
-physiquement pas de quoi écrire — et un test le compte
-(`functions/tests/outilsAdministrateurCible.test.ts`). Chaque refus sort avec un
-**code non nul**.
+**Combien** — parce qu'une commande peut viser la bonne base et parcourir tout
+autre chose que ce que tu avais en tête (`functions/src/migrationBornes.ts`) :
+
+5. **plafond obligatoire** — `--limite=<n>`, le nombre **maximal** de membership
+   parcourus. **Aucune valeur par défaut**, et c'est le point qui a été tranché
+   explicitement : un plafond que personne n'a choisi serait un nombre invisible,
+   et l'opérateur croirait avoir tout traité. Même doctrine que `--projet` : on
+   ne devine pas, on nomme. Dépasser le plafond **arrête proprement** et le
+   **dit**, avec un code de sortie **non nul** et le point de reprise — jamais
+   une troncature muette ;
+6. **compteur attendu** — `--attendu=<n>`, **obligatoire dès qu'on écrit**,
+   facultatif en simulation. Si le réel s'en écarte, la commande **refuse avant
+   la moindre écriture**. C'est le garde-fou de périmètre : viser douze membres
+   et en trouver quatre mille, ce n'est pas une commande lente, c'est une
+   commande qui s'est trompée de cible ;
+7. **reprise par curseur** — `--reprendre-apres=<clubId>/<playerUid>`, le point
+   exact affiché par l'exécution précédente ;
+8. la sortie ne contient **aucun prénom, aucune donnée de suivi** — uniquement
+   des compteurs, à une exception assumée : le **curseur**, qui est un couple
+   d'identifiants techniques et sans lequel la reprise serait impossible.
+
+**Aucun objet capable d'écrire — ni même de lire — n'existe avant que ces
+contrôles soient passés :** le magasin Firestore n'est construit qu'après le feu
+vert, cible **et** bornes. Un refus n'a donc physiquement pas de quoi écrire — et
+un test le compte (`functions/tests/outilsAdministrateurCible.test.ts` pour la
+cible, `functions/tests/coachAccessBackfillBornes.test.ts` pour les bornes).
+Chaque refus sort avec un **code non nul**.
 
 > **Pourquoi la confirmation nomme ici le projet SEUL**, alors que le transfert
 > de propriété exige `projet/club` : cet outil **parcourt** une base, il n'agit
@@ -510,28 +532,90 @@ physiquement pas de quoi écrire — et un test le compte
 > sur toute la base) et non la cible. Confirmer le projet, c'est donc confirmer
 > exactement ce que la commande peut toucher au maximum.
 
-Ordre à respecter :
+> **Deux options qui se contredisent sont refusées à la lecture de la ligne de
+> commande**, pas au n-ième document. Déclarer `--attendu=500` sous
+> `--limite=100`, ou reprendre sur `clubB/...` alors que la commande est bornée à
+> `--clubId=clubA` : refus immédiat, base jamais ouverte. Découvrir la
+> contradiction au centième document, avec quatre-vingt-dix-neuf écritures déjà
+> faites, ne serait pas un garde-fou.
+
+#### La procédure, dans l'ordre
 
 ```
-# 1. Simulation. N'écrit rien. Lire les compteurs et vérifier qu'ils
-#    ressemblent à l'effectif réel avant d'aller plus loin.
-node lib/coachAccessBackfillCli.js --projet=<leProjet> --clubId=<idDuClubPilote>
+# 1. SIMULER. N'écrit rien. Le plafond est obligatoire ici AUSSI : une
+#    simulation sans plafond parcourrait déjà toute la base.
+node lib/coachAccessBackfillCli.js \
+  --projet=<leProjet> --clubId=<idDuClubPilote> --limite=200
 
-# 2. Si et seulement si les compteurs sont cohérents :
-node lib/coachAccessBackfillCli.js --projet=<leProjet> --clubId=<idDuClubPilote> \
-  --apply --je-confirme=<leProjet>
+# 2. LIRE LE NOMBRE. La dernière ligne dit, mot pour mot :
+#      "Le perimetre COMPLET fait N document(s)"
+#    et écrit la commande d'application exacte, --attendu compris.
+#    Vérifie que N ressemble à l'effectif réel du club AVANT d'aller plus loin.
 
-# 3. Et si <leProjet> est la production (aucun marqueur demo/test/staging/
+# 3. RELANCER EN LE DÉCLARANT. Recopie le N lu à l'étape 2 :
+node lib/coachAccessBackfillCli.js \
+  --projet=<leProjet> --clubId=<idDuClubPilote> --limite=200 \
+  --attendu=<N> --apply --je-confirme=<leProjet>
+
+# 4. Et si <leProjet> est la production (aucun marqueur demo/test/staging/
 #    preprod/sandbox/local/dev, aucun émulateur), il faut EN PLUS :
 #      --oui-je-vise-la-production
 ```
 
-**Toujours un club à la fois** (`--clubId`), jamais toute la base d'un coup. Le
-verrou ne l'impose pas — c'est la procédure qui l'impose, et c'est à toi de la
-tenir.
+#### Reprendre après une interruption
+
+Deux cas, et un seul geste différent entre les deux.
+
+**a) La commande s'est arrêtée sur le plafond** (`ARRET SUR PLAFOND` dans la
+sortie, code non nul). Elle affiche le point exact où elle s'est arrêtée. On
+recommence à l'étape 1 en ajoutant ce point, pour re-simuler **le reste** :
+
+```
+# Simuler le reste (le --attendu de la tranche précédente ne vaut plus rien) :
+node lib/coachAccessBackfillCli.js \
+  --projet=<leProjet> --clubId=<idDuClubPilote> --limite=200 \
+  --reprendre-apres=<clubId>/<playerUid>
+
+# Puis appliquer le reste, avec le nouveau nombre lu :
+node lib/coachAccessBackfillCli.js \
+  --projet=<leProjet> --clubId=<idDuClubPilote> --limite=200 \
+  --reprendre-apres=<clubId>/<playerUid> \
+  --attendu=<N restant> --apply --je-confirme=<leProjet>
+```
+
+**b) La commande a été coupée en plein vol** (Ctrl-C, coupure réseau, quota) :
+il n'y a **pas** de curseur affiché. Ne cherche pas à deviner où elle en était —
+**relance la même commande depuis le début**. Le script est **idempotent** : ce
+qui a déjà été posé est reconnu comme « déjà à jour » et n'est pas réécrit. Le
+`--attendu` reste le même : le nombre de membership n'a pas changé, seul leur
+contenu a bougé.
+
+> **Le curseur suit le parcours, pas le succès.** Il avance même sur un
+> membership en échec — sinon une reprise repasserait indéfiniment sur le même
+> document bloquant. Conséquence pratique : **si la sortie annonce des échecs, ne
+> reprends pas après le curseur** ; relance la même tranche. L'idempotence fait
+> que ça ne coûte rien.
+
+#### Trois pièges, dits franchement
+
+1. **Un chiffre lu sur une simulation tronquée ne vaut rien.** Si la simulation
+   affiche `ARRET SUR PLAFOND`, son compteur ne décrit **que la tranche
+   parcourue**. La commande te le dit explicitement (« NE DECLARE PAS ce chiffre
+   en `--attendu` ») et refuse de te proposer la commande d'application toute
+   faite. Remonte `--limite` jusqu'à ce que la simulation aille au bout.
+2. **`--limite` n'est pas une suggestion.** C'est le maximum absolu de ce que la
+   commande peut toucher. Choisis-le généreusement par rapport à ce que tu
+   attends (un club pilote = quelques dizaines de joueurs, `--limite=200` est
+   confortable), mais pas au hasard : c'est justement l'écart entre le plafond et
+   le réel qui permet au `--attendu` d'attraper une erreur de périmètre. Un
+   `--limite` collé au `--attendu` ne laisse plus rien détecter.
+3. **Toujours un club à la fois** (`--clubId`), jamais toute la base d'un coup.
+   Le verrou ne l'impose pas — c'est la procédure qui l'impose, et c'est à toi de
+   la tenir.
 
 Si tu ne sais plus quoi taper, **lance la simulation** : sa dernière ligne écrit
-la commande d'application exacte, option production comprise.
+la commande d'application exacte, plafond, compteur attendu et option production
+compris.
 
 ### 7.3 Étape 2 — Approuver un joueur (geste humain, un par un)
 
@@ -564,6 +648,10 @@ normalement.
 - ❌ passer un joueur en `approved` « pour tester » ;
 - ❌ lancer le script sans simulation préalable ;
 - ❌ lancer le script sur toute la base ;
+- ❌ recopier en `--attendu` un chiffre lu sur une simulation qui affichait
+  `ARRET SUR PLAFOND` — il ne décrit qu'une tranche ;
+- ❌ inventer un `--reprendre-apres` : le seul curseur valable est celui que la
+  commande précédente a affiché ;
 - ❌ ajouter le champ à la main dans l'app côté joueur ou coach — les règles le
   refusent, mais surtout ce serait contourner le seul point où la décision est
   tracée.
@@ -583,7 +671,8 @@ normalement.
 | Rebuild | `functions/tests/integration/rebuild.emulator.test.ts` | projection existante **supprimée** au passage en `revoked` |
 | Rattachement | `functions/tests/inviteCodes.test.ts` | état posé par la politique du club ; le profil du joueur n'est **pas lu** ; un rejeu ne réinitialise ni n'ouvre rien |
 | Callables | `functions/tests/callableRights.test.ts` | `approval_required` laisse entrer sans ouvrir ; mode par défaut ouvre la projection non sensible |
-| Script | `functions/tests/coachAccessBackfill.test.ts` | simulation n'écrit rien ; idempotent ; suit la politique du club ; ne fabrique jamais `approved` |
+| Script — métier | `functions/tests/coachAccessBackfill.test.ts` | simulation n'écrit rien ; idempotent ; suit la politique du club ; ne fabrique jamais `approved` |
+| Script — **bornes** | `functions/tests/coachAccessBackfillBornes.test.ts` | plafond absent, nul, négatif ou non entier → refus **sans ouvrir la base** ; `--apply` sans `--attendu` → refus ; attendu ≠ réel → refus **avant toute écriture** ; options contradictoires (`--attendu` > `--limite`, reprise sur un autre club) → refus à la validation ; plafond atteint → arrêt annoncé, code non nul, ce qui a été écrit annoncé, curseur donné ; simulation tronquée → interdiction explicite d'en déclarer le chiffre ; trois tranches couvrent les 5 membership **une fois chacun** (visites comptées, pas seulement les écritures) ; inventaire non strictement croissant → refus ; témoin positif : simuler → lire le nombre → relancer en le déclarant écrit vraiment |
 | Lecture front | `repositories/__tests__/clubsRepo.test.ts` | les trois états ne se contaminent pas |
 | Écrans | `screens/coach/__tests__/CoachPlayerScreen.test.tsx`, `CoachRosterScreen.test.tsx` | trois rendus différents ; jamais « aucun joueur » quand il y en a |
 | Copie coach | `domain/__tests__/coachAccess.test.ts` | aucun mot juridique ou médical ; jamais « ne s'entraîne pas » |

@@ -29,6 +29,7 @@ import {
   type MemberSnapshot,
 } from "../src/coachAccessSync";
 import {
+  comparerMemberRefs,
   runCoachAccessBackfill,
   type CoachAccessBackfillStore,
   type MemberRef,
@@ -69,13 +70,17 @@ function baseFictive(politique?: unknown): BaseFictive {
 /** Magasin qui MUTE l'etat, comme le ferait Firestore. */
 function magasin(base: BaseFictive): CoachAccessBackfillStore {
   return {
-    async listPlayerMembers(clubId?: string): Promise<MemberRef[]> {
+    async listPlayerMembers({ clubId, apres, max }): Promise<MemberRef[]> {
       const clubs = clubId ? [clubId] : Object.keys(base.membres);
-      return clubs.flatMap((c) =>
-        Object.entries(base.membres[c] ?? {})
-          .filter(([, m]) => m.playerStatus === "active")
-          .map(([playerUid]) => ({ clubId: c, playerUid })),
-      );
+      return clubs
+        .flatMap((c) =>
+          Object.entries(base.membres[c] ?? {})
+            .filter(([, m]) => m.playerStatus === "active")
+            .map(([playerUid]) => ({ clubId: c, playerUid })),
+        )
+        .filter((m) => !apres || comparerMemberRefs(m, apres) > 0)
+        .sort(comparerMemberRefs)
+        .slice(0, max);
     },
     async readMember(clubId, playerUid) {
       return base.membres[clubId]?.[playerUid] ?? null;
@@ -177,11 +182,16 @@ describe("changer la politique ne touche AUCUN acces existant", () => {
 
     base.clubs[CLUB][JOIN_ACCESS_POLICY_FIELD] = "approval_required";
     base.ecritures = [];
-    const stats = await runCoachAccessBackfill(magasin(base), { apply: true, clubId: CLUB });
+    const res = await runCoachAccessBackfill(magasin(base), {
+      apply: true,
+      clubId: CLUB,
+      limite: 100,
+    });
 
+    expect(res.ok).toBe(true);
     expect(photo(base)).toEqual(avant);
     expect(base.ecritures).toEqual([]);
-    expect(stats.updated).toBe(0);
+    expect(res.ok && res.stats.updated).toBe(0);
   });
 
   it("la bascule n'agit QUE sur celui qui rejoint APRES", async () => {
