@@ -1,31 +1,139 @@
-# Prototype Home vNext — à regarder
+# Prototype Home vNext — itération finale
+
+> **C'est l'itération FINALE du prototype.** Tu as regardé la variante 2 et validé la
+> direction « Progression intégrée ». Ce qui a changé depuis est en section
+> **[Ce qui a changé dans cette itération](#ce-qui-a-changé-dans-cette-itération)**,
+> et les **5 choses à regarder en priorité** sont juste en dessous.
 
 ---
 
-## POUR LANCER
+## POUR LANCER — les deux lignes
 
-Ouvre un terminal, place-toi dans le dossier du worktree, et lance ces deux lignes :
+Ouvre un terminal et colle ces deux lignes :
 
 ```
 cd C:\Users\Gamer\front-fks\.claude\worktrees\home-vnext-prototype
 node prototype/home-vnext/serve.js
 ```
 
-## PUIS OUVRE
+## PUIS OUVRE — l'adresse qui va droit au but
 
-# http://127.0.0.1:8140/
+# http://127.0.0.1:8141/#etat=v2-test-physique-en-recul&var=duo&paire=v1v2&w=375&vue=entiere&x13=0&typo=allegee&anim=0&onglet=regle
+
+Cette adresse ouvre directement **l'écran le plus important de l'itération** : à gauche la
+variante 1 (qui garde sa pastille « En forme », exprès, pour que la comparaison se voie), à
+droite la variante 2 que tu as validée — et le panneau de droite déjà ouvert sur **la règle
+de sélection du test**.
 
 C'est tout. Pas d'installation, pas de téléphone, pas de compte, pas de connexion.
 
-> **Le port change parfois.** Si 8140 est déjà pris, le serveur prend tout seul le
-> suivant et **affiche l'URL réelle** dans le terminal (`Visualiseur : http://127.0.0.1:8141/`).
-> C'est cette ligne-là qui fait foi, pas celle du titre ci-dessus. Au moment où ces
-> captures ont été faites, le serveur répondait sur **8141**.
+> **Le port change parfois.** Si 8141 est déjà pris, le serveur prend tout seul le suivant
+> et **affiche l'URL réelle** dans le terminal. C'est cette ligne-là qui fait foi. Au moment
+> où ces captures ont été faites, le serveur répondait sur **8141**. Si le tien répond
+> ailleurs, change juste le numéro et **garde tout ce qui suit le `#`**.
 
 > Si les pages n'existent pas encore (dossier `prototype/home-vnext/out/` vide),
 > lance d'abord `node prototype/home-vnext/build.js`, puis relance le serveur.
 
 Pour arrêter : `Ctrl+C` dans le terminal.
+
+---
+
+## Les bascules, en haut de l'écran
+
+Sept réglages, tous indépendants. L'URL garde ton réglage : elle se partage telle quelle.
+
+| Bascule | Choix | Touche | Ce que ça change |
+|---|---|:--:|---|
+| **Variante** | `Proposition vNext` · **`Progression intégrée`** · `Home actuel` · `Côte à côte` | `v` | quel écran tu regardes. **`Progression intégrée` = la variante que tu as validée.** |
+| **Paire** *(en côte à côte)* | **`vNext / Progression`** · `Actuel / vNext` · `Actuel / Progression` | `c` | qui est comparé à qui |
+| **Largeur** | `320` · `375` · `390` · `768` | `w` | 320 = vieil iPhone SE · 375 = la référence |
+| **Vue** | `Zone visible sans défilement` · `Page entière` | `e` | la première est la vue **honnête**, la seconde montre tout |
+| **Texte** | `x1` · `x1.3` | — | un joueur qui a grossi la police de son téléphone |
+| **Typo** | **`Allégée`** *(défaut)* · `Actuelle` | **`t`** | **la question du moment.** Martèle `t` sans quitter l'écran des yeux : les mots ne bougent pas, seule la typographie change. |
+| **Animations** | `Normales` · `Réduites` | `a` | le réglage d'accessibilité du téléphone. **Au repos les deux sont identiques — c'est le résultat voulu**, voir plus bas. |
+
+Panneaux de droite : **Valider** (les axes à trancher) · **La règle** (quel test s'affiche,
+et pourquoi celui-là) · **Cet état** · **Mesures** · **Limites**.
+`p` masque les panneaux, `↑` `↓` changent d'état.
+
+---
+
+## Ce qui a changé dans cette itération
+
+Quatre changements, tous issus de tes décisions.
+
+### 1. La pastille d'état global a été RETIRÉE — complètement *(décision D1)*
+
+Plus aucun jugement global sur la variante 2 : ni « En forme », ni « Frais », ni « Prêt à
+performer », ni « Un peu chargé », ni « Charge modérée ».
+
+Ce n'est plus un verrou conditionnel qu'un drapeau pourrait rouvrir : **le champ d'entrée
+et le champ de sortie ont été supprimés du contrat**. Aucune donnée d'entrée ne peut faire
+ressortir un libellé d'état. Un contrôle du vérificateur compte les pastilles sur les 60
+pages de la variante 2 et **attend zéro, écrit en clair**.
+
+Motif, dans tes mots : le modèle de charge part encore de valeurs d'usine et ne connaît pas
+les entraînements club. Une pastille « Charge FKS » ne pourra revenir que le jour où son
+calcul reposera sur des données entièrement réelles, avec sa portée expliquée.
+
+**La variante 1 garde la sienne** — uniquement pour que l'écart se voie en côte à côte.
+
+### 2. La typographie a été allégée
+
+Diagnostic que tu as posé : « la police paraît trop grosse ». La mesure dit autre chose —
+c'était l'**accumulation de poids**. Sur le rendu réel : **32 textes en graisse 800 avant,
+ZÉRO après**. Et pourtant **le texte lu grandit** : corps et liens passent de 13 à 14 px,
+interligne de 18 à 20.
+
+Aucune valeur n'a été réduite pour gagner de la hauteur (**décision D2**) : les
+métadonnées (12 px) et les valeurs chiffrées (16 px) ne perdent pas un pixel.
+
+Le tableau rôle par rôle est dans [`COMPARAISON.md`](COMPARAISON.md), le raisonnement dans
+[`DECISIONS_VISUELLES.md`](DECISIONS_VISUELLES.md).
+
+### 3. Le test affiché sur le Home suit une règle publiée *(décision D3)*
+
+Un seul repère de test à l'écran, choisi par une règle **déterministe** en trois étages :
+l'objectif du cycle actif → la mesure la plus récente → un ordre de départage figé.
+
+**Jamais « la meilleure progression ».** La fonction qui choisit ne reçoit **que** le nom du
+test et la date de sa dernière mesure — l'écart n'est pas dans sa signature. Un tri
+flatteur est littéralement impossible à écrire sans changer le type d'entrée.
+
+La preuve est à l'écran, fixture **« Test physique en recul »** : deux améliorations étaient
+disponibles dans la même batterie (+3 cm au saut, +25 m au 6 min) et c'est le **sprint en
+retrait** (+0,07 s) qui s'affiche, parce que c'est lui que la règle désigne.
+
+Le tableau cycle → test est une **décision produit qui t'attend** : chaque ligne cite le
+texte du dépôt qui la fonde, et deux cycles sur cinq n'ont volontairement aucun test.
+Tout est en §5 bis et §5 ter de [`VIEWMODEL_PROGRESSION.md`](VIEWMODEL_PROGRESSION.md).
+
+### 4. Le réglage « Réduire les animations » est respecté
+
+Le prototype n'a **aucune** animation en boucle — la seule animation existante est
+l'enfoncement du bouton sous le doigt. Quand le réglage est actif, le bouton du jour ne
+porte **plus aucune** consigne de mouvement (pas même une consigne neutre).
+
+Au repos, les deux rendus sont **identiques à l'œil**, et c'est le résultat voulu : aucune
+information de l'écran n'est portée par un mouvement. La preuve est dans le balisage —
+capture `mouvement-reduit-vs-normal-tendance-disponible-375.png`.
+
+**À comparer avec la production** : `components/home/HomePrimaryCTA.tsx` (lignes 39-49) joue
+une pulsation en boucle infinie **sans jamais consulter le réglage d'accessibilité**. Hors
+périmètre, non corrigée — mais mesurée et affichée dans l'onglet « Limites ».
+
+---
+
+## LES 5 CHOSES À REGARDER EN PRIORITÉ
+
+| # | Quoi | Comment y aller |
+|---|---|---|
+| **1** | **Le test en recul.** L'écran affiche une mauvaise nouvelle alors que deux bonnes étaient disponibles. C'est la preuve que la sélection est aveugle au résultat. | l'adresse en haut de ce fichier |
+| **2** | **Typo actuelle contre allégée.** Reste sur `v2-tendance-disponible` et martèle **`t`**. Les mots ne bougent pas. | `t`, en boucle |
+| **3** | **L'en-tête sans pastille.** En côte à côte, regarde le **haut** des deux colonnes : « En forme » à gauche, plus rien à droite. | `c` puis paire `vNext / Progression` |
+| **4** | **Le tableau cycle → test.** C'est la décision qui t'attend : 5 lignes, 2 volontairement vides. Conteste-les. | onglet **La règle**, en bas |
+| **5** | **Le défilement, en 320 px et en ×1,3.** Tu l'as accepté (D2) — vérifie quand même que ce qui compte reste lisible. | `w` pour 320 px, puis `x1.3` |
 
 ---
 
@@ -85,12 +193,13 @@ Trois repères sont dessinés par l'outil (ils n'existent pas dans l'app) :
   vue d'exploration, elle ne montre pas ce que voit le joueur).
 - **Texte** : `x1` / `x1.3` — simulation d'un joueur qui a grossi la police de son téléphone.
 
-**À droite — les panneaux.** Quatre onglets : *Points à valider* (les 12 questions sur
-lesquelles tu dois te prononcer), *Seuils et limites*, *Cet état* (ce que la maquette
-affirme et pourquoi), *Hauteurs*.
+**À droite — les panneaux.** Cinq onglets : *Valider* (les axes à trancher un par un),
+**La règle** (quel test s'affiche et pourquoi celui-là, plus le tableau cycle → test),
+*Cet état* (ce que la maquette affirme et pourquoi), *Mesures*, *Limites*.
 
-Raccourcis clavier : `↑` `↓` changent de situation, `v` change de variante,
-`e` change de vue, `p` masque les panneaux.
+Raccourcis clavier — la liste complète est dans le tableau des bascules en haut de ce
+fichier. Les plus utiles : `↑` `↓` changent de situation, **`t` bascule la typographie**,
+`c` passe en côte à côte, `e` change de vue, `p` masque les panneaux.
 
 ---
 
@@ -144,11 +253,13 @@ Dans le visualiseur, en haut à gauche :
 | variante 1 **contre** variante 2 | **Variante → `Côte à côte`**, puis la paire **`vNext / Progression`** |
 | le Home actuel contre la variante 2 | **Variante → `Côte à côte`**, puis **`Actuel / Progression`** |
 
-Les 6 cas de la carte apparaissent dans la liste de gauche avec l'identifiant `v2-…`.
-Le panneau de droite « **Points à valider** » contient **12 questions spécifiques à la
-variante 2** : chaque bouton t'emmène directement sur l'état concerné.
+Les 7 cas de la carte apparaissent dans la liste de gauche avec l'identifiant `v2-…`.
+Le panneau de droite « **Points à valider** » contient **14 questions spécifiques à la
+variante 2** : chaque bouton t'emmène directement sur l'état concerné. Et l'onglet
+« **Axes** » découpe la relecture en **7 jugements séparés** — tu peux dire oui à la
+typographie et non à la hauteur sans que les deux verdicts se contaminent.
 
-## Les 5 cas à regarder (plus une preuve)
+## Les 6 cas à regarder (plus une preuve)
 
 La carte n'a que **trois états**. Ce n'est pas une carte qui « se remplit » petit à petit :
 elle change de nature selon ce que l'app sait vraiment. Le détail en français simple est
@@ -158,10 +269,19 @@ dans [`VIEWMODEL_PROGRESSION.md`](VIEWMODEL_PROGRESSION.md).
 |---|---|---|---|
 | 1 | **Nouveau joueur** | `empty` | Trois repères numérotés et une mention honnête. **Aucun graphique, aucun bouton.** La page Progression n'a pas une seule ligne vraie pour ce joueur : on ne l'y envoie pas. |
 | 2 | **Deux séances, tendance indisponible** | `collecting` | Quatre faits **réellement mesurés** : 2 séances / 76 min / 2 ressentis / « Encore 2 séances ». Le « Encore 2 » est **calculé**, pas écrit en dur. Toujours aucun bouton. |
-| 3 | **Tendance disponible** | `ready` | La courbe s'affiche **avec sa portée exacte** juste en dessous. Le pied « Voir ma progression » apparaît, en lien discret. Et un test refait deux fois : saut en longueur 205 → 214 cm, **+9 cm** — le sens « plus grand = mieux ». |
-| 4 | **Test physique amélioré** | `ready` | La carte affiche le **sprint 10 m : 1,85 → 1,78 s, soit « −0,07 s »**. Un chiffre négatif qui est une bonne nouvelle : sur un sprint, mieux veut dire plus petit, et c'est le mot « en progrès » qui le dit — jamais une flèche. Le saut en longueur (218 → 227 cm) est calculé lui aussi, la carte n'en montre qu'un : le plus récent. |
-| 5 | **Aucune comparaison de test** | `ready` | Quatre tests existent, **aucune paire comparable** : deux essais du 6 min le **même jour**. La page Progression actuelle afficherait ici une fausse progression de +35 m. La carte explique pourquoi elle ne compare pas. |
-| — | **Donnée manquante** *(preuve, hors des 5)* | `collecting` | 3 séances, **aucune durée ni ressenti connus**. Les deux faits **disparaissent**. Ni « 0 min », ni « — », ni tiret. C'est la règle la plus importante du lot. |
+| 3 | **Tendance disponible** | `ready` | La courbe s'affiche **avec sa portée exacte** juste en dessous. Le pied « Voir ma progression » apparaît, en lien discret. Et un test refait deux fois : saut en longueur 205 → 214 cm, **+9 cm** — le sens « plus grand = mieux ». C'est le **cycle actif** (« Duels & puissance ») qui désigne ce test-là. |
+| 4 | **Test physique amélioré** | `ready` | La carte affiche le **sprint 10 m : 1,85 → 1,78 s, soit « −0,07 s »**. Un chiffre négatif qui est une bonne nouvelle : sur un sprint, mieux veut dire plus petit, et c'est le mot « en progrès » qui le dit — jamais une flèche. Le saut en longueur (218 → 227 cm) est calculé lui aussi ; la carte n'en montre qu'un, **celui que vise le cycle « Vitesse & détente »** — et pas le plus récent, qui serait le test 505, enregistré 45 min plus tard le même jour. |
+| 5 | **Test physique en recul** | `collecting` | Retour de coupure : **sprint 10 m 1,81 → 1,88 s**, écrit « en retrait ». Dans la **même batterie**, le saut a gagné 3 cm et le 6 min 25 m — deux bonnes nouvelles disponibles, et c'est quand même le recul qui s'affiche. **C'est la preuve que la sélection ne regarde jamais le résultat.** |
+| 6 | **Aucune comparaison de test** | `ready` | Quatre tests existent, **aucune paire comparable** : deux essais du 6 min le **même jour**. La page Progression actuelle afficherait ici une fausse progression de +35 m. La carte explique pourquoi elle ne compare pas. |
+| — | **Donnée manquante** *(preuve, hors des 6)* | `collecting` | 3 séances, **aucune durée ni ressenti connus**. Les deux faits **disparaissent**. Ni « 0 min », ni « — », ni tiret. C'est la règle la plus importante du lot. |
+
+> **Comment le test affiché est choisi.** Trois étages, dans cet ordre, et **aucun ne
+> regarde le résultat** : 1) le test que vise le **cycle actif** (Force → saut en longueur,
+> Endurance → 6 min, Explosivité → sprint 10 m ; Fondation et Saison n'en ont aucun) ;
+> 2) sinon la mesure **la plus récente** ; 3) à égalité de date — le cas normal, puisqu'une
+> batterie s'enregistre en **une seule fois** — un ordre figé tranche, sprint puis saut puis
+> 6 min. Le tableau complet et ses justifications sont dans l'onglet « La règle » du
+> visualiseur.
 
 ## Les 4 questions que la variante 2 pose vraiment
 
@@ -181,10 +301,16 @@ a donc gardé son libellé. Ce qui change, c'est sa **place**.
 
 ### 2. Est-ce que ça coûte trop de hauteur ?
 
-C'est le vrai prix. **En moyenne +89 px, soit +15 %.** Sur 30 mesures,
-**20 écrans tenaient sans défiler en variante 1, 15 en variante 2** — cinq écrans
-basculent sous la ligne de flottaison : quatre de **2 à 31 px**, le cinquième de
-**110 px** (« deux séances » en texte agrandi ×1,3, le pire cas du lot).
+C'est le vrai prix. **En moyenne +95 px, soit +16 %.** Sur 35 mesures,
+**21 écrans tiennent sans défiler en variante 1, 17 en variante 2** — quatre écrans
+basculent sous la ligne de flottaison, de **9 à 38 px** de dépassement.
+
+**Tu as tranché ce point le 28 juillet** : *« Le défilement est accepté. Les 29 px sous la
+ligne à taille normale ne sont pas un problème. »* Rien n'a donc été rogné pour les
+récupérer — au contraire, le texte courant a **grandi** (13 → 14 px, interligne 18 → 20) et
+les liens aussi (13 → 14 px). Le dépassement de « Tendance disponible » à 375 px est passé
+de 29 px à **9 px**, mais par la typographie et une ligne de cumul ramenée au rang de
+métadonnée, jamais en coupant un mot ni en rétrécissant une zone tactile.
 
 Le tableau complet est dans [`mesures-hauteurs-variante2.md`](mesures-hauteurs-variante2.md),
 la lecture en français dans [`COMPARAISON.md`](COMPARAISON.md).
@@ -203,21 +329,29 @@ version — c'est corrigé, et le vérificateur refuse maintenant que ça revien
 
 ### 4. Est-ce qu'on a le droit de te dire « En forme » ?
 
-En variante 2, **non** — et la pastille d'état du jour a disparu de l'en-tête. C'est ta
-règle, appliquée telle que tu l'as écrite : *ne pas afficher « En forme » ou « Prêt à
-performer » si les entraînements club et les autres charges ne sont pas réellement
-connus.* Un écran ne peut pas annoncer ton état en haut, puis écrire 200 px plus bas que
-tes entraînements club n'y sont pas comptés.
+En variante 2, **non**, et ce n'est plus une question ouverte : **tu as tranché le
+28 juillet (D1)**, la pastille d'état du jour est retirée de l'en-tête **sans condition**.
+Un écran ne peut pas annoncer ton état en haut, puis écrire 200 px plus bas que tes
+entraînements club n'y sont pas comptés.
 
-**La variante 1 la garde**, pour que tu voies l'écart en côte à côte. Ce qui reste à
-trancher : garder l'en-tête nu, ou écrire une pastille **reformulée** qui dise
-explicitement qu'elle ne parle que des séances FKS (par exemple « Charge FKS : modérée »).
-Ce libellé-là n'a pas été inventé à ta place. Détail en §4 bis.2 de
+Ce qui a changé depuis l'itération que tu as regardée : le retrait n'est **plus derrière un
+drapeau**. L'option d'entrée a été **supprimée** du programme, pas seulement mise à faux —
+il n'existe donc aucune valeur capable de faire revenir « En forme » en variante 2. Motif
+que tu as donné : le calcul lui-même part de valeurs d'usine (`ATL0` / `CTL0`), donc
+connaître les charges club n'aurait pas suffi.
+
+**La variante 1 la garde**, uniquement pour que tu voies l'écart en côte à côte. Aucune
+reformulation n'est proposée : la voie « Charge FKS : modérée » envisagée à l'itération
+précédente est **écartée**, « Charge modérée » faisant partie des libellés que tu as
+nommément interdits. Une mention de charge ne reviendra que le jour où son calcul reposera
+sur des données entièrement réelles, avec sa portée écrite à côté. Détail en §4 bis.2 de
 [`LIMITES_PROTOTYPE.md`](LIMITES_PROTOTYPE.md).
 
 ---
 
-## Les 4 choses à regarder en priorité
+## Ce qu'il reste à regarder au-delà des 5 priorités
+
+*(Ces quatre points viennent des itérations précédentes. Ils n'ont pas bougé.)*
 
 ### 1. Le nouveau joueur (situation 1) — c'est le cœur du sujet
 
@@ -273,47 +407,69 @@ projet (`constants/theme.ts`) n'a pas été modifié.
 
 | Fichier | Ce qu'il contient |
 |---|---|
-| [`COMPARAISON.md`](COMPARAISON.md) | Actuel contre proposition **et variante 1 contre variante 2**, chiffres mesurés |
-| [`VIEWMODEL_PROGRESSION.md`](VIEWMODEL_PROGRESSION.md) | **Nouveau.** Les 3 états de la carte progression en français simple, et les calculs de la page Progression qu'on a refusé de reprendre |
-| [`DECISIONS_VISUELLES.md`](DECISIONS_VISUELLES.md) | Chaque choix de design et sa raison, **variante 2 comprise** |
-| [`LIMITES_PROTOTYPE.md`](LIMITES_PROTOTYPE.md) | Ce qui n'est pas branché, ce que l'outil ne peut pas prouver, les questions ouvertes |
+| [`MIGRATION_PROGRESSSCREEN.md`](MIGRATION_PROGRESSSCREEN.md) | **NOUVEAU — celui que tu as demandé.** Le contrat partagé Home + page Progression, et ce que la page devra **abandonner** : amorces ATL0/CTL0, courbes artificielles, séries, cycles estimés, accomplissements déduits. Avec fichier:ligne, l'ordre de migration, et le risque de chaque étape. |
+| [`COMPARAISON.md`](COMPARAISON.md) | Actuel contre proposition, variante 1 contre variante 2, **et typo avant/après avec le compte des graisses** |
+| [`VIEWMODEL_PROGRESSION.md`](VIEWMODEL_PROGRESSION.md) | Les 3 états de la carte en français simple, **plus la règle de sélection du test (§5 bis) et le tableau cycle → test (§5 ter)** |
+| [`DECISIONS_VISUELLES.md`](DECISIONS_VISUELLES.md) | Chaque choix de design et sa raison, **typo allégée et politique d'agrandissement comprises** |
+| [`LIMITES_PROTOTYPE.md`](LIMITES_PROTOTYPE.md) | Ce qui n'est pas branché, les seuils à valider, les cas **non atteignables** avec le format réel, le traitement de reduceMotion |
 | [`FIXTURES.md`](FIXTURES.md) | Les 14 situations : ce que chacune prouve, l'action attendue |
 | [`FICHIERS_NON_MODIFIES.md`](FICHIERS_NON_MODIFIES.md) | La preuve que le produit est intact |
-| [`mesures-hauteurs.md`](mesures-hauteurs.md) | Le tableau brut des 60 mesures de hauteur (variante 1) |
-| [`mesures-hauteurs-variante2.md`](mesures-hauteurs-variante2.md) | **Nouveau.** Les 30 comparaisons de hauteur variante 1 / variante 2 |
+| [`mesures-hauteurs.md`](mesures-hauteurs.md) | Le tableau brut des mesures de hauteur (variante 1) |
+| [`mesures-hauteurs-variante2.md`](mesures-hauteurs-variante2.md) | Les comparaisons de hauteur variante 1 / variante 2 |
+| [`captures-final/`](captures-final/) | **NOUVEAU.** Les 20 images de l'itération finale |
+| [`captures-v2/`](captures-v2/) | 13 images de la variante 2, itération précédente |
 | [`captures/`](captures/) | 60 images de la variante 1 |
-| [`captures-v2/`](captures-v2/) | **Nouveau.** 13 images de la variante 2 |
 
 ---
 
 ## Si tu ne veux pas lancer le serveur
 
-Les dossiers de captures contiennent les images.
+### [`captures-final/`](captures-final/) — les 20 images de l'itération finale
 
-**Variante 1** — [`captures/`](captures/), les plus parlantes :
-
-- `comparaison-seance-prevue-aujourdhui-actuel-vs-vnext-375.png` — le côte à côte
-- `comparaison-nouveau-joueur-actuel-vs-vnext-375.png` — l'écran qui arrête d'inventer
-- `etat-01` à `etat-14-…-vnext-375-page-entiere.png` — les 14 situations proposées
-- `outil-visualiseur-vue-cote-a-cote.png` — à quoi ressemble l'outil
-
-**Variante 2** — [`captures-v2/`](captures-v2/), 13 images :
+**20 réussies, 0 échouée** (`_rapport-captures.json`).
 
 | Image | Ce qu'elle montre |
 |---|---|
-| `comparaison-v1-vs-v2-nouveau-joueur-375.png` | **Commence par celle-là.** Variante 1 à gauche, variante 2 à droite, même situation |
-| `comparaison-v1-vs-v2-deux-seances-375.png` | Le même côte à côte sur l'état « ça se construit » |
-| `comparaison-v1-vs-v2-tendance-disponible-375.png` | Le même côte à côte quand la courbe existe — **c'est là que le lien flottant disparaît au profit du pied de carte** |
-| `v2-01-nouveau-joueur-…` à `v2-05-aucune-comparaison-de-test-…` | Les 5 cas de la carte, page entière, 375 px |
-| `v2-preuve-r1-donnee-manquante-375-page-entiere.png` | La preuve qu'une donnée inconnue **disparaît** au lieu d'afficher 0 |
-| `largeur-320px-iphone-se-…-v2.png` (×2) | Le petit iPhone SE : le cas le plus serré |
-| `texte-agrandi-x1-3-tendance-disponible-v2-375.png` | Police agrandie ×1,3 |
-| `outil-visualiseur-selecteur-variante2.png` | Le nouveau sélecteur de variante dans l'outil |
-| `_rapport-captures.json` | Le compte-rendu machine : **13 réussies, 0 échouée** |
+| `etat-05-test-physique-en-recul-375-page-entiere.png` | **COMMENCE PAR CELLE-LÀ.** Le sprint en retrait s'affiche alors que deux améliorations existaient dans la même batterie. |
+| `comparaison-typo-actuelle-vs-allegee-tendance-disponible-375.png` | **La question du moment.** Mêmes mots à gauche et à droite, seule la typographie change. |
+| `comparaison-typo-actuelle-vs-allegee-test-physique-en-recul-375.png` | La même comparaison sur le cas le plus dense |
+| `comparaison-typo-actuelle-vs-allegee-tendance-disponible-320.png` | La même comparaison sur le petit iPhone SE |
+| `comparaison-progression-avant-apres-tendance-disponible-375.png` | **Avant / après l'intégration** : le lien flottant à gauche, la carte à droite — et la pastille « En forme » qui disparaît en haut à droite |
+| `comparaison-progression-avant-apres-nouveau-joueur-375.png` | Le même avant/après sur un compte tout neuf |
+| `comparaison-progression-avant-apres-test-physique-en-recul-375.png` | Le même avant/après sur le cas du recul |
+| `mouvement-reduit-vs-normal-tendance-disponible-375.png` | **Le réglage d'accessibilité.** Identiques à l'œil ; la preuve est la ligne de code sous chaque colonne. |
+| `etat-01` … `etat-06-…-375-page-entiere.png` | Les 6 cas de la carte, page entière, 375 px |
+| `etat-R1-preuve-donnee-manquante-375-page-entiere.png` | La preuve qu'une donnée inconnue **disparaît** au lieu d'afficher 0 |
+| `largeur-320px-iphone-se-tendance-disponible.png` | Le petit iPhone SE |
+| `largeur-320px-iphone-se-deux-seances-tendance-indisponible.png` | Le petit iPhone SE, état « ça se construit » |
+| `texte-agrandi-x1-3-tendance-disponible-375.png` | Police agrandie ×1,3 |
+| `texte-agrandi-x1-3-test-physique-en-recul-375.png` | Police agrandie ×1,3 sur le cas le plus dense |
+| `outil-visualiseur-bascules-et-regle.png` | **L'outil, toutes les bascules visibles**, panneau « La règle » ouvert |
+| `outil-visualiseur-axes-a-trancher.png` | L'outil, panneau « Valider » : les axes à trancher un par un |
+
+> **Sept états, pas huit.** La variante 2 compte **7** cas (6 cas de démonstration + la
+> preuve R1), pas 8. Le brief en annonçait 8 : il n'en existe que 7 sur le disque, et je
+> n'en ai pas fabriqué un huitième pour faire le compte.
+
+> **Ce que ces captures ne montrent pas** : les plafonds d'agrandissement.
+> `react-native-web` ne transmet pas `maxFontSizeMultiplier` au navigateur — les pages
+> ×1,3 montrent donc le **pire cas**, entièrement non plafonné. C'est conservateur
+> (si la mise en page tient sans plafond, elle tient avec), mais il faut le savoir.
+
+### Les dossiers des itérations précédentes
+
+**Variante 1** — [`captures/`](captures/) : `comparaison-seance-prevue-aujourdhui-actuel-vs-vnext-375.png`,
+`comparaison-nouveau-joueur-actuel-vs-vnext-375.png`, `etat-01` à `etat-14`,
+`outil-visualiseur-vue-cote-a-cote.png`.
+
+**Variante 2, itération précédente** — [`captures-v2/`](captures-v2/), 13 images.
+Elles restent utiles pour voir **d'où on part** : elles portent l'ancienne typographie.
 
 Le détail du nommage est en bas de [`COMPARAISON.md`](COMPARAISON.md).
 
 ---
 
-*Prototype produit le 27 juillet 2026 sur la branche `feat/home-vnext-prototype`,
-à partir du commit `724c062`. Rien n'est commité, rien n'est poussé, rien n'est fusionné.*
+*Prototype produit les 27 et 28 juillet 2026 sur la branche `feat/home-vnext-prototype`,
+à partir du commit `724c062`. Itération finale du 28 juillet : pastille retirée (D1),
+typographie allégée, règle de sélection du test (D3), reduceMotion respecté.
+Rien n'est commité, rien n'est poussé, rien n'est fusionné.*

@@ -24,11 +24,17 @@
 // R3  Portee obligatoire           -> `ProgressionCourbe.portee` est un `string`
 //                                     NON nullable : une courbe sans sa portee
 //                                     est impossible a construire.
-// R4  Pas d'etat global sans club  -> le libelle d'etat physique global n'est
-//                                     accessible QUE dans la variante
-//                                     `chargesClubCapturees: true` de l'entree.
-//                                     Avec `false`, TypeScript refuse meme de
-//                                     fournir le champ. Par construction.
+// R4  AUCUN etat global, point.    -> DECISION DU FONDATEUR (D1, 2026-07-28) :
+//                                     plus aucun jugement global sur la forme du
+//                                     joueur dans cette carte. Il n'existe plus
+//                                     ni champ d'entree pour en fournir un
+//                                     (`libelleEtatGlobal` a ete SUPPRIME), ni
+//                                     champ de sortie pour en porter un
+//                                     (`etatGlobal` a ete SUPPRIME). Ce n'est
+//                                     donc plus un verrou conditionnel qu'un
+//                                     booleen pourrait rouvrir : « En forme » ou
+//                                     « Pret a performer » n'a plus aucun chemin
+//                                     jusqu'a l'ecran. Voir §2 bis.
 // R5  Courbe = vrais points        -> `courbe` est type `null` (litteral) dans
 //                                     les etats "empty" et "collecting" : un
 //                                     graphique y est impossible a rendre.
@@ -40,6 +46,13 @@
 // R8  Un seul aplat par ecran      -> `detail.emphasis` vaut le litteral
 //                                     "lien_secondaire" et rien d'autre : un
 //                                     deuxieme aplat colore est impossible.
+// R9  Le repere de test n'est       -> la fonction qui choisit LE test affiche ne
+//     JAMAIS choisi sur le             recoit que `{ champ, apresTs }`
+//     resultat                         (`ProgressionCandidatRepere`). Ni l'ecart,
+//                                      ni son signe, ni son sens ne sont dans son
+//                                      type d'entree : trier par "meilleure
+//                                      progression" est impossible a ecrire sans
+//                                      changer la signature. Voir §5 bis.
 //
 // -----------------------------------------------------------------------------
 // CE QUE L'ON NE REPREND PAS DE `screens/ProgressScreen.tsx`
@@ -120,7 +133,9 @@
 // `screens/ProgressScreen.tsx` et `screens/HomeScreen.tsx` ne sont pas touches.
 // =============================================================================
 
+import { MICROCYCLES, type MicrocycleId } from "../../domain/microcycles";
 import {
+  CORE_FIELD_KEYS,
   FIELD_BY_KEY,
   FIELD_DEFS,
   type FieldKey,
@@ -305,38 +320,58 @@ export type ProgressionSemaineCourante = {
   seancesAffichees: number;
 };
 
-/**
- * R4, ENCODE DANS LE TYPE.
- *
- * Le libelle d'etat physique global n'existe QUE dans la variante
- * `chargesClubCapturees: true`. Avec `false`, TypeScript refuse le champ : il est
- * litteralement impossible de faire entrer "En forme" ou "Pret a performer" dans
- * ce ViewModel tant que les entrainements club et les autres charges ne sont pas
- * reellement connus. C'est une contrainte de compilation, pas une convention.
- *
- * ETAT REEL AUJOURD'HUI : `chargesClubCapturees` est TOUJOURS `false`.
- * PAS ENCORE BRANCHE — rien dans l'app ne capture les entrainements club
- * reellement realises. `useExternalStore.clubDays` ne fait qu'injecter une charge
- * SUPPOSEE a partir de cases cochees au setup profil (`applyAutoExternalLoads`),
- * ce qui n'est pas une mesure. La variante `true` est donc le contrat du futur.
- */
-export type ProgressionChargesGlobales =
-  | {
-      chargesClubCapturees: false;
-    }
-  | {
-      chargesClubCapturees: true;
-      /**
-       * Libelle d'etat physique global, deja calcule par l'app.
-       * SOURCE (future) : `getFootballLabel(tsb).label` (`config/trainingDefaults.ts`),
-       * MAIS uniquement une fois que le TSB integrera les charges club reelles.
-       * `null` = l'app n'a pas d'etat a proposer, meme avec les charges connues.
-       */
-      libelleEtatGlobal: string | null;
-    };
+// =============================================================================
+// 2 bis. R4 — CE QUI A ETE RETIRE, ET POURQUOI IL NE PEUT PAS REVENIR
+// =============================================================================
+//
+// DECISION DU FONDATEUR (D1, 2026-07-28), mot pour mot :
+//   « La pastille d'etat global est RETIREE COMPLETEMENT de la variante
+//     "Progression integree". Aucun de ces libelles, ni aucun autre jugement
+//     global : "En forme", "Frais", "Pret a performer", "Un peu charge",
+//     "Charge moderee".
+//     Motif : le modele de charge utilise encore des valeurs initiales
+//     artificielles et ne connait pas les entrainements club. Une pastille
+//     "Charge FKS" ne pourra revenir que le jour ou son calcul reposera sur des
+//     donnees entierement reelles avec une portee expliquee. »
+//
+// CE QUI EXISTAIT AVANT, ET QUI A DISPARU DU FICHIER :
+//   - le type d'entree `ProgressionChargesGlobales`, une union dont la branche
+//     `chargesClubCapturees: true` portait un champ `libelleEtatGlobal` ;
+//   - le type de sortie `ProgressionEtatGlobal` et le champ `etatGlobal`, present
+//     dans les trois etats du ViewModel.
+//
+// POURQUOI LA SUPPRESSION PLUTOT QUE LE VERROU. L'ancien montage etait un verrou
+// CONDITIONNEL : passer `chargesClubCapturees: true` avec un libelle suffisait a
+// faire ressortir « En forme ». C'etait defendable tant que la question etait
+// « les charges club sont-elles connues ? ». Ce n'est plus la question : le
+// fondateur constate que le modele de charge lui-meme part de valeurs initiales
+// artificielles (ATL0 / CTL0), donc qu'AUCUN booleen d'entree ne peut rendre ce
+// libelle honnete aujourd'hui. Un verrou qu'un drapeau rouvre serait un libelle
+// interdit a une ligne de distance. Le champ est donc parti, des deux cotes.
+//
+// CE QUI RESTE, ET QUI N'EST PAS UN JUGEMENT : `chargesClubCapturees` reste un
+// champ d'entree ORDINAIRE (un booleen, sans libelle associe). Il ne sert plus
+// qu'a UNE chose : ecrire la PORTEE exacte de la courbe (R3) — « Calcule sur tes
+// seances FKS uniquement — tes entrainements club n'y sont pas comptes. ». Dire
+// ce qu'une mesure contient n'est pas porter un jugement sur un joueur ; c'est
+// meme l'inverse, et c'est la condition posee par le fondateur pour qu'une
+// mesure ait le droit d'etre affichee.
+// =============================================================================
 
-/** Tout ce qui n'est pas soumis a la contrainte R4. */
-export type ProgressionInputBase = {
+/** Tout ce que la carte recoit. */
+export type ProgressionInput = {
+  /**
+   * Les entrainements club REELLEMENT REALISES sont-ils captures ?
+   *
+   * `false` est l'etat reel de l'app aujourd'hui, et PAS ENCORE BRANCHE : rien
+   * ne capture les seances club faites. `useExternalStore.clubDays` ne fait
+   * qu'injecter une charge SUPPOSEE a partir de cases cochees au setup profil
+   * (`applyAutoExternalLoads`), ce qui n'est pas une mesure.
+   *
+   * SEUL EFFET DE CE CHAMP : la phrase de portee de la courbe (R3). Il ne peut
+   * plus produire, ni autoriser, le moindre libelle d'etat (§2 bis).
+   */
+  chargesClubCapturees: boolean;
   /**
    * Seances FKS **reellement terminees**, du plus ancien au plus recent.
    * SOURCE : `useSessionsStore.sessions` filtre par `isSessionCompleted`
@@ -352,6 +387,18 @@ export type ProgressionInputBase = {
    * `ProgressScreen` (:226-236) et cela contourne toute la normalisation.
    */
   testsTerrain: readonly TestEntry[];
+  /**
+   * Cycle ACTUELLEMENT actif, deja canonicalise.
+   * SOURCE : `canonicalizeMicrocycleGoal(useSessionsStore.microcycleGoal)`
+   * (`domain/microcycles.ts`) — exactement le champ que le Home lit deja
+   * (`HomeVNextInput.microcycleGoal`, `./viewModel`). Un seul cycle actif a la
+   * fois (regle produit n5, CLAUDE.md). `null` = aucun cycle choisi.
+   *
+   * A NE PAS CONFONDRE avec `TestEntry.playlist`, qui note quel cycle etait actif
+   * AU MOMENT du test : celui-la est une PROVENANCE (un tag d'historique), il ne
+   * selectionne rien. La regle 1 (§5 bis) lit CE champ-ci, jamais celui-la.
+   */
+  microcycleGoal: MicrocycleId | null;
   /** Trajectoire fournie. `null` = rien de calcule. */
   tendance: ProgressionTendanceInput | null;
   /** Ce que "Ma semaine" affiche deja sur le meme ecran (R7). */
@@ -359,14 +406,12 @@ export type ProgressionInputBase = {
 };
 
 /**
- * ENTREE DU SELECTEUR.
- *
- * L'intersection avec `ProgressionChargesGlobales` distribue sur les deux
- * variantes : `input.chargesClubCapturees` reste un champ de premier niveau, et
- * `libelleEtatGlobal` n'est accessible qu'apres avoir prouve au compilateur que
- * le booleen vaut `true`.
+ * @deprecated Alias de `ProgressionInput`, conserve le temps que le visualiseur
+ * et les scripts du prototype suivent. Le decoupage `Base` + variante n'a plus
+ * lieu d'etre : il n'existait que pour porter la contrainte R4 dans le type, et
+ * R4 est desormais tenue par l'ABSENCE du champ (§2 bis).
  */
-export type ProgressionInput = ProgressionChargesGlobales & ProgressionInputBase;
+export type ProgressionInputBase = ProgressionInput;
 
 // =============================================================================
 // 3. SORTIE — `ProgressionViewModel`
@@ -507,19 +552,6 @@ export type ProgressionCourbe = {
 };
 
 /**
- * L'etat physique global. R4 : la variante `connu: true` n'est atteignable que
- * si l'entree a ete fournie avec `chargesClubCapturees: true` ET un libelle.
- */
-export type ProgressionEtatGlobal =
-  | { connu: true; libelle: string }
-  | {
-      connu: false;
-      raison: "charges_club_non_capturees" | "aucun_libelle_disponible";
-      /** Pourquoi l'ecran ne dit pas dans quel etat est le joueur. */
-      explication: string;
-    };
-
-/**
  * Le pied de carte qui mene a l'ecran Progression (« Voir ma progression »). La
  * decision d'affichage est prise ICI, dans le ViewModel, jamais dans le
  * composant, et le libelle exact vient de `LIBELLE_DETAIL` (§7).
@@ -557,6 +589,10 @@ export type ProgressionRepere = {
  *
  * `courbe: null` est un type LITTERAL dans "empty" et "collecting" : un
  * graphique y est impossible a rendre (R5).
+ *
+ * AUCUN DES TROIS ETATS NE PORTE D'ETAT PHYSIQUE GLOBAL (§2 bis) : le champ
+ * `etatGlobal` a ete supprime. La carte peut dire ce qu'elle a mesure ; elle ne
+ * peut plus dire dans quel etat est le joueur.
  */
 export type ProgressionViewModel =
   | {
@@ -566,7 +602,6 @@ export type ProgressionViewModel =
       /** Mention honnete de l'absence de donnees. */
       mention: string;
       courbe: null;
-      etatGlobal: ProgressionEtatGlobal;
       detail: ProgressionDetail;
       protoWarnings: readonly string[];
     }
@@ -578,9 +613,8 @@ export type ProgressionViewModel =
       courbe: null;
       tendanceIndisponible: ProgressionTendanceIndisponible;
       comparaisonsTests: ProgressionComparaisonsTests;
-      /** La comparaison la plus recente, ou `null`. */
-      derniereComparaisonTest: ProgressionComparaisonTest | null;
-      etatGlobal: ProgressionEtatGlobal;
+      /** LE repere affiche, designe par la regle du §5 bis. `null` = aucun. */
+      repereTest: ProgressionRepereTest | null;
       detail: ProgressionDetail;
       protoWarnings: readonly string[];
     }
@@ -591,8 +625,8 @@ export type ProgressionViewModel =
       /** UN fait complementaire reel, choisi pour ne pas doubler "Ma semaine" (R7). */
       resume: ProgressionFait;
       comparaisonsTests: ProgressionComparaisonsTests;
-      derniereComparaisonTest: ProgressionComparaisonTest | null;
-      etatGlobal: ProgressionEtatGlobal;
+      /** LE repere affiche, designe par la regle du §5 bis. `null` = aucun. */
+      repereTest: ProgressionRepereTest | null;
       detail: ProgressionDetail;
       protoWarnings: readonly string[];
     };
@@ -777,19 +811,285 @@ export function construireComparaisonsTests(
   return { possible: true, comparaisons };
 }
 
+// =============================================================================
+// 5 bis. LE REPERE DE TEST AFFICHE — LA REGLE DE SELECTION
+// =============================================================================
+//
+// Le Home affiche UN SEUL repere de test. Le choisir, c'est deja une decision
+// produit : le joueur ne verra que celui-la.
+//
+// LA REGLE, DANS L'ORDRE (posee par le fondateur) :
+//   1. le test qui correspond a l'OBJECTIF DU CYCLE ACTIF ;
+//   2. sinon, la mesure comparable la PLUS RECENTE ;
+//   3. a egalite d'horodatage, un ordre stable et documente (§5 bis.3).
+//
+// CE QUE LA REGLE NE FAIT JAMAIS
+// -----------------------------------------------------------------------------
+// Elle ne regarde ni le signe, ni l'amplitude du resultat. « La meilleure
+// progression » serait du cherry-picking : l'ecran montrerait le chiffre le plus
+// flatteur du joueur et tairait les autres. Un repere en RECUL doit s'afficher
+// exactement comme un repere en progres.
+//
+// Ce n'est pas une intention, c'est un TYPE (R9) : `choisirChampRepere` ne recoit
+// que `{ champ, apresTs }`. `ecart`, `sens`, `avant`, `apres`,
+// `plusPetitEstMieux` ne sont pas dans sa signature — les trier est impossible
+// sans changer le type d'entree, ce qui se voit en une ligne dans une revue.
+// =============================================================================
+
+/** Une ligne du mapping cycle -> test. Documentee, pas devinee. */
+export type ProgressionCycleRepere = {
+  cycle: MicrocycleId;
+  /** Libelle joueur du cycle. SOURCE : `MICROCYCLES[cycle].label`. */
+  libelleCycle: string;
+  /**
+   * Le champ de test que ce cycle designe.
+   * `null` = AUCUNE correspondance evidente. La regle 1 ne mord pas, on tombe
+   * sur la regle 2. Forcer une correspondance ferait dire a l'ecran que le cycle
+   * travaille une qualite qu'il ne promet pas.
+   */
+  champ: FieldKey | null;
+  /** La ou les citations du depot qui fondent la ligne. */
+  fondement: string;
+  /** Ce qui a ete envisage puis ecarte, et pourquoi. `null` = rien de serieux en face. */
+  ecarte: string | null;
+};
+
 /**
- * La comparaison la plus recente. Aucun tri par "meilleure progression" :
- * choisir la plus flatteuse serait exactement le chiffre arrange que la doctrine
- * interdit. On prend la plus recente, quel que soit son sens ; a egalite de
- * date, l'ordre canonique de `FIELD_DEFS` tranche (deterministe).
+ * §5 bis.1 — LE MAPPING CYCLE -> TEST.
+ *
+ * DECISION PRODUIT — A VALIDER PAR LE FONDATEUR. Rien ici n'est deduit
+ * automatiquement : chaque ligne est un choix, et chaque choix cite le texte du
+ * depot qui le fonde.
+ *
+ * Le type est un `Record<MicrocycleId, ...>` : le jour ou un sixieme cycle entre
+ * dans `domain/microcycles.ts`, ce fichier NE COMPILE PLUS tant que sa ligne
+ * n'est pas ecrite. Un cycle ne peut donc pas arriver sans que quelqu'un ait
+ * tranche — ni tomber en silence sur un repli.
+ *
+ * Le repere se prend dans le SOCLE (`CORE_FIELD_KEYS`) : ce sont les 3 tests que
+ * tout le monde passe, "identiques pour tous, quel que soit le cycle actif"
+ * (`screens/tests/testConfig.ts`:283-296). Un repere pioche dans les tests
+ * optionnels n'existerait que pour les joueurs qui les font.
  */
-function choisirDerniereComparaison(
-  etat: ProgressionComparaisonsTests
-): ProgressionComparaisonTest | null {
+export const PROGRESSION_TEST_PAR_CYCLE: Readonly<Record<MicrocycleId, ProgressionCycleRepere>> = {
+  fondation: {
+    cycle: "fondation",
+    libelleCycle: MICROCYCLES.fondation.label,
+    champ: null,
+    fondement:
+      "Aucune correspondance evidente. `MICROCYCLES.fondation.highlights` = [\"Appuis & controle\", \"Gainage\", \"Cardio leger\"] (domain/microcycles.ts:65) : aucun des 3 tests du socle ne mesure le gainage ni la qualite d'appui, et \"cardio leger\" decrit une INTENSITE de travail, pas une performance a battre. `PLAYLISTS.fondation.subtitle` = \"Base physique / S&C + endurance\" (testConfig.ts:274) est une base large, pas une qualite ciblee.",
+    ecarte:
+      "endurance6min_m, au motif du mot \"endurance\" dans le sous-titre. Ecarte : le cycle dit \"cardio leger\" (un moyen), pas \"tenir 90 min\" (un objectif). Accrocher la VMA a Fondation ferait promettre a l'ecran une progression que le cycle ne cherche pas.",
+  },
+  force: {
+    cycle: "force",
+    libelleCycle: MICROCYCLES.force.label,
+    champ: "broadJumpCm",
+    fondement:
+      "`MICROCYCLES.force.highlights` contient \"Puissance\" (domain/microcycles.ts:83) et `CORE_FIELD_WHY.broadJumpCm` dit \"Ta puissance de jambes, mesurable sans le moindre materiel.\" (testConfig.ts:300). Meme mot, meme qualite — et c'est le seul test du socle qui mesure une production de force.",
+    ecarte:
+      "gobletKg / splitKg, plus proches de \"Force max + charges lourdes\" (PLAYLISTS.force.subtitle, testConfig.ts:275). Ecartes pour deux raisons : leur protocole dit \"Choisis une charge que tu peux lever 8-10 fois\" (testConfig.ts:222) — comparer deux dates compare deux CHOIX de charge autant que deux capacites ; et ils n'existent que si le profil declare du materiel (`EQUIPMENT_OPTIONAL_FIELD_KEYS`). trapbar3rmKg est un vrai maximum (\"la charge maximale que tu peux soulever 3 fois\", :262) mais il est reserve aux Seniors avec salle (`SENIOR_EQUIPMENT_OPTIONAL_FIELD_KEYS`) : en faire LE repere du cycle Force priverait de repere tous les autres joueurs.",
+  },
+  endurance: {
+    cycle: "endurance",
+    libelleCycle: MICROCYCLES.endurance.label,
+    champ: "endurance6min_m",
+    fondement:
+      "`PLAYLISTS.endurance.subtitle` = \"Tenir 90 min + sprints repetes\" (testConfig.ts:277) et `MICROCYCLES.endurance.label` = \"Tenir tout le match\" (domain/microcycles.ts:95). En face, `CORE_FIELD_WHY.endurance6min_m` : \"L'IA s'en sert pour calibrer les allures de course de tes seances (ta VMA)\" (testConfig.ts:302), protocole \"l'allure la plus rapide que tu peux tenir sur toute la duree\" (:191). C'est la meme question : combien de temps tu tiens.",
+    ecarte:
+      "sprint10s, au motif de \"sprints repetes\". Ecarte : un 10 m unique mesure UN demarrage, pas la capacite a le repeter. Aucun test du socle ne mesure la repetition — le Yo-Yo IR1, qui s'en approcherait, est volontairement retire du produit (testConfig.ts:315-317).",
+  },
+  explosivite: {
+    cycle: "explosivite",
+    libelleCycle: MICROCYCLES.explosivite.label,
+    champ: "sprint10s",
+    fondement:
+      "`MICROCYCLES.explosivite.description` : \"Tu travailles la vitesse de demarrage, les changements de direction et la detente. Les premiers metres et le saut font la difference.\" (domain/microcycles.ts:116). Le protocole du sprint 10 m est litteralement ces premiers metres : \"Pose deux reperes a 10 m... Depart arrete\" (testConfig.ts:137). Et `CORE_FIELD_WHY.sprint10s` ajoute \"Ta vitesse, la qualite n1 en foot\" (:301).",
+    ecarte:
+      "broadJumpCm, au motif de \"la detente\" dans la meme phrase (et cmjCm, plus direct encore pour la detente, mais hors socle). Ecarte parce que la citation du demarrage est litterale la ou celle de la detente est partagee ; le saut reste calcule et visible dans la liste complete des comparaisons, il n'est simplement pas LE repere du Home.",
+  },
+  saison: {
+    cycle: "saison",
+    libelleCycle: MICROCYCLES.saison.label,
+    champ: null,
+    fondement:
+      "Aucune correspondance, et c'est volontaire. `MICROCYCLES.saison.description` : \"en pleine saison, l'objectif c'est rester performant le jour du match : juste ce qu'il faut a l'entrainement, pas plus.\" (domain/microcycles.ts:134), `PLAYLISTS.saison.subtitle` = \"Maintenir la forme sans se cramer\" (testConfig.ts:278). Un cycle de MAINTIEN ne promet d'ameliorer aucune qualite en particulier.",
+    ecarte:
+      "Rien. Y accrocher un test ferait dire a l'ecran que le cycle travaille cette qualite-la, alors qu'il travaille la fraicheur du week-end.",
+  },
+};
+
+/**
+ * Le mapping en liste, dans l'ordre de declaration de `MICROCYCLES` — pour le
+ * visualiseur et le compte rendu. Derive du `Record` ci-dessus : impossible
+ * qu'une ligne affichee dise autre chose que la ligne appliquee.
+ */
+export const PROGRESSION_MAPPING_CYCLES: readonly ProgressionCycleRepere[] = (
+  Object.keys(MICROCYCLES) as MicrocycleId[]
+).map((id) => PROGRESSION_TEST_PAR_CYCLE[id]);
+
+/**
+ * §5 bis.3 — L'ORDRE DE DEPARTAGE, JUSTIFIE LIGNE A LIGNE.
+ *
+ * POURQUOI IL SERT VRAIMENT, ET SOUVENT : une batterie du socle est enregistree
+ * en UNE SEULE entree, avec UN SEUL horodatage (`screens/TestsScreen.tsx`:241,
+ * `const cleanEntry: TestEntry = { ts: Date.now() }`). Les 3 tests du socle
+ * partagent donc leur date A LA SECONDE PRES. L'egalite n'est pas un cas rare :
+ * c'est le cas NORMAL. Un departage bancal se verrait tous les jours.
+ *
+ * L'iteration precedente SUBISSAIT l'ordre de `FIELD_DEFS` (l'ordre de
+ * declaration du formulaire de saisie). Voici un ordre choisi, chaque rang tenu
+ * par une phrase du depot :
+ *
+ *   1. `sprint10s` — c'est le seul des trois que le produit CLASSE lui-meme :
+ *      "Ta vitesse, la qualite n1 en foot" (`CORE_FIELD_WHY`, testConfig.ts:301).
+ *      Aucune autre ligne de `CORE_FIELD_WHY` ne revendique un rang. A egalite
+ *      stricte, on montre ce que le produit dit etre le plus important en foot.
+ *   2. le reste du SOCLE, dans l'ordre documente de `CORE_FIELD_KEYS`
+ *      ("Ordre = ordre d'execution conseille", testConfig.ts:288-296) : ce sont
+ *      les tests que TOUS les joueurs passent.
+ *   3. les tests optionnels, dans l'ordre de `FIELD_DEFS` — le seul ordre total
+ *      que le depot definisse sur les 17 champs. Ils passent APRES le socle :
+ *      un repere du socle est comparable d'un joueur a l'autre et present chez
+ *      tout le monde.
+ *
+ * EFFET DE BORD, ASSUME ET VERIFIE : ce classement fait passer le sprint devant
+ * le saut en longueur. Il est FIGE dans le code, calcule une fois au chargement,
+ * et ne lit aucune valeur de test : un sprint en RECUL sort exactement pareil (
+ * c'est la fixture « test-physique-en-recul », et c'est un test).
+ */
+const CHAMP_QUALITE_N1: FieldKey = "sprint10s";
+
+export const PROGRESSION_ORDRE_DEPARTAGE: readonly FieldKey[] = [
+  CHAMP_QUALITE_N1,
+  ...(CORE_FIELD_KEYS as readonly FieldKey[]).filter((k) => k !== CHAMP_QUALITE_N1),
+  ...FIELD_DEFS.map((d) => d.key).filter(
+    (k) => !(CORE_FIELD_KEYS as readonly FieldKey[]).includes(k)
+  ),
+];
+
+/** Rang de departage d'un champ. Table figee, aucune valeur de test n'y entre. */
+const RANG_DEPARTAGE: Readonly<Record<string, number>> = PROGRESSION_ORDRE_DEPARTAGE.reduce<
+  Record<string, number>
+>((acc, champ, index) => {
+  acc[champ] = index;
+  return acc;
+}, {});
+
+/**
+ * §5 bis.2 — CE QUE LA SELECTION A LE DROIT DE VOIR (R9).
+ *
+ * Deux champs, pas trois. Ni l'ecart, ni son signe, ni son sens ne sont ici :
+ * un tri par "meilleure progression" ne peut pas etre ecrit sans changer cette
+ * definition, et changer cette definition se voit.
+ */
+export type ProgressionCandidatRepere = {
+  champ: FieldKey;
+  /** Horodatage de la mesure la plus recente du champ. Une DATE, pas un score. */
+  apresTs: number;
+};
+
+/** Laquelle des regles a designe le repere affiche. */
+export type ProgressionRegleRepere = "objectif_du_cycle" | "mesure_la_plus_recente";
+
+/** Le verdict de la selection, sans la comparaison elle-meme. */
+export type ProgressionChoixRepere = {
+  champ: FieldKey;
+  regle: ProgressionRegleRepere;
+  /**
+   * `true` quand plusieurs mesures partageaient l'horodatage le plus recent et
+   * que l'ordre de departage a tranche (le cas normal apres une batterie).
+   */
+  departageApplique: boolean;
+};
+
+/**
+ * LA REGLE, DANS L'ORDRE. Fonction pure, exportee pour etre testee seule.
+ *
+ * Son entree ne porte AUCUN resultat (R9) : elle ne peut pas favoriser un bon
+ * chiffre, meme par accident, meme en la modifiant sans faire attention.
+ */
+export function choisirChampRepere(
+  candidats: readonly ProgressionCandidatRepere[],
+  cycleActif: MicrocycleId | null
+): ProgressionChoixRepere | null {
+  if (candidats.length === 0) return null;
+
+  // REGLE 1 — l'objectif du cycle actif.
+  const champDuCycle = cycleActif === null ? null : PROGRESSION_TEST_PAR_CYCLE[cycleActif].champ;
+  if (champDuCycle !== null) {
+    const surLObjectif = candidats.find((c) => c.champ === champDuCycle);
+    if (surLObjectif !== undefined) {
+      return { champ: surLObjectif.champ, regle: "objectif_du_cycle", departageApplique: false };
+    }
+  }
+
+  // REGLE 2 — la mesure comparable la plus recente.
+  const tsMax = candidats.reduce((max, c) => (c.apresTs > max ? c.apresTs : max), candidats[0].apresTs);
+  const exAequo = candidats.filter((c) => c.apresTs === tsMax);
+  if (exAequo.length === 1) {
+    return { champ: exAequo[0].champ, regle: "mesure_la_plus_recente", departageApplique: false };
+  }
+
+  // REGLE 3 — le departage, table figee (§5 bis.3).
+  const rang = (champ: FieldKey): number =>
+    RANG_DEPARTAGE[champ] ?? PROGRESSION_ORDRE_DEPARTAGE.length;
+  const gagnant = [...exAequo].sort((a, b) => rang(a.champ) - rang(b.champ))[0];
+  return { champ: gagnant.champ, regle: "mesure_la_plus_recente", departageApplique: true };
+}
+
+/** Le repere REELLEMENT affiche par la carte, avec la regle qui l'a designe. */
+export type ProgressionRepereTest = {
+  /** La comparaison a afficher, telle quelle. */
+  comparaison: ProgressionComparaisonTest;
+  regle: ProgressionRegleRepere;
+  departageApplique: boolean;
+  /**
+   * Pourquoi CE repere-la. Destine au VISUALISEUR, au compte rendu et aux tests
+   * — ce n'est pas un texte d'ecran joueur (aucune ligne de l'app ne le rend
+   * aujourd'hui, et l'ajouter serait une decision de contenu a part).
+   */
+  motif: string;
+};
+
+/**
+ * Applique la regle a un etat de comparaisons.
+ *
+ * Le passage par `candidats` n'est pas une precaution de style : c'est la
+ * PROJECTION qui prive la selection de tout acces au resultat (R9). La
+ * comparaison complete n'est retrouvee qu'APRES que le champ a ete choisi.
+ */
+export function choisirRepereTest(
+  etat: ProgressionComparaisonsTests,
+  cycleActif: MicrocycleId | null
+): ProgressionRepereTest | null {
   if (!etat.possible || etat.comparaisons.length === 0) return null;
-  return etat.comparaisons.reduce((meilleure, candidate) =>
-    candidate.apresTs > meilleure.apresTs ? candidate : meilleure
-  );
+
+  const candidats: ProgressionCandidatRepere[] = etat.comparaisons.map((c) => ({
+    champ: c.champ,
+    apresTs: c.apresTs,
+  }));
+  const choix = choisirChampRepere(candidats, cycleActif);
+  if (choix === null) return null;
+
+  const comparaison = etat.comparaisons.find((c) => c.champ === choix.champ);
+  if (comparaison === undefined) return null;
+
+  const libelleCycle =
+    cycleActif === null ? null : PROGRESSION_TEST_PAR_CYCLE[cycleActif].libelleCycle;
+  const motif =
+    choix.regle === "objectif_du_cycle"
+      ? `Regle 1 : c'est le test que vise le cycle actif (${libelleCycle ?? cycleActif}).`
+      : choix.departageApplique
+        ? "Regle 2 : la mesure comparable la plus recente. Plusieurs tests partageaient cet horodatage (une batterie est enregistree en une seule fois) — l'ordre de departage fige a tranche."
+        : "Regle 2 : la mesure comparable la plus recente.";
+
+  return {
+    comparaison,
+    regle: choix.regle,
+    departageApplique: choix.departageApplique,
+    motif,
+  };
 }
 
 // =============================================================================
@@ -821,39 +1121,36 @@ export function buildProgressionViewModel(input: ProgressionInput): ProgressionV
   const joursActifs = new Set(seances.map((s) => s.dateKey).filter((k) => k.length > 0)).size;
 
   // ---------------------------------------------------------------------------
-  // 6.2 R4 — l'etat physique global
+  // 6.2 R4 — l'etat physique global : il n'y en a plus (§2 bis)
   // ---------------------------------------------------------------------------
-  // Le libelle n'est meme pas lisible depuis la branche `false` : c'est le
-  // compilateur qui l'interdit, pas ce code.
-  let etatGlobal: ProgressionEtatGlobal;
-  if (input.chargesClubCapturees) {
-    const libelle = (input.libelleEtatGlobal ?? "").trim();
-    etatGlobal =
-      libelle.length > 0
-        ? { connu: true, libelle }
-        : {
-            connu: false,
-            raison: "aucun_libelle_disponible",
-            explication:
-              "Tes charges sont connues, mais l'application n'a pas d'état à afficher pour aujourd'hui.",
-          };
-  } else {
-    etatGlobal = {
-      connu: false,
-      raison: "charges_club_non_capturees",
-      explication:
-        "Tes entraînements club ne sont pas encore comptés : impossible de dire dans quel état tu es globalement.",
-    };
-    protoWarnings.push(
-      "R4 : aucun libelle d'etat global n'est produit (chargesClubCapturees=false). PAS ENCORE BRANCHE — rien dans l'app ne capture les entrainements club reellement realises ; useExternalStore.clubDays ne fait qu'injecter une charge SUPPOSEE depuis des cases cochees au setup profil (applyAutoExternalLoads)."
-    );
-  }
+  // Il n'y a rien a calculer ici, et c'est le point : aucun champ d'entree ne
+  // porte de libelle d'etat, aucun champ de sortie ne peut en recevoir un. Ce
+  // paragraphe ne fait qu'emettre l'avertissement destine au visualiseur, pour
+  // que la decision soit LISIBLE a l'ecran de validation et pas seulement dans
+  // le code.
+  protoWarnings.push(
+    "D1 (decision du fondateur, 2026-07-28) : cette carte n'affiche AUCUN etat physique global — ni « En forme », ni « Frais », ni « Pret a performer », ni « Un peu charge », ni « Charge moderee ». Ce n'est plus un verrou conditionnel : le champ d'entree (libelleEtatGlobal) et le champ de sortie (etatGlobal) ont ete SUPPRIMES du contrat. Motif : le modele de charge part encore de valeurs initiales artificielles (ATL0/CTL0) et ignore les entrainements club. Une pastille « Charge FKS » ne pourra revenir que le jour ou son calcul reposera sur des donnees entierement reelles, avec une portee expliquee."
+  );
 
   // ---------------------------------------------------------------------------
   // 6.3 Les tests terrain
   // ---------------------------------------------------------------------------
   const comparaisonsTests = construireComparaisonsTests(input.testsTerrain);
-  const derniereComparaisonTest = choisirDerniereComparaison(comparaisonsTests);
+  const repereTest = choisirRepereTest(comparaisonsTests, input.microcycleGoal);
+
+  if (repereTest !== null) {
+    const ligne =
+      input.microcycleGoal === null ? null : PROGRESSION_TEST_PAR_CYCLE[input.microcycleGoal];
+    protoWarnings.push(
+      `Repere de test affiche : ${repereTest.comparaison.label} — ${repereTest.motif} Le mapping cycle -> test (PROGRESSION_TEST_PAR_CYCLE) est une DECISION PRODUIT a valider par le fondateur${
+        ligne === null
+          ? " ; aucun cycle actif ici, la regle 1 ne pouvait pas s'appliquer."
+          : ligne.champ === null
+            ? ` ; le cycle "${ligne.libelleCycle}" n'a volontairement AUCUN test associe, la regle 2 s'applique.`
+            : "."
+      }`
+    );
+  }
 
   if (input.testsTerrain.length > 0) {
     protoWarnings.push(
@@ -892,6 +1189,24 @@ export function buildProgressionViewModel(input: ProgressionInput): ProgressionV
   // afficherait exactement le nombre que "Ma semaine" affiche deja, il est
   // retire et la carte change de fait.
   //
+  // R7 BIS — LE LIBELLE DIT DE QUELLE PERIODE ON PARLE (demande du fondateur).
+  // Le garde-fou ci-dessus empeche deux nombres IDENTIQUES de se suivre. Il
+  // n'empeche pas un joueur de lire « Seances terminees : 12 » juste sous
+  // « 1 seance sur 2 » et de se demander laquelle compte quoi. Les deux nombres
+  // coexistent sur le meme ecran : la difference doit donc etre portee par le
+  // LIBELLE, pas par la taille du texte.
+  //
+  // D'ou le suffixe ci-dessous, applique au SEUL compteur de seances : c'est le
+  // seul fait de la carte qui compte la meme chose que "Ma semaine". Les minutes,
+  // les ressentis et les jours d'entrainement ne comptent pas des seances — les
+  // qualifier tous alourdirait quatre lignes pour lever une ambiguite qui
+  // n'existe que sur une seule.
+  //
+  // Formulation retenue : « depuis tes debuts » plutot que « au total ». Elle
+  // nomme la PERIODE, qui est exactement l'axe de la confusion (cette semaine vs
+  // depuis le debut), la ou « au total » nomme une operation.
+  const DEPUIS_LE_DEBUT = "depuis tes débuts";
+  //
   // Portee du garde-fou : tous les faits COMPTABLES de la carte. Seul
   // `avant_tendance` y echappe — ce n'est pas un compteur d'etat mais un reste a
   // parcourir, son libelle le dit explicitement, et le fondateur l'a demande
@@ -905,7 +1220,10 @@ export function buildProgressionViewModel(input: ProgressionInput): ProgressionV
     nbSeances > 0
       ? {
           cle: "seances_terminees",
-          libelle: accord(nbSeances, "Séance terminée", "Séances terminées"),
+          // R7 bis : le libelle dit lui-meme que c'est un CUMUL. Sans ce
+          // suffixe, "Séances terminées : 12" et "1 séance sur 2" sont deux
+          // comptes de seances a 300 px l'un de l'autre, distingues par rien.
+          libelle: `${accord(nbSeances, "Séance terminée", "Séances terminées")} ${DEPUIS_LE_DEBUT}`,
           valeur: String(nbSeances),
         }
       : null;
@@ -1043,7 +1361,6 @@ export function buildProgressionViewModel(input: ProgressionInput): ProgressionV
       ],
       mention: "0 séance terminée — tes premiers repères apparaîtront ici.",
       courbe: null,
-      etatGlobal,
       detail: decisionDetail("empty", protoWarnings),
       protoWarnings,
     };
@@ -1082,8 +1399,7 @@ export function buildProgressionViewModel(input: ProgressionInput): ProgressionV
       courbe: null,
       tendanceIndisponible: indisponibilite,
       comparaisonsTests,
-      derniereComparaisonTest,
-      etatGlobal,
+      repereTest,
       detail: decisionDetail("collecting", protoWarnings),
       protoWarnings,
     };
@@ -1135,8 +1451,7 @@ export function buildProgressionViewModel(input: ProgressionInput): ProgressionV
     },
     resume,
     comparaisonsTests,
-    derniereComparaisonTest,
-    etatGlobal,
+    repereTest,
     detail: decisionDetail("ready", protoWarnings),
     protoWarnings,
   };

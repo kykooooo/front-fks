@@ -34,6 +34,7 @@ import {
   FIXTURE_TODAY_KEY,
   type HomeVNextFixture,
 } from "../../screens/homeVNext/fixtures";
+import { LIBELLES_ETAT_INTERDITS } from "./libellesEtatInterdits";
 
 // -----------------------------------------------------------------------------
 // Outils de test
@@ -223,18 +224,24 @@ describe("Home vNext — invariants sur les 14 etats", () => {
   );
 
   // ---------------------------------------------------------------------------
-  // LE SECOND VERROU — variante 2 uniquement
+  // D1 — LA PASTILLE N'EXISTE PLUS EN VARIANTE 2
   // ---------------------------------------------------------------------------
   // Defaut trouve en regardant l'ECRAN ENTIER : la pastille d'en-tete annoncait
   // un etat physique GLOBAL (« En forme », « Un peu chargé ») pendant que la
   // carte, 200 px plus bas, ecrivait « tes entraînements club n'y sont pas
-  // comptés ». Le premier verrou ne protegeait que de l'amorcage ATL0/CTL0 : il
-  // ne disait rien de ce qui MANQUE au calcul.
+  // comptés ».
   //
-  // Regle du fondateur : ne rien affirmer sur l'etat physique tant que les
-  // charges club ne sont pas reellement connues. Appliquee a la VARIANTE 2 seule,
-  // parce que la variante 1 est deja validee et que l'ECART est precisement ce
-  // qu'il doit pouvoir comparer.
+  // A l'iteration precedente, la regle etait CONDITIONNELLE : la pastille
+  // revenait si l'appelant passait `chargesClubCapturees: true`. Le fondateur a
+  // tranche autrement apres avoir regarde l'ecran (D1, 2026-07-28) : retrait
+  // COMPLET en variante 2, parce que le modele de charge part encore de valeurs
+  // initiales artificielles (ATL0/CTL0) — aucun drapeau d'entree ne peut rendre
+  // ce libelle honnete aujourd'hui.
+  //
+  // Les tests ci-dessous verifient donc l'inverse de ce qu'ils verifiaient : non
+  // plus « la pastille revient quand les charges sont connues », mais « aucune
+  // entree, aucune option, aucun etat ne peut la faire revenir ».
+  // La variante 1 garde la sienne — c'est l'ecart a comparer.
   // ---------------------------------------------------------------------------
   it.each(toutesLesFixtures().map((f) => [f.id, f] as const))(
     "%s — variante 1 inchangee : les options par defaut ne modifient RIEN",
@@ -250,36 +257,52 @@ describe("Home vNext — invariants sur les 14 etats", () => {
   );
 
   it.each(toutesLesFixtures().map((f) => [f.id, f] as const))(
-    "%s — variante 2 : aucune pastille d'etat tant que les charges club sont inconnues",
+    "%s — variante 2 : aucune pastille d'etat, sur AUCUN des 15 etats",
     (_id, fixture) => {
       const v2 = buildHomeVNextViewModel(fixture.input, { variante: "v2" });
       expect(v2.header.stateChip).toBeNull();
     }
   );
 
-  it("variante 2 : la pastille revient si — et seulement si — les charges club sont capturees", () => {
-    // La regle porte sur les CHARGES, pas sur la variante : la variante decide
-    // seulement si la regle est armee. Le jour ou l'app capturera vraiment les
-    // entrainements club, la pastille reviendra sans toucher a une ligne de code.
+  it("variante 2 : aucune option ne peut faire revenir la pastille (D1)", () => {
+    // L'option `chargesClubCapturees` a ete SUPPRIMEE du type `HomeVNextOptions`.
+    // Le compilateur refuse donc deja de la passer. Ce test prouve qu'a
+    // l'execution non plus rien ne revient : on force la vieille option par un
+    // cast, exactement comme le ferait un appelant JavaScript (le visualiseur du
+    // prototype en est un).
     const f = getHomeVNextFixture("tendance-disponible")!;
     const v1 = buildHomeVNextViewModel(f.input);
     expect(v1.header.stateChip).not.toBeNull();
 
+    const optionsForcees = {
+      variante: "v2",
+      chargesClubCapturees: true,
+    } as unknown as Parameters<typeof buildHomeVNextViewModel>[1];
+
     expect(buildHomeVNextViewModel(f.input, { variante: "v2" }).header.stateChip).toBeNull();
-    expect(
-      buildHomeVNextViewModel(f.input, { variante: "v2", chargesClubCapturees: false }).header
-        .stateChip
-    ).toBeNull();
-    expect(
-      buildHomeVNextViewModel(f.input, { variante: "v2", chargesClubCapturees: true }).header
-        .stateChip
-    ).toEqual(v1.header.stateChip);
+    expect(buildHomeVNextViewModel(f.input, optionsForcees).header.stateChip).toBeNull();
   });
+
+  it.each(toutesLesFixtures().map((f) => [f.id, f] as const))(
+    "%s — variante 2 : aucun libelle d'etat ne survit nulle part dans le ViewModel",
+    (_id, fixture) => {
+      // Pas seulement la pastille : le libelle ne doit reapparaitre dans AUCUN
+      // champ affichable (sous-titre, message, conseil, metadonnee). Les
+      // `protoWarnings` sont exclus — ils sont destines au visualiseur, et c'est
+      // precisement leur role de NOMMER ce qui a ete retire.
+      const v2 = buildHomeVNextViewModel(fixture.input, { variante: "v2" });
+      const affichable = { ...v2, protoWarnings: [] };
+      const corpus = JSON.stringify(affichable);
+      for (const interdit of LIBELLES_ETAT_INTERDITS) {
+        expect(corpus).not.toContain(interdit);
+      }
+    }
+  );
 
   it("variante 2 : le retrait de la pastille est ECRIT, jamais silencieux", () => {
     const f = getHomeVNextFixture("tendance-disponible")!;
     const v2 = buildHomeVNextViewModel(f.input, { variante: "v2" });
-    const avertissement = v2.protoWarnings.find((w) => w.startsWith("Variante 2 :"));
+    const avertissement = v2.protoWarnings.find((w) => w.startsWith("D1 "));
     expect(avertissement).toBeDefined();
     // Il nomme le libelle retire : sans ca, le visualiseur ne pourrait pas dire
     // au fondateur ce que la variante 1 affiche a la place.
@@ -290,7 +313,7 @@ describe("Home vNext — invariants sur les 14 etats", () => {
     const sansTendance = getHomeVNextFixture("nouveau-joueur")!;
     expect(
       buildHomeVNextViewModel(sansTendance.input, { variante: "v2" }).protoWarnings.some((w) =>
-        w.startsWith("Variante 2 :")
+        w.startsWith("D1 ")
       )
     ).toBe(false);
   });
@@ -307,7 +330,7 @@ describe("Home vNext — invariants sur les 14 etats", () => {
         vm: JSON.stringify({
           ...v2,
           header: { ...v2.header, stateChip: v1.header.stateChip },
-          protoWarnings: v2.protoWarnings.filter((w) => !w.startsWith("Variante 2 :")),
+          protoWarnings: v2.protoWarnings.filter((w) => !w.startsWith("D1 ")),
         }),
       }).toEqual({ id: f.id, vm: JSON.stringify(v1) });
     }

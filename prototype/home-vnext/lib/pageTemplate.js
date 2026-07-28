@@ -198,8 +198,19 @@ const nomDeVariante = (v) => NOMS_VARIANTE[v] || v;
  * @param {?object} o.ecart        { qualite, texte } quand la correspondance n'est pas exacte
  */
 function pageEcran(o) {
-  const { variante, etatId, etatTitre, etatResume, device, vue, echelleTexte, html, cssHref, ecart } = o;
+  const { variante, etatId, etatTitre, etatResume, device, vue, echelleTexte, html, cssHref, ecart, presentation } = o;
   const nomVariante = nomDeVariante(variante);
+  // Une page ouverte SEULE (hors du visualiseur) doit dire avec quels reglages
+  // elle a ete rendue. Sans cette ligne, deux pages du meme etat qui ne different
+  // que par la typographie seraient indiscernables une fois enregistrees.
+  const ligneEchelleTypo = presentation
+    ? `Echelle typographique : <b>${esc(presentation.titre)}</b>` +
+      (presentation.reduceMotion
+        ? " · <b>« reduire les animations » actif</b> — au repos, l'ecran est identique a celui " +
+          "sans le reglage : ce qui change est le balisage, pas l'image."
+        : "") +
+      "<br>"
+    : "";
   const noteEchelle =
     echelleTexte === 1
       ? "texte a l'echelle 1"
@@ -245,7 +256,7 @@ function pageEcran(o) {
   ${esc(etatResume)}<br>
   <b>${device.width} x ${device.screenHeight}</b> — ${esc(device.reference)}<br>
   ${esc(device.calcul)}<br>
-  Vue : <b>${vue === "visible" ? "zone visible sans defilement" : "page entiere"}</b> · ${esc(
+  ${ligneEchelleTypo}Vue : <b>${vue === "visible" ? "zone visible sans defilement" : "page entiere"}</b> · ${esc(
     noteEchelle
   )}
   ${blocEcart}

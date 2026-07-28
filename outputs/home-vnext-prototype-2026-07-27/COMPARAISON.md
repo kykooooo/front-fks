@@ -106,7 +106,7 @@ L'audit compte, sur l'écran actuel (`AUDIT_HOME.md §3.2`) :
 
 | Information | Fois écrite aujourd'hui | Dans la proposition |
 |---|---:|---:|
-| L'état du jour (« Un peu chargé ») | **3** — pastille du header + titre de la carte `TON ÉTAT` + titre du conseil, souvent mot pour mot | **1** — la pastille du header, et seulement si l'app a de quoi le dire |
+| L'état du jour (« Un peu chargé ») | **3** — pastille du header + titre de la carte `TON ÉTAT` + titre du conseil, souvent mot pour mot | **1** en variante 1 (la pastille du header) · **0** en variante 2 — décision D1 du 28 juillet, sans condition |
 | La série (« N jours d'affilée ») | **2** — ligne de stats + carte Progression, même variable à 30 lignes d'écart | **0** — interdit dans le prototype |
 | L'action / la prochaine séance | **2 à 3** — le CTA + la carte du bas + l'alerte de l'onglet Séance | **1** — vérifié automatiquement sur les 150 pages |
 
@@ -235,6 +235,15 @@ police garde la courbe et perd la mise en garde. Détail et correction proposée
 > Fichier de mesures brut : [`mesures-hauteurs-variante2.md`](mesures-hauteurs-variante2.md).
 > **30 comparaisons**, produites par le même moteur de rendu que le reste du document.
 
+> ⚠️ **TOUTE LA SECTION 8 DATE DE L'ITÉRATION PRÉCÉDENTE.** Ces mesures (30 comparaisons,
+> +89,2 px, « 5 écrans basculent », les **29 px** de « Tendance disponible ») ont été faites
+> **avant** l'échelle typographique allégée et **avant** la 6ᵉ situation « Test physique en
+> recul ». Elles sont gardées telles quelles parce que ce sont celles que tu as regardées, et
+> parce que c'est de là que vient ton « les 29 px ne sont pas un problème ».
+> **Les chiffres à jour sont en §9.4 et §10** : 35 comparaisons, **+95,3 px (+15,6 %)**,
+> **21 → 17** écrans qui tiennent, et le dépassement de « Tendance disponible » passé de
+> **29 px à 9 px**. En cas de désaccord entre les deux, **ce sont §9.4 et §10 qui font foi**.
+
 ## 8.1 Le résumé en quatre lignes
 
 | Ce qu'on mesure | Variante 1 | Variante 2 |
@@ -352,7 +361,165 @@ règle d'honnêteté qui produit ce chiffre, pas une optimisation de mise en pag
 
 ---
 
+# 9. ITÉRATION FINALE — la typographie, avant et après
+
+Toutes les valeurs de cette section sont **mesurées sur le rendu réel** (Chrome sans
+interface, 7 états de la variante 2, aux largeurs indiquées), jamais lues dans le code.
+
+## 9.1 Rôle par rôle
+
+| Rôle | Où ça se voit | AVANT (actuelle) | APRÈS (allégée) | Ce qui bouge |
+|---|---|---|---|---|
+| salutation | « Salut, Yanis » | 22 px / **800** / interligne 28 / tracking −0,3 | 20 / 700 / 26 / −0,3 | −2 px, **−100 de graisse** |
+| titreAction | « Préparer ma séance », « Séance faite » | 17 px / **800** / 22 / +0,3 | 16 / 700 / 21 / +0,3 | −1 px, −100 |
+| overline | MA SEMAINE / MA PROGRESSION | 13 px / **800** / 16 / 1,2 / capitales | 12 / 700 / 16 / 0,8 / capitales | −1 px, −100, tracking calmé — **interligne inchangé** |
+| valeur | « 2 séances sur 3 », « +9 cm » | 16 px / 700 / 20 / 0 | 16 / 700 / 20 / 0 | **inchangé** |
+| **corps** | sous-titre d'action, messages | 13 px / 600 / 18 | **14 px** / 500 / **20** | **+1 px, +2 d'interligne** |
+| meta | portée, date, période | 12 px / 500 / 16 | 12 / 500 / 16 | **inchangé** |
+| **lien** | « Voir ma progression », « Voir le détail » | 13 px / 600 / 18 | **14 px** / 600 / **20** | **+1 px, +2 d'interligne** |
+| emphaseCorps | le préfixe « Pourquoi : » | 13 px / **800** / 18 | 14 / 600 / 20 | +1 px, **−200** |
+| emphaseMeta | le nom du cycle dans sa ligne | 12 px / 700 / 16 | 12 / 600 / 16 | −100 |
+| metaAppuyée | « À garder en tête », numéro d'étape | 12 px / **800** / 16 | 12 / 700 / 16 | −100 |
+
+## 9.2 LE CHIFFRE QUI COMPTE — le compte des graisses
+
+Compté sur les **129 textes** réellement rendus.
+
+| Condition | graisse ≥ **800** AVANT | graisse ≥ **800** APRÈS | graisse 700 APRÈS |
+|---|---:|---:|---:|
+| 320 px, taille normale | **32** | **0** | 54 |
+| 375 px, taille normale | **32** | **0** | 54 |
+| 375 px, texte ×1,3 | **32** | **0** | 54 |
+
+**Ton diagnostic (« la police paraît trop grosse ») portait sur le POIDS, pas sur la
+taille.** 32 textes en graisse 800 disparaissent de chaque écran, la graisse maximale
+tombe à 700 — et pourtant **le texte lu grandit** (corps et liens 13 → 14 px, interligne
+18 → 20).
+
+**Aucune valeur n'a été réduite pour gagner de la hauteur** (décision D2). Les
+métadonnées (12 px) et les valeurs chiffrées (16 px) ne perdent pas un pixel. L'interligne
+de l'overline reste à 16 : la hauteur de la ligne de titre est identique — la baisser
+aurait été une réduction de hauteur déguisée.
+
+## 9.3 Ce que ça coûte en hauteur — état par état
+
+| État | Largeur | Texte | AVANT | APRÈS | Écart | Zone visible | Sous la ligne |
+|---|---:|:--:|---:|---:|---:|---:|---:|
+| nouveau-joueur | 320 | ×1 | 434 px | 433 px | −1 | 519 | **0 — tient** |
+| nouveau-joueur | 375 | ×1 | 492 px | 491 px | −1 | 729 | **0 — tient** |
+| nouveau-joueur | 375 | ×1,3 | 568 px | 574 px | +6 | 729 | **0 — tient** |
+| deux-seances-tendance-indisponible | 320 | ×1 | 667 px | 692 px | +25 | 519 | 173 |
+| deux-seances-tendance-indisponible | 375 | ×1 | 707 px | 712 px | +5 | 729 | **0 — tient** |
+| deux-seances-tendance-indisponible | 375 | ×1,3 | 836 px | 871 px | +35 | 729 | 142 |
+| tendance-disponible | 320 | ×1 | 713 px | 716 px | +3 | 519 | 197 |
+| **tendance-disponible** | **375** | **×1** | **737 px** | **738 px** | **+1** | **729** | **9** |
+| tendance-disponible | 375 | ×1,3 | 878 px | 882 px | +4 | 729 | 153 |
+| test-physique-ameliore | 320 | ×1 | 715 px | 718 px | +3 | 519 | 199 |
+| test-physique-ameliore | 375 | ×1 | 739 px | 740 px | +1 | 729 | 11 |
+| test-physique-ameliore | 375 | ×1,3 | 880 px | 884 px | +4 | 729 | 155 |
+| test-physique-en-recul | 320 | ×1 | 722 px | 747 px | +25 | 519 | 228 |
+| test-physique-en-recul | 375 | ×1 | 762 px | 767 px | +5 | 729 | 38 |
+| test-physique-en-recul | 375 | ×1,3 | 902 px | 937 px | +35 | 729 | 208 |
+| aucune-comparaison-de-test | 320 | ×1 | 901 px | 960 px | +59 | 519 | 441 |
+| aucune-comparaison-de-test | 375 | ×1 | 923 px | 938 px | +15 | 729 | 209 |
+| aucune-comparaison-de-test | 375 | ×1,3 | 1 166 px | 1 201 px | +35 | 729 | 472 |
+| donnee-manquante | 320 | ×1 | 589 px | 614 px | +25 | 519 | 95 |
+| donnee-manquante | 375 | ×1 | 615 px | 634 px | +19 | 729 | **0 — tient** |
+| donnee-manquante | 375 | ×1,3 | 750 px | 785 px | +35 | 729 | 56 |
+
+**La typographie allégée coûte de la hauteur, elle n'en gagne pas** — jusqu'à +59 px dans
+le pire cas. C'est la conséquence directe de D2 : le texte lu grandit, donc l'écran
+grandit. C'était le choix, il est assumé.
+
+### Le repère que tu as cité — les 29 px
+
+**Le seul « avant » rejouable est la TYPOGRAPHIE.** L'écran de l'itération précédente
+n'existe plus sur disque : ni sa pastille, ni son ancienne règle de sélection ne peuvent
+être rejoués côte à côte. Un point de repère existe quand même, et il recoupe ton chiffre :
+
+> Sur l'écran de référence (`tendance-disponible`, 375 px), la version que tu as regardée
+> mesurait **758 px, soit 29 px sous la ligne**.
+> Elle mesure aujourd'hui **738 px, soit 9 px**.
+> **Les 29 px sont devenus 9.**
+
+L'écart ne vient pas de la typographie (qui ajoute +1 px), mais du **compactage de la ligne
+« Séances terminées »** et du retrait de la pastille — expliqués dans
+[`DECISIONS_VISUELLES.md`](DECISIONS_VISUELLES.md).
+
+## 9.4 Ce que la carte coûte face au lien qu'elle remplace
+
+Moyenne sur **35 comparaisons** variante 1 → variante 2 : **+95,3 px, soit +15,6 %**.
+Écrans tenant entièrement sans défiler : **21 en variante 1, 17 en variante 2, sur 35**.
+Le tableau ligne à ligne est dans
+[`mesures-hauteurs-variante2.md`](mesures-hauteurs-variante2.md).
+
+---
+
+# 10. LES ÉTATS QUI DEMANDENT DE FAIRE DÉFILER
+
+**16 combinaisons sur 21** — les 7 états × 3 conditions (320 px taille normale, 375 px
+taille normale, 375 px en texte ×1,3), échelle allégée, celle par défaut. Classées du moins
+gênant au plus gênant.
+
+**Rappel du cadre (décision D2)** : le défilement est **accepté**. Ce qui est vérifié
+séparément, et qui serait un vrai défaut, c'est qu'un contenu soit **masqué** par la barre
+d'onglets — ce n'est le cas nulle part.
+
+| État | Largeur | Texte | Contenu | Visible | Sous la ligne |
+|---|---:|:--:|---:|---:|---:|
+| tendance-disponible | 375 | ×1 | 738 px | 729 px | **9 px** |
+| test-physique-ameliore | 375 | ×1 | 740 px | 729 px | **11 px** |
+| test-physique-en-recul | 375 | ×1 | 767 px | 729 px | **38 px** |
+| donnee-manquante | 375 | ×1,3 | 785 px | 729 px | **56 px** |
+| donnee-manquante | 320 | ×1 | 614 px | 519 px | **95 px** |
+| deux-seances-tendance-indisponible | 375 | ×1,3 | 871 px | 729 px | **142 px** |
+| tendance-disponible | 375 | ×1,3 | 882 px | 729 px | **153 px** |
+| test-physique-ameliore | 375 | ×1,3 | 884 px | 729 px | **155 px** |
+| deux-seances-tendance-indisponible | 320 | ×1 | 692 px | 519 px | **173 px** |
+| tendance-disponible | 320 | ×1 | 716 px | 519 px | **197 px** |
+| test-physique-ameliore | 320 | ×1 | 718 px | 519 px | **199 px** |
+| test-physique-en-recul | 375 | ×1,3 | 937 px | 729 px | **208 px** |
+| aucune-comparaison-de-test | 375 | ×1 | 938 px | 729 px | **209 px** |
+| test-physique-en-recul | 320 | ×1 | 747 px | 519 px | **228 px** |
+| aucune-comparaison-de-test | 320 | ×1 | 960 px | 519 px | **441 px** |
+| aucune-comparaison-de-test | 375 | ×1,3 | 1 201 px | 729 px | **472 px** |
+
+**Tiennent entièrement sans défiler : 5 sur 21** — dont **les trois rendus de
+`nouveau-joueur`** : le tout premier écran d'un compte neuf tient à toutes les largeurs
+**et** en texte ×1,3. C'est le seul écran où ça compte vraiment : un joueur qui vient de
+s'inscrire ne sait pas encore qu'il peut faire défiler.
+
+Deux cas hors de ce tableau, relevés par le vérificateur à 390 px :
+`test-physique-en-recul` (+9 px) et `aucune-comparaison-de-test` (+180 px).
+
+### Le pire cas, et ce qu'il vaut vraiment
+
+`aucune-comparaison-de-test` est l'état le plus long du lot **parce qu'il explique**.
+Il ne montre pas un chiffre : il dit pourquoi il n'en montre pas (deux essais du même
+jour ne sont pas une progression). C'est le seul écran où le texte remplace la donnée.
+
+Le raccourcir voudrait dire **retirer l'explication** — c'est-à-dire revenir à un écran qui
+affiche « +35 m » sans dire d'où ça sort. Interdit par D2 : pas de réduction des textes
+explicatifs pour gagner de la hauteur.
+
+---
+
 ## Annexe — le nommage des captures
+
+### Itération finale — dossier [`captures-final/`](captures-final/)
+
+| Motif | Contenu |
+|---|---|
+| `etat-01` … `etat-06-<cas>-375-page-entiere.png` | Les 6 cas de la carte, 375 px, rien n'est coupé |
+| `etat-R1-preuve-donnee-manquante-375-page-entiere.png` | La preuve qu'une donnée inconnue disparaît |
+| `comparaison-typo-actuelle-vs-allegee-<cas>-<largeur>.png` | **La question du moment**, ×3 |
+| `comparaison-progression-avant-apres-<cas>-375.png` | Lien flottant contre carte intégrée, ×3 |
+| `mouvement-reduit-vs-normal-tendance-disponible-375.png` | Le réglage d'accessibilité, avec la preuve dans le balisage |
+| `largeur-320px-iphone-se-<cas>.png` | Les 2 cas sur le petit iPhone |
+| `texte-agrandi-x1-3-<cas>-375.png` | Texte grossi de 30 %, ×2 |
+| `outil-visualiseur-bascules-et-regle.png` | L'outil, toutes les bascules, panneau « La règle » |
+| `outil-visualiseur-axes-a-trancher.png` | L'outil, panneau « Valider » |
+| `_rapport-captures.json` | Le compte-rendu machine : **20 réussies, 0 échouée** |
 
 ### Variante 2 — dossier [`captures-v2/`](captures-v2/)
 

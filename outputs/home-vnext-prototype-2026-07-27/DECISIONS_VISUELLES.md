@@ -47,6 +47,135 @@ Chaque palier indique d'où il vient, et rien n'est inventé.
 
 ---
 
+## 1 bis. L'ÉCHELLE ALLÉGÉE — pourquoi elle calme la hiérarchie *(itération finale)*
+
+### Ton diagnostic, et ce que la mesure a répondu
+
+Tu as dit : **« la police paraît parfois trop grosse »**. J'ai mesuré avant de toucher quoi
+que ce soit. La taille n'était pas le problème : **cinq rôles sur dix étaient en graisse
+800** — la salutation, le titre d'action, le titre de section, le préfixe « Pourquoi : » et
+le titre de note. Sur le rendu réel, ça faisait **32 textes en graisse 800 par écran**.
+
+**Analogie foot** : ce n'est pas que les joueurs soient trop grands. C'est qu'ils crient
+tous en même temps. Quand cinq voix hurlent, on n'entend plus qui donne la consigne — et
+c'est exactement ce qui donne l'impression de « gros ».
+
+### La règle appliquée : baisser le VOLUME, pas la TAILLE
+
+| | Avant | Après |
+|---|---:|---:|
+| Rôles en graisse **800** | **5** | **0** |
+| Graisse maximale de l'écran | 800 | **700** |
+| Taille du texte courant | 13 px | **14 px** |
+| Interligne du texte courant | 18 | **20** |
+| Taille des liens | 13 px | **14 px** |
+| Taille des métadonnées | 12 px | **12 px** (inchangé) |
+| Taille des valeurs chiffrées | 16 px | **16 px** (inchangé) |
+
+**Le texte qu'on lit vraiment a GRANDI pendant que le bruit baissait.** C'est le point
+central : ce n'est pas un écran rapetissé, c'est un écran qui arrête de tout souligner.
+
+### Mes choix dans les fourchettes que tu as données
+
+Tu as donné des fourchettes, pas des valeurs. Voici ce que j'ai pris et pourquoi.
+
+| Ta fourchette | Ce que j'ai pris | Pourquoi |
+|---|---|---|
+| valeurs principales « 16-17 » | **16**, le bas | c'est déjà ce qui était à l'écran. Monter à 17 aurait **grossi** un texte sur un écran que tu trouvais trop gros. |
+| texte courant « 400 ou 500 » | **500** | ce palier porte surtout du gris secondaire (contraste 6,08:1). À 400, la lecture en plein soleil se dégrade. 500 quitte quand même le 600 actuel. |
+| métadonnées « 12-13 » | **12**, le bas | c'est la valeur déjà en place. Rien ne bouge. |
+
+### Trois rôles que ta liste ne couvrait pas — alignés et déclarés
+
+Ils étaient écrits **en dur dans les composants** (`fontWeight: "800"` posé à la main), ce
+qui est exactement la maladie qu'une échelle est censée soigner. Ils sont remontés dans
+l'échelle :
+
+- **le préfixe « Pourquoi : »** et **le nom du cycle** → graisse **600**, celle des liens
+  secondaires, seule graisse d'appui de la nouvelle échelle ;
+- **« À garder en tête » et les numéros d'étape** → graisse **700**, celle des labels.
+  Ce sont des **étiquettes posées sur du contenu**, pas des mots appuyés dans une phrase.
+
+Deux réglages non spécifiés ont été **conservés tels quels**, volontairement : le tracking
+de la salutation (−0,3), celui du titre d'action (+0,3), et **l'interligne de l'overline
+(16)** — le baisser aurait été une réduction de hauteur déguisée, interdite par D2.
+
+### Ce que ça coûte, dit franchement
+
+**De la hauteur.** Jusqu'à +59 px sur l'état le plus long. C'est la conséquence directe de
+D2 : le texte lu grandit, donc l'écran grandit. Le tableau complet est en §9.3 de
+[`COMPARAISON.md`](COMPARAISON.md).
+
+### Un rôle hors de portée, et il est dit plutôt que caché
+
+La pastille d'état de la **variante 1** est rendue par `components/ui/Badge`, hors du
+périmètre modifiable du prototype : son texte garde sa propre métrique. Sans conséquence
+sur l'écran validé — **la variante 2 n'affiche aucune pastille** (D1).
+
+---
+
+## 1 ter. LA POLITIQUE D'AGRANDISSEMENT — texte par texte
+
+Un joueur peut grossir la police de son téléphone. La question n'est pas « est-ce qu'on
+l'autorise » (**on l'autorise toujours**), c'est « est-ce qu'on plafonne certains textes ».
+
+### Règle 0 — l'agrandissement système n'est JAMAIS désactivé
+
+`allowFontScaling={false}` n'apparaît **nulle part** dans le prototype. Un test le vérifie
+sur les 15 états, texte par texte. C'est la ligne rouge : couper l'agrandissement, c'est
+rendre l'app inutilisable pour quelqu'un qui voit mal.
+
+### Ce qui est plafonné — trois textes, et rien d'autre
+
+| Texte | Plafond | Pourquoi |
+|---|:--:|---|
+| « Salut, Yanis » | **×1,2** | Texte d'**affichage**. Deux mots, une seule ligne. Au-delà, il occupe la hauteur d'une carte entière sans rien apprendre à personne. La date juste en dessous, elle, **n'est pas bornée du tout** — c'est elle qui porte l'information de l'en-tête. |
+| Le libellé de l'action du jour (« C'est parti », « Réessayer »…) | **×1,2** | Texte d'**affichage**. L'information réelle du bloc est dans le **sous-titre** (« Force bas du corps · 45 min · Modérée »), qui n'est **pas** borné. Borner le titre **libère justement la place** pour que le sous-titre grandisse. |
+| MA SEMAINE / MA PROGRESSION | **×1,15** | Repères de **structure**, pas d'information. En capitales avec du tracking, ils occupent déjà beaucoup de largeur ; un plafond un peu plus bas évite qu'un simple intitulé passe à deux lignes **avant** le contenu qu'il annonce. |
+
+### Ce qui n'est PAS plafonné — tout le reste
+
+Et « pas plafonné » veut dire que la consigne n'est **même pas posée** sur le texte, pas
+qu'elle est posée avec une valeur généreuse :
+
+- les **valeurs chiffrées** (« 2 séances sur 3 », « 76 min », l'écart d'un test) ;
+- **tout le texte courant** : sous-titre d'action, ligne « Pourquoi », messages, explications ;
+- **les métadonnées**, et en particulier **la portée de la mesure** (« calculé sur tes
+  séances FKS uniquement — tes entraînements club n'y sont pas comptés ») ;
+- **les libellés de liens** (« Voir le détail », « Voir ma progression »).
+
+Ce sont exactement les textes qu'un joueur malvoyant a besoin de voir grandir. Un test
+vérifie **dans les deux sens** : la liste des textes plafonnés est **fermée**, et tout
+autre texte plafonné fait échouer la suite. Un plafond posé par erreur sur la portée de la
+mesure serait donc attrapé.
+
+### La règle qui prime sur tout : les zones tactiles
+
+**Un plafond de texte ne doit jamais rapetisser une cible du doigt.** C'est vérifié, pas
+supposé :
+
+| Élément | Hauteur minimale | D'où elle vient |
+|---|---:|---|
+| L'aplat d'action du jour | **76 pt** | posée par le **conteneur**, pas dérivée de la taille du texte. Plafonner son libellé ne peut donc pas le rapetisser — et son sous-titre non borné le fait **grandir** au-delà de 76 quand le système agrandit. 76 pt = 1,7 fois le plancher de 44 pt. |
+| Les liens (secondaire, sortie, pied de carte) | **44 pt** | et leur libellé n'est **pas** borné. Rien ne rétrécit. |
+
+Aucun autre élément de l'écran n'est tactile.
+
+### La limite de ce que tu vois dans le navigateur — mesurée, pas supposée
+
+`react-native-web` **ne transmet pas** `maxFontSizeMultiplier` au navigateur (vérifié sur
+le HTML généré : la propriété en est absente). Les pages « ×1,3 » du visualiseur
+multiplient **toutes** les tailles par 1,3 : elles montrent donc le **pire cas**,
+entièrement non plafonné.
+
+C'est conservateur — si la mise en page tient sans plafond, elle tient avec — mais il faut
+le savoir en regardant ces pages. Émuler les plafonds serait impossible pour 2 des 3 rôles :
+le titre d'action (16 px) partage sa classe CSS avec les valeurs (16 px), et l'overline
+(12 px) avec les métadonnées (12 px). Seule la salutation (20 px) a une taille unique.
+**Le plafond est réel sur téléphone et absent des captures web.**
+
+---
+
 ## 2. Les rayons — 2 valeurs au lieu de 7
 
 Le Home actuel utilise sept rayons en valeurs écrites à la main : **26, 22, 20, 16, 14, 12,
@@ -332,6 +461,188 @@ Ce que ça préserve, et ce que ça te donne quand même :
 Autrement dit : **tu perds une zone de clic que personne ne voyait, tu gardes tout le
 reste.** Si tu veux quand même la carte entière cliquable, c'est un arbitrage possible —
 mais il se paie sur la phrase de portée, et il faudra le décider en le sachant.
+
+---
+
+## 6 ter. LE COMPACTAGE DE « SÉANCES TERMINÉES » — et le piège qu'il fallait éviter
+
+### Le problème
+
+Sur l'état `ready`, la carte affiche **un** fait complémentaire en plus de la courbe.
+Il occupait une **ligne pleine de relevé** : filet de séparation + libellé + grosse valeur.
+Ta demande : **« compacter, sans perdre le sens »**.
+
+### Ce qui a été fait
+
+Le cumul descend au rang de **métadonnée**, comme la phrase de portée juste au-dessus.
+Le calcul, sur les jetons d'espacement (taille de texte normale, libellé sur une ligne) :
+
+| | Composition | Hauteur |
+|---|---|---:|
+| **Avant** | filet (marge 12 + trait ~0,5) + ligne (marge 8 + `minHeight` 22) | **42,5 px** |
+| **Après** | ligne (marge 8 + hauteur de ligne 16, palier `meta`) | **24,0 px** |
+| | | **≈ −18 px** |
+
+**Aucune zone tactile touchée, aucun mot retiré** — les deux seules choses que tu as
+interdites pour gagner de la hauteur. Le libellé, lui, **s'allonge**.
+
+Pourquoi ce n'est pas une trahison de la hiérarchie : dans l'état `ready`, **la courbe est
+le contenu de la carte**. Le cumul est un complément. Dans l'état `collecting`, où les faits
+**sont** le contenu (il n'y a ni courbe ni rien d'autre), ils gardent leur relevé en lignes
+pleines. La forme suit le rôle, pas l'inverse.
+
+Ce que la forme compacte **ne change pas** : le libellé et la valeur restent deux textes
+distincts écrits par le programme (le composant ne compose aucune phrase, n'invente aucun
+chiffre) ; la ligne reste un nœud d'accessibilité à part, annoncé « libellé : valeur » ;
+et elle garde son marqueur, donc la règle R1 (« un fait sans donnée disparaît ») reste
+vérifiable exactement de la même façon.
+
+### LE PIÈGE : deux comptes de séances à 300 px l'un de l'autre
+
+C'est le point le plus important de cette section.
+
+Sur le même écran, le joueur lit **deux nombres de séances** :
+
+```
+MA SEMAINE
+1 séance sur 2                    ← la semaine en cours
+
+MA PROGRESSION
+Séances terminées …          12   ← le cumul depuis toujours
+```
+
+Un garde-fou existait déjà (**R7**) : si un fait de la carte affichait **exactement** le
+nombre que « Ma semaine » affiche, il est retiré et la carte change de fait. Mais il ne
+protège que de deux nombres **identiques**. Il n'empêche pas un joueur de lire
+« Séances terminées : 12 » sous « 1 séance sur 2 » et de se demander **laquelle compte quoi**.
+
+**La distinction devait donc être portée par le LIBELLÉ, pas par la taille du texte** —
+d'autant plus que la ligne vient justement d'être compactée. D'où le suffixe :
+
+> **« Séances terminées depuis tes débuts »**
+
+Trois décisions dans ce petit bout de phrase :
+
+1. **« depuis tes débuts » plutôt que « au total ».** Il nomme la **période**, qui est
+   exactement l'axe de la confusion (*cette semaine* contre *depuis le début*), là où
+   « au total » nomme une opération.
+2. **Appliqué au SEUL compteur de séances.** Les minutes, les ressentis et les jours
+   d'entraînement ne comptent pas des séances : les qualifier tous alourdirait quatre lignes
+   pour lever une ambiguïté qui n'existe que sur une seule.
+3. **Pas dans l'en-tête de la carte**, l'autre emplacement possible. La légende de l'en-tête
+   porte déjà la période de la courbe (« 7 derniers jours ») et vit sur la ligne du titre.
+   Y ajouter « 12 séances terminées depuis tes débuts » ferait **tronquer « MA PROGRESSION »**
+   dès 375 px, et bien avant en texte agrandi. Le gain de hauteur aurait été payé par une
+   troncature du titre.
+
+**Bilan : on gagne 18 px de hauteur ET on lève une ambiguïté qui existait avant.**
+C'est le seul endroit du lot où compacter a rendu l'écran plus clair, pas moins.
+
+---
+
+## 6 quater. LE RETRAIT DE LA PASTILLE D'ÉTAT — décision D1
+
+### Ce qui a été retiré
+
+Sur la variante 2, l'en-tête n'affiche **plus aucun** jugement global. Ni « En forme », ni
+« Frais », ni « Prêt à performer », ni « Un peu chargé », ni « Charge modérée ».
+
+### Pourquoi c'est plus fort qu'un simple masquage
+
+L'itération précédente masquait la pastille **derrière une condition** : elle revenait dès
+que les charges club seraient capturées. Ce n'est plus le cas.
+
+**Le champ d'entrée et le champ de sortie ont été SUPPRIMÉS du contrat.** Il n'existe donc
+aucune valeur d'entrée, aucun drapeau, aucune combinaison de données capable de faire
+réapparaître un libellé d'état en variante 2. Ce n'est plus une convention de rédaction
+qu'un développeur pourrait contourner : c'est une absence de tuyau.
+
+### Un effet de bord trouvé en faisant le ménage, et corrigé
+
+Le contrôle automatique qui comptait les pastilles était écrit sur le champ **désormais
+supprimé**. Son expression valait donc **toujours zéro** : le contrôle passait au vert sans
+plus rien protéger. Il a été réécrit sur le **marqueur réellement rendu**, avec l'attendu
+(**0**) **écrit en clair**, sur les 60 pages de la variante 2. Un second filet compte aussi
+les libellés d'état dans le texte de l'**écran entier**, au cas où un état reviendrait
+ailleurs que dans une pastille.
+
+### Pourquoi la variante 1 la garde
+
+Uniquement pour que **l'écart se voie**. En côte à côte, le haut des deux colonnes est la
+démonstration la plus courte de ce que la décision change. Ce n'est pas une hésitation.
+
+### Ce qui n'a PAS été proposé, et pourquoi
+
+La reformulation envisagée à l'itération précédente — **« Charge FKS : modérée »** — est
+**écartée**. « Charge modérée » fait partie des libellés que tu as nommément interdits.
+
+Le motif tient en une phrase, et il est plus profond que la question du club : **le calcul
+lui-même part de valeurs d'usine** (`ATL0` / `CTL0`). Même en capturant parfaitement les
+entraînements club, la pastille resterait assise sur une amorce artificielle. Connaître les
+charges club n'aurait donc pas suffi.
+
+**Ce qu'il faudrait pour qu'une mention de charge revienne** : un calcul reposant sur des
+données **entièrement** réelles, et une **portée écrite à côté** — exactement ce que la
+courbe fait déjà (« Calculé sur tes séances FKS uniquement »). Tant que les deux ne sont pas
+réunis, l'en-tête reste nu.
+
+> **À faire aussi côté page Progression.** Le même libellé y est toujours affiché
+> (`screens/ProgressScreen.tsx`:240 et :470-474). Le retirer d'un écran et le laisser sur
+> l'autre ne change rien pour le joueur : il le lit quand même, un clic plus loin.
+> C'est l'**étape 1** de [`MIGRATION_PROGRESSSCREEN.md`](MIGRATION_PROGRESSSCREEN.md).
+
+---
+
+## 6 quinquies. LE MOUVEMENT — ce qu'on a le droit d'animer
+
+### La règle
+
+**Aucune animation en boucle. Jamais, quel que soit le réglage.** La seule animation du
+prototype est l'**enfoncement du bouton sous le doigt** — une réponse au geste, pas une
+animation d'attention.
+
+Techniquement, la fonction qui anime la pression **ne contient aucun `useEffect`** : rien
+ne peut démarrer au montage. Une pulsation d'attention n'est pas « désactivée », elle est
+**inécrivable** sans ajouter du code qui se verrait.
+
+### Quand le joueur demande moins d'animations
+
+- Le conteneur du bouton du jour ne porte **plus aucune** consigne de mouvement — pas même
+  une consigne neutre. (Une consigne neutre rendrait le test incapable de distinguer
+  « aucun mouvement » de « un mouvement immobile ».)
+- **L'assombrissement à l'appui est CONSERVÉ** dans les deux cas. Un fondu n'est pas un
+  mouvement — le système lui-même substitue des fondus aux transitions glissées. Le doigt
+  reste acquitté.
+- **Aucune information n'est portée par un mouvement** : l'action du jour reste
+  identifiable à l'arrêt. C'est le seul aplat coloré de l'écran, elle porte son libellé, son
+  chevron, son rôle de bouton et ses 76 pt de hauteur.
+
+### Le test prouve qu'il mord — deux fois
+
+1. **Un canari** : un faux composant reproduit exactement le défaut de production (une
+   boucle infinie lancée au montage). Un test exige que le détecteur l'attrape. Sans lui,
+   « zéro boucle détectée » serait aussi vrai avec un détecteur cassé.
+2. **Une mutation réelle**, faite puis retirée : la boucle de production a été injectée dans
+   le bouton du prototype et le garde relancé. Résultat : **ÉCHEC** (« attendu 0, reçu 1 »).
+   La mutation a été retirée et la suite repasse au vert.
+
+**Effet de bord utile à connaître pour l'intégration** : avec la boucle injectée, la suite
+de tests **ne se terminait plus** (une animation JS infinie affame la boucle d'événements).
+Une pulsation non gardée ne fera donc pas seulement échouer un test — **elle bloquera la CI**.
+
+### Le contre-exemple est en production
+
+`components/home/HomePrimaryCTA.tsx`, lignes **39-49** : `Animated.loop` infini, pulsation
+d'échelle 1 → 1,015, 900 ms dans chaque sens, lancée dans un `useEffect` qui **ne consulte
+jamais** `reduceMotion` — alors que `screens/HomeScreen.tsx` (lignes 70-76) le consulte pour
+son fondu d'entrée. Le même écran respecte donc la préférence pour son apparition et
+l'ignore pour son bouton principal. Hors périmètre, **non corrigée**.
+
+La démonstration est involontaire et parfaite : le harnais **force** « mouvement réduit »
+avant chaque rendu, et deux générations successives produisent des fichiers rigoureusement
+identiques **partout sauf sur ce bouton**, dont l'échelle varie (`1.014793…` puis
+`1.014800…`). Il pulse quand même. C'est la preuve, sur un fichier, que la préférence
+d'accessibilité n'est pas respectée en production.
 
 ---
 

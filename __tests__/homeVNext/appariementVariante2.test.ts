@@ -162,12 +162,16 @@ describe("appariement de la variante 2 — coherence avec l'ecran d'accueil", ()
 
 describe("appariement de la variante 2 — l'ecran ne se contredit pas lui-meme", () => {
   // ---------------------------------------------------------------------------
-  // 1. LA PASTILLE D'ETAT DU JOUR
+  // 1. LA PASTILLE D'ETAT DU JOUR — RETIREE (D1)
   // ---------------------------------------------------------------------------
-  // Le harnais doit construire le ViewModel du Home AVEC les options de la
-  // variante 2. Sans elles, l'ecran rendu annoncerait « En forme » a 200 px
+  // Le harnais doit construire le ViewModel du Home AVEC l'option de la
+  // variante 2. Sans elle, l'ecran rendu annoncerait « En forme » a 200 px
   // au-dessus d'une carte qui ecrit « tes entraînements club n'y sont pas
-  // comptés » — le defaut que ces options corrigent.
+  // comptés » — le defaut que cette option corrige.
+  //
+  // Depuis D1 (2026-07-28) le retrait n'est plus conditionne aux charges club :
+  // il est complet. Cote carte, il n'y a meme plus de champ ou un etat pourrait
+  // se loger — d'ou la verification par les CLES et non par un `connu: false`.
   // ---------------------------------------------------------------------------
   it("le harnais construit le Home avec les options de la variante 2", () => {
     expect(appariement.OPTIONS_VM_VARIANTE2).toEqual({ variante: "v2" });
@@ -181,10 +185,10 @@ describe("appariement de la variante 2 — l'ecran ne se contredit pas lui-meme"
       const homeVm = buildHomeVNextViewModel(home.input, appariement.OPTIONS_VM_VARIANTE2);
       const progVm = buildProgressionViewModel(prog.input);
 
-      // Les deux blocs qui pourraient annoncer un etat physique global se
-      // taisent, et pour la MEME raison : les charges club ne sont pas captures.
+      // Les deux blocs qui pouvaient annoncer un etat physique global se taisent,
+      // et pour la MEME raison : le fondateur l'a retire des deux.
       expect(homeVm.header.stateChip).toBeNull();
-      expect(progVm.etatGlobal.connu).toBe(false);
+      expect(Object.keys(progVm)).not.toContain("etatGlobal");
     }
   );
 

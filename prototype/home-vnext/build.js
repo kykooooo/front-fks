@@ -31,9 +31,12 @@ const { pageEcran, pageErreur } = require("./lib/pageTemplate");
 const scenariosActuel = require("./lib/scenariosActuel");
 const { MAPPING, EXTRAS_ACTUEL, byFixture } = require("./lib/mapping");
 const { POINTS, POINTS_PROGRESSION } = require("./lib/pointsAValider");
+const { AXES, COUVERTURE } = require("./lib/axesAValider");
+const { CHANGEMENTS, INCHANGE } = require("./lib/iteration");
 const { viewerHtml, viewerCss, viewerJs } = require("./lib/viewerTemplate");
 const { LIMITES, STUBS_DECRITS } = require("./lib/limites");
 const appariement = require("./lib/appariementVariante2");
+const presentations = require("./lib/presentations");
 
 // ---------------------------------------------------------------------------
 // Contrat : fixtures, seuils, jetons visuels
@@ -53,11 +56,40 @@ try {
 // 14 etats, et le harnais le rend en plus pour qu'on puisse le regarder.
 const TOUTES_LES_FIXTURES = fixturesMod.HOME_VNEXT_FIXTURES_RENDU || fixturesMod.HOME_VNEXT_FIXTURES;
 
-// Les six cas de la carte progression (5 de demonstration + la preuve R1).
+// Les sept cas de la carte progression (6 de demonstration + la preuve R1).
 // Absents tant que l'autre agent n'a pas livre `fixtures.ts` : on ne plante pas,
 // la variante 2 est simplement annoncee indisponible.
 const FIXTURES_PROGRESSION = fixturesMod.PROGRESSION_FIXTURES_RENDU || [];
 const progMod = render.getProgressionModule();
+
+// ---------------------------------------------------------------------------
+// L'axe « presentation » : typographie x mouvement.
+// ---------------------------------------------------------------------------
+// Les combinaisons viennent du PRODUIT (`PRESENTATIONS_A_COMPARER`), jamais
+// d'une liste recopiee ici — voir lib/presentations.js. Si le module est
+// illisible, `construirePresentations` retombe sur la seule combinaison par
+// defaut : le visualiseur perd l'axe, il n'invente pas de reglages.
+// ---------------------------------------------------------------------------
+let presentationMod = null;
+try {
+  presentationMod = require(path.join(APP_ROOT, "components/homeVNext/homeVNextPresentation.tsx"));
+} catch (err) {
+  console.warn("[harnais] module de presentation illisible :", err.message);
+}
+let typoMod = null;
+try {
+  typoMod = require(path.join(APP_ROOT, "components/homeVNext/homeVNextTypo.ts"));
+} catch (err) {
+  console.warn("[harnais] echelles typographiques illisibles :", err.message);
+}
+// Libelles des champs de test, pour afficher l'ordre de departage en francais
+// plutot qu'en identifiants. Lecture SEULE d'un fichier hors perimetre.
+let testConfigMod = null;
+try {
+  testConfigMod = require(path.join(APP_ROOT, "screens/tests/testConfig.ts"));
+} catch (err) {
+  console.warn("[harnais] libelles de tests illisibles :", err.message);
+}
 
 // ---------------------------------------------------------------------------
 // Filtres de mise au point (facultatifs) — pour iterer vite pendant le travail.
@@ -81,6 +113,19 @@ const DEVICES_ACTIFS = FILTRE_LARGEURS.length
   ? DEVICES.filter((d) => FILTRE_LARGEURS.indexOf(d.width) !== -1)
   : DEVICES;
 const PARTIEL = FIXTURES.length !== TOUTES_LES_FIXTURES.length || DEVICES_ACTIFS.length !== DEVICES.length;
+
+const PRESENTATIONS = presentations.construirePresentations(
+  presentationMod ? presentationMod.PRESENTATIONS_A_COMPARER : null,
+  DEVICES_ACTIFS.map((d) => d.width)
+);
+const PRESENTATION_DEFAUT = PRESENTATIONS[0];
+
+/** Les presentations reellement generees pour une variante et une largeur. */
+function presentationsPour(variante, width) {
+  return PRESENTATIONS.filter(
+    (p) => p.variantes.indexOf(variante) !== -1 && p.largeurs.indexOf(width) !== -1
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Regroupement des etats pour la liste laterale
@@ -138,9 +183,12 @@ function ecrire(rel, contenu) {
   return rel.replace(/\\/g, "/");
 }
 
-function nomPage(etatId, width, vue, scale) {
+function nomPage(etatId, width, vue, scale, suffixePresentation) {
   const suffixe = scale === 1 ? "" : `-x${String(scale).replace(".", "")}`;
-  return `${etatId}-${width}${suffixe}-${vue}.html`;
+  // Le suffixe de presentation est VIDE pour la combinaison par defaut : les
+  // pages deja validees gardent exactement le meme nom qu'avant l'ajout de cet
+  // axe. Deux builds successifs restent donc comparables au bit pres.
+  return `${etatId}-${width}${suffixe}-${vue}${suffixePresentation || ""}.html`;
 }
 
 // ---------------------------------------------------------------------------
@@ -187,12 +235,13 @@ const VERSION_RESSOURCES = empreinteDesSources();
 // ---------------------------------------------------------------------------
 // Ecriture des 4 fichiers (2 vues x 2 echelles) d'un rendu
 // ---------------------------------------------------------------------------
-function ecrirePages({ variante, etatId, etatTitre, etatResume, device, html, ecart }) {
+function ecrirePages({ variante, etatId, etatTitre, etatResume, device, html, ecart, presentation }) {
   const pages = {};
   const echelles = device.width === SCALE_WIDTH ? [1, TEXT_SCALE] : [1];
+  const suffixe = presentation ? presentation.suffixe : "";
   for (const echelle of echelles) {
     for (const vue of ["visible", "entiere"]) {
-      const rel = `pages/${variante}/${nomPage(etatId, device.width, vue, echelle)}`;
+      const rel = `pages/${variante}/${nomPage(etatId, device.width, vue, echelle, suffixe)}`;
       const contenu = pageEcran({
         variante,
         etatId,
@@ -205,6 +254,7 @@ function ecrirePages({ variante, etatId, etatTitre, etatResume, device, html, ec
         cssHref:
           (echelle === 1 ? "../../app.css" : "../../app-x13.css") + "?v=" + VERSION_RESSOURCES,
         ecart,
+        presentation,
       });
       pages[`${device.width}${echelle === 1 ? "" : "-x13"}-${vue}`] = ecrire(rel, contenu);
     }
@@ -221,12 +271,14 @@ function ecrirePagesErreur({
   viewModel,
   titreVm,
   noteVm,
+  presentation,
 }) {
   const pages = {};
   const echelles = device.width === SCALE_WIDTH ? [1, TEXT_SCALE] : [1];
+  const suffixe = presentation ? presentation.suffixe : "";
   for (const echelle of echelles) {
     for (const vue of ["visible", "entiere"]) {
-      const rel = `pages/${variante}/${nomPage(etatId, device.width, vue, echelle)}`;
+      const rel = `pages/${variante}/${nomPage(etatId, device.width, vue, echelle, suffixe)}`;
       const contenu = pageErreur({
         variante,
         etatId,
@@ -244,6 +296,23 @@ function ecrirePagesErreur({
     }
   }
   return pages;
+}
+
+/**
+ * Range un lot de pages dans le bloc d'une variante.
+ *
+ * `bloc.pages` reste la presentation PAR DEFAUT — c'est la seule que tout le
+ * reste du visualiseur connaissait, et rien de ce qui la lit n'a besoin de
+ * changer. Les autres presentations vivent a cote, dans une table indexee par
+ * identifiant.
+ */
+function rangerPages(bloc, presentation, pages) {
+  bloc.pagesPresentations = bloc.pagesPresentations || {};
+  bloc.pagesPresentations[presentation.id] = Object.assign(
+    bloc.pagesPresentations[presentation.id] || {},
+    pages
+  );
+  if (presentation.parDefaut) Object.assign(bloc.pages, pages);
 }
 
 // ---------------------------------------------------------------------------
@@ -329,13 +398,144 @@ function resumerProgression(p) {
         }
       : null,
     comparaisons,
-    derniereComparaison: p.derniereComparaisonTest
-      ? `${p.derniereComparaisonTest.label} : ${p.derniereComparaisonTest.avantAffiche} -> ` +
-        `${p.derniereComparaisonTest.apresAffiche} (${p.derniereComparaisonTest.ecartAffiche})`
+    // LE repere affiche, avec la regle qui l'a designe (§5 bis du ViewModel).
+    repereTest: p.repereTest
+      ? `${p.repereTest.comparaison.label} : ${p.repereTest.comparaison.avantAffiche} -> ` +
+        `${p.repereTest.comparaison.apresAffiche} (${p.repereTest.comparaison.ecartAffiche})` +
+        ` — ${p.repereTest.motif}`
       : null,
-    etatGlobal: p.etatGlobal,
+    // PAS de champ `etatGlobal` ici : il a ete SUPPRIME du ViewModel (decision
+    // D1 du fondateur, 2026-07-28). Le laisser aurait pousse `undefined` dans
+    // le manifeste — invisible apres serialisation, mais lu par le visualiseur
+    // comme « pas de libelle » plutot que « le champ n'existe pas », ce qui
+    // n'est pas la meme affirmation.
     detail: p.detail,
   };
+}
+
+/**
+ * TOUT CE QU'IL FAUT POUR EXPLIQUER LE REPERE DE TEST DE L'ETAT COURANT.
+ *
+ * Trois questions, et une seule reponse pour chacune, tiree du contrat :
+ *   1. quel test est affiche, et par QUELLE regle (1, 2, ou 2 + departage) ;
+ *   2. quels autres tests etaient comparables, et a quelles dates — c'est ce qui
+ *      rend l'egalite d'horodatage visible au lieu d'etre affirmee ;
+ *   3. ce que la REGLE 2 SEULE aurait designe.
+ *
+ * Le point 3 est la seule facon honnete de montrer l'effet de la regle 1 sans
+ * recoder l'ancien selecteur : on appelle la fonction DU PRODUIT avec « aucun
+ * cycle actif », ce qui empeche la regle 1 de mordre. Le calcul reste donc celui
+ * du produit ; le harnais ne fait que poser la question autrement.
+ */
+function resumerRepere(progVm, input) {
+  if (!progVm || !progMod.ok) return null;
+  const mod = progMod.mod;
+  const cycle = input ? input.microcycleGoal : null;
+  const ligneCycle =
+    cycle && mod.PROGRESSION_TEST_PAR_CYCLE ? mod.PROGRESSION_TEST_PAR_CYCLE[cycle] || null : null;
+
+  const base = {
+    cycleActif: cycle,
+    libelleCycle: ligneCycle ? ligneCycle.libelleCycle : null,
+    champDuCycle: ligneCycle ? ligneCycle.champ : null,
+    fondementCycle: ligneCycle ? ligneCycle.fondement : null,
+    ecarteCycle: ligneCycle ? ligneCycle.ecarte : null,
+  };
+
+  const cmp = progVm.comparaisonsTests;
+  if (cmp == null) {
+    return {
+      ...base,
+      etat: "hors_etat",
+      explication:
+        "Cet etat de carte ne calcule aucune comparaison de test : le champ n'existe meme pas " +
+        "dans son contrat. Rien n'est cache, il n'y a rien.",
+    };
+  }
+  if (!cmp.possible) {
+    return { ...base, etat: "aucune", raison: cmp.raison, explication: cmp.explication };
+  }
+
+  const candidats = cmp.comparaisons.map((c) => ({ champ: c.champ, apresTs: c.apresTs }));
+  const tsMax = candidats.reduce((m, c) => (c.apresTs > m ? c.apresTs : m), candidats[0].apresTs);
+  const exAequo = candidats.filter((c) => c.apresTs === tsMax).length;
+
+  // La regle 2 SEULE : meme fonction, meme entree, cycle neutralise.
+  let regle2 = null;
+  try {
+    const choix2 = mod.choisirChampRepere(candidats, null);
+    if (choix2) {
+      const c = cmp.comparaisons.find((x) => x.champ === choix2.champ);
+      regle2 = {
+        champ: choix2.champ,
+        label: c ? c.label : choix2.champ,
+        departageApplique: choix2.departageApplique,
+        ecart: c ? c.ecartAffiche : null,
+        sens: c ? c.sens : null,
+      };
+    }
+  } catch (_) {
+    regle2 = null;
+  }
+
+  const rep = progVm.repereTest || null;
+  return {
+    ...base,
+    etat: rep ? "affiche" : "aucune",
+    regle: rep ? rep.regle : null,
+    departageApplique: rep ? rep.departageApplique : false,
+    motif: rep ? rep.motif : null,
+    champ: rep ? rep.comparaison.champ : null,
+    label: rep ? rep.comparaison.label : null,
+    avant: rep ? rep.comparaison.avantAffiche : null,
+    apres: rep ? rep.comparaison.apresAffiche : null,
+    ecart: rep ? rep.comparaison.ecartAffiche : null,
+    sens: rep ? rep.comparaison.sens : null,
+    jours: rep ? `${rep.comparaison.avantJour} -> ${rep.comparaison.apresJour}` : null,
+    // Les concurrents, avec leur horodatage. L'egalite se VOIT ici.
+    candidats: cmp.comparaisons.map((c) => ({
+      champ: c.champ,
+      label: c.label,
+      jourApres: c.apresJour,
+      apresTs: c.apresTs,
+      auPlusRecent: c.apresTs === tsMax,
+      ecart: c.ecartAffiche,
+      sens: c.sens,
+      retenu: rep != null && c.champ === rep.comparaison.champ,
+    })),
+    exAequoAuPlusRecent: exAequo,
+    regle2Seule: regle2,
+    // `true` quand la regle 1 CHANGE le resultat : c'est la seule ligne qui
+    // prouve que le tableau cycle -> test sert vraiment a quelque chose.
+    regle1Determinante: Boolean(rep && regle2 && rep.comparaison.champ !== regle2.champ),
+  };
+}
+
+/**
+ * L'ordre de departage (regle 3), traduit en francais.
+ *
+ * Les libelles viennent de `screens/tests/testConfig.ts`, lu en SEULE LECTURE :
+ * ce sont exactement les mots que le joueur voit dans l'ecran de tests. Les
+ * recopier ici les ferait deriver le jour ou l'un d'eux change.
+ * `socle: true` = l'un des trois tests que TOUT LE MONDE passe, quel que soit le
+ * cycle — c'est ce qui justifie qu'ils passent avant les tests optionnels.
+ */
+function ordreDepartageLisible() {
+  if (!progMod.ok || !progMod.mod.PROGRESSION_ORDRE_DEPARTAGE) return [];
+  const defs = testConfigMod && testConfigMod.FIELD_DEFS ? testConfigMod.FIELD_DEFS : [];
+  const socle =
+    testConfigMod && testConfigMod.CORE_FIELD_KEYS ? Array.from(testConfigMod.CORE_FIELD_KEYS) : [];
+  const pourquoi = (testConfigMod && testConfigMod.CORE_FIELD_WHY) || {};
+  return progMod.mod.PROGRESSION_ORDRE_DEPARTAGE.map((champ, i) => {
+    const def = defs.find((d) => d.key === champ);
+    return {
+      rang: i + 1,
+      champ,
+      label: def ? def.label : champ,
+      socle: socle.indexOf(champ) !== -1,
+      pourquoi: pourquoi[champ] || null,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -393,12 +593,30 @@ async function main() {
         "Relance sans FKS_ETATS ni FKS_LARGEURS pour le lot complet."
     );
   }
+  if (!presentationMod) {
+    rapport.alertes.push(
+      "AXE TYPOGRAPHIE / MOUVEMENT INDISPONIBLE — components/homeVNext/homeVNextPresentation.tsx " +
+        "n'a pas pu etre lu. Seule la presentation par defaut est generee : la bascule " +
+        "« Presentation » n'aura qu'un seul choix. Aucun reglage n'est invente a la place."
+    );
+  }
+  if (!typoMod) {
+    rapport.alertes.push(
+      "components/homeVNext/homeVNextTypo.ts illisible : le tableau avant / apres des roles " +
+        "typographiques et la politique d'agrandissement ne seront pas affiches."
+    );
+  }
 
   // Balisage de la variante 1, garde par (etat, largeur). Sert a UNE seule
   // chose : quand la carte n'est pas detectee en variante 2, savoir dire si
   // l'ecran a reagi ou s'il a rendu exactement la variante 1.
   const htmlVariante1 = new Map();
-  const cleHtml = (etatId, width) => `${etatId}|${width}`;
+  const cleHtml = (etatId, width, presentationId) => `${etatId}|${width}|${presentationId}`;
+
+  // Les animations surprises dans le Home de PRODUCTION alors que le harnais a
+  // force « mouvement reduit ». C'est ce qui empeche deux generations d'etre
+  // rigoureusement identiques — et c'est une information, pas un bruit.
+  const pulsationsActuel = [];
 
   // --- les 14 etats ---------------------------------------------------------
   for (const fixture of FIXTURES) {
@@ -427,41 +645,59 @@ async function main() {
     };
 
     for (const device of DEVICES_ACTIFS) {
-      // --- proposition ---
-      const rv = await render.renderVNext(fixture, device);
-      if (rv.viewModel && !entree.vnext.viewModel) {
-        entree.vnext.viewModel = resumerViewModel(rv.viewModel);
-        entree.vnext.protoWarnings = rv.viewModel.protoWarnings || [];
-      }
-      if (rv.indisponible) {
-        Object.assign(
-          entree.vnext.pages,
-          ecrirePagesErreur({
-            variante: "vnext",
-            etatId: fixture.id,
-            etatTitre: fixture.titre,
-            device,
-            indisponible: rv.indisponible,
-            viewModel: rv.viewModel,
-          })
-        );
-        entree.vnext.disponible = false;
-        entree.vnext.indisponible = rv.indisponible.titre;
-      } else {
-        Object.assign(
-          entree.vnext.pages,
-          ecrirePages({
-            variante: "vnext",
-            etatId: fixture.id,
-            etatTitre: fixture.titre,
-            etatResume: fixture.resume,
-            device,
-            html: rv.html,
-            ecart: null,
-          })
-        );
-        if (device.width === SCALE_WIDTH) entree.vnext.sonde = rv.sonde;
-        htmlVariante1.set(cleHtml(fixture.id, device.width), rv.html);
+      // --- proposition, une passe par presentation generee a cette largeur ---
+      // La presentation PAR DEFAUT passe toujours en premier : le premier rendu
+      // de chaque couple (etat, largeur) est donc rigoureusement celui d'avant
+      // l'ajout de cet axe, et l'ordre d'injection des regles de style de
+      // react-native-web est preserve pour tout ce qui existait deja.
+      for (const presentation of presentationsPour("vnext", device.width)) {
+        const rv = await render.renderVNext(fixture, device, presentation);
+        if (rv.viewModel && !entree.vnext.viewModel) {
+          entree.vnext.viewModel = resumerViewModel(rv.viewModel);
+          entree.vnext.protoWarnings = rv.viewModel.protoWarnings || [];
+        }
+        if (rv.indisponible) {
+          rangerPages(
+            entree.vnext,
+            presentation,
+            ecrirePagesErreur({
+              variante: "vnext",
+              etatId: fixture.id,
+              etatTitre: fixture.titre,
+              device,
+              indisponible: rv.indisponible,
+              viewModel: rv.viewModel,
+              presentation,
+            })
+          );
+          entree.vnext.disponible = false;
+          entree.vnext.indisponible = rv.indisponible.titre;
+        } else {
+          rangerPages(
+            entree.vnext,
+            presentation,
+            ecrirePages({
+              variante: "vnext",
+              etatId: fixture.id,
+              etatTitre: fixture.titre,
+              etatResume: fixture.resume,
+              device,
+              html: rv.html,
+              ecart: null,
+              presentation,
+            })
+          );
+          if (device.width === SCALE_WIDTH) {
+            if (presentation.parDefaut) entree.vnext.sonde = rv.sonde;
+            entree.vnext.mouvement = entree.vnext.mouvement || {};
+            entree.vnext.mouvement[presentation.id] = presentations.controleMouvement(
+              rv.mouvement,
+              presentation.reduceMotion
+            );
+          }
+          htmlVariante1.set(cleHtml(fixture.id, device.width, presentation.id), rv.html);
+        }
+        process.stdout.write(presentation.parDefaut ? "." : "+");
       }
 
       // --- home actuel ---
@@ -495,10 +731,23 @@ async function main() {
               ecart,
             })
           );
-          if (device.width === SCALE_WIDTH) entree.actuel.sonde = ra.sonde;
+          if (device.width === SCALE_WIDTH) {
+            entree.actuel.sonde = ra.sonde;
+            // Une animation qui tourne AU MOMENT DE LA CAPTURE, alors que le
+            // harnais a force « mouvement reduit ». Voir lib/presentations.js.
+            const pulse = presentations.mesurerPulsation(ra.html);
+            if (pulse.length) {
+              // Le NOMBRE d'animations surprises, jamais leurs valeurs : celles-ci
+              // changent a chaque generation (c'est justement ce qu'on constate),
+              // et les ecrire dans le manifeste ferait echouer le controle
+              // d'idempotence du prototype pour une raison qui ne le concerne pas.
+              entree.actuel.pulsation = pulse.length;
+              pulsationsActuel.push({ etat: fixture.id, combien: pulse.length });
+            }
+          }
         }
+        process.stdout.write("o");
       }
-      process.stdout.write(".");
     }
 
     etats[fixture.id] = entree;
@@ -601,17 +850,21 @@ async function main() {
         : null;
 
       for (const device of DEVICES_ACTIFS) {
+       for (const presentation of presentationsPour("vnext2", device.width)) {
         const rv2 = await render.renderVNext2({
           fixtureHote,
           fixtureProgression,
           device,
-          htmlVariante1: htmlVariante1.get(cleHtml(fixtureHote.id, device.width)) || null,
+          presentation,
+          htmlVariante1:
+            htmlVariante1.get(cleHtml(fixtureHote.id, device.width, presentation.id)) || null,
         });
 
         // Le resume du contrat et l'audit ne dependent pas de la largeur : on les
         // prend a la premiere passe.
         if (!entree.vnext2.viewModel && rv2.progVm) {
           entree.vnext2.viewModel = resumerProgression(rv2.progVm);
+          entree.vnext2.repere = resumerRepere(rv2.progVm, fixtureProgression.input);
           // Les avertissements des DEUX selecteurs, pas seulement celui de la
           // carte : le verrou de la pastille d'etat du jour est une decision du
           // ViewModel du Home, prise pour la variante 2 uniquement. La taire
@@ -644,8 +897,9 @@ async function main() {
         }
 
         if (rv2.indisponible) {
-          Object.assign(
-            entree.vnext2.pages,
+          rangerPages(
+            entree.vnext2,
+            presentation,
             ecrirePagesErreur({
               variante: "vnext2",
               etatId: app.id,
@@ -657,13 +911,15 @@ async function main() {
               noteVm:
                 "Le selecteur de la carte (screens/homeVNext/progressionViewModel.ts) fonctionne : " +
                 "voici son resultat pour ce cas. Il ne manque que l'ecran qui le dessine.",
+              presentation,
             })
           );
           entree.vnext2.disponible = false;
           entree.vnext2.indisponible = rv2.indisponible.titre;
         } else {
-          Object.assign(
-            entree.vnext2.pages,
+          rangerPages(
+            entree.vnext2,
+            presentation,
             ecrirePages({
               variante: "vnext2",
               etatId: app.id,
@@ -672,11 +928,25 @@ async function main() {
               device,
               html: rv2.html,
               ecart: ecartPage,
+              presentation,
             })
           );
           if (device.width === SCALE_WIDTH) {
-            entree.vnext2.sonde = rv2.sonde;
-            entree.vnext2.mesures = rv2.mesures;
+            if (presentation.parDefaut) {
+              entree.vnext2.sonde = rv2.sonde;
+              entree.vnext2.mesures = rv2.mesures;
+            }
+            // Le controle de mouvement est releve POUR CHAQUE presentation : c'est
+            // la seule facon de prouver que le reglage a un effet. L'absence de
+            // transform sur la page « anim. reduites » ne vaut demonstration que si
+            // la page sans le reglage, elle, en porte un.
+            if (rv2.mouvement) {
+              entree.vnext2.mouvement = entree.vnext2.mouvement || {};
+              entree.vnext2.mouvement[presentation.id] = presentations.controleMouvement(
+                rv2.mouvement,
+                presentation.reduceMotion
+              );
+            }
           }
         }
 
@@ -684,12 +954,15 @@ async function main() {
         // dependre de la largeur. On les releve donc a chaque largeur, et pas
         // seulement a 375 — une carte qui perdrait une ligne de fait en 320 px
         // passerait sinon inapercue. Ce qui est garde est compact : la liste des
-        // controles en echec, par largeur.
-        if (rv2.mesures) {
+        // controles en echec, par largeur. La presentation par defaut sert de
+        // reference : une carte qui perdrait un bloc sur une AUTRE presentation
+        // serait un defaut de typographie, pas de contrat, et se verrait a l'oeil.
+        if (rv2.mesures && presentation.parDefaut) {
           entree.vnext2.controlesParLargeur = entree.vnext2.controlesParLargeur || {};
           entree.vnext2.controlesParLargeur[device.width] = rv2.mesures.clesEnEchec;
         }
-        process.stdout.write(".");
+        process.stdout.write(presentation.parDefaut ? "." : "+");
+       }
       }
 
       // Un controle en echec, a n'importe quelle largeur, doit remonter jusqu'au
@@ -815,7 +1088,50 @@ async function main() {
     ordreEtatsVariante2: ordreVariante2,
     etatsVariante2,
     seuilsProgression: progMod.ok ? progMod.mod.PROGRESSION_SEUILS : [],
+    // Le tableau cycle -> test qui decide QUEL repere la carte met en avant
+    // (regle 1 du §5 bis). DECISION PRODUIT en attente de validation : il est
+    // publie tel quel, avec le fondement de chaque ligne, pour etre lu et
+    // conteste. `champ: null` = ce cycle n'a volontairement aucun test attitre.
+    mappingCyclesProgression:
+      progMod.ok && progMod.mod.PROGRESSION_MAPPING_CYCLES
+        ? progMod.mod.PROGRESSION_MAPPING_CYCLES
+        : [],
+    // L'ordre de departage a egalite d'horodatage (regle 3). Fige, aucune valeur
+    // de test n'y entre.
+    ordreDepartageProgression: ordreDepartageLisible(),
     pointsProgression: POINTS_PROGRESSION,
+
+    // --- l'axe presentation : typographie x mouvement -----------------------
+    presentations: PRESENTATIONS,
+    presentationParDefaut: PRESENTATION_DEFAUT.id,
+    largeursComparaisonTypo: presentations.LARGEURS_COMPARAISON,
+    comparaisonEchelles: typoMod ? typoMod.COMPARAISON_ECHELLES : [],
+    echellesLibelles: typoMod ? typoMod.ECHELLES_LIBELLES : null,
+    politiqueAgrandissement: typoMod ? typoMod.POLITIQUE_AGRANDISSEMENT : [],
+    agrandissementLibreMinimal: typoMod ? typoMod.AGRANDISSEMENT_LIBRE_MINIMAL : null,
+    regleMouvement: presentationMod ? presentationMod.REGLE_MOUVEMENT : [],
+
+    // Ce que la verification de reproductibilite a mis au jour : le bouton
+    // principal du Home de PRODUCTION pulse pendant la capture, alors meme que le
+    // harnais a force « mouvement reduit ». Publie tel quel — c'est la preuve, sur
+    // un fichier, que la preference d'accessibilite n'est pas respectee la-bas.
+    // Le COMPTE et les ETATS, jamais les valeurs relevees. Les valeurs changent a
+    // chaque generation — c'est tout le probleme — et les publier ferait echouer
+    // le controle d'idempotence du prototype pour une raison qui ne le concerne
+    // pas. Ce qui compte n'est pas le chiffre exact mais le fait qu'il ne vaille
+    // pas 1 : l'amplitude, elle, est une constante lue dans le code de
+    // production (echelle 1 -> 1,015).
+    pulsationHomeActuel: {
+      etatsConcernes: pulsationsActuel.length,
+      etats: pulsationsActuel.map((p) => p.etat).sort(),
+      amplitudeDeclaree: "1 -> 1,015, 900 ms dans chaque sens",
+    },
+
+    // --- juger par axe, et ce qui a change depuis l'iteration precedente ----
+    axes: AXES,
+    couverture: COUVERTURE,
+    iterationChangements: CHANGEMENTS,
+    iterationInchange: INCHANGE,
     carteProgression: carteMod.ok
       ? { present: true, exports: carteMod.exports }
       : { present: false, raison: carteMod.raison },

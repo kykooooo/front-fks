@@ -174,6 +174,138 @@ Cette réserve est écrite noir sur blanc dans le programme et répétée dans l
 du prototype : **le haut de la page Progression doit être corrigé avant toute mise en
 production de ce lien.**
 
+Le plan de correction, étape par étape, avec le risque de chacune, est dans
+[`MIGRATION_PROGRESSSCREEN.md`](MIGRATION_PROGRESSSCREEN.md).
+
+---
+
+## 5 bis. QUEL TEST S'AFFICHE, ET POURQUOI CELUI-LÀ
+
+> **C'est la section la plus importante du document.** Elle décrit une décision produit
+> qui t'attend, et elle explique pourquoi l'écran affiche parfois un **mauvais** résultat
+> alors qu'un bon était disponible juste à côté.
+
+### Le problème, en une phrase
+
+Le Home n'a la place que pour **un seul** repère de test. Quand un joueur a refait sa
+batterie complète, il en a **trois** d'un coup. Il faut donc choisir — et la façon de
+choisir est, à elle seule, une décision d'honnêteté.
+
+**Analogie foot** : c'est le choix de l'action qu'on passe au ralenti à la mi-temps.
+Si le réalisateur choisit toujours la plus belle, le résumé ment sur le match.
+
+### La règle interdite
+
+**« Afficher la meilleure progression » est interdit.** Ce serait du cherry-picking : le
+joueur verrait toujours son chiffre le plus flatteur, et l'app tairait les autres. Un
+écran qui ne montre que les bonnes nouvelles n'est plus une mesure, c'est une publicité.
+
+### La règle appliquée — trois étages, dans l'ordre
+
+On descend les étages et **on s'arrête au premier qui désigne un test**.
+
+| Étage | Règle | En français |
+|---|---|---|
+| **1** | L'objectif du cycle actif | « Tu es en cycle Force ? On te montre le test que le cycle Force cherche à améliorer. » |
+| **2** | La mesure comparable la plus récente | « Pas de test attitré pour ce cycle ? On montre celui que tu as refait le plus récemment. » |
+| **3** | Un ordre de départage figé | « Trois tests à la même seconde ? Un classement écrit à l'avance tranche. » |
+
+### Pourquoi l'étage 3 n'est PAS un cas rare
+
+Quand un joueur remplit sa batterie, `TestsScreen` enregistre **une seule entrée avec un
+seul horodatage** (`screens/TestsScreen.tsx`:241). Les 3 tests du socle partagent donc leur
+date **à la seconde près**. L'égalité est le cas **normal**, pas l'exception — c'est pour
+ça qu'un ordre de départage écrit à l'avance existe.
+
+L'ordre retenu, et ce qui tient chaque rang :
+
+1. **Sprint 10 m** — c'est le seul des trois que le produit classe lui-même :
+   *« Ta vitesse, la qualité n°1 en foot »* (`screens/tests/testConfig.ts`:301). Aucune
+   autre ligne ne revendique un rang.
+2. **Saut en longueur**, puis **6 minutes** — le reste du socle, dans l'ordre documenté de
+   `CORE_FIELD_KEYS` (« Ordre = ordre d'exécution conseillé », `testConfig.ts`:288-296).
+3. **Les tests optionnels**, après. Un repère du socle existe chez tout le monde ; un test
+   optionnel n'existe que chez ceux qui l'ont fait.
+
+### La preuve que la règle est aveugle au résultat
+
+C'est la fixture **« Test physique en recul »**, et c'est celle qu'il faut regarder en
+premier dans le visualiseur.
+
+Le joueur a refait sa batterie le 20 juillet. Dans la **même** batterie :
+
+| Test | Avant | Après | Écart |
+|---|---|---|---|
+| Saut en longueur | 228 cm | 231 cm | **+3 cm** (mieux) |
+| Endurance 6 min | 1 395 m | 1 420 m | **+25 m** (mieux) |
+| **Sprint 10 m** | **1,81 s** | **1,88 s** | **+0,07 s** (moins bien) |
+
+*(Valeurs exactes de la fixture, `screens/homeVNext/fixtures.ts`:1421-1437 : batterie de
+fin de saison le 30 mai, batterie de reprise le 20 juillet.)*
+
+Le cycle actif est Fondation, qui n'a **aucun** test attitré : la règle 1 ne mord pas.
+Les trois tests partagent le même horodatage : la règle 2 ne départage pas. C'est l'ordre
+figé qui tranche, et il désigne le sprint — **celui qui recule**.
+
+**Deux bonnes nouvelles étaient disponibles et n'ont pas été préférées.** C'est exactement
+ce qu'on veut prouver.
+
+### Comment c'est verrouillé dans le code
+
+Ce n'est pas une bonne intention, c'est un **type**. La fonction qui choisit
+(`choisirChampRepere`, `progressionViewModel.ts`:1012) ne reçoit que deux choses par
+candidat : **le nom du test** et **la date de sa dernière mesure**. L'écart, son signe et
+son sens ne sont **pas dans sa signature**.
+
+Écrire un tri par « meilleure progression » serait donc impossible sans **changer le type
+d'entrée** — ce qui se voit en une ligne dans une revue de code. Trois tests gardent la
+porte : six scénarios d'écarts différents doivent donner **le même** repère ; la signature
+est vérifiée ; et le texte de la fonction ne doit contenir aucun des mots `ecart`, `sens`,
+`avant`, `apres`, `plusPetitEstMieux`.
+
+### Ce que la règle ne lit PAS
+
+Le champ `playlist` d'une entrée de test (`TestsScreen.tsx`:243-244) note **quel cycle était
+actif au moment du test**. C'est une **provenance**, une étiquette d'historique — pas un
+sélecteur. Un test dédié réécrit toutes les provenances des fixtures : aucun repère ne
+change.
+
+---
+
+## 5 ter. LE TABLEAU CYCLE → TEST — **DÉCISION PRODUIT, ELLE T'ATTEND**
+
+Chaque ligne est un **choix**, et chaque choix cite le texte du dépôt qui le fonde.
+Deux cycles sur cinq n'ont **volontairement aucun** test attitré.
+
+| Cycle | Test attitré | Pourquoi celui-là | Ce qui a été écarté, et pourquoi |
+|---|---|---|---|
+| **Fondation** — « Reprise & bases » | **aucun** | Le cycle promet « Appuis & contrôle », « Gainage », « Cardio léger » (`domain/microcycles.ts`:65). Aucun test du socle ne mesure le gainage ni la qualité d'appui. | Le 6 minutes, à cause du mot « endurance ». Écarté : le cycle dit *cardio léger* (un moyen), pas *tenir 90 min* (un objectif). L'accrocher ferait promettre une progression que le cycle ne cherche pas. |
+| **Force** — « Duels & puissance » | **Saut en longueur** | Le cycle liste « Puissance » (`microcycles.ts`:83) ; le test dit « Ta puissance de jambes, mesurable sans le moindre matériel » (`testConfig.ts`:300). Même mot, même qualité — et c'est le seul test du socle qui mesure une production de force. | Le goblet et le split squat, pourtant plus proches de « Force max + charges lourdes ». Écartés : leur protocole dit « choisis une charge que tu peux lever 8-10 fois » — comparer deux dates compare deux **choix de charge** autant que deux capacités ; et ils n'existent que si le profil déclare du matériel. Le trap bar 3RM est un vrai maximum mais réservé aux Seniors avec salle : en faire LE repère priverait tous les autres joueurs. |
+| **Endurance** — « Tenir tout le match » | **Endurance 6 min** | « Tenir 90 min + sprints répétés » (`testConfig.ts`:277) face à « l'allure la plus rapide que tu peux tenir sur toute la durée » (`:191`). C'est la même question : combien de temps tu tiens. | Le sprint 10 m, à cause de « sprints répétés ». Écarté : un 10 m unique mesure **un** démarrage, pas la capacité à le répéter. Aucun test du socle ne mesure la répétition (le Yo-Yo, qui s'en approcherait, est retiré du produit). |
+| **Explosivité** — « Vitesse & détente » | **Sprint 10 m** | Le cycle dit « la vitesse de démarrage… **les premiers mètres** et le saut font la différence » (`microcycles.ts`:116). Le protocole du sprint 10 m **est** ces premiers mètres : « pose deux repères à 10 m… départ arrêté » (`testConfig.ts`:137). | Le saut en longueur, à cause du mot « détente » dans la même phrase. Écarté : la citation du démarrage est **littérale**, celle de la détente est partagée. Le saut reste calculé — il n'est simplement pas LE repère du Home. |
+| **Saison / Maintien** — « Rester frais pour les matchs » | **aucun** | « L'objectif c'est rester performant le jour du match : juste ce qu'il faut à l'entraînement, pas plus » (`microcycles.ts`:134). Un cycle de **maintien** ne promet d'améliorer aucune qualité. | Rien. Y accrocher un test ferait dire à l'écran que le cycle travaille cette qualité-là, alors qu'il travaille la fraîcheur du week-end. |
+
+### Deux garanties sur ce tableau
+
+**Un sixième cycle ne peut pas arriver en silence.** Le tableau est typé
+`Record<MicrocycleId, …>` : le jour où un cycle entre dans `domain/microcycles.ts`, le
+fichier **ne compile plus** tant que sa ligne n'est pas écrite. Personne ne peut ajouter un
+cycle et le laisser tomber sur un repli par défaut.
+
+**Le tableau affiché est le tableau appliqué.** La liste que tu lis dans le visualiseur est
+**dérivée** de la table utilisée par le code (`PROGRESSION_MAPPING_CYCLES`). Il est
+impossible qu'une ligne affichée dise autre chose que la ligne appliquée.
+
+### Ce que la règle 1 change vraiment — deux exemples mesurés
+
+| Fixture | Cycle actif | Sans la règle 1, on afficherait | Avec la règle 1, on affiche |
+|---|---|---|---|
+| **Tendance disponible** | Force | le **sprint** (les 3 tests partagent l'horodatage, l'ordre figé désigne le sprint) | le **saut en longueur**, +9 cm — la qualité que le cycle Force travaille |
+| **Test physique amélioré** | Explosivité | le **test 505**, enregistré seul **après** la batterie, donc plus récent | le **sprint 10 m**, −0,07 s — les premiers mètres, ce que le cycle vise |
+
+Le second cas est la **réparation d'une faute de l'itération précédente** : la démonstration
+tenait alors à des horodatages fabriqués. Elle tient maintenant à la règle.
+
 ---
 
 ## 6. Les calculs de la page Progression qu'on a refusé de reprendre

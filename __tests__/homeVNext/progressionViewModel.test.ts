@@ -9,7 +9,7 @@
 //   R1  aucun defaut artificiel   R5  pas de courbe sans vrais points
 //   R2  chiffres reellement mesures   R6  "serie"/"streak" banni
 //   R3  portee obligatoire        R7  pas de doublon avec "Ma semaine"
-//   R4  pas d'etat global sans charges club   R8  un seul aplat par ecran
+//   R4  AUCUN etat global (D1)    R8  un seul aplat par ecran
 //
 // NOTE D'EXECUTION : la config jest du depot ignore `.claude/worktrees/`
 // (`testPathIgnorePatterns`) — depuis ce worktree, `npx jest` liste 0 test et
@@ -19,16 +19,24 @@
 
 import {
   buildProgressionViewModel,
+  choisirChampRepere,
+  choisirRepereTest,
   construireComparaisonsTests,
+  PROGRESSION_MAPPING_CYCLES,
+  PROGRESSION_ORDRE_DEPARTAGE,
   PROGRESSION_SEUILS,
   PROGRESSION_SEANCES_MIN_POUR_TENDANCE,
   PROGRESSION_POINTS_MIN_POUR_COURBE,
   PROGRESSION_JOURS_OBSERVES_MIN_POUR_COURBE,
+  PROGRESSION_TEST_PAR_CYCLE,
   PROGRESSION_TESTS_MIN_JOURS_PAR_CHAMP,
+  type ProgressionCandidatRepere,
   type ProgressionFait,
   type ProgressionInput,
   type ProgressionViewModel,
 } from "../../screens/homeVNext/progressionViewModel";
+import { MICROCYCLES, type MicrocycleId } from "../../domain/microcycles";
+import { CORE_FIELD_KEYS, FIELD_DEFS, type FieldKey } from "../../screens/tests/testConfig";
 import { SEANCES_MIN_POUR_TENDANCE, POINTS_MIN_POUR_COURBE } from "../../screens/homeVNext/viewModel";
 import {
   PROGRESSION_FIXTURES,
@@ -37,6 +45,7 @@ import {
   type ProgressionFixture,
 } from "../../screens/homeVNext/fixtures";
 import type { TestEntry } from "../../screens/tests/testConfig";
+import { LIBELLES_ETAT_INTERDITS } from "./libellesEtatInterdits";
 
 // -----------------------------------------------------------------------------
 // Outils
@@ -71,25 +80,20 @@ function tousLesFaits(vm: ProgressionViewModel): ProgressionFait[] {
 
 const toutesLesFixtures = (): ProgressionFixture[] => [...PROGRESSION_FIXTURES_RENDU];
 
-/**
- * Rebatit une entree dans la variante "charges club capturees".
- *
- * On ne peut PAS se contenter de basculer le booleen : les deux variantes de
- * `ProgressionInput` sont deux formes distinctes, et c'est precisement ce qui
- * rend R4 structurel. Il faut reconstruire l'objet — le compilateur l'exige.
- */
-function avecChargesCapturees(
-  base: ProgressionInput,
-  libelleEtatGlobal: string | null
-): ProgressionInput {
-  return {
-    chargesClubCapturees: true,
-    libelleEtatGlobal,
-    seancesTerminees: base.seancesTerminees,
-    testsTerrain: base.testsTerrain,
-    tendance: base.tendance,
-    semaineCourante: base.semaineCourante,
-  };
+// `avecChargesCapturees` a ete SUPPRIME avec le champ qu'il servait a construire
+// (`libelleEtatGlobal`). Basculer le booleen `chargesClubCapturees` se fait
+// desormais par un simple `{ ...base, chargesClubCapturees: true }` — il n'y a
+// plus de seconde forme d'entree a reconstruire, parce qu'il n'y a plus de
+// libelle d'etat a porter (D1, §2 bis de progressionViewModel.ts).
+
+/** Rejoue une entree en changeant le seul cycle actif. */
+function avecCycle(base: ProgressionInput, microcycleGoal: MicrocycleId | null): ProgressionInput {
+  return { ...cloner(base), microcycleGoal };
+}
+
+/** Le repere affiche, quel que soit l'etat (l'etat "empty" n'en porte pas). */
+function repereDe(vm: ProgressionViewModel) {
+  return vm.state === "empty" ? null : vm.repereTest;
 }
 
 // -----------------------------------------------------------------------------
@@ -97,15 +101,16 @@ function avecChargesCapturees(
 // -----------------------------------------------------------------------------
 
 describe("Progression — contrat des fixtures", () => {
-  it("expose les 5 cas de demonstration demandes, tous marques fictifs", () => {
-    expect(PROGRESSION_FIXTURES).toHaveLength(5);
+  it("expose les 6 cas de demonstration demandes, tous marques fictifs", () => {
+    expect(PROGRESSION_FIXTURES).toHaveLength(6);
     const ids = PROGRESSION_FIXTURES.map((f) => f.id);
-    expect(new Set(ids).size).toBe(5);
+    expect(new Set(ids).size).toBe(6);
     expect(ids).toEqual([
       "nouveau-joueur",
       "deux-seances-tendance-indisponible",
       "tendance-disponible",
       "test-physique-ameliore",
+      "test-physique-en-recul",
       "aucune-comparaison-de-test",
     ]);
     for (const f of PROGRESSION_FIXTURES_RENDU) {
@@ -120,6 +125,9 @@ describe("Progression — contrat des fixtures", () => {
     expect(vmDe("deux-seances-tendance-indisponible").state).toBe("collecting");
     expect(vmDe("tendance-disponible").state).toBe("ready");
     expect(vmDe("test-physique-ameliore").state).toBe("ready");
+    // "collecting" et non "ready" : un ecart de test peut exister AVANT qu'une
+    // tendance soit calculable — passer une batterie ne demande aucune seance FKS.
+    expect(vmDe("test-physique-en-recul").state).toBe("collecting");
     expect(vmDe("aucune-comparaison-de-test").state).toBe("ready");
     expect(vmDe("donnee-manquante").state).toBe("collecting");
   });
@@ -336,51 +344,84 @@ describe("Progression — R1 : un fait inconnu disparait, il n'est pas remplace"
 });
 
 // -----------------------------------------------------------------------------
-// 4. R4 — aucun etat physique global sans les charges club
+// 4. R4 / D1 — AUCUN etat physique global, quelle que soit l'entree
+// -----------------------------------------------------------------------------
+// CE QUE CETTE SECTION VERIFIAIT AVANT, ET POURQUOI ELLE A CHANGE DE SENS.
+// Elle verifiait un verrou CONDITIONNEL : « pas d'etat global tant que les
+// charges club sont inconnues », avec un test qui exigeait le retour de « En
+// forme » des que `chargesClubCapturees` passait a `true`.
+//
+// Le fondateur a tranche autrement (D1, 2026-07-28) : le modele de charge part
+// encore de valeurs initiales artificielles (ATL0/CTL0), donc aucun drapeau
+// d'entree ne peut rendre ce libelle honnete aujourd'hui. Le champ d'entree
+// `libelleEtatGlobal` et le champ de sortie `etatGlobal` ont ete SUPPRIMES du
+// contrat. Les tests ci-dessous verifient donc l'absence, y compris sous
+// falsification volontaire de l'entree.
 // -----------------------------------------------------------------------------
 
-describe("Progression — R4 : pas d'etat global tant que les charges club sont inconnues", () => {
+describe("Progression — D1 : aucun jugement global ne peut sortir de cette carte", () => {
   it.each(toutesLesFixtures().map((f) => [f.id, f] as const))(
-    "%s — etatGlobal reste inconnu et dit pourquoi",
+    "%s — le ViewModel ne porte aucun champ d'etat global",
     (_id, f) => {
-      expect(f.input.chargesClubCapturees).toBe(false);
       const vm = buildProgressionViewModel(f.input);
-      expect(vm.etatGlobal.connu).toBe(false);
-      if (vm.etatGlobal.connu) throw new Error("etat global impossible ici");
-      expect(vm.etatGlobal.raison).toBe("charges_club_non_capturees");
-      expect(vm.etatGlobal.explication.trim().length).toBeGreaterThan(0);
-      expect(vm.protoWarnings.some((w) => w.startsWith("R4 :"))).toBe(true);
+      // Le type ne declare plus `etatGlobal` ; on verifie qu'aucune cle du genre
+      // ne subsiste a l'execution (un champ oublie dans un `return` passerait le
+      // compilateur en trop-plein d'objet litteral, pas ce test).
+      expect(Object.keys(vm)).not.toContain("etatGlobal");
+      expect(vm.protoWarnings.some((w) => w.startsWith("D1 "))).toBe(true);
     }
   );
 
-  it("un libelle force par un cast est IGNORE tant que le booleen est faux", () => {
-    // Le compilateur refuse deja ce champ (le type `chargesClubCapturees: false`
-    // ne le porte pas). Ce test prouve qu'a l'execution aussi, rien ne passe :
-    // la protection n'est pas seulement une affaire de compilation.
+  it.each(toutesLesFixtures().map((f) => [f.id, f] as const))(
+    "%s — aucun libelle de jugement global dans les champs affiches",
+    (_id, f) => {
+      const vm = buildProgressionViewModel(f.input);
+      // Les `protoWarnings` sont exclus : ils sont destines au visualiseur, et
+      // c'est leur role de NOMMER les libelles interdits pour dire ce qui a ete
+      // retire. Tout le reste est du texte d'ecran.
+      const affichable = { ...vm, protoWarnings: [] };
+      const corpus = JSON.stringify(affichable);
+      for (const interdit of LIBELLES_ETAT_INTERDITS) {
+        expect(corpus).not.toContain(interdit);
+      }
+    }
+  );
+
+  it("un libelle force par un cast n'a plus AUCUN chemin vers la sortie", () => {
+    // Le compilateur refuse deja ce champ : il n'existe plus dans
+    // `ProgressionInput`. Ce test prouve qu'a l'execution non plus rien ne passe
+    // — un appelant JavaScript (le visualiseur du prototype en est un) ne peut
+    // pas le faire ressortir par la porte de service.
     const base = cloner(fixture("tendance-disponible").input);
-    const triche = { ...base, libelleEtatGlobal: "En forme" } as unknown as ProgressionInput;
+    const triche = {
+      ...base,
+      chargesClubCapturees: true,
+      libelleEtatGlobal: "En forme",
+    } as unknown as ProgressionInput;
     const vm = buildProgressionViewModel(triche);
-    expect(vm.etatGlobal.connu).toBe(false);
-    expect(JSON.stringify(vm)).not.toContain("En forme");
-    expect(JSON.stringify(vm)).not.toContain("Prêt à performer");
+    const affichable = { ...vm, protoWarnings: [] };
+    expect(JSON.stringify(affichable)).not.toContain("En forme");
+    expect(JSON.stringify(affichable)).not.toContain("Prêt à performer");
   });
 
-  it("avec les charges reellement capturees, l'etat global devient affichable", () => {
+  it("`chargesClubCapturees` ne pilote plus que la PORTEE de la courbe (R3)", () => {
+    // Le booleen reste — ce n'est pas un jugement, c'est ce qui permet de dire
+    // honnetement ce que la courbe contient. On verifie qu'il ne fait que ca.
     const base = cloner(fixture("tendance-disponible").input);
-    const vm = buildProgressionViewModel(avecChargesCapturees(base, "En forme"));
-    expect(vm.etatGlobal).toEqual({ connu: true, libelle: "En forme" });
-    // Et la portee de la courbe change : elle n'exclut plus le club.
-    if (vm.state !== "ready") throw new Error("etat attendu : ready");
-    expect(vm.courbe.portee).toContain("club");
-    expect(vm.courbe.portee).not.toContain("n'y sont pas comptés");
-  });
+    const sansClub = buildProgressionViewModel({ ...base, chargesClubCapturees: false });
+    const avecClub = buildProgressionViewModel({ ...base, chargesClubCapturees: true });
+    if (sansClub.state !== "ready" || avecClub.state !== "ready") {
+      throw new Error("etat attendu : ready");
+    }
+    expect(sansClub.courbe.portee).toContain("n'y sont pas comptés");
+    expect(avecClub.courbe.portee).toContain("charges club");
+    expect(avecClub.courbe.portee).not.toContain("n'y sont pas comptés");
 
-  it("charges capturees mais aucun libelle fourni : toujours pas d'etat invente", () => {
-    const base = cloner(fixture("tendance-disponible").input);
-    const vm = buildProgressionViewModel(avecChargesCapturees(base, null));
-    expect(vm.etatGlobal.connu).toBe(false);
-    if (vm.etatGlobal.connu) throw new Error("impossible");
-    expect(vm.etatGlobal.raison).toBe("aucun_libelle_disponible");
+    // Et RIEN d'autre ne bouge : les deux ViewModels sont identiques une fois la
+    // portee mise de cote.
+    const sansPortee = (vm: typeof sansClub) =>
+      JSON.stringify({ ...vm, courbe: { ...vm.courbe, portee: "" } });
+    expect(sansPortee(avecClub)).toBe(sansPortee(sansClub));
   });
 });
 
@@ -552,12 +593,19 @@ describe("Progression — comparaison de tests", () => {
     if (vm.comparaisonsTests.possible) throw new Error("impossible");
     expect(vm.comparaisonsTests.raison).toBe("aucune_paire_comparable");
     expect(vm.comparaisonsTests.explication.trim().length).toBeGreaterThan(0);
-    expect(vm.derniereComparaisonTest).toBeNull();
+    expect(vm.repereTest).toBeNull();
     // La fixture porte bien deux valeurs du meme champ, le meme jour.
     const memeChamp = fixture("aucune-comparaison-de-test").input.testsTerrain.filter(
       (e) => typeof e.endurance6min_m === "number"
     );
     expect(memeChamp).toHaveLength(PROGRESSION_TESTS_MIN_JOURS_PAR_CHAMP);
+    // Et deux champs n'ont qu'UNE SEULE mesure : rien a comparer, par definition.
+    for (const champ of ["broadJumpCm", "sprint10s"] as const) {
+      const mesures = fixture("aucune-comparaison-de-test").input.testsTerrain.filter(
+        (e) => typeof e[champ] === "number"
+      );
+      expect(mesures).toHaveLength(1);
+    }
   });
 
   it("aucun test enregistre / un seul test enregistre : deux raisons distinctes", () => {
@@ -608,19 +656,22 @@ describe("Progression — comparaison de tests", () => {
     expect(c.sens).toBe("amelioration");
   });
 
-  it("la comparaison mise en avant est la plus RECENTE, jamais la plus flatteuse", () => {
+  it("a defaut d'objectif de cycle, c'est la mesure la plus RECENTE, jamais la plus flatteuse", () => {
     const tests: TestEntry[] = [
-      { ts: Date.UTC(2026, 4, 1, 10), broadJumpCm: 200, sprint10s: 1.9 },
-      { ts: Date.UTC(2026, 5, 1, 10), broadJumpCm: 240 }, // enorme progres, mais ancien
       { ts: Date.UTC(2026, 6, 20, 10), sprint10s: 1.95 }, // recent, et c'est un recul
+      { ts: Date.UTC(2026, 5, 1, 10), broadJumpCm: 240 }, // enorme progres, mais ancien
+      { ts: Date.UTC(2026, 4, 1, 10), broadJumpCm: 200, sprint10s: 1.9 },
     ];
     const etat = construireComparaisonsTests(tests);
     if (!etat.possible) throw new Error("comparaison attendue possible");
-    const base = cloner(fixture("tendance-disponible").input);
+    // Cycle Fondation : aucun test associe (decision documentee), donc la regle 1
+    // ne mord pas et la regle 2 doit trancher seule.
+    const base = avecCycle(fixture("tendance-disponible").input, "fondation");
     const vm = buildProgressionViewModel({ ...base, testsTerrain: tests });
     if (vm.state !== "ready") throw new Error("etat attendu : ready");
-    expect(vm.derniereComparaisonTest?.champ).toBe("sprint10s");
-    expect(vm.derniereComparaisonTest?.sens).toBe("regression");
+    expect(vm.repereTest?.regle).toBe("mesure_la_plus_recente");
+    expect(vm.repereTest?.comparaison.champ).toBe("sprint10s");
+    expect(vm.repereTest?.comparaison.sens).toBe("regression");
   });
 
   it("signale les comparaisons que la page Progression ne saurait pas afficher", () => {
@@ -633,70 +684,163 @@ describe("Progression — comparaison de tests", () => {
   // ---------------------------------------------------------------------------
   // CE QUI EST REELLEMENT MONTRE, PAS SEULEMENT CE QUI EST CALCULE
   // ---------------------------------------------------------------------------
-  // La carte n'affiche QU'UNE comparaison : la plus recente. Une regle juste
-  // peut donc rester invisible — c'etait le cas : les quatre mesures d'une meme
-  // batterie partageaient un seul horodatage, l'egalite etait tranchee par
-  // l'ordre de `FIELD_DEFS`, et le seul ecart jamais AFFICHE sur les 60 pages de
-  // la variante 2 etait « +9 cm » : le cas facile, celui ou le signe du chiffre
-  // et le sens sportif vont dans le meme sens.
+  // La carte n'affiche QU'UN repere. Une regle juste peut donc rester invisible.
+  // Ces tests portent sur la DEMONSTRATION : ils verifient que les deux sens de
+  // `lowerIsBetter` — et un RECUL — atteignent reellement l'ecran.
   //
-  // Ces tests portent donc sur la DEMONSTRATION, pas sur la logique : ils
-  // verifient que les deux sens de `lowerIsBetter` atteignent l'ecran.
+  // L'iteration precedente obtenait ce resultat en fabriquant des horodatages
+  // par exercice. C'est corrige : les fixtures sont au format reel (une batterie
+  // = une entree, un `ts`), et c'est la REGLE de selection qui designe le repere.
   // ---------------------------------------------------------------------------
 
-  it("chaque batterie de test s'etale dans le temps : jamais deux mesures au meme instant", () => {
-    // C'est ce qui rend le departage significatif. Deux mesures au meme `ts`
-    // rendent le choix arbitraire — et toujours gagnant pour le premier champ de
-    // FIELD_DEFS, quel que soit l'interet sportif.
-    for (const f of toutesLesFixtures()) {
-      const ts = f.input.testsTerrain.map((e) => e.ts);
-      expect({ id: f.id, distincts: new Set(ts).size }).toEqual({ id: f.id, distincts: ts.length });
-    }
-  });
-
-  it("« Test physique ameliore » MONTRE le chrono qui baisse, pas le saut qui monte", () => {
+  it("« Test physique ameliore » MONTRE le chrono qui baisse, parce que le cycle le vise", () => {
     const vm = vmDe("test-physique-ameliore");
     if (vm.state !== "ready") throw new Error("etat attendu : ready");
-    const c = vm.derniereComparaisonTest;
-    expect(c).not.toBeNull();
-    expect(c!.champ).toBe("sprint10s");
+    const r = vm.repereTest;
+    expect(r).not.toBeNull();
+    expect(r!.regle).toBe("objectif_du_cycle");
+    expect(r!.comparaison.champ).toBe("sprint10s");
     // Un ecart NEGATIF, presente comme un PROGRES : le cas qui distingue une app
     // qui a compris le sport d'une app qui aligne des soustractions.
-    expect(c!.plusPetitEstMieux).toBe(true);
-    expect(c!.ecart).toBeLessThan(0);
-    expect(c!.ecartAffiche).toBe("-0.07 s");
-    expect(c!.sens).toBe("amelioration");
+    expect(r!.comparaison.plusPetitEstMieux).toBe(true);
+    expect(r!.comparaison.ecart).toBeLessThan(0);
+    expect(r!.comparaison.ecartAffiche).toBe("-0.07 s");
+    expect(r!.comparaison.sens).toBe("amelioration");
     // Le saut en longueur reste calcule — il n'est simplement plus celui que la
     // carte met en avant.
     if (!vm.comparaisonsTests.possible) throw new Error("comparaisons attendues possibles");
     expect(vm.comparaisonsTests.comparaisons.map((x) => x.champ)).toContain("broadJumpCm");
   });
 
-  it("« Tendance disponible » MONTRE l'autre sens : plus grand = mieux", () => {
-    const vm = vmDe("tendance-disponible");
-    if (vm.state !== "ready") throw new Error("etat attendu : ready");
-    const c = vm.derniereComparaisonTest;
-    expect(c).not.toBeNull();
-    expect(c!.champ).toBe("broadJumpCm");
-    expect(c!.plusPetitEstMieux).toBe(false);
-    expect(c!.ecart).toBeGreaterThan(0);
-    expect(c!.sens).toBe("amelioration");
+  it("« Test physique ameliore » : sans la regle 1, c'est le 505 qui sortirait — la regle mord donc vraiment", () => {
+    const base = fixture("test-physique-ameliore").input;
+    // Meme donnee, cycle sans test associe : la regle 2 prend la mesure la plus
+    // recente, et le 505 a bien ete enregistre APRES la batterie.
+    const vm = buildProgressionViewModel(avecCycle(base, "fondation"));
+    expect(repereDe(vm)?.comparaison.champ).toBe("test505_s");
+    expect(repereDe(vm)?.regle).toBe("mesure_la_plus_recente");
   });
 
-  it("les DEUX sens de lowerIsBetter sont affiches quelque part dans les cas de demonstration", () => {
-    const affichees = toutesLesFixtures()
-      .map((f) => {
-        // L'etat "empty" ne porte meme pas le champ : le type l'interdit.
-        const vm = buildProgressionViewModel(f.input);
-        return vm.state === "empty" ? null : vm.derniereComparaisonTest;
-      })
+  it("« Tendance disponible » MONTRE l'autre sens : plus grand = mieux, designe par le cycle Force", () => {
+    const vm = vmDe("tendance-disponible");
+    if (vm.state !== "ready") throw new Error("etat attendu : ready");
+    const r = vm.repereTest;
+    expect(r).not.toBeNull();
+    expect(r!.regle).toBe("objectif_du_cycle");
+    expect(r!.comparaison.champ).toBe("broadJumpCm");
+    expect(r!.comparaison.plusPetitEstMieux).toBe(false);
+    expect(r!.comparaison.ecart).toBeGreaterThan(0);
+    expect(r!.comparaison.sens).toBe("amelioration");
+  });
+
+  it("« Test physique en recul » MONTRE le recul, alors que deux ameliorations etaient disponibles", () => {
+    const vm = vmDe("test-physique-en-recul");
+    if (vm.state !== "collecting") throw new Error("etat attendu : collecting");
+    const r = vm.repereTest;
+    expect(r).not.toBeNull();
+    // Cycle Fondation : aucun test associe -> regle 2, egalite parfaite (une
+    // batterie = un horodatage) -> regle 3.
+    expect(r!.regle).toBe("mesure_la_plus_recente");
+    expect(r!.departageApplique).toBe(true);
+    expect(r!.comparaison.champ).toBe("sprint10s");
+    expect(r!.comparaison.sens).toBe("regression");
+    expect(r!.comparaison.ecart).toBeGreaterThan(0);
+    // La preuve que rien n'a ete choisi pour flatter : deux ameliorations
+    // existaient dans la meme batterie et n'ont pas ete preferees.
+    if (!vm.comparaisonsTests.possible) throw new Error("comparaisons attendues possibles");
+    const ameliorations = vm.comparaisonsTests.comparaisons.filter(
+      (c) => c.sens === "amelioration"
+    );
+    expect(ameliorations.map((c) => c.champ).sort()).toEqual(["broadJumpCm", "endurance6min_m"]);
+  });
+
+  it("les DEUX sens de lowerIsBetter, ET un recul, sont affiches dans les cas de demonstration", () => {
+    const affiches = toutesLesFixtures()
+      .map((f) => repereDe(buildProgressionViewModel(f.input))?.comparaison ?? null)
       .filter((c): c is NonNullable<typeof c> => Boolean(c));
-    expect(affichees.some((c) => c.plusPetitEstMieux && c.ecart < 0 && c.sens === "amelioration")).toBe(
+    expect(affiches.some((c) => c.plusPetitEstMieux && c.ecart < 0 && c.sens === "amelioration")).toBe(
       true
     );
-    expect(affichees.some((c) => !c.plusPetitEstMieux && c.ecart > 0 && c.sens === "amelioration")).toBe(
+    expect(affiches.some((c) => !c.plusPetitEstMieux && c.ecart > 0 && c.sens === "amelioration")).toBe(
       true
     );
+    expect(affiches.some((c) => c.sens === "regression")).toBe(true);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// 7 bis. LE FORMAT REEL DES ENTREES DE TESTS
+// -----------------------------------------------------------------------------
+// Les fixtures doivent avoir la forme EXACTE de ce que `screens/TestsScreen.tsx`
+// ecrit. Sinon la demonstration montre un produit qui n'existe pas — la faute
+// commise a l'iteration precedente, reparee ici.
+// -----------------------------------------------------------------------------
+
+describe("Progression — les fixtures respectent le format reel d'une entree de test", () => {
+  const CLES_HORS_CHAMPS = new Set(["ts", "playlist", "notes"]);
+  const estChampSocle = (k: string): boolean =>
+    (CORE_FIELD_KEYS as readonly string[]).includes(k);
+
+  it.each(toutesLesFixtures().map((f) => [f.id, f] as const))(
+    "%s — une batterie = UNE entree et UN horodatage ; un test optionnel est enregistre seul",
+    (_id, f) => {
+      for (const entree of f.input.testsTerrain) {
+        const champs = Object.keys(entree).filter((k) => !CLES_HORS_CHAMPS.has(k));
+        const socle = champs.filter(estChampSocle);
+        const optionnels = champs.filter((k) => !estChampSocle(k));
+
+        // `save` n'ecrit QUE des cles connues de FIELD_DEFS (TestsScreen:245-249).
+        for (const champ of champs) {
+          expect(FIELD_DEFS.map((d) => d.key as string)).toContain(champ);
+        }
+
+        if (optionnels.length > 0) {
+          // Flux "un seul test" : exactement un champ, jamais melange au socle,
+          // et jamais de notes (TestsScreen:212 + :250).
+          expect({ id: _id, optionnels }).toEqual({ id: _id, optionnels: [optionnels[0]] });
+          expect(socle).toHaveLength(0);
+          expect(entree.notes).toBeUndefined();
+        } else {
+          // Flux batterie : 1 a 3 champs du socle, tous dans la MEME entree.
+          expect(socle.length).toBeGreaterThanOrEqual(1);
+          expect(socle.length).toBeLessThanOrEqual(CORE_FIELD_KEYS.length);
+        }
+      }
+    }
+  );
+
+  it.each(toutesLesFixtures().map((f) => [f.id, f] as const))(
+    "%s — horodatages valides, distincts par enregistrement, et ordre decroissant",
+    (_id, f) => {
+      const ts = f.input.testsTerrain.map((e) => e.ts);
+      for (const t of ts) {
+        expect(Number.isFinite(t)).toBe(true);
+        expect(t).toBeGreaterThan(0);
+      }
+      // Deux ENREGISTREMENTS distincts ne peuvent pas tomber sur la meme
+      // milliseconde ; en revanche les champs d'une meme entree partagent le sien.
+      expect(new Set(ts).size).toBe(ts.length);
+      // `useTestsStorage` trie desc (:56) et `save` empile en tete (:253).
+      expect([...ts].sort((a, b) => b - a)).toEqual(ts);
+    }
+  );
+
+  it("la provenance `playlist` est un cycle canonique, et elle ne selectionne RIEN", () => {
+    for (const f of toutesLesFixtures()) {
+      for (const entree of f.input.testsTerrain) {
+        if (entree.playlist === undefined) continue;
+        expect(Object.keys(MICROCYCLES)).toContain(entree.playlist);
+      }
+      // Rejouer la meme fixture avec TOUTES les provenances reecrites ne change
+      // pas le repere : `playlist` est un tag d'historique, pas un selecteur.
+      const brouille: ProgressionInput = {
+        ...cloner(f.input),
+        testsTerrain: f.input.testsTerrain.map((e) => ({ ...e, playlist: "saison" as const })),
+      };
+      expect(repereDe(buildProgressionViewModel(brouille))?.comparaison.champ ?? null).toBe(
+        repereDe(buildProgressionViewModel(f.input))?.comparaison.champ ?? null
+      );
+    }
   });
 });
 
@@ -788,5 +932,309 @@ describe("Progression — seuils d'affichage", () => {
     // "pas encore de tendance" a cote d'un bloc qui en affiche une.
     expect(PROGRESSION_SEANCES_MIN_POUR_TENDANCE).toBe(SEANCES_MIN_POUR_TENDANCE);
     expect(PROGRESSION_POINTS_MIN_POUR_COURBE).toBe(POINTS_MIN_POUR_COURBE);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// 11. LA REGLE DE SELECTION DU REPERE DE TEST (§5 bis du ViewModel)
+// -----------------------------------------------------------------------------
+// Trois regles, dans l'ordre :
+//   1. le test que vise l'objectif du cycle actif ;
+//   2. sinon, la mesure comparable la plus recente ;
+//   3. a egalite d'horodatage, l'ordre de departage fige.
+//
+// Et une interdiction qui prime sur tout : la selection ne regarde JAMAIS le
+// resultat. Les tests de la section "aveugle au resultat" echouent si quelqu'un
+// introduit un jour un tri par "meilleure progression".
+// -----------------------------------------------------------------------------
+
+/** Deux batteries completes a deux dates. `ecarts` decide de ce que valent les tests. */
+function deuxBatteries(ecarts: {
+  broadJumpCm: number;
+  sprint10s: number;
+  endurance6min_m: number;
+}): TestEntry[] {
+  const avant = { broadJumpCm: 220, sprint10s: 1.82, endurance6min_m: 1350 };
+  return [
+    {
+      ts: Date.UTC(2026, 6, 20, 10, 0),
+      broadJumpCm: avant.broadJumpCm + ecarts.broadJumpCm,
+      sprint10s: Number((avant.sprint10s + ecarts.sprint10s).toFixed(2)),
+      endurance6min_m: avant.endurance6min_m + ecarts.endurance6min_m,
+    },
+    { ts: Date.UTC(2026, 5, 20, 10, 0), ...avant },
+  ];
+}
+
+describe("Regle du repere — 1. l'objectif du cycle actif", () => {
+  it("le mapping couvre les 5 cycles, chacun avec son fondement ecrit", () => {
+    const cycles = Object.keys(MICROCYCLES) as MicrocycleId[];
+    expect(PROGRESSION_MAPPING_CYCLES.map((l) => l.cycle)).toEqual(cycles);
+    for (const ligne of PROGRESSION_MAPPING_CYCLES) {
+      expect(ligne.libelleCycle).toBe(MICROCYCLES[ligne.cycle].label);
+      // Un fondement ecrit, meme (et surtout) quand la reponse est "aucun test".
+      expect(ligne.fondement.trim().length).toBeGreaterThan(40);
+      if (ligne.champ !== null) {
+        // Le repere se prend dans le SOCLE : les 3 tests que tout le monde passe.
+        expect(CORE_FIELD_KEYS as readonly string[]).toContain(ligne.champ);
+      }
+    }
+  });
+
+  it("les cycles sans correspondance evidente tombent sur la regle 2, ils ne sont pas forces", () => {
+    expect(PROGRESSION_TEST_PAR_CYCLE.fondation.champ).toBeNull();
+    expect(PROGRESSION_TEST_PAR_CYCLE.saison.champ).toBeNull();
+    // Et leur ligne dit pourquoi.
+    expect(PROGRESSION_TEST_PAR_CYCLE.fondation.fondement).toMatch(/aucune correspondance/i);
+    expect(PROGRESSION_TEST_PAR_CYCLE.saison.fondement).toMatch(/aucune correspondance/i);
+  });
+
+  it("Force -> saut en longueur, Endurance -> 6 min, Explosivite -> sprint 10 m", () => {
+    expect(PROGRESSION_TEST_PAR_CYCLE.force.champ).toBe("broadJumpCm");
+    expect(PROGRESSION_TEST_PAR_CYCLE.endurance.champ).toBe("endurance6min_m");
+    expect(PROGRESSION_TEST_PAR_CYCLE.explosivite.champ).toBe("sprint10s");
+  });
+
+  it("la regle 1 passe AVANT la mesure la plus recente", () => {
+    // Le 505 est enregistre apres la batterie : c'est lui, le plus recent.
+    const tests: TestEntry[] = [
+      { ts: Date.UTC(2026, 6, 20, 11, 0), test505_s: 2.44 },
+      { ts: Date.UTC(2026, 6, 20, 10, 0), broadJumpCm: 231, sprint10s: 1.79, endurance6min_m: 1410 },
+      { ts: Date.UTC(2026, 5, 20, 11, 0), test505_s: 2.51 },
+      { ts: Date.UTC(2026, 5, 20, 10, 0), broadJumpCm: 224, sprint10s: 1.84, endurance6min_m: 1360 },
+    ];
+    const etat = construireComparaisonsTests(tests);
+    for (const [cycle, attendu] of [
+      ["force", "broadJumpCm"],
+      ["endurance", "endurance6min_m"],
+      ["explosivite", "sprint10s"],
+    ] as const) {
+      const r = choisirRepereTest(etat, cycle);
+      expect({ cycle, champ: r?.comparaison.champ, regle: r?.regle }).toEqual({
+        cycle,
+        champ: attendu,
+        regle: "objectif_du_cycle",
+      });
+    }
+    // Sans cycle actif, ou sur un cycle sans test associe : la regle 2 reprend.
+    expect(choisirRepereTest(etat, null)?.comparaison.champ).toBe("test505_s");
+    expect(choisirRepereTest(etat, "fondation")?.comparaison.champ).toBe("test505_s");
+  });
+
+  it("la regle 1 ne mord pas si le test du cycle n'a pas de comparaison possible", () => {
+    // Cycle Endurance, mais le 6 min n'a qu'une seule mesure.
+    const tests: TestEntry[] = [
+      { ts: Date.UTC(2026, 6, 20, 10, 0), broadJumpCm: 231, sprint10s: 1.79, endurance6min_m: 1410 },
+      { ts: Date.UTC(2026, 5, 20, 10, 0), broadJumpCm: 224, sprint10s: 1.84 },
+    ];
+    const r = choisirRepereTest(construireComparaisonsTests(tests), "endurance");
+    expect(r?.regle).toBe("mesure_la_plus_recente");
+    expect(r?.comparaison.champ).toBe("sprint10s"); // regle 3 : egalite, ordre fige
+  });
+});
+
+describe("Regle du repere — 2. la mesure la plus recente", () => {
+  it("prend le `ts` le plus grand, sans egard pour l'ordre du tableau", () => {
+    const candidats: ProgressionCandidatRepere[] = [
+      { champ: "broadJumpCm", apresTs: 100 },
+      { champ: "run1km_s", apresTs: 900 },
+      { champ: "sprint10s", apresTs: 500 },
+    ];
+    expect(choisirChampRepere(candidats, null)).toEqual({
+      champ: "run1km_s",
+      regle: "mesure_la_plus_recente",
+      departageApplique: false,
+    });
+    // Le meme ensemble dans un autre ordre donne le meme resultat.
+    expect(choisirChampRepere([...candidats].reverse(), null)?.champ).toBe("run1km_s");
+  });
+
+  it("aucun candidat = aucun repere (jamais un repere invente)", () => {
+    expect(choisirChampRepere([], null)).toBeNull();
+    expect(choisirChampRepere([], "explosivite")).toBeNull();
+    expect(
+      choisirRepereTest(
+        { possible: false, raison: "aucun_test_enregistre", explication: "x" },
+        "explosivite"
+      )
+    ).toBeNull();
+  });
+});
+
+describe("Regle du repere — 3. le departage a egalite", () => {
+  it("l'ordre de departage est complet, sans doublon, et couvre les 17 champs", () => {
+    expect(PROGRESSION_ORDRE_DEPARTAGE).toHaveLength(FIELD_DEFS.length);
+    expect(new Set(PROGRESSION_ORDRE_DEPARTAGE).size).toBe(FIELD_DEFS.length);
+    for (const def of FIELD_DEFS) {
+      expect(PROGRESSION_ORDRE_DEPARTAGE).toContain(def.key);
+    }
+  });
+
+  it("le socle passe avant les tests optionnels, et le sprint 10 m ouvre la marche", () => {
+    // Rang 1 : le seul test que `CORE_FIELD_WHY` classe lui-meme
+    // ("la qualite n1 en foot", testConfig.ts:301).
+    expect(PROGRESSION_ORDRE_DEPARTAGE[0]).toBe("sprint10s");
+    const rangs = PROGRESSION_ORDRE_DEPARTAGE.reduce<Record<string, number>>((acc, k, i) => {
+      acc[k] = i;
+      return acc;
+    }, {});
+    const pireDuSocle = Math.max(...CORE_FIELD_KEYS.map((k) => rangs[k]));
+    const meilleurOptionnel = Math.min(
+      ...FIELD_DEFS.map((d) => d.key as FieldKey)
+        .filter((k) => !(CORE_FIELD_KEYS as readonly string[]).includes(k))
+        .map((k) => rangs[k])
+    );
+    expect(pireDuSocle).toBeLessThan(meilleurOptionnel);
+    // Le reste du socle garde l'ordre documente de CORE_FIELD_KEYS.
+    expect(rangs.broadJumpCm).toBeLessThan(rangs.endurance6min_m);
+  });
+
+  it("une batterie met TOUS ses tests a egalite : le departage sert au quotidien", () => {
+    const tests = deuxBatteries({ broadJumpCm: +9, sprint10s: -0.05, endurance6min_m: +40 });
+    const etat = construireComparaisonsTests(tests);
+    if (!etat.possible) throw new Error("comparaison attendue possible");
+    expect(new Set(etat.comparaisons.map((c) => c.apresTs)).size).toBe(1);
+    const r = choisirRepereTest(etat, null);
+    expect(r?.departageApplique).toBe(true);
+    expect(r?.comparaison.champ).toBe("sprint10s");
+  });
+
+  it("le departage est STABLE : le meme ensemble donne le meme repere, quel que soit l'ordre", () => {
+    const candidats: ProgressionCandidatRepere[] = [
+      { champ: "endurance6min_m", apresTs: 42 },
+      { champ: "broadJumpCm", apresTs: 42 },
+      { champ: "sprint10s", apresTs: 42 },
+      { champ: "cmjCm", apresTs: 42 },
+    ];
+    const permutations = [
+      candidats,
+      [...candidats].reverse(),
+      [candidats[2], candidats[0], candidats[3], candidats[1]],
+      [candidats[3], candidats[1], candidats[2], candidats[0]],
+    ];
+    for (const p of permutations) {
+      expect(choisirChampRepere(p, null)).toEqual({
+        champ: "sprint10s",
+        regle: "mesure_la_plus_recente",
+        departageApplique: true,
+      });
+    }
+  });
+});
+
+describe("Regle du repere — AVEUGLE AU RESULTAT (R9)", () => {
+  // Le garde-fou central du fondateur : la selection ne doit JAMAIS dependre de
+  // l'amplitude positive du resultat. Ces tests echouent si quelqu'un introduit
+  // un tri par "meilleure progression".
+
+  it("le meme jeu de dates designe le MEME repere, que les ecarts soient bons ou mauvais", () => {
+    const scenarios = [
+      { nom: "tout progresse", broadJumpCm: +12, sprint10s: -0.09, endurance6min_m: +80 },
+      { nom: "tout recule", broadJumpCm: -12, sprint10s: +0.09, endurance6min_m: -80 },
+      { nom: "seul le sprint recule", broadJumpCm: +12, sprint10s: +0.09, endurance6min_m: +80 },
+      { nom: "seul le sprint progresse", broadJumpCm: -12, sprint10s: -0.09, endurance6min_m: -80 },
+      { nom: "rien ne bouge", broadJumpCm: 0, sprint10s: 0, endurance6min_m: 0 },
+      { nom: "saut spectaculaire", broadJumpCm: +60, sprint10s: +0.01, endurance6min_m: +2 },
+    ];
+    for (const s of scenarios) {
+      const etat = construireComparaisonsTests(deuxBatteries(s));
+      // Regle 2 + 3 : toujours le sprint, quel que soit ce que valent les chiffres.
+      expect({ nom: s.nom, champ: choisirRepereTest(etat, null)?.comparaison.champ }).toEqual({
+        nom: s.nom,
+        champ: "sprint10s",
+      });
+      // Regle 1 : toujours le test du cycle, meme quand il est le pire des trois.
+      expect({ nom: s.nom, champ: choisirRepereTest(etat, "force")?.comparaison.champ }).toEqual({
+        nom: s.nom,
+        champ: "broadJumpCm",
+      });
+    }
+  });
+
+  it("un repere en RECUL s'affiche : il n'est ni masque, ni remplace par un meilleur", () => {
+    const etat = construireComparaisonsTests(
+      deuxBatteries({ broadJumpCm: -6, sprint10s: +0.08, endurance6min_m: +90 })
+    );
+    const r = choisirRepereTest(etat, "explosivite");
+    expect(r?.comparaison.champ).toBe("sprint10s");
+    expect(r?.comparaison.sens).toBe("regression");
+    // Une amelioration franche existait a cote et n'a pas ete preferee.
+    if (!etat.possible) throw new Error("comparaisons attendues possibles");
+    expect(etat.comparaisons.find((c) => c.champ === "endurance6min_m")?.sens).toBe("amelioration");
+  });
+
+  it("la selection ne recoit PAS le resultat : sa signature ne porte que champ + horodatage", () => {
+    // Preuve de type, verifiee a l'execution : un candidat n'a que deux cles.
+    const candidat: ProgressionCandidatRepere = { champ: "sprint10s", apresTs: 1 };
+    expect(Object.keys(candidat).sort()).toEqual(["apresTs", "champ"]);
+    // Et la fonction se contente de ces deux cles-la : appelee avec une liste
+    // depouillee de tout le reste, elle rend exactement le meme verdict que via
+    // `choisirRepereTest` sur les comparaisons completes.
+    const etat = construireComparaisonsTests(
+      deuxBatteries({ broadJumpCm: +30, sprint10s: +0.2, endurance6min_m: -100 })
+    );
+    if (!etat.possible) throw new Error("comparaisons attendues possibles");
+    const depouille = etat.comparaisons.map((c) => ({ champ: c.champ, apresTs: c.apresTs }));
+    expect(choisirChampRepere(depouille, "explosivite")?.champ).toBe(
+      choisirRepereTest(etat, "explosivite")?.comparaison.champ
+    );
+  });
+
+  it("le code de la selection ne mentionne aucun terme de resultat (garde anti-cherry-picking)", () => {
+    // Filet supplementaire : si un jour quelqu'un fait entrer l'ecart dans la
+    // decision, il devra l'ecrire — et ce test le verra.
+    const source = choisirChampRepere
+      .toString()
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/\/\/[^\n]*/g, " ");
+    for (const interdit of [
+      "ecart",
+      "sens",
+      "amelioration",
+      "regression",
+      "plusPetitEstMieux",
+      "avantAffiche",
+      "apresAffiche",
+    ]) {
+      expect({ interdit, present: new RegExp(`\\b${interdit}\\b`).test(source) }).toEqual({
+        interdit,
+        present: false,
+      });
+    }
+  });
+});
+
+describe("Regle du repere — ce que le ViewModel en expose", () => {
+  it("chaque fixture qui affiche un repere dit AUSSI par quelle regle", () => {
+    for (const f of toutesLesFixtures()) {
+      const r = repereDe(buildProgressionViewModel(f.input));
+      if (r === null) continue;
+      expect(["objectif_du_cycle", "mesure_la_plus_recente"]).toContain(r.regle);
+      expect(r.motif.trim().length).toBeGreaterThan(0);
+      expect(typeof r.departageApplique).toBe("boolean");
+      // La regle 1 designe UN champ : elle ne peut pas avoir eu besoin d'un departage.
+      if (r.regle === "objectif_du_cycle") expect(r.departageApplique).toBe(false);
+    }
+  });
+
+  it("le repere affiche est toujours l'une des comparaisons calculees", () => {
+    for (const f of toutesLesFixtures()) {
+      const vm = buildProgressionViewModel(f.input);
+      const r = repereDe(vm);
+      if (r === null) continue;
+      if (vm.state === "empty" || !vm.comparaisonsTests.possible) {
+        throw new Error("un repere sans comparaisons possibles");
+      }
+      expect(vm.comparaisonsTests.comparaisons).toContain(r.comparaison);
+    }
+  });
+
+  it("le mapping est signale comme une decision produit a valider", () => {
+    const vm = vmDe("test-physique-ameliore");
+    expect(
+      vm.protoWarnings.some(
+        (w) => w.includes("PROGRESSION_TEST_PAR_CYCLE") && w.includes("valider par le fondateur")
+      )
+    ).toBe(true);
   });
 });

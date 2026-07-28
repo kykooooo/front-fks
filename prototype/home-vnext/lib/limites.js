@@ -31,6 +31,55 @@ const LIMITES = [
       "voient pas. Ce harnais sert a juger la mise en page et la hierarchie, pas le mouvement.",
   },
   {
+    quoi: "Le reglage « reduire les animations »",
+    detail:
+      "Il ne SE VOIT PAS, et c'est exactement le resultat voulu : au repos, un ecran sans " +
+      "animation est identique a un ecran avec animation. Une capture ne peut donc pas en rendre " +
+      "compte. Ce qui se prouve est dans le balisage, et le visualiseur le compte pour toi " +
+      "(onglet « Cet etat ») : le bouton du jour porte une consigne de mouvement dans un cas, " +
+      "aucune dans l'autre. Ne cherche pas la difference a l'oeil, elle n'y est pas.",
+  },
+  {
+    quoi: "Les plafonds d'agrandissement du texte",
+    detail:
+      "Sur telephone, trois textes d'affichage cessent de grandir a un moment (la salutation, le " +
+      "libelle du bouton du jour, les titres de section) : ce sont les seuls, tout le reste " +
+      "grandit sans limite. Le moteur de rendu web ne transmet PAS ces plafonds. Les pages " +
+      "« x1,3 » de ce visualiseur montrent donc le PIRE CAS, sans aucun plafond : la vraie page " +
+      "sera moins etiree que celle-ci, jamais plus. Si la mise en page tient ici, elle tient sur " +
+      "telephone.",
+  },
+  {
+    quoi: "La comparaison avant / apres de la carte progression",
+    detail:
+      "Cinq choses ont change depuis la version validee. UNE SEULE est rejouable par une bascule : " +
+      "la typographie, parce que l'ancienne echelle a ete conservee expres. Les quatre autres ont " +
+      "REMPLACE ce qui existait — l'ancien selecteur de test a ete supprime, les anciennes dates " +
+      "de fixture aussi. Le harnais ne les rejoue donc pas : il les CHIFFRE a cote (onglet " +
+      "« Valider », section avant / apres, et onglet « La regle » pour le test mis en avant). " +
+      "Fabriquer une fausse page « avant » en recopiant a la main le comportement suppose de " +
+      "l'ancien code serait exactement l'erreur que cette iteration corrige.",
+  },
+  {
+    quoi: "Deux generations ne donnent pas EXACTEMENT le meme resultat — et on sait pourquoi",
+    detail:
+      "Verifie : deux generations successives produisent des fichiers rigoureusement identiques " +
+      "pour la proposition et pour la carte progression. Les seules pages qui different sont " +
+      "celles du Home de PRODUCTION, et toujours au meme endroit : la valeur d'echelle de son " +
+      "bouton principal, qui joue une pulsation en boucle sans consulter le reglage « reduire les " +
+      "animations ». La capture l'attrape a un endroit different a chaque fois. Ce n'est donc pas " +
+      "un defaut du harnais mais un defaut du produit, mis au jour par la verification — il est " +
+      "chiffre dans ce meme panneau. Hors perimetre, non corrige ici.",
+  },
+  {
+    quoi: "Le Home de production et l'axe typographie",
+    detail:
+      "L'ecran de production n'a ni reglage d'echelle ni prise en compte de « reduire les " +
+      "animations » : il n'a qu'une typographie, la sienne. Sa colonne reste donc sur la " +
+      "presentation par defaut quel que soit le reglage choisi, et le cadre le dit. Ce n'est pas " +
+      "un manque du harnais, c'est un fait du produit.",
+  },
+  {
     quoi: "Le flou",
     detail:
       "Les fonds floutes (expo-blur) sont rendus transparents. Aucun effet de verre depoli.",
@@ -77,7 +126,7 @@ const LIMITES = [
       "La carte progression a ete ecrite avec ses propres jeux de donnees, sans ecran d'accueil " +
       "autour. Pour la regarder en place, le harnais la pose sur un ecran existant. Le choix de " +
       "l'ecran garantit toujours une chose : le nombre affiche par « Ma semaine » est exactement " +
-      "celui contre lequel la carte s'est protegee. Sur trois des six cas, quelque chose d'autre " +
+      "celui contre lequel la carte s'est protegee. Sur trois des sept cas, quelque chose d'autre " +
       "ne concorde pas (deux courbes qui ne tracent pas la meme serie, ou deux comptes de seances " +
       "differents) : c'est ecrit en rouge sur l'etat concerne et detaille dans « Cet etat ». " +
       "Un ecart ainsi signale vient de l'assemblage du prototype, pas d'une proposition de produit.",

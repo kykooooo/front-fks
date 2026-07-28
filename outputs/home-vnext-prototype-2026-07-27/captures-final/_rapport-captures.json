@@ -1,0 +1,109 @@
+{
+  "genereLe": "2026-07-28T19:18:04.868Z",
+  "ok": [
+    {
+      "nom": "etat-v2-nouveau-joueur",
+      "fichier": "etat-01-nouveau-joueur-375-page-entiere.png"
+    },
+    {
+      "nom": "etat-v2-deux-seances-tendance-indisponible",
+      "fichier": "etat-02-deux-seances-tendance-indisponible-375-page-entiere.png"
+    },
+    {
+      "nom": "etat-v2-tendance-disponible",
+      "fichier": "etat-03-tendance-disponible-375-page-entiere.png"
+    },
+    {
+      "nom": "etat-v2-test-physique-ameliore",
+      "fichier": "etat-04-test-physique-ameliore-375-page-entiere.png"
+    },
+    {
+      "nom": "etat-v2-test-physique-en-recul",
+      "fichier": "etat-05-test-physique-en-recul-375-page-entiere.png"
+    },
+    {
+      "nom": "etat-v2-aucune-comparaison-de-test",
+      "fichier": "etat-06-aucune-comparaison-de-test-375-page-entiere.png"
+    },
+    {
+      "nom": "etat-v2-donnee-manquante",
+      "fichier": "etat-R1-preuve-donnee-manquante-375-page-entiere.png"
+    },
+    {
+      "nom": "typo-tendance-disponible-375",
+      "fichier": "comparaison-typo-actuelle-vs-allegee-tendance-disponible-375.png",
+      "gauche": 737,
+      "droite": 738,
+      "ecartPx": 1
+    },
+    {
+      "nom": "typo-test-physique-en-recul-375",
+      "fichier": "comparaison-typo-actuelle-vs-allegee-test-physique-en-recul-375.png",
+      "gauche": 762,
+      "droite": 767,
+      "ecartPx": 5
+    },
+    {
+      "nom": "typo-tendance-disponible-320",
+      "fichier": "comparaison-typo-actuelle-vs-allegee-tendance-disponible-320.png",
+      "gauche": 713,
+      "droite": 716,
+      "ecartPx": 3
+    },
+    {
+      "nom": "prog-nouveau-joueur",
+      "fichier": "comparaison-progression-avant-apres-nouveau-joueur-375.png",
+      "gauche": 401,
+      "droite": 491,
+      "ecartPx": 90
+    },
+    {
+      "nom": "prog-tendance-disponible",
+      "fichier": "comparaison-progression-avant-apres-tendance-disponible-375.png",
+      "gauche": 666,
+      "droite": 738,
+      "ecartPx": 72
+    },
+    {
+      "nom": "prog-test-physique-en-recul",
+      "fichier": "comparaison-progression-avant-apres-test-physique-en-recul-375.png",
+      "gauche": 606,
+      "droite": 767,
+      "ecartPx": 161
+    },
+    {
+      "nom": "largeur-320-v2-tendance-disponible",
+      "fichier": "largeur-320px-iphone-se-tendance-disponible.png"
+    },
+    {
+      "nom": "largeur-320-v2-deux-seances-tendance-indisponible",
+      "fichier": "largeur-320px-iphone-se-deux-seances-tendance-indisponible.png"
+    },
+    {
+      "nom": "x13-v2-tendance-disponible",
+      "fichier": "texte-agrandi-x1-3-tendance-disponible-375.png"
+    },
+    {
+      "nom": "x13-v2-test-physique-en-recul",
+      "fichier": "texte-agrandi-x1-3-test-physique-en-recul-375.png"
+    },
+    {
+      "nom": "mouvement-reduit",
+      "fichier": "mouvement-reduit-vs-normal-tendance-disponible-375.png",
+      "gauche": 738,
+      "droite": 738,
+      "ecartPx": 0
+    },
+    {
+      "nom": "visualiseur-regle",
+      "fichier": "outil-visualiseur-bascules-et-regle.png",
+      "visualiseur": "http://127.0.0.1:8141/"
+    },
+    {
+      "nom": "visualiseur-axes",
+      "fichier": "outil-visualiseur-axes-a-trancher.png",
+      "visualiseur": "http://127.0.0.1:8141/"
+    }
+  ],
+  "echecs": []
+}

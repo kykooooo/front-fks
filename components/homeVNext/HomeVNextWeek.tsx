@@ -19,8 +19,10 @@ import { StyleSheet, Text, View } from "react-native";
 
 import type { WeekBlock } from "../../screens/homeVNext/viewModel";
 import { MARQUEURS } from "./homeVNextMarqueurs";
+import { stylesParEchelle, useStylesEchelle } from "./homeVNextPresentation";
 import { CarteSection } from "./HomeVNextPrimitives";
-import { couleurs, espacement, typo } from "./homeVNextTokens";
+import type { EchelleTypo } from "./homeVNextTypo";
+import { couleurs, espacement } from "./homeVNextTokens";
 
 /**
  * Au-dela de ce nombre de seances visees, les segments deviennent des echardes
@@ -31,6 +33,7 @@ const MAX_SEGMENTS_LISIBLES = 7;
 const pluriel = (n: number, mot: string) => `${n} ${mot}${n > 1 ? "s" : ""}`;
 
 export function HomeVNextWeek({ week }: { week: NonNullable<WeekBlock> }) {
+  const styles = useStylesEchelle(STYLES);
   const titreValeur = week.goalExceeded
     ? `${pluriel(week.doneCount, "séance")} cette semaine`
     : `${pluriel(week.doneCount, "séance")} sur ${week.goalCount}`;
@@ -74,34 +77,38 @@ export function HomeVNextWeek({ week }: { week: NonNullable<WeekBlock> }) {
   );
 }
 
-const styles = StyleSheet.create({
-  valeur: {
-    ...typo.metricValue,
-    color: couleurs.texte,
-  },
-  jauge: {
-    flexDirection: "row",
-    // Largeurs en flex : la jauge s'adapte de 320 a 430 px sans une seule
-    // valeur en dur.
-    gap: 6,
-    marginTop: espacement.serre,
-  },
-  segment: {
-    flex: 1,
-    height: 6,
-    borderRadius: 3,
-  },
-  segmentFait: {
-    // Le bleu ambient du theme, pas l'orange : l'orange reste reserve a l'unique
-    // aplat d'action de l'ecran.
-    backgroundColor: couleurs.lien,
-  },
-  segmentVide: {
-    backgroundColor: couleurs.bordure,
-  },
-  message: {
-    ...typo.body,
-    color: couleurs.texteSecondaire,
-    marginTop: espacement.serre,
-  },
-});
+const creerStyles = (t: EchelleTypo) =>
+  StyleSheet.create({
+    valeur: {
+      // Information chiffree : jamais plafonnee a l'agrandissement systeme.
+      ...t.valeur,
+      color: couleurs.texte,
+    },
+    jauge: {
+      flexDirection: "row",
+      // Largeurs en flex : la jauge s'adapte de 320 a 430 px sans une seule
+      // valeur en dur.
+      gap: 6,
+      marginTop: espacement.serre,
+    },
+    segment: {
+      flex: 1,
+      height: 6,
+      borderRadius: 3,
+    },
+    segmentFait: {
+      // Le bleu ambient du theme, pas l'orange : l'orange reste reserve a l'unique
+      // aplat d'action de l'ecran.
+      backgroundColor: couleurs.lien,
+    },
+    segmentVide: {
+      backgroundColor: couleurs.bordure,
+    },
+    message: {
+      ...t.corps,
+      color: couleurs.texteSecondaire,
+      marginTop: espacement.serre,
+    },
+  });
+
+const STYLES = stylesParEchelle(creerStyles);

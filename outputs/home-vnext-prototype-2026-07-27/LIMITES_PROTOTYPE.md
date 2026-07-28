@@ -199,35 +199,41 @@ Yanis » — pendant que la carte, ~200 px plus bas, écrivait « tes entraînem
 sont pas comptés ». Un joueur qui lit de haut en bas apprenait donc son état, puis
 apprenait qu'on ne peut pas le connaître. **L'écran se contredisait lui-même.**
 
-Ta règle, mot pour mot : *« Ne pas afficher "En forme" ou "Prêt à performer" si les
-entraînements club et les autres charges ne sont pas réellement connus. »*
+**TA DÉCISION DU 28 JUILLET (D1), APPLIQUÉE SANS CONDITION.** Cette section décrivait
+jusqu'ici un verrou *conditionnel* : la pastille disparaissait tant qu'un drapeau
+`chargesClubCapturees` restait faux, et « reviendrait toute seule » le jour où l'app
+capturerait les charges club. **Ce n'est plus le cas, et c'est toi qui l'as tranché :**
+
+> *« La pastille d'état global est RETIRÉE COMPLÈTEMENT de la variante "Progression
+> intégrée". Aucun de ces libellés, ni aucun autre jugement global : "En forme", "Frais",
+> "Prêt à performer", "Un peu chargé", "Charge modérée". Motif : le modèle de charge
+> utilise encore des valeurs initiales artificielles et ne connaît pas les entraînements
+> club. Une pastille "Charge FKS" ne pourra revenir que le jour où son calcul reposera sur
+> des données entièrement réelles avec une portée expliquée. »*
 
 Ce qui a été fait :
 
-- le verrou vit **dans le ViewModel du Home**, au même endroit que la règle qui protégeait
-  déjà de l'amorçage (`screens/homeVNext/viewModel.ts`, §5.7) — **pas** dans le composant
-  d'en-tête : un composant ne doit jamais décider de ce que l'app a le droit d'affirmer ;
-- il est **piloté par la variante**. En variante 2, la pastille ne s'affiche que si les
-  charges club sont réellement capturées. Ce drapeau étant aujourd'hui **toujours faux**,
-  la variante 2 n'affiche **plus aucune pastille d'état** ;
-- **la variante 1 garde la sienne**, volontairement. C'est l'écart que tu dois pouvoir
-  regarder côte à côte avant de trancher — elle n'a pas bougé d'un pixel ;
+- le retrait vit **dans le ViewModel du Home** (`screens/homeVNext/viewModel.ts`, §5.7) —
+  **pas** dans le composant d'en-tête : un composant ne doit jamais décider de ce que
+  l'app a le droit d'affirmer ;
+- il n'est **plus derrière un drapeau**. L'option `chargesClubCapturees` a été
+  **supprimée** de ce ViewModel, et le champ de sortie `etatGlobal` a été supprimé du
+  contrat de la carte. Il n'existe donc plus aucune valeur d'entrée capable de faire
+  revenir « En forme » en variante 2 : la question posée par l'ancien drapeau n'était pas
+  la bonne, puisque le calcul lui-même part de `ATL0` / `CTL0` ;
+- **la variante 1 garde la sienne**, volontairement, et uniquement pour ça : c'est l'écart
+  que tu dois pouvoir regarder côte à côte — elle n'a pas bougé d'un pixel ;
 - le retrait est **mesuré, pas supposé** : le vérificateur lit le marqueur de la pastille
-  sur les 60 pages de la variante 2 (ligne « f2 »), et l'attendu vient du contrat, pas
-  d'une constante écrite à la main. Le jour où l'app capturera vraiment les charges club,
-  la pastille reviendra toute seule, sans qu'une ligne soit à changer.
+  sur toutes les pages de la variante 2 (ligne « f2 »), et une suite de tests interdit en
+  plus **tous** les libellés de `FOOTBALL_LABELS` — la liste est *lue* dans la config, pas
+  recopiée, donc un septième état ajouté un jour serait couvert sans que personne y pense.
 
-**Ce qui reste ta décision** — et qui n'a **pas** été pris à ta place :
-
-| Voie | Ce que ça veut dire |
-|---|---|
-| **A** (appliquée) | Pas de pastille tant que les charges club sont inconnues. L'en-tête est plus nu ; l'écran ne se contredit plus. |
-| **B** | Une pastille **reformulée**, explicitement limitée aux séances FKS — par exemple « Charge FKS : modérée ». Elle n'affirmerait plus rien sur ton état global. C'est un **libellé nouveau**, donc une décision de produit, pas une correction technique. |
-| **C** | La garder telle quelle, et assumer que la règle ne vaut que pour la carte. |
-
-La voie B est la seule qui garde une information en haut d'écran sans mentir. Elle n'a pas
-été prise parce qu'elle invente un libellé que tu n'as pas validé. Le point à valider
-« La pastille "En forme" de l'en-tête » du visualiseur te met les deux colonnes côte à côte.
+**Ce qui reste ta décision, et seulement celle-là** : à quelle condition une mention de
+charge pourra revenir un jour en haut d'écran. Ta règle actuelle est claire — *quand son
+calcul reposera sur des données entièrement réelles, avec une portée expliquée*. Tant que
+ce n'est pas le cas, aucune reformulation n'est proposée : « Charge FKS : modérée » avait
+été envisagée à l'itération précédente, elle est **écartée**, le libellé « Charge modérée »
+faisant partie de ceux que tu as nommément interdits.
 
 ### 4 bis.3 La page Progression n'a pas été refondue, et ses calculs restent douteux
 
@@ -336,6 +342,93 @@ pas :
   en vrai — c'est justement pour ça que le cas « donnée manquante » existe) ;
 - que les textes tiendront avec de vrais noms d'exercices ;
 - que les seuils tomberont juste sur un vrai historique.
+
+---
+
+## 4 ter. LES CAS QUI NE SONT PAS ATTEIGNABLES AVEC LE FORMAT RÉEL
+
+> **Décision D4** : aucune fixture mensongère. Les données de démonstration doivent
+> respecter **exactement** le format que `TestsScreen` produit réellement. Interdit de
+> fabriquer des dates pour forcer un exemple à l'écran.
+
+### La faute de l'itération précédente, dite en clair
+
+À l'itération précédente, les batteries de test avaient été **éclatées en une entrée par
+exercice**, avec une heure fabriquée pour chacune (10 h 05, 10 h 25, 10 h 45…), dans le seul
+but de faire remonter un cas à l'écran. **Le produit ne fabrique pas cette forme de
+donnée.** La démonstration montrait donc quelque chose qui n'existe pas.
+
+Ce qui devait changer, c'était **la règle de sélection**, pas les données. C'est fait, et
+les fixtures sont revenues au format réel.
+
+### Les six contraintes du format réel — relues dans le code
+
+| # | Contrainte | Où c'est écrit |
+|---|---|---|
+| 1 | **Une batterie du socle = UNE entrée, UN seul horodatage.** Les 3 tests du socle partagent leur date à la seconde près. | `screens/TestsScreen.tsx`:241, puis :245-249 |
+| 2 | Une batterie **peut être incomplète** : passer une étape est permis, et seuls les champs renseignés sont écrits. Une entrée socle à 1 ou 2 champs est **réelle**. | `TestsScreen.tsx`:348-350 et :245-249 |
+| 3 | **Un test optionnel est enregistré SEUL**, dans sa propre entrée, avec son propre horodatage. Il ne peut **jamais** partager une entrée avec un test du socle. | `TestsScreen.tsx`:212 et :327-332 |
+| 4 | Le champ `notes` **n'existe que** sur une entrée socle. | `TestsScreen.tsx`:250 |
+| 5 | `playlist` = le cycle actif **au moment du test**. C'est une **provenance**, pas un sélecteur. | `TestsScreen.tsx`:243-244 |
+| 6 | L'historique est **décroissant** (le plus récent d'abord) et **borné à 30 entrées**. | `screens/tests/hooks/useTestsStorage.ts`:56-57 |
+
+### Ce que ces contraintes rendent NON ATTEIGNABLE — et donc non démontrable ici
+
+| Cas | Pourquoi il ne peut pas exister |
+|---|---|
+| **Deux tests du socle avec des horodatages différents le même jour** | Contrainte 1. Une batterie s'écrit en une fois. C'est **précisément** pour ça que l'ordre de départage (règle 3) est utile au quotidien et pas anecdotique. |
+| **Un test optionnel qui départage un test du socle à horodatage égal** | Contrainte 3. Les deux ne partagent jamais une entrée, donc jamais un horodatage. Les rangs 4 à 17 de l'ordre de départage sont donc **structurellement peu sollicités** — ils existent pour un joueur qui n'aurait **que** des tests optionnels comparables. |
+| **Une note (`notes`) attachée à un test optionnel** | Contrainte 4. |
+| **Un historique de plus de 30 entrées** | Contrainte 6. Un joueur très assidu sur plusieurs saisons **perdra ses plus anciennes mesures** — et donc, un jour, la possibilité de comparer. **Ce n'est pas une limite du prototype, c'est une limite du produit**, et elle n'est écrite nulle part côté joueur. À trancher. |
+| **Une comparaison bâtie sur deux mesures du même jour** | Refusée par le contrat (seuil « 2 jours distincts »). La fixture `aucune-comparaison-de-test` **montre le refus**, pas le résultat. |
+
+### La conséquence à assumer
+
+Un jeu de fixtures honnête est **moins spectaculaire** qu'un jeu arrangé. Trois cas de
+démonstration reposent sur la règle 1 (le cycle actif désigne le test) parce que c'est la
+situation normale ; un seul exerce vraiment les règles 2 et 3. **C'est le produit qui est
+comme ça**, ce n'est pas un manque de scénarios.
+
+---
+
+## 4 quater. LE RÉGLAGE « RÉDUIRE LES ANIMATIONS » — ce qui est fait, ce qui ne l'est pas
+
+### Ce qui est modélisé
+
+Le réglage vit dans un contexte de **présentation**, à côté de l'échelle typographique —
+pas dans le programme qui décide quoi afficher. Motif : ce programme répond à « qu'est-ce
+que l'écran a le **droit** d'afficher ? », une question sur la **donnée**. Un réglage
+d'accessibilité du téléphone n'est pas une donnée de joueur. L'y mettre aurait aussi forcé
+à ajouter un champ obligatoire aux 15 fixtures, pour zéro information nouvelle.
+
+### Ce qui n'est PAS branché
+
+**Le prototype n'a aucune API système.** C'est la fixture (ou la bascule du visualiseur) qui
+pilote le drapeau, jamais le téléphone.
+
+Le branchement réel est écrit en toutes lettres dans le fichier :
+`AccessibilityInfo.isReduceMotionEnabled()` au montage **+ un abonnement à
+`reduceMotionChanged`**. L'abonnement est un **ajout** : le Home de production ne lit la
+préférence **qu'une seule fois**, donc un joueur qui active le réglage en cours de route
+n'est pas servi tant qu'il ne relance pas l'app.
+
+### Ce qu'une capture ne peut pas montrer
+
+**Au repos, les deux rendus sont identiques à l'œil.** C'est le résultat voulu — aucune
+information n'est portée par un mouvement — mais ça veut dire qu'**aucune capture d'écran
+ne peut prouver que le réglage est respecté**.
+
+La preuve est donc dans le **balisage**, et elle est reproduite dans la capture
+`captures-final/mouvement-reduit-vs-normal-tendance-disponible-375.png` : la ligne de code
+du conteneur du bouton du jour est affichée sous chaque colonne. À gauche il porte une
+consigne de mouvement, à droite **aucune**.
+
+### Ce que le prototype ne répare pas
+
+`components/home/HomePrimaryCTA.tsx` (lignes 39-49) joue une pulsation en boucle infinie
+sans jamais consulter le réglage. **Hors périmètre, non corrigée.** Le prototype ne fait
+que la mesurer : le harnais force « mouvement réduit » avant chaque rendu, et deux
+générations successives sont rigoureusement identiques **partout sauf sur ce bouton**.
 
 ---
 
@@ -536,12 +629,17 @@ qu'on fait de la phrase de portée.
    « nouveau joueur », « deux séances » et « tendance disponible ». **Descends jusqu'en bas
    des deux colonnes** : la question est de savoir si le lien flottant a vraiment disparu,
    ou si la carte s'est ajoutée à côté.
-8. **Réponds aux 12 questions** du panneau « Points à valider » propres à la variante 2.
+8. **Réponds aux 14 questions** du panneau « Points à valider » propres à la variante 2 —
+   dont les deux nouvelles : *« Quel test la carte affiche-t-elle ? »* et *« Un repère en
+   recul s'affiche-t-il ? »*. Et passe par l'onglet **« Axes »** : les sept axes s'y
+   jugent un par un, avec la bascule à manipuler pour chacun.
 9. **Regarde le cas « donnée manquante »** : c'est la démonstration que l'app préfère se
    taire plutôt qu'écrire « 0 min ». Si ce comportement te gêne, il faut le dire maintenant —
    il structure tout le reste.
-10. **Tranche sur la pastille « En forme »** de l'en-tête (§4 bis.2). Elle a été **retirée
-    de la variante 2**, en appliquant ta règle telle que tu l'as écrite ; la variante 1 la
-    garde, pour que tu voies l'écart. Ce qui reste à trancher : garder l'en-tête nu (voie
-    appliquée), ou écrire une pastille reformulée qui dise explicitement qu'elle ne parle
-    que des séances FKS. Ce libellé-là n'a pas été inventé à ta place.
+10. **Valide (ou conteste) le mapping cycle → test** (§5 bis du ViewModel, onglet « La
+    règle » du visualiseur). C'est la seule décision produit vraiment neuve de cette
+    itération : quel test le Home met en avant selon le cycle actif — Force → saut en
+    longueur, Endurance → 6 min, Explosivité → sprint 10 m, Fondation et Saison → aucun.
+    Chaque ligne cite la phrase du dépôt qui la fonde et ce qui a été écarté.
+    **La pastille « En forme », elle, n'est plus une question ouverte** : ta décision D1 du
+    28 juillet l'a retirée sans condition de la variante 2 (§4 bis.2).

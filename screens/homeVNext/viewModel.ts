@@ -658,7 +658,7 @@ export type HomeVNextSection = (typeof HOME_VNEXT_SECTION_ORDER)[number];
 // OPTIONS DE CONSTRUCTION — CE QUI DEPEND DE LA VARIANTE, ET RIEN D'AUTRE
 // =============================================================================
 //
-// POURQUOI CES OPTIONS EXISTENT
+// POURQUOI CETTE OPTION EXISTE
 // -----------------------------------------------------------------------------
 // La variante 2 pose une carte qui ecrit, en toutes lettres, « Calculé sur tes
 // séances FKS uniquement — tes entraînements club n'y sont pas comptés ». Sur
@@ -666,22 +666,21 @@ export type HomeVNextSection = (typeof HOME_VNEXT_SECTION_ORDER)[number];
 // PHYSIQUE GLOBAL (« En forme », « Un peu chargé »). Un joueur qui lit de haut
 // en bas apprend donc son etat, puis apprend qu'on ne peut pas le connaitre.
 //
-// Regle du fondateur, mot pour mot :
-//   « Ne pas afficher "En forme" ou "Prêt à performer" si les entraînements club
-//     et les autres charges ne sont pas réellement connus. »
-//   « Ne présente pas une tendance construite uniquement avec FKS comme l'état
-//     physique global du joueur. »
+// Le fondateur a tranche apres avoir regarde l'ecran (D1, 2026-07-28) : en
+// variante 2, la pastille est retiree COMPLETEMENT, et pas seulement quand les
+// charges club manquent. Motif : le modele de charge lui-meme part de valeurs
+// initiales artificielles (ATL0 / CTL0) — aucune condition d'entree ne peut
+// rendre le libelle honnete aujourd'hui.
 //
-// La regle est donc appliquee A LA SOURCE, ici, au meme endroit que le verrou
-// existant (§5.7) — pas dans le composant d'en-tete, qui ne doit jamais decider
-// de ce que l'app a le droit d'affirmer.
+// La regle est donc appliquee A LA SOURCE, ici (§5.7) — pas dans le composant
+// d'en-tete, qui ne doit jamais decider de ce que l'app a le droit d'affirmer.
 //
 // POURQUOI ELLE EST PILOTEE PAR LA VARIANTE ET NON APPLIQUEE PARTOUT
 // -----------------------------------------------------------------------------
-// La VARIANTE 1 est celle que le fondateur a deja regardee et validee. Elle ne
-// bouge pas d'un pixel : c'est precisement l'ECART entre les deux qu'il doit
-// pouvoir voir cote a cote pour trancher. Par defaut, ces options reproduisent
-// donc EXACTEMENT le comportement d'origine.
+// La VARIANTE 1 est celle que le fondateur a deja regardee. Elle ne bouge pas
+// d'un pixel, PASTILLE COMPRISE : c'est precisement l'ECART entre les deux qu'il
+// doit pouvoir voir cote a cote. Sans option, le ViewModel se comporte donc
+// EXACTEMENT comme avant l'ajout de ce parametre.
 // =============================================================================
 
 /** Laquelle des deux propositions ce ViewModel alimente. */
@@ -691,21 +690,14 @@ export type HomeVNextOptions = {
   /**
    * Variante rendue. Defaut `"v1"` : sans option, le ViewModel se comporte
    * exactement comme avant l'ajout de ce parametre (zero diff sur la variante 1).
+   *
+   * SEULE option de ce ViewModel, et c'est voulu. Il y en avait une deuxieme,
+   * `chargesClubCapturees`, qui autorisait la pastille d'etat du jour en
+   * variante 2 quand les charges club etaient capturees. Elle a ete SUPPRIMEE
+   * par la decision D1 du fondateur (voir §5.7) : la pastille ne doit pas
+   * pouvoir revenir en variante 2 par un drapeau.
    */
   variante?: HomeVNextVarianteVm;
-  /**
-   * Les entrainements club REELLEMENT REALISES sont-ils captures ?
-   *
-   * Defaut `false`, et c'est l'etat reel de l'app aujourd'hui : rien ne capture
-   * les seances club faites. `useExternalStore.clubDays` n'injecte qu'une charge
-   * SUPPOSEE depuis des cases cochees au setup profil (`applyAutoExternalLoads`).
-   * C'est le meme champ, avec le meme nom et le meme sens, que
-   * `ProgressionInput.chargesClubCapturees` (`./progressionViewModel`).
-   *
-   * En variante 2, tant qu'il vaut `false`, AUCUNE pastille d'etat global n'est
-   * produite — quelle que soit la qualite de la tendance FKS.
-   */
-  chargesClubCapturees?: boolean;
 };
 
 /** Ce que l'ecran affiche. */
@@ -912,7 +904,6 @@ export function buildHomeVNextViewModel(
   // Defauts choisis pour que `buildHomeVNextViewModel(input)` — la forme
   // utilisee partout jusqu'ici — produise le MEME ViewModel qu'avant.
   const variante: HomeVNextVarianteVm = options.variante ?? "v1";
-  const chargesClubCapturees = options.chargesClubCapturees ?? false;
 
   // ---------------------------------------------------------------------------
   // 5.1 Coherence des entrees (une seule verite par chiffre)
@@ -1310,37 +1301,41 @@ export function buildHomeVNextViewModel(
   const tendanceDisponible = form !== null && form.kind === "available";
   const libelleEtat = trend ? texteOuNull(trend.stateLabel) : null;
 
-  // VERROU 2 (VARIANTE 2 UNIQUEMENT) — les charges club doivent etre capturees.
+  // VERROU 2 (VARIANTE 2 UNIQUEMENT) — IL N'Y A PLUS DE PASTILLE. DU TOUT.
   //
-  // Le verrou 1 ne protege que de l'AMORCAGE : il verifie qu'il y a assez de
-  // seances FKS et assez de jours observes. Il ne dit rien de ce qui MANQUE au
-  // calcul. Or `stateLabel` vient de `getFootballLabel(tsb)`, et le TSB n'est
-  // calcule que sur les charges connues de l'app — c'est-a-dire les seances FKS,
-  // les entrainements club en etant absents. Le presenter comme l'etat physique
-  // du joueur, c'est faire dire a une mesure partielle ce qu'elle ne mesure pas.
+  // DECISION DU FONDATEUR (D1, 2026-07-28), apres avoir regarde la variante 2 :
+  //   « La pastille d'etat global est RETIREE COMPLETEMENT de la variante
+  //     "Progression integree". Aucun de ces libelles, ni aucun autre jugement
+  //     global : "En forme", "Frais", "Pret a performer", "Un peu charge",
+  //     "Charge moderee". Motif : le modele de charge utilise encore des valeurs
+  //     initiales artificielles et ne connait pas les entrainements club. Une
+  //     pastille "Charge FKS" ne pourra revenir que le jour ou son calcul
+  //     reposera sur des donnees entierement reelles avec une portee expliquee. »
   //
-  // Le meme ecran, en variante 2, ecrit deja « tes entraînements club n'y sont
-  // pas comptés » sous la courbe : les deux affirmations ne peuvent pas coexister.
+  // CE QUI A CHANGE DEPUIS L'ITERATION PRECEDENTE. La condition etait
+  // `variante === "v1" ? true : chargesClubCapturees` : un appelant qui passait
+  // `chargesClubCapturees: true` faisait revenir « En forme » en variante 2. La
+  // question posee n'etait donc pas la bonne — elle supposait qu'il suffisait de
+  // connaitre les charges club. Le fondateur tranche autrement : le calcul
+  // lui-meme part de valeurs initiales artificielles (`TRAINING_DEFAULTS.ATL0` /
+  // `CTL0`, ProgressScreen.tsx:251-252), donc aucun drapeau d'entree ne peut
+  // rendre ce libelle honnete aujourd'hui. L'option a ete supprimee avec la
+  // condition : il n'y a plus de drapeau a passer.
   //
-  // ETAT REEL AUJOURD'HUI : `chargesClubCapturees` vaut TOUJOURS `false` — rien
-  // dans l'app ne capture les entrainements club realises. En pratique, la
-  // variante 2 n'affiche donc AUCUNE pastille d'etat. Ce n'est pas un effet de
-  // bord : c'est la regle demandee, appliquee telle qu'elle a ete ecrite.
-  //
-  // LA VARIANTE 1 GARDE SA PASTILLE, volontairement : c'est l'ecart que le
-  // fondateur doit pouvoir regarder cote a cote avant de trancher.
-  const etatAutoriseParLesCharges = variante === "v1" ? true : chargesClubCapturees;
-  const etatAutorise = tendanceDisponible && etatAutoriseParLesCharges;
+  // LA VARIANTE 1 GARDE SA PASTILLE, et uniquement pour ca : rendre l'ecart
+  // visible cote a cote. C'est le seul endroit du prototype ou un libelle d'etat
+  // peut encore etre produit.
+  const etatAutorise = variante === "v1" && tendanceDisponible;
 
   const stateChip =
     etatAutorise && libelleEtat !== null ? { label: libelleEtat } : null;
 
-  // L'avertissement n'est emis QUE lorsque le verrou retire quelque chose de
+  // L'avertissement n'est emis QUE lorsque la regle retire quelque chose de
   // reellement affichable : sinon il decrirait une suppression qui n'a pas eu
   // lieu, et le visualiseur afficherait du bruit sur des etats non concernes.
-  if (tendanceDisponible && libelleEtat !== null && !etatAutoriseParLesCharges) {
+  if (variante === "v2" && tendanceDisponible && libelleEtat !== null) {
     protoWarnings.push(
-      `Variante 2 : la pastille d'etat du jour (« ${libelleEtat} ») est RETIREE de l'en-tete parce que chargesClubCapturees=false — les entrainements club realises ne sont pas captures, donc l'app ne sait pas dans quel etat physique global est le joueur. La variante 1 l'affiche toujours : c'est l'ecart a arbitrer. Regle demandee par le fondateur : « ne pas afficher "En forme" ou "Pret a performer" si les entrainements club et les autres charges ne sont pas reellement connus ».`
+      `D1 (decision du fondateur, 2026-07-28) : la pastille d'etat du jour (« ${libelleEtat} ») est RETIREE de l'en-tete en variante 2, sans condition. Elle n'est plus derriere un drapeau : l'option chargesClubCapturees a ete supprimee de ce ViewModel. Motif : le modele de charge part encore de valeurs initiales artificielles (ATL0/CTL0) et ne connait pas les entrainements club. La variante 1 l'affiche toujours — c'est l'ecart a regarder.`
     );
   }
 

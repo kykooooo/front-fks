@@ -24,9 +24,12 @@ import { StyleSheet, Text, View } from "react-native";
 
 import type { Note } from "../../screens/homeVNext/viewModel";
 import { MARQUEURS } from "./homeVNextMarqueurs";
-import { couleurs, espacement, typo } from "./homeVNextTokens";
+import { stylesParEchelle, useStylesEchelle } from "./homeVNextPresentation";
+import type { EchelleTypo } from "./homeVNextTypo";
+import { couleurs, espacement } from "./homeVNextTokens";
 
 export function HomeVNextNote({ note }: { note: NonNullable<Note> }) {
+  const styles = useStylesEchelle(STYLES);
   return (
     <View
       style={styles.ligne}
@@ -52,31 +55,35 @@ export function HomeVNextNote({ note }: { note: NonNullable<Note> }) {
   );
 }
 
-const styles = StyleSheet.create({
-  ligne: {
-    flexDirection: "row",
-    gap: espacement.interne,
-  },
-  marque: {
-    width: 3,
-    // `alignSelf: "stretch"` plutot qu'une hauteur fixe : la marque suit le
-    // texte, y compris quand le systeme l'agrandit.
-    alignSelf: "stretch",
-    borderRadius: 999,
-    backgroundColor: couleurs.lien,
-  },
-  contenu: {
-    flex: 1,
-    minWidth: 0,
-  },
-  titre: {
-    ...typo.caption,
-    fontWeight: "800",
-    color: couleurs.texte,
-  },
-  message: {
-    ...typo.body,
-    color: couleurs.texteSecondaire,
-    marginTop: 2,
-  },
-});
+const creerStyles = (t: EchelleTypo) =>
+  StyleSheet.create({
+    ligne: {
+      flexDirection: "row",
+      gap: espacement.interne,
+    },
+    marque: {
+      width: 3,
+      // `alignSelf: "stretch"` plutot qu'une hauteur fixe : la marque suit le
+      // texte, y compris quand le systeme l'agrandit.
+      alignSelf: "stretch",
+      borderRadius: 999,
+      backgroundColor: couleurs.lien,
+    },
+    contenu: {
+      flex: 1,
+      minWidth: 0,
+    },
+    titre: {
+      // "À garder en tête" est un LABEL pose sur du contenu : graisse 700 en
+      // echelle allegee, contre 800 ecrit en dur auparavant.
+      ...t.metaAppuyee,
+      color: couleurs.texte,
+    },
+    message: {
+      ...t.corps,
+      color: couleurs.texteSecondaire,
+      marginTop: 2,
+    },
+  });
+
+const STYLES = stylesParEchelle(creerStyles);

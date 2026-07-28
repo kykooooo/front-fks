@@ -271,9 +271,10 @@ async function monter({ cle, element, device }) {
  * `fixtureId`) plus une navigation inerte. Un composant qui n'en lit qu'une
  * fonctionne ; les autres props sont ignorees.
  */
-async function renderVNext(fixture, device) {
+async function renderVNext(fixture, device, presentation) {
   const mod = getVNext();
   const vmMod = getViewModelModule();
+  const presentations = require("./presentations");
 
   let viewModel = null;
   let erreurVm = null;
@@ -307,6 +308,10 @@ async function renderVNext(fixture, device) {
   }
 
   const nav = require("./stubs/navigation-native").__nav;
+  // Pour la presentation PAR DEFAUT, `propsDePresentation` renvoie un objet vide :
+  // l'ecran applique alors ses propres valeurs par defaut, exactement comme avant
+  // l'ajout de cet axe. Les pages deja validees passent donc par le meme chemin,
+  // pas par un chemin « equivalent ».
   const props = {
     viewModel,
     vm: viewModel,
@@ -316,15 +321,23 @@ async function renderVNext(fixture, device) {
     navigation: nav,
     onAction: () => {},
     route: { key: "harnais", name: "HomeVNext", params: { fixtureId: fixture.id } },
+    ...presentations.propsDePresentation(presentation),
   };
+
+  const suffixeCle = presentation && !presentation.parDefaut ? `_${presentation.id}` : "";
 
   try {
     const { html, sonde } = await monter({
-      cle: `vnext_${fixture.id}_${device.width}`,
+      cle: `vnext_${fixture.id}_${device.width}${suffixeCle}`,
       element: React.createElement(mod.Comp, props),
       device,
     });
-    return { html, viewModel, sonde: { ...sonde, erreurs: [...sonde.erreurs, ...(erreurVm ? [erreurVm] : [])] } };
+    return {
+      html,
+      viewModel,
+      mouvement: presentations.mesurerMouvement(html),
+      sonde: { ...sonde, erreurs: [...sonde.erreurs, ...(erreurVm ? [erreurVm] : [])] },
+    };
   } catch (err) {
     return {
       indisponible: {
@@ -356,11 +369,12 @@ async function renderVNext(fixture, device) {
 // rendu les phrases que le ViewModel de la carte a produites. Si le titre de la
 // carte n'y est pas, on refuse de servir la page et on explique pourquoi.
 // ---------------------------------------------------------------------------
-async function renderVNext2({ fixtureHote, fixtureProgression, device, htmlVariante1 }) {
+async function renderVNext2({ fixtureHote, fixtureProgression, device, htmlVariante1, presentation }) {
   const mod = getVNext();
   const vmMod = getViewModelModule();
   const progMod = getProgressionModule();
   const appariement = require("./appariementVariante2");
+  const presentations = require("./presentations");
 
   const erreurs = [];
   let homeVm = null;
@@ -412,12 +426,18 @@ async function renderVNext2({ fixtureHote, fixtureProgression, device, htmlVaria
   }
 
   const nav = require("./stubs/navigation-native").__nav;
-  const props = appariement.propsVariante2({ homeVm, progVm, nav });
+  const props = appariement.propsVariante2({
+    homeVm,
+    progVm,
+    nav,
+    presentation: presentations.propsDePresentation(presentation),
+  });
+  const suffixeCle = presentation && !presentation.parDefaut ? `_${presentation.id}` : "";
 
   let rendu;
   try {
     rendu = await monter({
-      cle: `vnext2_${fixtureProgression.id}_${device.width}`,
+      cle: `vnext2_${fixtureProgression.id}_${device.width}${suffixeCle}`,
       element: React.createElement(mod.Comp, props),
       device,
     });
@@ -452,6 +472,7 @@ async function renderVNext2({ fixtureHote, fixtureProgression, device, htmlVaria
   }
 
   const mesures = appariement.mesurerVariante2(rendu.html, homeVm, progVm, htmlCarte);
+  const mouvement = presentations.mesurerMouvement(rendu.html);
 
   if (!mesures.carteDetectee) {
     const identique = htmlVariante1 != null && htmlVariante1 === rendu.html;
@@ -504,6 +525,7 @@ async function renderVNext2({ fixtureHote, fixtureProgression, device, htmlVaria
     homeVm,
     progVm,
     mesures,
+    mouvement,
     carte,
     sonde: { ...rendu.sonde, erreurs: [...rendu.sonde.erreurs, ...erreurs] },
   };

@@ -368,15 +368,24 @@ async function main() {
   // pendant que la carte ecrivait, 200 px plus bas, « tes entrainements club n'y
   // sont pas comptes ».
   //
-  // Ce n'est plus une observation, c'est un VERDICT — et l'attendu vient du
-  // contrat : la pastille n'a le droit d'exister que si les charges club sont
-  // capturees, exactement la condition qui autorise la carte a nommer un etat
-  // global. Aucune liste de mots ici : on lit le marqueur, donc n'importe quel
-  // libelle est attrape, y compris un libelle ajoute plus tard.
+  // Ce n'est plus une observation, c'est un VERDICT — et l'attendu ne depend
+  // plus d'aucune donnee d'entree.
+  //
+  // AVANT, il etait derive de `progVm.etatGlobal.connu` : « la pastille n'a le
+  // droit d'exister que si les charges club sont capturees ». Ce champ a ete
+  // SUPPRIME du contrat (decision D1 du fondateur, 2026-07-28), l'expression
+  // valait donc toujours 0 et le verdict etait trivialement vrai. D1 ne pose
+  // pas une condition, elle pose une interdiction : aucun jugement global, quel
+  // que soit l'etat des donnees. L'attendu est donc 0, ecrit en clair.
+  //
+  // Aucune liste de mots ici : on lit le marqueur, donc n'importe quel libelle
+  // est attrape, y compris un libelle ajoute plus tard. Le controle par les
+  // libelles eux-memes existe a cote (`etat_global_entete` de l'audit
+  // d'appariement), pour le cas ou un etat reapparaitrait hors pastille.
   const fautesChip = [];
   const detailChip = [];
   for (const cas of CAS) {
-    const attendu = cas.progVm && cas.progVm.etatGlobal && cas.progVm.etatGlobal.connu ? 1 : 0;
+    const attendu = 0;
     let luSurLaPage = null;
     for (const p of pagesV2.filter((x) => x.cas === cas.id)) {
       const d = docDe(lire(p.fichier));
@@ -397,19 +406,20 @@ async function main() {
     detailChip.push(
       `${cas.id} : variante 1 affiche ${enV1 ? `« ${enV1} »` : "aucune pastille"} ; ` +
         `variante 2 affiche ${luSurLaPage ? `« ${luSurLaPage} »` : "aucune pastille"} ` +
-        `(attendu ${attendu} — chargesClubCapturees=${Boolean(cas.input && cas.input.chargesClubCapturees)})`
+        `(attendu ${attendu} — D1 : aucun jugement global, quelles que soient les donnees)`
     );
   }
   const retirees = CAS.filter(
     (c) => c.homeVmV1 && c.homeVmV1.header && c.homeVmV1.header.stateChip
   ).length;
   noter(
-    "f2) R4 sur l'ECRAN — aucune pastille d'etat du jour tant que les charges club sont inconnues",
+    "f2) D1 sur l'ECRAN — AUCUNE pastille d'etat du jour en variante 2, quelles que soient les donnees",
     fautesChip.length === 0 ? "PASS" : "FAIL",
     `Marqueur lu dans le rendu des ${pagesV2.length} pages : data-testid="${MARQUEURS.etatDuJour}".\n` +
-      `L'attendu n'est pas ecrit ici : c'est le meme fait que pour la carte (chargesClubCapturees).\n` +
-      `Le verrou vit dans screens/homeVNext/viewModel.ts (§5.7) et n'est arme QUE pour la variante 2 :\n` +
-      `la variante 1 garde sa pastille, c'est l'ecart que le fondateur doit pouvoir comparer.\n  ` +
+      `Attendu 0 partout. Ce n'est plus une condition sur les donnees : le champ qui alimentait la\n` +
+      `pastille (etatGlobal / libelleEtatGlobal) a ete SUPPRIME du contrat, et HomeVNextScreen retire\n` +
+      `lui-meme le stateChip en variante 2. Decision D1 du fondateur (2026-07-28).\n` +
+      `La variante 1 garde sa pastille : c'est l'ecart que le fondateur doit pouvoir comparer.\n  ` +
       detailChip.join("\n  ") +
       `\n` +
       `Pastilles presentes en variante 1 : ${retirees} cas sur ${CAS.length} — autant de retirees en variante 2.\n` +
@@ -577,15 +587,22 @@ async function main() {
     const p = pagesV2.find((x) => x.cas === cas.id && x.largeur === 375 && x.echelle === 1 && x.vue === "entiere");
     const d = docDe(lire(p.fichier));
     const blocs = Array.from(d.querySelectorAll(`[data-testid="${MARQUEURS.progressionTest}"]`));
-    const attendu = cas.progVm.derniereComparaisonTest ? 1 : 0;
+    const attendu = cas.progVm.repereTest ? 1 : 0;
     if (blocs.length !== attendu) {
       fautesK.push(`${cas.id} : ${blocs.length} bloc(s) de comparaison, attendu ${attendu}`);
     }
     if (!blocs.length) {
-      detailK.push(`${cas.id} : aucune comparaison affichee (contrat : ${attendu})`);
+      detailK.push(`${cas.id} : aucun repere de test affiche (contrat : ${attendu})`);
       continue;
     }
-    const c = cas.progVm.derniereComparaisonTest;
+    if (!cas.progVm.repereTest) {
+      // La faute est deja enregistree juste au-dessus (blocs.length !== attendu).
+      // On ne lit pas un repere absent : un verificateur ne doit pas planter sur
+      // l'ecart qu'il vient de relever.
+      detailK.push(`${cas.id} : un bloc est rendu alors que le contrat n'a aucun repere.`);
+      continue;
+    }
+    const c = cas.progVm.repereTest.comparaison;
     const libelle = normaliserTexte(blocs[0].getAttribute("aria-label") || "");
     const texte = normaliserTexte(blocs[0].textContent);
     // Le VERDICT AFFICHE doit correspondre au sens calcule sur lowerIsBetter.

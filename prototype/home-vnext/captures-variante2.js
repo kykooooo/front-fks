@@ -11,7 +11,7 @@
 // Ce que ce script ecrit dans
 // outputs/home-vnext-prototype-2026-07-27/captures-v2/ :
 //
-//   1. les 5 cas de la carte + la preuve R1, en 375 px, VUE PAGE ENTIERE
+//   1. les 6 cas de la carte + la preuve R1, en 375 px, VUE PAGE ENTIERE
 //      (rien n'est coupe : on voit tout l'ecran, meme ce qui demande a defiler)
 //   2. 3 comparaisons cote a cote VARIANTE 1 vs VARIANTE 2
 //      (nouveau joueur / deux seances / tendance disponible)
@@ -42,8 +42,8 @@ const VISUALISEURS = process.env.FKS_VISUALISEUR
   ? [process.env.FKS_VISUALISEUR]
   : ["http://127.0.0.1:8141/", "http://127.0.0.1:8140/", "http://127.0.0.1:8142/"];
 
-// --- les 6 cas de la carte, dans l'ordre du contrat --------------------------
-// Les 5 cas de demonstration, puis la preuve de R1 (hors serie).
+// --- les 7 cas de la carte, dans l'ordre du contrat --------------------------
+// Les 6 cas de demonstration, puis la preuve de R1 (hors serie).
 // `hote` = l'ecran Home sur lequel la carte est posee : c'est aussi la page de
 // variante 1 a laquelle on la compare.
 const CAS = [
@@ -51,7 +51,8 @@ const CAS = [
   { num: "02", id: "v2-deux-seances-tendance-indisponible", hote: "tendance-indisponible", titre: "Deux seances, tendance indisponible", etat: "collecting" },
   { num: "03", id: "v2-tendance-disponible", hote: "tendance-disponible", titre: "Tendance disponible", etat: "ready" },
   { num: "04", id: "v2-test-physique-ameliore", hote: "seance-terminee", titre: "Test physique ameliore", etat: "ready" },
-  { num: "05", id: "v2-aucune-comparaison-de-test", hote: "seance-prevue-aujourdhui", titre: "Aucune comparaison de test", etat: "ready" },
+  { num: "05", id: "v2-test-physique-en-recul", hote: "tendance-indisponible", titre: "Test physique en recul", etat: "collecting" },
+  { num: "06", id: "v2-aucune-comparaison-de-test", hote: "seance-prevue-aujourdhui", titre: "Aucune comparaison de test", etat: "ready" },
   { num: "R1", id: "v2-donnee-manquante", hote: "tendance-indisponible", titre: "Donnee manquante (preuve R1)", etat: "collecting" },
 ];
 

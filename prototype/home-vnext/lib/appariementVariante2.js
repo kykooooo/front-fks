@@ -7,7 +7,7 @@
 // -----------------------------------------------------------------------------
 // La variante 2 ne remplace pas l'ecran : elle remplace le BAS de l'ecran. Pour
 // la regarder, il faut donc un ecran complet — un `HomeVNextInput` — ET une carte
-// progression — un `ProgressionInput`. Or les six cas de la carte
+// progression — un `ProgressionInput`. Or les sept cas de la carte
 // (`PROGRESSION_FIXTURES_RENDU`) ont ete ecrits SEULS, sans ecran autour. Il faut
 // les poser quelque part.
 //
@@ -52,7 +52,7 @@
 "use strict";
 
 // ---------------------------------------------------------------------------
-// 1. LES SIX APPARIEMENTS
+// 1. LES SEPT APPARIEMENTS
 // ---------------------------------------------------------------------------
 // `progression` — identifiant dans `PROGRESSION_FIXTURES_RENDU`.
 // `hote`        — identifiant dans `HOME_VNEXT_FIXTURES_RENDU` : l'ecran qui
@@ -128,6 +128,20 @@ const APPARIEMENTS = [
       "permettait en plus d'aligner les trajectoires.",
   },
   {
+    id: "v2-test-physique-en-recul",
+    progression: "test-physique-en-recul",
+    hote: "tendance-indisponible",
+    qualite: "exact",
+    ecart: null,
+    pourquoiCetHote:
+      "Entree DERIVEE de cette fixture Home (progressionInputDepuisHome) : memes seances, meme " +
+      "semaine, ET surtout le meme cycle actif — Fondation. C'est le cycle qui, volontairement, " +
+      "n'a aucun test associe : la carte tombe donc sur la regle 2 puis sur le departage, et " +
+      "affiche un RECUL alors que deux ameliorations existaient dans la meme batterie. Un hote " +
+      "au cycle different aurait fait mentir la demonstration : la regle de selection lit le " +
+      "cycle actif, et l'ecran d'accueil l'affiche.",
+  },
+  {
     id: "v2-aucune-comparaison-de-test",
     progression: "aucune-comparaison-de-test",
     hote: "seance-prevue-aujourdhui",
@@ -164,8 +178,8 @@ const APPARIEMENTS = [
 
 /**
  * Regroupement pour la liste laterale du visualiseur.
- * Les cinq cas demandes d'un cote, la preuve d'honnetete de l'autre : ce n'est
- * pas un etat du produit, il ne doit pas se melanger aux cinq.
+ * Les six cas demandes d'un cote, la preuve d'honnetete de l'autre : ce n'est
+ * pas un etat du produit, il ne doit pas se melanger aux six.
  */
 const GROUPES_VARIANTE2 = [
   {
@@ -178,13 +192,14 @@ const GROUPES_VARIANTE2 = [
       "v2-deux-seances-tendance-indisponible",
       "v2-tendance-disponible",
       "v2-test-physique-ameliore",
+      "v2-test-physique-en-recul",
       "v2-aucune-comparaison-de-test",
     ],
   },
   {
     titre: "Variante 2 — preuve d'honnetete",
     aide:
-      "Hors des cinq cas : ce qui s'affiche quand une donnee n'existe pas. Ni 0, ni tiret — le " +
+      "Hors des six cas : ce qui s'affiche quand une donnee n'existe pas. Ni 0, ni tiret — le " +
       "fait disparait.",
     etats: ["v2-donnee-manquante"],
   },
@@ -226,7 +241,14 @@ const VALEUR_VARIANTE = "v2";
  */
 const OPTIONS_VM_VARIANTE2 = { variante: VALEUR_VARIANTE };
 
-function propsVariante2({ homeVm, progVm, nav }) {
+/**
+ * @param {object} o
+ * @param {?object} o.presentation props `echelle` / `reduceMotion` de l'axe
+ *   presentation (voir lib/presentations.js). VIDE pour la combinaison par
+ *   defaut : on ne pose alors AUCUNE des deux props, et l'ecran applique ses
+ *   propres valeurs par defaut — exactement comme avant l'ajout de cet axe.
+ */
+function propsVariante2({ homeVm, progVm, nav, presentation }) {
   const rien = () => {};
   return {
     vm: homeVm,
@@ -237,12 +259,15 @@ function propsVariante2({ homeVm, progVm, nav }) {
     onExit: rien,
     navigation: nav,
     route: { key: "harnais", name: "HomeVNext", params: { variante: VALEUR_VARIANTE } },
+    ...(presentation || {}),
   };
 }
 
 /** Les cles reellement passees, pour les afficher quand la carte n'est pas trouvee. */
-function clesDuSac() {
-  return Object.keys(propsVariante2({ homeVm: null, progVm: null, nav: null }));
+function clesDuSac(presentation) {
+  return Object.keys(
+    propsVariante2({ homeVm: null, progVm: null, nav: null, presentation })
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -411,7 +436,7 @@ function marqueursDe(progVm) {
     }
   }
 
-  const cmp = progVm.derniereComparaisonTest;
+  const cmp = progVm.repereTest ? progVm.repereTest.comparaison : null;
   if (cmp) {
     m.push({
       cle: "comparaison",
@@ -654,23 +679,36 @@ function mesurerVariante2(html, homeVm, progVm, htmlCarte) {
     },
     {
       cle: "etat_global_entete",
-      question: "L'EN-TETE annonce-t-il un etat physique global ? (R4, ecran entier)",
-      valeur: compter(MARQUEURS.etatDuJour),
-      // L'attendu vient du CONTRAT, pas d'une constante ecrite ici : le meme
-      // fait — les charges club sont-elles capturees ? — gouverne la pastille et
-      // le libelle de la carte. Si un jour l'app capture vraiment les charges
-      // club, l'attendu passe a 1 tout seul.
-      attendu: progVm && progVm.etatGlobal && progVm.etatGlobal.connu ? 1 : 0,
+      question: "L'ECRAN annonce-t-il un etat physique global ? (D1, ecran entier)",
+      // DEUX FILETS, PAS UN. Le marqueur seul ne suffit plus : depuis que
+      // `HomeVNextScreen` retire lui-meme le stateChip en variante 2, il vaut 0
+      // par construction et le controle passerait au vert meme si un libelle
+      // d'etat reapparaissait ailleurs sur l'ecran (dans un message, un conseil,
+      // un sous-titre). On compte donc AUSSI les libelles interdits dans le
+      // texte rendu de l'ecran entier.
+      valeur:
+        compter(MARQUEURS.etatDuJour) +
+        ETATS_GLOBAUX_INTERDITS.filter((libelle) => texte.includes(libelle)).length,
+      // ATTENDU 0, EN DUR, ET C'EST VOULU. Il etait auparavant derive de
+      // `progVm.etatGlobal.connu` — un champ SUPPRIME du contrat (decision D1
+      // du fondateur, 2026-07-28). L'expression valait donc toujours 0 : le
+      // controle etait trivialement vrai et ne protegeait plus rien. D1 ne dit
+      // pas « tant que les charges club ne sont pas capturees », elle dit
+      // « aucun jugement global, point » — l'attendu ne depend donc plus
+      // d'aucune donnee d'entree.
+      attendu: 0,
       pourquoi:
         "Le controle precedent ne regarde que la carte. Celui-ci regarde l'ECRAN : c'est la ou le " +
         "defaut se voyait. Annoncer « En forme » dans l'en-tete, puis ecrire 200 px plus bas " +
         "« tes entrainements club n'y sont pas comptes », c'est un ecran qui se contredit lui-meme. " +
-        "En variante 2 le ViewModel du Home retire donc la pastille tant que les charges club ne " +
-        "sont pas capturees ; la variante 1 la garde, et c'est l'ecart a arbitrer.",
+        "Decision D1 : en variante 2 il n'y a plus de pastille du tout, et plus aucun libelle " +
+        "d'etat global nulle part sur l'ecran ; la variante 1 garde la sienne pour que l'ecart " +
+        "reste visible.",
       trouve:
         compter(MARQUEURS.etatDuJour) > 0 && chipHomeV2
           ? `pastille rendue : « ${chipHomeV2} »`
-          : "aucune pastille d'etat dans l'en-tete",
+          : ETATS_GLOBAUX_INTERDITS.filter((libelle) => texte.includes(libelle)).join(", ") ||
+            "aucune pastille d'etat, aucun libelle d'etat global sur l'ecran",
     },
     {
       cle: "doublon_semaine",

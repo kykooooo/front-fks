@@ -978,6 +978,48 @@ export function getHomeVNextFixture(id: string): HomeVNextFixture | null {
 // Les horodatages sont construits en UTC explicite (`tsUTC`) pour que le jour
 // calcule par le ViewModel soit le meme sur toutes les machines — les captures
 // du prototype doivent etre reproductibles.
+//
+// -----------------------------------------------------------------------------
+// LE FORMAT REEL D'UNE ENTREE DE TEST — RELU DANS `screens/TestsScreen.tsx`
+// -----------------------------------------------------------------------------
+// CORRECTION D'UNE FAUTE DE L'ITERATION PRECEDENTE. Les batteries y avaient ete
+// eclatees en UNE ENTREE PAR EXERCICE, avec une heure fabriquee pour chacun
+// (10h05, 10h25, 10h45...), dans le seul but de faire remonter un cas a l'ecran.
+// La demo montrait donc une forme de donnee que le produit NE FABRIQUE PAS. Ce
+// qui devait changer, c'etait la regle de selection, pas les donnees — c'est
+// fait (§5 bis de `progressionViewModel.ts`), et les fixtures sont revenues au
+// format reel :
+//
+//   1. UNE BATTERIE DU SOCLE = UNE SEULE ENTREE, UN SEUL `ts`.
+//      `TestsScreen.tsx`:241 — `const cleanEntry: TestEntry = { ts: Date.now() };`
+//      puis :245-249 posent TOUS les champs saisis dans cette meme entree. Les 3
+//      tests du socle (`CORE_FIELD_KEYS` = broadJumpCm, sprint10s,
+//      endurance6min_m) partagent donc leur horodatage a la seconde pres.
+//
+//   2. UNE BATTERIE PEUT ETRE INCOMPLETE.
+//      `onSkipStep` (:348-350) permet de passer une etape, et `save` n'ecrit que
+//      les champs reellement renseignes (:245-249, `hasValidNumber`). Une entree
+//      socle a 1 ou 2 champs est donc REELLE : c'est un joueur qui relance la
+//      batterie et ne refait que le test qui l'interesse.
+//
+//   3. UN TEST OPTIONNEL EST ENREGISTRE SEUL, DANS SA PROPRE ENTREE.
+//      :212 — `isCoreFlow ? [...CORE_FIELD_KEYS] : [activeFlow as FieldKey]`, et
+//      `startOptionalEntry` (:327-332) n'est cable que sur `optionalKeys`. Un
+//      test de la section "Aller plus loin" ne peut donc JAMAIS partager une
+//      entree avec un test du socle, et il a son propre `ts`.
+//
+//   4. `notes` N'EXISTE QUE SUR UNE ENTREE SOCLE. :250 — `if (isCoreFlow)`.
+//
+//   5. `playlist` = LE CYCLE ACTIF AU MOMENT DU TEST (:243-244,
+//      `canonicalizeMicrocycleGoal(microcycleGoal)`). C'est une PROVENANCE
+//      d'historique. Aucune regle de selection ne la lit — le repere du Home se
+//      choisit sur le cycle actif AUJOURD'HUI (`ProgressionInput.microcycleGoal`).
+//
+//   6. L'ORDRE EST DECROISSANT, le plus recent d'abord.
+//      `useTestsStorage` trie `.sort((a, b) => b.ts - a.ts)` et borne a 30
+//      (`screens/tests/hooks/useTestsStorage.ts`:56-57) ; `save` re-empile en
+//      tete (`[cleanEntry, ...entries]`, :253). Les fixtures sont ecrites dans
+//      cet ordre-la, celui que le ViewModel recevra reellement.
 // =============================================================================
 
 export type ProgressionFixture = {
@@ -995,11 +1037,11 @@ export type ProgressionFixture = {
 /**
  * Horodatage UTC explicite. `mois` est humain (1 = janvier).
  *
- * Les MINUTES comptent : une batterie de tests ne se passe pas en une seule
- * seconde, et le ViewModel departage deux comparaisons a egalite d'horodatage
- * par l'ordre canonique de `FIELD_DEFS`. Des exercices qui partageaient tous le
- * meme `ts` rendaient donc ce tri arbitraire — et toujours gagnant pour le
- * premier champ de la liste. Voir P4 plus bas.
+ * Les MINUTES ne servent qu'a placer deux ENREGISTREMENTS distincts du meme jour
+ * (une batterie du socle, puis un test optionnel enregistre a part). A
+ * l'interieur d'une batterie, tous les champs partagent ce meme `ts` : c'est le
+ * format reel (`TestsScreen.tsx`:241), et c'est ce qui rend l'ordre de departage
+ * du §5 bis utile au quotidien plutot qu'anecdotique.
  */
 function tsUTC(annee: number, mois: number, jour: number, heure: number, minute = 0): number {
   return Date.UTC(annee, mois - 1, jour, heure, minute, 0, 0);
@@ -1038,6 +1080,9 @@ export function progressionInputDepuisHome(
     chargesClubCapturees: false,
     seancesTerminees,
     testsTerrain: extras.testsTerrain ?? [],
+    // Le MEME champ que le Home lit deja : les deux cartes de l'ecran ne peuvent
+    // pas se contredire sur le cycle actif.
+    microcycleGoal: home.microcycleGoal,
     tendance: home.formTrend
       ? {
           points: home.formTrend.points.map((p) => ({ dateKey: p.dateKey, value: p.value })),
@@ -1091,6 +1136,8 @@ const progDeuxSeances: ProgressionFixture = {
       { id: "s2", dateKey: "2026-07-28", dureeMin: 36, ressentiEnregistre: true },
     ],
     testsTerrain: [],
+    // Un joueur qui vient de commencer : cycle Fondation, aucun test passe.
+    microcycleGoal: "fondation",
     // Une trajectoire EST fournie, et volontairement suffisante en points :
     // c'est le seuil de SEANCES qui bloque, et le message doit le dire.
     tendance: {
@@ -1113,16 +1160,26 @@ const progDeuxSeances: ProgressionFixture = {
 // 7 seances terminees, 7 points, 7 jours observes : etat "ready".
 // "Ma semaine" affiche 2, la carte affiche le CUMUL 7 : deux nombres, deux sens.
 //
-// LE SENS « PLUS GRAND = MIEUX », VISIBLE A L'ECRAN
+// LA REGLE 1 QUI MORD, ET LE SENS « PLUS GRAND = MIEUX »
 // -----------------------------------------------------------------------------
-// Depuis que "Test physique ameliore" met en avant le sprint (plus PETIT =
-// mieux), il fallait qu'un cas « plus GRAND = mieux » reste lisible quelque part :
-// les deux sens doivent etre observables, sinon la demonstration ne montre qu'une
-// moitie du probleme. C'est ici : saut en longueur 205 -> 214 cm, +9 cm.
+// C'est ici que le mapping cycle -> test se voit VRAIMENT, parce qu'il CHANGE le
+// repere affiche :
 //
-// Le joueur s'entraine du 6 au 29 juillet ; la batterie est passee le 4 juillet
-// (avant la premiere seance) puis refaite le 25. Deux dates distinctes, un
-// exercice commun : c'est exactement ce que la comparaison exige.
+//   - la fixture Home du meme identifiant porte `microcycleGoal: "force"` (cycle
+//     "Duels & puissance"), et `PROGRESSION_TEST_PAR_CYCLE.force` designe le
+//     saut en longueur ("Puissance" en face de "Ta puissance de jambes") ;
+//   - or les DEUX batteries sont des enregistrements uniques : leurs 3 tests
+//     partagent chacun un seul `ts`. Sans la regle 1, la regle 2 trouverait trois
+//     mesures a egalite parfaite et le departage designerait le sprint 10 m ;
+//   - avec la regle 1, c'est le SAUT qui s'affiche : 205 -> 214 cm, +9 cm.
+//
+// Le sens « plus GRAND = mieux » reste donc lisible quelque part (le chrono qui
+// baisse est demontre par « Test physique ameliore »), et il l'est maintenant
+// parce qu'une REGLE le designe, pas parce qu'une donnee a ete arrangee.
+//
+// Le joueur s'entraine du 6 au 29 juillet ; la batterie complete est passee le
+// 4 juillet (avant la premiere seance) puis refaite le 25. Deux dates distinctes,
+// trois exercices communs : la comparaison existe sur les trois.
 //
 // POURQUOI CET ETAT-LA :
 //   - c'est le seul autre etat "ready" ou une comparaison peut apparaitre sans
@@ -1130,84 +1187,112 @@ const progDeuxSeances: ProgressionFixture = {
 //     precisement n'en avoir aucune ; « Donnee manquante » est la preuve de R1 ;
 //   - la carte y remplacait une phrase d'absence (« Tes tests terrain
 //     apparaitront ici des que... ») par une ligne de vide utile. Elle porte
-//     maintenant un fait mesure. L'absence, elle, reste montree sur « Aucune
-//     comparaison de test », avec sa raison la plus interessante (deux essais le
-//     meme jour ne sont pas une progression) ;
+//     maintenant un fait mesure ;
 //   - COUT EN HAUTEUR quasi nul, et c'etait un critere : deux lignes de
 //     comparaison remplacent trois lignes d'explication. Le surcout de la
 //     variante 2 — l'arbitrage que le fondateur doit rendre — n'est pas deplace
 //     par ce choix. Les chiffres exacts sont dans mesures-hauteurs-variante2.md.
+//
+// Les valeurs : un amateur senior sur les trois tests du socle. La batterie du
+// 4 juillet a ete passee alors que le joueur etait encore en Fondation — d'ou
+// `playlist: "fondation"` sur l'entree ancienne et `"force"` sur la recente.
+// C'est la provenance reelle, elle ne selectionne rien.
 // -----------------------------------------------------------------------------
-const testsCycleFondation: readonly TestEntry[] = [
-  { ts: tsUTC(2026, 7, 4, 10, 15), playlist: "fondation", broadJumpCm: 205 },
-  { ts: tsUTC(2026, 7, 25, 10, 20), playlist: "fondation", broadJumpCm: 214 },
+const testsDeuxBatteriesCompletes: readonly TestEntry[] = [
+  {
+    ts: tsUTC(2026, 7, 25, 10, 20),
+    playlist: "force",
+    broadJumpCm: 214,
+    sprint10s: 1.86,
+    endurance6min_m: 1305,
+  },
+  {
+    ts: tsUTC(2026, 7, 4, 10, 15),
+    playlist: "fondation",
+    broadJumpCm: 205,
+    sprint10s: 1.88,
+    endurance6min_m: 1290,
+  },
 ];
 
 const progTendanceDisponible: ProgressionFixture = {
   id: "tendance-disponible",
   titre: "Tendance disponible",
   resume:
-    "Assez de séances ET assez de jours enregistrés : la courbe s'affiche avec sa portée exacte, le test refait (205 → 214 cm) donne un écart mesuré, et le lien vers le détail apparaît.",
+    "Assez de séances ET assez de jours enregistrés : la courbe s'affiche avec sa portée exacte, et comme le cycle actif est « Duels & puissance », c'est le saut en longueur qui est mis en avant — 205 → 214 cm, +9 cm.",
   __fictif: true,
   input: progressionInputDepuisHome(tendanceDisponible.input, {
-    testsTerrain: testsCycleFondation,
+    testsTerrain: testsDeuxBatteriesCompletes,
   }),
 };
 
 // -----------------------------------------------------------------------------
 // P4 — Test physique ameliore
 // -----------------------------------------------------------------------------
-// Deux batteries a deux dates, avec de vraies ameliorations dans les DEUX sens
-// de `lowerIsBetter` :
+// Deux batteries a deux dates, plus le test 505 enregistre a part chaque fois.
+// Les ecarts, dans les DEUX sens de `lowerIsBetter` :
 //   - saut en longueur   218 -> 227 cm  (plus grand = mieux)     -> amelioration
-//   - test 505          2.55 -> 2.48 s  (plus PETIT = mieux)     -> amelioration
 //   - sprint 10 m       1.85 -> 1.78 s  (plus PETIT = mieux)     -> amelioration
-// Le 6 min n'existe que dans la batterie recente : il n'est donc PAS compare.
+//   - test 505          2.55 -> 2.48 s  (plus PETIT = mieux)     -> amelioration
+// Le 6 min n'existe que dans la batterie recente (le joueur a passe l'etape en
+// juin) : il n'est donc PAS compare.
 //
-// UNE ENTREE PAR EXERCICE, AVEC SON HEURE REELLE — ET POURQUOI CA CHANGE TOUT
+// CE QUI A ETE REPARE ICI, ET COMMENT
 // -----------------------------------------------------------------------------
-// Avant, les quatre mesures d'une meme batterie partageaient un seul `ts`. Or
-// `choisirDerniereComparaison` (progressionViewModel.ts) prend la comparaison la
-// plus RECENTE, et departage une egalite d'horodatage par l'ordre canonique de
-// `FIELD_DEFS` — ou `broadJumpCm` arrive en premier. Consequence : sur les 60
-// pages de la variante 2, le seul ecart JAMAIS AFFICHE etait « +9 cm », le cas
-// facile, celui ou le signe du chiffre et le sens sportif vont dans le meme sens.
-// Le cas qui compte — un CHRONO QUI BAISSE et qui est un PROGRES — existait dans
-// la donnee sans jamais atteindre l'ecran.
+// A l'iteration precedente, cette fixture eclatait chaque batterie en une entree
+// PAR EXERCICE, avec des heures fabriquees (10h05, 10h25, 10h45, 11h15), pour
+// qu'un exercice precis se retrouve « le plus recent » et atteigne l'ecran. Le
+// produit ne fabrique pas ca : une batterie du socle, c'est UNE entree et UN
+// horodatage (`TestsScreen.tsx`:241). La demo montrait donc une donnee qui
+// n'existe pas.
 //
-// La logique de departage n'a pas ete touchee (elle est juste, et volontairement
-// aveugle au sens : choisir la comparaison la plus flatteuse serait le chiffre
-// arrange que la doctrine interdit). Ce sont les DONNEES qui ont ete corrigees :
-// une batterie s'etale sur une heure, chaque exercice a son horaire, et
-// l'exercice mesure en DERNIER est celui que la carte met en avant.
+// La reparation est passee par la REGLE, pas par les donnees : le cycle actif
+// est ici `explosivite` ("Vitesse & detente"), et `PROGRESSION_TEST_PAR_CYCLE`
+// designe pour ce cycle le sprint 10 m — "Tu travailles la vitesse de
+// demarrage... Les premiers metres" (domain/microcycles.ts:116) en face du
+// protocole "deux reperes a 10 m... Depart arrete" (testConfig.ts:137).
 //
-// Ordre retenu, le meme aux deux dates : saut en longueur, 505, sprint 10 m,
-// puis l'endurance qui ferme la marche (elle fatigue, on ne mesure plus rien
-// apres). Le sprint 10 m est donc le dernier exercice COMPARABLE : c'est lui que
-// la carte affiche, avec « -0.07 s » et le mot « en progres ».
+// La regle 1 mord donc, et elle CHANGE le resultat : le test 505 est enregistre
+// APRES la batterie (11h05 contre 10h20, deux enregistrements distincts — c'est
+// le format reel, :212), donc la regle 2 seule aurait affiche le 505. C'est bien
+// l'objectif du cycle qui decide, pas l'ordre de saisie.
 //
 // Le test 505 est volontairement present : `screens/ProgressScreen.tsx` ne le
 // compare pas (sa liste locale `TEST_FIELDS`, l.144-160, ignore 8 champs de
-// FIELD_DEFS). La carte le montre, la page Progression non — le ViewModel le
+// FIELD_DEFS). La carte le calcule, la page Progression non — le ViewModel le
 // signale dans `protoWarnings`.
+//
+// La note du 24 juillet est ecrite dans la meme entree que la batterie : c'est
+// exactement ce que fait `save` (`if (isCoreFlow) cleanEntry.notes = ...`, :250).
 // -----------------------------------------------------------------------------
 const testsAmeliores: readonly TestEntry[] = [
-  // --- batterie du 15 juin 2026 (~40 min de terrain) ---
-  { ts: tsUTC(2026, 6, 15, 10, 5), playlist: "fondation", broadJumpCm: 218 },
-  { ts: tsUTC(2026, 6, 15, 10, 25), playlist: "fondation", test505_s: 2.55 },
-  { ts: tsUTC(2026, 6, 15, 10, 45), playlist: "fondation", sprint10s: 1.85 },
-  // --- batterie du 24 juillet 2026 (~1 h, endurance en dernier) ---
-  { ts: tsUTC(2026, 7, 24, 10, 10), playlist: "force", broadJumpCm: 227 },
-  { ts: tsUTC(2026, 7, 24, 10, 30), playlist: "force", test505_s: 2.48 },
-  { ts: tsUTC(2026, 7, 24, 10, 50), playlist: "force", sprint10s: 1.78 },
-  { ts: tsUTC(2026, 7, 24, 11, 15), playlist: "force", endurance6min_m: 1385 },
+  // --- 24 juillet 2026 : le 505 (test optionnel), enregistre seul apres la batterie ---
+  { ts: tsUTC(2026, 7, 24, 11, 5), playlist: "explosivite", test505_s: 2.48 },
+  // --- 24 juillet 2026 : la batterie du socle, une entree, un horodatage ---
+  {
+    ts: tsUTC(2026, 7, 24, 10, 20),
+    playlist: "explosivite",
+    broadJumpCm: 227,
+    sprint10s: 1.78,
+    endurance6min_m: 1385,
+    notes: "Terrain sec, vent de face sur le 10 m.",
+  },
+  // --- 15 juin 2026 : le 505, enregistre seul ---
+  { ts: tsUTC(2026, 6, 15, 11, 0), playlist: "force", test505_s: 2.55 },
+  // --- 15 juin 2026 : la batterie, 6 min passe (etape sautee) ---
+  {
+    ts: tsUTC(2026, 6, 15, 10, 15),
+    playlist: "force",
+    broadJumpCm: 218,
+    sprint10s: 1.85,
+  },
 ];
 
 const progTestAmeliore: ProgressionFixture = {
   id: "test-physique-ameliore",
   titre: "Test physique amélioré",
   resume:
-    "Deux batteries à deux dates. La carte affiche le sprint 10 m : 1,85 s → 1,78 s, soit −0,07 s, et elle écrit « en progrès ». Un chiffre négatif qui est une bonne nouvelle.",
+    "Cycle « Vitesse & détente » : la carte affiche le sprint 10 m, le test que vise le cycle. 1,85 s → 1,78 s, soit −0,07 s, et elle écrit « en progrès ». Un chiffre négatif qui est une bonne nouvelle.",
   __fictif: true,
   input: {
     chargesClubCapturees: false,
@@ -1220,6 +1305,7 @@ const progTestAmeliore: ProgressionFixture = {
       { id: "s6", dateKey: "2026-07-29", dureeMin: 40, ressentiEnregistre: false },
     ],
     testsTerrain: testsAmeliores,
+    microcycleGoal: "explosivite",
     tendance: {
       points: [
         { dateKey: "2026-07-24", value: -4.8 },
@@ -1239,28 +1325,37 @@ const progTestAmeliore: ProgressionFixture = {
 // -----------------------------------------------------------------------------
 // P5 — Aucune comparaison de test possible
 // -----------------------------------------------------------------------------
-// Quatre entrees de tests EXISTENT, et pourtant aucune paire n'est comparable :
-//   - chaque batterie porte un exercice different (longueur, puis 10 m, puis 6 min) ;
-//   - les deux dernieres entrees portent bien le MEME exercice (6 min), mais le
-//     MEME JOUR — deux essais du 22 juillet, a deux heures differentes.
+// Le joueur a passe sa batterie UNE fois, et refait le 6 min l'apres-midi meme.
+// Deux entrees existent, et pourtant aucune paire n'est comparable :
+//   - le saut en longueur et le sprint 10 m n'ont qu'UNE SEULE mesure chacun :
+//     il n'y a rien a comparer, par definition ;
+//   - le 6 min en a bien deux, mais le MEME JOUR — 10h puis 16h le 22 juillet.
 //
 // Ce dernier cas est exactement celui que `computeTestComparisons`
 // (`screens/ProgressScreen.tsx`:169-203) traite mal : il ne verifie pas les
 // dates et afficherait une "progression" de +35 m entre deux essais du meme
 // apres-midi. Ici : aucune comparaison, et on dit pourquoi.
+//
+// La seconde entree ne porte QUE le 6 min : le joueur a relance la batterie et
+// passe les deux premieres etapes (`onSkipStep`, `TestsScreen.tsx`:348-350) —
+// `save` n'ecrit alors que le champ renseigne (:245-249).
 // -----------------------------------------------------------------------------
 const testsSansPaire: readonly TestEntry[] = [
-  { ts: tsUTC(2026, 6, 10, 10), playlist: "fondation", broadJumpCm: 214 },
-  { ts: tsUTC(2026, 7, 2, 10), playlist: "fondation", sprint10s: 1.83 },
-  { ts: tsUTC(2026, 7, 22, 10), playlist: "endurance", endurance6min_m: 1420 },
-  { ts: tsUTC(2026, 7, 22, 16), playlist: "endurance", endurance6min_m: 1455 },
+  { ts: tsUTC(2026, 7, 22, 16, 5), playlist: "endurance", endurance6min_m: 1455 },
+  {
+    ts: tsUTC(2026, 7, 22, 10, 0),
+    playlist: "endurance",
+    broadJumpCm: 214,
+    sprint10s: 1.83,
+    endurance6min_m: 1420,
+  },
 ];
 
 const progAucuneComparaison: ProgressionFixture = {
   id: "aucune-comparaison-de-test",
   titre: "Aucune comparaison de test",
   resume:
-    "Des tests existent, mais aucun n'a été refait un autre jour : la carte l'explique au lieu d'inventer une progression.",
+    "Une seule batterie passée, et le 6 min refait le même jour : aucun test n'a deux mesures à deux dates. La carte l'explique au lieu d'inventer une progression.",
   __fictif: true,
   input: {
     chargesClubCapturees: false,
@@ -1272,6 +1367,7 @@ const progAucuneComparaison: ProgressionFixture = {
       { id: "s5", dateKey: "2026-07-28", dureeMin: 45, ressentiEnregistre: true },
     ],
     testsTerrain: testsSansPaire,
+    microcycleGoal: "endurance",
     tendance: {
       points: [
         { dateKey: "2026-07-25", value: 0.9 },
@@ -1287,19 +1383,84 @@ const progAucuneComparaison: ProgressionFixture = {
   },
 };
 
-/** Les 5 cas de demonstration de la carte progression, dans l'ordre. */
+// -----------------------------------------------------------------------------
+// P6 — Test physique EN RECUL
+// -----------------------------------------------------------------------------
+// LE CAS QUI PROUVE QUE LA REGLE N'EST PAS ARRANGEE.
+//
+// Meme format que « Test physique ameliore », resultat inverse. Le joueur revient
+// de coupure (cycle Fondation, reprise de juillet) et se compare a sa derniere
+// batterie de fin de saison :
+//   - sprint 10 m       1.81 -> 1.88 s  (plus PETIT = mieux)  -> RECUL
+//   - saut en longueur   228 -> 231 cm  (plus grand = mieux)  -> amelioration
+//   - 6 min             1395 -> 1420 m  (plus grand = mieux)  -> amelioration
+//
+// Deux ameliorations etaient disponibles. C'est le RECUL qui s'affiche, et il
+// s'affiche parce que la regle le designe :
+//   - `microcycleGoal: "fondation"` — ce cycle n'a VOLONTAIREMENT aucun test
+//     associe (§5 bis) : "cardio leger" et "gainage" ne se mesurent pas avec les
+//     3 tests du socle. La regle 1 ne mord pas ;
+//   - la regle 2 cherche la mesure la plus recente : les 3 tests viennent de la
+//     MEME entree, donc du meme horodatage, et sont a egalite parfaite ;
+//   - la regle 3 tranche par l'ordre fige : le sprint 10 m, "la qualite n1 en
+//     foot" (`CORE_FIELD_WHY`, testConfig.ts:301).
+//
+// Aucune de ces trois etapes ne lit une valeur de test. Un tri par "meilleure
+// progression" aurait affiche le saut en longueur et cache le sprint. C'est
+// exactement ce que la doctrine interdit, et c'est verifiable a l'ecran.
+//
+// C'est aussi le seul cas de demonstration ou les regles 2 ET 3 sont visibles :
+// partout ailleurs, le cycle actif designe lui-meme un test.
+//
+// L'entree est DERIVEE de la fixture Home « Tendance indisponible » : meme cycle
+// (Fondation), meme semaine, memes seances. L'ecran d'accueil qui accueille cette
+// carte ne peut donc pas la contredire — la carte est en etat "collecting" (deux
+// seances terminees), et un ecart de test peut tres bien exister avant qu'une
+// tendance soit calculable : passer une batterie ne demande aucune seance FKS.
+// -----------------------------------------------------------------------------
+const testsEnRecul: readonly TestEntry[] = [
+  {
+    ts: tsUTC(2026, 7, 20, 10, 30),
+    playlist: "fondation",
+    broadJumpCm: 231,
+    sprint10s: 1.88,
+    endurance6min_m: 1420,
+    notes: "Reprise apres 3 semaines sans courir.",
+  },
+  {
+    ts: tsUTC(2026, 5, 30, 18, 10),
+    playlist: "saison",
+    broadJumpCm: 228,
+    sprint10s: 1.81,
+    endurance6min_m: 1395,
+  },
+];
+
+const progTestEnRecul: ProgressionFixture = {
+  id: "test-physique-en-recul",
+  titre: "Test physique en recul",
+  resume:
+    "Retour de coupure : le sprint 10 m est passé de 1,81 s à 1,88 s. Deux autres tests progressent, et c'est quand même le recul qui s'affiche — c'est la règle qui le désigne, jamais le résultat.",
+  __fictif: true,
+  input: progressionInputDepuisHome(tendanceIndisponible.input, {
+    testsTerrain: testsEnRecul,
+  }),
+};
+
+/** Les 6 cas de demonstration de la carte progression, dans l'ordre. */
 export const PROGRESSION_FIXTURES: readonly ProgressionFixture[] = [
   progNouveauJoueur,
   progDeuxSeances,
   progTendanceDisponible,
   progTestAmeliore,
+  progTestEnRecul,
   progAucuneComparaison,
 ];
 
 // -----------------------------------------------------------------------------
-// P6 (hors serie) — DONNEE MANQUANTE
+// P7 (hors serie) — DONNEE MANQUANTE
 // -----------------------------------------------------------------------------
-// Ce n'est PAS un des 5 cas de demonstration : c'est la preuve visuelle de R1.
+// Ce n'est PAS un des 6 cas de demonstration : c'est la preuve visuelle de R1.
 //
 // Trois seances terminees, AUCUNE duree connue, AUCUN ressenti enregistre.
 // La carte ne doit afficher ni "0 minute", ni "-- min", ni "0 ressenti" : ces
@@ -1320,6 +1481,7 @@ const progDonneeManquante: ProgressionFixture = {
       { id: "s3", dateKey: "2026-07-28", dureeMin: null, ressentiEnregistre: false },
     ],
     testsTerrain: [],
+    microcycleGoal: "fondation",
     tendance: null,
     semaineCourante: { blocAffiche: true, seancesAffichees: 1 },
   },
@@ -1329,7 +1491,7 @@ const progDonneeManquante: ProgressionFixture = {
 export const PROGRESSION_FIXTURE_DONNEE_MANQUANTE: ProgressionFixture = progDonneeManquante;
 
 /**
- * Tout ce que le harnais de rendu doit generer : les 5 cas de demonstration +
+ * Tout ce que le harnais de rendu doit generer : les 6 cas de demonstration +
  * la preuve R1. A ne PAS utiliser pour raisonner sur les cas du produit.
  */
 export const PROGRESSION_FIXTURES_RENDU: readonly ProgressionFixture[] = [

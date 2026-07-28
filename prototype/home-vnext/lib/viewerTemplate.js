@@ -64,6 +64,14 @@ function viewerHtml(version) {
     <span class="lab">Texte</span>
     <div class="seg" id="seg-echelle"></div>
   </div>
+  <div class="grp" id="grp-typo">
+    <span class="lab">Typo</span>
+    <div class="seg" id="seg-typo"></div>
+  </div>
+  <div class="grp" id="grp-anim">
+    <span class="lab">Animations</span>
+    <div class="seg" id="seg-anim"></div>
+  </div>
   <div class="grp droite">
     <button class="btn-panneau" id="btn-panneau">Masquer les panneaux</button>
   </div>
@@ -111,6 +119,9 @@ function viewerCss() {
      produit) : en cote a cote, la colonne de droite doit se reconnaitre sans
      lire son titre. */
   --v2: #C48BFF;
+  /* Reperage d'un reglage de presentation non par defaut (typographie d'avant,
+     animations reduites). Jamais dans le produit, uniquement dans l'outil. */
+  --typo: #F2B33D;
   --alerte: #7A1F1F;
   --avert: #B4530C;
   --ok: #2E7D5B;
@@ -155,6 +166,10 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 .seg button:hover:not(:disabled) { background: #223047; color: var(--texte); }
 .seg button.on { background: var(--actif); color: #06101F; font-weight: 700; }
 .seg button:disabled { opacity: .35; cursor: not-allowed; }
+/* Un reglage de PRESENTATION qui n'est pas celui par defaut doit se voir sans
+   lire le bouton : sinon on juge la typographie d'avant en croyant regarder
+   celle d'apres. Couleur differente de l'actif ordinaire, exprès. */
+.seg button.on.non-defaut { background: var(--typo); color: #17110A; }
 .btn-panneau {
   background: var(--fond-3); color: var(--texte-2); border: 1px solid var(--bord);
   border-radius: 6px; padding: 6px 11px; font-family: var(--mono); font-size: 11px; cursor: pointer;
@@ -324,6 +339,65 @@ dl.kv { margin: 0; font-size: 12px; }
 dl.kv dt { font-family: var(--mono); font-size: 9.5px; letter-spacing: .9px; text-transform: uppercase; color: var(--texte-2); margin-top: 9px; }
 dl.kv dd { margin: 2px 0 0; line-height: 1.55; }
 
+/* --- un axe a juger : la forme est volontairement differente d'un « point »,
+   parce qu'on ne lui demande pas la meme chose. Un axe se tranche seul. ----- */
+.axe { border: 1px solid var(--bord); border-radius: 7px; margin-bottom: 11px; background: var(--fond-3); overflow: hidden; }
+.axe > summary {
+  cursor: pointer; padding: 10px 11px; list-style: none; display: flex; align-items: baseline; gap: 8px;
+}
+.axe > summary::-webkit-details-marker { display: none; }
+.axe > summary::before { content: "▸"; color: var(--texte-2); font-size: 11px; }
+.axe[open] > summary::before { content: "▾"; }
+.axe > summary .nom { font-size: 13.5px; font-weight: 700; }
+.axe .corps { padding: 0 11px 12px; font-size: 12px; line-height: 1.6; }
+.axe .q {
+  font-size: 12.5px; line-height: 1.55; color: #CFE0FA; background: #16233A;
+  border-left: 3px solid var(--actif); border-radius: 0 5px 5px 0; padding: 7px 9px; margin-bottom: 10px;
+}
+.axe .bascule {
+  background: #2A2210; border: 1px solid #6B551A; border-radius: 5px; padding: 7px 9px;
+  font-size: 11.5px; line-height: 1.55; color: #FFE7B8; margin-bottom: 10px;
+}
+.axe .bascule .t { font-family: var(--mono); font-size: 9.5px; letter-spacing: .9px; text-transform: uppercase; display: block; margin-bottom: 3px; color: var(--typo); }
+/* Cote a cote quand le panneau est large, empiles quand il ne l'est pas : les
+   deux verdicts portent des phrases entieres, et deux colonnes de 150 px les
+   rendraient illisibles — exactement le defaut qu'on demande de traquer dans
+   l'ecran produit. */
+.verdict { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.verdict > div { flex: 1 1 190px; min-width: 0; border-radius: 5px; padding: 7px 9px; font-size: 11.5px; line-height: 1.5; }
+.verdict .v-oui { background: #10281C; border: 1px solid #2E7D5B; color: #B6EBCF; }
+.verdict .v-non { background: #2A1210; border: 1px solid #6B2B22; color: #FFC8BC; }
+.verdict .t { font-family: var(--mono); font-size: 9.5px; letter-spacing: .9px; text-transform: uppercase; display: block; margin-bottom: 3px; }
+.cibles { display: flex; flex-wrap: wrap; gap: 5px; }
+.cibles button {
+  background: #223047; border: 1px solid var(--bord); border-radius: 999px; color: #CFE0FA;
+  font-size: 10.5px; padding: 4px 10px; cursor: pointer; font-family: var(--mono); text-align: left;
+}
+.cibles button:hover { background: #2E415F; color: #fff; }
+.cibles button.actif { background: var(--actif); color: #06101F; border-color: var(--actif); font-weight: 700; }
+
+/* --- le repere de test de l'etat courant --------------------------------- */
+.repere { border: 1px solid #3B5B33; background: #101E0F; border-radius: 7px; padding: 10px 11px; margin-bottom: 12px; }
+.repere .t { font-family: var(--mono); font-size: 9.5px; letter-spacing: 1px; text-transform: uppercase; color: #8FE3B0; display: block; margin-bottom: 5px; }
+.repere .gros { font-size: 14px; font-weight: 700; line-height: 1.4; }
+.repere .chiffre { font-family: var(--mono); font-size: 13px; color: #DCE6F4; margin-top: 3px; }
+.repere .sous { font-size: 11.5px; line-height: 1.55; color: var(--texte-2); margin-top: 7px; }
+.repere.vide { border-color: #4A4A2A; background: #1B1A10; }
+.repere.vide .t { color: #E4D48A; }
+tr.retenu td { background: #14361F; }
+tr.retenu td:first-child { border-left: 3px solid #8FE3B0; }
+
+/* --- ce qui passe sous la ligne ------------------------------------------ */
+.sousligne { font-size: 11.5px; line-height: 1.6; }
+.sousligne .bloc-ligne { display: flex; gap: 8px; padding: 5px 6px; border-bottom: 1px solid var(--bord); }
+.sousligne .bloc-ligne .pos { font-family: var(--mono); white-space: nowrap; }
+.sousligne .dessus .pos { color: #7BD6A6; }
+.sousligne .dessous .pos { color: #FFB46B; }
+.sousligne .coupe .pos { color: #FF9E8C; }
+.jauge { height: 8px; border-radius: 4px; background: #223047; overflow: hidden; margin: 6px 0 3px; }
+.jauge > i { display: block; height: 100%; background: #7BD6A6; }
+.jauge.deborde > i { background: #FFB46B; }
+
 #mesureur { position: absolute; left: -20000px; top: 0; width: 800px; height: 12000px; border: 0; visibility: hidden; }
 
 @media (max-width: 1400px) {
@@ -370,6 +444,49 @@ function viewerJs() {
     actuel: "Home actuel (production)"
   };
 
+  // ------------------------------------------------------------------------
+  // L'AXE PRESENTATION, EN DEUX BOUTONS AU LIEU D'UN
+  //
+  // Le manifeste porte QUATRE combinaisons (typographie x mouvement). Les
+  // proposer telles quelles ferait un segment de quatre boutons aux libelles
+  // longs, dans une barre deja chargee — et surtout ca melangerait deux
+  // jugements que le fondateur doit rendre SEPAREMENT.
+  //
+  // On expose donc les deux axes, et on retrouve la combinaison correspondante.
+  // Si le produit en retirait une, le bouton se desactive avec son explication
+  // plutot que d'afficher une page qui n'existe pas.
+  // ------------------------------------------------------------------------
+  var PRESENTATIONS = M.presentations || [];
+  var TYPOS = [
+    { id: "allegee", libelle: "Allegee" },
+    { id: "actuelle", libelle: "Actuelle" }
+  ];
+  var ANIMS = [
+    { id: "0", libelle: "Normales" },
+    { id: "1", libelle: "Reduites" }
+  ];
+
+  function presentationParId(id) {
+    for (var i = 0; i < PRESENTATIONS.length; i++) if (PRESENTATIONS[i].id === id) return PRESENTATIONS[i];
+    return null;
+  }
+  function presentationPour(typo, anim) {
+    for (var i = 0; i < PRESENTATIONS.length; i++) {
+      if (PRESENTATIONS[i].echelle === typo && Boolean(PRESENTATIONS[i].reduceMotion) === Boolean(anim)) {
+        return PRESENTATIONS[i];
+      }
+    }
+    return null;
+  }
+  var PRESENTATION_DEFAUT = presentationParId(M.presentationParDefaut) || PRESENTATIONS[0] || null;
+  function presentationCourante() {
+    return presentationPour(etat.typo, etat.anim) || PRESENTATION_DEFAUT;
+  }
+  function estPresentationDefaut() {
+    var p = presentationCourante();
+    return !p || !PRESENTATION_DEFAUT || p.id === PRESENTATION_DEFAUT.id;
+  }
+
   var etat = {
     etatId: M.ordreEtats[1] || M.ordreEtats[0],
     variante: "vnext",
@@ -377,7 +494,10 @@ function viewerJs() {
     largeur: 375,
     vue: "visible",
     x13: false,
-    onglet: "points",
+    typo: PRESENTATION_DEFAUT ? PRESENTATION_DEFAUT.echelle : "allegee",
+    anim: false,
+    onglet: "axes",
+    axeOuvert: null,
     panneaux: true
   };
 
@@ -395,12 +515,15 @@ function viewerJs() {
       if (k === "w") { var w = Number(v); if (M.largeurs.indexOf(w) !== -1) etat.largeur = w; }
       if (k === "vue" && ["visible", "entiere"].indexOf(v) !== -1) etat.vue = v;
       if (k === "x13") etat.x13 = v === "1";
+      if (k === "typo" && ["allegee", "actuelle"].indexOf(v) !== -1) etat.typo = v;
+      if (k === "anim") etat.anim = v === "1";
       if (k === "onglet") etat.onglet = v;
     });
   }
   function ecrireHash() {
     var h = "etat=" + etat.etatId + "&var=" + etat.variante + "&paire=" + etat.paire +
       "&w=" + etat.largeur + "&vue=" + etat.vue + "&x13=" + (etat.x13 ? 1 : 0) +
+      "&typo=" + etat.typo + "&anim=" + (etat.anim ? 1 : 0) +
       "&onglet=" + etat.onglet;
     if (("#" + h) !== location.hash) history.replaceState(null, "", "#" + h);
   }
@@ -443,16 +566,63 @@ function viewerJs() {
     return M.devices[1];
   }
   function cle(w) { return w + (etat.x13 && w === M.largeurEchelle ? "-x13" : "") + "-" + etat.vue; }
+  function cleVue(w, vue) { return w + (etat.x13 && w === M.largeurEchelle ? "-x13" : "") + "-" + vue; }
   function blocDe(e, variante) {
     if (!e) return null;
     if (variante === "vnext") return e.vnext;
     if (variante === "vnext2") return e.vnext2;
     return e.actuel;
   }
-  function pageDe(variante, w) {
+
+  /**
+   * QUELLE TABLE DE PAGES SERVIR, ET SOUS QUELLE ETIQUETTE.
+   *
+   * Trois cas, et aucun ne doit etre silencieux :
+   *   "exact"  — la combinaison demandee a bien ete generee ;
+   *   "replie" — elle ne l'a pas ete, on sert la presentation par defaut ET on
+   *              le dit sur le cadre. C'est le cas du Home de production, qui
+   *              n'a qu'une typographie, la sienne : ce n'est pas un manque du
+   *              harnais, c'est un fait du produit ;
+   *   "absent" — rien a servir.
+   *
+   * Servir en silence une page d'une autre presentation serait le meme defaut
+   * que servir la variante 1 sous l'etiquette « Progression integree ».
+   */
+  function tablePages(variante, w) {
     var bloc = blocDe(courant(), variante);
-    if (!bloc || !bloc.pages) return null;
-    return bloc.pages[cle(w)] || null;
+    if (!bloc || !bloc.pages) return { pages: null, statut: "absent", raison: null };
+    var p = presentationCourante();
+    var pp = bloc.pagesPresentations || null;
+    if (p && pp && pp[p.id] && pp[p.id][cle(w)]) {
+      return { pages: pp[p.id], statut: "exact", presentation: p, raison: null };
+    }
+    if (!bloc.pages[cle(w)]) return { pages: null, statut: "absent", raison: null };
+    if (estPresentationDefaut()) {
+      return { pages: bloc.pages, statut: "exact", presentation: PRESENTATION_DEFAUT, raison: null };
+    }
+    return {
+      pages: bloc.pages,
+      statut: "replie",
+      presentation: PRESENTATION_DEFAUT,
+      raison: variante === "actuel"
+        ? "Le Home de production n'a qu'une typographie, la sienne : il n'a ni reglage d'echelle " +
+          "ni prise en compte de « reduire les animations ». Cette colonne reste donc sur la " +
+          "presentation par defaut, quel que soit le reglage choisi."
+        : "Cette combinaison n'est pas generee a " + w + " px — seulement en " +
+          (M.largeursComparaisonTypo || [320, 375]).join(" et ") + " px. La page affichee est " +
+          "celle de la presentation par defaut."
+    };
+  }
+
+  function pageDe(variante, w) {
+    var t = tablePages(variante, w);
+    return t.pages ? t.pages[cle(w)] || null : null;
+  }
+
+  /** La page « page entiere » de la meme combinaison — pour les mesures. */
+  function pageEntiereDe(variante, w) {
+    var t = tablePages(variante, w);
+    return t.pages ? t.pages[cleVue(w, "entiere")] || null : null;
   }
 
   function esc(s) {
@@ -469,11 +639,33 @@ function viewerJs() {
     options.forEach(function (o) {
       var b = document.createElement("button");
       b.textContent = o.libelle;
-      b.className = o.id === actifId ? "on" : "";
+      b.className = (o.id === actifId ? "on" : "") + (o.id === actifId && o.nonDefaut ? " non-defaut" : "");
+      if (o.titre) b.title = o.titre;
       if (estDesactive && estDesactive(o)) { b.disabled = true; b.title = estDesactive(o); }
       b.onclick = function () { onChoix(o.id); };
       hote.appendChild(b);
     });
+  }
+
+  /**
+   * Un reglage de presentation est-il servable sur ce qu'on regarde ?
+   * On repond en cherchant une page REELLE, pas en supposant : c'est ce qui
+   * evite d'annoncer un reglage que la generation n'a pas produit.
+   */
+  function presentationServable(typo, anim) {
+    var p = presentationPour(typo, anim);
+    if (!p) return "Cette combinaison n'existe pas dans le module de presentation du produit.";
+    var vs = etat.variante === "duo" ? [paireCourante().gauche, paireCourante().droite] : [etat.variante];
+    var w = etat.variante === "duo" ? 375 : etat.largeur;
+    for (var i = 0; i < vs.length; i++) {
+      if (vs[i] === "actuel") continue; // le Home de production n'a pas ces reglages
+      var bloc = blocDe(courant(), vs[i]);
+      var pp = bloc && bloc.pagesPresentations;
+      if (pp && pp[p.id] && pp[p.id][cle(w)]) return null;
+    }
+    if (p.id === M.presentationParDefaut) return null;
+    return "Genere en " + (M.largeursComparaisonTypo || [320, 375]).join(" et ") + " px seulement. " +
+      "En " + w + " px, le cadre affichera la presentation par defaut et le signalera.";
   }
 
   function rendreBarre() {
@@ -483,7 +675,7 @@ function viewerJs() {
       if (estExtra() && o.id !== "actuel") return "Cet etat n'existe que cote Home actuel.";
       if (o.id === "vnext2" && !varianteDispo("vnext2")) {
         if (!M.varianteDeuxDisponible) return "La variante 2 n'a pas ete generee (voir les alertes).";
-        return "Cet etat n'a pas de cas de carte progression. Les six cas sont regroupes en bas " +
+        return "Cet etat n'a pas de cas de carte progression. Les sept cas sont regroupes en bas " +
           "de la liste, sous « Variante 2 ».";
       }
       return null;
@@ -526,6 +718,41 @@ function viewerJs() {
         }
         return null;
       });
+
+    // --- l'axe presentation, en deux reglages independants ------------------
+    var dispoTypo = PRESENTATIONS.length > 1;
+    document.getElementById("grp-typo").style.display = dispoTypo ? "" : "none";
+    document.getElementById("grp-anim").style.display = dispoTypo ? "" : "none";
+    segments(document.getElementById("seg-typo"),
+      TYPOS.map(function (t) {
+        return {
+          id: t.id,
+          libelle: t.libelle,
+          nonDefaut: !PRESENTATION_DEFAUT || t.id !== PRESENTATION_DEFAUT.echelle,
+          titre: t.id === "allegee"
+            ? "L'echelle demandee : plus aucun texte en graisse 800."
+            : "L'ecran tel qu'il etait a l'iteration precedente : cinq roles en graisse 800."
+        };
+      }),
+      etat.typo,
+      function (v) { etat.typo = v; rendre(); },
+      function (o) { return presentationServable(o.id, etat.anim); });
+
+    segments(document.getElementById("seg-anim"),
+      ANIMS.map(function (a) {
+        return {
+          id: a.id,
+          libelle: a.libelle,
+          nonDefaut: a.id === "1",
+          titre: a.id === "1"
+            ? "Le joueur a active « reduire les animations ». Au repos l'image est IDENTIQUE : " +
+              "c'est le but. La preuve est comptee dans l'onglet « Cet etat »."
+            : "Le reglage du telephone n'est pas actif — le cas de la grande majorite."
+        };
+      }),
+      etat.anim ? "1" : "0",
+      function (v) { etat.anim = v === "1"; rendre(); },
+      function (o) { return presentationServable(etat.typo, o.id === "1"); });
 
     var btn = document.getElementById("btn-panneau");
     btn.textContent = etat.panneaux ? "Masquer les panneaux" : "Afficher les panneaux";
@@ -608,17 +835,34 @@ function viewerJs() {
   // -----------------------------------------------------------------------
   function cadre(variante, w, hote) {
     var d = device(w);
-    var src = pageDe(variante, w);
+    var table = tablePages(variante, w);
+    var src = table.pages ? table.pages[cle(w)] || null : null;
     var wrap = document.createElement("div");
     wrap.className = "cadre";
     wrap.style.width = w + "px";
 
     var titre = NOMS_VARIANTE[variante] || variante;
+    var pres = table.presentation || presentationCourante();
     var tete = document.createElement("div");
     tete.className = "tete";
     tete.innerHTML = '<span class="puce puce-' + variante + '"></span>' + esc(titre) + " — " + w + " px" +
-      (etat.x13 && w === M.largeurEchelle ? " — texte x" + M.echelleTexte : "");
+      (etat.x13 && w === M.largeurEchelle ? " — texte x" + M.echelleTexte : "") +
+      (pres && PRESENTATION_DEFAUT && pres.id !== PRESENTATION_DEFAUT.id
+        ? ' <span style="color:var(--typo)">— ' + esc(pres.court || pres.titre) + "</span>"
+        : "");
     wrap.appendChild(tete);
+
+    // Un repli n'est jamais silencieux : la colonne dit qu'elle ne montre pas ce
+    // qui a ete demande, et pourquoi.
+    if (table.statut === "replie") {
+      var avis = document.createElement("div");
+      avis.className = "mesure";
+      avis.style.color = "var(--typo)";
+      avis.style.marginTop = "0";
+      avis.style.marginBottom = "6px";
+      avis.textContent = "presentation par defaut — " + table.raison;
+      wrap.appendChild(avis);
+    }
 
     var porte = document.createElement("div");
     porte.className = "porte";
@@ -706,7 +950,10 @@ function viewerJs() {
   var cacheMesures = {};
   function mesurer(variante, w, hauteurVue, sortie) {
     var d = device(w);
-    var kEnt = variante + "|" + etat.etatId + "|" + w + "|" + (etat.x13 ? 1 : 0);
+    // La presentation entre dans la cle du cache : deux typographies donnent deux
+    // hauteurs, et servir l'une pour l'autre ferait mentir le chiffre affiche.
+    var kEnt = variante + "|" + etat.etatId + "|" + w + "|" + (etat.x13 ? 1 : 0) + "|" +
+      (presentationCourante() ? presentationCourante().id : "-");
     function afficher(hContenu) {
       var reste = hContenu - d.stageVisible;
       var txt = "hauteur d'ecran <b>" + d.screenHeight + "</b> px · disponible pour l'ecran <b>" +
@@ -724,8 +971,7 @@ function viewerJs() {
     if (cacheMesures[kEnt] != null) { afficher(cacheMesures[kEnt]); return; }
     if (etat.vue === "entiere") { cacheMesures[kEnt] = hauteurVue; afficher(hauteurVue); return; }
 
-    var bloc = blocDe(courant(), variante);
-    var src = bloc && bloc.pages ? bloc.pages[w + (etat.x13 && w === M.largeurEchelle ? "-x13" : "") + "-entiere"] : null;
+    var src = pageEntiereDe(variante, w);
     if (!src) { sortie.textContent = "mesure indisponible"; return; }
     demanderMesure(src, function (h) {
       if (h == null) { sortie.textContent = "mesure impossible"; return; }
@@ -794,6 +1040,22 @@ function viewerJs() {
       }
     }
 
+    // Un reglage de presentation non par defaut doit se signaler AVANT que le
+    // fondateur ne se prononce : juger la typographie d'avant en croyant regarder
+    // celle d'apres serait la pire confusion possible de cet outil.
+    if (!estPresentationDefaut()) {
+      var pc = presentationCourante();
+      alerte.innerHTML +=
+        '<div class="alerte alerte-orange"><span class="t">Presentation : ' + esc(pc.titre) +
+        "</span>" + esc(pc.resume) +
+        (pc.reduceMotion
+          ? " CETTE PAGE EST VISUELLEMENT IDENTIQUE a celle sans le reglage, et c'est le resultat " +
+            "voulu : au repos, un ecran sans animation ressemble a un ecran avec animation. Ce qui " +
+            "change se compte dans l'onglet « Cet etat »."
+          : "") +
+        "</div>";
+    }
+
     var hote = document.getElementById("cadres");
     hote.innerHTML = "";
     if (etat.variante === "duo") {
@@ -804,23 +1066,27 @@ function viewerJs() {
     }
 
     var d = device(etat.largeur);
+    var pres = presentationCourante();
     document.getElementById("scene-pied").innerHTML =
       "<b>Les reperes.</b> Le haut du cadre est le haut physique de l'ecran. Le trait gris pointille " +
       "marque la fin de la zone systeme (" + d.insetTop + " px). Le trait rouge est la ligne de flottaison : " +
       "en dessous, il faut defiler. Le rectangle du bas represente la barre d'onglets (" +
       d.tabBarContent + " px + " + d.insetBottom + " px d'inset). Calcul : " + esc(d.calcul) +
+      (pres ? "<br><b>Presentation affichee.</b> " + esc(pres.titre) + " — " + esc(pres.resume) : "") +
       "<br><b>Raccourcis.</b> Fleches haut / bas : changer d'etat. <code>v</code> : variante. " +
-      "<code>c</code> : paire du cote a cote. <code>e</code> : vue. <code>p</code> : panneaux.";
+      "<code>c</code> : paire du cote a cote. <code>e</code> : vue. <code>p</code> : panneaux. " +
+      "<code>t</code> : typographie. <code>a</code> : animations. <code>w</code> : largeur.";
   }
 
   // -----------------------------------------------------------------------
   // Panneaux
   // -----------------------------------------------------------------------
   var ONGLETS = [
-    { id: "points", libelle: "Points a valider" },
-    { id: "seuils", libelle: "Seuils et limites" },
+    { id: "axes", libelle: "Valider" },
+    { id: "regle", libelle: "La regle" },
     { id: "etat", libelle: "Cet etat" },
-    { id: "hauteurs", libelle: "Hauteurs" }
+    { id: "mesures", libelle: "Mesures" },
+    { id: "seuils", libelle: "Limites" }
   ];
 
   function rendrePanneaux() {
@@ -835,13 +1101,37 @@ function viewerJs() {
     });
 
     var c = document.getElementById("panneau-contenu");
-    if (etat.onglet === "points") c.innerHTML = htmlPoints();
+    if (etat.onglet === "axes") c.innerHTML = htmlAxes();
+    else if (etat.onglet === "regle") c.innerHTML = htmlRegle();
     else if (etat.onglet === "seuils") c.innerHTML = htmlSeuils();
-    else if (etat.onglet === "hauteurs") { c.innerHTML = htmlHauteursSquelette(); balayerHauteurs(); }
+    else if (etat.onglet === "mesures") { c.innerHTML = htmlMesuresSquelette(); mesurerSousLaLigne(); balayerHauteurs(); }
     else c.innerHTML = htmlEtat();
 
+    // Un bouton de cible ne pose pas seulement l'etat : il pose la COMBINAISON
+    // entiere (etat + variante + largeur + vue + texte + presentation). Sans ca,
+    // « regarde ceci en 320 px avec la typo d'avant » demanderait trois reglages
+    // a la main, et on finirait par regarder autre chose que ce qui est demande.
     Array.prototype.forEach.call(c.querySelectorAll("button[data-etat]"), function (b) {
-      b.onclick = function () { allerA(b.getAttribute("data-etat")); };
+      b.onclick = function () {
+        allerA(b.getAttribute("data-etat"), {
+          variante: b.getAttribute("data-variante"),
+          paire: b.getAttribute("data-paire"),
+          largeur: b.getAttribute("data-largeur"),
+          vue: b.getAttribute("data-vue"),
+          x13: b.getAttribute("data-x13"),
+          typo: b.getAttribute("data-typo"),
+          anim: b.getAttribute("data-anim")
+        });
+      };
+    });
+    // Les axes gardent leur pli d'un rendu a l'autre : le panneau se redessine a
+    // chaque changement de reglage, et un axe qui se refermerait a chaque clic
+    // rendrait la comparaison impraticable.
+    Array.prototype.forEach.call(c.querySelectorAll("details.axe"), function (d) {
+      d.addEventListener("toggle", function () {
+        if (d.open) etat.axeOuvert = d.getAttribute("data-axe");
+        else if (etat.axeOuvert === d.getAttribute("data-axe")) etat.axeOuvert = null;
+      });
     });
   }
 
@@ -854,17 +1144,213 @@ function viewerJs() {
   var EN_TETE_HAUTEURS =
     "<tr><th>Etat</th><th>vNext</th><th>Progression</th><th>Actuel</th></tr>";
 
-  function htmlHauteursSquelette() {
+  /**
+   * PANNEAU « MESURES » — trois reponses chiffrees pour la combinaison affichee :
+   *   1. la hauteur de la page, et de combien elle depasse la ligne de flottaison ;
+   *   2. QUELS blocs passent sous cette ligne, un par un ;
+   *   3. quelle echelle typographique est active, avec le detail role par role.
+   *
+   * Les deux premieres sont mesurees dans le navigateur, sur la page reellement
+   * generee — pas estimees. La troisieme vient du contrat.
+   */
+  function htmlMesuresSquelette() {
     var d = device(etat.largeur);
-    return '<div class="bloc-panneau"><h3>Hauteur de contenu — ' + etat.largeur + " px" +
-      (etat.x13 ? " · texte x" + M.echelleTexte : "") + "</h3>" +
-      '<p class="fin">Mesure faite dans le navigateur sur la vue « page entiere ». ' +
-      "Ligne de flottaison a <b>" + d.stageVisible + " px</b> : au-dela, il faut defiler. " +
-      "La colonne <b>Progression</b> est la variante 2 : sur les six cas de carte, l\\'ecart avec " +
-      "la colonne vNext chiffre exactement ce que la carte coute en hauteur par rapport au lien " +
-      "flottant qu\\'elle remplace.</p>" +
+    var varianteMesuree = etat.variante === "duo" ? paireCourante().droite : etat.variante;
+    var wMesure = etat.variante === "duo" ? 375 : etat.largeur;
+    var pres = presentationCourante();
+
+    var s = '<div class="bloc-panneau"><h3>Ce que tu regardes, en chiffres</h3>' +
+      '<dl class="kv">' +
+      "<dt>combinaison</dt><dd>" + esc(NOMS_VARIANTE[varianteMesuree] || varianteMesuree) +
+      " · " + wMesure + " px · vue " + esc(etat.vue === "visible" ? "zone visible" : "page entiere") +
+      (etat.x13 ? " · texte x" + esc(M.echelleTexte) : " · texte x1") + "</dd>" +
+      "<dt>echelle typographique active</dt><dd><b>" +
+      esc(pres ? pres.titre : "—") + "</b>" +
+      (pres && pres.reduceMotion ? " · <b>animations reduites</b>" : "") +
+      '<br><span style="color:#8DA0BC">' + esc(pres ? pres.resume : "") + "</span></dd>" +
+      "<dt>ligne de flottaison</dt><dd><b>" + d.stageVisible + " px</b> — " + esc(d.calcul) + "</dd>" +
+      "</dl></div>";
+
+    s += '<div class="bloc-panneau"><h3>Hauteur de la page, et ce qui passe sous la ligne</h3>' +
+      '<div id="sous-la-ligne"><p class="vide">mesure en cours…</p></div>' +
+      '<p class="fin">Mesure faite dans le navigateur sur la page « page entiere » de cette ' +
+      "combinaison exacte. Un bloc « sous la ligne » n\\'est pas un defaut en soi : le defilement " +
+      "est accepte. Ce qui compte est CE QUI se trouve dessous — de l\\'action a faire aujourd\\'hui " +
+      "ou du bilan qu\\'on va chercher.</p></div>";
+
+    // --- l'echelle typographique, role par role -----------------------------
+    var comp = M.comparaisonEchelles || [];
+    if (comp.length) {
+      s += '<div class="bloc-panneau"><h3>Les deux echelles, role par role</h3>' +
+        '<table class="tbl"><tr><th>Role</th><th>Actuelle</th><th>Allegee</th></tr>';
+      comp.forEach(function (r) {
+        var change = r.actuelle.fontSize !== r.allegee.fontSize ||
+          r.actuelle.fontWeight !== r.allegee.fontWeight ||
+          r.actuelle.lineHeight !== r.allegee.lineHeight;
+        var fmt = function (x) { return x.fontSize + " px / " + x.fontWeight + " / " + x.lineHeight; };
+        s += "<tr><td>" + esc(r.usage) +
+          '<br><span style="color:#8DA0BC">' + esc(r.role) + "</span></td>" +
+          '<td class="num"' + (change ? ' style="color:#FFB46B"' : "") + ">" + esc(fmt(r.actuelle)) + "</td>" +
+          '<td class="num"' + (change ? ' style="color:#8FE3B0"' : "") + ">" + esc(fmt(r.allegee)) + "</td></tr>";
+      });
+      s += "</table><p class=\\"fin\\">Lecture : taille / graisse / interligne. Roles en graisse " +
+        "800 : <b>cinq</b> avant, <b>zero</b> apres — la graisse maximale de l\\'ecran est " +
+        "desormais 700. Rien n\\'a ete reduit pour gagner de la hauteur : le texte courant " +
+        "GRANDIT (13 → 14 px, interligne 18 → 20) et les liens aussi. Les chiffres et les " +
+        "metadonnees n\\'ont pas bouge d\\'un pixel.</p></div>";
+    }
+
+    // --- le balayage de tous les etats, a la largeur courante ---------------
+    s += '<div class="bloc-panneau"><h3>Hauteur de contenu — tous les etats, ' + etat.largeur + " px" +
+      (etat.x13 ? " · texte x" + M.echelleTexte : "") +
+      (pres && PRESENTATION_DEFAUT && pres.id !== PRESENTATION_DEFAUT.id
+        ? " · " + esc(pres.court || pres.titre)
+        : "") + "</h3>" +
+      '<p class="fin">Ligne de flottaison a <b>' + d.stageVisible + " px</b> : au-dela, il faut " +
+      "defiler. La colonne <b>Progression</b> est la variante 2 : l\\'ecart avec la colonne vNext " +
+      "chiffre exactement ce que la carte coute en hauteur par rapport au lien flottant qu\\'elle " +
+      "remplace. Change la typographie en haut : ce tableau se remesure, et l\\'ecart entre les " +
+      "deux echelles se lit ici en pixels.</p>" +
       '<table class="tbl" id="tbl-hauteurs">' + EN_TETE_HAUTEURS +
       '<tr><td colspan="4" class="vide">mesure en cours…</td></tr></table></div>';
+    return s;
+  }
+
+  // -----------------------------------------------------------------------
+  // CE QUI PASSE SOUS LA LIGNE, BLOC PAR BLOC.
+  //
+  // Les pages generees marquent chaque bloc de premier niveau (data-fks-bloc).
+  // On charge la page « page entiere » de la combinaison affichee dans une iframe
+  // cachee, on releve la position de chaque bloc par rapport au haut de l'ecran,
+  // et on la compare a la ligne de flottaison. C'est une MESURE, pas une
+  // estimation : elle porte sur la page que le fondateur regarde.
+  // -----------------------------------------------------------------------
+  var jetonSousLigne = 0;
+
+  /**
+   * La MEME page, dans l'autre echelle typographique. Sert a chiffrer ce que la
+   * typographie coute (ou rapporte) en hauteur, sans demander au fondateur de
+   * basculer et de retenir un nombre.
+   */
+  function pageAutreEchelle(variante, w) {
+    if (!PRESENTATION_DEFAUT) return null;
+    var p = presentationCourante();
+    if (!p) return null;
+    var autre = presentationPour(p.echelle === "allegee" ? "actuelle" : "allegee", p.reduceMotion);
+    if (!autre) return null;
+    var bloc = blocDe(courant(), variante);
+    var pp = bloc && bloc.pagesPresentations;
+    var src = pp && pp[autre.id] ? pp[autre.id][cleVue(w, "entiere")] : null;
+    return src ? { src: src, presentation: autre } : null;
+  }
+
+  function mesurerSousLaLigne() {
+    var monJeton = ++jetonSousLigne;
+    var varianteMesuree = etat.variante === "duo" ? paireCourante().droite : etat.variante;
+    var w = etat.variante === "duo" ? 375 : etat.largeur;
+    var d = device(w);
+    var src = pageEntiereDe(varianteMesuree, w);
+    var hote = document.getElementById("sous-la-ligne");
+    if (!hote) return;
+    if (!src) { hote.innerHTML = '<p class="vide">Aucune page generee pour cette combinaison.</p>'; return; }
+
+    var cadreM = document.createElement("iframe");
+    cadreM.style.cssText = "position:absolute;left:-20000px;top:0;width:" + (w + 40) +
+      "px;height:12000px;border:0;visibility:hidden";
+    document.body.appendChild(cadreM);
+    cadreM.onload = function () {
+      if (monJeton !== jetonSousLigne) { cadreM.remove(); return; }
+      var blocs = [];
+      var hTotal = null;
+      try {
+        var doc = cadreM.contentDocument;
+        var dev = doc.querySelector(".device");
+        hTotal = dev ? dev.offsetHeight : null;
+        var base = dev ? dev.getBoundingClientRect().top : 0;
+        Array.prototype.forEach.call(doc.querySelectorAll("[data-fks-bloc]"), function (el) {
+          var r = el.getBoundingClientRect();
+          blocs.push({
+            i: el.getAttribute("data-fks-bloc"),
+            haut: Math.round(r.top - base),
+            bas: Math.round(r.bottom - base),
+            texte: (el.textContent || "").trim().replace(/\\s+/g, " ").slice(0, 90)
+          });
+        });
+      } catch (err) { hTotal = null; }
+      cadreM.remove();
+      if (monJeton !== jetonSousLigne) return;
+      if (hTotal == null) { hote.innerHTML = '<p class="vide">mesure impossible</p>'; return; }
+
+      var ligne = d.stageVisible;
+      var reste = hTotal - ligne;
+      var pct = Math.max(4, Math.min(100, Math.round((ligne / Math.max(hTotal, 1)) * 100)));
+      var h = '<dl class="kv"><dt>hauteur de la page</dt><dd><b>' + hTotal + " px</b></dd>" +
+        "<dt>ligne de flottaison</dt><dd><b>" + ligne + " px</b></dd>" +
+        "<dt>verdict</dt><dd>" +
+        (reste > 2
+          ? '<span style="color:#FFB46B"><b>' + reste + " px sous la ligne</b> — il faut defiler.</span>"
+          : reste < -2
+          ? '<span style="color:#7BD6A6">l\\'ecran s\\'arrete <b>' + (-reste) +
+            " px avant</b> la ligne : tout tient sans defiler.</span>"
+          : '<span style="color:#7BD6A6">l\\'ecran finit pile a la ligne.</span>') +
+        "</dd></dl>" +
+        '<div class="jauge' + (reste > 2 ? " deborde" : "") + '"><i style="width:' + pct + '%"></i></div>' +
+        '<p class="fin">La barre montre la part de la page visible sans defiler.</p>';
+
+      if (!blocs.length) {
+        h += '<p class="vide">Aucun bloc repere sur cette page.</p>';
+      } else {
+        var dessous = blocs.filter(function (b) { return b.bas > ligne; });
+        h += '<p class="fin"><b>' + dessous.length + " bloc(s) sur " + blocs.length +
+          " touchent ou depassent la ligne.</b>";
+        // LA DISTINCTION QUI COMPTE. Une page peut depasser la ligne sans qu'un
+        // seul bloc de contenu soit coupe : ce qui deborde est alors la marge de
+        // fin. Confondre les deux ferait condamner un ecran qui va tres bien.
+        if (!dessous.length && reste > 2) {
+          h += " Aucun bloc de CONTENU n\\'est coupe : les " + reste + " px qui depassent sont la " +
+            "marge de fin d\\'ecran. Le defilement existe, mais il ne cache rien.";
+        }
+        h += "</p><div class=\\"sousligne\\">";
+        blocs.forEach(function (b) {
+          var cls = b.haut >= ligne ? "dessous" : b.bas > ligne ? "coupe" : "dessus";
+          var mot = cls === "dessous" ? "sous la ligne" : cls === "coupe" ? "coupe par la ligne" : "visible";
+          h += '<div class="bloc-ligne ' + cls + '"><span class="pos">' + b.haut + "→" + b.bas +
+            " px<br>" + mot + '</span><span>' + esc(b.texte) + "</span></div>";
+        });
+        h += "</div>";
+      }
+      hote.innerHTML = h;
+
+      // --- ce que l'AUTRE echelle typographique donnerait, en pixels ---------
+      var autre = pageAutreEchelle(varianteMesuree, w);
+      if (!autre) return;
+      var cadreA = document.createElement("iframe");
+      cadreA.style.cssText = cadreM.style.cssText;
+      document.body.appendChild(cadreA);
+      cadreA.onload = function () {
+        var hA = null;
+        try {
+          var devA = cadreA.contentDocument.querySelector(".device");
+          hA = devA ? devA.offsetHeight : null;
+        } catch (e2) { hA = null; }
+        cadreA.remove();
+        if (monJeton !== jetonSousLigne || hA == null) return;
+        var ecart = hA - hTotal;
+        var p = document.createElement("p");
+        p.className = "fin";
+        p.innerHTML = "<b>La meme page dans l\\'autre echelle (" + esc(autre.presentation.titre) +
+          ") : " + hA + " px</b> — soit " +
+          (Math.abs(ecart) <= 2
+            ? "la MEME hauteur, a " + Math.abs(ecart) + " px pres. L\\'allegement typographique ne " +
+              "coute donc rien en hauteur sur cet ecran : c\\'est un choix de lisibilite, pas un " +
+              "arbitrage contre le defilement."
+            : (ecart > 0 ? ecart + " px de PLUS" : (-ecart) + " px de MOINS") +
+              " que ce qui est affiche.");
+        hote.appendChild(p);
+      };
+      cadreA.src = autre.src;
+    };
+    cadreM.src = src;
   }
 
   var jetonBalayage = 0;
@@ -911,8 +1397,17 @@ function viewerJs() {
       cadre.src = src;
     }
 
+    // Les pages de la PRESENTATION affichee, avec repli documente sur celle par
+    // defaut. Sans ce repli, le tableau afficherait des trous en typo « actuelle »
+    // pour la colonne « Home actuel », qui n'a pas ce reglage.
+    var presBalayage = presentationCourante();
     function pagesDe(bloc) {
-      return bloc && bloc.pages ? bloc.pages[etat.largeur + suffixe] : null;
+      if (!bloc) return null;
+      var pp = bloc.pagesPresentations;
+      if (presBalayage && pp && pp[presBalayage.id] && pp[presBalayage.id][etat.largeur + suffixe]) {
+        return pp[presBalayage.id][etat.largeur + suffixe];
+      }
+      return bloc.pages ? bloc.pages[etat.largeur + suffixe] : null;
     }
 
     function suivant() {
@@ -961,20 +1456,153 @@ function viewerJs() {
   function htmlPoints() {
     var v2 = estVariante2(etat.etatId);
     var pointsV2 = M.pointsProgression || [];
-    var s = '<div class="bloc-panneau"><h3>Ce sur quoi tu dois te prononcer</h3>' +
-      '<p class="fin">Pour chaque point : quoi regarder, dans quel etat, et ce qui vaut oui ou non. ' +
-      'Les boutons basculent directement sur l\\'etat concerne — et sur la bonne variante.</p></div>';
 
     // L'ordre suit ce qu'on regarde : sur un etat de variante 2, ses points
     // passent devant. On ne cache jamais l'autre serie.
     var blocV1 = '<div class="sep-panneau bleu">Variante 1 — l\\'ecran valide (' +
-      M.points.length + " points)</div>" + listePoints(M.points, !v2);
+      M.points.length + " points)</div>" + listePoints(M.points, false);
     var blocV2 = pointsV2.length
       ? '<div class="sep-panneau">Variante 2 — la carte progression (' + pointsV2.length +
-        " points)</div>" + listePoints(pointsV2, v2)
+        " points)</div>" + listePoints(pointsV2, false)
       : "";
 
-    return s + (v2 ? blocV2 + blocV1 : blocV1 + blocV2);
+    return (v2 ? blocV2 + blocV1 : blocV1 + blocV2);
+  }
+
+  // -----------------------------------------------------------------------
+  // PANNEAU « VALIDER » — un jugement par AXE, pas par ecran.
+  //
+  // C'est le panneau principal de cette iteration. Il repond a une demande
+  // precise : pouvoir dire OUI a la typographie et NON a la hauteur sans que
+  // les deux verdicts se contaminent.
+  //
+  // Chaque axe porte sa BASCULE (le reglage a manipuler) et ses CIBLES, qui sont
+  // des combinaisons completes : un clic pose l'etat, la variante, la largeur, la
+  // vue, l'echelle de texte et la presentation d'un seul coup.
+  // -----------------------------------------------------------------------
+
+  /** La cible correspond-elle EXACTEMENT a ce qui est affiche ? */
+  function cibleActive(c) {
+    if (c.etat !== etat.etatId) return false;
+    var v = c.variante || (estVariante2(c.etat) ? "vnext2" : "vnext");
+    if (v !== etat.variante) return false;
+    if (v === "duo" && c.paire && c.paire !== etat.paire) return false;
+    if (v !== "duo" && Number(c.largeur || 375) !== etat.largeur) return false;
+    if ((c.vue || "visible") !== etat.vue) return false;
+    if (Boolean(c.x13) !== etat.x13) return false;
+    // Une cible qui ne DECLARE pas de presentation n'en impose pas : l'axe de la
+    // pastille d'en-tete, par exemple, se juge dans n'importe quelle typographie.
+    // La contraindre au defaut ferait clignoter le bouton actif d'un axe a
+    // l'autre sans raison.
+    if (!c.presentation) return true;
+    var pres = presentationParId(c.presentation);
+    if (!pres) return false;
+    return pres.echelle === etat.typo && Boolean(pres.reduceMotion) === Boolean(etat.anim);
+  }
+
+  function boutonCible(c) {
+    var connu = M.etats[c.etat] || etatsV2()[c.etat];
+    if (!connu) {
+      // Une cible qui pointe sur un etat non genere ne devient PAS un bouton
+      // mort : elle se dit, avec la raison. Sinon le fondateur cliquerait dans
+      // le vide sans comprendre.
+      return '<span class="vide">' + esc(c.libelle) + " — etat non genere</span>";
+    }
+    var pres = c.presentation ? presentationParId(c.presentation) : null;
+    var v = c.variante || (estVariante2(c.etat) ? "vnext2" : "vnext");
+    return '<button class="' + (cibleActive(c) ? "actif" : "") + '"' +
+      ' data-etat="' + esc(c.etat) + '"' +
+      ' data-variante="' + esc(v) + '"' +
+      (c.paire ? ' data-paire="' + esc(c.paire) + '"' : "") +
+      ' data-largeur="' + esc(c.largeur || 375) + '"' +
+      ' data-vue="' + esc(c.vue || "visible") + '"' +
+      ' data-x13="' + (c.x13 ? "1" : "0") + '"' +
+      (pres ? ' data-typo="' + esc(pres.echelle) + '" data-anim="' + (pres.reduceMotion ? "1" : "0") + '"' : "") +
+      ">" + esc(c.libelle) + "</button>";
+  }
+
+  function htmlAxes() {
+    var axes = M.axes || [];
+    var s = '<div class="bloc-panneau"><h3>Sept axes, sept verdicts separes</h3>' +
+      "<p>Chaque axe se juge SEUL : tu peux dire oui a la typographie et non a la hauteur, ils ne " +
+      "se contaminent pas. Chaque axe dit quel reglage manipuler, et ses boutons posent la " +
+      "combinaison entiere — etat, largeur, vue, texte et presentation d'un seul coup.</p>" +
+      '<p class="fin">Un bouton en bleu plein = c\\'est exactement ce que tu regardes en ce moment.</p></div>';
+
+    if (!axes.length) {
+      s += '<p class="vide">Aucun axe declare (lib/axesAValider.js absent ?).</p>';
+    }
+    axes.forEach(function (a) {
+      var ouvert = etat.axeOuvert === a.id;
+      s += '<details class="axe" data-axe="' + esc(a.id) + '"' + (ouvert ? " open" : "") + ">" +
+        '<summary><span class="nom">' + esc(a.titre) + "</span></summary>" +
+        '<div class="corps">' +
+        '<div class="q">' + esc(a.question) + "</div>" +
+        '<div class="bascule"><span class="t">La bascule a manipuler</span>' + esc(a.bascule) + "</div>" +
+        '<div class="bloc"><span class="cle">Quoi regarder</span>' + esc(a.regarder) + "</div>" +
+        '<div class="verdict">' +
+        '<div class="v-oui"><span class="t">ca vaut oui</span>' + esc(a.oui) + "</div>" +
+        '<div class="v-non"><span class="t">ca vaut non</span>' + esc(a.non) + "</div>" +
+        "</div>" +
+        '<div class="bloc"><span class="cle">Ou le regarder — un clic pose tout</span>' +
+        '<div class="cibles">' + (a.cibles || []).map(boutonCible).join("") + "</div></div>" +
+        "</div></details>";
+    });
+
+    // --- la couverture demandee --------------------------------------------
+    var couv = M.couverture || [];
+    if (couv.length) {
+      s += '<div class="sep-panneau bleu">Les huit situations demandees, et ou chacune se regarde</div>' +
+        '<table class="tbl"><tr><th>Situation</th><th>Ce qu\\'on y voit</th></tr>';
+      couv.forEach(function (c) {
+        s += "<tr><td>" + boutonCible({
+          libelle: c.situation,
+          etat: c.cible.etat,
+          variante: c.cible.variante,
+          largeur: c.cible.largeur,
+          vue: c.cible.vue,
+          x13: c.cible.x13,
+          presentation: c.cible.presentation
+        }) + "</td><td>" + esc(c.ceQuOnVoit) + "</td></tr>";
+      });
+      s += "</table>";
+    }
+
+    // --- ce qui a change depuis l'iteration precedente ----------------------
+    var chg = M.iterationChangements || [];
+    if (chg.length) {
+      s += '<div class="sep-panneau">« Progression integree » — avant / apres</div>' +
+        '<p class="fin">Cinq changements depuis la version que tu as validee. Un seul est ' +
+        "rejouable par une bascule : la typographie, parce que l\\'ancienne echelle a ete gardee " +
+        "expres. Les autres ont REMPLACE ce qui existait — l\\'ancien selecteur de test a ete " +
+        "supprime, les anciennes dates de fixture aussi. Fabriquer une fausse page « avant » " +
+        "serait exactement l\\'erreur que cette iteration corrige : on ne la refait pas dans " +
+        "l\\'outil qui sert a la juger. Ce qui n\\'est pas rejouable est donc CHIFFRE a cote.</p>";
+      chg.forEach(function (c) {
+        var badge = c.rejouable === "oui"
+          ? '<span class="badge badge-ok">rejouable par une bascule</span>'
+          : c.rejouable === "mesure"
+          ? '<span class="badge badge-neutre">non rejouable — chiffre a cote</span>'
+          : '<span class="badge badge-neutre">non rejouable — ajout</span>';
+        s += '<details class="point"><summary>' + esc(c.titre) + "</summary>" +
+          '<div class="corps">' +
+          '<div class="bloc">' + badge + "</div>" +
+          '<div class="bloc"><span class="cle">Ce qui change</span>' + esc(c.quoi) + "</div>" +
+          '<div class="bloc"><span class="cle">A savoir</span>' + esc(c.aSavoir) + "</div>" +
+          '<div class="bloc"><span class="cle">Ou le voir</span>' + esc(c.ouLeVoir) + "</div>" +
+          "</div></details>";
+      });
+      (M.iterationInchange || []).forEach(function (t) {
+        s += '<p class="fin">— ' + esc(t) + "</p>";
+      });
+    }
+
+    // --- l'ancienne liste, point par point : rien n'est perdu ---------------
+    s += '<div class="sep-panneau bleu">Le detail, point par point (la liste precedente)</div>' +
+      '<p class="fin">Elle reste : elle est faite pour relire l\\'ecran de bout en bout, la ou les ' +
+      "axes ci-dessus servent a trancher un sujet a la fois. Les deux disent la meme chose, " +
+      "rangee autrement.</p>" + htmlPoints();
+    return s;
   }
 
   /**
@@ -1016,20 +1644,37 @@ function viewerJs() {
     }
     s += "</div>";
 
-    // --- 2. l'etat physique global (R4) ------------------------------------
-    s += '<div class="encadre-portee"><span class="t">Etat physique global — R4</span>';
-    if (v2 && pv) {
-      if (pv.etatGlobal && pv.etatGlobal.connu) {
-        s += '<div class="phrase"><span class="badge badge-ko">annonce</span> « ' +
-          esc(pv.etatGlobal.libelle) + " »</div>";
-      } else {
-        s += '<div class="phrase"><span class="badge badge-ok">rien d\\'annonce</span> ' +
-          "La carte n\\'ecrit aucun libelle d\\'etat global.</div>" +
-          '<div class="sous">' + esc(pv.etatGlobal ? pv.etatGlobal.explication : "") +
-          " Ce n\\'est pas une convention de redaction : le TYPE d\\'entree du contrat ne porte le " +
-          "champ que si les charges club sont capturees, et rien dans l\\'app ne les capture " +
-          "aujourd\\'hui. La carte ne PEUT pas en produire un.</div>";
-      }
+    // --- 2. l'etat physique global (D1) ------------------------------------
+    //
+    // DECISION DU FONDATEUR D1 (2026-07-28) : la pastille d'etat global est
+    // RETIREE COMPLETEMENT de la variante 2. Ce panneau doit dire COMMENT, et
+    // la reponse a change depuis l'iteration precedente : ce n'est plus un
+    // verrou conditionne aux charges club, c'est une SUPPRESSION du contrat,
+    // des deux cotes.
+    //
+    // ATTENTION : ce commentaire vit DANS un litteral de gabarit — pas de
+    // caracteres accent grave ici, ils termineraient la chaine (erreur de
+    // syntaxe au build). Les noms de champs sont donc cites entre guillemets.
+    //
+    // Le champ "etatGlobal" n'existe donc plus dans le ViewModel — ni le type
+    // "ProgressionEtatGlobal", ni le champ d'entree "libelleEtatGlobal". Les
+    // branches qui les lisaient ont ete RETIREES plutot que laissees a tourner
+    // a blanc : elles affichaient une explication devenue fausse (« le type
+    // d'entree ne porte le champ que si les charges club sont capturees »),
+    // c'est-a-dire exactement le verrou conditionnel que le fondateur a refuse.
+    s += '<div class="encadre-portee"><span class="t">Etat physique global — D1</span>';
+    if (v2) {
+      s += '<div class="phrase"><span class="badge badge-ok">rien d\\'annonce</span> ' +
+        "La carte n\\'ecrit aucun libelle d\\'etat global, et l\\'en-tete non plus.</div>" +
+        '<div class="sous">Ce n\\'est ni une convention de redaction, ni un verrou qu\\'un ' +
+        "drapeau pourrait rouvrir : le champ de sortie (<code>etatGlobal</code>) et le champ " +
+        "d\\'entree (<code>libelleEtatGlobal</code>) ont ete <b>supprimes du contrat</b>. " +
+        "Aucune valeur d\\'entree ne peut donc faire ressortir « En forme » ou « Frais ». " +
+        "Motif du fondateur : le modele de charge part encore de valeurs initiales " +
+        "artificielles (ATL0 / CTL0) et ignore les entrainements club — aucun booleen ne " +
+        "rendrait ce libelle honnete aujourd\\'hui. Une pastille « Charge FKS » ne pourra " +
+        "revenir que le jour ou son calcul reposera sur des donnees entierement reelles, avec " +
+        "une portee expliquee.</div>";
     } else {
       s += '<div class="phrase">La carte progression n\\'existe pas sur cet etat.</div>';
     }
@@ -1038,58 +1683,221 @@ function viewerJs() {
     //
     // hv.pastilleEtat est ce que la VARIANTE 1 affiche ; e.vnext2.pastilleEtat
     // ce que la VARIANTE 2 affiche reellement (mesure sur son propre ViewModel,
-    // jamais suppose). Depuis que le verrou est pose dans le ViewModel du Home
-    // pour la variante 2, le second vaut null partout : les entrainements club
-    // ne sont pas captures, donc aucun etat physique global n'est annonce.
+    // jamais suppose). Le second vaut null PARTOUT, et pas « tant que les
+    // charges club ne sont pas capturees » : l'ecran retire lui-meme le
+    // stateChip en variante 2, et le champ qui l'alimentait n'existe plus.
+    // La branche « les deux colonnes affichent la pastille » est donc devenue
+    // inatteignable ; elle est conservee sous forme d'ALERTE, parce qu'un
+    // panneau qui garde une explication inatteignable la fait lire comme un cas
+    // normal, alors que ce serait un ecart avec D1.
     if (hv && hv.pastilleEtat) {
       var pastilleV2 = v2 && e.vnext2 ? e.vnext2.pastilleEtat || null : null;
-      if (v2 && !pastilleV2) {
+      if (v2) {
         s += '<div class="sous"><b>Ecart entre les deux colonnes :</b> l\\'en-tete de la ' +
           'VARIANTE 1 affiche la pastille « ' + esc(hv.pastilleEtat) + ' » — un etat physique ' +
-          'GLOBAL. En VARIANTE 2 elle est <b>retiree</b> : tant que les entrainements club ne ' +
-          'sont pas captures, l\\'app ne sait pas dans quel etat est le joueur, et un ecran ne ' +
-          'peut pas annoncer un etat puis ecrire 200 px plus bas qu\\'il n\\'est pas calculable. ' +
-          'Regle appliquee dans le ViewModel du Home, pilotee par la variante. A regarder cote a ' +
-          'cote avant de trancher.</div>';
-      } else if (v2) {
-        s += '<div class="sous"><b>A savoir :</b> les deux colonnes affichent la pastille ' +
-          '« ' + esc(pastilleV2) + ' ». En variante 2 cela ne peut arriver que si les charges ' +
-          'club sont capturees : verifie l\\'entree, sinon c\\'est un ecart avec la regle.</div>';
+          'GLOBAL. En VARIANTE 2 elle est <b>retiree</b> (decision D1) : un ecran ne peut pas ' +
+          'annoncer un etat puis ecrire 200 px plus bas que les entrainements club n\\'y sont ' +
+          'pas comptes. La variante 1 la garde volontairement, pour que l\\'ecart se voie. ' +
+          'A regarder cote a cote avant de trancher.' +
+          (pastilleV2
+            ? ' <b>ANOMALIE — ECART AVEC D1 :</b> la variante 2 affiche pourtant « ' +
+              esc(pastilleV2) + ' ». Cela ne devrait plus etre possible.'
+            : "") +
+          "</div>";
       } else {
         s += '<div class="sous"><b>A savoir :</b> l\\'en-tete de l\\'ecran affiche la pastille ' +
           '« ' + esc(hv.pastilleEtat) + ' ». C\\'est le bloc d\\'en-tete de la VARIANTE 1, et ' +
-          'non la carte. La variante 2, elle, ne l\\'affiche plus : tant que les entrainements ' +
-          'club ne sont pas comptes, elle refuse d\\'annoncer un etat physique global.</div>';
+          'non la carte. La variante 2, elle, ne l\\'affiche <b>plus du tout</b> (decision D1) : ' +
+          'le champ qui l\\'alimentait a ete supprime du contrat, aucune valeur d\\'entree ne ' +
+          'peut le faire revenir. La variante 1 la conserve pour que la comparaison reste ' +
+          'visible.</div>';
       }
     }
     s += "</div>";
     return s;
   }
 
-  function htmlSeuils() {
+  // -----------------------------------------------------------------------
+  // PANNEAU « LA REGLE » — la decision produit qui attend d'etre validee.
+  //
+  // La carte n'affiche qu'UN test. Lequel, et pourquoi ? Trois etages, un
+  // tableau cycle -> test, et un ordre de departage fige. Rien de tout ca n'est
+  // visible a l'ecran produit — c'est normal, le joueur n'a pas a lire une regle.
+  // Mais le fondateur, lui, doit pouvoir la contester ligne par ligne.
+  // -----------------------------------------------------------------------
+  function htmlRepereCourant() {
     var e = courant();
-    var v2courant = estVariante2(etat.etatId);
-    var s = htmlPorteeEtEtatGlobal();
-
-    // avertissements du prototype pour l'etat courant
-    s += '<div class="bloc-panneau"><h3>Avertissements du prototype — etat courant</h3>';
-    var w = estExtra()
-      ? []
-      : (v2courant
-          ? (e.vnext2 && e.vnext2.protoWarnings) || []
-          : (e.vnext && e.vnext.protoWarnings) || []);
-    if (!w.length) {
-      s += '<p class="vide">Aucun avertissement pour cet etat.</p>';
-    } else {
-      w.forEach(function (x) {
-        s += '<div class="avertissement"><span class="t">a savoir</span>' + esc(x) + "</div>";
-      });
+    if (!e || estExtra()) return "";
+    if (!estVariante2(etat.etatId)) {
+      return '<div class="repere vide"><span class="t">Repere de test — etat courant</span>' +
+        '<div class="gros">Cet ecran n\\'a pas de carte progression.</div>' +
+        '<div class="sous">Le repere de test est une decision de la CARTE. Choisis un des sept ' +
+        "cas du groupe « Variante 2 », en bas de la liste de gauche.</div></div>";
     }
-    s += '<p class="fin">Ces avertissements viennent du selecteur du prototype. Ils vivent ICI, ' +
-      'jamais dans l\\'ecran produit : le joueur ne doit pas lire les notes de chantier.</p></div>';
+    var r = e.vnext2 && e.vnext2.repere;
+    if (!r) {
+      return '<div class="repere vide"><span class="t">Repere de test — etat courant</span>' +
+        '<div class="gros">Selecteur indisponible.</div></div>';
+    }
 
-    // seuils d'affichage — variante 1
-    s += '<div class="bloc-panneau"><h3>Seuils d\\'affichage de l\\'ecran — a valider par le fondateur</h3>' +
+    var s = "";
+    if (r.etat === "affiche") {
+      s += '<div class="repere"><span class="t">Le test affiche, et pourquoi</span>' +
+        '<div class="gros">' + esc(r.label) + "</div>" +
+        '<div class="chiffre">' + esc(r.avant) + "  →  " + esc(r.apres) + "   <b>" + esc(r.ecart) +
+        "</b>  (" + esc(r.sens === "amelioration" ? "en progres" : r.sens === "regression" ? "en retrait" : "identique") +
+        ")</div>" +
+        '<div class="sous"><b>' +
+        (r.regle === "objectif_du_cycle" ? "REGLE 1" : r.departageApplique ? "REGLES 2 + 3" : "REGLE 2") +
+        ".</b> " + esc(r.motif) + "</div>" +
+        '<div class="sous">Mesures comparees : ' + esc(r.jours) + ".</div></div>";
+    } else if (r.etat === "aucune") {
+      s += '<div class="repere vide"><span class="t">Repere de test — etat courant</span>' +
+        '<div class="gros">Aucun repere affiche.</div>' +
+        '<div class="sous">' + esc(r.explication || "") +
+        (r.raison ? ' <span style="color:#8DA0BC">(' + esc(r.raison) + ")</span>" : "") +
+        " La carte ne fabrique pas une comparaison pour remplir la place.</div></div>";
+    } else {
+      s += '<div class="repere vide"><span class="t">Repere de test — etat courant</span>' +
+        '<div class="gros">Hors sujet sur cet etat.</div>' +
+        '<div class="sous">' + esc(r.explication || "") + "</div></div>";
+    }
+
+    // --- le cycle actif, et ce qu'il designe --------------------------------
+    s += '<div class="bloc-panneau"><h3>Le cycle actif de ce joueur</h3>';
+    if (r.cycleActif) {
+      s += "<p><b>" + esc(r.libelleCycle || r.cycleActif) + "</b> — test attitre : <b>" +
+        (r.champDuCycle
+          ? esc(libelleChamp(r.champDuCycle))
+          : "AUCUN, volontairement") + "</b></p>" +
+        justification(r.fondementCycle, r.ecarteCycle);
+    } else {
+      s += '<p class="fin">Aucun cycle actif sur cette fixture : la regle 1 ne peut pas mordre.</p>';
+    }
+    s += "</div>";
+
+    // --- les concurrents, et l'effet de la regle 1 --------------------------
+    if (r.candidats && r.candidats.length) {
+      s += '<div class="bloc-panneau"><h3>Ce qui etait comparable, et ce qui a ete retenu</h3>' +
+        '<table class="tbl"><tr><th>Test</th><th>Derniere mesure</th><th>Ecart</th></tr>';
+      r.candidats.forEach(function (c) {
+        s += '<tr class="' + (c.retenu ? "retenu" : "") + '"><td>' + esc(c.label) +
+          (c.retenu ? ' <span class="badge badge-ok">affiche</span>' : "") + "</td>" +
+          '<td class="num">' + esc(c.jourApres) +
+          (c.auPlusRecent ? '<br><span style="font-size:10px;color:#8DA0BC">le plus recent</span>' : "") +
+          '</td><td class="num">' + esc(c.ecart) + "</td></tr>";
+      });
+      s += "</table>";
+      if (r.exAequoAuPlusRecent > 1) {
+        s += '<p class="fin"><b>' + esc(r.exAequoAuPlusRecent) + " tests partagent le meme " +
+          "horodatage.</b> Ce n\\'est pas un hasard : une batterie du socle est enregistree en UNE " +
+          "seule fois, donc ses trois tests portent la meme date A LA SECONDE. L\\'egalite est le " +
+          "cas NORMAL, pas l\\'exception — c\\'est pour ca qu\\'un ordre de departage fige existe.</p>";
+      }
+      if (r.regle2Seule) {
+        s += '<p class="fin"><b>Ce que la regle 2 SEULE aurait designe :</b> ' +
+          esc(r.regle2Seule.label) + " (" + esc(r.regle2Seule.ecart) + ")." +
+          (r.regle1Determinante
+            ? " C\\'est DIFFERENT du test affiche : sur cet etat, la regle 1 — l\\'objectif du " +
+              "cycle — change le resultat. Sans le tableau cycle -> test, c\\'est cet autre test " +
+              "qui serait a l\\'ecran."
+            : " C\\'est le MEME test : sur cet etat, la regle 1 ne change rien au resultat.") +
+          '<br><span style="color:#8DA0BC">Calcul fait par la fonction du produit, avec « aucun ' +
+          "cycle actif » — pas par une reconstitution du harnais. C\\'est la meme question que " +
+          "posait la version precedente de la carte.</span></p>";
+      }
+      s += "</div>";
+    }
+    return s;
+  }
+
+  /**
+   * La justification d'une ligne du tableau cycle -> test, REPLIEE.
+   *
+   * Ces textes citent le depot mot pour mot : ils contiennent des noms de
+   * fichiers et de variables. C'est ce qui les rend verifiables — et illisibles
+   * pour quelqu'un qui n'ecrit pas de code. On les garde donc integralement, mais
+   * derriere un pli : le tableau reste lisible, et la preuve reste a un clic. Les
+   * couper ou les reformuler les rendrait invérifiables, ce qui est pire.
+   */
+  function justification(fondement, ecarte) {
+    if (!fondement && !ecarte) return "";
+    return '<details class="point"><summary>Pourquoi cette ligne (citations du code)</summary>' +
+      '<div class="corps">' +
+      (fondement ? '<div class="bloc"><span class="cle">Ce qui la fonde</span>' + esc(fondement) + "</div>" : "") +
+      (ecarte ? '<div class="bloc"><span class="cle">Ce qui a ete envisage puis ecarte</span>' + esc(ecarte) + "</div>" : "") +
+      "</div></details>";
+  }
+
+  /** Libelle francais d'un champ de test, depuis l'ordre de departage publie. */
+  function libelleChamp(champ) {
+    var o = M.ordreDepartageProgression || [];
+    for (var i = 0; i < o.length; i++) if (o[i].champ === champ) return o[i].label;
+    return champ;
+  }
+
+  function htmlRegle() {
+    var s = htmlPorteeEtEtatGlobal();
+    s += htmlRepereCourant();
+
+    // --- le tableau cycle -> test ------------------------------------------
+    var map = M.mappingCyclesProgression || [];
+    if (map.length) {
+      s += '<div class="sep-panneau">Le tableau cycle → test — DECISION PRODUIT, elle t\\'attend</div>' +
+        '<p class="fin">La carte n\\'affiche qu\\'UN test. Premiere regle : celui que vise le cycle ' +
+        "actif. Ce tableau dit lequel, pour chacun des cinq cycles. Deux cycles n\\'ont " +
+        "volontairement aucun test attitre : ils ne promettent d\\'ameliorer aucune qualite " +
+        "precise, et leur en accrocher un ferait dire a l\\'ecran une chose que le cycle ne fait " +
+        "pas. Chaque ligne se change en une minute — dis simplement laquelle est fausse.</p>" +
+        '<table class="tbl"><tr><th>Cycle</th><th>Test mis en avant</th></tr>';
+      map.forEach(function (l) {
+        s += "<tr><td><b>" + esc(l.libelleCycle) + "</b>" +
+          justification(l.fondement, l.ecarte) +
+          "</td><td>" +
+          (l.champ
+            ? "<b>" + esc(libelleChamp(l.champ)) + "</b>"
+            : '<span class="badge badge-neutre">aucun</span>') +
+          "</td></tr>";
+      });
+      s += "</table>";
+    }
+
+    // --- l'ordre de departage ----------------------------------------------
+    var ordre = M.ordreDepartageProgression || [];
+    if (ordre.length) {
+      s += '<div class="sep-panneau">L\\'ordre qui departage a egalite (regle 3)</div>' +
+        '<p class="fin">Quand plusieurs tests partagent l\\'horodatage le plus recent — le cas ' +
+        "NORMAL, puisqu\\'une batterie est enregistree en une fois — cet ordre tranche. Il est fige " +
+        "au chargement, il ne lit AUCUNE valeur de test : un resultat en recul sort exactement " +
+        "comme un resultat en progres. Les trois tests du socle passent devant les optionnels, " +
+        "parce qu\\'ils existent chez tout le monde.</p>" +
+        '<table class="tbl"><tr><th>#</th><th>Test</th></tr>';
+      ordre.slice(0, 6).forEach(function (o) {
+        s += '<tr><td class="num">' + esc(o.rang) + "</td><td>" + esc(o.label) +
+          (o.socle ? ' <span class="badge badge-ok">socle</span>' : "") +
+          (o.pourquoi ? '<br><span style="color:#8DA0BC">' + esc(o.pourquoi) + "</span>" : "") +
+          "</td></tr>";
+      });
+      s += "</table>";
+      if (ordre.length > 6) {
+        s += '<p class="fin">Puis, dans l\\'ordre : ' +
+          ordre.slice(6).map(function (o) { return esc(o.label); }).join(", ") + ".</p>";
+      }
+      s += '<p class="fin"><b>Ce que la regle ne fait JAMAIS.</b> Elle ne regarde ni le signe ni ' +
+        "l\\'amplitude du resultat. Ce n\\'est pas une intention mais une contrainte du code : la " +
+        "fonction qui choisit ne recoit QUE deux informations par test — lequel c\\'est, et sa " +
+        "date. L\\'ecart, son sens et sa valeur ne lui sont pas transmis. Trier par « meilleure " +
+        "progression » ne peut donc pas s\\'ecrire sans changer ce qu\\'elle recoit, et ce " +
+        "changement se voit en une ligne.</p>";
+    }
+
+    return s + htmlSeuilsAffichage();
+  }
+
+  /** Les seuils qui decident de ce que l'ecran a le droit de MONTRER. */
+  function htmlSeuilsAffichage() {
+    var s = '<div class="sep-panneau bleu">Seuils d\\'affichage — a valider par le fondateur</div>';
+    s += '<div class="bloc-panneau"><h3>L\\'ecran</h3>' +
       '<table class="tbl"><tr><th>Seuil</th><th>Valeur</th><th>Role</th></tr>';
     (M.seuils || []).forEach(function (x) {
       s += "<tr><td class=\\"num\\">" + esc(x.nom) + '</td><td class="num">' + esc(x.valeur) +
@@ -1116,6 +1924,79 @@ function viewerJs() {
         "differents pour comparer deux tests — c\\'est ce que la page Progression actuelle ne " +
         "verifie pas, et qui lui fait afficher une progression entre deux essais du meme " +
         "apres-midi.</p></div>";
+    }
+    return s;
+  }
+
+  // -----------------------------------------------------------------------
+  // PANNEAU « LIMITES » — ce qui est faux ici, et ce qui ne se juge pas ici.
+  // Regarder un ecran sans savoir ce qui est faux dedans, c'est valider une
+  // illusion.
+  // -----------------------------------------------------------------------
+  function htmlSeuils() {
+    var s = "";
+
+    // La politique d'agrandissement : elle explique pourquoi les pages x1,3 de
+    // cet outil sont PLUS etirees que ce que verra un vrai telephone.
+    var pol = M.politiqueAgrandissement || [];
+    if (pol.length) {
+      s += '<div class="bloc-panneau"><h3>Texte agrandi : ce qui grandit sans limite, et ce qui s\\'arrete</h3>' +
+        "<p>Le reglage d'agrandissement du telephone n'est JAMAIS desactive. Trois textes " +
+        "d'AFFICHAGE cessent tout de meme de grandir a un moment : ils ne portent aucune " +
+        "information, et les laisser filer volerait la place a ceux qui en portent. Tout le " +
+        "reste — les chiffres, le texte courant, la portee de la mesure, les liens — grandit " +
+        "autant que le systeme le demande.</p>" +
+        '<table class="tbl"><tr><th>Texte</th><th>Plafond</th></tr>';
+      pol.forEach(function (p) {
+        s += "<tr><td>" + esc(p.texteConcerne) +
+          '<br><span style="color:#8DA0BC">' + esc(p.raison) + "</span></td>" +
+          '<td class="num">' +
+          (p.plafond == null
+            ? '<span class="badge badge-ok">aucun</span>'
+            : "x" + esc(p.plafond)) +
+          "</td></tr>";
+      });
+      s += "</table>" +
+        '<div class="avertissement"><span class="t">a savoir en regardant les pages x' +
+        esc(M.echelleTexte) + "</span>Ce visualiseur ne sait pas reproduire ces plafonds : ses " +
+        "pages « x" + esc(M.echelleTexte) + " » multiplient TOUTES les tailles de texte. Elles " +
+        "montrent donc le PIRE CAS. Sur telephone, la mise en page sera moins etiree que ce que " +
+        "tu vois ici — jamais plus. Si elle tient ici, elle tient la-bas.</div></div>";
+    }
+
+    // La regle de mouvement, en toutes lettres.
+    var rm = M.regleMouvement || [];
+    if (rm.length) {
+      s += '<div class="bloc-panneau"><h3>Le mouvement — la regle appliquee</h3><table class="tbl">';
+      rm.forEach(function (r) { s += "<tr><td>" + esc(r) + "</td></tr>"; });
+      s += "</table>" +
+        '<p class="fin">Une capture ne peut pas montrer un mouvement, et encore moins son ' +
+        "ABSENCE. C\\'est pour ca que le reglage « animations reduites » se verifie par un compteur " +
+        "(onglet « Cet etat ») et non a l\\'oeil : au repos, les deux rendus sont identiques — " +
+        "c\\'est precisement le resultat voulu.</p></div>";
+    }
+
+    // Ce que la verification de reproductibilite a trouve dans le Home ACTUEL.
+    var pu = M.pulsationHomeActuel;
+    if (pu && pu.etatsConcernes) {
+      s += '<div class="bloc-panneau"><h3>Trouve en verifiant que deux generations donnent le meme resultat</h3>' +
+        '<div class="avertissement"><span class="t">defaut du Home de production — hors perimetre</span>' +
+        "Deux generations successives produisent des fichiers RIGOUREUSEMENT identiques… sauf pour " +
+        "le Home de production, sur <b>" + esc(pu.etatsConcernes) + " etats</b>. La cause : son " +
+        "bouton principal joue une pulsation EN BOUCLE, sans jamais consulter le reglage " +
+        "« reduire les animations » du telephone. La capture attrape la boucle a un endroit " +
+        "different a chaque fois." +
+        "<br><br>Amplitude declaree dans le code de production : <b>" +
+        esc(pu.amplitudeDeclaree || "") + "</b>. Au repos, l\\'echelle du bouton devrait valoir " +
+        "exactement 1 sur toutes ces pages ; elle vaut autre chose, et une autre chose a chaque " +
+        "generation. (Les valeurs relevees ne sont volontairement pas publiees ici : elles " +
+        "changeraient a chaque build, et feraient echouer le controle d\\'idempotence du prototype " +
+        "pour une raison qui ne le concerne pas.)" +
+        "<br><br><b>Ce que ca prouve.</b> Ce harnais FORCE « mouvement reduit » avant chaque " +
+        "rendu. Si le bouton de production consultait ce reglage, il serait immobile. Il pulse " +
+        "quand meme : la preference d\\'accessibilite n\\'est donc pas respectee en production " +
+        "aujourd\\'hui. Le prototype, lui, n\\'a aucune boucle — c\\'est mesure sur les 15 etats." +
+        "<br><br>Non corrige ici : l\\'ecran de production est hors du perimetre de ce travail.</div></div>";
     }
 
     // contrastes
@@ -1318,10 +2199,57 @@ function viewerJs() {
       return '<div class="bloc-panneau"><h3>' + esc(e.titre) + "</h3><p>" + esc(e.resume) + "</p>" +
         '<p class="fin">' + esc(e.pourquoi) + "</p></div>";
     }
+    var v2courant = estVariante2(etat.etatId);
     var s = '<div class="bloc-panneau"><h3>Donnees fictives</h3><p class="fin">' + esc(e.resume) +
       "</p></div>";
 
-    if (estVariante2(etat.etatId)) s += htmlEtatVariante2(e);
+    // --- avertissements du prototype, pour CET etat -------------------------
+    // Ils vivent ICI, jamais dans l'ecran produit : le joueur ne doit pas lire
+    // les notes de chantier.
+    var w = v2courant
+      ? (e.vnext2 && e.vnext2.protoWarnings) || []
+      : (e.vnext && e.vnext.protoWarnings) || [];
+    if (w.length) {
+      s += '<div class="bloc-panneau"><h3>Avertissements du prototype</h3>';
+      w.forEach(function (x) {
+        s += '<div class="avertissement"><span class="t">a savoir</span>' + esc(x) + "</div>";
+      });
+      s += '<p class="fin">Produits par le selecteur du prototype. Ils n\\'apparaissent jamais ' +
+        "dans l\\'ecran produit.</p></div>";
+    }
+
+    // --- le mouvement : ce qu'une capture ne peut pas montrer ---------------
+    var mv = v2courant ? (e.vnext2 && e.vnext2.mouvement) : (e.vnext && e.vnext.mouvement);
+    var presId = presentationCourante() ? presentationCourante().id : null;
+    if (mv && presId && mv[presId]) {
+      var c = mv[presId];
+      var okMv = c.valeur === c.attendu;
+      s += '<div class="bloc-panneau"><h3>Le mouvement — mesure, pas regarde</h3>' +
+        "<p>" + esc(c.question) + " <b>" + esc(c.valeur) + "</b> element(s) portant une consigne " +
+        "de mouvement, attendu <b>" + esc(c.attendu) + "</b> " +
+        (okMv ? '<span class="badge badge-ok">ok</span>' : '<span class="badge badge-ko">non</span>') +
+        "</p>" +
+        '<p class="fin">' + esc(c.trouve) + "</p>" +
+        '<p class="fin">' + esc(c.pourquoi) + "</p>";
+      // La comparaison entre les deux reglages : c'est elle qui fait la preuve.
+      var ids = Object.keys(mv);
+      if (ids.length > 1) {
+        s += '<table class="tbl"><tr><th>Reglage</th><th>Consigne de mouvement</th></tr>';
+        ids.forEach(function (id) {
+          var p = presentationParId(id);
+          s += "<tr" + (id === presId ? ' style="background:#16233A"' : "") + "><td>" +
+            esc(p ? p.titre : id) + "</td>" +
+            '<td class="num">' + esc(mv[id].valeur) + " / attendu " + esc(mv[id].attendu) + "</td></tr>";
+        });
+        s += "</table><p class=\\"fin\\">C\\'est le tableau entier qui fait la preuve, pas une " +
+          "seule ligne : l\\'absence de transform quand le reglage est actif ne veut dire quelque " +
+          "chose QUE si la ligne sans le reglage, elle, en porte un. Sinon ce serait un oubli, " +
+          "pas un reglage respecte.</p>";
+      }
+      s += "</div>";
+    }
+
+    if (v2courant) s += htmlEtatVariante2(e);
 
     var vm = e.vnext && e.vnext.viewModel;
     s += '<div class="bloc-panneau"><h3>' +
@@ -1419,6 +2347,13 @@ function viewerJs() {
       }
     }
     if (etat.largeur !== M.largeurEchelle) etat.x13 = false;
+    // Un reglage de presentation que le produit ne declare pas ne doit pas rester
+    // dans l'etat : on revient au defaut plutot que de chercher une page qui
+    // n'existera jamais.
+    if (!presentationPour(etat.typo, etat.anim) && PRESENTATION_DEFAUT) {
+      etat.typo = PRESENTATION_DEFAUT.echelle;
+      etat.anim = Boolean(PRESENTATION_DEFAUT.reduceMotion);
+    }
   }
 
   function rendre() {
@@ -1443,12 +2378,27 @@ function viewerJs() {
    * changerait d'etat sans changer d'ecran, et le nom affiche ne correspondrait
    * plus a ce qu'on regarde. Le cote a cote, lui, n'est jamais interrompu.
    */
-  function allerA(id) {
+  function allerA(id, combinaison) {
     var avantV2 = estVariante2(etat.etatId);
     var apresV2 = estVariante2(id);
     etat.etatId = id;
     if (etat.variante !== "duo" && avantV2 !== apresV2) {
       etat.variante = apresV2 ? "vnext2" : "vnext";
+    }
+    // Une CIBLE d'axe pose la combinaison entiere. Sans ca, « regarde ceci en
+    // 320 px avec la typographie d'avant » demanderait trois reglages a la main,
+    // et on finirait par juger autre chose que ce qui est demande.
+    var c = combinaison || null;
+    if (c) {
+      if (c.variante && ["vnext", "vnext2", "actuel", "duo"].indexOf(c.variante) !== -1) {
+        etat.variante = c.variante;
+      }
+      if (c.paire && trouverPaire(c.paire)) etat.paire = c.paire;
+      if (c.largeur && M.largeurs.indexOf(Number(c.largeur)) !== -1) etat.largeur = Number(c.largeur);
+      if (c.vue && ["visible", "entiere"].indexOf(c.vue) !== -1) etat.vue = c.vue;
+      if (c.x13 != null) etat.x13 = c.x13 === "1" || c.x13 === true;
+      if (c.typo && ["allegee", "actuelle"].indexOf(c.typo) !== -1) etat.typo = c.typo;
+      if (c.anim != null) etat.anim = c.anim === "1" || c.anim === true;
     }
     rendre();
   }
@@ -1483,6 +2433,20 @@ function viewerJs() {
       rendre();
     } else if (ev.key === "e") { etat.vue = etat.vue === "visible" ? "entiere" : "visible"; rendre(); }
     else if (ev.key === "p") { document.getElementById("btn-panneau").click(); }
+    // Les deux axes de presentation, chacun sur sa touche : la comparaison
+    // typographique se fait en martelant une seule touche, sans quitter l'ecran
+    // des yeux — c'est ainsi qu'on voit ce qui bouge.
+    else if (ev.key === "t") { etat.typo = etat.typo === "allegee" ? "actuelle" : "allegee"; rendre(); }
+    else if (ev.key === "a") { etat.anim = !etat.anim; rendre(); }
+    else if (ev.key === "w") {
+      // Alterne entre les deux largeurs que le fondateur a nommees.
+      var duo = M.largeursComparaisonTypo || [320, 375];
+      if (etat.variante !== "duo") {
+        etat.largeur = etat.largeur === duo[0] ? duo[1] : duo[0];
+        if (etat.largeur !== M.largeurEchelle) etat.x13 = false;
+        rendre();
+      }
+    }
   });
 
   window.addEventListener("hashchange", function () { lireHash(); rendre(); });

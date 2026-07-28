@@ -57,6 +57,8 @@ import { HomeVNextNote } from "../../components/homeVNext/HomeVNextNote";
 import { HomeVNextProgression } from "../../components/homeVNext/HomeVNextProgression";
 import { HomeVNextSkeleton } from "../../components/homeVNext/HomeVNextSkeleton";
 import { HomeVNextWeek } from "../../components/homeVNext/HomeVNextWeek";
+import { HomeVNextPresentation } from "../../components/homeVNext/homeVNextPresentation";
+import type { EchelleTypoId } from "../../components/homeVNext/homeVNextTypo";
 import { espacement } from "../../components/homeVNext/homeVNextTokens";
 import type { ProgressionViewModel } from "./progressionViewModel";
 import type { ActionTarget, HomeVNextViewModel } from "./viewModel";
@@ -138,6 +140,29 @@ type HomeVNextScreenPropsCommunes = {
    * Dans l'app, ne rien passer : `onLayout` mesure tout seul.
    */
   largeurCourbe?: number;
+
+  /**
+   * Echelle typographique rendue.
+   *
+   * Defaut : `ECHELLE_PAR_DEFAUT` = « allegee », celle que le fondateur a
+   * imposee. « actuelle » rend l'ecran exactement comme a l'iteration
+   * precedente, pour la comparaison cote a cote. Les deux jeux vivent dans
+   * `components/homeVNext/homeVNextTypo.ts` (`ECHELLES`).
+   */
+  echelle?: EchelleTypoId;
+
+  /**
+   * `true` quand le joueur a active « reduire les animations » sur son telephone.
+   *
+   * Le prototype n'a pas d'API systeme : c'est l'appelant (fixture, visualiseur,
+   * test) qui pilote ce drapeau. Le branchement reel a l'integration est ecrit
+   * en toutes lettres dans `components/homeVNext/homeVNextPresentation.tsx`.
+   *
+   * Consequence a l'ecran : plus AUCUN mouvement. L'action du jour reste
+   * parfaitement identifiable — c'est le seul aplat colore de l'ecran — et son
+   * enfoncement reste signale par un assombrissement.
+   */
+  reduceMotion?: boolean;
 };
 
 /**
@@ -156,79 +181,107 @@ export type HomeVNextScreenProps = HomeVNextScreenPropsCommunes &
   );
 
 export function HomeVNextScreen(props: HomeVNextScreenProps) {
-  const { vm, onAction, onSecondaryAction, onExit, largeurCourbe } = props;
+  const { vm, onAction, onSecondaryAction, onExit, largeurCourbe, echelle, reduceMotion } = props;
   const variante: HomeVNextVariante = props.variante ?? "v1";
   const progression = props.variante === "v2" ? props.progression : null;
+
+  // ---------------------------------------------------------------------------
+  // D1 — LE SECOND VERROU SUR LA PASTILLE D'ETAT
+  // ---------------------------------------------------------------------------
+  // Decision du fondateur (2026-07-28) : en variante 2, aucun jugement global sur
+  // la forme du joueur. La regle est deja appliquee A LA SOURCE, dans
+  // `buildHomeVNextViewModel(input, { variante: "v2" })` (§5.7) — c'est la que
+  // vit la decision, et c'est la qu'elle est expliquee au visualiseur.
+  //
+  // POURQUOI LA REPETER ICI, alors que le principe du prototype est que l'ecran
+  // n'affirme rien que le ViewModel n'ait autorise : parce que la variante est
+  // declaree DEUX FOIS, a deux endroits qui ne se parlent pas — l'option du
+  // ViewModel et cette prop. Un appelant qui construit son ViewModel sans
+  // l'option et rend l'ecran avec `variante="v2"` obtient un ecran « Progression
+  // integree » COIFFE D'UNE PASTILLE. Ce n'est pas theorique : plusieurs montages
+  // de test faisaient exactement ca.
+  //
+  // Ce verrou ne fabrique rien et n'affirme rien : il RETIRE. C'est la seule
+  // forme de decision qu'un composant a le droit de prendre sur du contenu, et
+  // elle va toujours dans le sens de la prudence.
+  const header = variante === "v2" ? { ...vm.header, stateChip: null } : vm.header;
   // `<Screen>` est la SEULE source de verite de la safe area (regle d'or du
   // projet). Aucun `SafeAreaView edges={...}`, aucun `paddingTop` magique,
   // aucune `StatusBar` locale : il n'y en a qu'une, globale, dans `App.tsx`.
+  //
+  // `HomeVNextPresentation` pose l'echelle typographique et le reglage de
+  // mouvement pour tout le sous-arbre. Il est A L'INTERIEUR de `<Screen>` : ce
+  // n'est pas un conteneur de mise en page, il ne rend aucun element, il ne
+  // deplace donc rien.
   return (
     <Screen scroll contentContainerStyle={styles.contenu}>
-      {vm.dataState === "hydrating" ? (
-        <HomeVNextSkeleton />
-      ) : (
-        <>
-          <HomeVNextHeader header={vm.header} />
+      <HomeVNextPresentation echelle={echelle} reduceMotion={reduceMotion}>
+        {vm.dataState === "hydrating" ? (
+          <HomeVNextSkeleton />
+        ) : (
+          <>
+            <HomeVNextHeader header={header} />
 
-          {vm.dataNotice ? (
+            {vm.dataNotice ? (
+              <Section>
+                <HomeVNextDataNotice notice={vm.dataNotice} />
+              </Section>
+            ) : null}
+
             <Section>
-              <HomeVNextDataNotice notice={vm.dataNotice} />
-            </Section>
-          ) : null}
-
-          <Section>
-            <HomeVNextActionBlock
-              action={vm.action}
-              why={vm.why}
-              cycle={vm.cycle}
-              onAction={onAction}
-              onSecondaryAction={onSecondaryAction}
-            />
-          </Section>
-
-          {vm.week ? (
-            <Section>
-              <HomeVNextWeek week={vm.week} />
-            </Section>
-          ) : null}
-
-          {/*
-            LE SEUL ENDROIT OU LES DEUX VARIANTES DIVERGENT.
-            v2 : la carte progression, qui absorbe "MA FORME" et le lien de sortie.
-            v1 : "MA FORME", inchangee.
-          */}
-          {progression !== null ? (
-            <Section>
-              <HomeVNextProgression
-                progression={progression}
-                onDetail={onExit}
-                largeurCourbe={largeurCourbe}
+              <HomeVNextActionBlock
+                action={vm.action}
+                why={vm.why}
+                cycle={vm.cycle}
+                onAction={onAction}
+                onSecondaryAction={onSecondaryAction}
               />
             </Section>
-          ) : vm.form ? (
-            <Section>
-              <HomeVNextForm form={vm.form} largeurCourbe={largeurCourbe} />
-            </Section>
-          ) : null}
 
-          {vm.note ? (
-            <Section>
-              <HomeVNextNote note={vm.note} />
-            </Section>
-          ) : null}
+            {vm.week ? (
+              <Section>
+                <HomeVNextWeek week={vm.week} />
+              </Section>
+            ) : null}
 
-          {/*
-            Le lien de sortie n'existe QUE en variante 1. En variante 2 il n'a
-            pas ete supprime : il a demenage dans le pied de la carte, ce qui est
-            precisement la demande du fondateur.
-          */}
-          {variante === "v1" && vm.exit ? (
-            <Section>
-              <HomeVNextExit exit={vm.exit} onPress={onExit} />
-            </Section>
-          ) : null}
-        </>
-      )}
+            {/*
+              LE SEUL ENDROIT OU LES DEUX VARIANTES DIVERGENT.
+              v2 : la carte progression, qui absorbe "MA FORME" et le lien de sortie.
+              v1 : "MA FORME", inchangee.
+            */}
+            {progression !== null ? (
+              <Section>
+                <HomeVNextProgression
+                  progression={progression}
+                  onDetail={onExit}
+                  largeurCourbe={largeurCourbe}
+                />
+              </Section>
+            ) : vm.form ? (
+              <Section>
+                <HomeVNextForm form={vm.form} largeurCourbe={largeurCourbe} />
+              </Section>
+            ) : null}
+
+            {vm.note ? (
+              <Section>
+                <HomeVNextNote note={vm.note} />
+              </Section>
+            ) : null}
+
+            {/*
+              Le lien de sortie n'existe QUE en variante 1. En variante 2 il n'a
+              pas ete supprime : il a demenage dans le pied de la carte, ce qui est
+              precisement la demande du fondateur.
+            */}
+            {variante === "v1" && vm.exit ? (
+              <Section>
+                <HomeVNextExit exit={vm.exit} onPress={onExit} />
+              </Section>
+            ) : null}
+          </>
+        )}
+      </HomeVNextPresentation>
     </Screen>
   );
 }

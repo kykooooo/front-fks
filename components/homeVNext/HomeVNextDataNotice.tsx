@@ -21,9 +21,12 @@ import { StyleSheet, Text, View } from "react-native";
 
 import { theme } from "../../constants/theme";
 import { MARQUEURS } from "./homeVNextMarqueurs";
-import { couleurs, espacement, rayons, typo } from "./homeVNextTokens";
+import { stylesParEchelle, useStylesEchelle } from "./homeVNextPresentation";
+import type { EchelleTypo } from "./homeVNextTypo";
+import { couleurs, espacement, rayons } from "./homeVNextTokens";
 
 export function HomeVNextDataNotice({ notice }: { notice: string }) {
+  const styles = useStylesEchelle(STYLES);
   return (
     <View
       style={styles.cadre}
@@ -39,19 +42,23 @@ export function HomeVNextDataNotice({ notice }: { notice: string }) {
   );
 }
 
-const styles = StyleSheet.create({
-  cadre: {
-    backgroundColor: theme.colors.cardSoft,
-    borderWidth: 1,
-    borderColor: couleurs.bordure,
-    borderRadius: rayons.carte,
-    paddingVertical: espacement.interne,
-    paddingHorizontal: espacement.interne,
-  },
-  texte: {
-    // Couleur de texte PRINCIPALE, pas secondaire : c'est une information dont
-    // depend la lecture de tout le reste de l'ecran.
-    ...typo.caption,
-    color: couleurs.texte,
-  },
-});
+const creerStyles = (t: EchelleTypo) =>
+  StyleSheet.create({
+    cadre: {
+      backgroundColor: theme.colors.cardSoft,
+      borderWidth: 1,
+      borderColor: couleurs.bordure,
+      borderRadius: rayons.carte,
+      paddingVertical: espacement.interne,
+      paddingHorizontal: espacement.interne,
+    },
+    texte: {
+      // Couleur de texte PRINCIPALE, pas secondaire : c'est une information dont
+      // depend la lecture de tout le reste de l'ecran. Et donc, pour la meme
+      // raison, aucun plafond d'agrandissement.
+      ...t.meta,
+      color: couleurs.texte,
+    },
+  });
+
+const STYLES = stylesParEchelle(creerStyles);

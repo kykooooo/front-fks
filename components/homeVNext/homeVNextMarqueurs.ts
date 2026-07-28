@@ -29,6 +29,16 @@ export const MARQUEURS = {
   aplat: "home-vnext-aplat",
   /** L'accuse de reception (journee faite) : pas un bouton, pas tapable. */
   accuseReception: "home-vnext-accuse-reception",
+  /**
+   * Le conteneur anime de l'action du jour — le SEUL endroit du prototype ou un
+   * mouvement peut apparaitre.
+   *
+   * Il porte un `transform` quand le joueur n'a pas demande moins d'animations,
+   * et RIEN du tout quand il l'a demande. C'est ce que le test de non-regression
+   * lit : sans marqueur, il faudrait deviner quel noeud de l'arbre inspecter, et
+   * une boucle reintroduite ailleurs passerait inapercue.
+   */
+  mouvementAction: "home-vnext-mouvement-action",
   /** Le lien secondaire sous l'action. Toujours un lien, jamais un aplat. */
   lienSecondaire: "home-vnext-lien-secondaire",
   /** Le lien de sortie en bas d'ecran. */

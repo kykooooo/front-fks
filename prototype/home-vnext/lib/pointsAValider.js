@@ -297,9 +297,9 @@ const POINTS_PROGRESSION = [
       "Trois ecrans, dans cet ordre. « Test physique ameliore » : la carte affiche le SPRINT " +
       "10 m, 1,85 s -> 1,78 s, soit « -0,07 s » — un chiffre negatif qui est une bonne nouvelle, " +
       "parce que sur un sprint mieux veut dire plus petit. « Tendance disponible » : l'autre " +
-      "sens, un saut en longueur 205 -> 214 cm, « +9 cm ». Puis « Aucune comparaison » : quatre " +
-      "tests enregistres et pourtant rien a comparer, parce qu'aucun exercice n'a ete refait un " +
-      "autre jour.",
+      "sens, un saut en longueur 205 -> 214 cm, « +9 cm ». Puis « Aucune comparaison » : une " +
+      "batterie passee et un test refait le meme jour, et pourtant rien a comparer, parce " +
+      "qu'aucun exercice n'a ete refait un AUTRE jour.",
     etats: ["v2-test-physique-ameliore", "v2-tendance-disponible", "v2-aucune-comparaison-de-test"],
     tranche:
       "OUI si le « -0,07 s » du sprint se lit sans hesiter comme une AMELIORATION — c'est le mot " +
@@ -307,6 +307,46 @@ const POINTS_PROGRESSION = [
       "aussi clairement, et si l'etat sans comparaison explique ce qui manque au lieu d'afficher " +
       "un bloc vide. NON si un chiffre negatif ressemble a une regression, ou si l'absence de " +
       "comparaison passe pour un bug.",
+  },
+  {
+    id: "quel-test-affiche",
+    titre: "QUEL test la carte met en avant — la regle, et le tableau qui la porte",
+    regarder:
+      "La carte n'affiche qu'UN test, jamais la liste. Trois ecrans montrent les trois etages de " +
+      "la regle. « Tendance disponible » (cycle Duels & puissance) : trois tests etaient " +
+      "comparables, c'est le SAUT EN LONGUEUR qui sort, parce que c'est la qualite que ce " +
+      "cycle-la travaille. « Test physique ameliore » (cycle Vitesse & detente) : c'est le " +
+      "SPRINT 10 m, pour la meme raison — alors qu'un autre test, le 505, avait ete enregistre " +
+      "plus tard dans la journee. « Test physique en recul » (cycle Reprise & bases) : ce " +
+      "cycle-la n'a AUCUN test attitre, donc la carte prend la mesure la plus recente ; les trois " +
+      "tests d'une meme batterie etant enregistres ensemble, ils ont le meme horodatage, et un " +
+      "ordre fige tranche — il designe le sprint.",
+    etats: ["v2-tendance-disponible", "v2-test-physique-ameliore", "v2-test-physique-en-recul"],
+    tranche:
+      "C'est une DECISION PRODUIT, elle t'attend. Le tableau propose : Duels & puissance -> saut " +
+      "en longueur, Tenir tout le match -> 6 min, Vitesse & detente -> sprint 10 m, Reprise & " +
+      "bases et Rester frais pour les matchs -> aucun test attitre (ces deux cycles-la ne " +
+      "promettent d'ameliorer aucune qualite precise : les forcer ferait dire a l'ecran une chose " +
+      "que le cycle ne fait pas). OUI si, sur chacun de ces trois ecrans, le test affiche est " +
+      "bien celui que TU voudrais voir en premier dans ce cycle-la. NON si une ligne du tableau " +
+      "te parait fausse — dis laquelle, elle se change en une ligne.",
+  },
+  {
+    id: "repere-en-recul",
+    titre: "Un test en RECUL s'affiche comme les autres",
+    regarder:
+      "Etat « Test physique en recul ». Le joueur revient de coupure : son sprint 10 m est passe " +
+      "de 1,81 s a 1,88 s. Regarde bien : dans la MEME batterie, son saut en longueur a gagne " +
+      "3 cm et son 6 min 25 m. Deux bonnes nouvelles etaient disponibles, et c'est la mauvaise " +
+      "qui est a l'ecran.",
+    etats: ["v2-test-physique-en-recul", "v2-test-physique-ameliore"],
+    tranche:
+      "C'est volontaire, et c'est le coeur de la regle : la selection ne regarde JAMAIS le " +
+      "resultat, seulement le cycle et la date. Choisir « la meilleure progression » aurait " +
+      "affiche le saut en longueur et cache le sprint — une app qui ne montre que ce qui " +
+      "l'arrange. OUI si l'ecran te parait honnete et lisible ainsi : le mot « en retrait », " +
+      "aucun rouge, aucun reproche. NON si tu preferes qu'un recul soit accompagne d'une phrase " +
+      "— ce serait une decision de contenu, pas un changement de regle.",
   },
   {
     id: "pastille-etat-du-jour",
@@ -319,14 +359,16 @@ const POINTS_PROGRESSION = [
       "uniquement — tes entrainements club n'y sont pas comptes. »",
     etats: ["v2-tendance-disponible", "v2-test-physique-ameliore", "v2-aucune-comparaison-de-test"],
     tranche:
-      "C'est TA regle, appliquee telle que tu l'as ecrite : ne pas annoncer un etat physique " +
-      "global tant que les entrainements club et les autres charges ne sont pas reellement " +
-      "connus. La variante 1 la garde, pour que tu puisses comparer. OUI si l'ecran de droite te " +
-      "parait plus honnete sans elle. NON si l'en-tete te semble desormais trop nu — dans ce cas " +
-      "une 3e voie existe, et elle n'a PAS ete prise a ta place : une pastille reformulee, " +
-      "explicitement limitee aux seances FKS (par exemple « Charge FKS : moderee »), qui " +
-      "n'affirmerait plus rien sur ton etat global. Ce serait un libelle nouveau, donc une " +
-      "decision de produit, pas une correction technique.",
+      "TA DECISION D1 DU 28 JUILLET, APPLIQUEE SANS CONDITION : la pastille d'etat global est " +
+      "retiree de la variante 2, et aucun drapeau ne peut la faire revenir — l'option d'entree a " +
+      "ete SUPPRIMEE du programme, pas seulement mise a faux. Motif que tu as donne : le modele " +
+      "de charge part encore de valeurs initiales artificielles et ne connait pas les " +
+      "entrainements club. La variante 1 la garde, uniquement pour que tu voies l'ecart. OUI si " +
+      "l'ecran de droite te parait plus honnete sans elle. NON si l'en-tete te semble desormais " +
+      "trop nu — dis-le, mais aucune reformulation n'est proposee ici : la voie « Charge FKS : " +
+      "moderee » envisagee a l'iteration precedente est ECARTEE, tu as nomme « Charge moderee » " +
+      "parmi les libelles interdits. Une mention de charge ne pourra revenir que le jour ou son " +
+      "calcul reposera sur des donnees entierement reelles, avec sa portee ecrite a cote.",
   },
   {
     id: "fin-ecran-variante2",
@@ -345,11 +387,12 @@ const POINTS_PROGRESSION = [
     id: "petit-ecran-variante2",
     titre: "La carte en 320 px et en texte x1,3",
     regarder:
-      "Passe chacun des cinq cas en largeur 320, puis reviens en 375 avec « Texte x1.3 ». Regarde " +
+      "Passe chacun des six cas en largeur 320, puis reviens en 375 avec « Texte x1.3 ». Regarde " +
       "les lignes de faits (libelle a gauche, chiffre a droite), la courbe et le lien de detail.",
     etats: [
       "v2-deux-seances-tendance-indisponible",
       "v2-test-physique-ameliore",
+      "v2-test-physique-en-recul",
       "v2-tendance-disponible",
       "v2-nouveau-joueur",
       "v2-aucune-comparaison-de-test",

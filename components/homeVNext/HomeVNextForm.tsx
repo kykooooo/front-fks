@@ -28,9 +28,11 @@ import { StyleSheet, Text, View } from "react-native";
 
 import type { FormBlock } from "../../screens/homeVNext/viewModel";
 import { MARQUEURS } from "./homeVNextMarqueurs";
+import { stylesParEchelle, useStylesEchelle } from "./homeVNextPresentation";
 import { CarteSection } from "./HomeVNextPrimitives";
 import { HomeVNextSparkline } from "./HomeVNextSparkline";
-import { couleurs, espacement, typo } from "./homeVNextTokens";
+import type { EchelleTypo } from "./homeVNextTypo";
+import { couleurs, espacement } from "./homeVNextTokens";
 
 const pluriel = (n: number, mot: string) => `${n} ${mot}${n > 1 ? "s" : ""}`;
 
@@ -44,6 +46,7 @@ export type HomeVNextFormProps = {
 };
 
 export function HomeVNextForm({ form, largeurCourbe }: HomeVNextFormProps) {
+  const styles = useStylesEchelle(STYLES);
   if (form.kind === "available") {
     return (
       <CarteSection titre="MA FORME" legende={form.periodLabel}>
@@ -92,26 +95,31 @@ export function HomeVNextForm({ form, largeurCourbe }: HomeVNextFormProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  titre: {
-    // Meme palier que "1 séance sur 2" dans Ma semaine : une seule convention de
-    // titrage de contenu pour toutes les sections.
-    ...typo.metricValue,
-    color: couleurs.texte,
-  },
-  message: {
-    ...typo.body,
-    color: couleurs.texteSecondaire,
-    marginTop: espacement.serre,
-  },
-  compteur: {
-    ...typo.caption,
-    color: couleurs.texteSecondaire,
-    marginTop: espacement.serre,
-  },
-  portee: {
-    ...typo.caption,
-    color: couleurs.texteSecondaire,
-    marginTop: espacement.serre,
-  },
-});
+const creerStyles = (t: EchelleTypo) =>
+  StyleSheet.create({
+    titre: {
+      // Meme palier que "1 séance sur 2" dans Ma semaine : une seule convention de
+      // titrage de contenu pour toutes les sections.
+      ...t.valeur,
+      color: couleurs.texte,
+    },
+    message: {
+      ...t.corps,
+      color: couleurs.texteSecondaire,
+      marginTop: espacement.serre,
+    },
+    compteur: {
+      ...t.meta,
+      color: couleurs.texteSecondaire,
+      marginTop: espacement.serre,
+    },
+    portee: {
+      // La portee est une INFORMATION, et l'une des plus importantes de l'ecran :
+      // aucun plafond d'agrandissement ne la touche.
+      ...t.meta,
+      color: couleurs.texteSecondaire,
+      marginTop: espacement.serre,
+    },
+  });
+
+const STYLES = stylesParEchelle(creerStyles);

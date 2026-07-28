@@ -23,89 +23,32 @@
 // =============================================================================
 
 import { theme } from "../../constants/theme";
+import { ECHELLE_ACTUELLE } from "./homeVNextTypo";
 
 // -----------------------------------------------------------------------------
-// 1. TYPOGRAPHIE — 6 paliers, pas un de plus
+// 1. TYPOGRAPHIE — DEMENAGEE
 // -----------------------------------------------------------------------------
-// Le Home de production pose 21 couples fontSize/fontWeight differents, dont un
-// `12.5`. Ici : 6 paliers, chacun avec sa provenance.
+// Les paliers ne vivent plus ici : ils vivent dans `./homeVNextTypo`, qui en
+// porte DEUX jeux complets (l'echelle actuelle et l'echelle allegee demandee par
+// le fondateur) plus la politique d'agrandissement systeme.
+//
+// Les composants lisent leur echelle via `useStylesEchelle` (`./homeVNextPresentation`) :
+// c'est ce qui permet a la bascule du visualiseur de changer d'echelle sans
+// remonter l'ecran.
+//
+// L'alias ci-dessous ne sert qu'a la compatibilite le temps de la bascule, avec
+// les anciens noms de paliers. Plus aucun composant du prototype ne l'utilise :
+// il est a retirer au moment de l'integration.
 // -----------------------------------------------------------------------------
 
+/** @deprecated Utiliser `ECHELLES` / `useStylesEchelle` (`./homeVNextTypo`). */
 export const typo = {
-  /**
-   * Titre d'ecran — le seul texte de niveau 1 du Home (le "Salut, X").
-   * PROVENANCE : `screens/HomeScreen.tsx` > `greeting` (22 / 800 / ls -0.3).
-   * Conserve tel quel : c'est deja le bon poids visuel, et le seul de son rang.
-   */
-  screenTitle: {
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: "800" as const,
-    letterSpacing: -0.3,
-  },
-
-  /**
-   * Libelle de l'action principale — le seul aplat de l'ecran.
-   * PROVENANCE : `components/ui/Button.tsx` > `labelLg` (17 / 800 / ls 0.3),
-   * la taille du bouton `size="lg"`. On reprend le composant existant, donc on
-   * reprend sa metrique.
-   */
-  actionLabel: {
-    fontSize: 17,
-    lineHeight: 22,
-    fontWeight: "800" as const,
-    letterSpacing: 0.3,
-  },
-
-  /**
-   * Valeur mise en avant dans une carte (ex : "1 seance sur 2").
-   * PROVENANCE : `screens/sessionPreview/components/HeroCard.tsx` >
-   * `heroStatValue` ET `screens/RoutineScreen.tsx` > `heroStatValue` — les deux
-   * ecrans les plus aboutis utilisent deja exactement 16 / 700.
-   */
-  metricValue: {
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: "700" as const,
-    letterSpacing: 0,
-  },
-
-  /**
-   * Corps de texte : sous-titre d'action, ligne "pourquoi", message de section.
-   * PROVENANCE : `HeroCard.subtitle` (13) et
-   * `screens/prebuilt/components/CategoryTile.tsx` > `tileTitle` (13 / 700).
-   * Poids ramene a 600 : sur le Home ces lignes sont lues, pas scannees.
-   */
-  body: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: "600" as const,
-    letterSpacing: 0,
-  },
-
-  /**
-   * Texte secondaire : portee de la mesure, periode, date, note.
-   * PROVENANCE : `HeroCard.progressLabel` (12) et `RoutineScreen.heroSubtitle` (12).
-   */
-  caption: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: "500" as const,
-    letterSpacing: 0,
-  },
-
-  /**
-   * Titre de section en capitales ("MA SEMAINE", "MA FORME").
-   * PROVENANCE : `components/ui/SectionHeader.tsx` (13 / 800 / ls 1.2 / uppercase),
-   * copie a l'identique — le prototype utilise directement ce composant.
-   */
-  overline: {
-    fontSize: 13,
-    lineHeight: 16,
-    fontWeight: "800" as const,
-    letterSpacing: 1.2,
-    textTransform: "uppercase" as const,
-  },
+  screenTitle: ECHELLE_ACTUELLE.salutation,
+  actionLabel: ECHELLE_ACTUELLE.titreAction,
+  metricValue: ECHELLE_ACTUELLE.valeur,
+  body: ECHELLE_ACTUELLE.corps,
+  caption: ECHELLE_ACTUELLE.meta,
+  overline: ECHELLE_ACTUELLE.overline,
 } as const;
 
 // -----------------------------------------------------------------------------
@@ -267,4 +210,6 @@ export const REGLES_DE_RENDU = [
   "Un seul aplat colore sur tout l'ecran : l'action. Le reste est carte ou texte.",
   "Aucun element interactif sous 44 pt : passer par components/ui/Button, ou ajouter un hitSlop.",
   "Aucun repere numerique brut sur la courbe de tendance.",
+  "L'agrandissement systeme n'est jamais desactive : aucun allowFontScaling={false}. Seuls les textes d'affichage (salutation, titre d'action, labels en capitales) sont plafonnes ; tout ce qui porte une information grandit sans limite.",
+  "Aucune boucle d'animation. Les seules animations repondent au doigt, et quand « reduire les animations » est actif elles ne deplacent plus rien.",
 ] as const;

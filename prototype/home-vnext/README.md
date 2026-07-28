@@ -21,15 +21,30 @@ node prototype/home-vnext/verifier.js  # exécute toutes les vérifications et r
 Si 8140 est occupé, `serve.js` prend le port libre suivant et **affiche l'URL réelle**.
 Le serveur n'écoute que sur `127.0.0.1` : rien n'est exposé sur le réseau.
 
-**Aller droit à la question du moment** — variante 1 contre variante 2, à 375 px :
+**Aller droit à la question du moment** — les 7 axes à trancher, sur l'écran de référence :
 
 ```
-http://127.0.0.1:8140/#etat=v2-tendance-disponible&var=duo&paire=v1v2&w=375&vue=entiere&x13=0&onglet=points
+http://127.0.0.1:8140/#etat=v2-tendance-disponible&var=vnext2&w=375&vue=visible&x13=0&typo=allegee&anim=0&onglet=axes
 ```
 
-À gauche l'écran validé, qui finit sur le lien flottant « Voir ma progression ». À droite le
-même écran, où ce lien a disparu au profit d'une carte. Les autres cas s'atteignent en un
-clic dans la liste latérale, ou avec `↓`.
+Le panneau de droite pose un axe à la fois — typographie, densité, hauteur, lisibilité, carte
+Progression, pied secondaire, absence de pastille globale. Chaque axe dit **quel réglage
+manipuler**, et ses boutons posent la **combinaison entière** (état, variante, largeur, vue,
+texte, présentation) d'un seul clic.
+
+**La comparaison typographique** se fait en martelant la touche `t` sans quitter l'écran des
+yeux : seule la typographie change, les mots sont identiques.
+
+**Variante 1 contre variante 2**, à 375 px :
+
+```
+http://127.0.0.1:8140/#etat=v2-tendance-disponible&var=duo&paire=v1v2&w=375&vue=entiere&x13=0&typo=allegee&anim=0&onglet=axes
+```
+
+À gauche l'écran validé, qui finit sur le lien flottant « Voir ma progression » et garde sa
+pastille d'état dans l'en-tête. À droite le même écran, où ce lien a disparu au profit d'une
+carte et où la pastille n'existe plus. Les autres cas s'atteignent en un clic dans la liste
+latérale, ou avec `↓`.
 
 Aucune installation. Aucune dépendance nouvelle. Tout est déjà dans `node_modules`
 (`react-native-web`, `jsdom`, `@babel/core`). **Ne lance jamais `npm install`.**
@@ -84,6 +99,13 @@ Ce que ça vérifie, et comment :
 | l | Textes longs | fixture `stress-textes-longs`, rendue aux 4 largeurs + ×1,3 |
 | m | Idempotence | deux builds, empreinte SHA-1 de chaque fichier produit |
 
+`__tests__/homeVNext/visualiseurAxes.test.ts` verrouille le panneau « Valider » lui-même :
+les 7 axes existent et portent chacun **deux verdicts séparés** ; aucune cible ne pointe sur
+un état, une largeur, une vue, une paire ou une présentation qui n'existe pas (une faute de
+frappe dans un identifiant afficherait sinon « état non généré » à la place du bouton, sans
+rien casser) ; les 8 situations demandées sont couvertes ; et la combinaison de présentation
+par défaut ne passe **aucune** prop à l'écran.
+
 **Pourquoi un vrai navigateur** : `jsdom` n'a aucun moteur de mise en page — toute hauteur y
 vaut 0. Les hauteurs, les zones tactiles, les débordements et les contrastes ne peuvent être
 mesurés que dans un moteur de rendu réel. Le vérificateur lance Chrome (ou Edge) sans
@@ -108,7 +130,7 @@ qui n'existent que pour la carte.
 | d2 | **R8** — un seul aplat, et **aucun dans la carte** | couleurs réellement rendues, opacité effective comprise ; l'appartenance à la carte vient du nœud `home-vnext-progression` |
 | d3 | Deux tactiles ne portent pas le même libellé visible | texte visible de chaque lien/bouton, sur les **60** pages, groupé par texte |
 | f | **R4** — aucun état physique global dans la carte | texte rendu de la carte seule |
-| f2 | **R4 sur l'écran** — aucune pastille d'état du jour | marqueur `home-vnext-etat-du-jour` sur les 60 pages ; attendu déduit de `chargesClubCapturees`, pas écrit à la main |
+| f2 | **D1 sur l'écran** — aucune pastille d'état du jour, **quelles que soient les données** | marqueur `home-vnext-etat-du-jour` sur les 60 pages, **attendu 0 écrit en clair**. Il était déduit de `chargesClubCapturees` via un champ `etatGlobal` depuis **supprimé du contrat** : l'expression valait donc toujours 0 et le contrôle ne protégeait plus rien. Second filet dans l'audit d'appariement (`etat_global_entete`) : les libellés de `FOOTBALL_LABELS` sont aussi comptés dans le texte de l'**écran entier**, pour le cas où un état reviendrait ailleurs que dans une pastille |
 | g | **R5** — pas de courbe sans vrais points | attendu déduit de `progVm.state`, jamais d'une liste écrite à la main |
 | h | **R6** — aucune « série » | HTML rendu + sources, commentaires retirés |
 | i | **R7** — pas de redite avec « Ma semaine » | nombres **lus dans le HTML**, des deux côtés |
@@ -141,8 +163,8 @@ carte coûte en hauteur par rapport au lien qu'elle remplace.
 - choisir l'un des **15 états de la variante 1** (liste latérale, groupée par situation) —
   les 14 états produit, plus `stress-textes-longs`, qui n'est pas un état produit mais un
   test de résistance de la mise en page ;
-- choisir l'un des **6 cas de la variante 2** (groupes `Variante 2 —` en bas de la liste) :
-  les 5 cas de démonstration de la carte progression, plus `v2-donnee-manquante`, qui n'est
+- choisir l'un des **7 cas de la variante 2** (groupes `Variante 2 —` en bas de la liste) :
+  les 6 cas de démonstration de la carte progression, plus `v2-donnee-manquante`, qui n'est
   pas un état produit mais la preuve visuelle de R1 (un fait sans donnée disparaît) ;
 - basculer entre **Proposition vNext** / **Progression intégrée** / **Home actuel** /
   **Côte à côte** ;
@@ -151,15 +173,55 @@ carte coûte en hauteur par rapport au lien qu'elle remplace.
 - changer de largeur : **320 / 375 / 390 / 768** ;
 - changer de vue : **zone visible sans défilement** / **page entière** ;
 - activer la variante **texte ×1,3** (générée en 375 px uniquement) ;
-- lire, dans un panneau **séparé de l'écran produit** : les points à valider (12 pour la
-  variante 1, 11 pour la variante 2), les seuils d'affichage des deux contrats, la portée
-  de la tendance et le verdict R4 pour l'état courant, les contrastes mesurés, les
-  avertissements du prototype (`protoWarnings`) et ce que le harnais ne reproduit pas.
+- changer de **typographie** (« Allégée » / « Actuelle ») et d'**animations** (« Normales » /
+  « Réduites ») — voir la section suivante ;
+- lire, dans un panneau **séparé de l'écran produit** : les 7 axes à trancher séparément, la
+  règle de sélection du test et le tableau cycle → test, la hauteur mesurée et ce qui passe
+  sous la ligne de flottaison, les seuils d'affichage des deux contrats, la portée de la
+  tendance et le verdict R4 pour l'état courant, les contrastes mesurés, les avertissements
+  du prototype (`protoWarnings`) et ce que le harnais ne reproduit pas.
 
 Raccourcis clavier : `↑` `↓` changent d'état, `v` change de variante (en sautant celles
 qui n'existent pas sur l'état courant), `c` passe en côte à côte puis fait tourner la
-paire, `e` change de vue, `p` masque les panneaux. L'URL garde l'état courant : elle peut
-être partagée telle quelle.
+paire, `e` change de vue, `p` masque les panneaux, `t` bascule la typographie, `a` bascule
+les animations, `w` alterne 320 / 375 px. L'URL garde l'état courant : elle peut être
+partagée telle quelle.
+
+### L'axe présentation : typographie × mouvement
+
+Deux réglages qui ne changent **aucune donnée** — ils changent comment elle est posée. Les
+deux sont des props de `HomeVNextScreen` (`echelle`, `reduceMotion`) : le harnais ne
+fabrique rien, il passe les valeurs que l'app passera. Les quatre combinaisons viennent de
+`PRESENTATIONS_A_COMPARER` (`components/homeVNext/homeVNextPresentation.tsx`), jamais d'une
+liste recopiée dans le harnais.
+
+- La combinaison **par défaut** (allégée, animations normales) est générée aux 4 largeurs, et
+  ses fichiers gardent **exactement le nom qu'ils avaient** : les pages déjà validées ne
+  bougent pas.
+- Les trois autres sont générées en **320 et 375 px**, les deux largeurs où la typographie se
+  joue. Ailleurs, le cadre affiche la présentation par défaut **et le dit**.
+- Le **Home de production** n'a ni `echelle` ni `reduceMotion` : sa colonne reste toujours sur
+  la présentation par défaut, et le cadre l'écrit. C'est un fait du produit, pas un manque du
+  harnais.
+
+**« Réduire les animations » ne se voit pas, et c'est le résultat voulu.** Au repos, les deux
+rendus sont identiques à l'œil. Ce qui se prouve est dans le balisage : le bouton du jour
+porte une consigne de mouvement dans un cas, aucune dans l'autre. Le panneau « Cet état »
+affiche les quatre combinaisons côte à côte — c'est le tableau entier qui fait la preuve, pas
+une seule ligne.
+
+### Ce que la vérification de reproductibilité a trouvé
+
+Deux générations successives produisent des fichiers **rigoureusement identiques** pour la
+proposition et pour la carte progression. Les seules pages qui diffèrent sont celles du
+**Home de production**, toujours au même endroit : l'échelle de son bouton principal
+(`1.014793…` puis `1.014800…`). Cause : `components/home/HomePrimaryCTA.tsx` joue une
+pulsation **en boucle infinie** sans jamais consulter `reduceMotion`.
+
+Le harnais **force** « mouvement réduit » avant chaque rendu. Si ce bouton consultait le
+réglage, il serait immobile. Il pulse quand même : c'est la démonstration, sur un fichier,
+que la préférence d'accessibilité n'est pas respectée en production. Hors périmètre, non
+corrigé — mais **mesuré et affiché** dans l'onglet « Limites ».
 
 ### La variante 2 ne peut pas être servie par erreur
 
@@ -178,7 +240,7 @@ pose donc sur un écran d'accueil existant, et **il ne peut pas mentir sur ce qu
   l'assemblage honnête : « Ma semaine » doit afficher **exactement** le nombre contre lequel
   la carte a calculé son garde-fou R7.
 
-Trois des six cas portent un écart déclaré. Il ne se voit **jamais sur l'écran de la
+Trois des sept cas portent un écart déclaré. Il ne se voit **jamais sur l'écran de la
 variante 2** (l'écran y absorbe le bloc « Ma forme » et le lien flottant) mais **en côte à
 côte**, où les deux colonnes tracent alors deux séries différentes ou annoncent deux comptes
 différents. C'est un artefact d'assemblage du prototype, pas une proposition de produit.
@@ -237,7 +299,13 @@ lib/
   mapping.js             correspondance états vNext ↔ scénarios, et ses approximations
   appariementVariante2.js  où la carte progression est posée, ce que ça coûte,
                            la détection du rendu et l'audit de cohérence
-  pointsAValider.js      les 12 + 11 questions posées au fondateur
+  presentations.js       l'axe typographie × mouvement : quelles combinaisons sont
+                         générées, à quelles largeurs, et la mesure du mouvement
+  axesAValider.js        les 7 axes à trancher séparément + les 8 situations couvertes
+  iteration.js           ce qui a changé depuis l'itération précédente, et ce qui
+                         est rejouable par une bascule ou seulement chiffrable
+  pointsAValider.js      les 12 + 14 questions posées au fondateur (le détail,
+                         point par point — les axes en sont la vue de décision)
   limites.js             ce que le harnais ne reproduit pas
   stubs/                 modules natifs remplacés
 out/                     tout le contenu généré (non versionné volontairement)

@@ -106,8 +106,10 @@ import type {
   ProgressionViewModel,
 } from "../../screens/homeVNext/progressionViewModel";
 import { MARQUEURS } from "./homeVNextMarqueurs";
+import { stylesParEchelle, usePressionAnimee, useStylesEchelle } from "./homeVNextPresentation";
 import { CarteSection, Chevron, Filet } from "./HomeVNextPrimitives";
-import { couleurs, espacement, typo, TAILLE_TACTILE_MIN } from "./homeVNextTokens";
+import { plafondDuRole, type EchelleTypo } from "./homeVNextTypo";
+import { couleurs, espacement, TAILLE_TACTILE_MIN } from "./homeVNextTokens";
 import { HomeVNextSparkline } from "./HomeVNextSparkline";
 
 // -----------------------------------------------------------------------------
@@ -240,6 +242,10 @@ export function HomeVNextProgression({
   onDetail,
   largeurCourbe,
 }: HomeVNextProgressionProps) {
+  // Aucun style lu a ce niveau : ce composant ne fait que placer ses trois etats
+  // et son pied. Le seul texte qu'il rendait lui-meme etait l'etat physique
+  // global, supprime par D1.
+  //
   // La legende de droite ne dit la periode que lorsqu'une courbe la couvre
   // reellement. Pas de courbe, pas de periode : il n'y a rien a dater.
   const legende = progression.state === "ready" ? progression.courbe.periodeLabel : null;
@@ -254,19 +260,16 @@ export function HomeVNextProgression({
         ) : null}
 
         {/*
-          R4 — l'etat physique global.
-          `connu: true` est aujourd'hui INATTEIGNABLE : le ViewModel n'y accede
-          que si l'entree a ete construite avec `chargesClubCapturees: true`, et
-          rien dans l'app ne capture les entrainements club reellement realises.
-          Quand `connu` est faux, la carte n'ecrit RIEN : ni l'etat, ni son
-          explication. La portee, sous la courbe, dit deja ce qui est compte et
-          ce qui ne l'est pas — repeter l'absence a chaque etat serait du bruit.
+          R4 / D1 — AUCUN ETAT PHYSIQUE GLOBAL.
+          Il n'y a plus rien a rendre ici, et ce n'est pas un oubli : le champ
+          `etatGlobal` a ete SUPPRIME du ViewModel (§2 bis de
+          progressionViewModel.ts). Ce composant ne peut donc plus ecrire « En
+          forme » ou « Pret a performer », meme par accident — la donnee n'existe
+          pas dans son type d'entree.
+          Ce que la carte dit toujours, et qui n'est pas un jugement : la PORTEE
+          de la courbe, sous le trace, qui nomme ce qui est compte et ce qui ne
+          l'est pas.
         */}
-        {progression.etatGlobal.connu ? (
-          <Text style={styles.etatGlobal} numberOfLines={2}>
-            {progression.etatGlobal.libelle}
-          </Text>
-        ) : null}
 
         <PiedEventuel detail={progression.detail} onDetail={onDetail} />
       </View>
@@ -305,6 +308,7 @@ function PiedEventuel({
 // =============================================================================
 
 function ContenuVide({ vm }: { vm: Extract<ProgressionViewModel, { state: "empty" }> }) {
+  const styles = useStylesEchelle(STYLES);
   return (
     <View>
       <Text style={styles.entete} numberOfLines={2}>
@@ -326,6 +330,7 @@ function ContenuVide({ vm }: { vm: Extract<ProgressionViewModel, { state: "empty
 
 /** Un repere numerote. Noeud d'accessibilite a part : la liste se parcourt. */
 function LigneRepere({ repere }: { repere: ProgressionRepere }) {
+  const styles = useStylesEchelle(STYLES);
   return (
     <View
       style={styles.repereLigne}
@@ -377,6 +382,7 @@ function LigneRepere({ repere }: { repere: ProgressionRepere }) {
 // =============================================================================
 
 function ContenuEnCours({ vm }: { vm: Extract<ProgressionViewModel, { state: "collecting" }> }) {
+  const styles = useStylesEchelle(STYLES);
   return (
     <View>
       <Text style={styles.entete} numberOfLines={2}>
@@ -385,9 +391,12 @@ function ContenuEnCours({ vm }: { vm: Extract<ProgressionViewModel, { state: "co
 
       <Releve faits={vm.faits} />
 
-      {vm.derniereComparaisonTest ? (
-        <BlocTest comparaison={vm.derniereComparaisonTest} />
-      ) : null}
+      {/*
+        UN SEUL repere de test, deja choisi par la regle du §5 bis du ViewModel
+        (objectif du cycle actif, sinon mesure la plus recente, sinon ordre de
+        departage fige). La vue ne choisit rien : elle n'a meme pas la liste.
+      */}
+      {vm.repereTest ? <BlocTest comparaison={vm.repereTest.comparaison} /> : null}
     </View>
   );
 }
@@ -408,6 +417,7 @@ function ContenuPret({
   vm: Extract<ProgressionViewModel, { state: "ready" }>;
   largeurCourbe?: number;
 }) {
+  const styles = useStylesEchelle(STYLES);
   return (
     <View>
       <HomeVNextSparkline
@@ -433,10 +443,15 @@ function ContenuPret({
         {vm.courbe.portee}
       </Text>
 
-      <Releve faits={[vm.resume]} />
+      {/*
+        LE CUMUL, EN LIGNE DE METADONNEE (demande du fondateur : « compacter,
+        sans perdre le sens »). Voir `FaitCompact` pour ce que ce choix garde et
+        ce qu'il coute.
+      */}
+      <FaitCompact fait={vm.resume} />
 
-      {vm.derniereComparaisonTest ? (
-        <BlocTest comparaison={vm.derniereComparaisonTest} />
+      {vm.repereTest ? (
+        <BlocTest comparaison={vm.repereTest.comparaison} />
       ) : !vm.comparaisonsTests.possible ? (
         <>
           <Filet style={styles.filet} />
@@ -471,6 +486,7 @@ function ContenuPret({
  * facon d'inventer un chiffre.
  */
 function Releve({ faits }: { faits: readonly ProgressionFait[] }) {
+  const styles = useStylesEchelle(STYLES);
   if (faits.length === 0) return null;
   return (
     <View>
@@ -506,6 +522,69 @@ function Releve({ faits }: { faits: readonly ProgressionFait[] }) {
   );
 }
 
+/**
+ * LE MEME FAIT, EN UNE LIGNE DE METADONNEE.
+ *
+ * Utilise dans le seul etat "ready", ou la carte porte deja une courbe, sa
+ * portee, une comparaison de test et un pied. Le cumul y est un REPERE, pas le
+ * contenu de la carte : il descend donc au rang de metadonnee, comme la portee
+ * juste au-dessus. Dans l'etat "collecting", ou les faits SONT le contenu (il
+ * n'y a ni courbe ni rien d'autre), ils gardent leur releve en lignes pleines.
+ *
+ * CE QUE CETTE FORME ECONOMISE, calcule sur les tokens (taille de texte normale,
+ * libelle sur une ligne) :
+ *   AVANT — filet : marge 12 (`espacement.interne`) + trait ~0,5 (hairline)
+ *           ligne : marge 8 (`espacement.serre`) + `minHeight` 22 ....... 42,5 px
+ *   APRES — ligne : marge 8 + hauteur de ligne 16 (palier `meta`) ....... 24,0 px
+ *   soit ~18 px de moins.
+ * Aucune zone tactile touchee, aucun mot retire : les deux seules choses que le
+ * fondateur a interdites pour gagner de la hauteur. Le libelle, lui, s'ALLONGE
+ * (« depuis tes débuts »).
+ *
+ * CE QU'ELLE NE CHANGE PAS :
+ *   - le LIBELLE et la VALEUR restent deux textes distincts, ecrits par le
+ *     ViewModel, affiches tels quels. Le composant ne compose aucune phrase, ne
+ *     recalcule aucun accord, n'invente aucun chiffre ;
+ *   - la ligne reste un noeud d'accessibilite a part, annonce « libelle :
+ *     valeur », exactement comme la ligne de releve ;
+ *   - elle garde le marqueur `progressionFait` : le compteur de faits du
+ *     verificateur voit toujours une ligne, et R1 (« un fait sans donnee
+ *     DISPARAIT ») reste verifiable de la meme facon.
+ *
+ * POURQUOI PAS DANS L'EN-TETE DE LA CARTE, l'autre emplacement autorise : la
+ * legende de l'en-tete porte deja la periode de la courbe (« 7 derniers jours »)
+ * et vit sur la ligne du titre. Y ajouter « 12 séances terminées depuis tes
+ * débuts » ferait tronquer « MA PROGRESSION » des 375 px — et bien avant en
+ * texte agrandi, puisque ni le titre ni la legende ne sont bornes en largeur.
+ * Le gain de hauteur aurait ete paye par une troncature du titre.
+ */
+function FaitCompact({ fait }: { fait: ProgressionFait }) {
+  const styles = useStylesEchelle(STYLES);
+  return (
+    <View
+      style={styles.compactLigne}
+      accessible
+      accessibilityLabel={`${fait.libelle} : ${fait.valeur}`}
+      testID={MARQUEURS.progressionFait}
+    >
+      <Text
+        style={styles.compactLibelle}
+        numberOfLines={2}
+        importantForAccessibility="no-hide-descendants"
+      >
+        {fait.libelle}
+      </Text>
+      <Text
+        style={styles.compactValeur}
+        numberOfLines={1}
+        importantForAccessibility="no-hide-descendants"
+      >
+        {fait.valeur}
+      </Text>
+    </View>
+  );
+}
+
 // =============================================================================
 // LA COMPARAISON DE TEST TERRAIN
 // =============================================================================
@@ -521,6 +600,7 @@ function Releve({ faits }: { faits: readonly ProgressionFait[] }) {
  * d'accessibilite unique dont le libelle dit "puis".
  */
 function BlocTest({ comparaison }: { comparaison: ProgressionComparaisonTest }) {
+  const styles = useStylesEchelle(STYLES);
   const mot = MOT_SENS[comparaison.sens];
   const couleur = COULEUR_SENS[comparaison.sens];
   const label = libelleSansUniteRepetee(comparaison.label, comparaison.unite);
@@ -569,24 +649,22 @@ function BlocTest({ comparaison }: { comparaison: ProgressionComparaisonTest }) 
  * la comparaison des deux ecrans impossible a interpreter.
  */
 function PiedDetail({ label, onPress }: { label: string; onPress?: () => void }) {
-  // `useState` paresseux plutot que `useRef(...).current` : meme stabilite, sans
-  // lire un ref pendant le rendu (regle `react-hooks/refs`).
-  const [anim] = React.useState(() => new Animated.Value(0));
+  const styles = useStylesEchelle(STYLES);
+  // Animation partagee, declenchee par le doigt et par rien d'autre.
+  const { pression, onPressIn, onPressOut } = usePressionAnimee();
 
-  const enfoncer = () =>
-    Animated.timing(anim, { toValue: 1, duration: 120, useNativeDriver: true }).start();
-  const relacher = () =>
-    Animated.timing(anim, { toValue: 0, duration: 120, useNativeDriver: true }).start();
-
-  const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.6] });
+  // Un estompement, pas un mouvement : conserve meme quand le joueur a demande
+  // « reduire les animations » (le systeme lui-meme substitue des fondus aux
+  // transitions glissees).
+  const opacity = pression.interpolate({ inputRange: [0, 1], outputRange: [1, 0.6] });
 
   return (
     <>
       <Filet style={styles.filetInterne} />
       <Pressable
         onPress={onPress}
-        onPressIn={enfoncer}
-        onPressOut={relacher}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
         accessibilityRole="link"
         // LIBELLE EXPLICITE, demande par le fondateur : un lien doit dire, hors
         // contexte, ce qu'il ouvre.
@@ -601,7 +679,8 @@ function PiedDetail({ label, onPress }: { label: string; onPress?: () => void })
           style={[styles.piedContenu, { opacity }]}
           importantForAccessibility="no-hide-descendants"
         >
-          <Text style={styles.piedTexte} numberOfLines={1}>
+          {/* Libelle de destination : information, donc aucun plafond. */}
+          <Text style={styles.piedTexte} numberOfLines={1} {...plafondDuRole("lien")}>
             {label}
           </Text>
           <Chevron color={couleurs.lien} size={7} thickness={1.8} />
@@ -613,162 +692,192 @@ function PiedDetail({ label, onPress }: { label: string; onPress?: () => void })
 
 // -----------------------------------------------------------------------------
 
-const styles = StyleSheet.create({
-  entete: {
-    // Meme palier que "1 séance sur 2" dans Ma semaine et que "Ta tendance se
-    // construit" dans Ma forme : une seule convention de titrage de contenu.
-    ...typo.metricValue,
-    color: couleurs.texte,
-  },
+const creerStyles = (t: EchelleTypo) =>
+  StyleSheet.create({
+    entete: {
+      // Meme palier que "1 séance sur 2" dans Ma semaine et que "Ta tendance se
+      // construit" dans Ma forme : une seule convention de titrage de contenu.
+      ...t.valeur,
+      color: couleurs.texte,
+    },
 
-  // --- Etat vide -------------------------------------------------------------
-  reperes: {
-    marginTop: espacement.interne,
-    gap: espacement.serre,
-  },
-  repereLigne: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: espacement.serre,
-  },
-  pastille: {
-    // Element a taille intrinseque (comme la coche et la marque du
-    // SectionHeader), pas une largeur de mise en page : rien ne peut deborder.
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: REPERE_PASTILLE,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pastilleTexte: {
-    ...typo.caption,
-    fontWeight: "800",
-    color: couleurs.lien,
-  },
-  repereTexte: {
-    ...typo.body,
-    color: couleurs.texte,
-    // Largeur en flex, jamais en px.
-    flex: 1,
-    minWidth: 0,
-  },
-  mention: {
-    ...typo.caption,
-    color: couleurs.texteSecondaire,
-    marginTop: espacement.interne,
-  },
+    // --- Etat vide -----------------------------------------------------------
+    reperes: {
+      marginTop: espacement.interne,
+      gap: espacement.serre,
+    },
+    repereLigne: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: espacement.serre,
+    },
+    pastille: {
+      // Element a taille intrinseque (comme la coche et la marque de l'entete de
+      // section), pas une largeur de mise en page : rien ne peut deborder.
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: REPERE_PASTILLE,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    pastilleTexte: {
+      // Petit label pose sur du contenu : 700 en allegee, contre 800 ecrit en
+      // dur auparavant.
+      ...t.metaAppuyee,
+      color: couleurs.lien,
+    },
+    repereTexte: {
+      ...t.corps,
+      color: couleurs.texte,
+      // Largeur en flex, jamais en px.
+      flex: 1,
+      minWidth: 0,
+    },
+    mention: {
+      ...t.meta,
+      color: couleurs.texteSecondaire,
+      marginTop: espacement.interne,
+    },
 
-  // --- Releve de faits -------------------------------------------------------
-  filet: {
-    marginTop: espacement.interne,
-  },
-  filetInterne: {
-    marginTop: espacement.serre,
-  },
-  faitLigne: {
-    flexDirection: "row",
-    // `center` et non `baseline` : le libelle peut passer a deux lignes quand la
-    // valeur n'en fait qu'une ("Minutes réalisées (sur 2 séances chronométrées)"
-    // face a "76 min"). Un alignement par la ligne de base laisserait alors la
-    // valeur accrochee en haut ; centrer tient dans tous les cas de repli.
-    // C'est aussi ce que fait deja `HomeVNextAction` pour sa rangee.
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: espacement.interne,
-    marginTop: espacement.serre,
-    // `minHeight`, jamais `height` : la ligne doit pouvoir grandir si le systeme
-    // agrandit le texte.
-    minHeight: 22,
-  },
-  faitLibelle: {
-    ...typo.body,
-    color: couleurs.texteSecondaire,
-    flex: 1,
-    minWidth: 0,
-  },
-  faitValeur: {
-    ...typo.metricValue,
-    color: couleurs.texte,
-    textAlign: "right",
-    // Garde-fou de largeur, en POURCENTAGE et non en pixels : certaines valeurs
-    // sont des phrases ("Encore 2 jours enregistrés"). Sans plafond, elles
-    // ecraseraient le libelle a 320 px de large.
-    maxWidth: "56%",
-  },
+    // --- Releve de faits -----------------------------------------------------
+    filet: {
+      marginTop: espacement.interne,
+    },
+    filetInterne: {
+      marginTop: espacement.serre,
+    },
+    faitLigne: {
+      flexDirection: "row",
+      // `center` et non `baseline` : le libelle peut passer a deux lignes quand la
+      // valeur n'en fait qu'une ("Minutes réalisées (sur 2 séances chronométrées)"
+      // face a "76 min"). Un alignement par la ligne de base laisserait alors la
+      // valeur accrochee en haut ; centrer tient dans tous les cas de repli.
+      // C'est aussi ce que fait deja `HomeVNextAction` pour sa rangee.
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: espacement.interne,
+      marginTop: espacement.serre,
+      // `minHeight`, jamais `height` : la ligne doit pouvoir grandir si le systeme
+      // agrandit le texte.
+      minHeight: 22,
+    },
+    faitLibelle: {
+      ...t.corps,
+      color: couleurs.texteSecondaire,
+      flex: 1,
+      minWidth: 0,
+    },
+    faitValeur: {
+      ...t.valeur,
+      color: couleurs.texte,
+      textAlign: "right",
+      // Garde-fou de largeur, en POURCENTAGE et non en pixels : certaines valeurs
+      // sont des phrases ("Encore 2 jours enregistrés"). Sans plafond, elles
+      // ecraseraient le libelle a 320 px de large.
+      maxWidth: "56%",
+    },
 
-  // --- Comparaison de test ---------------------------------------------------
-  test: {
-    marginTop: espacement.serre,
-  },
-  testLigne: {
-    flexDirection: "row",
-    // Meme raison que `faitLigne` : un nom d'exercice peut passer a deux lignes.
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: espacement.interne,
-  },
-  testLabel: {
-    ...typo.body,
-    color: couleurs.texte,
-    flex: 1,
-    minWidth: 0,
-  },
-  testEcart: {
-    ...typo.metricValue,
-    textAlign: "right",
-    maxWidth: "42%",
-  },
-  testValeurs: {
-    ...typo.caption,
-    color: couleurs.texteSecondaire,
-    flex: 1,
-    minWidth: 0,
-    marginTop: 2,
-  },
-  testSens: {
-    ...typo.caption,
-    textAlign: "right",
-    maxWidth: "42%",
-    marginTop: 2,
-  },
+    // --- Comparaison de test -------------------------------------------------
+    test: {
+      marginTop: espacement.serre,
+    },
+    testLigne: {
+      flexDirection: "row",
+      // Meme raison que `faitLigne` : un nom d'exercice peut passer a deux lignes.
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: espacement.interne,
+    },
+    testLabel: {
+      ...t.corps,
+      color: couleurs.texte,
+      flex: 1,
+      minWidth: 0,
+    },
+    testEcart: {
+      ...t.valeur,
+      textAlign: "right",
+      maxWidth: "42%",
+    },
+    testValeurs: {
+      ...t.meta,
+      color: couleurs.texteSecondaire,
+      flex: 1,
+      minWidth: 0,
+      marginTop: 2,
+    },
+    testSens: {
+      ...t.meta,
+      textAlign: "right",
+      maxWidth: "42%",
+      marginTop: 2,
+    },
 
-  explication: {
-    ...typo.body,
-    color: couleurs.texteSecondaire,
-    marginTop: espacement.serre,
-  },
+    explication: {
+      ...t.corps,
+      color: couleurs.texteSecondaire,
+      marginTop: espacement.serre,
+    },
 
-  portee: {
-    ...typo.caption,
-    color: couleurs.texteSecondaire,
-    marginTop: espacement.serre,
-  },
+    portee: {
+      // R3 : la portee de la mesure. Information, jamais plafonnee.
+      ...t.meta,
+      color: couleurs.texteSecondaire,
+      marginTop: espacement.serre,
+    },
 
-  etatGlobal: {
-    ...typo.caption,
-    color: couleurs.texteSecondaire,
-    marginTop: espacement.serre,
-  },
+    // --- Le cumul, en ligne de metadonnee ------------------------------------
+    compactLigne: {
+      flexDirection: "row",
+      // `center`, comme les autres rangees de la carte : le libelle peut passer a
+      // deux lignes quand la valeur n'en fait qu'une.
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: espacement.interne,
+      marginTop: espacement.serre,
+    },
+    compactLibelle: {
+      // Palier `meta`, celui de la portee juste au-dessus : les deux lignes
+      // forment une seule zone de contexte sous la courbe.
+      ...t.meta,
+      color: couleurs.texteSecondaire,
+      flex: 1,
+      minWidth: 0,
+    },
+    compactValeur: {
+      // Meme TAILLE que son libelle, graisse d'appui : le chiffre se trouve sans
+      // que la ligne redevienne un titre. La distinction avec le compteur de
+      // "Ma semaine" est portee par le libelle (« depuis tes débuts »), jamais
+      // par la taille — c'est la consigne du fondateur, mot pour mot.
+      ...t.emphaseMeta,
+      color: couleurs.texte,
+      textAlign: "right",
+      // Garde-fou de largeur en POURCENTAGE : certaines valeurs sont des phrases
+      // ("Encore 2 jours enregistrés").
+      maxWidth: "56%",
+    },
 
-  // --- Pied ------------------------------------------------------------------
-  pied: {
-    // Plancher tactile. `minHeight`, jamais `height`.
-    minHeight: TAILLE_TACTILE_MIN,
-    justifyContent: "center",
-    // Toute la largeur de la carte : la cible n'est plus un bout de texte perdu
-    // a gauche, comme le lien flottant de la variante 1.
-    alignSelf: "stretch",
-  },
-  piedContenu: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: espacement.serre,
-  },
-  piedTexte: {
-    ...typo.body,
-    color: couleurs.lien,
-    flexShrink: 1,
-  },
-});
+    // --- Pied ----------------------------------------------------------------
+    pied: {
+      // Plancher tactile. `minHeight`, jamais `height`.
+      minHeight: TAILLE_TACTILE_MIN,
+      justifyContent: "center",
+      // Toute la largeur de la carte : la cible n'est plus un bout de texte perdu
+      // a gauche, comme le lien flottant de la variante 1.
+      alignSelf: "stretch",
+    },
+    piedContenu: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: espacement.serre,
+    },
+    piedTexte: {
+      ...t.lien,
+      color: couleurs.lien,
+      flexShrink: 1,
+    },
+  });
+
+const STYLES = stylesParEchelle(creerStyles);

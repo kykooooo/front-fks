@@ -44,8 +44,16 @@ import type {
   WhySource,
 } from "../../screens/homeVNext/viewModel";
 import { MARQUEURS } from "./homeVNextMarqueurs";
+import {
+  stylesParEchelle,
+  transformDePression,
+  usePressionAnimee,
+  useReduceMotion,
+  useStylesEchelle,
+} from "./homeVNextPresentation";
 import { Chevron, Coche, Filet, HomeVNextLink } from "./HomeVNextPrimitives";
-import { couleurs, espacement, rayons, typo } from "./homeVNextTokens";
+import { plafondDuRole, type EchelleTypo } from "./homeVNextTypo";
+import { couleurs, espacement, rayons } from "./homeVNextTokens";
 
 // -----------------------------------------------------------------------------
 // Textes de rendu
@@ -112,6 +120,7 @@ export function HomeVNextActionBlock({
   onAction,
   onSecondaryAction,
 }: HomeVNextActionProps) {
+  const styles = useStylesEchelle(STYLES);
   const secondaire = action.secondary;
   const gapFilet = secondaire ? espacement.serre : espacement.interne;
 
@@ -150,28 +159,34 @@ export function HomeVNextActionBlock({
 // -----------------------------------------------------------------------------
 
 function Aplat({ action, onPress }: { action: ActionData; onPress: () => void }) {
-  // `useState` paresseux plutot que `useRef(...).current` : meme stabilite, sans
-  // lire un ref pendant le rendu (regle `react-hooks/refs`).
-  const [anim] = React.useState(() => new Animated.Value(0));
+  const styles = useStylesEchelle(STYLES);
+  const reduceMotion = useReduceMotion();
+  // Animation partagee. Elle ne demarre qu'au contact du doigt : il n'y a AUCUN
+  // `useEffect` derriere, donc aucune boucle ne peut se lancer au montage.
+  //
+  // C'est ici que le prototype se separe de `components/home/HomePrimaryCTA.tsx`
+  // (lignes 39-49), qui lance une pulsation infinie 1 -> 1,015 sans jamais
+  // consulter `reduceMotion`. Ce CTA-ci ne pulse pas du tout, et il est immobile
+  // quand le reglage est actif.
+  const { pression, onPressIn, onPressOut } = usePressionAnimee();
 
-  const enfoncer = () =>
-    Animated.timing(anim, { toValue: 1, duration: 140, useNativeDriver: true }).start();
-  const relacher = () =>
-    Animated.timing(anim, { toValue: 0, duration: 100, useNativeDriver: true }).start();
-
-  const scale = anim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.98] });
-  const voileOpacite = anim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.1] });
+  // `null` quand « reduire les animations » est actif : AUCUN transform dans
+  // l'arbre rendu, pas meme un transform neutre.
+  const mouvement = transformDePression(pression, reduceMotion, 0.98);
+  // L'assombrissement, lui, est conserve dans les deux cas : c'est un fondu, pas
+  // un mouvement, et il reste le signal que le doigt a bien ete pris en compte.
+  const voileOpacite = pression.interpolate({ inputRange: [0, 1], outputRange: [0, 0.1] });
 
   // Un seul noeud d'accessibilite pour tout le bloc : libelle et sous-titre sont
   // lus ensemble, comme un footballeur les lit — pas en deux arrets separes.
   const annonce = action.sublabel ? `${action.label}. ${action.sublabel}` : action.label;
 
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
+    <Animated.View style={mouvement} testID={MARQUEURS.mouvementAction}>
       <Pressable
         onPress={onPress}
-        onPressIn={enfoncer}
-        onPressOut={relacher}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
         accessibilityRole="button"
         accessibilityLabel={annonce}
         accessibilityHint={DESTINATION[action.target]}
@@ -185,11 +200,23 @@ function Aplat({ action, onPress }: { action: ActionData; onPress: () => void })
         <Animated.View style={[styles.voilePression, { opacity: voileOpacite }]} />
         <View style={styles.aplatContenu} importantForAccessibility="no-hide-descendants">
           <View style={styles.aplatTextes}>
-            <Text style={styles.aplatLabel} numberOfLines={2}>
+            {/*
+              Texte d'AFFICHAGE : plafonne a x1,2. « C'est parti » n'a pas besoin
+              de grandir davantage — et la zone tactile ne bouge pas d'un pouce,
+              elle tient a `minHeight: 76`, pose par le conteneur.
+            */}
+            <Text
+              style={styles.aplatLabel}
+              numberOfLines={2}
+              {...plafondDuRole("titreAction")}
+            >
               {action.label}
             </Text>
             {action.sublabel ? (
               // Contenu backend (titre de seance) -> borne, toujours.
+              // AUCUN plafond d'agrandissement : c'est ce sous-titre qui porte
+              // l'information du bloc (seance, duree, intensite), c'est donc lui
+              // qui doit grandir quand le joueur agrandit ses textes.
               <Text style={styles.aplatSousTitre} numberOfLines={2}>
                 {action.sublabel}
               </Text>
@@ -214,6 +241,7 @@ function Aplat({ action, onPress }: { action: ActionData; onPress: () => void })
  * pressable ouvrirait une destination que le contrat ne fournit pas.
  */
 function AccuseReception({ action }: { action: ActionData }) {
+  const styles = useStylesEchelle(STYLES);
   const annonce = action.sublabel
     ? `Fait. ${action.label}. ${action.sublabel}`
     : `Fait. ${action.label}`;
@@ -230,7 +258,8 @@ function AccuseReception({ action }: { action: ActionData }) {
     >
       <Coche color={theme.colors.success} background={ACCUSE_PASTILLE} />
       <View style={styles.accuseTextes} importantForAccessibility="no-hide-descendants">
-        <Text style={styles.accuseLabel} numberOfLines={2}>
+        {/* Meme role d'affichage que le libelle de l'aplat, meme plafond. */}
+        <Text style={styles.accuseLabel} numberOfLines={2} {...plafondDuRole("titreAction")}>
           {action.label}
         </Text>
         {action.sublabel ? (
@@ -248,6 +277,7 @@ function AccuseReception({ action }: { action: ActionData }) {
 // -----------------------------------------------------------------------------
 
 function LignePourquoi({ why }: { why: WhyLine }) {
+  const styles = useStylesEchelle(STYLES);
   const prefixe = PREFIXE_POURQUOI[why.source];
   return (
     <Text
@@ -266,6 +296,7 @@ function LignePourquoi({ why }: { why: WhyLine }) {
 // -----------------------------------------------------------------------------
 
 function RepereCycle({ cycle }: { cycle: NonNullable<CycleBlock> }) {
+  const styles = useStylesEchelle(STYLES);
   if (cycle.kind === "en_pause") {
     // Variante SANS libelle de phase : apres une interruption longue, l'ecran ne
     // peut pas affirmer une montee en charge qui n'a pas eu lieu. C'est l'etat
@@ -298,106 +329,113 @@ function RepereCycle({ cycle }: { cycle: NonNullable<CycleBlock> }) {
 
 // -----------------------------------------------------------------------------
 
-const styles = StyleSheet.create({
-  groupe: {
-    // Action + pourquoi + cycle forment UN bloc visuel (HOME_VNEXT_SECTION_ORDER).
-    width: "100%",
-  },
+const creerStyles = (t: EchelleTypo) =>
+  StyleSheet.create({
+    groupe: {
+      // Action + pourquoi + cycle forment UN bloc visuel (HOME_VNEXT_SECTION_ORDER).
+      width: "100%",
+    },
 
-  aplat: {
-    backgroundColor: couleurs.action,
-    borderRadius: rayons.carte,
-    padding: espacement.carte,
-    // `minHeight`, jamais `height` : si le systeme agrandit le texte, le bloc
-    // grandit au lieu de couper.
-    minHeight: 76,
-    justifyContent: "center",
-    overflow: "hidden",
-    ...theme.shadow.soft,
-  },
-  voilePression: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#000",
-    // Dans le style, pas en prop : la prop `pointerEvents` est depreciee.
-    pointerEvents: "none",
-  },
-  aplatContenu: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: espacement.interne,
-  },
-  aplatTextes: {
-    // Largeur en flex, jamais en px : le `width: 140` du Home actuel fait
-    // deborder le bouton voisin a 320 px.
-    flex: 1,
-    minWidth: 0,
-  },
-  aplatLabel: {
-    ...typo.actionLabel,
-    // Blanc PLEIN. Sur #B4530C, du blanc a 90 % retombe a 4.39:1.
-    color: couleurs.texteSurAction,
-  },
-  aplatSousTitre: {
-    ...typo.body,
-    color: couleurs.texteSurAction,
-    marginTop: 4,
-    // La hierarchie se fait par la taille et la graisse (17/800 vs 13/600),
-    // jamais par la transparence.
-  },
+    aplat: {
+      backgroundColor: couleurs.action,
+      borderRadius: rayons.carte,
+      padding: espacement.carte,
+      // `minHeight`, jamais `height` : si le systeme agrandit le texte, le bloc
+      // grandit au lieu de couper. C'est aussi ce qui garantit que plafonner le
+      // libelle ne rapetisse PAS la zone tactile : 76 pt sont poses ici, par le
+      // conteneur, et non par la taille du texte.
+      minHeight: 76,
+      justifyContent: "center",
+      overflow: "hidden",
+      ...theme.shadow.soft,
+    },
+    voilePression: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: "#000",
+      // Dans le style, pas en prop : la prop `pointerEvents` est depreciee.
+      pointerEvents: "none",
+    },
+    aplatContenu: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: espacement.interne,
+    },
+    aplatTextes: {
+      // Largeur en flex, jamais en px : le `width: 140` du Home actuel fait
+      // deborder le bouton voisin a 320 px.
+      flex: 1,
+      minWidth: 0,
+    },
+    aplatLabel: {
+      ...t.titreAction,
+      // Blanc PLEIN. Sur #B4530C, du blanc a 90 % retombe a 4.39:1.
+      color: couleurs.texteSurAction,
+    },
+    aplatSousTitre: {
+      ...t.corps,
+      color: couleurs.texteSurAction,
+      marginTop: 4,
+      // La hierarchie se fait par la taille et la graisse (16/700 contre 14/500
+      // en echelle allegee), jamais par la transparence.
+    },
 
-  accuse: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: espacement.interne,
-    backgroundColor: ACCUSE_FOND,
-    borderWidth: 1,
-    borderColor: ACCUSE_BORDURE,
-    borderRadius: rayons.carte,
-    padding: espacement.carte,
-    minHeight: 76,
-  },
-  accuseTextes: {
-    flex: 1,
-    minWidth: 0,
-  },
-  accuseLabel: {
-    ...typo.actionLabel,
-    color: couleurs.texte,
-  },
-  accuseSousTitre: {
-    ...typo.body,
-    color: couleurs.texteSecondaire,
-    marginTop: 4,
-  },
+    accuse: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: espacement.interne,
+      backgroundColor: ACCUSE_FOND,
+      borderWidth: 1,
+      borderColor: ACCUSE_BORDURE,
+      borderRadius: rayons.carte,
+      padding: espacement.carte,
+      minHeight: 76,
+    },
+    accuseTextes: {
+      flex: 1,
+      minWidth: 0,
+    },
+    accuseLabel: {
+      ...t.titreAction,
+      color: couleurs.texte,
+    },
+    accuseSousTitre: {
+      ...t.corps,
+      color: couleurs.texteSecondaire,
+      marginTop: 4,
+    },
 
-  pourquoi: {
-    ...typo.body,
-    color: couleurs.texte,
-    marginTop: espacement.interne,
-  },
-  pourquoiPrefixe: {
-    fontWeight: "800",
-    color: couleurs.texte,
-  },
+    pourquoi: {
+      ...t.corps,
+      color: couleurs.texte,
+      marginTop: espacement.interne,
+    },
+    pourquoiPrefixe: {
+      // La graisse d'appui vient de l'echelle : elle passe de 800 a 600 en
+      // allegee. C'etait l'un des cinq 800 accumules sur l'ecran.
+      ...t.emphaseCorps,
+      color: couleurs.texte,
+    },
 
-  lienSecondaire: {
-    marginTop: espacement.serre,
-  },
+    lienSecondaire: {
+      marginTop: espacement.serre,
+    },
 
-  cycle: {
-    marginTop: espacement.interne,
-  },
-  cycleTexte: {
-    ...typo.caption,
-    color: couleurs.texteSecondaire,
-  },
-  cycleLabel: {
-    fontWeight: "700",
-    color: couleurs.texte,
-  },
-  cycleTexteSecondaire: {
-    ...typo.caption,
-    color: couleurs.texteSecondaire,
-    marginTop: 2,
-  },
-});
+    cycle: {
+      marginTop: espacement.interne,
+    },
+    cycleTexte: {
+      ...t.meta,
+      color: couleurs.texteSecondaire,
+    },
+    cycleLabel: {
+      ...t.emphaseMeta,
+      color: couleurs.texte,
+    },
+    cycleTexteSecondaire: {
+      ...t.meta,
+      color: couleurs.texteSecondaire,
+      marginTop: 2,
+    },
+  });
+
+const STYLES = stylesParEchelle(creerStyles);

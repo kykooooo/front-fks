@@ -21,13 +21,26 @@ import { StyleSheet, Text, View } from "react-native";
 import { Badge } from "../ui/Badge";
 import type { HomeVNextHeader as HeaderData } from "../../screens/homeVNext/viewModel";
 import { MARQUEURS } from "./homeVNextMarqueurs";
-import { couleurs, espacement, typo } from "./homeVNextTokens";
+import { stylesParEchelle, useStylesEchelle } from "./homeVNextPresentation";
+import { plafondDuRole, type EchelleTypo } from "./homeVNextTypo";
+import { couleurs, espacement } from "./homeVNextTokens";
 
 export function HomeVNextHeader({ header }: { header: HeaderData }) {
+  const styles = useStylesEchelle(STYLES);
   return (
     <View style={styles.ligne}>
       <View style={styles.colonneTexte}>
-        <Text style={styles.salutation} numberOfLines={1} accessibilityRole="header">
+        {/*
+          Texte d'AFFICHAGE : plafonne a x1,2. Deux mots sur une seule ligne —
+          au-dela, la salutation prend la hauteur d'une carte entiere sans rien
+          apprendre a personne. La date en dessous, elle, n'est pas plafonnee.
+        */}
+        <Text
+          style={styles.salutation}
+          numberOfLines={1}
+          accessibilityRole="header"
+          {...plafondDuRole("salutation")}
+        >
           {header.greeting}
         </Text>
         <Text style={styles.date} numberOfLines={1}>
@@ -48,6 +61,10 @@ export function HomeVNextHeader({ header }: { header: HeaderData }) {
             "À alléger") mais aucune notion de bon ou mauvais : colorier serait
             porter un jugement que la donnee ne contient pas. C'est la pastille
             verte sur des chiffres fabriques que l'audit epingle en P0.1.
+            Sa typographie vient de `components/ui/Badge`, que le prototype n'a
+            pas le droit de modifier : elle reste donc hors de l'echelle. Sans
+            consequence sur l'ecran valide — la variante 2 n'affiche AUCUNE
+            pastille d'etat.
           */}
           <Badge label={header.stateChip.label} tone="default" />
         </View>
@@ -56,29 +73,32 @@ export function HomeVNextHeader({ header }: { header: HeaderData }) {
   );
 }
 
-const styles = StyleSheet.create({
-  ligne: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: espacement.interne,
-  },
-  colonneTexte: {
-    // `flex: 1` + `numberOfLines={1}` sur le prenom : a 320 px c'est le prenom
-    // qui se tronque, jamais l'etat du jour.
-    flex: 1,
-    minWidth: 0,
-  },
-  salutation: {
-    ...typo.screenTitle,
-    color: couleurs.texte,
-  },
-  date: {
-    ...typo.caption,
-    color: couleurs.texteSecondaire,
-    marginTop: 2,
-  },
-  pastille: {
-    flexShrink: 0,
-  },
-});
+const creerStyles = (t: EchelleTypo) =>
+  StyleSheet.create({
+    ligne: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: espacement.interne,
+    },
+    colonneTexte: {
+      // `flex: 1` + `numberOfLines={1}` sur le prenom : a 320 px c'est le prenom
+      // qui se tronque, jamais l'etat du jour.
+      flex: 1,
+      minWidth: 0,
+    },
+    salutation: {
+      ...t.salutation,
+      color: couleurs.texte,
+    },
+    date: {
+      ...t.meta,
+      color: couleurs.texteSecondaire,
+      marginTop: 2,
+    },
+    pastille: {
+      flexShrink: 0,
+    },
+  });
+
+const STYLES = stylesParEchelle(creerStyles);

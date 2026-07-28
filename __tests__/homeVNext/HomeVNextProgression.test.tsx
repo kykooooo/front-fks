@@ -51,11 +51,11 @@ import {
 } from "../../screens/homeVNext/fixtures";
 import {
   buildProgressionViewModel,
-  type ProgressionInput,
   type ProgressionViewModel,
 } from "../../screens/homeVNext/progressionViewModel";
 import { buildHomeVNextViewModel } from "../../screens/homeVNext/viewModel";
 import type { TestEntry } from "../../screens/tests/testConfig";
+import { LIBELLES_ETAT_INTERDITS } from "./libellesEtatInterdits";
 
 jest.mock("react-native-safe-area-context", () =>
   require("react-native-safe-area-context/jest/mock").default
@@ -289,37 +289,51 @@ describe("R3 — la portee est a l'ecran des qu'une courbe l'est", () => {
 
 // =============================================================================
 
-describe("R4 — aucun etat physique global tant que les charges club ne sont pas capturees", () => {
+describe("R4 / D1 — la carte n'affiche AUCUN etat physique global", () => {
   it.each(CAS.map((f) => [f.id, f] as const))("%s n'affirme aucun etat", (_id, fixture) => {
     const vm = buildProgressionViewModel(fixture.input);
-    expect(vm.etatGlobal.connu).toBe(false);
     const rendu = monterCarte(vm);
     const corpus = textes(rendu.root).join(" ");
-    for (const interdit of ["En forme", "Prêt à performer", "Pret a performer", "Frais", "Fatigué"]) {
+    // La liste vient de `config/trainingDefaults.FOOTBALL_LABELS` : elle suit la
+    // source canonique au lieu d'etre recopiee ici.
+    for (const interdit of LIBELLES_ETAT_INTERDITS) {
+      expect(corpus).not.toContain(interdit);
+    }
+    // Deux formes sans accent, au cas ou un libelle serait un jour normalise.
+    for (const interdit of ["Pret a performer", "Fatigué"]) {
       expect(corpus).not.toContain(interdit);
     }
     demonter(rendu);
   });
 
-  it("affiche le libelle UNIQUEMENT quand les charges club sont capturees", () => {
+  it("ne rend rien meme si un etat est injecte de force dans le ViewModel", () => {
+    // Le champ `etatGlobal` n'existe plus dans le type : le composant ne le lit
+    // plus, donc l'ajouter a la main ne peut plus rien afficher. Ce test fige ce
+    // fait — c'est lui qui echouerait si quelqu'un rebranchait un jour un
+    // libelle d'etat dans la carte sans repasser par la decision du fondateur.
+    const vm = buildProgressionViewModel(getProgressionFixture("tendance-disponible")!.input);
+    const truque = {
+      ...vm,
+      etatGlobal: { connu: true, libelle: "En forme" },
+    } as unknown as ProgressionViewModel;
+
+    const rendu = monterCarte(truque);
+    const corpus = textes(rendu.root).join(" ");
+    expect(corpus).not.toContain("En forme");
+    demonter(rendu);
+  });
+
+  it("dit toujours la PORTEE de la courbe — ce qui n'est pas un jugement (R3)", () => {
+    // Ce que la carte perd (l'etat global) et ce qu'elle garde (la portee) sont
+    // deux choses differentes : l'une juge le joueur, l'autre qualifie la mesure.
+    // Le fondateur a retire la premiere et exige la seconde.
     const base = getProgressionFixture("tendance-disponible")!.input;
-    const avecCharges: ProgressionInput = {
-      chargesClubCapturees: true,
-      libelleEtatGlobal: "Bien récupéré",
-      seancesTerminees: base.seancesTerminees,
-      testsTerrain: base.testsTerrain,
-      tendance: base.tendance,
-      semaineCourante: base.semaineCourante,
-    };
-    const vm = buildProgressionViewModel(avecCharges);
-    expect(vm.etatGlobal.connu).toBe(true);
+    const vm = buildProgressionViewModel({ ...base, chargesClubCapturees: true });
+    if (vm.state !== "ready") throw new Error("etat attendu : ready");
+    expect(vm.courbe.portee).toContain("charges club");
 
     const rendu = monterCarte(vm);
-    expect(textes(rendu.root)).toContain("Bien récupéré");
-    if (vm.state === "ready") {
-      // La portee change aussi : les charges club y sont desormais comptees.
-      expect(vm.courbe.portee).toContain("charges club");
-    }
+    expect(textes(rendu.root)).toContain(vm.courbe.portee);
     demonter(rendu);
   });
 });
@@ -441,7 +455,7 @@ describe("Comparaison de test terrain", () => {
 
   it("rend la comparaison que le ViewModel a choisie, sans en changer un chiffre", () => {
     const vm = buildProgressionViewModel(getProgressionFixture("test-physique-ameliore")!.input);
-    const comparaison = vm.state === "ready" ? vm.derniereComparaisonTest : null;
+    const comparaison = vm.state === "ready" ? (vm.repereTest?.comparaison ?? null) : null;
     expect(comparaison).not.toBeNull();
 
     const rendu = monterCarte(vm);
@@ -475,7 +489,7 @@ describe("Comparaison de test terrain", () => {
 
   it("garde l'unite lisible sur les valeurs apres l'avoir retiree du libelle", () => {
     const vm = buildProgressionViewModel(getProgressionFixture("test-physique-ameliore")!.input);
-    const comparaison = vm.state === "ready" ? vm.derniereComparaisonTest : null;
+    const comparaison = vm.state === "ready" ? (vm.repereTest?.comparaison ?? null) : null;
     expect(comparaison!.unite).not.toBe("");
     const rendu = monterCarte(vm);
     const corpus = textes(rendu.root).join(" ");
@@ -491,13 +505,13 @@ describe("Comparaison de test terrain", () => {
     // rend a l'envers avec une fleche.
     //
     // Ce test montait autrefois une entree fabriquee ici, parce qu'aucun cas de
-    // demonstration n'AFFICHAIT ce sens : les mesures d'une meme batterie
-    // partageaient un horodatage, et le departage donnait toujours le saut en
-    // longueur. Depuis que les fixtures portent l'heure reelle de chaque
-    // exercice, le cas est visible a l'ecran — donc le test se fait sur la
-    // fixture elle-meme, celle que le fondateur regarde.
+    // demonstration n'AFFICHAIT ce sens. La reparation n'est PAS passee par les
+    // donnees (les fixtures sont revenues au format reel : une batterie = une
+    // entree, un horodatage) mais par la REGLE : le cycle actif de cette fixture
+    // est « Vitesse & detente », qui vise le sprint 10 m. Le cas est donc visible
+    // a l'ecran que le fondateur regarde.
     const vm = buildProgressionViewModel(getProgressionFixture("test-physique-ameliore")!.input);
-    const comparaison = vm.state === "ready" ? vm.derniereComparaisonTest : null;
+    const comparaison = vm.state === "ready" ? (vm.repereTest?.comparaison ?? null) : null;
     expect(comparaison).not.toBeNull();
     expect(comparaison!.champ).toBe("sprint10s");
     expect(comparaison!.sens).toBe("amelioration");
@@ -518,18 +532,21 @@ describe("Comparaison de test terrain", () => {
 
   it("dit \"en retrait\" sans rouge quand la mesure a baisse", () => {
     const base = getProgressionFixture("tendance-disponible")!.input;
+    // Deux batteries ou seul le saut a ete refait (les deux autres etapes
+    // passees) : format reel, ordre decroissant comme le store le rend.
     const enRetrait: readonly TestEntry[] = [
-      { ts: Date.UTC(2026, 5, 15, 10), playlist: "fondation", broadJumpCm: 227 },
-      { ts: Date.UTC(2026, 6, 24, 10), playlist: "fondation", broadJumpCm: 218 },
+      { ts: Date.UTC(2026, 6, 24, 10), playlist: "force", broadJumpCm: 218 },
+      { ts: Date.UTC(2026, 5, 15, 10), playlist: "force", broadJumpCm: 227 },
     ];
     const vm = buildProgressionViewModel({
       chargesClubCapturees: false,
       seancesTerminees: base.seancesTerminees,
       testsTerrain: enRetrait,
+      microcycleGoal: base.microcycleGoal,
       tendance: base.tendance,
       semaineCourante: base.semaineCourante,
     });
-    const comparaison = vm.state === "ready" ? vm.derniereComparaisonTest : null;
+    const comparaison = vm.state === "ready" ? (vm.repereTest?.comparaison ?? null) : null;
     expect(comparaison?.sens).toBe("regression");
 
     const rendu = monterCarte(vm);
@@ -581,18 +598,19 @@ describe("Comparaison de test terrain", () => {
     // fausse le tableau de hauteurs que le fondateur doit arbitrer.
     const base = getProgressionFixture("deux-seances-tendance-indisponible")!.input;
     const testsEspaces: readonly TestEntry[] = [
-      { ts: Date.UTC(2026, 4, 16, 10, 15), playlist: "fondation", broadJumpCm: 205 },
       { ts: Date.UTC(2026, 6, 26, 10, 20), playlist: "fondation", broadJumpCm: 214 },
+      { ts: Date.UTC(2026, 4, 16, 10, 15), playlist: "fondation", broadJumpCm: 205 },
     ];
     const vm = buildProgressionViewModel({
       chargesClubCapturees: false,
       seancesTerminees: base.seancesTerminees,
       testsTerrain: testsEspaces,
+      microcycleGoal: base.microcycleGoal,
       tendance: base.tendance,
       semaineCourante: base.semaineCourante,
     });
     if (vm.state !== "collecting") throw new Error("etat attendu : collecting");
-    const c = vm.derniereComparaisonTest;
+    const c = vm.repereTest?.comparaison ?? null;
     expect(c).not.toBeNull();
 
     const rendu = monterCarte(vm);
@@ -603,6 +621,102 @@ describe("Comparaison de test terrain", () => {
     // Et toujours aucun element tactile dans cet etat : la carte informe, elle
     // n'envoie pas sur une page qui mentirait.
     expect(noeuds(rendu.root, MARQUEURS.progressionDetail)).toHaveLength(0);
+    demonter(rendu);
+  });
+});
+
+// =============================================================================
+
+// =============================================================================
+
+describe("Le cumul de seances — compacte, et jamais confondu avec « Ma semaine »", () => {
+  /** La taille de police reellement posee sur un `Text`. */
+  const taille = (n: ReactTestInstance): number | undefined =>
+    (StyleSheet.flatten(n.props.style) as { fontSize?: number } | undefined)?.fontSize;
+
+  const casPret = CAS.filter((f) => buildProgressionViewModel(f.input).state === "ready");
+
+  it("il y a bien des cas 'ready' a verifier", () => {
+    expect(casPret.length).toBeGreaterThan(0);
+  });
+
+  it.each(casPret.map((f) => [f.id, f] as const))(
+    "%s : le fait de resume tient sur UNE ligne de metadonnee",
+    (_id, fixture) => {
+      const vm = buildProgressionViewModel(fixture.input);
+      if (vm.state !== "ready") throw new Error("etat attendu : ready");
+      const rendu = monterCarte(vm);
+
+      // Toujours UNE ligne de fait, toujours marquee : R1 reste verifiable de la
+      // meme facon, et le compteur du verificateur ne change pas de sens.
+      const lignes = noeuds(rendu.root, MARQUEURS.progressionFait);
+      expect(lignes).toHaveLength(1);
+
+      // Le libelle et la valeur restent DEUX textes distincts, ecrits par le
+      // ViewModel et affiches tels quels : la vue n'a compose aucune phrase.
+      const lues = textes(rendu.root);
+      expect(lues).toContain(vm.resume.libelle);
+      expect(lues).toContain(vm.resume.valeur);
+
+      // « Ligne de metadonnee » n'est pas une metaphore : le libelle est pose au
+      // MEME palier que la portee juste au-dessus.
+      const portee = noeuds(rendu.root, MARQUEURS.progressionPortee)[0];
+      expect(portee).toBeDefined();
+      const textesDeLaLigne = lignes[0]!.findAllByType(Text);
+      const libelle = textesDeLaLigne.find(
+        (n) =>
+          React.Children.toArray(n.props.children).filter((c) => typeof c === "string").join("") ===
+          vm.resume.libelle
+      );
+      expect(libelle).toBeDefined();
+      expect(taille(libelle!)).toBe(taille(portee!));
+
+      // La ligne reste annoncee d'un bloc, libelle ET valeur.
+      expect(lignes[0]!.props.accessibilityLabel).toBe(
+        `${vm.resume.libelle} : ${vm.resume.valeur}`
+      );
+      demonter(rendu);
+    }
+  );
+
+  it("le libelle du cumul dit lui-meme sur quelle periode il compte", () => {
+    // Le fait le plus expose a la confusion est celui qui compte des SEANCES :
+    // c'est le seul dont le voisin « Ma semaine » compte la meme chose.
+    const cumuls = CAS.map((f) => buildProgressionViewModel(f.input))
+      .flatMap((vm) =>
+        vm.state === "collecting" ? [...vm.faits] : vm.state === "ready" ? [vm.resume] : []
+      )
+      .filter((fait) => fait.cle === "seances_terminees");
+
+    expect(cumuls.length).toBeGreaterThan(0);
+    for (const fait of cumuls) {
+      expect(fait.libelle).toContain("depuis tes débuts");
+      // Et jamais le vocabulaire de la semaine : ce sont deux comptes differents.
+      expect(fait.libelle).not.toContain("cette semaine");
+      expect(fait.libelle).not.toContain("sur ");
+    }
+  });
+
+  it("sur l'ecran, les deux compteurs de seances se distinguent par leurs mots", () => {
+    // Le vrai test de la regle : les deux nombres coexistent a l'ecran, et ce
+    // sont les LIBELLES — pas les tailles — qui disent lequel compte quoi.
+    const fixture = HOME_VNEXT_FIXTURES_RENDU.find((f) => f.id === "tendance-disponible")!;
+    const vm = buildHomeVNextViewModel(fixture.input, { variante: "v2" });
+    const progression = buildProgressionViewModel(progressionInputDepuisHome(fixture.input));
+    expect(vm.week).not.toBeNull();
+
+    const rendu = monter(<HomeVNextScreen vm={vm} variante="v2" progression={progression} />);
+    const lues = textes(rendu.root);
+
+    // Le compteur HEBDOMADAIRE, tel que "Ma semaine" l'ecrit.
+    const compteurSemaine = lues.find((t) => /^\d+ séances? sur \d+$/.test(t));
+    expect(compteurSemaine).toBeDefined();
+
+    // Aucun libelle de la carte ne compte des seances sans dire sur quelle
+    // periode : « Séances terminées » tout court est precisement le libelle qui
+    // pouvait se lire comme un compte de la semaine.
+    expect(lues).not.toContain("Séances terminées");
+    expect(lues).not.toContain("Séance terminée");
     demonter(rendu);
   });
 });
@@ -767,6 +881,67 @@ describe("Les deux variantes de l'ecran", () => {
       demonter(rendu);
     }
   );
+
+  // ---------------------------------------------------------------------------
+  // D1 — SUR L'ECRAN ENTIER, PAS SEULEMENT DANS LA CARTE
+  // ---------------------------------------------------------------------------
+  // La carte ne PEUT plus porter d'etat global (le champ n'existe plus). Restait
+  // l'en-tete, 200 px plus haut, qui vit dans un autre ViewModel. Ces deux tests
+  // regardent l'ECRAN, c'est-a-dire ce que le fondateur regarde.
+  //
+  // Le second monte l'ecran avec un ViewModel construit SANS l'option de la
+  // variante 2 — le cas ou les deux declarations de variante divergent. C'est
+  // exactement ce que font les montages ci-dessus, et ce que ferait n'importe
+  // quel appelant distrait.
+  // ---------------------------------------------------------------------------
+  it.each(ECRANS.map((f) => [f.id, f] as const))(
+    "%s : variante 2, aucun jugement global nulle part sur l'ecran",
+    (_id, fixture) => {
+      const vm = buildHomeVNextViewModel(fixture.input, { variante: "v2" });
+      const progression = buildProgressionViewModel(progressionInputDepuisHome(fixture.input));
+      const rendu = monter(<HomeVNextScreen vm={vm} variante="v2" progression={progression} />);
+
+      expect(noeuds(rendu.root, MARQUEURS.etatDuJour)).toHaveLength(0);
+      const corpus = textes(rendu.root).join(" ");
+      for (const interdit of LIBELLES_ETAT_INTERDITS) {
+        expect(corpus).not.toContain(interdit);
+      }
+      demonter(rendu);
+    }
+  );
+
+  it.each(ECRANS.map((f) => [f.id, f] as const))(
+    "%s : variante 2, la pastille ne revient pas si le ViewModel a ete construit sans l'option",
+    (_id, fixture) => {
+      // ViewModel de la VARIANTE 1 (il porte donc sa pastille quand la tendance
+      // existe), rendu dans l'ecran de la variante 2.
+      const vmV1 = buildHomeVNextViewModel(fixture.input);
+      const progression = buildProgressionViewModel(progressionInputDepuisHome(fixture.input));
+      const rendu = monter(<HomeVNextScreen vm={vmV1} variante="v2" progression={progression} />);
+
+      expect(noeuds(rendu.root, MARQUEURS.etatDuJour)).toHaveLength(0);
+      if (vmV1.header.stateChip !== null) {
+        // Le libelle existait vraiment dans le ViewModel : la preuve que le
+        // verrou d'ecran a mordu, et pas seulement que la fixture etait vide.
+        expect(textes(rendu.root).join(" ")).not.toContain(vmV1.header.stateChip.label);
+      }
+      demonter(rendu);
+    }
+  );
+
+  it("la variante 1 garde sa pastille — c'est l'ecart a comparer", () => {
+    // Sans ce test, « aucune pastille en variante 2 » pourrait aussi bien vouloir
+    // dire « plus aucune pastille nulle part », et l'ecart que le fondateur veut
+    // regarder aurait disparu sans que rien ne le signale.
+    const fixture = HOME_VNEXT_FIXTURES_RENDU.find((f) => f.id === "tendance-disponible")!;
+    const vm = buildHomeVNextViewModel(fixture.input);
+    expect(vm.header.stateChip).not.toBeNull();
+
+    const rendu = monter(<HomeVNextScreen vm={vm} />);
+    expect(noeuds(rendu.root, MARQUEURS.etatDuJour)).toHaveLength(1);
+    expect(textes(rendu.root)).toContain(vm.header.stateChip!.label);
+    demonter(rendu);
+  });
 
   it("appelle onExit depuis le pied de la carte, avec la bonne destination", () => {
     const fixture = HOME_VNEXT_FIXTURES_RENDU.find((f) => f.id === "tendance-disponible");
