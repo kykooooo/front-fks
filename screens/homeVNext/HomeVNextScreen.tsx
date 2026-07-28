@@ -54,22 +54,80 @@ import { HomeVNextExit } from "../../components/homeVNext/HomeVNextExit";
 import { HomeVNextForm } from "../../components/homeVNext/HomeVNextForm";
 import { HomeVNextHeader } from "../../components/homeVNext/HomeVNextHeader";
 import { HomeVNextNote } from "../../components/homeVNext/HomeVNextNote";
+import { HomeVNextProgression } from "../../components/homeVNext/HomeVNextProgression";
 import { HomeVNextSkeleton } from "../../components/homeVNext/HomeVNextSkeleton";
 import { HomeVNextWeek } from "../../components/homeVNext/HomeVNextWeek";
 import { espacement } from "../../components/homeVNext/homeVNextTokens";
+import type { ProgressionViewModel } from "./progressionViewModel";
 import type { ActionTarget, HomeVNextViewModel } from "./viewModel";
 
-export type HomeVNextScreenProps = {
+// =============================================================================
+// LES DEUX VARIANTES
+// =============================================================================
+//
+// La variante 1 est celle que le fondateur a regardee et validee. Elle ne bouge
+// pas d'un pixel : c'est le defaut, et elle reste rendable telle quelle pour que
+// les deux puissent etre comparees cote a cote.
+//
+// La variante 2 ne change QUE le bas de l'ecran :
+//   - le lien flottant "Voir ma progression" disparait ;
+//   - la carte "MA PROGRESSION" prend la place de la carte "MA FORME", et le
+//     lien devient son pied.
+//
+// POURQUOI LA CARTE REMPLACE AUSSI "MA FORME", et pas seulement le lien :
+//
+//   1. Les deux blocs sont alimentes par la MEME serie de points. L'adaptateur
+//      de demonstration `progressionInputDepuisHome` (fixtures.ts) recopie
+//      `HomeVNextInput.formTrend.points` dans l'entree de la carte. Les garder
+//      tous les deux dessinerait deux fois la meme courbe sur un meme ecran.
+//   2. `buildProgressionViewModel` le demande explicitement : il emet le
+//      protoWarning "Composition : cette carte et le bloc Ma forme parlent tous
+//      les deux de la tendance. En variante 2, un seul des deux doit rester a
+//      l'ecran".
+//   3. La carte contient tout ce que "MA FORME" contient — la courbe, sa portee,
+//      sa periode — et en plus un fait mesure, une comparaison de test terrain
+//      et l'acces au detail. Garder les deux, c'est garder le sous-ensemble.
+//
+// CE QUE CE CHOIX COUTE, et qui doit etre arbitre : le cas
+// `form.reason === "reprise_en_cours"` de la variante 1 ("Ta forme sera de
+// nouveau mesuree apres ta premiere seance de reprise") n'a AUCUN equivalent
+// dans `ProgressionViewModel`, qui ne connait pas la notion de reprise. Apres une
+// longue interruption, la variante 2 dit "Encore 3 jours enregistres" — honnete,
+// mais moins precis. C'est signale dans le compte rendu.
+// =============================================================================
+
+/** Laquelle des deux propositions est rendue. */
+export type HomeVNextVariante = "v1" | "v2";
+
+/**
+ * Ordre de rendu de la variante 2. A comparer avec `HOME_VNEXT_SECTION_ORDER`
+ * (viewModel.ts) : "form" et "exit" y sont remplaces par une seule section.
+ */
+export const HOME_VNEXT_SECTION_ORDER_V2 = [
+  "header",
+  "action", // action + why + cycle forment UN bloc visuel
+  "week",
+  "progression", // absorbe "form" ET "exit"
+  "note",
+] as const;
+
+type HomeVNextScreenPropsCommunes = {
   /** Tout ce que l'ecran a le droit d'afficher. Seule entree. */
   vm: HomeVNextViewModel;
   /** Action principale. Sans callback : aucun effet. */
   onAction?: (target: ActionTarget) => void;
   /** Action secondaire (le lien sous l'aplat). */
   onSecondaryAction?: (target: ActionTarget) => void;
-  /** Lien de sortie en bas d'ecran. */
+  /**
+   * Ouverture de l'ecran Progression.
+   * En variante 1 : le lien de sortie en bas d'ecran.
+   * En variante 2 : le pied "Voir ma progression" de la carte progression.
+   * Meme destination, donc un seul callback.
+   */
   onExit?: (target: "progression") => void;
   /**
-   * Largeur en pixels du trace de la courbe de forme.
+   * Largeur en pixels du trace de la courbe (de forme en v1, de progression
+   * en v2).
    *
    * A NE PASSER QUE depuis un environnement qui rend l'ecran en une seule
    * passe, sans cycle de layout (rendu statique en chaine de caracteres,
@@ -82,13 +140,25 @@ export type HomeVNextScreenProps = {
   largeurCourbe?: number;
 };
 
-export function HomeVNextScreen({
-  vm,
-  onAction,
-  onSecondaryAction,
-  onExit,
-  largeurCourbe,
-}: HomeVNextScreenProps) {
+/**
+ * Union discriminee volontaire : demander la variante 2 SANS fournir le
+ * ViewModel de progression ne compile pas. Le rendu ne peut donc pas retomber
+ * silencieusement sur la variante 1 en croyant rendre la 2.
+ */
+export type HomeVNextScreenProps = HomeVNextScreenPropsCommunes &
+  (
+    | { variante?: "v1" }
+    | {
+        variante: "v2";
+        /** Le resume de progression, deja calcule par `buildProgressionViewModel`. */
+        progression: ProgressionViewModel;
+      }
+  );
+
+export function HomeVNextScreen(props: HomeVNextScreenProps) {
+  const { vm, onAction, onSecondaryAction, onExit, largeurCourbe } = props;
+  const variante: HomeVNextVariante = props.variante ?? "v1";
+  const progression = props.variante === "v2" ? props.progression : null;
   // `<Screen>` est la SEULE source de verite de la safe area (regle d'or du
   // projet). Aucun `SafeAreaView edges={...}`, aucun `paddingTop` magique,
   // aucune `StatusBar` locale : il n'y en a qu'une, globale, dans `App.tsx`.
@@ -122,7 +192,20 @@ export function HomeVNextScreen({
             </Section>
           ) : null}
 
-          {vm.form ? (
+          {/*
+            LE SEUL ENDROIT OU LES DEUX VARIANTES DIVERGENT.
+            v2 : la carte progression, qui absorbe "MA FORME" et le lien de sortie.
+            v1 : "MA FORME", inchangee.
+          */}
+          {progression !== null ? (
+            <Section>
+              <HomeVNextProgression
+                progression={progression}
+                onDetail={onExit}
+                largeurCourbe={largeurCourbe}
+              />
+            </Section>
+          ) : vm.form ? (
             <Section>
               <HomeVNextForm form={vm.form} largeurCourbe={largeurCourbe} />
             </Section>
@@ -134,7 +217,12 @@ export function HomeVNextScreen({
             </Section>
           ) : null}
 
-          {vm.exit ? (
+          {/*
+            Le lien de sortie n'existe QUE en variante 1. En variante 2 il n'a
+            pas ete supprime : il a demenage dans le pied de la carte, ce qui est
+            precisement la demande du fondateur.
+          */}
+          {variante === "v1" && vm.exit ? (
             <Section>
               <HomeVNextExit exit={vm.exit} onPress={onExit} />
             </Section>

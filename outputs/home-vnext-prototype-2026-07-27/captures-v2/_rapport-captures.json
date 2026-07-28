@@ -1,0 +1,65 @@
+{
+  "genereLe": "2026-07-28T13:40:21.381Z",
+  "ok": [
+    {
+      "nom": "cas-v2-nouveau-joueur",
+      "fichier": "v2-01-nouveau-joueur-375-page-entiere.png"
+    },
+    {
+      "nom": "cas-v2-deux-seances-tendance-indisponible",
+      "fichier": "v2-02-deux-seances-tendance-indisponible-375-page-entiere.png"
+    },
+    {
+      "nom": "cas-v2-tendance-disponible",
+      "fichier": "v2-03-tendance-disponible-375-page-entiere.png"
+    },
+    {
+      "nom": "cas-v2-test-physique-ameliore",
+      "fichier": "v2-04-test-physique-ameliore-375-page-entiere.png"
+    },
+    {
+      "nom": "cas-v2-aucune-comparaison-de-test",
+      "fichier": "v2-05-aucune-comparaison-de-test-375-page-entiere.png"
+    },
+    {
+      "nom": "cas-v2-donnee-manquante",
+      "fichier": "v2-preuve-r1-donnee-manquante-375-page-entiere.png"
+    },
+    {
+      "nom": "comparaison-v2-nouveau-joueur",
+      "fichier": "comparaison-v1-vs-v2-nouveau-joueur-375.png",
+      "v1": 399,
+      "v2": 493
+    },
+    {
+      "nom": "comparaison-v2-deux-seances-tendance-indisponible",
+      "fichier": "comparaison-v1-vs-v2-deux-seances-375.png",
+      "v1": 603,
+      "v2": 709
+    },
+    {
+      "nom": "comparaison-v2-tendance-disponible",
+      "fichier": "comparaison-v1-vs-v2-tendance-disponible-375.png",
+      "v1": 667,
+      "v2": 758
+    },
+    {
+      "nom": "largeur-320-v2-deux-seances-tendance-indisponible",
+      "fichier": "largeur-320px-iphone-se-deux-seances-tendance-indisponible-v2.png"
+    },
+    {
+      "nom": "largeur-320-v2-tendance-disponible",
+      "fichier": "largeur-320px-iphone-se-tendance-disponible-v2.png"
+    },
+    {
+      "nom": "texte-x1.3-tendance-disponible",
+      "fichier": "texte-agrandi-x1-3-tendance-disponible-v2-375.png"
+    },
+    {
+      "nom": "visualiseur-selecteur-variante",
+      "fichier": "outil-visualiseur-selecteur-variante2.png",
+      "visualiseur": "http://127.0.0.1:8141/"
+    }
+  ],
+  "echecs": []
+}

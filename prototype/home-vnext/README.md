@@ -21,6 +21,16 @@ node prototype/home-vnext/verifier.js  # exécute toutes les vérifications et r
 Si 8140 est occupé, `serve.js` prend le port libre suivant et **affiche l'URL réelle**.
 Le serveur n'écoute que sur `127.0.0.1` : rien n'est exposé sur le réseau.
 
+**Aller droit à la question du moment** — variante 1 contre variante 2, à 375 px :
+
+```
+http://127.0.0.1:8140/#etat=v2-tendance-disponible&var=duo&paire=v1v2&w=375&vue=entiere&x13=0&onglet=points
+```
+
+À gauche l'écran validé, qui finit sur le lien flottant « Voir ma progression ». À droite le
+même écran, où ce lien a disparu au profit d'une carte. Les autres cas s'atteignent en un
+clic dans la liste latérale, ou avec `↓`.
+
 Aucune installation. Aucune dépendance nouvelle. Tout est déjà dans `node_modules`
 (`react-native-web`, `jsdom`, `@babel/core`). **Ne lance jamais `npm install`.**
 
@@ -29,7 +39,7 @@ Aucune installation. Aucune dépendance nouvelle. Tout est déjà dans `node_mod
 | Variable | Effet |
 |---|---|
 | `FKS_SETTLE=200` | temps laissé aux effets pour se stabiliser, en ms (défaut 900) |
-| `FKS_ETATS=hors-ligne,nouveau-joueur` | ne génère que ces états |
+| `FKS_ETATS=hors-ligne,nouveau-joueur` | ne génère que ces états. Un cas de variante 2 dont l'écran d'accueil n'est pas dans la liste est **ignoré, avec une alerte** — jamais posé sur un autre écran en douce |
 | `FKS_LARGEURS=375` | ne génère que ces largeurs |
 | `PORT=9000` | port de départ de `serve.js` |
 
@@ -80,6 +90,39 @@ mesurés que dans un moteur de rendu réel. Le vérificateur lance Chrome (ou Ed
 interface, lui sert les pages depuis un serveur éphémère, et récupère le JSON par
 `--dump-dom`. Aucun pilote à installer.
 
+### La variante 2 a son propre vérificateur
+
+```
+node prototype/home-vnext/verifier-variante2.js
+```
+
+`verifier.js` juge les 150 pages de la variante 1. Il ne regarde **pas** les 60 pages de la
+variante 2 : elles n'existaient pas quand il a été écrit. Ce second fichier fait le même
+travail, avec les mêmes outils, les mêmes seuils et le même moteur de mesure, plus les règles
+qui n'existent que pour la carte.
+
+| # | Vérification | Méthode |
+|---|---|---|
+| 0 | Les 60 pages existent et ne sont pas des pages d'erreur | présence + absence du gabarit « carte non détectée » |
+| d1 | Une seule action principale | comptage du marqueur sur les **210** pages (150 v1 + 60 v2) |
+| d2 | **R8** — un seul aplat, et **aucun dans la carte** | couleurs réellement rendues, opacité effective comprise ; l'appartenance à la carte vient du nœud `home-vnext-progression` |
+| d3 | Deux tactiles ne portent pas le même libellé visible | texte visible de chaque lien/bouton, sur les **60** pages, groupé par texte |
+| f | **R4** — aucun état physique global dans la carte | texte rendu de la carte seule |
+| f2 | **R4 sur l'écran** — aucune pastille d'état du jour | marqueur `home-vnext-etat-du-jour` sur les 60 pages ; attendu déduit de `chargesClubCapturees`, pas écrit à la main |
+| g | **R5** — pas de courbe sans vrais points | attendu déduit de `progVm.state`, jamais d'une liste écrite à la main |
+| h | **R6** — aucune « série » | HTML rendu + sources, commentaires retirés |
+| i | **R7** — pas de redite avec « Ma semaine » | nombres **lus dans le HTML**, des deux côtés |
+| j | **R3** — portée présente et mot pour mot | texte rendu comparé à `courbe.portee` |
+| k | Sens d'un écart de test | recalculé depuis l'écart signé **et** `lowerIsBetter`, puis comparé au mot affiché |
+| l | Accessibilité de la carte | un seul focusable, jamais imbriqué, ≥ 44 pt, `aria-label` explicite |
+| m | 320 px et ×1,3 | débordement, chevauchement, **et troncature réelle dans la carte** (échec, pas observation) |
+| n | Rien sous la barre d'onglets | vide réel en bas d'écran, hypothèse d'inset écrite dans le rapport |
+| o | Contraste WCAG des textes **de la carte** | ratio sur les couleurs rendues, fond effectif reconstitué |
+
+Il écrit `outputs/home-vnext-prototype-2026-07-27/mesures-hauteurs-variante2.md` : la hauteur
+de page **variante 1 contre variante 2**, état par état et largeur par largeur. C'est ce que la
+carte coûte en hauteur par rapport au lien qu'elle remplace.
+
 **Deux configurations dédiées, et pourquoi elles existent** :
 
 - `tsconfig.proto.json` — le `tsconfig.json` de la racine pointe `typeRoots` sur
@@ -95,19 +138,50 @@ interface, lui sert les pages depuis un serveur éphémère, et récupère le JS
 
 ## Ce que le visualiseur permet
 
-- choisir l'un des 15 états (liste latérale, groupée par situation) — les 14 états produit,
-  plus `stress-textes-longs`, qui n'est pas un état produit mais un test de résistance de
-  la mise en page ;
-- basculer entre **Proposition vNext** / **Home actuel** / **Côte à côte 375** ;
+- choisir l'un des **15 états de la variante 1** (liste latérale, groupée par situation) —
+  les 14 états produit, plus `stress-textes-longs`, qui n'est pas un état produit mais un
+  test de résistance de la mise en page ;
+- choisir l'un des **6 cas de la variante 2** (groupes `Variante 2 —` en bas de la liste) :
+  les 5 cas de démonstration de la carte progression, plus `v2-donnee-manquante`, qui n'est
+  pas un état produit mais la preuve visuelle de R1 (un fait sans donnée disparaît) ;
+- basculer entre **Proposition vNext** / **Progression intégrée** / **Home actuel** /
+  **Côte à côte** ;
+- en côte à côte, choisir la **paire** : `vNext / Progression` (variante 1 contre variante 2,
+  la question du fondateur), `Actuel / vNext`, `Actuel / Progression` ;
 - changer de largeur : **320 / 375 / 390 / 768** ;
 - changer de vue : **zone visible sans défilement** / **page entière** ;
 - activer la variante **texte ×1,3** (générée en 375 px uniquement) ;
-- lire, dans un panneau **séparé de l'écran produit** : les points à valider, les seuils
-  d'affichage, les contrastes mesurés, les avertissements du prototype (`protoWarnings`)
-  et ce que le harnais ne reproduit pas.
+- lire, dans un panneau **séparé de l'écran produit** : les points à valider (12 pour la
+  variante 1, 11 pour la variante 2), les seuils d'affichage des deux contrats, la portée
+  de la tendance et le verdict R4 pour l'état courant, les contrastes mesurés, les
+  avertissements du prototype (`protoWarnings`) et ce que le harnais ne reproduit pas.
 
-Raccourcis clavier : `↑` `↓` changent d'état, `v` change de variante, `e` change de vue,
-`p` masque les panneaux. L'URL garde l'état courant : elle peut être partagée telle quelle.
+Raccourcis clavier : `↑` `↓` changent d'état, `v` change de variante (en sautant celles
+qui n'existent pas sur l'état courant), `c` passe en côte à côte puis fait tourner la
+paire, `e` change de vue, `p` masque les panneaux. L'URL garde l'état courant : elle peut
+être partagée telle quelle.
+
+### La variante 2 ne peut pas être servie par erreur
+
+La carte progression a ses propres jeux de données, écrits sans écran autour. Le harnais la
+pose donc sur un écran d'accueil existant, et **il ne peut pas mentir sur ce qu'il montre** :
+
+- après chaque rendu, il cherche le marqueur `home-vnext-progression` dans le HTML produit.
+  Absent, la page n'est **pas servie** : elle est remplacée par une page d'explication qui
+  dit si l'écran a réagi ou non, ce qui manque, et la seule ligne à corriger. Afficher la
+  variante 1 sous l'étiquette « Progression intégrée » ferait valider un écran inexistant ;
+- l'appariement entre l'écran et la carte est **audité à chaque génération** (12 contrôles
+  chiffrés par état et par largeur, plus 5 points de cohérence). Un écart non déclaré lève
+  une alerte de génération ; un écart déclaré s'affiche en rouge sur l'état concerné, avant
+  qu'on le regarde ;
+- `__tests__/homeVNext/appariementVariante2.test.ts` verrouille la condition qui rend
+  l'assemblage honnête : « Ma semaine » doit afficher **exactement** le nombre contre lequel
+  la carte a calculé son garde-fou R7.
+
+Trois des six cas portent un écart déclaré. Il ne se voit **jamais sur l'écran de la
+variante 2** (l'écran y absorbe le bloc « Ma forme » et le lien flottant) mais **en côte à
+côte**, où les deux colonnes tracent alors deux séries différentes ou annoncent deux comptes
+différents. C'est un artefact d'assemblage du prototype, pas une proposition de produit.
 
 Les `protoWarnings` s'affichent **dans le panneau, jamais dans l'écran produit** : le
 joueur ne doit pas lire les notes de chantier.
@@ -144,7 +218,9 @@ mesurées sur un téléphone réel. À confirmer en recette téléphone.
 ```
 build.js                 orchestration : rend, écrit les pages, écrit le manifeste
 serve.js                 serveur statique local, repli de port automatique
-verifier.js              les vérifications, et leur verdict chiffré
+verifier.js              les vérifications de la variante 1, et leur verdict chiffré
+verifier-variante2.js    les mêmes, sur les 60 pages de la carte progression,
+                         + le tableau de hauteurs variante 1 contre variante 2
 tsconfig.proto.json      type-check ciblé (contourne le typeRoots cassé en worktree)
 jest.proto.config.js     tests ciblés (contourne l'exclusion des worktrees)
 types/                   déclaration locale pour react-test-renderer (@types absent du dépôt)
@@ -154,12 +230,14 @@ lib/
   hook.js                hook require : transpilation babel + détournement des imports
   dom.js                 environnement jsdom + mesures onLayout approchées
   devices.js             les 4 formats et le calcul de la zone visible
-  render.js              le moteur : un seul pipeline pour les deux variantes
+  render.js              le moteur : un seul pipeline pour les trois variantes
   pageTemplate.js        gabarit d'une page d'écran (HTML statique, sans JS)
   viewerTemplate.js      le visualiseur (HTML + CSS + JS)
   scenariosActuel.js     jeux de données fictives pour le Home de production
   mapping.js             correspondance états vNext ↔ scénarios, et ses approximations
-  pointsAValider.js      les 12 questions posées au fondateur
+  appariementVariante2.js  où la carte progression est posée, ce que ça coûte,
+                           la détection du rendu et l'audit de cohérence
+  pointsAValider.js      les 12 + 11 questions posées au fondateur
   limites.js             ce que le harnais ne reproduit pas
   stubs/                 modules natifs remplacés
 out/                     tout le contenu généré (non versionné volontairement)

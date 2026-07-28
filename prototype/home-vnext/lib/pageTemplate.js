@@ -176,9 +176,17 @@ function tabbarHtml() {
 </div>`;
 }
 
+/** Nom lisible d'une variante. Une seule table, utilisee par les deux gabarits. */
+const NOMS_VARIANTE = {
+  vnext: "Proposition vNext",
+  vnext2: "Progression integree (variante 2)",
+  actuel: "Home actuel (production)",
+};
+const nomDeVariante = (v) => NOMS_VARIANTE[v] || v;
+
 /**
  * @param {object} o
- * @param {string} o.variante      "vnext" | "actuel"
+ * @param {string} o.variante      "vnext" | "vnext2" | "actuel"
  * @param {string} o.etatId        identifiant de l'etat
  * @param {string} o.etatTitre     titre lisible
  * @param {string} o.etatResume    une ligne
@@ -191,18 +199,23 @@ function tabbarHtml() {
  */
 function pageEcran(o) {
   const { variante, etatId, etatTitre, etatResume, device, vue, echelleTexte, html, cssHref, ecart } = o;
-  const nomVariante = variante === "vnext" ? "Proposition vNext" : "Home actuel (production)";
+  const nomVariante = nomDeVariante(variante);
   const noteEchelle =
     echelleTexte === 1
       ? "texte a l'echelle 1"
       : `texte x${echelleTexte} — SIMULATION : les tailles de police et les interlignes du CSS sont ` +
         `multipliees. Ce n'est PAS le vrai Dynamic Type d'iOS, qui redistribue aussi les marges.`;
 
+  // `ecart.titre` permet a l'appelant de nommer lui-meme l'ecart : la variante 2
+  // ne parle pas d'une correspondance avec le Home de production mais de
+  // l'appariement entre un ecran et une carte. Sans ce champ, la page afficherait
+  // un intitule faux.
   const blocEcart = ecart
     ? `<div class="ecart"><span class="titre">${esc(
-        ecart.qualite === "inexistant"
-          ? "Le Home actuel n'a pas cet etat"
-          : "Correspondance approximative"
+        ecart.titre ||
+          (ecart.qualite === "inexistant"
+            ? "Le Home actuel n'a pas cet etat"
+            : "Correspondance approximative")
       )}</span>${esc(ecart.texte)}</div>`
     : "";
 
@@ -244,11 +257,26 @@ function pageEcran(o) {
  * Page de repli quand l'ecran ne peut pas etre rendu (module absent, erreur de
  * rendu). On ne montre JAMAIS un ecran vide sans explication.
  */
-function pageErreur({ variante, etatId, etatTitre, device, vue, titre, message, detail, viewModel }) {
+function pageErreur({
+  variante,
+  etatId,
+  etatTitre,
+  device,
+  vue,
+  titre,
+  message,
+  detail,
+  viewModel,
+  titreVm,
+  noteVm,
+}) {
   const vmBlock = viewModel
-    ? `<h2>Ce que le contrat produit deja pour cet etat</h2>
-<p class="note">Le selecteur (<code>screens/homeVNext/viewModel.ts</code>) fonctionne : voici son
-resultat pour cette fixture. Il ne manque que l'ecran qui le dessine.</p>
+    ? `<h2>${esc(titreVm || "Ce que le contrat produit deja pour cet etat")}</h2>
+<p class="note">${esc(
+        noteVm ||
+          "Le selecteur (screens/homeVNext/viewModel.ts) fonctionne : voici son resultat pour cette " +
+            "fixture. Il ne manque que l'ecran qui le dessine."
+      )}</p>
 <pre>${esc(JSON.stringify(viewModel, null, 2))}</pre>`
     : "";
   return `<!doctype html>
@@ -281,4 +309,4 @@ ${vmBlock}
 </div></body></html>`;
 }
 
-module.exports = { pageEcran, pageErreur, esc, scaleInlineHtml };
+module.exports = { pageEcran, pageErreur, esc, scaleInlineHtml, nomDeVariante, NOMS_VARIANTE };

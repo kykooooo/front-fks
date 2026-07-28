@@ -72,6 +72,17 @@ const LIMITES = [
       "Home actuel de scenarios ecrits pour l'audit.",
   },
   {
+    quoi: "L'assemblage de la variante 2",
+    detail:
+      "La carte progression a ete ecrite avec ses propres jeux de donnees, sans ecran d'accueil " +
+      "autour. Pour la regarder en place, le harnais la pose sur un ecran existant. Le choix de " +
+      "l'ecran garantit toujours une chose : le nombre affiche par « Ma semaine » est exactement " +
+      "celui contre lequel la carte s'est protegee. Sur trois des six cas, quelque chose d'autre " +
+      "ne concorde pas (deux courbes qui ne tracent pas la meme serie, ou deux comptes de seances " +
+      "differents) : c'est ecrit en rouge sur l'etat concerne et detaille dans « Cet etat ». " +
+      "Un ecart ainsi signale vient de l'assemblage du prototype, pas d'une proposition de produit.",
+  },
+  {
     quoi: "La barre d'onglets",
     detail:
       "Le rectangle du bas est un dessin du harnais, pas la vraie barre de l'app. Il est a la " +

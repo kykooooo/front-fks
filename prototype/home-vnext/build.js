@@ -10,7 +10,8 @@
 //   manifest.js         tout ce que le visualiseur doit savoir
 //   app.css             la feuille generee par react-native-web (echelle 1)
 //   app-x13.css         la meme, tailles de texte multipliees par 1,3
-//   pages/vnext/…       la proposition, un fichier par etat/largeur/vue
+//   pages/vnext/…       la proposition (variante 1), un fichier par etat/largeur/vue
+//   pages/vnext2/…      la meme proposition AVEC la carte progression (variante 2)
 //   pages/actuel/…      le Home de production, meme decoupage
 //   rapport.json        ce qui s'est passe pendant la generation
 //
@@ -29,9 +30,10 @@ const render = require("./lib/render");
 const { pageEcran, pageErreur } = require("./lib/pageTemplate");
 const scenariosActuel = require("./lib/scenariosActuel");
 const { MAPPING, EXTRAS_ACTUEL, byFixture } = require("./lib/mapping");
-const { POINTS } = require("./lib/pointsAValider");
+const { POINTS, POINTS_PROGRESSION } = require("./lib/pointsAValider");
 const { viewerHtml, viewerCss, viewerJs } = require("./lib/viewerTemplate");
 const { LIMITES, STUBS_DECRITS } = require("./lib/limites");
+const appariement = require("./lib/appariementVariante2");
 
 // ---------------------------------------------------------------------------
 // Contrat : fixtures, seuils, jetons visuels
@@ -50,6 +52,12 @@ try {
 // expose separement par `fixtures.ts` pour que le contrat continue de compter
 // 14 etats, et le harnais le rend en plus pour qu'on puisse le regarder.
 const TOUTES_LES_FIXTURES = fixturesMod.HOME_VNEXT_FIXTURES_RENDU || fixturesMod.HOME_VNEXT_FIXTURES;
+
+// Les six cas de la carte progression (5 de demonstration + la preuve R1).
+// Absents tant que l'autre agent n'a pas livre `fixtures.ts` : on ne plante pas,
+// la variante 2 est simplement annoncee indisponible.
+const FIXTURES_PROGRESSION = fixturesMod.PROGRESSION_FIXTURES_RENDU || [];
+const progMod = render.getProgressionModule();
 
 // ---------------------------------------------------------------------------
 // Filtres de mise au point (facultatifs) — pour iterer vite pendant le travail.
@@ -204,7 +212,16 @@ function ecrirePages({ variante, etatId, etatTitre, etatResume, device, html, ec
   return pages;
 }
 
-function ecrirePagesErreur({ variante, etatId, etatTitre, device, indisponible, viewModel }) {
+function ecrirePagesErreur({
+  variante,
+  etatId,
+  etatTitre,
+  device,
+  indisponible,
+  viewModel,
+  titreVm,
+  noteVm,
+}) {
   const pages = {};
   const echelles = device.width === SCALE_WIDTH ? [1, TEXT_SCALE] : [1];
   for (const echelle of echelles) {
@@ -220,6 +237,8 @@ function ecrirePagesErreur({ variante, etatId, etatTitre, device, indisponible, 
         message: indisponible.message,
         detail: indisponible.detail,
         viewModel,
+        titreVm,
+        noteVm,
       });
       pages[`${device.width}${echelle === 1 ? "" : "-x13"}-${vue}`] = ecrire(rel, contenu);
     }
@@ -254,8 +273,68 @@ function resumerViewModel(vm) {
         ? `courbe affichee (${vm.form.points.length} points) — ${vm.form.scope}`
         : `pas de courbe — ${vm.form.title} (${vm.form.reason})`
       : "aucun bloc forme",
+    // Sorties DEDIEES, pas une phrase a redecouper : le panneau doit pouvoir
+    // afficher la portee exacte sans la reconstruire, et dire pourquoi il n'y en
+    // a pas quand il n'y en a pas.
+    porteeForme: vm.form && vm.form.kind === "available" ? vm.form.scope : null,
+    raisonSansCourbe: vm.form && vm.form.kind === "insufficient" ? vm.form.title : null,
     conseil: vm.note ? `${vm.note.title} — ${vm.note.message}` : null,
     sortie: vm.exit ? vm.exit.label : null,
+  };
+}
+
+/**
+ * Resume lisible d'un ViewModel de carte progression (panneau du visualiseur).
+ * Tout ce qui est affiche ici est DERIVE du contrat : rien n'est reformule a la
+ * main, sinon le panneau finirait par raconter autre chose que l'ecran.
+ */
+function resumerProgression(p) {
+  if (!p) return null;
+  const faits =
+    p.state === "collecting"
+      ? p.faits.map((f) => ({ libelle: f.libelle, valeur: f.valeur, cle: f.cle }))
+      : p.state === "ready" && p.resume
+      ? [{ libelle: p.resume.libelle, valeur: p.resume.valeur, cle: p.resume.cle }]
+      : [];
+  const comparaisons =
+    p.comparaisonsTests == null
+      ? null
+      : p.comparaisonsTests.possible
+      ? {
+          possible: true,
+          liste: p.comparaisonsTests.comparaisons.map((c) => ({
+            label: c.label,
+            avant: c.avantAffiche,
+            apres: c.apresAffiche,
+            ecart: c.ecartAffiche,
+            sens: c.sens,
+            jours: `${c.avantJour} -> ${c.apresJour}`,
+          })),
+        }
+      : { possible: false, raison: p.comparaisonsTests.raison, explication: p.comparaisonsTests.explication };
+
+  return {
+    etat: p.state,
+    titre: p.titre,
+    mention: p.mention || null,
+    reperes: p.reperes ? p.reperes.map((r) => `${r.numero}. ${r.texte}`) : null,
+    faits,
+    tendanceIndisponible: p.tendanceIndisponible || null,
+    courbe: p.courbe
+      ? {
+          points: p.courbe.points.length,
+          periode: p.courbe.periodeLabel,
+          joursObserves: p.courbe.joursObserves,
+          portee: p.courbe.portee,
+        }
+      : null,
+    comparaisons,
+    derniereComparaison: p.derniereComparaisonTest
+      ? `${p.derniereComparaisonTest.label} : ${p.derniereComparaisonTest.avantAffiche} -> ` +
+        `${p.derniereComparaisonTest.apresAffiche} (${p.derniereComparaisonTest.ecartAffiche})`
+      : null,
+    etatGlobal: p.etatGlobal,
+    detail: p.detail,
   };
 }
 
@@ -314,6 +393,12 @@ async function main() {
         "Relance sans FKS_ETATS ni FKS_LARGEURS pour le lot complet."
     );
   }
+
+  // Balisage de la variante 1, garde par (etat, largeur). Sert a UNE seule
+  // chose : quand la carte n'est pas detectee en variante 2, savoir dire si
+  // l'ecran a reagi ou s'il a rendu exactement la variante 1.
+  const htmlVariante1 = new Map();
+  const cleHtml = (etatId, width) => `${etatId}|${width}`;
 
   // --- les 14 etats ---------------------------------------------------------
   for (const fixture of FIXTURES) {
@@ -376,6 +461,7 @@ async function main() {
           })
         );
         if (device.width === SCALE_WIDTH) entree.vnext.sonde = rv.sonde;
+        htmlVariante1.set(cleHtml(fixture.id, device.width), rv.html);
       }
 
       // --- home actuel ---
@@ -427,6 +513,219 @@ async function main() {
       protoWarnings: entree.vnext.protoWarnings ? entree.vnext.protoWarnings.length : 0,
     });
     process.stdout.write(` ${fixture.id}\n`);
+  }
+
+  // ==========================================================================
+  // VARIANTE 2 — LA CARTE PROGRESSION INTEGREE
+  // ==========================================================================
+  // Chaque cas de carte est pose sur un ecran hote (voir lib/appariementVariante2).
+  // On ne regenere PAS la variante 1 ni le Home actuel de cet hote : on renvoie
+  // vers les pages deja produites juste au-dessus. Deux avantages, tous deux
+  // importants : la comparaison cote a cote porte sur des pages rigoureusement
+  // identiques a celles de l'onglet « Proposition vNext » (aucun rendu parallele
+  // qui pourrait deriver), et la generation ne s'allonge que du strict necessaire.
+  // ==========================================================================
+  const etatsVariante2 = {};
+  const ordreVariante2 = [];
+  const groupesVariante2 = [];
+
+  const fixtureProgParId = new Map(FIXTURES_PROGRESSION.map((f) => [f.id, f]));
+  const fixtureHomeParId = new Map(FIXTURES.map((f) => [f.id, f]));
+  const carteMod = render.getCarteProgression();
+
+  const variante2Possible = FIXTURES_PROGRESSION.length > 0 && progMod.ok && vnextDispo;
+  if (!variante2Possible) {
+    rapport.alertes.push(
+      "VARIANTE 2 INDISPONIBLE — " +
+        (FIXTURES_PROGRESSION.length === 0
+          ? "aucun cas de carte progression dans screens/homeVNext/fixtures.ts."
+          : !progMod.ok
+          ? "screens/homeVNext/progressionViewModel.ts illisible : " + String(progMod.detail).slice(0, 200)
+          : "l'ecran screens/homeVNext/HomeVNextScreen.tsx est indisponible.") +
+        " Le selecteur de variante n'affichera que « Proposition vNext », « Home actuel » et le cote a cote."
+    );
+  } else {
+    if (!carteMod.ok) {
+      rapport.alertes.push(
+        "components/homeVNext/HomeVNextProgression.tsx est absent ou illisible (" +
+          carteMod.raison +
+          "). Ce composant est ecrit par un autre agent. Tant qu'il manque, la variante 2 affiche " +
+          "des pages d'explication a la place de l'ecran : le harnais ne sert JAMAIS la variante 1 " +
+          "sous l'etiquette « Progression integree »."
+      );
+    }
+
+    for (const app of appariement.APPARIEMENTS) {
+      const fixtureProgression = fixtureProgParId.get(app.progression);
+      const fixtureHote = fixtureHomeParId.get(app.hote);
+      if (!fixtureProgression) {
+        rapport.alertes.push(`Cas de carte « ${app.progression} » introuvable : etat ${app.id} non genere.`);
+        continue;
+      }
+      if (!fixtureHote) {
+        // Arrive uniquement sous filtre FKS_ETATS : l'hote n'a pas ete genere.
+        rapport.alertes.push(
+          `Ecran hote « ${app.hote} » non genere (filtre FKS_ETATS ?) : etat ${app.id} ignore.`
+        );
+        continue;
+      }
+
+      const hote = etats[app.hote];
+      const entree = {
+        id: app.id,
+        titre: fixtureProgression.titre,
+        resume: fixtureProgression.resume,
+        groupe: null, // rempli plus bas depuis GROUPES_VARIANTE2
+        fictif: true,
+        variante2: true,
+        progressionId: fixtureProgression.id,
+        hoteId: fixtureHote.id,
+        hoteTitre: fixtureHote.titre,
+        hoteResume: fixtureHote.resume,
+        qualiteAppariement: app.qualite,
+        ecartAppariement: app.ecart,
+        pourquoiCetHote: app.pourquoiCetHote,
+        // Les pages de la variante 1 et du Home actuel sont celles de l'hote :
+        // meme fichier, aucun rendu supplementaire.
+        vnext: hote ? { ...hote.vnext, hoteId: fixtureHote.id } : { disponible: false, pages: {} },
+        actuel: hote ? { ...hote.actuel, hoteId: fixtureHote.id } : { pages: {} },
+        vnext2: { disponible: true, pages: {} },
+      };
+
+      const ecartPage = app.ecart
+        ? {
+            titre: "Appariement approximatif — a savoir avant de regarder",
+            qualite: app.qualite,
+            texte: app.ecart,
+          }
+        : null;
+
+      for (const device of DEVICES_ACTIFS) {
+        const rv2 = await render.renderVNext2({
+          fixtureHote,
+          fixtureProgression,
+          device,
+          htmlVariante1: htmlVariante1.get(cleHtml(fixtureHote.id, device.width)) || null,
+        });
+
+        // Le resume du contrat et l'audit ne dependent pas de la largeur : on les
+        // prend a la premiere passe.
+        if (!entree.vnext2.viewModel && rv2.progVm) {
+          entree.vnext2.viewModel = resumerProgression(rv2.progVm);
+          // Les avertissements des DEUX selecteurs, pas seulement celui de la
+          // carte : le verrou de la pastille d'etat du jour est une decision du
+          // ViewModel du Home, prise pour la variante 2 uniquement. La taire
+          // rendrait invisible, dans le panneau, la seule regle de cet ecran qui
+          // ne se voit pas dans la carte.
+          entree.vnext2.protoWarnings = []
+            .concat(rv2.progVm.protoWarnings || [])
+            .concat((rv2.homeVm && rv2.homeVm.protoWarnings) || []);
+          // Ce que l'en-tete affiche REELLEMENT en variante 2 (souvent `null`,
+          // la ou la variante 1 affiche une pastille d'etat). Le panneau compare
+          // les deux : sans cette valeur, il ne pourrait que supposer.
+          entree.vnext2.pastilleEtat =
+            rv2.homeVm && rv2.homeVm.header && rv2.homeVm.header.stateChip
+              ? rv2.homeVm.header.stateChip.label
+              : null;
+          const audit = appariement.auditerCoherence({
+            homeVm: rv2.homeVm,
+            progVm: rv2.progVm,
+            progressionInput: fixtureProgression.input,
+          });
+          entree.audit = audit;
+          if (audit.qualiteCalculee !== app.qualite) {
+            rapport.alertes.push(
+              `Appariement ${app.id} : declare « ${app.qualite} » mais l'audit calcule ` +
+                `« ${audit.qualiteCalculee} » (${audit.divergences} divergence(s)). ` +
+                "Une fixture a bouge — corrige la declaration dans lib/appariementVariante2.js " +
+                "ou l'appariement lui-meme, mais ne laisse pas l'ecart non dit."
+            );
+          }
+        }
+
+        if (rv2.indisponible) {
+          Object.assign(
+            entree.vnext2.pages,
+            ecrirePagesErreur({
+              variante: "vnext2",
+              etatId: app.id,
+              etatTitre: fixtureProgression.titre,
+              device,
+              indisponible: rv2.indisponible,
+              viewModel: rv2.progVm,
+              titreVm: "Ce que la carte AURAIT affiche",
+              noteVm:
+                "Le selecteur de la carte (screens/homeVNext/progressionViewModel.ts) fonctionne : " +
+                "voici son resultat pour ce cas. Il ne manque que l'ecran qui le dessine.",
+            })
+          );
+          entree.vnext2.disponible = false;
+          entree.vnext2.indisponible = rv2.indisponible.titre;
+        } else {
+          Object.assign(
+            entree.vnext2.pages,
+            ecrirePages({
+              variante: "vnext2",
+              etatId: app.id,
+              etatTitre: `${fixtureProgression.titre} — sur l'ecran « ${fixtureHote.titre} »`,
+              etatResume: fixtureProgression.resume,
+              device,
+              html: rv2.html,
+              ecart: ecartPage,
+            })
+          );
+          if (device.width === SCALE_WIDTH) {
+            entree.vnext2.sonde = rv2.sonde;
+            entree.vnext2.mesures = rv2.mesures;
+          }
+        }
+
+        // Les controles sont des COMPTES DE STRUCTURE : ils ne devraient pas
+        // dependre de la largeur. On les releve donc a chaque largeur, et pas
+        // seulement a 375 — une carte qui perdrait une ligne de fait en 320 px
+        // passerait sinon inapercue. Ce qui est garde est compact : la liste des
+        // controles en echec, par largeur.
+        if (rv2.mesures) {
+          entree.vnext2.controlesParLargeur = entree.vnext2.controlesParLargeur || {};
+          entree.vnext2.controlesParLargeur[device.width] = rv2.mesures.clesEnEchec;
+        }
+        process.stdout.write(".");
+      }
+
+      // Un controle en echec, a n'importe quelle largeur, doit remonter jusqu'au
+      // bandeau du visualiseur. Le panneau le detaille ; l'alerte garantit qu'on
+      // ne le decouvre pas par hasard en ouvrant le bon onglet.
+      const parLargeur = entree.vnext2.controlesParLargeur || {};
+      const largeursEnEchec = Object.keys(parLargeur).filter((w) => parLargeur[w].length > 0);
+      if (largeursEnEchec.length) {
+        rapport.alertes.push(
+          `${app.id} : controle(s) en echec — ` +
+            largeursEnEchec.map((w) => `${w} px : ${parLargeur[w].join(", ")}`).join(" · ") +
+            ". Detail dans l'onglet « Cet etat »."
+        );
+      }
+
+      etatsVariante2[app.id] = entree;
+      ordreVariante2.push(app.id);
+      rapport.etats.push({
+        id: app.id,
+        variante2: entree.vnext2.indisponible || "rendu",
+        hote: fixtureHote.id,
+        qualite: app.qualite,
+        divergences: entree.audit ? entree.audit.divergences : null,
+        protoWarnings: entree.vnext2.protoWarnings ? entree.vnext2.protoWarnings.length : 0,
+      });
+      process.stdout.write(` ${app.id}\n`);
+    }
+
+    for (const g of appariement.GROUPES_VARIANTE2) {
+      const presents = g.etats.filter((id) => etatsVariante2[id]);
+      if (!presents.length) continue;
+      groupesVariante2.push({ ...g, etats: presents });
+      presents.forEach((id) => {
+        etatsVariante2[id].groupe = g.titre;
+      });
+    }
   }
 
   // --- extras : etats du Home actuel sans contrepartie vNext -----------------
@@ -506,6 +805,22 @@ async function main() {
     ordreEtats: FIXTURES.map((f) => f.id),
     etats,
     extras,
+
+    // --- variante 2 ---------------------------------------------------------
+    // `etats` et `etatsVariante2` sont deux tables SEPAREES : deux cas de carte
+    // portent le meme identifiant qu'une fixture Home, et le visualiseur indexe
+    // par identifiant. Les fusionner ferait disparaitre un etat en silence.
+    varianteDeuxDisponible: ordreVariante2.length > 0,
+    groupesVariante2,
+    ordreEtatsVariante2: ordreVariante2,
+    etatsVariante2,
+    seuilsProgression: progMod.ok ? progMod.mod.PROGRESSION_SEUILS : [],
+    pointsProgression: POINTS_PROGRESSION,
+    carteProgression: carteMod.ok
+      ? { present: true, exports: carteMod.exports }
+      : { present: false, raison: carteMod.raison },
+    propsVariante2: appariement.clesDuSac(),
+
     seuils: vmMod.ok ? vmMod.mod.HOME_VNEXT_SEUILS : [],
     ordreSections: vmMod.ok ? vmMod.mod.HOME_VNEXT_SECTION_ORDER : [],
     reglesDeRendu: tokens ? tokens.REGLES_DE_RENDU : [],

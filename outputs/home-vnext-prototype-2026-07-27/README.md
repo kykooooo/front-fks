@@ -16,7 +16,11 @@ node prototype/home-vnext/serve.js
 # http://127.0.0.1:8140/
 
 C'est tout. Pas d'installation, pas de téléphone, pas de compte, pas de connexion.
-Si le port 8140 est déjà pris, le terminal affiche l'URL réelle à utiliser.
+
+> **Le port change parfois.** Si 8140 est déjà pris, le serveur prend tout seul le
+> suivant et **affiche l'URL réelle** dans le terminal (`Visualiseur : http://127.0.0.1:8141/`).
+> C'est cette ligne-là qui fait foi, pas celle du titre ci-dessus. Au moment où ces
+> captures ont été faites, le serveur répondait sur **8141**.
 
 > Si les pages n'existent pas encore (dossier `prototype/home-vnext/out/` vide),
 > lance d'abord `node prototype/home-vnext/build.js`, puis relance le serveur.
@@ -68,9 +72,12 @@ Trois repères sont dessinés par l'outil (ils n'existent pas dans l'app) :
 
 **En haut — les boutons de bascule.**
 
-- **Variante** : `Proposition vNext` / `Home actuel` / `Côte à côte 375`.
-  C'est le bouton le plus utile : `Côte à côte` met les deux versions l'une à côté
-  de l'autre, même situation, mêmes réglages.
+- **Variante** : `Proposition vNext` / **`Progression intégrée`** / `Home actuel` / `Côte à côte`.
+  C'est le bouton le plus utile : `Côte à côte` met deux versions l'une à côté
+  de l'autre, même situation, mêmes réglages. **`Progression intégrée` est la variante 2**,
+  celle que tu as demandée après avoir validé la variante 1 (voir la section dédiée plus bas).
+  En `Côte à côte`, choisis la paire **`vNext / Progression`** : c'est la comparaison
+  variante 1 contre variante 2.
 - **Largeur** : `320` (vieil iPhone SE) · `375` (iPhone 13 mini, la référence) ·
   `390` (iPhone récent) · `768` (tablette).
 - **Vue** : `Zone visible sans défilement` (ce que le joueur voit vraiment en ouvrant
@@ -108,6 +115,105 @@ Raccourcis clavier : `↑` `↓` changent de situation, `v` change de variante,
 
 Le détail — ce que chaque situation **prouve** et l'action attendue — est dans
 [`FIXTURES.md`](FIXTURES.md).
+
+---
+
+# VARIANTE 2 — la carte « Ma progression »
+
+## Ce que tu as demandé
+
+Tu as regardé la variante 1 et validé le CTA, la ligne « Pourquoi » et « Ma semaine ».
+Ta seule réserve portait sur **le bas de l'écran** : le lien « Voir ma progression »
+flotte tout seul sous la dernière carte, il a l'air d'avoir été ajouté après coup.
+
+La variante 2 ne change **que ça** : le lien devient une **vraie carte de contenu**,
+et le lien devient le **pied de cette carte**, sous un filet, à l'intérieur de la même
+surface. Plus de lien orphelin. Il garde ses mots — « Voir ma progression » — parce qu'il
+mène au même écran : ce qui change, c'est sa place, pas sa destination.
+
+**La variante 1 n'a pas bougé.** Elle est toujours là, entière, dans le sélecteur —
+c'est bien une comparaison, pas un remplacement.
+
+## Comment y accéder
+
+Dans le visualiseur, en haut à gauche :
+
+| Pour voir | Clique sur |
+|---|---|
+| la variante 2 seule | **Variante → `Progression intégrée`** |
+| variante 1 **contre** variante 2 | **Variante → `Côte à côte`**, puis la paire **`vNext / Progression`** |
+| le Home actuel contre la variante 2 | **Variante → `Côte à côte`**, puis **`Actuel / Progression`** |
+
+Les 6 cas de la carte apparaissent dans la liste de gauche avec l'identifiant `v2-…`.
+Le panneau de droite « **Points à valider** » contient **12 questions spécifiques à la
+variante 2** : chaque bouton t'emmène directement sur l'état concerné.
+
+## Les 5 cas à regarder (plus une preuve)
+
+La carte n'a que **trois états**. Ce n'est pas une carte qui « se remplit » petit à petit :
+elle change de nature selon ce que l'app sait vraiment. Le détail en français simple est
+dans [`VIEWMODEL_PROGRESSION.md`](VIEWMODEL_PROGRESSION.md).
+
+| # | Cas | État | Ce que tu dois vérifier |
+|---|---|---|---|
+| 1 | **Nouveau joueur** | `empty` | Trois repères numérotés et une mention honnête. **Aucun graphique, aucun bouton.** La page Progression n'a pas une seule ligne vraie pour ce joueur : on ne l'y envoie pas. |
+| 2 | **Deux séances, tendance indisponible** | `collecting` | Quatre faits **réellement mesurés** : 2 séances / 76 min / 2 ressentis / « Encore 2 séances ». Le « Encore 2 » est **calculé**, pas écrit en dur. Toujours aucun bouton. |
+| 3 | **Tendance disponible** | `ready` | La courbe s'affiche **avec sa portée exacte** juste en dessous. Le pied « Voir ma progression » apparaît, en lien discret. Et un test refait deux fois : saut en longueur 205 → 214 cm, **+9 cm** — le sens « plus grand = mieux ». |
+| 4 | **Test physique amélioré** | `ready` | La carte affiche le **sprint 10 m : 1,85 → 1,78 s, soit « −0,07 s »**. Un chiffre négatif qui est une bonne nouvelle : sur un sprint, mieux veut dire plus petit, et c'est le mot « en progrès » qui le dit — jamais une flèche. Le saut en longueur (218 → 227 cm) est calculé lui aussi, la carte n'en montre qu'un : le plus récent. |
+| 5 | **Aucune comparaison de test** | `ready` | Quatre tests existent, **aucune paire comparable** : deux essais du 6 min le **même jour**. La page Progression actuelle afficherait ici une fausse progression de +35 m. La carte explique pourquoi elle ne compare pas. |
+| — | **Donnée manquante** *(preuve, hors des 5)* | `collecting` | 3 séances, **aucune durée ni ressenti connus**. Les deux faits **disparaissent**. Ni « 0 min », ni « — », ni tiret. C'est la règle la plus importante du lot. |
+
+## Les 4 questions que la variante 2 pose vraiment
+
+### 1. Est-ce que la carte remplace le lien, ou est-ce qu'elle s'ajoute ?
+
+Mets-toi en `Côte à côte`, paire `vNext / Progression`, largeur 375, et **descends
+jusqu'en bas des deux colonnes**.
+
+Les **mêmes mots** des deux côtés, ce n'est pas un oubli : le lien mène au même écran, il
+a donc gardé son libellé. Ce qui change, c'est sa **place**.
+
+- **OUI** si, à droite, plus rien ne **flotte** sous les cartes — le lien est devenu le
+  pied d'une carte, dans la même surface — et si ce qui l'entoure t'apprend quelque chose
+  que tu ne savais pas en regardant le haut de l'écran.
+- **NON** si les deux coexistent, ou si la carte ne fait que renvoyer ailleurs sans rien
+  dire. Dans ce cas le lien texte faisait le même travail pour dix fois moins de place.
+
+### 2. Est-ce que ça coûte trop de hauteur ?
+
+C'est le vrai prix. **En moyenne +89 px, soit +15 %.** Sur 30 mesures,
+**20 écrans tenaient sans défiler en variante 1, 15 en variante 2** — cinq écrans
+basculent sous la ligne de flottaison : quatre de **2 à 31 px**, le cinquième de
+**110 px** (« deux séances » en texte agrandi ×1,3, le pire cas du lot).
+
+Le tableau complet est dans [`mesures-hauteurs-variante2.md`](mesures-hauteurs-variante2.md),
+la lecture en français dans [`COMPARAISON.md`](COMPARAISON.md).
+
+### 3. Est-ce que le pied « Voir ma progression » reste secondaire ?
+
+Il ne doit **jamais** concurrencer l'action du jour. Sur la carte c'est un texte bleu
+avec un chevron, **jamais un aplat coloré** — le seul aplat de l'écran reste le bouton
+orange. Et il **n'existe que dans l'état `ready`** : dans les deux autres états, la page
+Progression n'a rien de vrai à montrer, donc il n'y a aucun bouton du tout.
+
+Regarde aussi l'écran « Aucune comparaison de test » : le lien **« Voir le détail »** y
+est juste sous l'action du jour et ouvre **la séance**, pendant que le pied ouvre **la
+progression**. Deux destinations, deux libellés. Ils portaient les mêmes mots il y a une
+version — c'est corrigé, et le vérificateur refuse maintenant que ça revienne.
+
+### 4. Est-ce qu'on a le droit de te dire « En forme » ?
+
+En variante 2, **non** — et la pastille d'état du jour a disparu de l'en-tête. C'est ta
+règle, appliquée telle que tu l'as écrite : *ne pas afficher « En forme » ou « Prêt à
+performer » si les entraînements club et les autres charges ne sont pas réellement
+connus.* Un écran ne peut pas annoncer ton état en haut, puis écrire 200 px plus bas que
+tes entraînements club n'y sont pas comptés.
+
+**La variante 1 la garde**, pour que tu voies l'écart en côte à côte. Ce qui reste à
+trancher : garder l'en-tête nu, ou écrire une pastille **reformulée** qui dise
+explicitement qu'elle ne parle que des séances FKS (par exemple « Charge FKS : modérée »).
+Ce libellé-là n'a pas été inventé à ta place. Détail en §4 bis.2 de
+[`LIMITES_PROTOTYPE.md`](LIMITES_PROTOTYPE.md).
 
 ---
 
@@ -167,24 +273,43 @@ projet (`constants/theme.ts`) n'a pas été modifié.
 
 | Fichier | Ce qu'il contient |
 |---|---|
-| [`COMPARAISON.md`](COMPARAISON.md) | Actuel contre proposition, chiffres mesurés : hauteurs, blocs, répétitions supprimées |
-| [`DECISIONS_VISUELLES.md`](DECISIONS_VISUELLES.md) | Chaque choix de design et sa raison |
+| [`COMPARAISON.md`](COMPARAISON.md) | Actuel contre proposition **et variante 1 contre variante 2**, chiffres mesurés |
+| [`VIEWMODEL_PROGRESSION.md`](VIEWMODEL_PROGRESSION.md) | **Nouveau.** Les 3 états de la carte progression en français simple, et les calculs de la page Progression qu'on a refusé de reprendre |
+| [`DECISIONS_VISUELLES.md`](DECISIONS_VISUELLES.md) | Chaque choix de design et sa raison, **variante 2 comprise** |
 | [`LIMITES_PROTOTYPE.md`](LIMITES_PROTOTYPE.md) | Ce qui n'est pas branché, ce que l'outil ne peut pas prouver, les questions ouvertes |
 | [`FIXTURES.md`](FIXTURES.md) | Les 14 situations : ce que chacune prouve, l'action attendue |
 | [`FICHIERS_NON_MODIFIES.md`](FICHIERS_NON_MODIFIES.md) | La preuve que le produit est intact |
-| [`mesures-hauteurs.md`](mesures-hauteurs.md) | Le tableau brut des 60 mesures de hauteur |
-| [`captures/`](captures/) | 60 images, si tu veux regarder sans lancer le serveur |
+| [`mesures-hauteurs.md`](mesures-hauteurs.md) | Le tableau brut des 60 mesures de hauteur (variante 1) |
+| [`mesures-hauteurs-variante2.md`](mesures-hauteurs-variante2.md) | **Nouveau.** Les 30 comparaisons de hauteur variante 1 / variante 2 |
+| [`captures/`](captures/) | 60 images de la variante 1 |
+| [`captures-v2/`](captures-v2/) | **Nouveau.** 13 images de la variante 2 |
 
 ---
 
 ## Si tu ne veux pas lancer le serveur
 
-Le dossier [`captures/`](captures/) contient les images. Les plus parlantes :
+Les dossiers de captures contiennent les images.
+
+**Variante 1** — [`captures/`](captures/), les plus parlantes :
 
 - `comparaison-seance-prevue-aujourdhui-actuel-vs-vnext-375.png` — le côte à côte
 - `comparaison-nouveau-joueur-actuel-vs-vnext-375.png` — l'écran qui arrête d'inventer
 - `etat-01` à `etat-14-…-vnext-375-page-entiere.png` — les 14 situations proposées
 - `outil-visualiseur-vue-cote-a-cote.png` — à quoi ressemble l'outil
+
+**Variante 2** — [`captures-v2/`](captures-v2/), 13 images :
+
+| Image | Ce qu'elle montre |
+|---|---|
+| `comparaison-v1-vs-v2-nouveau-joueur-375.png` | **Commence par celle-là.** Variante 1 à gauche, variante 2 à droite, même situation |
+| `comparaison-v1-vs-v2-deux-seances-375.png` | Le même côte à côte sur l'état « ça se construit » |
+| `comparaison-v1-vs-v2-tendance-disponible-375.png` | Le même côte à côte quand la courbe existe — **c'est là que le lien flottant disparaît au profit du pied de carte** |
+| `v2-01-nouveau-joueur-…` à `v2-05-aucune-comparaison-de-test-…` | Les 5 cas de la carte, page entière, 375 px |
+| `v2-preuve-r1-donnee-manquante-375-page-entiere.png` | La preuve qu'une donnée inconnue **disparaît** au lieu d'afficher 0 |
+| `largeur-320px-iphone-se-…-v2.png` (×2) | Le petit iPhone SE : le cas le plus serré |
+| `texte-agrandi-x1-3-tendance-disponible-v2-375.png` | Police agrandie ×1,3 |
+| `outil-visualiseur-selecteur-variante2.png` | Le nouveau sélecteur de variante dans l'outil |
+| `_rapport-captures.json` | Le compte-rendu machine : **13 réussies, 0 échouée** |
 
 Le détail du nommage est en bas de [`COMPARAISON.md`](COMPARAISON.md).
 

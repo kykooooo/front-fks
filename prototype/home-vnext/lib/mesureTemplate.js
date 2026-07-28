@@ -135,27 +135,55 @@ function mesurerUnePage(doc, cible) {
   // ---- marqueurs ------------------------------------------------------------
   const marqueur = (nom) => vue.querySelectorAll('[data-testid="' + nom + '"]').length;
 
+  // ---- carte progression (VARIANTE 2) ---------------------------------------
+  // AJOUT DE LA PASSE D'INTEGRATION. Plusieurs regles portent sur la CARTE et
+  // pas sur l'ecran : aucun second aplat DANS la carte, un seul element
+  // focusable DANS la carte, contraste des textes DE LA CARTE. Sans savoir ou
+  // commence et ou finit la carte, ces controles accuseraient le mauvais bloc —
+  // ou passeraient a cote. On repere donc son noeud une fois, et chaque element
+  // mesure porte ensuite un booleen dansCarte.
+  //
+  // Purement ADDITIF : sur une page de variante 1 il n'y a pas de carte, le
+  // champ carte vaut null et tous les dansCarte valent false. Aucun champ
+  // existant ne change, donc verifier.js n'est pas affecte.
+  // (Aucun accent grave dans ce commentaire : tout le bloc vit dans un litteral
+  //  de gabarit, un accent grave y fermerait la chaine.)
+  const carteEl = vue.querySelector('[data-testid="home-vnext-progression"]');
+  const dansCarte = (el) => (carteEl ? carteEl.contains(el) : false);
+
   // ---- elements tactiles ----------------------------------------------------
-  const tactiles = tous
-    .filter((el) => {
-      const role = el.getAttribute("role");
-      return (
-        el.tagName === "BUTTON" ||
-        role === "button" ||
-        role === "link" ||
-        (el.hasAttribute("tabindex") && el.getAttribute("tabindex") !== "-1")
-      );
-    })
-    .map((el) => {
-      const r = el.getBoundingClientRect();
-      return {
-        role: el.getAttribute("role") || el.tagName.toLowerCase(),
-        marqueur: el.getAttribute("data-testid") || null,
-        libelle: (el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 60),
-        hauteur: Math.round(r.height * 10) / 10,
-        largeur: Math.round(r.width * 10) / 10,
-      };
-    });
+  const estTactile = (el) => {
+    const role = el.getAttribute("role");
+    return (
+      el.tagName === "BUTTON" ||
+      role === "button" ||
+      role === "link" ||
+      (el.hasAttribute("tabindex") && el.getAttribute("tabindex") !== "-1")
+    );
+  };
+  /** Un tactile a l'INTERIEUR d'un autre tactile = cible ambigue, focus incoherent. */
+  const tactileImbrique = (el) => {
+    let n = el.parentElement;
+    while (n && n !== doc.documentElement) {
+      if (estTactile(n)) return true;
+      n = n.parentElement;
+    }
+    return false;
+  };
+  const tactiles = tous.filter(estTactile).map((el) => {
+    const r = el.getBoundingClientRect();
+    return {
+      role: el.getAttribute("role") || el.tagName.toLowerCase(),
+      marqueur: el.getAttribute("data-testid") || null,
+      libelle: (el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 60),
+      libelleExplicite: el.hasAttribute("aria-label"),
+      texte: (el.textContent || "").trim().replace(/\\s+/g, " ").slice(0, 60),
+      hauteur: Math.round(r.height * 10) / 10,
+      largeur: Math.round(r.width * 10) / 10,
+      imbrique: tactileImbrique(el),
+      dansCarte: dansCarte(el),
+    };
+  });
 
   // ---- aplats colores (un seul autorise) ------------------------------------
   // ATTENTION : il faut tenir compte de l'OPACITE effective, pas seulement de
@@ -192,6 +220,8 @@ function mesurerUnePage(doc, cible) {
           "rgb(" + Math.round(bg.r) + "," + Math.round(bg.v) + "," + Math.round(bg.b) + ")",
         marqueur: el.getAttribute("data-testid") || el.id || null,
         hauteur: Math.round(r.height),
+        largeur: Math.round(r.width),
+        dansCarte: dansCarte(el),
       };
     });
 
@@ -224,6 +254,7 @@ function mesurerUnePage(doc, cible) {
         // Seuil AA : 3:1 pour du "grand texte" (>= 24px, ou >= 18.66px en gras).
         grandTexte: taille >= 24 || (taille >= 18.66 && graisse >= 700),
         ratio: Math.round(ratio(couleurComposee, fond) * 100) / 100,
+        dansCarte: dansCarte(el),
       });
     }
     // Troncature reelle : le contenu deborde la boite qui le clippe.
@@ -246,6 +277,7 @@ function mesurerUnePage(doc, cible) {
         texte: texte.slice(0, 70),
         lignesMax: st.webkitLineClamp && st.webkitLineClamp !== "none" ? st.webkitLineClamp : null,
         cache: el.scrollHeight - el.clientHeight,
+        dansCarte: dansCarte(el),
       });
     }
     if (
@@ -256,6 +288,7 @@ function mesurerUnePage(doc, cible) {
         texte: texte.slice(0, 70),
         lignesMax: "1",
         cache: el.scrollWidth - el.clientWidth,
+        dansCarte: dansCarte(el),
       });
     }
     boitesTexte.push({
@@ -372,6 +405,26 @@ function mesurerUnePage(doc, cible) {
     debordements,
     chevauchements,
     stageLargeur: stage ? Math.round(stage.getBoundingClientRect().width) : null,
+    // Encombrement de la carte progression, quand elle existe. Sert a dire ce
+    // que la carte COUTE en hauteur par rapport au lien qu'elle remplace.
+    carte: carteEl
+      ? (function () {
+          const rc = carteEl.getBoundingClientRect();
+          return {
+            hauteur: Math.round(rc.height),
+            largeur: Math.round(rc.width),
+            y: Math.round(rc.top - rVue.top),
+            texte: (carteEl.textContent || "").trim().replace(/\\s+/g, " "),
+            marqueurs: {
+              detail: carteEl.querySelectorAll('[data-testid="home-vnext-progression-detail"]').length,
+              fait: carteEl.querySelectorAll('[data-testid="home-vnext-progression-fait"]').length,
+              portee: carteEl.querySelectorAll('[data-testid="home-vnext-progression-portee"]').length,
+              test: carteEl.querySelectorAll('[data-testid="home-vnext-progression-test"]').length,
+              courbe: carteEl.querySelectorAll('[data-testid="home-vnext-courbe"]').length,
+            },
+          };
+        })()
+      : null,
   };
 }
 

@@ -206,6 +206,135 @@ assumé et non comblé — voir [`LIMITES_PROTOTYPE.md`](LIMITES_PROTOTYPE.md), 
 
 ---
 
+## 6 bis. VARIANTE 2 — la carte à la place du lien
+
+> Cette section documente **la seule différence** entre la variante 1 et la variante 2.
+> Tout le reste de ce document s'applique aux deux à l'identique.
+
+### Le problème que tu as signalé
+
+Tu as validé le haut de l'écran et pointé le bas : le lien « Voir ma progression » flotte
+seul sous la dernière carte. Il a l'air ajouté après coup — **parce qu'il l'est
+visuellement** : il est posé dans le fond de l'écran, pas dans une surface, et il ne fait
+que la largeur de son texte.
+
+### 6 bis.1 La carte intégrée
+
+Le lien devient le **pied d'une vraie carte de contenu**. Concrètement :
+
+| Avant (v1) | Après (v2) |
+|---|---|
+| Un texte bleu posé sur le fond gris, aligné à gauche, large comme son texte | Une `Card variant="surface"` — fond blanc, bordure d'un cheveu, même rayon que « Ma semaine » |
+| Rien autour de lui | Un titre de section, du contenu réellement mesuré, puis le lien **sous un filet**, dans la même surface |
+
+Le lien ne flotte plus : il est **à l'intérieur**. C'est exactement la plainte à laquelle
+la variante 2 répond, et c'est la seule chose qu'elle change.
+
+**Analogie foot** : en variante 1, le lien est un joueur qui traîne hors du terrain en
+attendant qu'on l'appelle. En variante 2, il est sur le banc de touche, dans l'équipe,
+à sa place, avec un rôle écrit.
+
+### 6 bis.2 Le titre : « MA PROGRESSION »
+
+Tu autorisais « Ma progression » ou « Ma tendance FKS ». **Retenu : « MA PROGRESSION »**,
+pour trois raisons.
+
+1. **La carte n'est pas qu'une tendance.** Dans deux de ses trois états il n'y a
+   **aucune courbe à l'écran**, et dans tous ses états elle peut porter une comparaison de
+   tests terrain — qui n'est pas une mesure de charge FKS mais **un chrono ou un mètre**.
+   « Ma tendance FKS » serait faux sur ce contenu-là.
+2. **Un seul mot du haut en bas.** Le contenu de la carte dit déjà
+   « TA PROGRESSION SE CONSTRUIT », et le lien du pied mène à l'écran Progression.
+   Trois fois le même mot, zéro traduction mentale pour le joueur.
+3. **La voix reste celle du joueur.** « MA SEMAINE » juste au-dessus, « MA PROGRESSION »
+   juste en dessous. Les titres internes disent « TA… » (c'est l'app qui parle au joueur).
+   Mélanger « MA SEMAINE » et « TA PROGRESSION » dans deux titres de section qui se suivent
+   ferait bafouiller l'écran.
+
+**Ce que le titre ne fait PAS** : il ne porte pas la mise en garde sur la portée de la
+mesure. Celle-ci est imprimée **sous la courbe**, en toutes lettres, à chaque fois qu'une
+courbe existe — au même endroit que la variante 1 la place déjà pour « Ma forme ».
+Un titre ne peut pas qualifier une mesure qui n'est pas encore à l'écran.
+
+### 6 bis.3 Le pied « Voir ma progression » — secondaire, et jamais un aplat
+
+La règle de l'écran est intacte : **un seul aplat coloré, et c'est l'action du jour**.
+
+> **Pourquoi ce libellé, et plus « Voir le détail ».** Sur l'écran d'une journée ordinaire,
+> deux liens portaient exactement les mêmes mots à quelques centimètres l'un de l'autre :
+> celui de la ligne « Pourquoi », qui ouvre **la séance**, et le pied de la carte, qui ouvre
+> **la progression**. Leurs libellés vocaux différaient — un lecteur d'écran s'en sortait —
+> mais un joueur qui **lit** l'écran, non. Le pied nomme désormais sa destination, avec les
+> mots que la variante 1 employait déjà pour le même voyage : les deux variantes ne
+> diffèrent plus que par la **place** du lien. Le vérificateur refait ce contrôle sur les
+> 60 pages (ligne « d3 »).
+
+| Traitement | Ce que c'est |
+|---|---|
+| Couleur | Un **texte** bleu + un chevron. Aucun fond, aucun contour, aucun bouton |
+| Position | Tout en bas de la carte, **sous un filet de séparation** |
+| Taille tactile | Toute la largeur de la carte, `minHeight` 44 pt, plus un `hitSlop` qui va chercher le padding bas |
+| Existence | **Uniquement dans l'état `ready`** |
+
+Ce dernier point est le plus important, et il n'est pas cosmétique. Dans les états `empty`
+et `collecting`, **il n'y a aucun bouton du tout** — parce que la page Progression n'aurait
+rien de vrai à montrer à ce joueur-là. Le choix est pris **dans le ViewModel**, pas dans le
+composant : le composant est incapable d'afficher un pied que le ViewModel n'autorise pas.
+Le raisonnement complet est dans [`VIEWMODEL_PROGRESSION.md`](VIEWMODEL_PROGRESSION.md).
+
+Résultat mesurable : **aucun lien orphelin ne peut réapparaître**. Soit le lien est dans
+la carte, soit il n'existe pas.
+
+Noter aussi que la cible tactile a **grossi** en passant de v1 à v2 : en variante 1 le
+lien était calé à gauche et ne faisait que la largeur de son texte ; en variante 2 le pied
+prend toute la largeur de la carte. On a intégré le lien **et** agrandi la cible.
+
+### 6 bis.4 Accessibilité : pourquoi la carte entière n'est PAS cliquable
+
+Tu autorisais la carte entière pressable « si l'accessibilité reste claire ».
+**Elle ne le reste pas.** Voici pourquoi, en français simple.
+
+**Le piège des zones cliquables imbriquées.** Quand on rend une carte entière cliquable,
+le téléphone doit la présenter comme **un seul objet** aux lecteurs d'écran (l'assistant
+vocal pour les joueurs malvoyants). Tout ce qu'il y a dedans est alors **fusionné en une
+seule phrase**. Les éléments internes cessent d'exister séparément.
+
+**Analogie foot** : c'est comme si, au lieu d'annoncer les joueurs un par un à l'entrée sur
+le terrain, le speaker annonçait « l'équipe » et s'arrêtait là. Tu sais qu'il y a une
+équipe. Tu ne sais plus qui est dedans.
+
+Sur cette carte précise, ça coûterait trois choses :
+
+1. **La phrase de portée disparaîtrait ou serait noyée.** « Calculé sur tes séances FKS
+   uniquement — tes entraînements club n'y sont pas comptés » cesserait d'être une
+   information à part. Soit on la perd, soit on la noie dans une annonce de ~50 mots que
+   personne n'écoute jusqu'au bout. **C'est la phrase qui porte l'honnêteté de la mesure :
+   elle n'est pas négociable.** L'option tombe là.
+2. **Les faits ne seraient plus parcourables un par un.** « 76 min — minutes réalisées »
+   deviendrait un fragment de phrase au lieu d'une ligne qu'on peut atteindre.
+3. **Une carte cliquable contenant un pied cliquable serait un défaut franc** : double
+   annonce, cible ambiguë, ordre de navigation incohérent. C'est exactement le piège des
+   zones cliquables imbriquées.
+
+**La décision : le pied est le seul élément tactile de la carte.**
+
+Ce que ça préserve, et ce que ça te donne quand même :
+
+- Le pied porte un **libellé explicite** — « Voir ma progression » — donc ta demande (un
+  libellé clair, pas un « Voir le détail » orphelin) est tenue. À voix haute, il n'est plus
+  préfixé du titre de la carte : il se suffit à lui-même, et « Ma progression, Voir ma
+  progression » aurait bégayé.
+- La cible est **plus grande** que le lien de la variante 1, pas plus petite.
+- Le contenu reste **parcourable élément par élément**, la phrase de portée comprise.
+- À l'œil, rien ne change par rapport à ce que tu voulais : le pied est visuellement
+  **intégré** — même surface, même rayon, filet de séparation. Il ne flotte plus.
+
+Autrement dit : **tu perds une zone de clic que personne ne voyait, tu gardes tout le
+reste.** Si tu veux quand même la carte entière cliquable, c'est un arbitrage possible —
+mais il se paie sur la phrase de portée, et il faudra le décider en le sachant.
+
+---
+
 ## 7. Ce qui vient du socle existant
 
 Rien n'a été réinventé quand une brique existait. Sont **importés tels quels**, sans copie

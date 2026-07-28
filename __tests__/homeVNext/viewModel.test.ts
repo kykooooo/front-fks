@@ -222,6 +222,97 @@ describe("Home vNext — invariants sur les 14 etats", () => {
     }
   );
 
+  // ---------------------------------------------------------------------------
+  // LE SECOND VERROU — variante 2 uniquement
+  // ---------------------------------------------------------------------------
+  // Defaut trouve en regardant l'ECRAN ENTIER : la pastille d'en-tete annoncait
+  // un etat physique GLOBAL (« En forme », « Un peu chargé ») pendant que la
+  // carte, 200 px plus bas, ecrivait « tes entraînements club n'y sont pas
+  // comptés ». Le premier verrou ne protegeait que de l'amorcage ATL0/CTL0 : il
+  // ne disait rien de ce qui MANQUE au calcul.
+  //
+  // Regle du fondateur : ne rien affirmer sur l'etat physique tant que les
+  // charges club ne sont pas reellement connues. Appliquee a la VARIANTE 2 seule,
+  // parce que la variante 1 est deja validee et que l'ECART est precisement ce
+  // qu'il doit pouvoir comparer.
+  // ---------------------------------------------------------------------------
+  it.each(toutesLesFixtures().map((f) => [f.id, f] as const))(
+    "%s — variante 1 inchangee : les options par defaut ne modifient RIEN",
+    (_id, fixture) => {
+      const sansOptions = buildHomeVNextViewModel(fixture.input);
+      expect(JSON.stringify(buildHomeVNextViewModel(fixture.input, {}))).toBe(
+        JSON.stringify(sansOptions)
+      );
+      expect(JSON.stringify(buildHomeVNextViewModel(fixture.input, { variante: "v1" }))).toBe(
+        JSON.stringify(sansOptions)
+      );
+    }
+  );
+
+  it.each(toutesLesFixtures().map((f) => [f.id, f] as const))(
+    "%s — variante 2 : aucune pastille d'etat tant que les charges club sont inconnues",
+    (_id, fixture) => {
+      const v2 = buildHomeVNextViewModel(fixture.input, { variante: "v2" });
+      expect(v2.header.stateChip).toBeNull();
+    }
+  );
+
+  it("variante 2 : la pastille revient si — et seulement si — les charges club sont capturees", () => {
+    // La regle porte sur les CHARGES, pas sur la variante : la variante decide
+    // seulement si la regle est armee. Le jour ou l'app capturera vraiment les
+    // entrainements club, la pastille reviendra sans toucher a une ligne de code.
+    const f = getHomeVNextFixture("tendance-disponible")!;
+    const v1 = buildHomeVNextViewModel(f.input);
+    expect(v1.header.stateChip).not.toBeNull();
+
+    expect(buildHomeVNextViewModel(f.input, { variante: "v2" }).header.stateChip).toBeNull();
+    expect(
+      buildHomeVNextViewModel(f.input, { variante: "v2", chargesClubCapturees: false }).header
+        .stateChip
+    ).toBeNull();
+    expect(
+      buildHomeVNextViewModel(f.input, { variante: "v2", chargesClubCapturees: true }).header
+        .stateChip
+    ).toEqual(v1.header.stateChip);
+  });
+
+  it("variante 2 : le retrait de la pastille est ECRIT, jamais silencieux", () => {
+    const f = getHomeVNextFixture("tendance-disponible")!;
+    const v2 = buildHomeVNextViewModel(f.input, { variante: "v2" });
+    const avertissement = v2.protoWarnings.find((w) => w.startsWith("Variante 2 :"));
+    expect(avertissement).toBeDefined();
+    // Il nomme le libelle retire : sans ca, le visualiseur ne pourrait pas dire
+    // au fondateur ce que la variante 1 affiche a la place.
+    expect(avertissement).toContain(
+      buildHomeVNextViewModel(f.input).header.stateChip!.label
+    );
+    // Et il n'apparait QUE la ou il y avait reellement quelque chose a retirer.
+    const sansTendance = getHomeVNextFixture("nouveau-joueur")!;
+    expect(
+      buildHomeVNextViewModel(sansTendance.input, { variante: "v2" }).protoWarnings.some((w) =>
+        w.startsWith("Variante 2 :")
+      )
+    ).toBe(false);
+  });
+
+  it("variante 2 : le SEUL ecart avec la variante 1 est la pastille d'etat", () => {
+    // Garde-fou de perimetre. Si un jour l'option `variante` se mettait a changer
+    // autre chose — un libelle, un bloc, un seuil — ce test tombe. Le fondateur
+    // compare deux ecrans : ils ne doivent differer que la ou c'est voulu.
+    for (const f of toutesLesFixtures()) {
+      const v1 = buildHomeVNextViewModel(f.input);
+      const v2 = buildHomeVNextViewModel(f.input, { variante: "v2" });
+      expect({
+        id: f.id,
+        vm: JSON.stringify({
+          ...v2,
+          header: { ...v2.header, stateChip: v1.header.stateChip },
+          protoWarnings: v2.protoWarnings.filter((w) => !w.startsWith("Variante 2 :")),
+        }),
+      }).toEqual({ id: f.id, vm: JSON.stringify(v1) });
+    }
+  });
+
   it.each(toutesLesFixtures().map((f) => [f.id, f] as const))(
     "%s — le conseil ne recoupe jamais le reste de l'ecran",
     (_id, fixture) => {

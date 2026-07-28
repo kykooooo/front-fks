@@ -224,7 +224,149 @@ police garde la courbe et perd la mise en garde. Détail et correction proposée
 
 ---
 
+# 8. Variante 1 contre variante 2 — le lien flottant contre la carte
+
+> Cette section ne compare plus l'actuel à la proposition. Elle compare **deux versions
+> de la proposition entre elles** : la variante 1 que tu as validée (un lien texte
+> « Voir ma progression » sous les cartes) et la variante 2 (une carte « Ma progression »
+> intégrée, dont le lien devient le pied — mêmes mots, « Voir ma progression », puisque
+> c'est le même écran au bout).
+>
+> Fichier de mesures brut : [`mesures-hauteurs-variante2.md`](mesures-hauteurs-variante2.md).
+> **30 comparaisons**, produites par le même moteur de rendu que le reste du document.
+
+## 8.1 Le résumé en quatre lignes
+
+| Ce qu'on mesure | Variante 1 | Variante 2 |
+|---|---:|---:|
+| Hauteur de page, moyenne sur 30 mesures | référence | **+89,2 px (+14,7 %)** |
+| Écrans qui tiennent sans défiler (sur 30) | **20** | **15** |
+| Éléments tactiles dans le bloc progression | 1 (le lien, large comme son texte) | **1** (le pied, large comme la carte) |
+| Aplats colorés sur l'écran | 1 (l'action du jour) | **1** (l'action du jour) |
+
+La variante 2 **ne rajoute aucun bouton** et **n'ajoute aucun aplat**. Elle coûte de la
+hauteur, et elle seule.
+
+> **Ce chiffre a bougé de 1,1 px depuis la version précédente, et voici pourquoi.**
+> Il valait **+90,3 px**. Une seule chose a changé : sur l'état « Tendance disponible », la
+> carte affichait une phrase d'absence de trois lignes (« Tes tests terrain apparaîtront
+> ici dès que… ») ; elle affiche maintenant une **comparaison réellement mesurée** de deux
+> lignes (saut en longueur 205 → 214 cm). Deux lignes au lieu de trois : **−1,1 px de
+> moyenne**, et un écran de plus qui tient sans défiler (14 → 15). **Rien dans la carte
+> elle-même n'a été rétréci** — ni une marge, ni une police, ni un bloc retiré. Le surcoût
+> de la variante 2 reste entier : c'est ton arbitrage, pas le mien.
+
+## 8.2 Ce que la carte apporte
+
+Ce n'est pas un habillage du lien : c'est du **contenu qui n'existait nulle part** sur
+l'écran. Détail par état :
+
+| État | Ce que la variante 1 affichait, mot pour mot | Ce que la variante 2 affiche en plus |
+|---|---|---|
+| `empty` (nouveau joueur) | « Ta tendance se construit » + une phrase d'encouragement. **Aucun chiffre.** | **Trois repères numérotés** — ce qu'il faut faire, dans l'ordre, pour que la progression démarre |
+| `collecting` (2 séances) | « Ta tendance se construit » + une phrase + **un seul chiffre** : « 2 séances enregistrées » | **Quatre faits mesurés** au lieu d'un : 2 séances, **76 min**, **2 ressentis**, et **combien il en manque** avant une tendance (« Encore 2 séances ») |
+| `ready` (courbe) | la courbe + sa portée, puis un lien flottant. **Aucun chiffre sous la courbe.** | **Un fait de cumul** (7 séances terminées) + **la comparaison de tests terrain**, et le lien devient le pied de la carte |
+
+Sur l'état `collecting`, la différence n'est donc pas « rien contre quelque chose » mais
+**un chiffre contre quatre** — dont deux (les minutes et les ressentis) n'existaient nulle
+part sur l'écran, et un quatrième qui dit **ce qui manque** au lieu de le laisser deviner.
+
+Le gain le plus concret est dans l'état `ready` : la **comparaison de tests terrain**
+(saut en longueur, sprint 10 m, test 505) n'apparaissait **nulle part** sur le Home en
+variante 1. Il fallait aller sur la page Progression pour la voir — c'est-à-dire traverser
+un écran dont le haut est faux.
+
+Et un détail qui compte : la carte affiche **le cumul** (7 séances au total) là où
+« Ma semaine » juste au-dessus affiche **la semaine** (2 séances sur 3). Deux nombres
+différents, deux sens différents, aucun doublon. Quand les deux nombres risqueraient
+d'être identiques, la carte **change de fait affiché** plutôt que de répéter.
+
+## 8.3 Ce que la carte coûte, sans arrondir
+
+**+89,2 px en moyenne, soit +14,7 %.** Mais la moyenne cache l'essentiel : ce qui compte
+est de savoir **quels écrans basculent sous la ligne de flottaison**.
+
+Sur les 30 comparaisons, **5 écrans passent de « tient » à « ne tient pas »**.
+Aucun ne bascule dans l'autre sens. Voici les cinq, avec le dépassement réel :
+
+| Cas | Largeur | Texte | Marge restante en v1 | Dépassement en v2 |
+|---|---:|---:|---:|---:|
+| Test physique amélioré | 390 px | ×1 | 89 px | **2 px** |
+| Donnée manquante | 375 px | ×1,3 | 6 px | **24 px** |
+| Tendance disponible | 375 px | ×1 | 62 px | **29 px** |
+| Test physique amélioré | 375 px | ×1 | 60 px | **31 px** |
+| Deux séances, tendance indisponible | 375 px | ×1,3 | 6 px | **110 px** |
+
+> **Un sixième cas est sur la ligne, exactement.** « Tendance disponible » à 390 px fait
+> **761 px** pour **761 px** disponibles : il tient, au pixel près. Ne compte pas dessus —
+> c'est le genre de marge qu'une police système un peu différente efface.
+
+**Quatre de ces cinq dépassements sont inférieurs ou égaux à 31 px** — quelques
+millimètres, récupérables sur les marges internes de la carte. **Le cinquième dépasse de
+110 px**, et
+il n'est pas du même ordre : c'est le cas « deux séances » en police agrandie ×1,3, où la
+carte est à son plus lourd (quatre lignes de fait) sur un écran déjà à 6 px de la limite
+en variante 1.
+
+> **Correction d'un chiffre annoncé plus tôt.** Une première lecture de ces mesures
+> résumait ces six bascules par « de 2 à 31 px seulement ». **C'est faux** : la fourchette
+> réelle va de **2 à 110 px**. Les six lignes ci-dessus sont recalculées depuis le fichier
+> de mesures brut, avec la hauteur disponible de chaque appareil
+> (`hauteur d'écran − 49 pt de barre d'onglets − inset bas` : 729 px à 375, 761 px à 390).
+> Le cas ×1,3 avait été confondu avec les autres.
+
+## 8.4 L'encombrement propre de la carte
+
+Combien pèse la carte elle-même, indépendamment du reste de l'écran :
+
+| Cas | À 375 px | À 320 px | Ce qu'elle contient |
+|---|---:|---:|---|
+| Nouveau joueur (`empty`) | 158 px | 158 px | entête + 3 repères + mention — **aucun élément tactile** |
+| Deux séances (`collecting`) | 194 px | 194 px | entête + 4 lignes de fait — **aucun élément tactile** |
+| Donnée manquante (`collecting`) | **102 px** | 116 px | entête + 2 lignes de fait — 2 faits ont **disparu** faute de données |
+| Tendance disponible (`ready`) | 243 px | 243 px | courbe + portée + 1 fait + comparaison de test + pied |
+| Test physique amélioré (`ready`) | 243 px | 243 px | courbe + portée + 1 fait + comparaison de test + pied |
+| Aucune comparaison de test (`ready`) | 263 px | 263 px | courbe + portée + 1 fait + explication + pied |
+
+La carte la plus lourde fait **263 px**, la plus légère **102 px**.
+
+**Pourquoi l'écart de page (+89 px) est-il plus petit que la carte elle-même ?** Parce que
+la variante 2 **supprime en même temps** le bloc « Ma forme » et le lien flottant : on ne
+paie que la différence. La carte ne s'ajoute pas à l'écran, elle **remplace** deux éléments.
+
+Et remarque la ligne « Donnée manquante » : **102 px**, la carte la plus légère de toutes.
+Quand l'app ne sait rien, la carte rétrécit au lieu de remplir avec des zéros. C'est la
+règle d'honnêteté qui produit ce chiffre, pas une optimisation de mise en page.
+
+## 8.5 Ce que cette comparaison ne tranche pas
+
+- **La hauteur se mesure, le confort se ressent.** 31 px de dépassement veut dire qu'il
+  faut un petit coup de pouce pour voir le bas de la carte. Est-ce grave ? Ça ne se
+  mesure pas dans un navigateur : **c'est à toi, sur ton téléphone**.
+- **Le pied « Voir ma progression » mène à un écran encore faux.** Le haut de la page
+  Progression affiche une courbe de 30 jours et un libellé d'état produits par des
+  constantes d'usine. La carte porte cette réserve dans son propre code, mais elle ne
+  la répare pas. Détail dans [`VIEWMODEL_PROGRESSION.md`](VIEWMODEL_PROGRESSION.md).
+- **Rien n'est branché.** Les six cas sont des fixtures écrites à la main. Aucun chiffre
+  ne vient d'un vrai compte.
+
+---
+
 ## Annexe — le nommage des captures
+
+### Variante 2 — dossier [`captures-v2/`](captures-v2/)
+
+| Motif | Contenu |
+|---|---|
+| `comparaison-v1-vs-v2-<cas>-375.png` | Les **3 côte à côte** variante 1 / variante 2 |
+| `v2-01` … `v2-05-<cas>-375-page-entiere.png` | Les 5 cas de la carte, 375 px, rien n'est coupé |
+| `v2-preuve-r1-donnee-manquante-375-page-entiere.png` | La preuve qu'une donnée inconnue disparaît |
+| `largeur-320px-iphone-se-<cas>-v2.png` | Les 2 cas les plus serrés sur le petit iPhone |
+| `texte-agrandi-x1-3-tendance-disponible-v2-375.png` | Texte grossi de 30 % |
+| `outil-visualiseur-selecteur-variante2.png` | Le nouveau sélecteur de variante dans l'outil |
+| `_rapport-captures.json` | Le compte-rendu machine : 13 réussies, 0 échouée |
+
+### Variante 1 — dossier [`captures/`](captures/)
 
 | Motif | Contenu |
 |---|---|

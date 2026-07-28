@@ -142,6 +142,201 @@ Cinq seuils décident **de ce que l'écran a le droit de montrer** quand la donn
 
 **Les cinq sont marqués « à valider par le fondateur » en toutes lettres dans le code.**
 
+### Quatre seuils de plus, apportés par la variante 2
+
+La carte « Ma progression » en ajoute **quatre**, marqués de la même façon
+(« SEUIL D'AFFICHAGE — À VALIDER PAR LE FONDATEUR »), et soumis à la même règle : aucun ne
+touche à une séance, une charge, une intensité ou une prescription.
+
+| Seuil | Valeur | Ce qu'il décide | Pourquoi cette valeur |
+|---|---:|---|---|
+| Séances avant de passer de « ça se construit » à « voilà ta progression » | **4** | En dessous : des faits listés, pas de courbe, **pas de bouton**. | **Volontairement repris du seuil de la variante 1**, pas redéfini. La carte et le bloc « Ma forme » vivent sur le même écran : deux seuils différents feraient un écran qui se contredit — la carte dirait « pas encore de tendance » à côté d'un bloc qui en affiche une. Un test verrouille cette égalité. |
+| Points avant de tracer | **3** | Idem, repris de la variante 1. | Même raison. |
+| Jours de charge **réellement enregistrée** | **3** | Exigés **en plus** des points. | Deux comptes distincts, vérifiés tous les deux. 7 points adossés à 0 jour observé ne dessinent pas un joueur : ils dessinent la décroissance d'une constante de démarrage. |
+| Jours distincts pour comparer un test | **2** | Deux mesures d'un même exercice doivent venir de **deux jours différents**. | C'est ce que la page Progression actuelle ne vérifie pas : deux essais du même après-midi y produisent une « progression ». |
+
+**Ce qui n'a PAS été inventé** : aucun palier d'accomplissement, aucun nombre de cycles,
+aucune durée de référence, aucune valeur cible de test. Rien ne les mesure, donc la carte
+ne les dit pas.
+
+---
+
+## 4 bis. La carte « Ma progression » (variante 2) — ce qu'elle ne sait pas encore
+
+> Explication complète et sans jargon dans
+> [`VIEWMODEL_PROGRESSION.md`](VIEWMODEL_PROGRESSION.md). Ici : uniquement les trous.
+
+### 4 bis.1 Les entraînements club ne sont capturés nulle part
+
+**C'est la limite qui commande toutes les autres.**
+
+Rien dans l'app n'enregistre ce qu'un joueur fait réellement à l'entraînement de son club.
+Ce qui existe aujourd'hui n'injecte qu'une charge **supposée**, à partir de cases cochées
+au moment de l'inscription au profil. Une case cochée en juin décide encore de la charge
+de juillet, que le joueur soit allé à l'entraînement ou non.
+
+Conséquences, assumées :
+
+- **La carte n'affiche jamais d'état physique global.** Ni « En forme », ni
+  « Prêt à performer ». Cette interdiction n'est pas une consigne qu'un développeur
+  pourrait oublier : elle est **inscrite dans la forme même de la donnée d'entrée**.
+  Tant que le drapeau « charges club capturées » est faux, il est **impossible d'écrire**
+  un libellé d'état global — le programme refuse de compiler.
+- **Ce drapeau est aujourd'hui TOUJOURS faux.** Il n'est branché sur rien. C'est une place
+  réservée pour le jour où la donnée existera, pas une fonctionnalité.
+- **La courbe porte donc obligatoirement sa portée** : « Calculé sur tes séances FKS
+  uniquement — tes entraînements club n'y sont pas comptés. » Cette phrase n'est pas
+  optionnelle dans le programme : une courbe sans portée est impossible à produire.
+
+### 4 bis.2 La pastille « En forme » de l'en-tête — retirée en variante 2
+
+**C'était le point le plus gênant du lot. Il est traité, dans un sens et un seul : celui
+que tu as écrit.**
+
+Le constat d'abord. Sur **trois des six écrans** de la variante 2, une pastille **« En
+forme »** ou **« Un peu chargé »** apparaissait en haut à droite, à côté de « Salut,
+Yanis » — pendant que la carte, ~200 px plus bas, écrivait « tes entraînements club n'y
+sont pas comptés ». Un joueur qui lit de haut en bas apprenait donc son état, puis
+apprenait qu'on ne peut pas le connaître. **L'écran se contredisait lui-même.**
+
+Ta règle, mot pour mot : *« Ne pas afficher "En forme" ou "Prêt à performer" si les
+entraînements club et les autres charges ne sont pas réellement connus. »*
+
+Ce qui a été fait :
+
+- le verrou vit **dans le ViewModel du Home**, au même endroit que la règle qui protégeait
+  déjà de l'amorçage (`screens/homeVNext/viewModel.ts`, §5.7) — **pas** dans le composant
+  d'en-tête : un composant ne doit jamais décider de ce que l'app a le droit d'affirmer ;
+- il est **piloté par la variante**. En variante 2, la pastille ne s'affiche que si les
+  charges club sont réellement capturées. Ce drapeau étant aujourd'hui **toujours faux**,
+  la variante 2 n'affiche **plus aucune pastille d'état** ;
+- **la variante 1 garde la sienne**, volontairement. C'est l'écart que tu dois pouvoir
+  regarder côte à côte avant de trancher — elle n'a pas bougé d'un pixel ;
+- le retrait est **mesuré, pas supposé** : le vérificateur lit le marqueur de la pastille
+  sur les 60 pages de la variante 2 (ligne « f2 »), et l'attendu vient du contrat, pas
+  d'une constante écrite à la main. Le jour où l'app capturera vraiment les charges club,
+  la pastille reviendra toute seule, sans qu'une ligne soit à changer.
+
+**Ce qui reste ta décision** — et qui n'a **pas** été pris à ta place :
+
+| Voie | Ce que ça veut dire |
+|---|---|
+| **A** (appliquée) | Pas de pastille tant que les charges club sont inconnues. L'en-tête est plus nu ; l'écran ne se contredit plus. |
+| **B** | Une pastille **reformulée**, explicitement limitée aux séances FKS — par exemple « Charge FKS : modérée ». Elle n'affirmerait plus rien sur ton état global. C'est un **libellé nouveau**, donc une décision de produit, pas une correction technique. |
+| **C** | La garder telle quelle, et assumer que la règle ne vaut que pour la carte. |
+
+La voie B est la seule qui garde une information en haut d'écran sans mentir. Elle n'a pas
+été prise parce qu'elle invente un libellé que tu n'as pas validé. Le point à valider
+« La pastille "En forme" de l'en-tête » du visualiseur te met les deux colonnes côte à côte.
+
+### 4 bis.3 La page Progression n'a pas été refondue, et ses calculs restent douteux
+
+Le pied « Voir ma progression » mène à un écran que je n'ai **pas** réparé — c'était hors
+périmètre, explicitement. Ce qui l'attend là-bas :
+
+| Ce qui est faux | Détail |
+|---|---|
+| Le grand encart du haut | Courbe de 30 jours et libellé d'état repartis de deux constantes d'usine, sur 45 jours de chauffe. Un jour sans donnée y devient un point à charge zéro. La légende ne dit jamais sur quoi c'est calculé |
+| Les 6 accomplissements | Affichés en toutes circonstances. Sur un compte neuf : six cadenas |
+| Le compte de cycles | Estimé en divisant les séances par 12 — le code lui-même appelle ça un substitut |
+| Le mot « série » | Compté de **deux façons différentes** sur la même page, sous le même mot |
+| Le calendrier et les stats du mois | Affichés en toutes circonstances, avec des « 0 » et des « — » |
+| La comparaison de tests | Ne couvre que 9 des 17 champs, et ne vérifie jamais que les deux mesures viennent de deux jours différents |
+
+**Le bouton part donc avec sa réserve**, écrite dans le programme et répétée dans les
+avertissements du prototype : *le haut de la page Progression doit être corrigé avant toute
+mise en production de ce lien.*
+
+Le choix fait ici est de **n'ouvrir le lien que quand la page porte au moins trois blocs
+vrais** — pas de le supprimer, pas de le laisser toujours ouvert. Ce n'est pas une
+réparation, c'est un pansement honnête.
+
+### 4 bis.4 La comparaison de tests ne montre que ce qui existe vraiment
+
+La carte n'affiche une comparaison que s'il existe **deux mesures du même exercice à deux
+jours différents**. Sinon elle explique pourquoi elle ne compare pas.
+
+Ce que ça veut dire concrètement pour un joueur réel :
+
+- un joueur qui n'a jamais fait de test : **aucune comparaison**, et la carte le dit ;
+- un joueur qui a fait une seule batterie : **aucune comparaison** — il faut refaire les
+  mêmes exercices plus tard ;
+- un joueur qui a changé d'exercices entre deux batteries : **aucune comparaison** sur les
+  exercices non repris ;
+- un joueur qui a fait deux essais le même après-midi : **aucune comparaison** — c'est un
+  deuxième essai, pas un progrès.
+
+**C'est volontairement plus sévère que la page actuelle**, et ça se paiera : beaucoup de
+joueurs verront « pas encore de comparaison » là où l'app actuelle leur montrerait un
+chiffre. Le chiffre serait faux, mais il serait là. **C'est un arbitrage à assumer**, pas
+un détail technique.
+
+Une seule comparaison est affichée sur la carte : **la plus récente**, jamais la plus
+flatteuse. La liste complète est ce que le pied « Voir ma progression » va chercher.
+
+> **Un défaut de démonstration corrigé ici, et il valait la peine d'être vu.** Le cas qui
+> compte vraiment — un **chrono qui baisse** et qui est un **progrès** — n'apparaissait sur
+> **aucun** des 60 écrans de la variante 2, alors qu'il existait dans les données. Cause :
+> les quatre mesures d'une même batterie partageaient un seul horodatage ; à égalité de
+> date, le départage se fait par l'ordre officiel des champs de test, et le saut en
+> longueur y arrive en premier. Le seul écart jamais **affiché** était donc « +9 cm » : le
+> cas facile, celui où le signe du chiffre et le sens sportif vont dans le même sens.
+>
+> Ce sont les **données de démonstration** qui ont été corrigées, pas la règle de
+> départage : dans la fixture, chaque exercice porte désormais un horodatage distinct, et le
+> dernier exercice comparable est le sprint. Les deux sens sont donc lisibles à l'écran :
+> **« −0,07 s, en progrès »** sur « Test physique amélioré », **« +9 cm, en progrès »** sur
+> « Tendance disponible ». Le vérificateur recalcule le sens à partir de l'écart signé et du
+> drapeau « plus petit = mieux », puis le compare à ce que la carte **écrit** (ligne « k »).
+
+> ### ⚠️ Mais cette démonstration n'est pas atteignable en vrai — à lire avant de conclure
+>
+> **Ce qui est prouvé** : le rendu est juste. Un écart négatif est bien présenté comme un
+> progrès, et la carte ne choisit jamais la comparaison la plus flatteuse.
+>
+> **Ce qui n'est PAS prouvé** : qu'un joueur verra un jour cet écran. L'app enregistre une
+> batterie du socle en **une seule entrée avec un seul horodatage**
+> (`screens/TestsScreen.tsx:241` — `const cleanEntry: TestEntry = { ts: Date.now() }`, puis
+> tous les champs saisis dans cette même entrée). La fixture, elle, écrit **une entrée par
+> exercice** à des horaires différents. Ce n'est pas ce que le produit fabrique aujourd'hui.
+>
+> Vérifié par sonde, avec les deux formes de données :
+>
+> | Forme des données | Comparaisons calculées | Ce que la carte **affiche** |
+> |---|---|---|
+> | **Production** (une batterie, un horodatage) | les 3, sprint compris (−0,07 s, amélioration) | **le saut** — le sprint n'atteint aucun écran |
+> | **Fixture** (un horodatage par exercice) | les 3 | le sprint |
+>
+> Autrement dit : le départage à égalité de date par l'ordre officiel des champs
+> (`broadJumpCm` avant `sprint10s`) **mord toujours sur les données réelles**. Le cas ne
+> devient atteignable que si le joueur refait le sprint **seul**, un autre jour — ce qui
+> arrive, mais qu'on ne peut pas présenter comme le cas normal.
+>
+> **Quatre sorties possibles, toutes du ressort du fondateur** :
+> (a) horodater chaque exercice dans `TestsScreen` ; (b) changer la règle de départage à
+> égalité de date ; (c) afficher plus d'une comparaison ; (d) l'assumer et l'écrire — ce que
+> fait ce paragraphe en attendant la décision.
+
+### 4 bis.5 Le jour d'un test est calculé en heure universelle
+
+Dans le prototype, le jour d'un test est déterminé en heure universelle, pour que les
+captures soient reproductibles d'une machine à l'autre. **Le reste de l'app utilise l'heure
+locale.**
+
+À trancher au branchement : **un test fait à 23 h ne doit pas basculer au lendemain.**
+C'est signalé dans les avertissements du prototype sur les cas concernés.
+
+### 4 bis.6 Aucun de ces six cas ne vient d'un vrai compte
+
+Les six situations de la carte sont des **fixtures écrites à la main**. Les durées, les
+tests, les points de courbe : tout est inventé, et chaque page le dit. Ce que ça ne prouve
+pas :
+
+- que les données réelles auront cette forme (les durées de séance sont souvent absentes
+  en vrai — c'est justement pour ça que le cas « donnée manquante » existe) ;
+- que les textes tiendront avec de vrais noms d'exercices ;
+- que les seuils tomberont juste sur un vrai historique.
+
 ---
 
 ## 5. Hors périmètre, volontairement
@@ -262,6 +457,44 @@ tombe.
 l'écran proposé, et il passe). Mais c'est **un choix d'identité**, pas une correction
 technique. `constants/theme.ts` n'est pas modifié. **À regarder et à trancher.**
 
+### 8. *(Variante 2)* La carte fait basculer six écrans sous la ligne de flottaison
+
+**Mesure** : sur 30 comparaisons, **20 écrans tenaient sans défiler en variante 1, 14 en
+variante 2**. Six basculent, aucun dans l'autre sens.
+
+Cinq d'entre eux dépassent de **2 à 31 px** — quelques millimètres, récupérables sur les
+marges internes de la carte. **Le sixième dépasse de 110 px** : c'est le cas « deux
+séances » en police agrandie ×1,3, où la carte est à son plus lourd (quatre lignes de fait)
+sur un écran déjà à 6 px de la limite en variante 1.
+
+> ⚠ **Un chiffre publié plus tôt était faux.** Une première lecture résumait ces six
+> bascules par « de 2 à 31 px seulement ». La fourchette réelle va de **2 à 110 px** :
+> le cas ×1,3 avait été confondu avec les autres. Recalcul et détail ligne par ligne dans
+> [`COMPARAISON.md`](COMPARAISON.md) §8.3.
+
+**Trois pistes, aucune appliquée** — ce sont des décisions :
+1. réduire les marges internes de la carte (récupère les cinq cas à ≤ 31 px, pas le sixième) ;
+2. en état « ça se construit », n'afficher que **trois** faits au lieu de quatre ;
+3. accepter le défilement, en considérant que le bas de la carte n'est pas de l'action
+   mais de la lecture.
+
+**La hauteur se mesure, le confort se ressent.** Ce point-là se tranche sur ton téléphone,
+pas dans un tableau.
+
+### 9. *(Variante 2)* La carte entière n'est pas cliquable
+
+Tu autorisais la carte entière pressable « si l'accessibilité reste claire ». Elle ne le
+reste pas : rendre la carte cliquable fusionne tout son contenu en un seul objet pour la
+synthèse vocale, et **la phrase qui porte l'honnêteté de la mesure disparaît ou se noie**.
+Le raisonnement complet est dans
+[`DECISIONS_VISUELLES.md`](DECISIONS_VISUELLES.md) §6 bis.4.
+
+**Le pied est donc le seul élément tactile** — mais il fait toute la largeur de la carte,
+là où le lien de la variante 1 ne faisait que la largeur de son texte. **La cible a grossi.**
+
+Si tu veux quand même la carte entière cliquable, c'est possible : il faudra décider ce
+qu'on fait de la phrase de portée.
+
 ---
 
 ## 7. Détails de chantier
@@ -296,3 +529,19 @@ technique. `constants/theme.ts` n'est pas modifié. **À regarder et à trancher
    c'est la seule chose que je n'ai pas voulu inventer à ta place.
 6. **Une fois d'accord sur l'écran** : recette téléphone. Les hauteurs, la barre d'onglets,
    la police et le vrai texte agrandi ne peuvent être validés que là.
+
+### Et pour la variante 2, quatre choses de plus
+
+7. **Bascule en « côte à côte », paire `vNext / Progression`**, sur les trois cas
+   « nouveau joueur », « deux séances » et « tendance disponible ». **Descends jusqu'en bas
+   des deux colonnes** : la question est de savoir si le lien flottant a vraiment disparu,
+   ou si la carte s'est ajoutée à côté.
+8. **Réponds aux 12 questions** du panneau « Points à valider » propres à la variante 2.
+9. **Regarde le cas « donnée manquante »** : c'est la démonstration que l'app préfère se
+   taire plutôt qu'écrire « 0 min ». Si ce comportement te gêne, il faut le dire maintenant —
+   il structure tout le reste.
+10. **Tranche sur la pastille « En forme »** de l'en-tête (§4 bis.2). Elle a été **retirée
+    de la variante 2**, en appliquant ta règle telle que tu l'as écrite ; la variante 1 la
+    garde, pour que tu voies l'écart. Ce qui reste à trancher : garder l'en-tête nu (voie
+    appliquée), ou écrire une pastille reformulée qui dise explicitement qu'elle ne parle
+    que des séances FKS. Ce libellé-là n'a pas été inventé à ta place.

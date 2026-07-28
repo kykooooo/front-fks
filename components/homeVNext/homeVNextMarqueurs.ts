@@ -47,6 +47,33 @@ export const MARQUEURS = {
   avisDonnees: "home-vnext-avis-donnees",
   /** Le squelette d'hydratation. */
   squelette: "home-vnext-squelette",
+
+  // ---------------------------------------------------------------------------
+  // VARIANTE 2 — la carte "Ma progression"
+  // ---------------------------------------------------------------------------
+  // Ajouts PUREMENT additifs : aucun composant de la variante 1 ne les porte,
+  // donc aucun rendu existant n'est modifie.
+
+  /**
+   * La carte progression. Presente une seule fois en variante 2, JAMAIS en
+   * variante 1 : c'est ce qui permet de prouver automatiquement que les deux
+   * variantes sont bien distinctes.
+   */
+  progression: "home-vnext-progression",
+  /**
+   * Le pied "Voir ma progression". Il ne doit exister QUE si le ViewModel l'autorise
+   * (`detail.affiche`), c'est-a-dire uniquement dans l'etat "ready".
+   */
+  progressionDetail: "home-vnext-progression-detail",
+  /**
+   * Une ligne de fait mesure. Le compter permet de verifier R1 : sur la fixture
+   * "donnee-manquante", il doit y en avoir 2 et non 4.
+   */
+  progressionFait: "home-vnext-progression-fait",
+  /** La comparaison de test terrain (le bloc, pas la ligne). */
+  progressionTest: "home-vnext-progression-test",
+  /** La ligne de portee de la courbe (R3). Doit exister des qu'une courbe existe. */
+  progressionPortee: "home-vnext-progression-portee",
 } as const;
 
 export type MarqueurNom = keyof typeof MARQUEURS;

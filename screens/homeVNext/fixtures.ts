@@ -21,7 +21,9 @@
 // etre reproductibles.
 // =============================================================================
 
-import type { HomeVNextInput } from "./viewModel";
+import type { TestEntry } from "../tests/testConfig";
+import { buildHomeVNextViewModel, type HomeVNextInput } from "./viewModel";
+import type { ProgressionInput, ProgressionSeanceTerminee } from "./progressionViewModel";
 
 /** Instant de reference de toutes les fixtures : jeudi 30 juillet 2026. */
 export const FIXTURE_NOW_ISO = "2026-07-30T09:15:00";
@@ -960,4 +962,382 @@ export const HOME_VNEXT_FIXTURES_RENDU: readonly HomeVNextFixture[] = [
 /** Recupere une fixture par son identifiant. `null` si inconnue. */
 export function getHomeVNextFixture(id: string): HomeVNextFixture | null {
   return HOME_VNEXT_FIXTURES_RENDU.find((f) => f.id === id) ?? null;
+}
+
+// =============================================================================
+// VARIANTE 2 — FIXTURES DE LA CARTE PROGRESSION
+// =============================================================================
+//
+// Meme regle que ci-dessus : AUCUNE de ces donnees ne vient d'un joueur reel,
+// d'un compte de production ou d'un appel backend. Chaque fixture porte
+// `__fictif: true`.
+//
+// Les entrees de tests sont de VRAIS `TestEntry` (`screens/tests/testConfig.ts`) :
+// memes cles, memes unites que la batterie de l'app. Aucune cle inventee.
+//
+// Les horodatages sont construits en UTC explicite (`tsUTC`) pour que le jour
+// calcule par le ViewModel soit le meme sur toutes les machines — les captures
+// du prototype doivent etre reproductibles.
+// =============================================================================
+
+export type ProgressionFixture = {
+  /** Identifiant stable, utilise par le visualiseur et les tests. */
+  id: string;
+  /** Titre lisible par un non-developpeur. */
+  titre: string;
+  /** Une ligne : ce que cet etat demontre. */
+  resume: string;
+  /** Marqueur explicite : donnees inventees pour la demonstration. */
+  __fictif: true;
+  input: ProgressionInput;
+};
+
+/**
+ * Horodatage UTC explicite. `mois` est humain (1 = janvier).
+ *
+ * Les MINUTES comptent : une batterie de tests ne se passe pas en une seule
+ * seconde, et le ViewModel departage deux comparaisons a egalite d'horodatage
+ * par l'ordre canonique de `FIELD_DEFS`. Des exercices qui partageaient tous le
+ * meme `ts` rendaient donc ce tri arbitraire — et toujours gagnant pour le
+ * premier champ de la liste. Voir P4 plus bas.
+ */
+function tsUTC(annee: number, mois: number, jour: number, heure: number, minute = 0): number {
+  return Date.UTC(annee, mois - 1, jour, heure, minute, 0, 0);
+}
+
+/**
+ * Adaptateur de DEMONSTRATION : derive une entree de carte progression depuis
+ * une entree de Home deja ecrite, pour que les deux cartes du meme ecran
+ * racontent exactement la meme chose.
+ *
+ * Deux points a savoir avant de s'en servir ailleurs :
+ *
+ *  - `semaineCourante` est rempli en appelant reellement `buildHomeVNextViewModel`.
+ *    Le garde-fou R7 compare donc la carte au nombre que "Ma semaine" AFFICHE,
+ *    pas a une valeur recopiee a la main qui pourrait deriver.
+ *  - `ressentiEnregistre` est deduit ici de la presence d'un `perceivedEffort`,
+ *    parce que c'est la seule trace de retour joueur que porte
+ *    `HomeVNextCompletedSession`. Dans l'app reelle, lire `Boolean(session.feedback)` :
+ *    c'est l'information exacte, et un retour peut exister sans RPE.
+ *
+ * PROTOTYPE : cet adaptateur sert a construire des fixtures, ce n'est PAS un
+ * branchement de production.
+ */
+export function progressionInputDepuisHome(
+  home: HomeVNextInput,
+  extras: { testsTerrain?: readonly TestEntry[] } = {}
+): ProgressionInput {
+  const seancesTerminees: ProgressionSeanceTerminee[] = home.completedSessions.map((s) => ({
+    id: s.id,
+    dateKey: s.dateKey,
+    dureeMin: s.durationMin,
+    ressentiEnregistre: s.perceivedEffort !== null,
+  }));
+  const week = buildHomeVNextViewModel(home).week;
+  return {
+    chargesClubCapturees: false,
+    seancesTerminees,
+    testsTerrain: extras.testsTerrain ?? [],
+    tendance: home.formTrend
+      ? {
+          points: home.formTrend.points.map((p) => ({ dateKey: p.dateKey, value: p.value })),
+          joursObserves: home.formTrend.observedDayCount,
+        }
+      : null,
+    semaineCourante: {
+      blocAffiche: week !== null,
+      seancesAffichees: week?.doneCount ?? 0,
+    },
+  };
+}
+
+// -----------------------------------------------------------------------------
+// P1 — Nouveau joueur (enrichit la fixture Home du meme identifiant)
+// -----------------------------------------------------------------------------
+// Aucune seance terminee, aucun test, aucune trajectoire : etat "empty".
+// Rien a mesurer, donc rien de mesure n'est affiche.
+// -----------------------------------------------------------------------------
+const progNouveauJoueur: ProgressionFixture = {
+  id: "nouveau-joueur",
+  titre: "Nouveau joueur",
+  resume:
+    "Compte tout neuf : trois repères et une mention honnête, aucun graphique, aucun bouton vers la page Progression.",
+  __fictif: true,
+  input: progressionInputDepuisHome(nouveauJoueur.input),
+};
+
+// -----------------------------------------------------------------------------
+// P2 — Deux seances, tendance indisponible
+// -----------------------------------------------------------------------------
+// L'etat "collecting" du cahier des charges, avec ses quatre faits :
+//   2 seances terminees / 76 minutes realisees / 2 ressentis enregistres /
+//   Encore 2 seances avant d'afficher une tendance.
+// Le dernier fait est CALCULE depuis PROGRESSION_SEANCES_MIN_POUR_TENDANCE (4).
+//
+// Les deux seances tombent sur deux semaines differentes (samedi 25 juillet,
+// mardi 28 juillet) : "Ma semaine" affiche donc 1, la carte affiche 2. Aucun
+// doublon, le garde-fou R7 n'a rien a retirer.
+// -----------------------------------------------------------------------------
+const progDeuxSeances: ProgressionFixture = {
+  id: "deux-seances-tendance-indisponible",
+  titre: "Deux séances, tendance indisponible",
+  resume:
+    "Assez de faits réels pour dire quelque chose, pas assez pour tracer une tendance : la carte liste, elle ne dessine pas.",
+  __fictif: true,
+  input: {
+    chargesClubCapturees: false,
+    seancesTerminees: [
+      { id: "s1", dateKey: "2026-07-25", dureeMin: 40, ressentiEnregistre: true },
+      { id: "s2", dateKey: "2026-07-28", dureeMin: 36, ressentiEnregistre: true },
+    ],
+    testsTerrain: [],
+    // Une trajectoire EST fournie, et volontairement suffisante en points :
+    // c'est le seuil de SEANCES qui bloque, et le message doit le dire.
+    tendance: {
+      points: [
+        { dateKey: "2026-07-26", value: -1.4 },
+        { dateKey: "2026-07-27", value: -0.2 },
+        { dateKey: "2026-07-28", value: -5.8 },
+        { dateKey: "2026-07-29", value: -3.9 },
+        { dateKey: "2026-07-30", value: -2.1 },
+      ],
+      joursObserves: 2,
+    },
+    semaineCourante: { blocAffiche: true, seancesAffichees: 1 },
+  },
+};
+
+// -----------------------------------------------------------------------------
+// P3 — Tendance disponible (enrichit la fixture Home du meme identifiant)
+// -----------------------------------------------------------------------------
+// 7 seances terminees, 7 points, 7 jours observes : etat "ready".
+// "Ma semaine" affiche 2, la carte affiche le CUMUL 7 : deux nombres, deux sens.
+//
+// LE SENS « PLUS GRAND = MIEUX », VISIBLE A L'ECRAN
+// -----------------------------------------------------------------------------
+// Depuis que "Test physique ameliore" met en avant le sprint (plus PETIT =
+// mieux), il fallait qu'un cas « plus GRAND = mieux » reste lisible quelque part :
+// les deux sens doivent etre observables, sinon la demonstration ne montre qu'une
+// moitie du probleme. C'est ici : saut en longueur 205 -> 214 cm, +9 cm.
+//
+// Le joueur s'entraine du 6 au 29 juillet ; la batterie est passee le 4 juillet
+// (avant la premiere seance) puis refaite le 25. Deux dates distinctes, un
+// exercice commun : c'est exactement ce que la comparaison exige.
+//
+// POURQUOI CET ETAT-LA :
+//   - c'est le seul autre etat "ready" ou une comparaison peut apparaitre sans
+//     detruire ce que la fixture demontre. « Aucune comparaison de test » doit
+//     precisement n'en avoir aucune ; « Donnee manquante » est la preuve de R1 ;
+//   - la carte y remplacait une phrase d'absence (« Tes tests terrain
+//     apparaitront ici des que... ») par une ligne de vide utile. Elle porte
+//     maintenant un fait mesure. L'absence, elle, reste montree sur « Aucune
+//     comparaison de test », avec sa raison la plus interessante (deux essais le
+//     meme jour ne sont pas une progression) ;
+//   - COUT EN HAUTEUR quasi nul, et c'etait un critere : deux lignes de
+//     comparaison remplacent trois lignes d'explication. Le surcout de la
+//     variante 2 — l'arbitrage que le fondateur doit rendre — n'est pas deplace
+//     par ce choix. Les chiffres exacts sont dans mesures-hauteurs-variante2.md.
+// -----------------------------------------------------------------------------
+const testsCycleFondation: readonly TestEntry[] = [
+  { ts: tsUTC(2026, 7, 4, 10, 15), playlist: "fondation", broadJumpCm: 205 },
+  { ts: tsUTC(2026, 7, 25, 10, 20), playlist: "fondation", broadJumpCm: 214 },
+];
+
+const progTendanceDisponible: ProgressionFixture = {
+  id: "tendance-disponible",
+  titre: "Tendance disponible",
+  resume:
+    "Assez de séances ET assez de jours enregistrés : la courbe s'affiche avec sa portée exacte, le test refait (205 → 214 cm) donne un écart mesuré, et le lien vers le détail apparaît.",
+  __fictif: true,
+  input: progressionInputDepuisHome(tendanceDisponible.input, {
+    testsTerrain: testsCycleFondation,
+  }),
+};
+
+// -----------------------------------------------------------------------------
+// P4 — Test physique ameliore
+// -----------------------------------------------------------------------------
+// Deux batteries a deux dates, avec de vraies ameliorations dans les DEUX sens
+// de `lowerIsBetter` :
+//   - saut en longueur   218 -> 227 cm  (plus grand = mieux)     -> amelioration
+//   - test 505          2.55 -> 2.48 s  (plus PETIT = mieux)     -> amelioration
+//   - sprint 10 m       1.85 -> 1.78 s  (plus PETIT = mieux)     -> amelioration
+// Le 6 min n'existe que dans la batterie recente : il n'est donc PAS compare.
+//
+// UNE ENTREE PAR EXERCICE, AVEC SON HEURE REELLE — ET POURQUOI CA CHANGE TOUT
+// -----------------------------------------------------------------------------
+// Avant, les quatre mesures d'une meme batterie partageaient un seul `ts`. Or
+// `choisirDerniereComparaison` (progressionViewModel.ts) prend la comparaison la
+// plus RECENTE, et departage une egalite d'horodatage par l'ordre canonique de
+// `FIELD_DEFS` — ou `broadJumpCm` arrive en premier. Consequence : sur les 60
+// pages de la variante 2, le seul ecart JAMAIS AFFICHE etait « +9 cm », le cas
+// facile, celui ou le signe du chiffre et le sens sportif vont dans le meme sens.
+// Le cas qui compte — un CHRONO QUI BAISSE et qui est un PROGRES — existait dans
+// la donnee sans jamais atteindre l'ecran.
+//
+// La logique de departage n'a pas ete touchee (elle est juste, et volontairement
+// aveugle au sens : choisir la comparaison la plus flatteuse serait le chiffre
+// arrange que la doctrine interdit). Ce sont les DONNEES qui ont ete corrigees :
+// une batterie s'etale sur une heure, chaque exercice a son horaire, et
+// l'exercice mesure en DERNIER est celui que la carte met en avant.
+//
+// Ordre retenu, le meme aux deux dates : saut en longueur, 505, sprint 10 m,
+// puis l'endurance qui ferme la marche (elle fatigue, on ne mesure plus rien
+// apres). Le sprint 10 m est donc le dernier exercice COMPARABLE : c'est lui que
+// la carte affiche, avec « -0.07 s » et le mot « en progres ».
+//
+// Le test 505 est volontairement present : `screens/ProgressScreen.tsx` ne le
+// compare pas (sa liste locale `TEST_FIELDS`, l.144-160, ignore 8 champs de
+// FIELD_DEFS). La carte le montre, la page Progression non — le ViewModel le
+// signale dans `protoWarnings`.
+// -----------------------------------------------------------------------------
+const testsAmeliores: readonly TestEntry[] = [
+  // --- batterie du 15 juin 2026 (~40 min de terrain) ---
+  { ts: tsUTC(2026, 6, 15, 10, 5), playlist: "fondation", broadJumpCm: 218 },
+  { ts: tsUTC(2026, 6, 15, 10, 25), playlist: "fondation", test505_s: 2.55 },
+  { ts: tsUTC(2026, 6, 15, 10, 45), playlist: "fondation", sprint10s: 1.85 },
+  // --- batterie du 24 juillet 2026 (~1 h, endurance en dernier) ---
+  { ts: tsUTC(2026, 7, 24, 10, 10), playlist: "force", broadJumpCm: 227 },
+  { ts: tsUTC(2026, 7, 24, 10, 30), playlist: "force", test505_s: 2.48 },
+  { ts: tsUTC(2026, 7, 24, 10, 50), playlist: "force", sprint10s: 1.78 },
+  { ts: tsUTC(2026, 7, 24, 11, 15), playlist: "force", endurance6min_m: 1385 },
+];
+
+const progTestAmeliore: ProgressionFixture = {
+  id: "test-physique-ameliore",
+  titre: "Test physique amélioré",
+  resume:
+    "Deux batteries à deux dates. La carte affiche le sprint 10 m : 1,85 s → 1,78 s, soit −0,07 s, et elle écrit « en progrès ». Un chiffre négatif qui est une bonne nouvelle.",
+  __fictif: true,
+  input: {
+    chargesClubCapturees: false,
+    seancesTerminees: [
+      { id: "s1", dateKey: "2026-07-08", dureeMin: 45, ressentiEnregistre: true },
+      { id: "s2", dateKey: "2026-07-12", dureeMin: 50, ressentiEnregistre: true },
+      { id: "s3", dateKey: "2026-07-16", dureeMin: 40, ressentiEnregistre: true },
+      { id: "s4", dateKey: "2026-07-20", dureeMin: 45, ressentiEnregistre: true },
+      { id: "s5", dateKey: "2026-07-25", dureeMin: 50, ressentiEnregistre: true },
+      { id: "s6", dateKey: "2026-07-29", dureeMin: 40, ressentiEnregistre: false },
+    ],
+    testsTerrain: testsAmeliores,
+    tendance: {
+      points: [
+        { dateKey: "2026-07-24", value: -4.8 },
+        { dateKey: "2026-07-25", value: -8.1 },
+        { dateKey: "2026-07-26", value: -5.4 },
+        { dateKey: "2026-07-27", value: -2.2 },
+        { dateKey: "2026-07-28", value: 1.1 },
+        { dateKey: "2026-07-29", value: -3.6 },
+        { dateKey: "2026-07-30", value: -1.0 },
+      ],
+      joursObserves: 6,
+    },
+    semaineCourante: { blocAffiche: true, seancesAffichees: 2 },
+  },
+};
+
+// -----------------------------------------------------------------------------
+// P5 — Aucune comparaison de test possible
+// -----------------------------------------------------------------------------
+// Quatre entrees de tests EXISTENT, et pourtant aucune paire n'est comparable :
+//   - chaque batterie porte un exercice different (longueur, puis 10 m, puis 6 min) ;
+//   - les deux dernieres entrees portent bien le MEME exercice (6 min), mais le
+//     MEME JOUR — deux essais du 22 juillet, a deux heures differentes.
+//
+// Ce dernier cas est exactement celui que `computeTestComparisons`
+// (`screens/ProgressScreen.tsx`:169-203) traite mal : il ne verifie pas les
+// dates et afficherait une "progression" de +35 m entre deux essais du meme
+// apres-midi. Ici : aucune comparaison, et on dit pourquoi.
+// -----------------------------------------------------------------------------
+const testsSansPaire: readonly TestEntry[] = [
+  { ts: tsUTC(2026, 6, 10, 10), playlist: "fondation", broadJumpCm: 214 },
+  { ts: tsUTC(2026, 7, 2, 10), playlist: "fondation", sprint10s: 1.83 },
+  { ts: tsUTC(2026, 7, 22, 10), playlist: "endurance", endurance6min_m: 1420 },
+  { ts: tsUTC(2026, 7, 22, 16), playlist: "endurance", endurance6min_m: 1455 },
+];
+
+const progAucuneComparaison: ProgressionFixture = {
+  id: "aucune-comparaison-de-test",
+  titre: "Aucune comparaison de test",
+  resume:
+    "Des tests existent, mais aucun n'a été refait un autre jour : la carte l'explique au lieu d'inventer une progression.",
+  __fictif: true,
+  input: {
+    chargesClubCapturees: false,
+    seancesTerminees: [
+      { id: "s1", dateKey: "2026-07-09", dureeMin: 40, ressentiEnregistre: true },
+      { id: "s2", dateKey: "2026-07-14", dureeMin: 50, ressentiEnregistre: true },
+      { id: "s3", dateKey: "2026-07-18", dureeMin: 35, ressentiEnregistre: true },
+      { id: "s4", dateKey: "2026-07-23", dureeMin: 45, ressentiEnregistre: true },
+      { id: "s5", dateKey: "2026-07-28", dureeMin: 45, ressentiEnregistre: true },
+    ],
+    testsTerrain: testsSansPaire,
+    tendance: {
+      points: [
+        { dateKey: "2026-07-25", value: 0.9 },
+        { dateKey: "2026-07-26", value: 2.4 },
+        { dateKey: "2026-07-27", value: 1.7 },
+        { dateKey: "2026-07-28", value: -3.8 },
+        { dateKey: "2026-07-29", value: -1.5 },
+        { dateKey: "2026-07-30", value: 0.4 },
+      ],
+      joursObserves: 4,
+    },
+    semaineCourante: { blocAffiche: true, seancesAffichees: 1 },
+  },
+};
+
+/** Les 5 cas de demonstration de la carte progression, dans l'ordre. */
+export const PROGRESSION_FIXTURES: readonly ProgressionFixture[] = [
+  progNouveauJoueur,
+  progDeuxSeances,
+  progTendanceDisponible,
+  progTestAmeliore,
+  progAucuneComparaison,
+];
+
+// -----------------------------------------------------------------------------
+// P6 (hors serie) — DONNEE MANQUANTE
+// -----------------------------------------------------------------------------
+// Ce n'est PAS un des 5 cas de demonstration : c'est la preuve visuelle de R1.
+//
+// Trois seances terminees, AUCUNE duree connue, AUCUN ressenti enregistre.
+// La carte ne doit afficher ni "0 minute", ni "-- min", ni "0 ressenti" : ces
+// deux faits DISPARAISSENT, purement. Il ne reste que le cumul de seances et ce
+// qui manque avant la tendance.
+// -----------------------------------------------------------------------------
+const progDonneeManquante: ProgressionFixture = {
+  id: "donnee-manquante",
+  titre: "Donnée manquante (preuve R1)",
+  resume:
+    "Trois séances sans durée ni ressenti connus : les faits correspondants disparaissent au lieu d'afficher 0 ou un tiret.",
+  __fictif: true,
+  input: {
+    chargesClubCapturees: false,
+    seancesTerminees: [
+      { id: "s1", dateKey: "2026-07-18", dureeMin: null, ressentiEnregistre: false },
+      { id: "s2", dateKey: "2026-07-23", dureeMin: null, ressentiEnregistre: false },
+      { id: "s3", dateKey: "2026-07-28", dureeMin: null, ressentiEnregistre: false },
+    ],
+    testsTerrain: [],
+    tendance: null,
+    semaineCourante: { blocAffiche: true, seancesAffichees: 1 },
+  },
+};
+
+/** Preuve de R1, hors des 5 cas de demonstration. */
+export const PROGRESSION_FIXTURE_DONNEE_MANQUANTE: ProgressionFixture = progDonneeManquante;
+
+/**
+ * Tout ce que le harnais de rendu doit generer : les 5 cas de demonstration +
+ * la preuve R1. A ne PAS utiliser pour raisonner sur les cas du produit.
+ */
+export const PROGRESSION_FIXTURES_RENDU: readonly ProgressionFixture[] = [
+  ...PROGRESSION_FIXTURES,
+  PROGRESSION_FIXTURE_DONNEE_MANQUANTE,
+];
+
+/** Recupere une fixture de progression par son identifiant. `null` si inconnue. */
+export function getProgressionFixture(id: string): ProgressionFixture | null {
+  return PROGRESSION_FIXTURES_RENDU.find((f) => f.id === id) ?? null;
 }

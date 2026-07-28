@@ -107,6 +107,45 @@ function getViewModelModule() {
   return cacheViewModel;
 }
 
+let cacheProgression = null;
+function getProgressionModule() {
+  if (!cacheProgression) {
+    try {
+      cacheProgression = {
+        ok: true,
+        mod: require(path.join(APP_ROOT, "screens/homeVNext/progressionViewModel.ts")),
+      };
+    } catch (err) {
+      cacheProgression = { ok: false, detail: (err && err.stack) || String(err) };
+    }
+  }
+  return cacheProgression;
+}
+
+/**
+ * Le composant de la carte, ecrit par l'autre agent. On ne le monte JAMAIS
+ * nous-memes — c'est l'ecran qui doit le poser, sinon on ne teste pas la
+ * variante mais un montage du harnais. On l'interroge uniquement pour savoir
+ * s'il existe, et le dire.
+ */
+let cacheCarte = null;
+function getCarteProgression() {
+  if (!cacheCarte) {
+    try {
+      const mod = require(path.join(APP_ROOT, "components/homeVNext/HomeVNextProgression.tsx"));
+      const noms = Object.keys(mod || {});
+      cacheCarte = { ok: true, exports: noms };
+    } catch (err) {
+      cacheCarte = {
+        ok: false,
+        raison: err && err.code === "MODULE_NOT_FOUND" ? "fichier_absent" : "erreur_chargement",
+        detail: (err && (err.stack || err.message)) || String(err),
+      };
+    }
+  }
+  return cacheCarte;
+}
+
 // ---------------------------------------------------------------------------
 // Reperage de la structure
 // ---------------------------------------------------------------------------
@@ -302,6 +341,175 @@ async function renderVNext(fixture, device) {
 }
 
 // ---------------------------------------------------------------------------
+// Variante A bis — la proposition AVEC la carte progression integree
+// ---------------------------------------------------------------------------
+// MEME pipeline, MEME ecran, MEMES stubs que la variante 1. La seule difference
+// est le sac de props (voir lib/appariementVariante2.js).
+//
+// LE POINT CRITIQUE : si l'ecran ne connait pas encore la variante 2 — parce que
+// la prop porte un autre nom, ou parce que le composant de carte n'est pas
+// encore ecrit — il rendra la variante 1 SANS RIEN DIRE. Montrer ce rendu sous
+// l'etiquette « Progression integree » serait le pire defaut possible de ce
+// harnais : le fondateur validerait un ecran qu'il n'a jamais vu.
+//
+// On se protege par une mesure, pas par une convention : on cherche dans le
+// rendu les phrases que le ViewModel de la carte a produites. Si le titre de la
+// carte n'y est pas, on refuse de servir la page et on explique pourquoi.
+// ---------------------------------------------------------------------------
+async function renderVNext2({ fixtureHote, fixtureProgression, device, htmlVariante1 }) {
+  const mod = getVNext();
+  const vmMod = getViewModelModule();
+  const progMod = getProgressionModule();
+  const appariement = require("./appariementVariante2");
+
+  const erreurs = [];
+  let homeVm = null;
+  let progVm = null;
+
+  if (vmMod.ok) {
+    try {
+      // Les options de la VARIANTE 2, pas celles par defaut : c'est ce qui
+      // active le verrou de la pastille d'etat du jour dans le ViewModel.
+      // La variante 1 (`renderVNext`, plus haut) appelle sans options et reste
+      // donc rigoureusement identique a ce qui a deja ete valide.
+      homeVm = vmMod.mod.buildHomeVNextViewModel(
+        fixtureHote.input,
+        appariement.OPTIONS_VM_VARIANTE2
+      );
+    } catch (err) {
+      erreurs.push(`Selecteur du Home : ${(err && err.stack) || String(err)}`);
+    }
+  } else {
+    erreurs.push(`Selecteur du Home illisible : ${vmMod.detail}`);
+  }
+
+  if (progMod.ok) {
+    try {
+      progVm = progMod.mod.buildProgressionViewModel(fixtureProgression.input);
+    } catch (err) {
+      erreurs.push(`Selecteur de la carte : ${(err && err.stack) || String(err)}`);
+    }
+  } else {
+    erreurs.push(`Selecteur de la carte illisible : ${progMod.detail}`);
+  }
+
+  const carte = getCarteProgression();
+
+  // --- l'ecran lui-meme est-il chargeable ? ---------------------------------
+  if (!mod.ok) {
+    return {
+      indisponible: {
+        titre: "L'ecran de la proposition n'existe pas encore",
+        message:
+          "La variante 2 se rend avec le MEME ecran que la variante 1, avec une prop en plus. " +
+          "Cet ecran n'a pas pu etre charge.",
+        detail: mod.detail,
+      },
+      homeVm,
+      progVm,
+      sonde: { erreurs },
+    };
+  }
+
+  const nav = require("./stubs/navigation-native").__nav;
+  const props = appariement.propsVariante2({ homeVm, progVm, nav });
+
+  let rendu;
+  try {
+    rendu = await monter({
+      cle: `vnext2_${fixtureProgression.id}_${device.width}`,
+      element: React.createElement(mod.Comp, props),
+      device,
+    });
+  } catch (err) {
+    return {
+      indisponible: {
+        titre: "L'ecran a plante en variante 2",
+        message:
+          "Le composant existe mais leve une exception quand on lui passe le sac de props de la " +
+          "variante 2. Le harnais ne masque pas : voici la trace.",
+        detail: (err && err.stack) || String(err),
+      },
+      homeVm,
+      progVm,
+      sonde: { erreurs: [...erreurs, (err && err.stack) || String(err)] },
+    };
+  }
+
+  // --- la carte est-elle REELLEMENT a l'ecran ? -----------------------------
+  // On isole son balisage : certaines regles portent sur la CARTE et pas sur
+  // l'ecran. « En forme » lu dans la pastille d'en-tete du Home n'est pas la
+  // carte qui annonce un etat global — accuser le mauvais bloc serait une mesure
+  // fausse. On reutilise le jsdom deja monte : aucune dependance en plus.
+  let htmlCarte = null;
+  try {
+    const bac = doc.createElement("div");
+    bac.innerHTML = rendu.html;
+    const el = bac.querySelector(`[data-testid="${appariement.MARQUEURS.progression}"]`);
+    htmlCarte = el ? el.outerHTML : null;
+  } catch (err) {
+    erreurs.push(`Isolation de la carte impossible : ${String(err)}`);
+  }
+
+  const mesures = appariement.mesurerVariante2(rendu.html, homeVm, progVm, htmlCarte);
+
+  if (!mesures.carteDetectee) {
+    const identique = htmlVariante1 != null && htmlVariante1 === rendu.html;
+    const manquants = mesures.marqueurs.filter((m) => !m.trouve);
+    return {
+      indisponible: {
+        titre: "La carte progression n'apparait pas dans l'ecran rendu",
+        message:
+          (identique
+            ? "Le rendu est RIGOUREUSEMENT IDENTIQUE a celui de la variante 1 : la prop de " +
+              "variante n'a eu aucun effet. L'ecran ne connait pas (ou plus) la valeur que le " +
+              "harnais lui passe.\n\n"
+            : "L'ecran a bien reagi (le rendu differe de la variante 1) mais le marqueur de la " +
+              "carte n'y est pas.\n\n") +
+          "Le harnais REFUSE de servir cette page. Afficher la variante 1 sous l'etiquette " +
+          "« Progression integree » ferait valider un ecran qui n'existe pas.\n\n" +
+          "Rien a corriger cote harnais : relance `node prototype/home-vnext/build.js` quand " +
+          "l'ecran saura poser la carte.",
+        detail:
+          `Marqueur cherche : data-testid="${appariement.MARQUEURS.progression}" ` +
+          `(pose par components/homeVNext/HomeVNextProgression.tsx via homeVNextMarqueurs.ts).\n` +
+          `Trouve : ${mesures.controles.find((c) => c.cle === "carte").valeur} fois, attendu 1.\n` +
+          `\n` +
+          `Composant de carte : ` +
+          `${carte.ok ? `present, exports = ${carte.exports.join(", ") || "(aucun)"}` : `ABSENT (${carte.raison})`}\n` +
+          `\n` +
+          `Props passees a l'ecran par le harnais :\n  ` +
+          appariement.clesDuSac().join(", ") +
+          `\n  variante = "${appariement.VALEUR_VARIANTE}"\n` +
+          `\n` +
+          `Contrat attendu par screens/homeVNext/HomeVNextScreen.tsx au moment ou ce harnais a ete\n` +
+          `ecrit : union discriminee { variante: "v2"; progression: ProgressionViewModel }.\n` +
+          `S'il a change, la seule ligne a corriger est VALEUR_VARIANTE dans\n` +
+          `prototype/home-vnext/lib/appariementVariante2.js.\n` +
+          `\n` +
+          `Phrases du contrat retrouvees dans le rendu : ${mesures.marqueursTrouves} / ${mesures.marqueursTotal}.` +
+          (manquants.length
+            ? `\nIntrouvables :\n` + manquants.map((m) => `  - ${m.quoi} : « ${m.texte} »`).join("\n")
+            : ""),
+      },
+      homeVm,
+      progVm,
+      mesures,
+      sonde: { ...rendu.sonde, erreurs: [...rendu.sonde.erreurs, ...erreurs] },
+    };
+  }
+
+  return {
+    html: rendu.html,
+    homeVm,
+    progVm,
+    mesures,
+    carte,
+    sonde: { ...rendu.sonde, erreurs: [...rendu.sonde.erreurs, ...erreurs] },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Variante B — le Home de production
 // ---------------------------------------------------------------------------
 async function renderActuel(scenario, device) {
@@ -401,10 +609,13 @@ function scaleCss(css, factor) {
 
 module.exports = {
   renderVNext,
+  renderVNext2,
   renderActuel,
   extractCss,
   scaleCss,
   getVNext,
   getViewModelModule,
+  getProgressionModule,
+  getCarteProgression,
   SETTLE_MS,
 };
