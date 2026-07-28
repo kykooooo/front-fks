@@ -233,6 +233,71 @@ describe("chaque appartenance ouvre — ou non — l'espace coach", () => {
   });
 });
 
+// ─── Le suivi sportif, lu depuis LE MÊME instantané ─────────────────────────
+//
+// C'est ce que consomme le bouton « Je m'entraîne aussi » (espace coach) pour
+// choisir entre activer et arrêter. Le vérifier ICI plutôt que sur le seul
+// domaine prouve la chose qui compte : la valeur vient bien de l'abonnement, et
+// elle bascule sur le même montage, sans reconnexion.
+
+describe("suiviJoueur — ce que le bouton « Je m'entraîne aussi » va lire", () => {
+  test("avant le premier instantané : `inconnu`, donc AUCUN geste proposé", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    expect(h.current.suiviJoueur).toBe("inconnu");
+  });
+
+  test("encadrant sans suivi → `inactif` ; entraîneur-joueur → `actif`", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach", null));
+    expect(h.current.suiviJoueur).toBe("inactif");
+
+    await actAsync(() => dernier().emet("coach", "active"));
+    expect(h.current.suiviJoueur).toBe("actif");
+  });
+
+  test("l'ACTIVATION se voit sur le même montage : inactif → actif, sans reconnexion", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("owner", null));
+    expect(h.current.suiviJoueur).toBe("inactif");
+    expect(h.current.peutChoisirEspace).toBe(false);
+
+    // Le serveur écrit `playerStatus: "active"` : l'instantané arrive, le suivi
+    // devient actif ET le sélecteur d'espace s'ouvre — dans le même rendu.
+    await actAsync(() => dernier().emet("owner", "active"));
+    expect(h.current.suiviJoueur).toBe("actif");
+    expect(h.current.peutChoisirEspace).toBe(true);
+    // La permission d'encadrement n'a pas bougé d'un cran.
+    expect(h.current.membershipAccessRole).toBe("owner");
+  });
+
+  test("l'ARRÊT se voit aussi : actif → inactif, encadrement conservé", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach", "active"));
+    expect(h.current.suiviJoueur).toBe("actif");
+
+    await actAsync(() => dernier().emet("coach", "inactive"));
+    expect(h.current.suiviJoueur).toBe("inactif");
+    expect(h.current.space).toBe("coach");
+    expect(h.current.membershipAccessRole).toBe("coach");
+  });
+
+  test("lecture EN ÉCHEC → `inconnu`, jamais `inactif` (le piège)", async () => {
+    // Sans ce troisième état, couper le réseau ferait proposer « Je m'entraîne
+    // aussi » à quelqu'un qui a déjà un suivi actif.
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach", "active"));
+    expect(h.current.suiviJoueur).toBe("actif");
+
+    await actAsync(() => dernier().echoue());
+    expect(h.current.suiviJoueur).toBe("inconnu");
+  });
+
+  test("aucun club rattaché → `inconnu` (il n'y a aucune appartenance à lire)", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: null }));
+    expect(h.current.suiviJoueur).toBe("inconnu");
+  });
+});
+
 describe("transfert de propriété — la bascule, sans reconnexion", () => {
   test("joueur devenu propriétaire : l'espace coach s'ouvre sur le même montage", async () => {
     const h = await renderHook(() => useAppSpace({ uid: "successeur", clubId: "clubX" }));

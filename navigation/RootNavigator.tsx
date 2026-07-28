@@ -381,16 +381,23 @@ export default function RootNavigator() {
   // ce qui aurait ouvert un second abonnement Firestore et une seconde lecture
   // de la préférence — donc deux états qui se croient tous les deux vrais.
   // Voir state/appSpaceGate.ts pour le raisonnement complet.
+  //
+  // Le SUIVI SPORTIF (`suiviJoueur`) emprunte le même relais, et c'est délibéré :
+  // il vient du même instantané d'appartenance que `peutChoisirEspace`. Le
+  // diffuser par un second portillon aurait rouvert un second abonnement — ou,
+  // pire, deux lectures du même document à deux instants différents.
   const peutChoisirEspace = appSpace.peutChoisirEspace;
   const espaceAffiche = appSpace.space;
   const choisirEspace = appSpace.choisirEspace;
+  const suiviJoueur = appSpace.suiviJoueur;
   useEffect(() => {
     publishAppSpaceSwitch({
       peutChoisir: peutChoisirEspace,
       espace: espaceAffiche,
+      suiviJoueur,
       choisir: choisirEspace,
     });
-  }, [peutChoisirEspace, espaceAffiche, choisirEspace]);
+  }, [peutChoisirEspace, espaceAffiche, suiviJoueur, choisirEspace]);
 
   // 0) DEV: force welcome screen (déconnecte + reset flag)
   useEffect(() => {

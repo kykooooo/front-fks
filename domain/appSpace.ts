@@ -176,3 +176,31 @@ export function resolveAppSpace(
 export function readMembershipAccessRole(lecture: ClubMembershipReading): ClubAccessRole | null {
   return lecture.statut === "lu" ? normalizeAccessRole(lecture.accessRole) : null;
 }
+
+/**
+ * LE SUIVI SPORTIF DE L'UTILISATEUR DANS SON CLUB, EN TROIS ÉTATS.
+ *
+ * ─── POURQUOI TROIS, ET PAS UN BOOLÉEN ─────────────────────────────────────
+ * C'est ce que lit le bouton « Je m'entraîne aussi » (espace coach) pour savoir
+ * lequel des deux gestes proposer : l'ACTIVER, ou l'ARRÊTER. Un booléen les
+ * ramènerait à deux, donc forcerait à choisir un geste même quand on ne sait
+ * pas encore — et le mauvais choix, ici, se paie cher dans les deux sens :
+ *  . proposer « activer » à quelqu'un qui a déjà un suivi, c'est un bouton qui
+ *    ne change rien (le serveur répond « déjà actif », mais l'écran a menti) ;
+ *  . proposer « arrêter » à quelqu'un qui n'a rien, c'est promettre de retirer
+ *    quelque chose qui n'existe pas.
+ * Tant qu'on ne sait pas, on n'affiche NI l'un NI l'autre. `inconnu` couvre le
+ * démarrage, la revalidation, l'absence de club et l'échec de lecture : quatre
+ * situations où la seule réponse honnête est « je ne sais pas encore ».
+ *
+ * ─── CE QU'ELLE N'EST PAS ──────────────────────────────────────────────────
+ * Elle n'ACCORDE rien. `actif` ne donne aucun droit, `inactif` n'en retire
+ * aucun : le serveur revérifie tout à chaque appel, et un écran qui se
+ * tromperait ne produirait qu'un bouton refusé, jamais une écriture.
+ */
+export type PlayerFollowState = "actif" | "inactif" | "inconnu";
+
+export function readPlayerFollowState(lecture: ClubMembershipReading): PlayerFollowState {
+  if (lecture.statut !== "lu") return "inconnu";
+  return isActivePlayerStatus(lecture.playerStatus) ? "actif" : "inactif";
+}

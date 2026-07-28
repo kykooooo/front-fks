@@ -15,7 +15,12 @@
 //     pas un paramètre de ces fonctions. C'est la preuve la plus courte qu'un
 //     champ client falsifié ne peut plus ouvrir l'espace coach.
 
-import { espacesDisponibles, readMembershipAccessRole, resolveAppSpace } from "../appSpace";
+import {
+  espacesDisponibles,
+  readMembershipAccessRole,
+  readPlayerFollowState,
+  resolveAppSpace,
+} from "../appSpace";
 
 /** Lecture aboutie : les DEUX axes, toujours nommés ensemble. */
 const lu = (accessRole: unknown, playerStatus: unknown = null) => ({
@@ -166,5 +171,43 @@ describe("readMembershipAccessRole — dire l'état, sans ouvrir de droit", () =
     expect(readMembershipAccessRole({ statut: "illisible" })).toBeNull();
     expect(readMembershipAccessRole({ statut: "en-attente" })).toBeNull();
     expect(readMembershipAccessRole({ statut: "aucun-club" })).toBeNull();
+  });
+});
+
+// ─── Le suivi sportif, en TROIS états ───────────────────────────────────────
+//
+// C'est ce que lit le bouton « Je m'entraîne aussi » pour savoir lequel des deux
+// gestes proposer. Le troisième état — « je ne sais pas » — est la raison d'être
+// de cette fonction : sans lui, un écran devrait parier, et se tromper de geste
+// promet soit de retirer ce qui n'existe pas, soit d'ajouter ce qui existe déjà.
+
+describe("readPlayerFollowState — actif, inactif, ou on ne sait pas", () => {
+  test("suivi actif → `actif`, encadrement compris (entraîneur-joueur)", () => {
+    expect(readPlayerFollowState(lu(null, "active"))).toBe("actif");
+    expect(readPlayerFollowState(lu("coach", "active"))).toBe("actif");
+    expect(readPlayerFollowState(lu("owner", "active"))).toBe("actif");
+  });
+
+  test("lecture ABOUTIE sans suivi actif → `inactif`, quelle que soit la cause", () => {
+    // Ces quatre situations n'ont pas la même histoire (jamais joueur, suivi
+    // arrêté, valeur inconnue, membre absent) mais elles appellent le MÊME
+    // geste : proposer l'activation. On ne les distingue donc pas ici.
+    expect(readPlayerFollowState(lu("coach"))).toBe("inactif");
+    expect(readPlayerFollowState(lu("coach", "inactive"))).toBe("inactif");
+    expect(readPlayerFollowState(lu("coach", "ACTIVE"))).toBe("inactif");
+    expect(readPlayerFollowState(lu(null, null))).toBe("inactif");
+  });
+
+  test("aucune lecture aboutie → `inconnu` (et donc AUCUN geste proposé)", () => {
+    expect(readPlayerFollowState({ statut: "en-attente" })).toBe("inconnu");
+    expect(readPlayerFollowState({ statut: "illisible" })).toBe("inconnu");
+    expect(readPlayerFollowState({ statut: "aucun-club" })).toBe("inconnu");
+  });
+
+  test("`inconnu` n'est JAMAIS confondu avec `inactif` (le piège de cette fonction)", () => {
+    // Un booléen aurait écrasé les deux sur `false`, donc aurait proposé
+    // « Je m'entraîne aussi » à un entraîneur-joueur pendant une revalidation.
+    expect(readPlayerFollowState({ statut: "illisible" })).not.toBe("inactif");
+    expect(readPlayerFollowState({ statut: "en-attente" })).not.toBe("inactif");
   });
 });

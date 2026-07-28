@@ -39,6 +39,13 @@ describe("UN SEUL émetteur : la racine", () => {
     expect(navigateur).toContain("choisir: choisirEspace");
   });
 
+  test("le SUIVI SPORTIF emprunte le MÊME relais, depuis le même instantané", () => {
+    // S'il partait par un second portillon, ce serait un second abonnement — ou
+    // deux lectures du même document à deux instants différents.
+    expect(navigateur).toContain("suiviJoueur");
+    expect(navigateur).toContain("const suiviJoueur = appSpace.suiviJoueur");
+  });
+
   test("personne d'autre ne publie — hors le portillon lui-même et ses tests", () => {
     const emetteurs: string[] = [];
     const parcourir = (rel: string) => {
@@ -94,5 +101,61 @@ describe("le sélecteur est présent dans les DEUX espaces", () => {
   test("espace coach : onglet Semaine", () => {
     expect(semaineCoach).toContain("AppSpaceSwitch");
     expect(semaineCoach).toContain('variant="coach"');
+  });
+});
+
+// ─── « Je m'entraîne aussi » : là où le second espace se GAGNE ───────────────
+//
+// Le sélecteur d'espace n'apparaît que pour un entraîneur-joueur. Encore
+// faut-il pouvoir le DEVENIR : c'est le rôle de cette carte, et sa place la
+// rend lisible — juste avant le sélecteur qu'elle fait apparaître.
+
+describe("la carte « Je m'entraîne aussi »", () => {
+  test("elle est montée dans l'onglet Semaine, juste avant le sélecteur d'espace", () => {
+    expect(semaineCoach).toContain("CoachSelfPlayerCard");
+    const carte = semaineCoach.indexOf("<CoachSelfPlayerCard");
+    const selecteur = semaineCoach.indexOf("<AppSpaceSwitch");
+    expect(carte).toBeGreaterThan(-1);
+    expect(selecteur).toBeGreaterThan(carte);
+  });
+
+  test("elle n'est PAS dans l'onglet Aujourd'hui (file de lecture, pas réglages)", () => {
+    // Le geste se fait une fois ; l'atterrissage se lit tous les jours. Une
+    // carte de réglage y volerait de l'attention à chaque ouverture.
+    expect(lire("screens/coach/CoachTodayScreen.tsx")).not.toContain("CoachSelfPlayerCard");
+  });
+
+  test("un SEUL point de montage dans toute l'application", () => {
+    const hotes: string[] = [];
+    const parcourir = (rel: string) => {
+      for (const entree of readdirSync(resolve(racine, rel), { withFileTypes: true })) {
+        const chemin = `${rel}/${entree.name}`;
+        if (entree.isDirectory()) {
+          if (["node_modules", ".git", ".claude", "functions", "android", "ios"].includes(entree.name)) {
+            continue;
+          }
+          parcourir(chemin);
+          continue;
+        }
+        if (!/\.tsx?$/.test(entree.name)) continue;
+        if (chemin.includes("__tests__")) continue;
+        if (chemin.endsWith("components/coach/CoachSelfPlayerCard.tsx")) continue;
+        if (readFileSync(resolve(racine, chemin), "utf8").includes("<CoachSelfPlayerCard")) {
+          hotes.push(chemin);
+        }
+      }
+    };
+    for (const dossier of ["navigation", "screens", "components"]) parcourir(dossier);
+    expect(hotes).toEqual(["screens/coach/CoachWeekScreen.tsx"]);
+  });
+
+  test("elle réutilise la divulgation coach-safe, elle ne la recopie pas", () => {
+    const carte = lire("components/coach/CoachSelfPlayerCard.tsx");
+    expect(carte).toMatch(/import\s*\{\s*ClubDataDisclosure\s*\}\s*from/);
+    expect(carte).toContain("<ClubDataDisclosure");
+    // Et sans garde : une divulgation affichée « seulement si » n'en est pas une.
+    for (const garde of ["&& <ClubDataDisclosure", "? <ClubDataDisclosure"]) {
+      expect(carte).not.toContain(garde);
+    }
   });
 });

@@ -44,10 +44,18 @@ export { issueClubInviteCode, joinClubWithInviteCode } from "./clubInvites";
 //    arrête de jouer ne transfère pas son club.
 //  . `revokeClubStaffAccess` — retire les PERMISSIONS D'ENCADREMENT, conserve le
 //    suivi de joueur (l'entraîneur-joueur garde sa fiche dans l'effectif).
+//
+// Et une QUATRIÈME porte, qui va dans l'autre sens : `enrollSelfAsClubPlayer`
+// — « Je m'entraîne aussi ». Elle ACTIVE le statut de joueur de l'appelant,
+// uniquement sur lui-même (son cœur n'a pas de paramètre `memberUid`), sans
+// jamais nommer ses permissions d'encadrement. Elle n'ouvre la consultation
+// qu'au titre de la politique du club, exactement comme le rattachement par
+// code — jamais davantage.
 export {
   removeClubMember,
   deactivateClubPlayer,
   revokeClubStaffAccess,
+  enrollSelfAsClubPlayer,
 } from "./clubMembersApi";
 
 // Transfert de propriété du club : 100 % serveur, une seule transaction pour la

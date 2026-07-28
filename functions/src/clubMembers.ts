@@ -44,7 +44,18 @@
 // seul responsable, le proprietaire. Se retirer SOI-MEME reste toujours permis :
 // c'est une reduction de ses propres droits, jamais une prise de pouvoir.
 //
-// ─── LE PIEGE DU PROPRIETAIRE : DEUX GESTES SUR TROIS ───────────────────────
+// ─── ET UN QUATRIEME GESTE, QUI VA DANS L'AUTRE SENS ────────────────────────
+// `enrollSelfAsClubPlayer` (« Je m'entraine aussi ») ACTIVE le statut de joueur
+// de l'appelant, uniquement sur lui-meme. C'est l'exact inverse du geste 1
+// ci-dessus, et il obeit aux memes deux regles structurelles :
+//   . il ne NOMME PAS `accessRole` dans son ecriture, donc il ne peut pas le
+//     changer — un encadrant ne perd rien en devenant joueur ;
+//   . il n'accepte AUCUN identifiant de cible. Sa signature n'a pas de
+//     `memberUid` : le geste ne peut pas etre pointe vers quelqu'un d'autre.
+// Le raisonnement complet (autorisation d'acces alignee sur le rattachement par
+// code, projection laissee au projecteur) est en tete de la section « Geste 4 ».
+//
+// ─── LE PIEGE DU PROPRIETAIRE : DEUX GESTES SUR QUATRE ──────────────────────
 // OWNER_TRANSFER_REQUIRED protege ce qui ferait perdre au club son
 // proprietaire : la revocation de son encadrement, et son retrait complet. Il
 // NE protege PAS le troisieme : un proprietaire qui arrete de jouer
@@ -135,6 +146,7 @@
 
 import {
   ACCESS_ROLE_FIELD,
+  PLAYER_STATUS_ACTIVE,
   PLAYER_STATUS_FIELD,
   PLAYER_STATUS_INACTIVE,
   clubAuthoritySignal,
@@ -146,7 +158,14 @@ import {
   resolveOwnerAuthority,
   type ClubAuthoritySignal,
 } from "./clubAuthority";
-import { COACH_ACCESS_FIELD } from "./coachAccess";
+import {
+  COACH_ACCESS_FIELD,
+  initialCoachAccess,
+  isCoachAccessGranted,
+  normalizeCoachAccess,
+  type CoachAccessState,
+} from "./coachAccess";
+import { JOIN_ACCESS_POLICY_FIELD } from "./joinAccessPolicy";
 
 // ─── Port de stockage ───────────────────────────────────────────────────────
 
@@ -227,18 +246,28 @@ export const OWNER_TRANSFER_CODE: ClubMemberErrorCode = "failed-precondition";
 export const OWNER_TRANSFER_MESSAGE =
   "Impossible de retirer le proprietaire du club. Transfere d'abord la propriete a un autre encadrant, puis retire ce compte.";
 
-// ─── Les trois gestes, nommes une seule fois ────────────────────────────────
+// ─── Les gestes, nommes une seule fois ──────────────────────────────────────
 
 /**
- * Les trois gestes. Ce type ne traverse JAMAIS le reseau : il n'est pas un
- * parametre d'appel, c'est le nom interne du chemin d'ecriture. Chaque geste a
- * sa propre callable, donc son propre point d'entree — un client ne « choisit »
- * pas un geste dans une charge utile, il appelle une fonction ou une autre.
+ * Les gestes qui VISENT UN MEMBRE DESIGNE. Trois retraits, trois transactions,
+ * et une matrice acteur x cible qui peut refuser (`STAFF_OWNER_ONLY`).
  */
-export type ClubMemberGesture =
+export type ClubMemberTargetedGesture =
   | "removeClubMember"
   | "deactivateClubPlayer"
   | "revokeClubStaffAccess";
+
+/**
+ * Tous les gestes. Ce type ne traverse JAMAIS le reseau : il n'est pas un
+ * parametre d'appel, c'est le nom interne du chemin d'ecriture. Chaque geste a
+ * sa propre callable, donc son propre point d'entree — un client ne « choisit »
+ * pas un geste dans une charge utile, il appelle une fonction ou une autre.
+ *
+ * `enrollSelfAsClubPlayer` est le SEUL qui ne vise pas une cible : il ne peut
+ * porter que sur l'appelant lui-meme (cf. plus bas). C'est ce qui le sort de la
+ * matrice acteur x cible, et de la liste `ClubMemberTargetedGesture`.
+ */
+export type ClubMemberGesture = ClubMemberTargetedGesture | "enrollSelfAsClubPlayer";
 
 /**
  * Refus d'AUTORITE, par geste. Le message dit ce qui est refuse, jamais
@@ -252,6 +281,12 @@ export const GESTURE_DENIED_MESSAGE: Record<ClubMemberGesture, string> = {
     "Arret du suivi impossible : cette action demande d'etre encadrant de ce club.",
   revokeClubStaffAccess:
     "Retrait des acces d'encadrement impossible : cette action demande d'etre encadrant de ce club.",
+  // Ici, « ce club » n'apprend rien : seul quelqu'un qui possede deja une
+  // appartenance ACTIVE atteint le succes, et tous les autres cas — club
+  // inexistant, club d'autrui, autorite incoherente — rendent cette phrase-ci,
+  // a l'identique.
+  enrollSelfAsClubPlayer:
+    "Activation impossible : cette action demande d'etre membre actif de ce club.",
 };
 
 /** Panne du magasin, par geste. Meme code, meme absence d'information. */
@@ -260,6 +295,8 @@ export const GESTURE_UNAVAILABLE_MESSAGE: Record<ClubMemberGesture, string> = {
   deactivateClubPlayer: "L'arret du suivi est momentanement indisponible. Reessaie.",
   revokeClubStaffAccess:
     "Le retrait des acces d'encadrement est momentanement indisponible. Reessaie.",
+  enrollSelfAsClubPlayer:
+    "L'activation de ton suivi est momentanement indisponible. Reessaie.",
 };
 
 /**
@@ -294,7 +331,12 @@ export const STAFF_OWNER_ONLY = "STAFF_OWNER_ONLY";
 
 export const STAFF_OWNER_ONLY_CODE: ClubMemberErrorCode = "failed-precondition";
 
-export const STAFF_OWNER_ONLY_MESSAGE: Record<ClubMemberGesture, string> = {
+/**
+ * Restreint aux gestes QUI VISENT UNE CIBLE. Un geste qui ne peut porter que
+ * sur soi-meme n'atteint jamais la matrice : lui inventer une phrase serait du
+ * texte mort, et surtout un message qu'aucun test ne pourrait provoquer.
+ */
+export const STAFF_OWNER_ONLY_MESSAGE: Record<ClubMemberTargetedGesture, string> = {
   removeClubMember:
     "Ce compte fait partie de l'encadrement du club. Seul le proprietaire peut le retirer.",
   deactivateClubPlayer:
@@ -338,7 +380,7 @@ export function ownerTransferRequiredError(
   );
 }
 
-export function staffOwnerOnlyError(geste: ClubMemberGesture): ClubMemberError {
+export function staffOwnerOnlyError(geste: ClubMemberTargetedGesture): ClubMemberError {
   return new ClubMemberError(
     STAFF_OWNER_ONLY_CODE,
     STAFF_OWNER_ONLY_MESSAGE[geste],
@@ -377,6 +419,17 @@ export const PLAYER_DEACTIVATED_BY_FIELD = "playerDeactivatedBy";
 /** Revocation des PERMISSIONS D'ENCADREMENT. */
 export const STAFF_REVOKED_AT_FIELD = "staffRevokedAt";
 export const STAFF_REVOKED_BY_FIELD = "staffRevokedBy";
+
+/**
+ * ACTIVATION VOLONTAIRE DE SON PROPRE SUIVI DE JOUEUR.
+ *
+ * UN SEUL CHAMP, et pas de `...By`. Les trois retraits portent un auteur parce
+ * qu'un tiers peut les declencher ; celui-ci ne peut venir que du titulaire de
+ * l'appartenance (`memberUid` vaut toujours `actorUid`, cf. plus bas). Un champ
+ * qui ne peut porter qu'une seule valeur connue d'avance n'apprend rien a la
+ * relecture — il donnerait juste l'illusion qu'un tiers aurait pu agir.
+ */
+export const PLAYER_ENROLLED_AT_FIELD = "playerEnrolledAt";
 
 // ─── Socle commun aux trois gestes ──────────────────────────────────────────
 
@@ -518,7 +571,14 @@ function throwGestureDenial(
       geste === "revokeClubStaffAccess" ? "revokeClubStaffAccess" : "removeClubMember",
     );
   }
-  if (failure.kind === "staff-owner-only") throw staffOwnerOnlyError(geste);
+  if (failure.kind === "staff-owner-only") {
+    // STRUCTURELLEMENT INATTEIGNABLE pour l'activation du suivi : la matrice
+    // n'est evaluee que `!estSoiMeme`, et ce geste force `memberUid = actorUid`.
+    // On ne fabrique donc AUCUN message pour lui — on retombe sur son refus
+    // generique, celui qu'il rend deja pour toutes ses autres impossibilites.
+    if (geste === "enrollSelfAsClubPlayer") throw gestureDeniedError(geste, "not-staff");
+    throw staffOwnerOnlyError(geste);
+  }
 
   if (failure.signal) deps.onInconsistency?.(failure.signal);
   throw gestureDeniedError(geste, failure.reason);
@@ -866,6 +926,197 @@ export async function revokeClubStaffAccess(
         ok: true,
         result: { clubId, memberUid, alreadyRevoked: false, keepsPlayerStatus },
       };
+    },
+  );
+}
+
+// ─── Geste 4 : ACTIVER SON PROPRE SUIVI DE JOUEUR ───────────────────────────
+//
+// « Je m'entraine aussi ». Le geste inverse de `deactivateClubPlayer`, et le
+// SEUL de ce fichier qui OUVRE quelque chose au lieu de le fermer. Il est donc
+// le seul a devoir justifier chacun de ses verrous, un par un.
+//
+// ─── POURQUOI IL NE PASSE PAS PAR LE CODE D'INVITATION ──────────────────────
+// Techniquement, un encadrant PEUT deja saisir le code de son propre club :
+// `joinClubWithInviteCode` pose `playerStatus: "active"` sans nommer
+// `accessRole`, donc sans rien lui retirer. C'etait meme, jusqu'ici, le seul
+// chemin. Mais demander a un fondateur de generer un code, de le lire, puis de
+// le retaper pour entrer dans son propre effectif est une mauvaise experience :
+// le code d'invitation existe pour authentifier quelqu'un qui vient de
+// DEHORS. Ici, l'appartenance est deja etablie, verifiee, et ecrite par le
+// serveur — il n'y a rien a prouver.
+//
+// ─── CE QU'IL FAIT, ET RIEN D'AUTRE ─────────────────────────────────────────
+//   . `playerStatus` -> "active" ;
+//   . `coachAccess`  -> l'etat que la POLITIQUE DU CLUB pose a l'entree, ou
+//     celui deja pose s'il en existe un valide (voir plus bas) ;
+//   . `playerEnrolledAt` -> la date, pour l'audit.
+//
+// ─── CE QU'IL NE FAIT PAS, ET COMMENT C'EST GARANTI ─────────────────────────
+// `accessRole` n'est PAS NOMME dans l'ecriture. Ce n'est pas une garde qu'on
+// aurait pu oublier d'ecrire, ni une relecture-reecriture qu'une course pourrait
+// prendre en defaut : un `merge` ne peut pas changer un champ dont il ne parle
+// pas. Meme mecanique que les trois retraits — c'est la raison pour laquelle
+// aucun d'eux ne se marche dessus.
+//
+// `users/{uid}.clubId` n'est pas nomme non plus : la personne est deja membre de
+// ce club, son profil le designe deja (c'est meme ce qui a permis a l'ecran de
+// trouver cette appartenance). Il n'y a rien a rattacher.
+//
+// Aucun autre document n'est touche : ni un autre membre, ni le club, ni une
+// projection tierce. La transaction ecrit UN document, celui de l'appelant.
+//
+// ─── L'AUTORISATION D'ACCES N'EST PAS FORCEE, ELLE EST ALIGNEE ──────────────
+// `existingAccess ?? initialCoachAccess(politique du club)` — l'EXPRESSION
+// EXACTE du rattachement par code (inviteCodes.ts). C'est un choix, et il se
+// defend dans les deux sens :
+//
+//  . un etat DEJA POSE est conserve tel quel. Une personne dont le suivi avait
+//    ete arrete porte `coachAccess: "revoked"` : se reactiver la remet dans
+//    l'effectif suivi SANS rouvrir la consultation. Un "pending" reste
+//    "pending". Activer le suivi n'a donc jamais l'effet de bord d'ouvrir un
+//    acces que quelqu'un avait ferme ;
+//  . un etat ABSENT (cas de l'appartenance d'amorçage du proprietaire, ou les
+//    regles interdisent a tout client d'ecrire ce champ) recoit l'etat initial
+//    de la politique du club : "not_required" en mode par defaut, "pending" en
+//    mode `approval_required`.
+//
+// Autrement dit : MEME CLUB, MEME POLITIQUE, MEME RESULTAT qu'un joueur qui
+// rejoint avec un code. Un encadrant qui s'active n'obtient aucun traitement
+// plus favorable — et un club en `approval_required` verra son propre
+// entraineur-joueur en attente d'approbation, exactement comme ses joueurs.
+//
+// L'alternative — poser "approved" ou "not_required" en dur au motif que « c'est
+// lui-meme, il sait ce qu'il fait » — a ete ecartee : elle aurait fabrique une
+// exception d'acces reservee a l'encadrement, c'est-a-dire precisement la
+// categorie de personnes dont la fiche est la plus sensible a lire.
+//
+// ─── LA PROJECTION N'EST PAS ECRITE ICI, ET C'EST VOULU ─────────────────────
+// Le retrait SUPPRIME la fiche dans sa transaction, parce qu'une donnee qui doit
+// disparaitre ne peut pas attendre un trigger. L'inverse n'est pas vrai : une
+// fiche qui doit APPARAITRE peut naitre du recalcul serveur, et elle DOIT en
+// naitre — c'est le projecteur (projector.ts) qui detient le contrat coach-safe,
+// et lui seul. L'ecriture du membership declenche `onMemberWritten`, qui
+// reconstruit ; le projecteur relit alors `playerStatus` PUIS `coachAccess` et
+// renvoie `null` si l'un des deux refuse. La fiche n'existe donc que si le
+// contrat d'acces l'autorise, sans qu'aucune ligne de ce fichier n'ait a le
+// re-decider (donc sans qu'aucune ne puisse le decider differemment).
+
+export type EnrollSelfPlayerResult = {
+  clubId: string;
+  memberUid: string;
+  /**
+   * `true` si le suivi etait DEJA actif (rejeu). AUCUNE ecriture n'est emise, et
+   * la date d'activation d'origine n'est pas reecrite.
+   */
+  alreadyActive: boolean;
+  /** Etat d'autorisation d'acces EFFECTIF apres le geste (jamais choisi par le client). */
+  coachAccess: CoachAccessState;
+  /**
+   * Cet etat ouvre-t-il la consultation ? Expose pour que l'ecran dise la
+   * verite — « ton encadrement verra ta fiche » vs « une etape reste a faire » —
+   * jamais pour en deduire un droit : le serveur reste seul juge, a chaque appel.
+   */
+  coachAccessGranted: boolean;
+  /**
+   * La personne conserve-t-elle ses permissions d'encadrement ? Toujours `true`
+   * pour un encadrant, puisque le geste ne les nomme pas. C'est justement ce
+   * qu'on veut pouvoir VERIFIER depuis l'exterieur.
+   */
+  keepsStaffAccess: boolean;
+};
+
+/**
+ * ACTIVE LE SUIVI DE JOUEUR DE L'APPELANT, sur son propre club.
+ *
+ * UNIQUEMENT POUR SOI-MEME, et ce n'est pas une verification : c'est une
+ * IMPOSSIBILITE de construction. Cette fonction ne prend AUCUN identifiant de
+ * cible — `memberUid` n'existe pas dans sa signature. Il n'y a donc rien a
+ * valider, rien a usurper, et aucun champ supplementaire dans une charge utile
+ * ne peut deplacer le geste vers quelqu'un d'autre.
+ *
+ * APPARTENANCE ACTIVE OBLIGATOIRE. Une pierre tombale (les deux axes fermes)
+ * n'est PAS une appartenance : sans ce verrou, quelqu'un qu'on vient de retirer
+ * du club pourrait se remettre seul dans l'effectif suivi, sans code
+ * d'invitation, sans quota, sans expiration — c'est-a-dire contourner tout le
+ * contrat d'invitation par la porte de sortie. Le refus emprunte le message
+ * « ce membre ne fait pas partie de l'effectif », qui est exactement le fait.
+ *
+ * AUCUNE PROTECTION DU PROPRIETAIRE : ce geste ne retire aucun pouvoir, il n'y
+ * a donc rien a transferer d'abord. Un president qui se remet a s'entrainer
+ * reste president — la symetrie exacte de `deactivateClubPlayer`.
+ *
+ * QUI PEUT L'APPELER : n'importe quel membre ACTIF du club, encadrant ou non.
+ * Le bouton produit vit dans l'espace coach, mais la regle serveur ne parle pas
+ * d'encadrement — exiger `accessRole` ici ajouterait une condition que rien ne
+ * justifie, et refuserait par exemple a un ancien joueur redevenu simple membre
+ * de reprendre son suivi.
+ */
+export async function enrollSelfAsClubPlayer(
+  deps: ClubMemberDeps,
+  params: { actorUid: string; clubId: unknown },
+): Promise<EnrollSelfPlayerResult> {
+  return executerGeste<EnrollSelfPlayerResult>(
+    deps,
+    {
+      geste: "enrollSelfAsClubPlayer",
+      actorUid: params.actorUid,
+      clubId: params.clubId,
+      // LA CIBLE EST L'APPELANT, ecrit ici et nulle part ailleurs. Aucune
+      // valeur cliente n'entre dans ce parametre.
+      memberUid: params.actorUid,
+    },
+    async (tx, { clubId, memberUid, now }) => {
+      const prelude = await lireEtAutoriser(tx, {
+        geste: "enrollSelfAsClubPlayer",
+        clubId,
+        actorUid: memberUid,
+        memberUid,
+        protegeProprietaire: false,
+      });
+      if (!prelude.ok) return prelude;
+
+      // APPARTENANCE ACTIVE OBLIGATOIRE. `lireEtAutoriser` garantit que le
+      // document EXISTE ; il ne dit rien de son contenu. Une pierre tombale
+      // passe donc jusqu'ici, et c'est ce test-ci qui la refuse.
+      if (!isActiveMembership(prelude.target)) return { ok: false, kind: "member-missing" };
+
+      const keepsStaffAccess = isClubStaff(prelude.target);
+      // MEME EXPRESSION QUE LE RATTACHEMENT PAR CODE (inviteCodes.ts) : etat
+      // deja pose conserve, sinon etat initial de la politique du club.
+      const existingAccess = normalizeCoachAccess(prelude.target[COACH_ACCESS_FIELD]);
+      const coachAccess =
+        existingAccess ?? initialCoachAccess(prelude.club[JOIN_ACCESS_POLICY_FIELD]);
+
+      const resultat = (alreadyActive: boolean): EnrollSelfPlayerResult => ({
+        clubId,
+        memberUid,
+        alreadyActive,
+        coachAccess,
+        coachAccessGranted: isCoachAccessGranted(coachAccess),
+        keepsStaffAccess,
+      });
+
+      // Idempotence : suivi deja actif -> AUCUNE ecriture. Le succes est annonce
+      // comme un rejeu, et la date d'activation d'origine reste intacte.
+      if (isActivePlayer(prelude.target)) return { ok: true, result: resultat(true) };
+
+      // ── Ecriture UNIQUE ────────────────────────────────────────────────────
+      // `accessRole` est ABSENT de cet objet : un `merge` ne peut pas le
+      // changer. Aucun autre chemin, aucun autre document.
+      tx.set(
+        memberPaths.member(clubId, memberUid),
+        {
+          uid: memberUid,
+          [PLAYER_STATUS_FIELD]: PLAYER_STATUS_ACTIVE,
+          [COACH_ACCESS_FIELD]: coachAccess,
+          [PLAYER_ENROLLED_AT_FIELD]: now,
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+
+      return { ok: true, result: resultat(false) };
     },
   );
 }

@@ -34,7 +34,7 @@
 // espace coach » a quelqu'un qui n'y a aucun droit. Un bouton qui ne mene nulle
 // part est le genre de promesse vide qu'on refuse.
 
-import type { AppSpace } from "../domain/appSpace";
+import type { AppSpace, PlayerFollowState } from "../domain/appSpace";
 
 export type AppSpaceSwitchState = {
   /**
@@ -45,16 +45,36 @@ export type AppSpaceSwitchState = {
   /** L'espace actuellement affiche. */
   espace: AppSpace;
   /**
+   * SON SUIVI SPORTIF DANS SON CLUB : `actif`, `inactif`, `inconnu`.
+   *
+   * POURQUOI IL VOYAGE PAR CE PORTILLON-CI plutot que par un second relais : il
+   * vient du MEME instantane Firestore que `peutChoisir` (l'appartenance
+   * `clubs/{clubId}/members/{uid}`, lue une seule fois a la racine). Un second
+   * portillon aurait signifie un second abonnement, ou pire, deux etats derives
+   * du meme document a des instants differents — la divergence que tout ce
+   * perimetre s'interdit.
+   *
+   * Ce que ca sert : la carte « Je m'entraine aussi » (espace coach) doit savoir
+   * lequel des deux gestes proposer. `peutChoisir` ne suffit pas — il repond a
+   * une autre question, et il vaut faux dans DEUX situations opposees.
+   */
+  suiviJoueur: PlayerFollowState;
+  /**
    * Memorise un choix. N'ouvre RIEN : la preference ne fait que choisir entre
    * deux espaces deja autorises (cf. domain/appSpace.resolveAppSpace).
    */
   choisir: (espace: AppSpace) => void;
 };
 
-/** Etat ferme : aucun selecteur, et un `choisir` qui ne fait rien. */
+/**
+ * Etat ferme : aucun selecteur, aucun geste de suivi propose, et un `choisir`
+ * qui ne fait rien. `suiviJoueur: "inconnu"` est le pendant exact de
+ * `peutChoisir: false` — tant que la racine n'a rien publie, on n'affirme rien.
+ */
 const FERME: AppSpaceSwitchState = {
   peutChoisir: false,
   espace: "player",
+  suiviJoueur: "inconnu",
   choisir: () => {},
 };
 

@@ -95,6 +95,7 @@ jest.mock("../src/clubMembers", () => {
     removeClubMember: jest.fn(actual.removeClubMember),
     deactivateClubPlayer: jest.fn(actual.deactivateClubPlayer),
     revokeClubStaffAccess: jest.fn(actual.revokeClubStaffAccess),
+    enrollSelfAsClubPlayer: jest.fn(actual.enrollSelfAsClubPlayer),
   };
 });
 
@@ -127,6 +128,8 @@ import {
 import {
   deactivateClubPlayer,
   deactivateClubPlayerHandler,
+  enrollSelfAsClubPlayer,
+  enrollSelfAsClubPlayerHandler,
   removeClubMember,
   removeClubMemberHandler,
   revokeClubStaffAccess,
@@ -375,11 +378,20 @@ async function refus(promise: Promise<unknown>): Promise<HttpsError> {
 const removeSpy = clubMembersCore.removeClubMember as unknown as jest.Mock;
 const suiviSpy = clubMembersCore.deactivateClubPlayer as unknown as jest.Mock;
 const encadrementSpy = clubMembersCore.revokeClubStaffAccess as unknown as jest.Mock;
+const activationSpy = clubMembersCore.enrollSelfAsClubPlayer as unknown as jest.Mock;
 const transferSpy = clubOwnershipCore.transferClubOwnership as unknown as jest.Mock;
 const issueSpy = inviteCore.issueInviteCode as unknown as jest.Mock;
 const joinSpy = inviteCore.joinClubWithCode as unknown as jest.Mock;
 
-const TOUS_LES_ESPIONS = [removeSpy, suiviSpy, encadrementSpy, transferSpy, issueSpy, joinSpy];
+const TOUS_LES_ESPIONS = [
+  removeSpy,
+  suiviSpy,
+  encadrementSpy,
+  activationSpy,
+  transferSpy,
+  issueSpy,
+  joinSpy,
+];
 
 /** Le 2e argument recu par le coeur : c'est la ou vit l'identite transmise. */
 function paramsCoeur(spy: jest.Mock, index = 0): Record<string, unknown> {
@@ -404,6 +416,7 @@ describe("0 — l'enveloppe testee est celle qui part en production", () => {
     expect(deployed.removeClubMember).toBe(removeClubMember);
     expect(deployed.deactivateClubPlayer).toBe(deactivateClubPlayer);
     expect(deployed.revokeClubStaffAccess).toBe(revokeClubStaffAccess);
+    expect(deployed.enrollSelfAsClubPlayer).toBe(enrollSelfAsClubPlayer);
     expect(deployed.transferClubOwnership).toBe(transferClubOwnership);
     expect(deployed.issueClubInviteCode).toBe(issueClubInviteCode);
     expect(deployed.joinClubWithInviteCode).toBe(joinClubWithInviteCode);
@@ -415,6 +428,7 @@ describe("0 — l'enveloppe testee est celle qui part en production", () => {
       removeClubMember,
       deactivateClubPlayer,
       revokeClubStaffAccess,
+      enrollSelfAsClubPlayer,
       transferClubOwnership,
       issueClubInviteCode,
       joinClubWithInviteCode,
@@ -432,6 +446,7 @@ describe("0 — l'enveloppe testee est celle qui part en production", () => {
     expect(removeClubMemberHandler.length).toBe(1);
     expect(deactivateClubPlayerHandler.length).toBe(1);
     expect(revokeClubStaffAccessHandler.length).toBe(1);
+    expect(enrollSelfAsClubPlayerHandler.length).toBe(1);
     expect(transferClubOwnershipHandler.length).toBe(1);
     expect(issueClubInviteCodeHandler.length).toBe(1);
     expect(joinClubWithInviteCodeHandler.length).toBe(1);
@@ -472,6 +487,8 @@ describe.each(CHEMINS)("%s", (_chemin, invoke) => {
     invoke(deactivateClubPlayer, deactivateClubPlayerHandler, req);
   const appelRetraitEncadrement = (req: unknown) =>
     invoke(revokeClubStaffAccess, revokeClubStaffAccessHandler, req);
+  const appelActivationSuivi = (req: unknown) =>
+    invoke(enrollSelfAsClubPlayer, enrollSelfAsClubPlayerHandler, req);
   const appelTransfert = (req: unknown) =>
     invoke(transferClubOwnership, transferClubOwnershipHandler, req);
   const appelEmission = (req: unknown) =>
@@ -484,6 +501,9 @@ describe.each(CHEMINS)("%s", (_chemin, invoke) => {
     ["removeClubMember", appelRetrait, { clubId: CLUB_A, memberUid: PLAYER_A1 }],
     ["deactivateClubPlayer", appelArretSuivi, { clubId: CLUB_A, memberUid: PLAYER_A1 }],
     ["revokeClubStaffAccess", appelRetraitEncadrement, { clubId: CLUB_A, memberUid: PLAYER_A1 }],
+    // La charge utile de l'activation ne porte QU'un clubId : son coeur n'a pas
+    // de parametre de cible.
+    ["enrollSelfAsClubPlayer", appelActivationSuivi, { clubId: CLUB_A }],
     ["transferClubOwnership", appelTransfert, { clubId: CLUB_A, newOwnerUid: COACH_A2 }],
     ["issueClubInviteCode", appelEmission, { clubId: CLUB_A }],
     ["joinClubWithInviteCode", appelRattachement, { code: CODE_CLUB_A }],
@@ -537,7 +557,7 @@ describe.each(CHEMINS)("%s", (_chemin, invoke) => {
     ];
 
     it.each(IDENTITES_INEXPLOITABLES)(
-      "2.1 %s est refuse par les sept portes, sans aucune ecriture",
+      "2.1 %s est refuse par les huit portes, sans aucune ecriture",
       async (_nom, auth) => {
         const avant = mockDb.snapshot();
         for (const [, appel, data] of TOUTES) {
@@ -643,6 +663,41 @@ describe.each(CHEMINS)("%s", (_chemin, invoke) => {
       expect(mockAuthDeletions).not.toContain(PLAYER_A1);
     });
 
+    it("3.5 bis « je m'entraine aussi » active l'appelant, JAMAIS la cible nommee", async () => {
+      // LE test central de ce geste. Un encadrant du club A demande l'activation
+      // en nommant un joueur dans sa charge utile : le seul document touche doit
+      // etre le SIEN.
+      const avantCible = JSON.stringify(mockDb.read(memberPaths.member(CLUB_A, PLAYER_A1)));
+
+      const res = await appelActivationSuivi(
+        signedBy(COACH_A2, {
+          ...chargeUsurpatrice(PLAYER_A1),
+          clubId: CLUB_A,
+          memberUid: PLAYER_A1,
+        }),
+      );
+
+      // L'appelant est bien celui du jeton, dans le resultat comme dans la base.
+      expect((res as { memberUid: string }).memberUid).toBe(COACH_A2);
+      expect(mockDb.read(memberPaths.member(CLUB_A, COACH_A2))).toMatchObject({
+        accessRole: "coach", // permission INTACTE : elle n'est pas nommee
+        playerStatus: "active",
+      });
+      // La cible designee dans la charge utile n'a pas bouge d'un octet.
+      expect(JSON.stringify(mockDb.read(memberPaths.member(CLUB_A, PLAYER_A1)))).toBe(avantCible);
+    });
+
+    it("3.5 ter un membre RETIRE ne se remet pas seul dans l'effectif suivi", async () => {
+      // La pierre tombale du club A. Sans le verrou « appartenance active », ce
+      // chemin contournerait tout le contrat d'invitation.
+      const avant = mockDb.snapshot();
+      const err = await refus(
+        appelActivationSuivi(signedBy(RETIRE_A, { ...chargeUsurpatrice(COACH_A), clubId: CLUB_A })),
+      );
+      expect(err.code).toBe(MEMBER_NOT_FOUND_CODE);
+      expect(mockDb.snapshot()).toBe(avant);
+    });
+
     it("3.6 aucune de ces tentatives ne pollue le prototype des objets", () => {
       // `__proto__` glisse dans la charge utile de tous les tests precedents.
       expect(({} as Record<string, unknown>).fksPollution).toBeUndefined();
@@ -670,6 +725,23 @@ describe.each(CHEMINS)("%s", (_chemin, invoke) => {
       // Rien d'autre ne franchit l'enveloppe : ni `role`, ni `ownerUid`, ni
       // `auth`. La forme est close, donc un champ de plus ne peut pas se glisser.
       expect(Object.keys(params).sort()).toEqual(["actorUid", "clubId", "memberUid"]);
+    });
+
+    it("4.1 bis enrollSelfAsClubPlayer ne transmet AUCUNE cible : sa forme n'en a pas", async () => {
+      await appelActivationSuivi(
+        signedBy(COACH_A2, {
+          ...chargeUsurpatrice(PLAYER_A1),
+          clubId: CLUB_A,
+          memberUid: PLAYER_A1,
+        }),
+      );
+      const params = paramsCoeur(activationSpy);
+      expect(params.actorUid).toBe(COACH_A2);
+      // DEUX cles, et pas trois : `memberUid` n'existe pas dans cette forme.
+      // Ce n'est donc pas « on l'ignore », c'est « il n'y a nulle part ou le
+      // lire » — un oubli de relecture ne peut pas rouvrir la porte.
+      expect(Object.keys(params).sort()).toEqual(["actorUid", "clubId"]);
+      expect(params.memberUid).toBeUndefined();
     });
 
     it("4.2 transferClubOwnership transmet l'uid du jeton, et une forme d'arguments FIGEE", async () => {

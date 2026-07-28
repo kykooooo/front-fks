@@ -50,6 +50,7 @@ import { CoachStateBlock } from "../../components/coach/CoachStateBlock";
 import { CoachStatusPill } from "../../components/coach/CoachStatusPill";
 import { CoachSignalRow } from "../../components/coach/CoachSignalRow";
 import { CoachLegalFooter } from "../../components/coach/CoachLegalFooter";
+import { CoachSelfPlayerCard } from "../../components/coach/CoachSelfPlayerCard";
 import { AppSpaceSwitch } from "../../components/AppSpaceSwitch";
 import {
   coachColors,
@@ -1481,6 +1482,18 @@ export default function CoachWeekScreen() {
             </Text>
           ) : null}
         </CoachSectionCard>
+
+        {/* « Je m'entraîne aussi » — et son inverse, « Arrêter mon suivi ».
+            Placée JUSTE AVANT le sélecteur d'espace, parce qu'elle est ce qui
+            le fait apparaître : activer son suivi ouvre le second espace, et la
+            ligne d'en dessous sert à y aller. Elle rend `null` tant que l'état
+            du suivi n'est pas connu, et ne s'affiche jamais en double avec le
+            geste inverse (les deux états s'excluent). */}
+        <CoachSelfPlayerCard
+          clubId={club.clubId}
+          uid={auth.currentUser?.uid ?? null}
+          testID="coach-self-player"
+        />
 
         {/* Sélecteur Joueur / Coach. Ne s'affiche QUE pour un entraîneur-joueur
             (droit serveur aux deux espaces) ; il rend `null` pour tous les

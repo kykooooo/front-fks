@@ -20,6 +20,7 @@ import type { ClubAuthoritySignal } from "./clubAuthority";
 import {
   ClubMemberError,
   deactivateClubPlayer as deactivateClubPlayerCore,
+  enrollSelfAsClubPlayer as enrollSelfAsClubPlayerCore,
   removeClubMember as removeClubMemberCore,
   revokeClubStaffAccess as revokeClubStaffAccessCore,
   type MemberDocData,
@@ -235,3 +236,52 @@ export const revokeClubStaffAccessHandler = async (
 };
 
 export const revokeClubStaffAccess = onCall({ region: REGION }, revokeClubStaffAccessHandler);
+
+/**
+ * ACTIVATION VOLONTAIRE DE SON PROPRE SUIVI DE JOUEUR (« Je m'entraine aussi »).
+ *
+ * LA CHARGE UTILE NE PORTE QU'UN `clubId`, et c'est structurel : le coeur
+ * (`enrollSelfAsClubPlayer`) n'a pas de parametre `memberUid`. Meme si un client
+ * postait `memberUid`, `uid`, `actorUid` ou n'importe quel autre champ, il n'y
+ * aurait AUCUN endroit ou le lire — la cible est posee par le coeur, a partir de
+ * l'identite du jeton. C'est la difference entre « on ignore ce champ » et « ce
+ * champ n'existe nulle part » : la seconde ne peut pas etre annulee par un oubli
+ * de relecture.
+ *
+ * Sur le `clubId`, en revanche : il vient bien de la charge utile, comme pour
+ * les trois retraits, et ce n'est pas une faiblesse. Il ne dit pas QUI on est,
+ * il dit OU regarder. Le pointer vers un autre club fait lire
+ * `clubs/{autre}/members/{appelant}` — qui n'existe pas — donc un refus. On ne
+ * peut que se refuser un acces a soi-meme, jamais en obtenir un.
+ */
+export const enrollSelfAsClubPlayerHandler = async (
+  request: CallableRequest<{ clubId?: unknown }>,
+) => {
+  const uid = readCallerUid(request);
+  if (!uid) throw new HttpsError("unauthenticated", "Connexion requise.");
+
+  try {
+    const result = await enrollSelfAsClubPlayerCore(
+      {
+        store: createMemberStore(getDb()),
+        now: Date.now,
+        onInconsistency: logClubAuthorityInconsistency,
+      },
+      { actorUid: uid, clubId: request.data?.clubId },
+    );
+    logger.info("clubMembers: suivi joueur active", {
+      clubId: result.clubId,
+      actorUid: uid,
+      alreadyActive: result.alreadyActive,
+      // L'ETAT d'autorisation, pas la donnee : de quoi relire un journal et
+      // comprendre pourquoi une fiche est (ou n'est pas) apparue.
+      coachAccess: result.coachAccess,
+      keepsStaffAccess: result.keepsStaffAccess,
+    });
+    return result;
+  } catch (err) {
+    throw toHttpsError(err);
+  }
+};
+
+export const enrollSelfAsClubPlayer = onCall({ region: REGION }, enrollSelfAsClubPlayerHandler);

@@ -45,6 +45,7 @@ const FUNCTIONS_REGION = "europe-west4";
 const REMOVE_CALLABLE = "removeClubMember";
 const DEACTIVATE_CALLABLE = "deactivateClubPlayer";
 const REVOKE_STAFF_CALLABLE = "revokeClubStaffAccess";
+const ENROLL_SELF_CALLABLE = "enrollSelfAsClubPlayer";
 
 /**
  * Jetons machine des échecs typés, tels que le serveur les émet
@@ -206,4 +207,72 @@ export async function revokeClubStaffAccess(
   memberUid: string,
 ): Promise<RemoveMemberOutcome> {
   return appelerGeste(REVOKE_STAFF_CALLABLE, clubId, memberUid, "alreadyRevoked");
+}
+
+// ─── « Je m'entraîne aussi » : le geste qui OUVRE ────────────────────────────
+
+export type EnrollSelfOutcome =
+  | {
+      ok: true;
+      /** Le suivi était déjà actif (rejeu, double appui, retour en arrière). */
+      alreadyActive: boolean;
+      /**
+       * L'encadrement verra-t-il la fiche ? Vient du SERVEUR, qui applique la
+       * politique du club. L'écran l'affiche, il ne le calcule pas — et surtout
+       * il n'en déduit aucun droit.
+       */
+      coachAccessGranted: boolean;
+    }
+  | { ok: false; reason: RemoveMemberFailureReason; message: string };
+
+/**
+ * Messages de l'ACTIVATION. Table distincte de `REMOVE_MESSAGES` : les mêmes
+ * codes d'erreur ne veulent pas dire la même chose quand on ouvre que quand on
+ * ferme. « Ce membre ne fait plus partie de l'effectif » (le message du retrait)
+ * n'aurait aucun sens dit à quelqu'un qui essaie d'ENTRER.
+ *
+ * `staffOwnerOnly` figure ici pour satisfaire le type, et il est INATTEIGNABLE :
+ * la matrice acteur x cible ne s'applique qu'aux gestes visant un tiers, et
+ * celui-ci ne vise que soi-même. Son message reste donc générique plutôt que
+ * d'inventer une explication qu'aucun serveur n'émettra.
+ */
+const ENROLL_MESSAGES: Record<RemoveMemberFailureReason, string> = {
+  notMember:
+    "Ton compte n'est pas (ou n'est plus) membre actif de ce club. Actualise l'écran ; si le club n'apparaît plus, demande à ton club de te réinviter.",
+  denied:
+    "Activation impossible avec ce compte. Actualise l'écran : si le club n'apparaît plus, c'est qu'il n'est plus accessible avec ce compte.",
+  ownerTransferRequired:
+    "Activation impossible avec ce compte. Actualise l'écran et réessaie.",
+  staffOwnerOnly: "Activation impossible avec ce compte. Actualise l'écran et réessaie.",
+  unauthenticated: "Ta session a expiré. Reconnecte-toi puis réessaie.",
+  notFound: "Le service du club ne répond pas. Réessaie dans un moment.",
+  unavailable: "Impossible de joindre le serveur. Vérifie ta connexion et réessaie.",
+};
+
+/**
+ * ACTIVER SON PROPRE SUIVI DE JOUEUR — « Je m'entraîne aussi ».
+ *
+ * ELLE NE PREND PAS D'IDENTIFIANT DE PERSONNE, et c'est le point : il n'y a
+ * aucun paramètre à composer, donc rien qu'un appel malveillant puisse
+ * substituer. La charge utile ne porte qu'un `clubId`, et le serveur pose la
+ * cible lui-même à partir du jeton (functions/src/clubMembersApi.ts).
+ *
+ * Le geste INVERSE n'est pas ici : c'est `deactivateClubPlayer` ci-dessus, que
+ * la matrice serveur autorise déjà sur soi-même. Écrire une seconde callable
+ * « arrêter mon suivi » aurait dupliqué une porte qui existe et qui marche.
+ */
+export async function enrollSelfAsClubPlayer(clubId: string): Promise<EnrollSelfOutcome> {
+  try {
+    const res = await invoke<Record<string, unknown>>(ENROLL_SELF_CALLABLE, { clubId });
+    return {
+      ok: true,
+      alreadyActive: res.data?.alreadyActive === true,
+      // Deny-first côté affichage aussi : une réponse illisible ne fait jamais
+      // annoncer « ton encadrement verra ta fiche ».
+      coachAccessGranted: res.data?.coachAccessGranted === true,
+    };
+  } catch (err) {
+    const reason = readRemoveFailureReason(err);
+    return { ok: false, reason, message: ENROLL_MESSAGES[reason] };
+  }
 }

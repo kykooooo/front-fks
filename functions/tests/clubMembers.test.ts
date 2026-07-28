@@ -20,8 +20,10 @@ import {
   MEMBER_NOT_FOUND_CODE,
   OWNER_TRANSFER_CODE,
   OWNER_TRANSFER_REQUIRED,
+  GESTURE_UNAVAILABLE_MESSAGE,
   PLAYER_DEACTIVATED_AT_FIELD,
   PLAYER_DEACTIVATED_BY_FIELD,
+  PLAYER_ENROLLED_AT_FIELD,
   REMOVE_DENIED_CODE,
   REMOVE_DENIED_MESSAGE,
   STAFF_OWNER_ONLY,
@@ -29,6 +31,7 @@ import {
   STAFF_REVOKED_AT_FIELD,
   STAFF_REVOKED_BY_FIELD,
   deactivateClubPlayer,
+  enrollSelfAsClubPlayer,
   isProjectablePlayer,
   memberPaths,
   removeClubMember,
@@ -39,6 +42,7 @@ import {
 } from "../src/clubMembers";
 import {
   PLAYER_STATUS_INACTIVE,
+  hasOwnerMembership,
   isActiveMembership,
   isActivePlayer,
   isClubStaff,
@@ -1358,5 +1362,440 @@ describe("entrees hostiles — arret du suivi et revocation", () => {
       );
       expect(err.code).toBe("unavailable");
     }
+  });
+});
+
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// 7. Â« JE M'ENTRAINE AUSSI Â» â€” L'ACTIVATION VOLONTAIRE DE SON PROPRE SUIVI
+//
+// Le seul geste de ce fichier qui OUVRE quelque chose. Il est donc interroge
+// plus durement que les trois autres, et sur cinq axes :
+//
+//  1. IL N'OUVRE QUE CE QU'IL DOIT. Les permissions d'encadrement ne sont pas
+//     nommees dans l'ecriture : on le prouve en comparant l'AVANT et l'APRES du
+//     document, cle par cle, pour un coach ET pour un proprietaire.
+//  2. IL NE PEUT PAS ETRE POINTE AILLEURS. Le coeur n'a pas de parametre de
+//     cible : on le verifie par sa forme d'arguments ET par une charge utile
+//     usurpatrice.
+//  3. IL RESPECTE LE CONTRAT D'ACCES DU CLUB au lieu de le forcer â€” les deux
+//     politiques, plus l'etat deja pose.
+//  4. IL EST IDEMPOTENT PAR COMPTAGE D'ECRITURES, jamais par comparaison
+//     d'etat : une reecriture a l'identique passerait une comparaison d'etat.
+//  5. IL NE RESSUSCITE PERSONNE. Une pierre tombale n'est pas une appartenance :
+//     sans ce verrou, un membre retire contournerait tout le contrat
+//     d'invitation par la porte de sortie.
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+/** Le club A bascule en mode Â« une decision humaine est requise a l'entree Â». */
+function storeApprobationRequise(): FakeStore {
+  const store = storeAvecEncadrants();
+  store.seed(memberPaths.club(CLUB_A), {
+    name: "Club A",
+    ownerUid: OWNER_A,
+    joinAccessPolicy: "approval_required",
+  });
+  return store;
+}
+
+describe("geste 4 â€” ACTIVER SON PROPRE SUIVI DE JOUEUR", () => {
+  it("NOMINAL : un encadrant sans suivi entre dans l'effectif suivi de son club", async () => {
+    const store = storeAvecEncadrants();
+    const avant = store.read(memberPaths.member(CLUB_A, COACH_A2));
+    expect(isActivePlayer(avant)).toBe(false);
+
+    const result = await enrollSelfAsClubPlayer(deps(store), {
+      actorUid: COACH_A2,
+      clubId: CLUB_A,
+    });
+
+    expect(result).toEqual({
+      clubId: CLUB_A,
+      memberUid: COACH_A2,
+      alreadyActive: false,
+      // Politique par defaut du club A -> etat pose a l'entree.
+      coachAccess: "not_required",
+      coachAccessGranted: true,
+      keepsStaffAccess: true,
+    });
+
+    const apres = store.read(memberPaths.member(CLUB_A, COACH_A2));
+    expect(isActivePlayer(apres)).toBe(true);
+    expect(apres).toMatchObject({
+      uid: COACH_A2,
+      playerStatus: "active",
+      coachAccess: "not_required",
+      [PLAYER_ENROLLED_AT_FIELD]: NOW,
+      updatedAt: NOW,
+    });
+    // UNE SEULE ecriture, sur UN SEUL document : le sien.
+    expect(store.ecritures).toEqual(["set " + memberPaths.member(CLUB_A, COACH_A2)]);
+  });
+
+  it("PERMISSIONS INCHANGEES â€” coach : accessRole n'est meme pas dans l'ecriture", async () => {
+    const store = storeAvecEncadrants();
+    const avant = store.read(memberPaths.member(CLUB_A, COACH_A2));
+
+    await enrollSelfAsClubPlayer(deps(store), { actorUid: COACH_A2, clubId: CLUB_A });
+
+    const apres = store.read(memberPaths.member(CLUB_A, COACH_A2));
+    expect(apres?.accessRole).toBe(avant?.accessRole);
+    expect(apres?.accessRole).toBe("coach");
+    expect(isClubStaff(apres)).toBe(true);
+    // Preuve plus forte que Â« la valeur est identique Â» : AUCUNE cle de
+    // l'ancien document n'a change. Seules des cles NOUVELLES ont ete ajoutees.
+    for (const [cle, valeur] of Object.entries(avant ?? {})) {
+      if (cle === "playerStatus" || cle === "coachAccess" || cle === "updatedAt") continue;
+      expect(apres?.[cle]).toEqual(valeur);
+    }
+  });
+
+  it("PERMISSIONS INCHANGEES â€” proprietaire : il reste proprietaire, et autorise", async () => {
+    const store = storeAvecEncadrants();
+    // Le proprietaire du club A n'a AUCUN suivi au depart (baseStore).
+    const avant = store.read(memberPaths.member(CLUB_A, OWNER_A));
+    expect(avant).toMatchObject({ accessRole: "owner" });
+    expect(isActivePlayer(avant)).toBe(false);
+
+    const result = await enrollSelfAsClubPlayer(deps(store), {
+      actorUid: OWNER_A,
+      clubId: CLUB_A,
+    });
+    expect(result.keepsStaffAccess).toBe(true);
+
+    const apres = store.read(memberPaths.member(CLUB_A, OWNER_A));
+    expect(apres?.accessRole).toBe("owner");
+    // L'invariant proprietaire tient toujours : les DEUX sources concordent.
+    expect(hasOwnerMembership(apres)).toBe(true);
+    expect(store.read(memberPaths.club(CLUB_A))?.ownerUid).toBe(OWNER_A);
+    expect(isActivePlayer(apres)).toBe(true);
+  });
+
+  it("AUCUN AUTRE MEMBRE N'EST TOUCHE, ni le club, ni les profils", async () => {
+    const store = storeAvecEncadrants();
+    const temoins = [
+      memberPaths.member(CLUB_A, OWNER_A),
+      memberPaths.member(CLUB_A, PLAYER_A1),
+      memberPaths.member(CLUB_A, PLAYER_A2),
+      memberPaths.member(CLUB_A, COACH_JOUEUR),
+      memberPaths.member(CLUB_B, OWNER_B),
+      memberPaths.member(CLUB_B, PLAYER_B),
+      memberPaths.club(CLUB_A),
+      memberPaths.user(COACH_A2),
+      memberPaths.playerSummary(CLUB_A, PLAYER_A1),
+    ];
+    const avant = temoins.map((p) => JSON.stringify(store.read(p)));
+
+    await enrollSelfAsClubPlayer(deps(store), { actorUid: COACH_A2, clubId: CLUB_A });
+
+    temoins.forEach((p, i) => expect(JSON.stringify(store.read(p))).toBe(avant[i]));
+    expect(store.deleted).toEqual([]);
+    // users/{uid}.clubId n'est PAS nomme : la personne etait deja membre.
+    expect(store.ecritures.filter((e) => e.includes("/users/"))).toEqual([]);
+  });
+
+  it("IDEMPOTENCE PAR COMPTAGE : un second appel reussit SANS ECRIRE", async () => {
+    const store = storeAvecEncadrants();
+    await enrollSelfAsClubPlayer(deps(store), { actorUid: COACH_A2, clubId: CLUB_A });
+    expect(store.ecritures).toHaveLength(1);
+
+    const rejeu = await enrollSelfAsClubPlayer(deps(store), {
+      actorUid: COACH_A2,
+      clubId: CLUB_A,
+    });
+    expect(rejeu.alreadyActive).toBe(true);
+    // LA preuve : le journal d'ecritures n'a pas bouge. Une reecriture a
+    // l'identique aurait passe une simple comparaison d'etat.
+    expect(store.ecritures).toHaveLength(1);
+  });
+
+  it("IDEMPOTENCE : la date d'activation d'origine n'est jamais reecrite", async () => {
+    const store = storeAvecEncadrants();
+    await enrollSelfAsClubPlayer(deps(store), { actorUid: COACH_A2, clubId: CLUB_A });
+
+    const plusTard = NOW + 3_600_000;
+    await enrollSelfAsClubPlayer(
+      { store, now: () => plusTard },
+      { actorUid: COACH_A2, clubId: CLUB_A },
+    );
+    expect(store.read(memberPaths.member(CLUB_A, COACH_A2))?.[PLAYER_ENROLLED_AT_FIELD]).toBe(NOW);
+  });
+
+  it("REJEU d'un entraineur-joueur DEJA actif : aucune ecriture, etat rendu tel quel", async () => {
+    const store = storeAvecEncadrants();
+    const result = await enrollSelfAsClubPlayer(deps(store), {
+      actorUid: COACH_JOUEUR,
+      clubId: CLUB_A,
+    });
+    expect(result.alreadyActive).toBe(true);
+    expect(result.coachAccess).toBe("not_required");
+    expect(store.ecritures).toEqual([]);
+  });
+
+  it("un membre dont le statut n'a JAMAIS ete pose s'active normalement", async () => {
+    const store = storeAvecEncadrants();
+    store.seed(memberPaths.member(CLUB_A, "membreSansStatut"), {
+      uid: "membreSansStatut",
+      accessRole: "coach",
+    });
+    const result = await enrollSelfAsClubPlayer(deps(store), {
+      actorUid: "membreSansStatut",
+      clubId: CLUB_A,
+    });
+    expect(result.alreadyActive).toBe(false);
+    expect(result.keepsStaffAccess).toBe(true);
+    // Champ absent -> etat initial de la politique du club (default-deny cote
+    // etat, defaut produit cote politique : ce sont deux questions differentes).
+    expect(result.coachAccess).toBe("not_required");
+  });
+});
+
+describe("geste 4 â€” le contrat d'acces du club est RESPECTE, jamais force", () => {
+  it("politique par defaut : meme etat qu'un joueur qui rejoint avec un code", async () => {
+    const store = storeAvecEncadrants();
+    const result = await enrollSelfAsClubPlayer(deps(store), {
+      actorUid: COACH_A2,
+      clubId: CLUB_A,
+    });
+    expect(result.coachAccess).toBe("not_required");
+    expect(result.coachAccessGranted).toBe(true);
+  });
+
+  it("politique approval_required : l'encadrant entre EN ATTENTE, comme ses joueurs", async () => {
+    const store = storeApprobationRequise();
+    const result = await enrollSelfAsClubPlayer(deps(store), {
+      actorUid: COACH_A2,
+      clubId: CLUB_A,
+    });
+    // AUCUN traitement de faveur : s'activer soi-meme n'ouvre pas ce que le
+    // club ferme a l'entree de ses joueurs.
+    expect(result.coachAccess).toBe("pending");
+    expect(result.coachAccessGranted).toBe(false);
+    expect(store.read(memberPaths.member(CLUB_A, COACH_A2))?.coachAccess).toBe("pending");
+  });
+
+  it("un acces DEJA REVOQUE n'est pas rouvert par l'activation", async () => {
+    const store = storeAvecEncadrants();
+    // Cas reel : un entraineur-joueur dont on a arrete le suivi (le geste 2
+    // pose coachAccess "revoked"), et qui se reactive ensuite.
+    await deactivateClubPlayer(deps(store), {
+      actorUid: OWNER_A,
+      clubId: CLUB_A,
+      memberUid: COACH_JOUEUR,
+    });
+    expect(store.read(memberPaths.member(CLUB_A, COACH_JOUEUR))?.coachAccess).toBe("revoked");
+
+    const result = await enrollSelfAsClubPlayer(deps(store), {
+      actorUid: COACH_JOUEUR,
+      clubId: CLUB_A,
+    });
+    expect(result.alreadyActive).toBe(false);
+    expect(result.coachAccess).toBe("revoked");
+    expect(result.coachAccessGranted).toBe(false);
+    expect(store.read(memberPaths.member(CLUB_A, COACH_JOUEUR))?.coachAccess).toBe("revoked");
+  });
+
+  it("PROJECTION : creee sous la politique par defaut, refusee sous approbation", async () => {
+    const entree = (membership: MemberDocData | null) => ({
+      playerUid: COACH_A2,
+      clubId: CLUB_A,
+      membership,
+      profile: { uid: COACH_A2, clubId: CLUB_A, firstName: "Yann", profileCompleted: true },
+      sessions: [],
+      plannedSessions: [],
+      now: new Date(NOW),
+    });
+
+    const ouvert = storeAvecEncadrants();
+    await enrollSelfAsClubPlayer(deps(ouvert), { actorUid: COACH_A2, clubId: CLUB_A });
+    expect(
+      projectPlayerSummary(entree(ouvert.read(memberPaths.member(CLUB_A, COACH_A2)))),
+    ).not.toBeNull();
+
+    const enAttente = storeApprobationRequise();
+    await enrollSelfAsClubPlayer(deps(enAttente), { actorUid: COACH_A2, clubId: CLUB_A });
+    // Le statut de joueur est bien actif â€” c'est l'AUTORISATION qui refuse.
+    expect(isActivePlayer(enAttente.read(memberPaths.member(CLUB_A, COACH_A2)))).toBe(true);
+    expect(
+      projectPlayerSummary(entree(enAttente.read(memberPaths.member(CLUB_A, COACH_A2)))),
+    ).toBeNull();
+  });
+
+  it("la PROJECTION n'est pas ecrite par le geste : elle naitra du projecteur", async () => {
+    const store = storeAvecEncadrants();
+    await enrollSelfAsClubPlayer(deps(store), { actorUid: COACH_A2, clubId: CLUB_A });
+    // Aucune fiche fabriquee a la main dans la transaction : le contrat
+    // coach-safe reste detenu par projector.ts, et par lui seul.
+    expect(store.read(memberPaths.playerSummary(CLUB_A, COACH_A2))).toBeNull();
+    expect(store.ecritures.some((e) => e.includes("playerSummaries"))).toBe(false);
+  });
+});
+
+describe("geste 4 â€” ce qu'il REFUSE", () => {
+  it("APPARTENANCE ABSENTE : un inconnu ne s'inscrit pas dans un club", async () => {
+    const store = storeAvecEncadrants();
+    const err = await capture(() =>
+      enrollSelfAsClubPlayer(deps(store), { actorUid: STRANGER, clubId: CLUB_A }),
+    );
+    expect(err.code).toBe(REMOVE_DENIED_CODE);
+    expect(err.message).toBe(GESTURE_DENIED_MESSAGE.enrollSelfAsClubPlayer);
+    expect(store.ecritures).toEqual([]);
+    expect(store.read(memberPaths.member(CLUB_A, STRANGER))).toBeNull();
+  });
+
+  it("APPARTENANCE RETIREE : une pierre tombale ne se ressuscite pas toute seule", async () => {
+    const store = storeAvecEncadrants();
+    // Retrait complet reel, puis tentative d'auto-reactivation par l'interesse.
+    await removeClubMember(deps(store), {
+      actorUid: OWNER_A,
+      clubId: CLUB_A,
+      memberUid: PLAYER_A1,
+    });
+    const ecrituresApresRetrait = store.ecritures.length;
+
+    const err = await capture(() =>
+      enrollSelfAsClubPlayer(deps(store), { actorUid: PLAYER_A1, clubId: CLUB_A }),
+    );
+    expect(err.code).toBe(MEMBER_NOT_FOUND_CODE);
+    // Le contrat d'invitation n'est pas contournable par la porte de sortie.
+    expect(store.ecritures).toHaveLength(ecrituresApresRetrait);
+    expect(isActivePlayer(store.read(memberPaths.member(CLUB_A, PLAYER_A1)))).toBe(false);
+  });
+
+  it("CLUB D'AUTRUI et CLUB INEXISTANT : le MEME refus, aucun oracle", async () => {
+    const store = storeAvecEncadrants();
+    const autreClub = await capture(() =>
+      enrollSelfAsClubPlayer(deps(store), { actorUid: COACH_A2, clubId: CLUB_B }),
+    );
+    const inexistant = await capture(() =>
+      enrollSelfAsClubPlayer(deps(store), { actorUid: COACH_A2, clubId: "clubQuiNExistePas" }),
+    );
+    expect(autreClub.code).toBe(inexistant.code);
+    expect(autreClub.message).toBe(inexistant.message);
+    expect(store.ecritures).toEqual([]);
+    expect(store.read(memberPaths.member(CLUB_B, COACH_A2))).toBeNull();
+  });
+
+  it("identifiant de club malforme : refus, sans aucune ecriture", async () => {
+    const store = storeAvecEncadrants();
+    const malformes: unknown[] = ["", "   ", "a/b", "..", 42, null, undefined, { toString: () => CLUB_A }];
+    for (const clubId of malformes) {
+      const err = await capture(() =>
+        enrollSelfAsClubPlayer(deps(store), { actorUid: COACH_A2, clubId }),
+      );
+      expect(err.code).toBe(REMOVE_DENIED_CODE);
+    }
+    expect(store.ecritures).toEqual([]);
+  });
+
+  it("appelant sans identite : refus unauthenticated", async () => {
+    const store = storeAvecEncadrants();
+    const err = await capture(() =>
+      enrollSelfAsClubPlayer(deps(store), { actorUid: "   ", clubId: CLUB_A }),
+    );
+    expect(err.code).toBe("unauthenticated");
+    expect(store.ecritures).toEqual([]);
+  });
+
+  it("AUTORITE INCOHERENTE : refus + signal, et rien d'ecrit", async () => {
+    const store = storeAvecEncadrants();
+    // Le club designe OWNER_A, mais son appartenance ne porte plus "owner".
+    store.seed(memberPaths.member(CLUB_A, OWNER_A), { uid: OWNER_A, accessRole: "coach" });
+    const signals: ClubAuthoritySignal[] = [];
+    const err = await capture(() =>
+      enrollSelfAsClubPlayer(
+        deps(store, (s) => signals.push(s)),
+        { actorUid: OWNER_A, clubId: CLUB_A },
+      ),
+    );
+    expect(err.code).toBe(REMOVE_DENIED_CODE);
+    expect(signals).toEqual([
+      {
+        clubId: CLUB_A,
+        uid: OWNER_A,
+        authority: "designation-without-membership",
+        action: "enrollSelfAsClubPlayer",
+      },
+    ]);
+    expect(store.ecritures).toEqual([]);
+  });
+
+  it("une panne du magasin ne devient jamais un succes", async () => {
+    const casse: MemberStore = {
+      runTransaction: () => Promise.reject(new Error("indisponible")),
+    };
+    const err = await capture(() =>
+      enrollSelfAsClubPlayer(
+        { store: casse, now: () => NOW },
+        { actorUid: COACH_A2, clubId: CLUB_A },
+      ),
+    );
+    expect(err.code).toBe("unavailable");
+    expect(err.message).toBe(GESTURE_UNAVAILABLE_MESSAGE.enrollSelfAsClubPlayer);
+  });
+});
+
+describe("geste 4 â€” la cible ne peut PAS venir du client", () => {
+  it("des champs usurpateurs dans les parametres n'atteignent aucune cible", async () => {
+    const store = storeAvecEncadrants();
+    const avantJoueur = JSON.stringify(store.read(memberPaths.member(CLUB_A, PLAYER_A1)));
+
+    // `as never` : TypeScript refuse deja ces champs â€” la signature du coeur
+    // n'a pas de cible. On force le passage pour rejouer ce qu'un appel non
+    // type (curl) enverrait reellement.
+    await enrollSelfAsClubPlayer(deps(store), {
+      actorUid: COACH_A2,
+      clubId: CLUB_A,
+      memberUid: PLAYER_A1,
+      uid: PLAYER_A1,
+      targetUid: PLAYER_A1,
+      accessRole: "owner",
+    } as never);
+
+    // La victime designee est intacteâ€¦
+    expect(JSON.stringify(store.read(memberPaths.member(CLUB_A, PLAYER_A1)))).toBe(avantJoueur);
+    // â€¦ et c'est bien l'appelant qui a ete active.
+    expect(isActivePlayer(store.read(memberPaths.member(CLUB_A, COACH_A2)))).toBe(true);
+    expect(store.ecritures).toEqual(["set " + memberPaths.member(CLUB_A, COACH_A2)]);
+  });
+});
+
+describe("activer puis arreter puis reactiver â€” l'enchainement complet", () => {
+  it("les trois etapes s'enchainent, et l'encadrement survit aux trois", async () => {
+    const store = storeAvecEncadrants();
+    const lire = () => store.read(memberPaths.member(CLUB_A, COACH_A2));
+
+    // 1. Activation.
+    const active = await enrollSelfAsClubPlayer(deps(store), {
+      actorUid: COACH_A2,
+      clubId: CLUB_A,
+    });
+    expect(active.alreadyActive).toBe(false);
+    expect(isActivePlayer(lire())).toBe(true);
+    expect(isClubStaff(lire())).toBe(true);
+
+    // 2. Arret du suivi, PAR LUI-MEME : la callable existante l'autorise deja
+    //    (matrice Â« soi-meme Â»), il n'y a donc AUCUNE seconde callable a ecrire.
+    const arret = await deactivateClubPlayer(deps(store), {
+      actorUid: COACH_A2,
+      clubId: CLUB_A,
+      memberUid: COACH_A2,
+    });
+    expect(arret.alreadyInactive).toBe(false);
+    expect(arret.keepsStaffAccess).toBe(true);
+    expect(isActivePlayer(lire())).toBe(false);
+    expect(isClubStaff(lire())).toBe(true);
+    expect(isActiveMembership(lire())).toBe(true);
+
+    // 3. Reactivation. Le suivi revient ; l'autorisation, elle, reste fermee â€”
+    //    c'est l'etat pose par l'arret, et l'activation ne le rouvre pas.
+    const reactive = await enrollSelfAsClubPlayer(deps(store), {
+      actorUid: COACH_A2,
+      clubId: CLUB_A,
+    });
+    expect(reactive.alreadyActive).toBe(false);
+    expect(reactive.coachAccess).toBe("revoked");
+    expect(reactive.coachAccessGranted).toBe(false);
+    expect(isActivePlayer(lire())).toBe(true);
+    expect(lire()?.accessRole).toBe("coach");
   });
 });

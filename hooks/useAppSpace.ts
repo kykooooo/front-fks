@@ -71,10 +71,12 @@ import { db } from "../services/firebase";
 import {
   espacesDisponibles,
   readMembershipAccessRole,
+  readPlayerFollowState,
   resolveAppSpace,
   type AppSpace,
   type AppSpaceDecision,
   type ClubMembershipReading,
+  type PlayerFollowState,
 } from "../domain/appSpace";
 import { resolveCoachAuthority, type CoachAuthorityStatut } from "../domain/coachAuthority";
 import { isClubStaffRole, type ClubAccessRole } from "../domain/clubRoles";
@@ -139,6 +141,17 @@ export type AppSpaceState = {
    * de la préférence locale.
    */
   peutChoisirEspace: boolean;
+  /**
+   * Le suivi sportif de ce compte DANS CE CLUB : `actif`, `inactif`, ou
+   * `inconnu` tant que la lecture n'a pas abouti.
+   *
+   * Distinct de `peutChoisirEspace`, et ce n'est pas un doublon : ce dernier
+   * répond « les DEUX espaces sont-ils ouverts ? », donc il est faux aussi bien
+   * pour un encadrant sans suivi que pour un joueur sans encadrement. Le bouton
+   * « Je m'entraîne aussi » a besoin de la réponse à une AUTRE question — « ai-je
+   * un suivi, oui, non, ou je ne sais pas ? » — et il a besoin des trois états.
+   */
+  suiviJoueur: PlayerFollowState;
   /**
    * Mémorise l'espace choisi. N'a d'effet que si les deux sont ouverts : la
    * préférence CHOISIT, elle n'OUVRE jamais (cf. domain/appSpace).
@@ -356,6 +369,9 @@ export function useAppSpace(
     // DÉRIVÉ DU SERVEUR, jamais de la préférence : le sélecteur n'apparaît que
     // si les deux espaces sont réellement ouverts.
     peutChoisirEspace: espaces.coach && espaces.joueur,
+    // Lu depuis LE MÊME instantané que tout le reste : il ne peut donc pas
+    // décrire un état plus ancien (ou plus récent) que l'espace affiché.
+    suiviJoueur: readPlayerFollowState(lecture),
     choisirEspace,
     revalider,
   };
