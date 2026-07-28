@@ -212,6 +212,202 @@ service cloud.firestore {
       return request.resource.data.get("ownerUid", "") != resource.data.get("ownerUid", "");
     }
 
+    // ══ DOCUMENT UTILISATEUR : LISTE BLANCHE, INTERDICTION PAR DÉFAUT ═══════
+    //
+    // CE QUI ÉTAIT ÉCRIT ICI AVANT, ET QUI EST LE DÉFAUT FERMÉ PAR CE LOT :
+    // `allow create, update: if isOwner(userId)`. Chacun pouvait donc écrire
+    // N'IMPORTE QUEL champ de son propre document utilisateur. Plus aucun champ
+    // d'autorité n'y est lu depuis la refonte de l'espace applicatif (cf.
+    // domain/appSpace.ts) — mais la surface, elle, restait grande ouverte. Le
+    // prochain lot qui y poserait un champ sensible (un abonnement, un drapeau
+    // d'administration, un pilotage à distance des modes de suivi) l'aurait
+    // laissé écrivable par son titulaire sans même s'en apercevoir. On inverse
+    // donc la logique : ce n'est plus une liste noire de champs sensibles, c'est
+    // une LISTE BLANCHE, et tout ce qui n'y figure pas est REFUSÉ — y compris un
+    // champ que personne n'a encore inventé.
+    //
+    // ── LES DEUX MÉCANISMES, ET POURQUOI ILS NE SONT PAS LE MÊME ────────────
+    //
+    // 1. CRÉATION → `request.resource.data.keys().hasOnly(...)`. À la création,
+    //    le document N'A PAS de passé : toutes ses clés sont posées par cette
+    //    écriture, donc on les juge toutes. Un `create` qui pose un champ
+    //    interdit est refusé, même si sa valeur est nulle.
+    //
+    // 2. MISE À JOUR → `diff(resource.data).affectedKeys().hasOnly(...)`. On
+    //    juge les clés RÉELLEMENT TOUCHÉES : ajoutées, modifiées OU SUPPRIMÉES
+    //    (c'est la définition de `affectedKeys`, et c'est ce qui ferme la
+    //    suppression par merge partiel — un `deleteField()` sur un champ gelé
+    //    fait apparaître ce champ dans les clés affectées, donc REFUS).
+    //
+    //    POURQUOI PAS `keys()` SUR LE RÉSULTAT ICI. Parce que ça casserait en
+    //    PRODUCTION et pas en test : un document ANCIEN porte des champs qui ne
+    //    sont plus dans la liste blanche (`available_time_min`, `clubTypicalRPE`,
+    //    `explosivite_playlist_len`, `role`, `accessRole`… — vérifié : plus
+    //    aucun chemin ne les écrit, ils sont seulement LUS). Juger le résultat
+    //    rendrait ces documents INÉCRIVABLES, et le joueur ne pourrait plus
+    //    modifier son profil du tout. En jugeant les clés touchées, un champ
+    //    hérité qu'on ne touche pas reste tranquille, et un champ inconnu qu'on
+    //    tente d'ÉCRIRE est refusé. C'est exactement l'arbitrage voulu.
+    //
+    //    Le motif « condition sur le RÉSULTAT » reste employé là où il est le
+    //    bon outil (cf. `changesOwnerUid` et le bannissement de `note`) : ici,
+    //    pour `uid` et pour `clubId`, dont ce sont les VALEURS qui comptent.
+    //
+    // ── INVENTAIRE DES ÉCRITURES LÉGITIMES (source de la liste blanche) ─────
+    // CLIENT, création :
+    //   . screens/RegisterScreen.tsx        → email, displayName, firstName,
+    //                                          profileCompleted, createdAt, updatedAt
+    // CLIENT, mise à jour :
+    //   . screens/ProfileSetupScreen.tsx    → identité, profil sportif, rythme
+    //                                          club/match, matériel, consentement
+    //                                          parental, cycle auto-assigné
+    //   . screens/CycleModalScreen.tsx      → cycle (démarrage / abandon)
+    //   . screens/feedback/hooks/useFeedbackSave.ts → cycle suivant, parcours
+    //   . state/stores/useSyncStore.ts      → lastSessionDate/At, cycle, parcours
+    //   . repositories/clubsRepo.ts         → uid, clubId, firstName, profileCompleted
+    //   . components/settings/ClubManagementCard.tsx → clubId: null (départ)
+    // CLIENT, branche « boucle de suivi joueur » (claude/player-tracking-loop-559906),
+    // À MERGER AVANT NOUS — pré-autorisée ici pour que le merge ne casse pas :
+    //   . screens/ProfileSetupScreen.tsx           → selfReportedGapDays
+    //   . state/orchestrators/applyFeedback.ts     → lastTrackingDecision
+    //   Ces deux écritures sont « best-effort » : leur refus serait SILENCIEUX
+    //   côté joueur. Les oublier ici aurait cassé la boucle sans un message.
+    // SERVEUR (Admin SDK — contourne ces règles, vérifié : aucune de ces
+    // écritures ne passe par les rules) :
+    //   . functions/src/inviteCodes.ts      → uid, clubId (rattachement)
+    //   . functions/src/clubMembers.ts      → clubId: null (retrait complet)
+    //   . functions/src/clubOwnership.ts    → role: "coach" (mode administrateur)
+    //   . functions/src/deleteAccount.ts    → recursiveDelete (suppression compte)
+
+    /**
+     * Champs posables À LA CRÉATION SEULEMENT. Identité de compte : posée une
+     * fois par l'inscription, jamais retouchée ensuite. Ne pas les remettre
+     * dans la liste mutable les GÈLE automatiquement après création — un seul
+     * mécanisme, pas deux.
+     */
+    function userCreateOnlyFields() {
+      return ["createdAt", "email", "displayName"];
+    }
+
+    /**
+     * Champs que le titulaire peut écrire ET modifier. TOUT LE RESTE EST REFUSÉ.
+     * Un test (firestore-tests/rules.userDocument.test.ts) échoue si cette liste
+     * et l'inventaire ci-dessus divergent.
+     */
+    function userMutableFields() {
+      return [
+        // Identité applicative
+        "uid", "firstName", "profileCompleted", "updatedAt",
+        // Profil sportif
+        "position", "ageCategory", "level", "dominantFoot", "mainObjective",
+        "parentalConsent",
+        // Rythme club et match
+        "targetFksSessionsPerWeek", "clubTrainingsPerWeek", "matchesPerWeek",
+        "hasClubTrainings", "clubTrainingDays", "matchDay", "matchDays",
+        // Lieu et matériel
+        "hasGymAccess", "gymEquipment", "hasHomeEquipment", "homeEquipment",
+        // Cycle en cours
+        "microcycleGoal", "goal", "programGoal", "microcycleStatus",
+        "microcycleTotalSessions", "microcycleSessionIndex", "microcycleStartedAt",
+        "microcycleAbandonedAt", "microcycleAbandonReason",
+        // Parcours (enchaînement de cycles)
+        "activePathwayId", "activePathwayIndex",
+        // Trace d'activité
+        "lastSessionDate", "lastSessionAt",
+        // Rattachement au club — présent ici pour que l'écriture franchisse la
+        // liste blanche ; sa VALEUR est gouvernée par `userClubIdIsLegitimate`.
+        "clubId",
+        // Boucle de suivi joueur (branche à merger avant nous, cf. inventaire)
+        "selfReportedGapDays", "lastTrackingDecision"
+      ];
+    }
+
+    /**
+     * Champs D'AUTORITÉ, D'ACCÈS, DE PILOTAGE, DE FACTURATION ET
+     * D'ADMINISTRATION. Absents de la liste blanche, ils seraient DÉJÀ refusés ;
+     * on les NOMME quand même, pour trois raisons :
+     *  - le refus devient explicite et testé, au lieu d'être un effet de bord ;
+     *  - à la création, `hasOnly` juge les clés posées, mais nommer ces champs
+     *    rend l'intention lisible pour qui relit la règle ;
+     *  - certains EXISTENT déjà sur des documents anciens (`role`, `accessRole`,
+     *    `playerStatus`) : les nommer dit qu'ils sont GELÉS, pas bannis — un
+     *    document qui les porte reste modifiable par ailleurs.
+     *
+     * `trackingConfig` mérite d'être lu deux fois : c'est l'interrupteur distant
+     * des modes de la boucle de suivi (domain/tracking/modes.resolveTrackingModes,
+     * lu par services/aiContext.ts). Écrivable par son titulaire, un joueur
+     * activerait lui-même le mode Application sur ses propres séances. Il n'est
+     * écrit par AUCUN chemin applicatif : c'est un geste d'exploitation.
+     *
+     * Les noms de facturation et d'administration ne correspondent à AUCUN champ
+     * existant aujourd'hui. Ils sont RÉSERVÉS d'avance, pour qu'un futur lot les
+     * trouve déjà fermés au lieu de les poser en douce.
+     */
+    function userServerOnlyFields() {
+      return [
+        // Autorité et espace applicatif
+        "role", "accessRole", "playerStatus", "coachAccess",
+        "roles", "claims", "permissions", "isAdmin", "admin",
+        // Pilotage à distance
+        "trackingConfig", "featureFlags",
+        // Facturation (réservés)
+        "subscription", "subscriptionStatus", "plan", "entitlements",
+        "premium", "billing", "stripeCustomerId", "trialEndsAt"
+      ];
+    }
+
+    /**
+     * `uid`, quand il est écrit, DOIT désigner le titulaire du document.
+     * Condition sur le RÉSULTAT (comme `changesOwnerUid`) : un `uid` menteur ne
+     * peut ni être posé à la création, ni apparaître par mise à jour. Absent, il
+     * est accepté — l'inscription ne l'écrit pas, et des milliers de documents
+     * anciens n'en portent pas.
+     */
+    function userUidIsSelf(userId) {
+      return !("uid" in request.resource.data) ||
+        request.resource.data.uid == userId;
+    }
+
+    /** clubId AVANT l'écriture, "" si document absent, champ absent ou nul. */
+    function priorUserClubId() {
+      return resource != null && "clubId" in resource.data && resource.data.clubId is string
+        ? resource.data.clubId : "";
+    }
+
+    /**
+     * `clubId` : LE SEUL CHAMP DE CETTE LISTE QUI SOIT ASYMÉTRIQUE.
+     *
+     * Il dit OÙ regarder, jamais QUI on est (cf. navigation/RootNavigator.tsx) —
+     * aucune règle n'en dérive un droit. Mais il décide OÙ le serveur projette
+     * le suivi du joueur (functions/src/triggers.clubIdOfUser), donc le laisser
+     * pointer n'importe où reste une écriture qu'on ne veut pas.
+     *
+     * Trois cas, et trois seulement :
+     *  - EFFACEMENT (null) : toujours permis. C'est le départ volontaire depuis
+     *    les réglages (components/settings/ClubManagementCard.tsx), et un
+     *    détachement ne peut RIEN ouvrir.
+     *  - VALEUR INCHANGÉE : toujours permise. C'est l'écho du setup profil, qui
+     *    repasse le club existant tel quel à chaque enregistrement. Sans ce cas,
+     *    un joueur dont le suivi a été désactivé (`playerStatus: "inactive"`,
+     *    `clubId` conservé) ne pourrait PLUS JAMAIS modifier son profil.
+     *  - NOUVELLE VALEUR : seulement vers un club où l'appartenance est RÉELLE
+     *    et ACTIVE. C'est le cas du fondateur qui vient de créer son club
+     *    (repositories/clubsRepo.createClubAsCoach écrit l'appartenance
+     *    propriétaire JUSTE AVANT ce champ). Le rattachement d'un joueur, lui,
+     *    est écrit par la Cloud Function `joinClubWithInviteCode`, qui contourne
+     *    ces règles.
+     *
+     * COÛT : le `get()` d'appartenance n'est payé QUE si la valeur change
+     * réellement vers un club — jamais sur un enregistrement de profil ordinaire.
+     */
+    function userClubIdIsLegitimate() {
+      return !("clubId" in request.resource.data) ||
+        request.resource.data.clubId == null ||
+        (request.resource.data.clubId is string &&
+          (request.resource.data.clubId == priorUserClubId() ||
+            isActiveMember(request.resource.data.clubId)));
+    }
+
     function touchesJoinAccessPolicy() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasAny(["joinAccessPolicy"]);
@@ -232,7 +428,37 @@ service cloud.firestore {
     // membership réel du coach dans le club (isCoach), via le clubId du CHEMIN.
     match /users/{userId} {
       allow read: if isOwner(userId);
-      allow create, update: if isOwner(userId);
+
+      // CRÉATION — inscription (screens/RegisterScreen.tsx), ou rattrapage par
+      // le setup profil quand l'écriture de l'inscription a échoué (le compte
+      // Firebase EST créé, seul le document manque : cf. le chemin « Compte créé
+      // — petit souci réseau » de RegisterScreen). On juge TOUTES les clés
+      // posées : rien d'inconnu, rien de serveur, rien d'autre que soi.
+      allow create: if isOwner(userId) &&
+        request.resource.data.keys()
+          .hasOnly(userMutableFields().concat(userCreateOnlyFields())) &&
+        !request.resource.data.keys().hasAny(userServerOnlyFields()) &&
+        userUidIsSelf(userId) &&
+        userClubIdIsLegitimate();
+
+      // MISE À JOUR — setup et édition de profil, réglages, cycle, parcours,
+      // trace d'activité, départ de club. On juge les clés RÉELLEMENT TOUCHÉES
+      // (ajoutées, modifiées ou SUPPRIMÉES), ce qui ferme la suppression par
+      // merge partiel sans rendre inécrivables les documents anciens porteurs de
+      // champs hérités. Voir le long commentaire au-dessus de `userMutableFields`.
+      allow update: if isOwner(userId) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(userMutableFields()) &&
+        // Redondant avec `hasOnly` tant que les deux listes sont disjointes —
+        // et c'est précisément l'intérêt : si un futur lot glissait un nom
+        // d'autorité dans la liste mutable, cette ligne le rattraperait.
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(userServerOnlyFields()) &&
+        userUidIsSelf(userId) &&
+        userClubIdIsLegitimate();
+
+      // Suppression : Cloud Function `deleteAccount` uniquement (Admin SDK,
+      // recursiveDelete du document ET de ses sous-collections).
       allow delete: if false;
 
       match /sessions/{sessionId} {
@@ -344,7 +570,9 @@ service cloud.firestore {
         // l'effectif suivi d'un club — c'est-à-dire contourner le code
         // d'invitation, son expiration, sa révocation, son quota d'usages ET la
         // limitation de tentatives. Il est écrit UNIQUEMENT par les Cloud
-        // Functions `joinClubWithInviteCode` (entrée) et `removeClubMember`
+        // Functions `joinClubWithInviteCode` (entrée), `enrollSelfAsClubPlayer`
+        // (activation volontaire de SON PROPRE suivi, réservée aux membres déjà
+        // actifs du club) et `removeClubMember` / `deactivateClubPlayer`
         // (sortie), qui utilisent l'Admin SDK et contournent donc ces règles.
         allow create: if isOwner(memberId) &&
           request.resource.data.accessRole == "owner" &&

@@ -20,12 +20,15 @@
 //      fait de l'appartenance une autorité, et du champ applicatif un simple
 //      affichage.
 //
-//   C. ET LE CHAMP APPLICATIF, LUI, EST BEL ET BIEN ÉCRIVABLE PAR SON TITULAIRE.
-//      Ce test-là ne dénonce pas un trou à combler : il DOCUMENTE pourquoi ce
-//      champ ne peut pas porter une autorité. Les règles autorisent chacun à
-//      écrire tout son document `users/{uid}` (profil, préférences…) ; le
-//      restreindre champ par champ serait un autre chantier, et ce ne serait de
-//      toute façon pas une source d'autorité. On a donc changé de source.
+//   C. ET LE CHAMP APPLICATIF, LUI, N'EST MÊME PLUS ÉCRIVABLE.
+//      Ce point a CHANGÉ (lot « écritures libres dans users/{uid} »). Il disait
+//      auparavant : « le champ reste librement écrivable, c'est pourquoi il ne
+//      peut pas porter une autorité — on a donc changé de source ». La source a
+//      bien changé (l'appartenance), et depuis, le document utilisateur est
+//      passé en LISTE BLANCHE : `role` fait partie des champs d'autorité gelés
+//      (cf. rules.userDocument.test.ts). Les deux protections se doublent, et
+//      c'est volontaire : l'espace ne dépend plus de ce champ, ET ce champ n'est
+//      plus falsifiable.
 
 import { readFileSync } from "fs";
 import { resolve } from "path";
@@ -194,17 +197,29 @@ describe("B. l'appartenance est une autorité : aucun client ne l'accorde", () =
 
 // ── C. Pourquoi le champ applicatif ne peut pas porter l'autorité ──────────
 
-describe("C. `users/{uid}.role` est écrivable par son titulaire — donc il ne décide plus rien", () => {
-  test("un joueur peut s'écrire role:\"coach\" sur son propre document", async () => {
-    // C'était LA faille : la navigation lisait ce champ. Elle ne le lit plus.
-    // L'écriture reste permise (chacun écrit son profil), elle n'ouvre plus rien.
-    await assertSucceeds(
+describe("C. `users/{uid}.role` ne décide plus rien — ET n'est plus écrivable du tout", () => {
+  test("un joueur ne peut PLUS s'écrire role:\"coach\" sur son propre document", async () => {
+    // C'était LA faille : la navigation lisait ce champ. Elle ne le lit plus —
+    // c'est ce que prouve le test suivant, et c'était déjà vrai avant ce lot.
+    // Ce qui CHANGE ici : le champ n'est même plus écrivable. Le document
+    // utilisateur est passé en liste blanche (cf. rules.userDocument.test.ts),
+    // et `role` fait partie des champs d'autorité gelés. Une surface qui
+    // n'ouvrait plus rien restait une surface : elle est fermée.
+    await assertFails(
       setDoc(doc(asUser(PLAYER_A1), "users", PLAYER_A1), { role: "coach" }, { merge: true }),
     );
   });
 
-  test("et ce mensonge ne lui donne AUCUN accès d'encadrement", async () => {
-    await setDoc(doc(asUser(PLAYER_A1), "users", PLAYER_A1), { role: "coach" }, { merge: true });
+  test("et même si le champ était déjà en base, il ne donne AUCUN accès d'encadrement", async () => {
+    // On pose le mensonge EN ADMIN : un document ancien peut parfaitement le
+    // porter (le champ était librement écrivable avant ce lot). Ce qui compte
+    // est qu'il n'ouvre rien — hier comme aujourd'hui.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(
+        doc(ctx.firestore(), "users", PLAYER_A1),
+        { uid: PLAYER_A1, clubId: CLUB_A, firstName: "Anna", role: "coach" },
+      );
+    });
 
     // Les surfaces d'encadrement restent fermées : son appartenance, elle, dit
     // toujours « player », et c'est elle que la base et l'application lisent.

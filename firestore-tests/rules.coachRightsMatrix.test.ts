@@ -180,10 +180,12 @@ describe("Scénario 2 — utilisateur sans rôle Coach", () => {
     await assertFails(
       setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A1), { uid: PLAYER_A1, accessRole: "coach" }),
     );
-    // Et mentir dans son PROPRE profil (users/{uid}.role = "coach") — écriture
-    // autorisée puisque c'est son document — n'ouvre aucune porte : les règles
-    // club ne lisent jamais ce champ.
-    await assertSucceeds(setDoc(doc(db, "users", PLAYER_A1), { role: "coach" }, { merge: true }));
+    // Et mentir dans son PROPRE profil (users/{uid}.role = "coach") n'est même
+    // plus possible : le document utilisateur est passé en liste blanche et
+    // `role` fait partie des champs d'autorité gelés (rules.userDocument.test.ts).
+    // Les règles club n'ont jamais lu ce champ ; il n'est désormais plus non plus
+    // falsifiable.
+    await assertFails(setDoc(doc(db, "users", PLAYER_A1), { role: "coach" }, { merge: true }));
     await assertFails(getDocs(collection(db, "clubs", CLUB_A, "members")));
     await assertFails(getDoc(doc(db, "clubs", CLUB_A, "playerSummaries", PLAYER_A2)));
   });
@@ -371,12 +373,16 @@ describe("Scénario 6 — identifiant de club deviné", () => {
     await assertFails(getDoc(doc(asAnon(), "clubs", CLUB_A)));
   });
 
-  test("se déclarer membre du club A dans son PROPRE profil ne rattache à rien", async () => {
-    // users/{uid} est écrivable par son propriétaire : un intrus peut donc y
-    // écrire clubId = clubA. Les règles club ne lisent JAMAIS ce champ (elles
-    // vérifient le membership réel), donc ce mensonge n'ouvre aucune porte.
+  test("se déclarer membre du club A dans son PROPRE profil est refusé — et n'ouvrirait rien", async () => {
+    // DEUX protections, l'une derrière l'autre.
+    // 1. L'écriture elle-même est REFUSÉE depuis le lot « écritures libres dans
+    //    users/{uid} » : `clubId` ne peut désigner qu'un club où l'appartenance
+    //    est réelle (cf. `userClubIdIsLegitimate` dans firestore.rules).
+    // 2. Et quand bien même le champ serait posé, les règles club ne le lisent
+    //    JAMAIS : elles vérifient le membership réel. C'est ce que prouvent les
+    //    refus de lecture ci-dessous.
     const db = asUser(STRANGER);
-    await assertSucceeds(
+    await assertFails(
       setDoc(doc(db, "users", STRANGER), { uid: STRANGER, clubId: CLUB_A }, { merge: true }),
     );
     await assertFails(getDoc(doc(db, "clubs", CLUB_A)));
