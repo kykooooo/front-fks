@@ -1054,3 +1054,59 @@ describe("CoachWeekScreen — code club", () => {
     expect(texte.toLowerCase()).not.toContain("insufficient");
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// PURGE À LA PERTE D'AUTORITÉ — L'EFFET EN CASCADE
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Cet écran garde en mémoire, EN PLUS de ce que renvoient les hooks, des
+// brouillons locaux hydratés depuis eux : le cadre de la semaine, la directive,
+// et surtout la NOTE PRIVÉE du coach — le document qu'aucun joueur n'a le droit
+// de lire. Ces brouillons ne sont abonnés à rien.
+//
+// Ce test vérifie qu'ils partent QUAND MÊME : la purge remet les champs du hook
+// `useCoachClub` à zéro, les effets d'hydratation suivent, et l'écran retombe
+// sur son état « rien de lisible ». Autrement dit, la purge n'a pas besoin que
+// chaque écran pense à s'abonner — c'est ce qui la rend increvable.
+
+describe("purge de l'autorité coach — les brouillons locaux suivent", () => {
+  test("la note privée disparaît de l'écran quand le contexte club est purgé", async () => {
+    mockClubState = makeClubState({
+      coachNote: { note: "Anna a mal au genou", updatedAt: TODAY_MS },
+    });
+    const renderer = await render();
+    const saisie = noeuds(renderer, "week-private-note-input")[0];
+    expect(saisie.props.value).toBe("Anna a mal au genou");
+
+    // Ce que fait `useCoachClub` sur purge : tout à null, statut `error`.
+    mockClubState = makeClubState({
+      status: "error",
+      clubId: null,
+      clubName: null,
+      weekContext: null,
+      coachNote: null,
+      directive: null,
+      fetchedAt: null,
+    });
+    await act(async () => {
+      renderer.update(
+        <SafeAreaProvider initialMetrics={METRICS}>
+          <CoachWeekScreen />
+        </SafeAreaProvider>
+      );
+    });
+
+    expect(exists(renderer, "week-private-note-input")).toBe(false);
+    expect(flatText(renderer.toJSON())).not.toContain("Anna a mal au genou");
+  });
+
+  test("un contexte purgé n'annonce PAS « aucun club rattaché »", async () => {
+    // Ce serait affirmer un fait qu'on ne connaît plus. L'écran doit dire ce
+    // qu'il constate : il n'a rien pu lire.
+    mockClubState = makeClubState({ status: "error", clubId: null, fetchedAt: null });
+    const renderer = await render();
+    const texte = flatText(renderer.toJSON());
+    expect(texte).not.toContain("Aucun club rattaché");
+    expect(texte).toContain("Impossible de charger");
+  });
+});

@@ -20,6 +20,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 
+import {
+  canCommitCoachData,
+  currentCoachAuthorityToken,
+} from "../../state/coachAuthorityGate";
+import { useCoachDataPurge } from "./useCoachDataPurge";
 import { fetchClubPlayerSummaries } from "../../repositories/clubsRepo";
 import type { CoachPlayerSummary } from "../../domain/coachSummary";
 import { toCoachPlayerViews } from "../../domain/coachView/fromSummary";
@@ -84,6 +89,16 @@ const EMPTY_SNAPSHOT: RosterSnapshot = {
   todayKey: "",
 };
 
+/**
+ * Ce qu'il reste APRÈS une purge, et la nuance qui compte : `unavailable`.
+ *
+ * Un effectif vidé qui se présenterait comme LU (`unavailable: false`) afficherait
+ * « aucun joueur dans l'effectif » — c'est-à-dire un mensonge, et le pire de
+ * cet écran : le coach en déduirait que son club s'est vidé. Après une purge on
+ * ne sait plus rien, et c'est exactement ce que dit `unavailable`.
+ */
+const PURGED_SNAPSHOT: RosterSnapshot = { ...EMPTY_SNAPSHOT, unavailable: true };
+
 export function useCoachRoster(
   clubId: string | null,
   options?: UseCoachRosterOptions,
@@ -142,6 +157,8 @@ export function useCoachRoster(
       const key = clubId;
       const requestId = requestIdRef.current + 1;
       requestIdRef.current = requestId;
+      // Jeton d'autorité capturé AU DÉPART, vérifié À L'ARRIVÉE (cf. plus bas).
+      const jetonAutorite = currentCoachAuthorityToken();
       lastAttemptAtRef.current = now();
       inFlightRef.current = true;
       const todayKey = toDateKey(new Date(now()));
@@ -164,12 +181,18 @@ export function useCoachRoster(
         inFlightRef.current = false;
       }
 
-      // Réponse acceptée UNIQUEMENT si : montée + dernier requestId + club inchangé.
-      // Sinon on sort SANS toucher au moindre état (réponse tardive ignorée).
+      // Réponse acceptée UNIQUEMENT si : montée + dernier requestId + club inchangé
+      // + AUTORITÉ INCHANGÉE. Sinon on sort SANS toucher au moindre état.
+      //
+      // La quatrième condition ne double pas les trois autres, elle couvre le
+      // cas qu'elles laissent passer : même écran, même club, même requête — mais
+      // l'autorité coach est tombée pendant le vol. Sans elle, une lecture partie
+      // avant la révocation repeuple l'effectif après la purge.
       if (
         !mountedRef.current ||
         requestId !== requestIdRef.current ||
-        currentClubRef.current !== key
+        currentClubRef.current !== key ||
+        !canCommitCoachData(jetonAutorite)
       ) {
         return;
       }
@@ -235,6 +258,24 @@ export function useCoachRoster(
       requestIdRef.current += 1;
     };
   }, [clubId, runFetch]);
+
+  // PURGE À LA PERTE D'AUTORITÉ. L'effectif est la donnée coach la plus lourde
+  // et la plus sensible : il ne survit pas une seconde à la fermeture de
+  // l'espace. On invalide aussi les requêtes en vol (`requestIdRef`) et
+  // l'horodatage d'anti-rebond, pour qu'un retour d'autorité reparte d'une
+  // lecture neuve plutôt que d'un contenu à moitié effacé.
+  useCoachDataPurge(
+    useCallback(() => {
+      requestIdRef.current += 1;
+      snapshotRef.current = PURGED_SNAPSHOT;
+      committedClubRef.current = null;
+      lastAttemptAtRef.current = null;
+      setSnapshot(PURGED_SNAPSHOT);
+      setIsStale(false);
+      setIsRefreshing(false);
+      setLoading(false);
+    }, []),
+  );
 
   // Fraîcheur : on relit au retour sur l'écran, mais pas plus d'une fois par
   // minute et jamais pendant une lecture déjà en vol. Déclaré APRÈS l'effet de

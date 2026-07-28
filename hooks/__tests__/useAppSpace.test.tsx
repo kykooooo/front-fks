@@ -18,8 +18,29 @@
 //     parier sur l'espace joueur et de le faire clignoter devant un coach.
 //  5. L'ABONNEMENT EST NETTOYÉ — au démontage, à la déconnexion, au changement
 //     de club.
+//
+// ─── CE QUE LE LOT « PURGE » AJOUTE ─────────────────────────────────────────
+//  6. QUATRE ÉTATS, PAS DEUX. `illisible` ne se fond plus dans « espace joueur » :
+//     il devient `indetermine`, qui FERME l'espace coach et PURGE, exactement
+//     comme un refus. Sans ça, couper le réseau figerait un accès révoqué.
+//  7. REVALIDATION AU RETOUR AU PREMIER PLAN. L'abonnement est reposé, l'état
+//     repasse par `chargement` (donc purge, donc pas d'espace coach), et rien
+//     n'est réaffiché avant confirmation. Une revalidation qui n'aboutit pas
+//     tombe en `indetermine` — jamais en « on garde ce qu'on avait ».
+//  8. PAS DE PURGE INTEMPESTIVE. Une bascule d'écran passagère (`inactive`), un
+//     re-rendu, un instantané identique : rien ne bouge.
+
+import { AppState, type AppStateStatus } from "react-native";
 
 import { renderHook, actAsync } from "../coach/__tests__/hookHarness";
+import {
+  canCommitCoachData,
+  currentCoachAuthorityToken,
+  onCoachDataPurge,
+  readCoachAuthority,
+  resetCoachAuthorityGateForTests,
+  type CoachPurgeRaison,
+} from "../../state/coachAuthorityGate";
 
 jest.mock("../../services/firebase", () => ({ db: {} }));
 
@@ -67,8 +88,45 @@ import { useAppSpace } from "../useAppSpace";
 
 const dernier = () => abonnements[abonnements.length - 1];
 
+// ─── Cycle de vie de l'application, piloté par le test ──────────────────────
+// On espionne le vrai `AppState` plutôt que de remplacer tout `react-native` :
+// le hook n'en utilise qu'une fonction, et un module entier remplacé casserait
+// tout le reste du graphe d'import sans rien prouver de plus.
+let ecouteursAppState: Array<(etat: AppStateStatus) => void> = [];
+let espionAppState: jest.SpyInstance;
+
+/** Rejoue une bascule de cycle de vie sur tous les abonnés vivants. */
+const bascule = async (...etats: AppStateStatus[]) => {
+  await actAsync(() => {
+    for (const etat of etats) {
+      for (const ecouteur of [...ecouteursAppState]) ecouteur(etat);
+    }
+  });
+};
+
+/** Purges observées depuis le début du test. */
+let purges: CoachPurgeRaison[] = [];
+
 beforeEach(() => {
   abonnements = [];
+  ecouteursAppState = [];
+  purges = [];
+  resetCoachAuthorityGateForTests();
+  onCoachDataPurge((raison) => purges.push(raison));
+  espionAppState = jest
+    .spyOn(AppState, "addEventListener")
+    .mockImplementation(((_type: string, cb: (etat: AppStateStatus) => void) => {
+      ecouteursAppState.push(cb);
+      return {
+        remove: () => {
+          ecouteursAppState = ecouteursAppState.filter((e) => e !== cb);
+        },
+      };
+    }) as unknown as typeof AppState.addEventListener);
+});
+
+afterEach(() => {
+  espionAppState.mockRestore();
 });
 
 describe("démarrage à froid — on n'affiche pas avant de savoir", () => {
@@ -238,5 +296,319 @@ describe("cycle de vie de l'abonnement", () => {
     await h.unmount();
     // `unsubscribe()` coupe la source ; il ne rembobine pas ce qui est en vol.
     expect(() => abonnement.emet("owner")).not.toThrow();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// LES QUATRE ÉTATS DE L'AUTORITÉ
+// ════════════════════════════════════════════════════════════════════════════
+
+describe("quatre états, et un seul ouvre", () => {
+  test("appartenance encadrante lue → `autorise`", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach"));
+    expect(h.current.autorite).toBe("autorise");
+    expect(h.current.space).toBe("coach");
+  });
+
+  test("appartenance non encadrante lue → `refuse` (un fait, pas une incertitude)", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("player"));
+    expect(h.current.autorite).toBe("refuse");
+  });
+
+  test("premier instantané pas encore arrivé → `chargement`", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    expect(h.current.autorite).toBe("chargement");
+    expect(h.current.decision).toBe("en-attente");
+  });
+
+  test("lecture en échec → `indetermine`, PAS `refuse`", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().echoue());
+    expect(h.current.autorite).toBe("indetermine");
+    // L'espace coach est fermé — mais on ne prétend pas savoir que c'est un refus.
+    expect(h.current.space).toBe("player");
+  });
+
+  test("aucun club rattaché → `refuse`, sans attente", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: null }));
+    expect(h.current.autorite).toBe("refuse");
+  });
+});
+
+describe("mémoire d'une autorité confirmée — elle n'ouvre rien, elle choisit un écran", () => {
+  test("coach coupé du réseau : l'incertitude est ATTRIBUÉE à un accès coach", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("owner"));
+    expect(h.current.autoriteDejaConfirmee).toBe(true);
+
+    await actAsync(() => dernier().echoue());
+    expect(h.current.autorite).toBe("indetermine");
+    // C'est ce couple (indetermine + déjà confirmée) qui ouvre l'écran honnête.
+    expect(h.current.autoriteDejaConfirmee).toBe(true);
+  });
+
+  test("joueur coupé du réseau : AUCUNE mémoire, donc aucun écran d'accès coach", async () => {
+    // Un joueur ne doit jamais voir « impossible de vérifier tes accès » : son
+    // application sait vivre hors ligne, et il n'a aucun effectif à retrouver.
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("player"));
+    await actAsync(() => dernier().echoue());
+    expect(h.current.autorite).toBe("indetermine");
+    expect(h.current.autoriteDejaConfirmee).toBe(false);
+  });
+
+  test("une lecture aboutie EFFACE la mémoire : retiré puis hors réseau → aucun écran coach", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach"));
+    await actAsync(() => dernier().emet("removed")); // pierre tombale, LUE
+    expect(h.current.autoriteDejaConfirmee).toBe(false);
+
+    await actAsync(() => dernier().echoue());
+    expect(h.current.autoriteDejaConfirmee).toBe(false);
+  });
+
+  test("changement de compte : la mémoire du précédent ne fuit pas", async () => {
+    let params: { uid: string | null; clubId: string | null } = { uid: "coach1", clubId: "clubX" };
+    const h = await renderHook(() => useAppSpace(params));
+    await actAsync(() => dernier().emet("owner"));
+    expect(h.current.autoriteDejaConfirmee).toBe(true);
+
+    params = { uid: "joueur2", clubId: "clubX" };
+    await h.rerender();
+    await actAsync(() => dernier().echoue());
+    expect(h.current.autoriteDejaConfirmee).toBe(false);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// PUBLICATION DE L'AUTORITÉ ET PURGE
+// ════════════════════════════════════════════════════════════════════════════
+
+describe("l'autorité est publiée, et sa perte purge", () => {
+  test("l'espace coach ouvert publie une autorité qui autorise les écritures", async () => {
+    await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("owner"));
+    expect(readCoachAuthority()?.statut).toBe("autorise");
+    expect(canCommitCoachData(currentCoachAuthorityToken())).toBe(true);
+  });
+
+  test("la pierre tombale purge, EN TEMPS RÉEL, sur le même montage", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach"));
+    const captureAvant = currentCoachAuthorityToken();
+    purges = [];
+
+    await actAsync(() => dernier().emet("removed"));
+
+    expect(h.current.space).toBe("player");
+    expect(purges).toEqual(["revocation"]);
+    // Et toute lecture partie sous l'autorité précédente devient inapplicable.
+    expect(canCommitCoachData(captureAvant)).toBe(false);
+  });
+
+  test("une lecture illisible purge AUSSI (l'incertitude ne conserve rien)", async () => {
+    await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach"));
+    purges = [];
+
+    await actAsync(() => dernier().echoue());
+    expect(purges).toEqual(["incertitude"]);
+    expect(canCommitCoachData(currentCoachAuthorityToken())).toBe(false);
+  });
+
+  test("PAS DE PURGE INTEMPESTIVE : instantané identique, re-rendu, rien ne bouge", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach"));
+    const capture = currentCoachAuthorityToken();
+    purges = [];
+
+    await actAsync(() => dernier().emet("coach")); // ré-émission à l'identique
+    await h.rerender(); // navigation ordinaire : l'arbre se re-rend
+
+    expect(purges).toEqual([]);
+    // Le jeton n'a pas bougé : une lecture en vol doit pouvoir aboutir.
+    expect(currentCoachAuthorityToken()).toBe(capture);
+    expect(canCommitCoachData(capture)).toBe(true);
+  });
+
+  test("un changement de rôle SANS changement d'espace bouge quand même le jeton", async () => {
+    // owner → coach : l'espace reste coach, mais l'autorité n'est plus la même.
+    // Le jeton doit le refléter, sinon une lecture faite en tant que
+    // propriétaire s'appliquerait sous un rôle qui ne l'est plus.
+    await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("owner"));
+    const capture = currentCoachAuthorityToken();
+
+    await actAsync(() => dernier().emet("coach"));
+    expect(currentCoachAuthorityToken()).not.toBe(capture);
+    expect(canCommitCoachData(capture)).toBe(false);
+  });
+
+  test("déconnexion : l'autorité tombe et purge", async () => {
+    let params: { uid: string | null; clubId: string | null } = { uid: "u1", clubId: "clubX" };
+    await renderHook(() => useAppSpace(params));
+    await actAsync(() => dernier().emet("owner"));
+    purges = [];
+
+    params = { uid: null, clubId: null };
+    await renderHook(() => useAppSpace(params));
+    expect(purges.length).toBeGreaterThan(0);
+    expect(canCommitCoachData(currentCoachAuthorityToken())).toBe(false);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// REVALIDATION AU RETOUR AU PREMIER PLAN
+// ════════════════════════════════════════════════════════════════════════════
+
+describe("retour au premier plan — on revalide AVANT de réafficher", () => {
+  test("retour de l'arrière-plan : purge, `chargement`, et nouvel abonnement", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach"));
+    const premier = dernier();
+    purges = [];
+
+    await bascule("background", "active");
+
+    // L'espace coach est FERMÉ le temps de la vérification.
+    expect(h.current.autorite).toBe("chargement");
+    expect(h.current.decision).toBe("en-attente");
+    expect(purges).toEqual(["revalidation"]);
+    // L'ancien abonnement est coupé, un neuf est posé sur le même document.
+    expect(premier.fermetures).toBe(1);
+    expect(abonnements).toHaveLength(2);
+    expect(dernier().chemin).toBe("clubs/clubX/members/u1");
+  });
+
+  test("revalidation confirmée → l'espace coach revient", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach"));
+    await bascule("background", "active");
+
+    await actAsync(() => dernier().emet("coach"));
+    expect(h.current.autorite).toBe("autorise");
+    expect(h.current.space).toBe("coach");
+    expect(canCommitCoachData(currentCoachAuthorityToken())).toBe(true);
+  });
+
+  test("revalidation qui dit NON → l'espace coach ne revient pas", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("owner"));
+    await bascule("background", "active");
+
+    await actAsync(() => dernier().emet("removed"));
+    expect(h.current.autorite).toBe("refuse");
+    expect(h.current.space).toBe("player");
+  });
+
+  test("bascule PASSAGÈRE (`inactive`) : aucune revalidation, aucune purge", async () => {
+    // Centre de contrôle, bannière de notification, appel entrant : l'écran du
+    // coach ne doit pas se vider parce qu'il a baissé le volume.
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach"));
+    purges = [];
+
+    await bascule("inactive", "active");
+
+    expect(h.current.autorite).toBe("autorise");
+    expect(purges).toEqual([]);
+    expect(abonnements).toHaveLength(1);
+  });
+
+  test("iOS : background → inactive → active revalide quand même", async () => {
+    // Revenir depuis le sélecteur d'applications passe par `inactive` : l'état
+    // juste avant `active` n'est PAS `background`. Se fier au seul état
+    // précédent raterait donc tous les retours iOS.
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach"));
+
+    await bascule("background", "inactive", "active");
+    expect(h.current.autorite).toBe("chargement");
+    expect(abonnements).toHaveLength(2);
+  });
+
+  test("l'abonné au cycle de vie est retiré au démontage", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    expect(ecouteursAppState).toHaveLength(1);
+    await h.unmount();
+    expect(ecouteursAppState).toHaveLength(0);
+  });
+
+  test("déconnecté : aucun abonnement au cycle de vie (rien à revalider)", async () => {
+    await renderHook(() => useAppSpace({ uid: null, clubId: null }));
+    expect(ecouteursAppState).toHaveLength(0);
+  });
+});
+
+describe("revalidation qui n'aboutit pas — on ne reste pas suspendu", () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test("aucune réponse dans le délai → `indetermine`, jamais « on garde »", async () => {
+    const h = await renderHook(() =>
+      useAppSpace({ uid: "u1", clubId: "clubX" }, { delaiRevalidationMs: 1000 }),
+    );
+    await actAsync(() => dernier().emet("coach"));
+    await bascule("background", "active");
+    expect(h.current.autorite).toBe("chargement");
+
+    await actAsync(() => {
+      jest.advanceTimersByTime(1000);
+    });
+
+    expect(h.current.autorite).toBe("indetermine");
+    expect(h.current.autoriteDejaConfirmee).toBe(true); // → écran honnête
+    expect(canCommitCoachData(currentCoachAuthorityToken())).toBe(false);
+  });
+
+  test("une réponse arrivée AVANT le délai désamorce le minuteur", async () => {
+    const h = await renderHook(() =>
+      useAppSpace({ uid: "u1", clubId: "clubX" }, { delaiRevalidationMs: 1000 }),
+    );
+    await actAsync(() => dernier().emet("coach"));
+    await bascule("background", "active");
+    await actAsync(() => dernier().emet("coach"));
+    expect(h.current.autorite).toBe("autorise");
+
+    await actAsync(() => {
+      jest.advanceTimersByTime(5000);
+    });
+    // Le minuteur ne doit pas rattraper une réponse déjà arrivée.
+    expect(h.current.autorite).toBe("autorise");
+  });
+
+  test("démarrage à froid : AUCUN délai de garde (l'attente initiale reste l'attente)", async () => {
+    // Au démarrage il n'y a aucune donnée coach en mémoire à protéger, et
+    // l'application affiche déjà son écran de chargement. Poser un délai ici
+    // ferait clignoter l'espace joueur devant un coach sur réseau lent.
+    const h = await renderHook(() =>
+      useAppSpace({ uid: "u1", clubId: "clubX" }, { delaiRevalidationMs: 1000 }),
+    );
+    await actAsync(() => {
+      jest.advanceTimersByTime(60_000);
+    });
+    expect(h.current.autorite).toBe("chargement");
+  });
+
+  test("« Réessayer » repose l'abonnement et repasse par `chargement`", async () => {
+    const h = await renderHook(() =>
+      useAppSpace({ uid: "u1", clubId: "clubX" }, { delaiRevalidationMs: 1000 }),
+    );
+    await actAsync(() => dernier().emet("coach"));
+    await actAsync(() => dernier().echoue());
+    expect(h.current.autorite).toBe("indetermine");
+
+    await actAsync(() => h.current.revalider());
+    expect(h.current.autorite).toBe("chargement");
+    expect(dernier().chemin).toBe("clubs/clubX/members/u1");
+
+    await actAsync(() => dernier().emet("coach"));
+    expect(h.current.autorite).toBe("autorise");
   });
 });

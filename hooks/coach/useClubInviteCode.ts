@@ -15,6 +15,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { issueClubInviteCode } from "../../services/clubInvites";
+import {
+  canCommitCoachData,
+  currentCoachAuthorityToken,
+} from "../../state/coachAuthorityGate";
+import { useCoachDataPurge } from "./useCoachDataPurge";
 
 export type ClubInviteCodeState = {
   /** Code affichable, uniquement depuis l'émission de CETTE session d'écran. */
@@ -62,15 +67,30 @@ export function useClubInviteCode(clubId: string | null): ClubInviteCodeState {
     };
   }, []);
 
+  // PURGE À LA PERTE D'AUTORITÉ. Un code d'invitation est un droit d'entrée dans
+  // le club : il ne doit pas rester lisible à l'écran d'un compte dont
+  // l'encadrement vient de tomber. Il n'est écrit nulle part ailleurs (ni store,
+  // ni AsyncStorage), l'effacer ici l'efface donc partout.
+  useCoachDataPurge(
+    useCallback(() => {
+      setIssued(null);
+      setErrorState(null);
+      setIsIssuing(false);
+    }, []),
+  );
+
   const issue = useCallback(() => {
     if (!clubId || isIssuing) return;
     const target = clubId;
+    // Jeton capturé au DÉPART, vérifié à l'ARRIVÉE : un code émis avant la
+    // révocation ne doit pas s'afficher après elle.
+    const jetonAutorite = currentCoachAuthorityToken();
     setIsIssuing(true);
     setErrorState(null);
 
     issueClubInviteCode(target)
       .then((outcome) => {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || !canCommitCoachData(jetonAutorite)) return;
         if (!outcome.ok) {
           setErrorState({ clubId: target, message: outcome.message });
           return;

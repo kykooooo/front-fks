@@ -33,6 +33,7 @@ import ProgressScreen from "../screens/ProgressScreen";
 import CoachOnboardingScreen from "../screens/CoachOnboardingScreen";
 import CoachTabs, { type CoachTabsParamList } from "./CoachTabs";
 import CoachPlayerScreen from "../screens/coach/CoachPlayerScreen";
+import CoachAccessUnconfirmedScreen from "../screens/coach/CoachAccessUnconfirmedScreen";
 import { coachColors } from "../components/coach/coachTheme";
 import { theme } from "../constants/theme";
 import { STORAGE_KEYS } from "../constants/storage";
@@ -44,6 +45,7 @@ import { setAnalyticsUserId } from "../services/analytics";
 import { setSentryUser } from "../services/monitoring";
 import { onWelcomeReset } from "../services/accountDeletion";
 import { useAppSpace } from "../hooks/useAppSpace";
+import { resolveClubPointer } from "../domain/coachAuthority";
 
 // Firebase
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -441,8 +443,12 @@ export default function RootNavigator() {
       (snap) => {
         const data = snap.data();
         setProfileCompleted(!!data?.profileCompleted);
-        const rawClubId = data?.clubId;
-        setClubId(typeof rawClubId === "string" && rawClubId.trim() ? rawClubId.trim() : null);
+        // OÙ regarder, jamais QUI on est. Le jour où plusieurs clubs deviendront
+        // possibles, `resolveClubPointer` REFUSE explicitement plutôt que de
+        // prendre le premier de la liste : un choix implicite ouvrirait l'espace
+        // d'un club que personne n'a demandé, et personne ne saurait lequel.
+        const pointeur = resolveClubPointer(data?.clubId);
+        setClubId(pointeur.statut === "unique" ? pointeur.clubId : null);
         setInitializing(false);
       },
       (err) => {
@@ -490,6 +496,23 @@ export default function RootNavigator() {
   //    Ce temps d'attente ne concerne QUE les comptes rattachés à un club : sans
   //    `clubId`, il n'y a rien à lire et la décision est immédiate.
   if (appSpace.decision === "en-attente") return <Splash />;
+
+  // 5quater) Autorité coach INVÉRIFIABLE alors qu'elle avait été confirmée →
+  //    écran d'accès non vérifié.
+  //    Les quatre états de l'autorité (domain/coachAuthority) : seul `autorise`
+  //    ouvre l'espace coach ; `chargement`, `refuse` et `indetermine` le ferment
+  //    ET purgent. Ici on traite le seul des trois qui mérite une explication :
+  //    un coach dont on n'a pas pu vérifier les accès. Le renvoyer sans un mot
+  //    dans l'application joueur lui ferait croire à une panne — ou, si son
+  //    profil joueur n'est pas rempli, lui ouvrirait le questionnaire de profil
+  //    parce qu'un document n'a pas pu être lu.
+  //    Un joueur, lui, ne voit jamais cet écran : sans autorité coach confirmée,
+  //    une lecture en échec le laisse dans son application, qui sait vivre hors
+  //    ligne. La mémoire « déjà confirmée » n'ouvre rien — elle choisit entre
+  //    deux états déjà fermés.
+  if (appSpace.autorite === "indetermine" && appSpace.autoriteDejaConfirmee) {
+    return <CoachAccessUnconfirmedScreen onRetry={appSpace.revalider} />;
+  }
 
   // 6bis) Encadrant (propriétaire ou coach du club) → espace coach.
   //    Pas de questionnaire joueur, pas de tab bar joueur.

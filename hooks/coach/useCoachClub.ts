@@ -26,6 +26,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 
+import {
+  canCommitCoachData,
+  currentCoachAuthorityToken,
+} from "../../state/coachAuthorityGate";
+import { useCoachDataPurge } from "./useCoachDataPurge";
 import { auth, db } from "../../services/firebase";
 import {
   getClubDirective,
@@ -39,6 +44,7 @@ import {
   resolveClubOwnerAuthority,
   type ClubOwnerAuthority,
 } from "../../domain/clubRoles";
+import { resolveClubPointer } from "../../domain/coachAuthority";
 import type { ClubCoachNote } from "../../domain/clubCoachNote";
 import type { ClubTrainingDirective } from "../../domain/clubDirective";
 import { weekKeyOf } from "../../utils/dateHelpers";
@@ -173,12 +179,18 @@ export function useCoachClub(options?: UseCoachClubOptions): CoachClubState {
       if (!uid) return;
       const requestId = requestIdRef.current + 1;
       requestIdRef.current = requestId;
+      // Jeton d'autorité capturé AU DÉPART, vérifié dans `accept()` — donc au
+      // moment d'ÉCRIRE, à chacun des cinq points de sortie de cette lecture.
+      const jetonAutorite = currentCoachAuthorityToken();
       // Semaine recalculée À CHAQUE lecture, avec l'horloge du coach : c'est le
       // seul endroit "hors rendu" où l'on peut le faire sans figer l'app sur la
       // semaine du démarrage.
       const weekKey = weekKeyOf(new Date(now()));
 
-      const accept = () => mountedRef.current && requestId === requestIdRef.current;
+      const accept = () =>
+        mountedRef.current &&
+        requestId === requestIdRef.current &&
+        canCommitCoachData(jetonAutorite);
       const finish = () => {
         if (mode === "refresh") setIsRefreshing(false);
       };
@@ -187,7 +199,12 @@ export function useCoachClub(options?: UseCoachClubOptions): CoachClubState {
       try {
         const userSnap = await getDoc(doc(db, "users", uid));
         const raw = userSnap.exists() ? (userSnap.data() as { clubId?: unknown })?.clubId : null;
-        clubId = typeof raw === "string" && raw.trim() ? raw.trim() : null;
+        // Même lecture que la navigation (`domain/coachAuthority.resolveClubPointer`) :
+        // un pointeur qui désignerait plusieurs clubs est REFUSÉ, jamais réduit
+        // à son premier élément. Deux endroits qui lisent le même champ doivent
+        // le lire de la même façon, sinon l'un ouvre ce que l'autre ferme.
+        const pointeur = resolveClubPointer(raw);
+        clubId = pointeur.statut === "unique" ? pointeur.clubId : null;
       } catch {
         if (!accept()) return;
         setState((prev) => ({ ...prev, status: "error" }));
@@ -321,6 +338,25 @@ export function useCoachClub(options?: UseCoachClubOptions): CoachClubState {
       requestIdRef.current += 1;
     };
   }, [runFetch]);
+
+  // PURGE À LA PERTE D'AUTORITÉ. Ce hook porte l'identité du club, le cadre de
+  // la semaine, la DIRECTIVE et surtout la NOTE PRIVÉE du coach — le document
+  // qu'aucun joueur n'a le droit de lire. Il repart entièrement à zéro.
+  //
+  // Le statut retenu est `error` et non `notInClub` : dire « tu n'es dans aucun
+  // club » après une purge serait affirmer un fait qu'on ne connaît pas.
+  // `error` dit la seule chose vraie — on n'a plus rien de lisible.
+  //
+  // EFFET EN CASCADE, ET IL EST VOULU : CoachWeekScreen hydrate ses brouillons
+  // (cadre, note, directive) depuis ces champs. Les remettre à `null` vide donc
+  // aussi les zones de saisie de l'écran, sans que celui-ci ait à s'abonner.
+  useCoachDataPurge(
+    useCallback(() => {
+      requestIdRef.current += 1;
+      setState((prev) => ({ ...EMPTY, weekKey: prev.weekKey, status: "error" }));
+      setIsRefreshing(false);
+    }, []),
+  );
 
   const refresh = useCallback(() => {
     // Pas de spinner qu'on ne pourrait pas éteindre (sans uid, runFetch sort tout

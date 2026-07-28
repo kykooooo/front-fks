@@ -17,6 +17,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 
+import {
+  canCommitCoachData,
+  currentCoachAuthorityToken,
+} from "../../state/coachAuthorityGate";
+import { useCoachDataPurge } from "./useCoachDataPurge";
 import { fetchClubPlayerSummary } from "../../repositories/clubsRepo";
 import {
   nextCoachDetailView,
@@ -120,6 +125,8 @@ export function useCoachPlayer(
       const key = `${clubId}/${playerUid}`;
       const requestId = requestIdRef.current + 1;
       requestIdRef.current = requestId;
+      // Jeton d'autorité capturé AU DÉPART, vérifié À L'ARRIVÉE (cf. plus bas).
+      const jetonAutorite = currentCoachAuthorityToken();
       lastAttemptAtRef.current = now();
       inFlightRef.current = true;
       const readTodayKey = toDateKey(new Date(now()));
@@ -134,6 +141,13 @@ export function useCoachPlayer(
       } finally {
         inFlightRef.current = false;
       }
+
+      // AUTORITÉ D'ABORD. La garde existante est indexée sur la ROUTE : elle
+      // répond à « cette réponse parle-t-elle encore du joueur affiché ? ». Elle
+      // reste, telle quelle — elle n'est simplement pas la même question que
+      // « ai-je encore le droit de l'afficher ? ». Même route, autorité tombée :
+      // la première dit oui, la seconde dit non, et c'est la seconde qui tranche.
+      if (!canCommitCoachData(jetonAutorite)) return;
 
       // Réponse acceptée UNIQUEMENT si : montée + dernier requestId + route inchangée.
       if (
@@ -181,6 +195,28 @@ export function useCoachPlayer(
       requestIdRef.current += 1;
     };
   }, [runFetch]);
+
+  // PURGE À LA PERTE D'AUTORITÉ. La fiche et sa chronologie sont la donnée
+  // nominative la plus détaillée de l'espace coach : elles partent en premier.
+  //
+  // `unavailable: true` et non une fiche vide : une fiche vidée qui se
+  // présenterait comme LUE afficherait « synchronisation en cours » (notFound),
+  // c'est-à-dire une attente qui ne finira jamais. Après une purge, on ne sait
+  // plus — et c'est ce que dit `unavailable`.
+  useCoachDataPurge(
+    useCallback(() => {
+      requestIdRef.current += 1;
+      const vide: CoachDetailView = { summary: null, unavailable: true, restricted: false };
+      viewRef.current = vide;
+      committedKeyRef.current = null;
+      lastAttemptAtRef.current = null;
+      setView(vide);
+      setFetchedAt(null);
+      setTodayKey("");
+      setIsRefreshing(false);
+      setLoading(false);
+    }, []),
+  );
 
   // Fraîcheur au retour sur l'écran, anti-rebond identique à l'effectif.
   useFocusEffect(

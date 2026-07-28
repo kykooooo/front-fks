@@ -32,6 +32,11 @@ import {
   removeClubMember as removeClubMemberCall,
   type RemoveMemberFailureReason,
 } from "../../services/clubMembers";
+import {
+  canCommitCoachData,
+  currentCoachAuthorityToken,
+} from "../../state/coachAuthorityGate";
+import { useCoachDataPurge } from "./useCoachDataPurge";
 
 export type RemoveMemberPhase =
   | { kind: "idle" }
@@ -93,16 +98,28 @@ export function useRemoveClubMember(
 
   const inFlightRef = useRef(false);
 
+  // PURGE À LA PERTE D'AUTORITÉ. L'état de retrait PORTE l'identifiant d'un
+  // joueur (`key`) : c'est de la donnée coach, si peu que ce soit. Il repart à
+  // l'état neutre. Le retrait déjà parti vers le serveur, lui, suit son cours —
+  // la purge est LOCALE, elle n'annule aucune écriture en base.
+  useCoachDataPurge(
+    useCallback(() => {
+      setEntry(NEUTRAL);
+    }, []),
+  );
+
   const remove = useCallback(() => {
     if (!clubId || !memberUid || inFlightRef.current) return;
     // Clé capturée au moment du geste : c'est elle qui datera la réponse.
     const key = `${clubId}/${memberUid}`;
+    // Jeton capturé au DÉPART, vérifié à l'ARRIVÉE.
+    const jetonAutorite = currentCoachAuthorityToken();
     inFlightRef.current = true;
     setEntry({ key, phase: { kind: "pending" } });
 
     removeClubMemberCall(clubId, memberUid)
       .then((outcome) => {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || !canCommitCoachData(jetonAutorite)) return;
         setEntry({
           key,
           phase: outcome.ok
