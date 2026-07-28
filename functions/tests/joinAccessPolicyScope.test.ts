@@ -43,13 +43,13 @@ const CLUB = "clubPilote";
  * a le droit de toucher.
  */
 const EFFECTIF_INITIAL = (): Record<string, MemberSnapshot> => ({
-  "joueurApprouve": { role: "player", coachAccess: "approved" },
-  "joueurEnAttente": { role: "player", coachAccess: "pending" },
-  "joueurRevoque": { role: "player", coachAccess: "revoked" },
-  "joueurOuvert": { role: "player", coachAccess: "not_required" },
-  "joueurAncien": { role: "player", coachAccess: undefined },
-  "joueurCorrompu": { role: "player", coachAccess: "APPROVED" },
-  "leCoach": { role: "coach", coachAccess: undefined },
+  "joueurApprouve": { playerStatus: "active", coachAccess: "approved" },
+  "joueurEnAttente": { playerStatus: "active", coachAccess: "pending" },
+  "joueurRevoque": { playerStatus: "active", coachAccess: "revoked" },
+  "joueurOuvert": { playerStatus: "active", coachAccess: "not_required" },
+  "joueurAncien": { playerStatus: "active", coachAccess: undefined },
+  "joueurCorrompu": { playerStatus: "active", coachAccess: "APPROVED" },
+  "leCoach": { playerStatus: null, coachAccess: undefined },
 });
 
 type BaseFictive = {
@@ -73,7 +73,7 @@ function magasin(base: BaseFictive): CoachAccessBackfillStore {
       const clubs = clubId ? [clubId] : Object.keys(base.membres);
       return clubs.flatMap((c) =>
         Object.entries(base.membres[c] ?? {})
-          .filter(([, m]) => m.role === "player")
+          .filter(([, m]) => m.playerStatus === "active")
           .map(([playerUid]) => ({ clubId: c, playerUid })),
       );
     },
@@ -193,7 +193,7 @@ describe("changer la politique ne touche AUCUN acces existant", () => {
 
     // Un nouveau joueur entre : son membership est cree sans etat (c'est le
     // rattachement serveur qui le pose ; ici on regarde la resynchro).
-    base.membres[CLUB]["nouveauJoueur"] = { role: "player", coachAccess: undefined };
+    base.membres[CLUB]["nouveauJoueur"] = { playerStatus: "active", coachAccess: undefined };
     await chaqueJoueurEnregistreSonProfil(base);
 
     expect(photo(base).nouveauJoueur).toBe("pending");
@@ -229,7 +229,7 @@ describe("fermer un acces existant reste une operation EXPLICITE", () => {
     await chaqueJoueurEnregistreSonProfil(base);
     // Le geste reel decrit dans AUTORISATION_ACCES.md §7.4 : poser "revoked" sur
     // UN membership. Rien d'autre ne ferme un acces.
-    base.membres[CLUB]["joueurOuvert"] = { role: "player", coachAccess: "revoked" };
+    base.membres[CLUB]["joueurOuvert"] = { playerStatus: "active", coachAccess: "revoked" };
     await chaqueJoueurEnregistreSonProfil(base);
     expect(photo(base).joueurOuvert).toBe("revoked");
   });

@@ -16,7 +16,7 @@ service cloud.firestore {
     // rôle propriétaire ». DEUX sources, jamais une seule. Quand elles se
     // contredisent, la règle REFUSE — elle ne choisit pas laquelle des deux ment.
     //
-    // DUPLICATION ASSUMÉE. Ces trois fonctions sont la recopie MANUELLE de
+    // DUPLICATION ASSUMÉE. Ces fonctions sont la recopie MANUELLE de
     // functions/src/clubAuthority.ts (les règles ne peuvent pas importer de
     // TypeScript), exactement comme la liste des états d'accès l'est de
     // coachAccess.COACH_ACCESS_GRANTING_STATES. Aucun verrou automatique ne les
@@ -24,17 +24,43 @@ service cloud.firestore {
     // MÊMES cas — functions/tests/clubAuthority.test.ts et
     // firestore-tests/rules.clubAuthority.test.ts. Toucher les deux, toujours.
     //
-    // Rôles : "owner" · "coach" · "player" · "removed".
-    // "removed" est la pierre tombale posée par le retrait serveur : elle
-    // n'ouvre RIEN, nulle part — c'est ce qui ferme l'accès d'un membre retiré
-    // sans dépendre d'une suppression de document ni d'un ordre d'événements.
+    // ── DEUX AXES INDÉPENDANTS ──────────────────────────────────────────────
+    // Une appartenance `clubs/{clubId}/members/{uid}` porte DEUX champs qui ne
+    // parlent pas de la même chose :
+    //   . `accessRole`   : permissions d'encadrement — "owner" | "coach".
+    //                      Absent = aucune permission ;
+    //   . `playerStatus` : statut de joueur — "active" | "inactive".
+    //                      Absent = aucun suivi sportif dans ce club.
+    // LES DEUX PEUVENT COEXISTER : un entraîneur-joueur porte `accessRole:
+    // "coach"` ET `playerStatus: "active"`. L'ancien champ unique `role` (qui
+    // valait owner/coach/player/removed) a DISPARU : c'est sa fusion des deux
+    // axes qui faisait qu'obtenir l'encadrement effaçait le fait d'être joueur.
+    //
+    // LA PIERRE TOMBALE n'est plus une valeur, c'est l'absence des deux :
+    // `accessRole: null` + `playerStatus: "inactive"`, écrits ensemble par le
+    // retrait serveur (functions/src/clubMembers.ts). Elle n'ouvre RIEN, nulle
+    // part — sans dépendre d'une suppression de document ni d'un ordre
+    // d'événements.
+    //
+    // COÛT DE LECTURE : `myAccessRole` et `myPlayerStatus` visent le MÊME
+    // document ; les get()/exists() sur un même chemin sont mutualisés dans une
+    // évaluation de règle, donc `isActiveMember` ne coûte pas deux accès.
 
-    /** Rôle du membre courant, "" si le document n'existe pas (fail-closed). */
-    function myRole(clubId) {
+    /** Permission d'encadrement du membre courant, "" si absente (fail-closed). */
+    function myAccessRole(clubId) {
       return isSignedIn() &&
         exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid))
         ? get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid))
-            .data.get("role", "")
+            .data.get("accessRole", "")
+        : "";
+    }
+
+    /** Statut de joueur du membre courant, "" si absent (fail-closed). */
+    function myPlayerStatus(clubId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid))
+            .data.get("playerStatus", "")
         : "";
     }
 
@@ -53,38 +79,49 @@ service cloud.firestore {
     function isClubOwner(clubId) {
       return isSignedIn() &&
         clubOwnerUid(clubId) == request.auth.uid &&
-        myRole(clubId) == "owner";
+        myAccessRole(clubId) == "owner";
     }
 
     // ENCADREMENT. Le propriétaire EST encadrant : sans cette ligne, poser le
     // rôle propriétaire lui retirerait l'écriture du cadre de semaine et de la
     // directive — un trou ouvert en en fermant un autre.
-    // Ne dépend QUE de l'appartenance : aucune incohérence possible entre deux
-    // sources, puisqu'il n'y en a qu'une.
+    // Ne dépend QUE de `accessRole` : ni de `ownerUid` (aucune incohérence
+    // possible entre deux sources), ni du statut de joueur — un entraîneur-joueur
+    // est encadrant à part entière, et le rester ne doit rien à son suivi.
     function isClubStaff(clubId) {
-      return myRole(clubId) in ["owner", "coach"];
+      return myAccessRole(clubId) in ["owner", "coach"];
     }
 
-    // Appartenance ACTIVE au club (joueur OU encadrant). Remplace l'ancien
-    // « le document members/{uid} existe » : une pierre tombale existe aussi, et
-    // elle ne doit plus rien ouvrir. C'est ce qui rend le retrait RÉEL.
+    // Appartenance ACTIVE au club : encadrement OU suivi sportif actif.
+    // Remplace l'ancien « le document members/{uid} existe » : une pierre
+    // tombale existe aussi, et elle ne doit plus rien ouvrir. C'est ce qui rend
+    // le retrait RÉEL — il ferme les deux axes d'une seule écriture, donc cette
+    // fonction devient fausse quoi qu'il arrive ensuite.
     function isActiveMember(clubId) {
-      return myRole(clubId) in ["owner", "coach", "player"];
+      return isClubStaff(clubId) || myPlayerStatus(clubId) == "active";
     }
 
-    // La JOUEUSE ciblée est-elle un membre ACTIF du club, avec le rôle player ?
-    // Sert à invalider une projection playerSummaries STALE : si la joueuse a
-    // quitté le club (member doc supprimé) ou n'a pas le rôle player (coach/rôle
-    // invalide), le summary — même encore présent — n'est plus lisible.
+    // La personne ciblée a-t-elle un SUIVI SPORTIF ACTIF dans ce club ?
+    // Sert à invalider une projection playerSummaries STALE : si elle a quitté
+    // le club (member doc supprimé) ou n'a plus de suivi actif, le summary —
+    // même encore présent — n'est plus lisible.
     // exists() protège le get() (court-circuit) contre un doc absent.
     //
+    // ELLE NE REGARDE PAS L'ENCADREMENT, ET C'EST LE POINT : un entraîneur-joueur
+    // (`accessRole: "coach"` + `playerStatus: "active"`) a une fiche dans
+    // l'effectif suivi, exactement comme les autres joueurs — et soumise aux
+    // mêmes deux autres conditions (`isClubStaff` du lecteur, `coachAccess` du
+    // sujet). Ça n'ouvre donc aucune surface nouvelle : ça remplit une case qui
+    // était vide à tort.
+    //
     // C'EST AUSSI LE PREMIER DES TROIS VERROUS DU RETRAIT : une pierre tombale
-    // porte le rôle "removed", donc cette fonction est fausse, donc une
+    // porte `playerStatus: "inactive"`, donc cette fonction est fausse, donc une
     // projection résiduelle est illisible — même si un trigger en vol venait à
     // la réécrire une fraction de seconde après le retrait.
     function isPlayerMember(clubId, playerUid) {
       return exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid)) &&
-        get(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid)).data.role == "player";
+        get(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid))
+          .data.get("playerStatus", "") == "active";
     }
 
     // ── AUTORISATION D'ACCÈS AUX DONNÉES DE SUIVI (default-deny) ─────────────
@@ -268,8 +305,8 @@ service cloud.firestore {
         // l'invariant. Il n'est pas laissé dans le noir pour autant — le document
         // club, lui, reste lisible, et c'est là que l'application constate l'écart.
         allow read: if isOwner(memberId) || isClubStaff(clubId);
-        // ÉCRITURE CLIENTE : le rôle "owner" du créateur du club à l'AMORÇAGE, et
-        // RIEN D'AUTRE.
+        // ÉCRITURE CLIENTE : la permission "owner" du créateur du club à
+        // l'AMORÇAGE, et RIEN D'AUTRE.
         //
         // ── L'AMORÇAGE EST CIRCULAIRE, ET C'EST LA SEULE EXCEPTION ───────────
         // À la création du club, le document de membre propriétaire n'existe pas
@@ -280,7 +317,7 @@ service cloud.firestore {
         //
         // L'exception est rendue AUSSI ÉTROITE QUE POSSIBLE :
         //  - on n'écrit que SON PROPRE document (`isOwner(memberId)`) ;
-        //  - le rôle écrit est exactement "owner", aucun autre ;
+        //  - la permission écrite est exactement "owner", aucune autre ;
         //  - et il faut être celui que le club désigne déjà comme ownerUid.
         // Quelqu'un qui tente de s'écrire propriétaire dans un club dont il n'est
         // pas le ownerUid est donc refusé — c'est testé explicitement, y compris
@@ -290,32 +327,35 @@ service cloud.firestore {
         // aujourd'hui aucun chemin produit pour cela (limite connue, assumée, et
         // écrite ici pour qu'on ne la découvre pas en la cherchant).
         //
-        // Le membership "player" n'est plus écrivable par aucun client : il est
-        // posé par la Cloud Function `joinClubWithInviteCode` (Admin SDK, qui
-        // contourne ces règles) après vérification serveur du code. L'ancienne
-        // preuve `providesClubInviteCode` reposait sur un code lisible dans
-        // clubs/{id} et sur un annuaire interrogeable — deux surfaces désormais
-        // fermées. Un joueur qui écrirait lui-même son membership court-
-        // circuiterait expiration, révocation, quota d'usages ET limitation de
-        // tentatives : c'est exactement ce que cette règle empêche.
-        //
-        // Le champ `coachAccess` est ÉCRIT UNIQUEMENT PAR LE SERVEUR (Admin SDK,
-        // qui contourne ces règles). Aucun client ne le pose, ne le change, ni ne
-        // l'efface — ni le joueur, ni le coach, ni l'owner du club :
-        //  - à la création : le champ doit être ABSENT de la requête ;
-        //  - à la mise à jour : le champ ne doit pas figurer dans les clés
+        // ── LES DEUX CHAMPS SERVEUR : `playerStatus` ET `coachAccess` ────────
+        // Aucun client ne les pose, ne les change, ni ne les efface — ni le
+        // joueur, ni le coach, ni l'owner du club :
+        //  - à la création : les champs doivent être ABSENTS de la requête ;
+        //  - à la mise à jour : ils ne doivent pas figurer dans les clés
         //    affectées. `diff().affectedKeys()` compare l'AVANT et l'APRÈS, donc
-        //    une mise à jour PARTIELLE qui ne touche pas le champ passe, et une
-        //    qui le touche (même pour y remettre la même valeur explicitement,
-        //    même pour le supprimer) est refusée.
+        //    une mise à jour PARTIELLE qui ne les touche pas passe, et une qui
+        //    les touche (même pour y remettre la même valeur explicitement, même
+        //    pour les supprimer) est refusée.
+        //
+        // `playerStatus` rejoint `coachAccess` sous le même verrou, et pour la
+        // même raison : c'est lui qui décide désormais qu'une fiche de suivi
+        // existe et qu'elle est lisible (`isPlayerMember`, plus haut). Laisser un
+        // client le poser reviendrait à laisser n'importe qui s'inscrire dans
+        // l'effectif suivi d'un club — c'est-à-dire contourner le code
+        // d'invitation, son expiration, sa révocation, son quota d'usages ET la
+        // limitation de tentatives. Il est écrit UNIQUEMENT par les Cloud
+        // Functions `joinClubWithInviteCode` (entrée) et `removeClubMember`
+        // (sortie), qui utilisent l'Admin SDK et contournent donc ces règles.
         allow create: if isOwner(memberId) &&
-          request.resource.data.role == "owner" &&
+          request.resource.data.accessRole == "owner" &&
           clubOwnerUid(clubId) == request.auth.uid &&
-          !("coachAccess" in request.resource.data);
+          !("coachAccess" in request.resource.data) &&
+          !("playerStatus" in request.resource.data);
         allow update: if isOwner(memberId) &&
-          request.resource.data.role == "owner" &&
+          request.resource.data.accessRole == "owner" &&
           clubOwnerUid(clubId) == request.auth.uid &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(["coachAccess"]);
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(["coachAccess", "playerStatus"]);
 
         // ── SUPPRESSION ─────────────────────────────────────────────────────
         // Un membre peut se retirer lui-même (le joueur qui quitte son club
@@ -455,7 +495,7 @@ service cloud.firestore {
       // suffisait pas — un profil ancien ou incohérent passait au travers. Ici le
       // refus est prononcé par la base elle-même, avant qu'aucun octet ne sorte.
       // TROIS conditions, et le RETRAIT d'un membre en fait tomber DEUX d'un coup
-      // (rôle "removed" ⇒ `isPlayerMember` faux ; coachAccess "revoked" ⇒
+      // (`playerStatus: "inactive"` ⇒ `isPlayerMember` faux ; coachAccess "revoked" ⇒
       // `isCoachAccessGranted` faux). C'est ce qui rend la fermeture insensible
       // aux courses : même si une reprojection en vol réécrivait la projection
       // juste après le retrait, plus personne ne pourrait la lire.

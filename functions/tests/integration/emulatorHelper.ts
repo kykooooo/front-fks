@@ -33,20 +33,20 @@ export async function seedClubA(db: Firestore): Promise<void> {
   await db.doc("clubs/clubA").set({ name: "Club A", ownerUid: "coachA", teamGender: "female" });
   // Role "owner" : ownerUid le designe, son appartenance le confirme — l'etat
   // coherent exige par le predicat d'autorite (functions/src/clubAuthority.ts).
-  await db.doc("clubs/clubA/members/coachA").set({ uid: "coachA", role: "owner" });
+  await db.doc("clubs/clubA/members/coachA").set({ uid: "coachA", accessRole: "owner" });
   // `coachAccess` = état SERVEUR d'autorisation d'accès au suivi. Sans lui, le
   // projecteur ne produit RIEN (default-deny). Les deux joueuses sont U15 :
   // "approved" représente l'étape supplémentaire déjà faite côté procédure.
-  await db.doc("clubs/clubA/members/playerA1").set({ uid: "playerA1", role: "player", coachAccess: "approved" });
-  await db.doc("clubs/clubA/members/playerA2").set({ uid: "playerA2", role: "player", coachAccess: "approved" });
+  await db.doc("clubs/clubA/members/playerA1").set({ uid: "playerA1", playerStatus: "active", coachAccess: "approved" });
+  await db.doc("clubs/clubA/members/playerA2").set({ uid: "playerA2", playerStatus: "active", coachAccess: "approved" });
 
-  await db.doc("users/coachA").set({ uid: "coachA", clubId: "clubA", role: "coach", firstName: "CoachA", profileCompleted: true });
+  await db.doc("users/coachA").set({ uid: "coachA", clubId: "clubA", accessRole: "coach", firstName: "CoachA", profileCompleted: true });
   await db.doc("users/playerA1").set({
-    uid: "playerA1", clubId: "clubA", role: "player", firstName: "Anna",
+    uid: "playerA1", clubId: "clubA", playerStatus: "active", firstName: "Anna",
     position: "Milieu", level: "Regional", ageCategory: "U15", profileCompleted: true,
   });
   await db.doc("users/playerA2").set({
-    uid: "playerA2", clubId: "clubA", role: "player", firstName: "Bea", ageCategory: "U15", profileCompleted: true,
+    uid: "playerA2", clubId: "clubA", playerStatus: "active", firstName: "Bea", ageCategory: "U15", profileCompleted: true,
   });
 
   // Séance FAITE de playerA1 — sensible injecté volontairement.

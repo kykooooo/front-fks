@@ -56,7 +56,8 @@ jest.mock("firebase/firestore", () => ({
 /** Abonnements ouverts, indexés par chemin de document, avec leur compteur de fermeture. */
 type Abonnement = {
   chemin: string;
-  emet: (role: unknown | null) => void;
+  /** Emet un instantane d appartenance : les DEUX axes, comme le vrai document. */
+  emet: (accessRole: unknown | null, playerStatus?: unknown | null) => void;
   echoue: () => void;
   fermetures: number;
 };
@@ -70,10 +71,13 @@ const mockOnSnapshot = (
 ) => {
   const abonnement: Abonnement = {
     chemin: ref.path.join("/"),
-    emet: (role) =>
+    emet: (accessRole, playerStatus = null) =>
       next({
-        exists: () => role !== null,
-        data: () => (role === null ? undefined : { role }),
+        // Document ABSENT si les deux axes sont vides : c est l etat "aucune
+        // appartenance", distinct d une appartenance qui n ouvre rien.
+        exists: () => accessRole !== null || playerStatus !== null,
+        data: () =>
+          accessRole === null && playerStatus === null ? undefined : { accessRole, playerStatus },
       }),
     echoue: () => error(new Error("permission-denied")),
     fermetures: 0,
@@ -133,7 +137,7 @@ describe("démarrage à froid — on n'affiche pas avant de savoir", () => {
   test("membre d'un club : décision `en-attente` tant que l'appartenance n'est pas lue", async () => {
     const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
     expect(h.current.decision).toBe("en-attente");
-    expect(h.current.membershipRole).toBeNull();
+    expect(h.current.membershipAccessRole).toBeNull();
   });
 
   test("aucun club rattaché : décision immédiate, aucun abonnement posé", async () => {
@@ -158,25 +162,67 @@ describe("démarrage à froid — on n'affiche pas avant de savoir", () => {
     await actAsync(() => dernier().emet("owner"));
     expect(h.current.decision).toBe("coach");
     expect(h.current.space).toBe("coach");
-    expect(h.current.membershipRole).toBe("owner");
+    expect(h.current.membershipAccessRole).toBe("owner");
   });
 });
 
-describe("chaque rôle ouvre — ou non — l'espace coach", () => {
-  const cas: Array<[string, unknown | null, "coach" | "player"]> = [
-    ["propriétaire", "owner", "coach"],
-    ["coach", "coach", "coach"],
-    ["joueur", "player", "player"],
-    ["pierre tombale", "removed", "player"],
-    ["aucune appartenance", null, "player"],
-    ["rôle inconnu", "admin", "player"],
+describe("chaque appartenance ouvre — ou non — l'espace coach", () => {
+  // Les DEUX axes, cas par cas. `null` sur les deux = document absent.
+  const cas: Array<[string, unknown | null, unknown | null, "coach" | "player"]> = [
+    ["propriétaire", "owner", null, "coach"],
+    ["coach", "coach", null, "coach"],
+    ["joueur", null, "active", "player"],
+    ["pierre tombale (les deux fermés)", null, "inactive", "player"],
+    ["aucune appartenance", null, null, "player"],
+    ["permission inconnue", "admin", null, "player"],
+    // L'ENTRAÎNEUR-JOUEUR : les deux espaces sont ouverts, et sans préférence
+    // mémorisée on atterrit sur coach — pour que le gain se voie.
+    ["entraîneur-joueur (défaut)", "coach", "active", "coach"],
+    ["propriétaire-joueur (défaut)", "owner", "active", "coach"],
   ];
 
-  test.each(cas)("%s → espace %s", async (_nom, role, attendu) => {
+  test.each(cas)("%s → espace %s", async (_nom, accessRole, playerStatus, attendu) => {
     const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
-    await actAsync(() => dernier().emet(role));
+    await actAsync(() => dernier().emet(accessRole, playerStatus));
     expect(h.current.space).toBe(attendu);
     expect(h.current.decision).toBe(attendu);
+  });
+
+  test("le sélecteur n'est proposé QU'À qui a réellement les deux espaces", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+
+    await actAsync(() => dernier().emet(null, "active")); // joueur pur
+    expect(h.current.peutChoisirEspace).toBe(false);
+
+    await actAsync(() => dernier().emet("coach", null)); // encadrant sans suivi
+    expect(h.current.peutChoisirEspace).toBe(false);
+
+    await actAsync(() => dernier().emet("coach", "active")); // entraîneur-joueur
+    expect(h.current.peutChoisirEspace).toBe(true);
+  });
+
+  test("LE PIÈGE : perdre l'encadrement referme l'espace coach malgré le choix mémorisé", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach", "active"));
+    // Il choisit explicitement l'espace coach, et ce choix est mémorisé.
+    await actAsync(() => h.current.choisirEspace("coach"));
+    expect(h.current.space).toBe("coach");
+
+    // Le serveur lui retire l'encadrement (retrait, rétrogradation).
+    await actAsync(() => dernier().emet(null, "active"));
+    expect(h.current.space).toBe("player");
+    expect(h.current.peutChoisirEspace).toBe(false);
+  });
+
+  test("... et le choix « joueur » ne referme pas l'espace coach de qui n'a que lui", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach", "active"));
+    await actAsync(() => h.current.choisirEspace("player"));
+    expect(h.current.space).toBe("player");
+
+    // Son suivi sportif est désactivé : il ne reste que l'espace coach.
+    await actAsync(() => dernier().emet("coach", "inactive"));
+    expect(h.current.space).toBe("coach");
   });
 
   test("appartenance illisible → espace joueur, et l'état est NOMMÉ", async () => {
@@ -190,7 +236,7 @@ describe("chaque rôle ouvre — ou non — l'espace coach", () => {
 describe("transfert de propriété — la bascule, sans reconnexion", () => {
   test("joueur devenu propriétaire : l'espace coach s'ouvre sur le même montage", async () => {
     const h = await renderHook(() => useAppSpace({ uid: "successeur", clubId: "clubX" }));
-    await actAsync(() => dernier().emet("player"));
+    await actAsync(() => dernier().emet(null, "active"));
     expect(h.current.space).toBe("player");
 
     // Le serveur écrit `role: "owner"` sur l'appartenance (transaction du
@@ -208,7 +254,7 @@ describe("transfert de propriété — la bascule, sans reconnexion", () => {
 
     await actAsync(() => dernier().emet("coach"));
     expect(h.current.space).toBe("coach");
-    expect(h.current.membershipRole).toBe("coach");
+    expect(h.current.membershipAccessRole).toBe("coach");
   });
 
   test("retrait du club : l'espace coach se referme aussi vite qu'il s'est ouvert", async () => {
@@ -216,7 +262,7 @@ describe("transfert de propriété — la bascule, sans reconnexion", () => {
     await actAsync(() => dernier().emet("coach"));
     expect(h.current.space).toBe("coach");
 
-    await actAsync(() => dernier().emet("removed"));
+    await actAsync(() => dernier().emet(null, "inactive"));
     expect(h.current.space).toBe("player");
   });
 });
@@ -228,7 +274,7 @@ describe("un champ client falsifié n'ouvre pas l'espace coach", () => {
     const h = await renderHook(() =>
       useAppSpace({ uid: "tricheur", clubId: "clubX" } as { uid: string | null; clubId: string | null }),
     );
-    await actAsync(() => dernier().emet("player"));
+    await actAsync(() => dernier().emet(null, "active"));
     expect(h.current.space).toBe("player");
   });
 
@@ -286,7 +332,7 @@ describe("cycle de vie de l'abonnement", () => {
     params = { uid: "joueur2", clubId: "clubX" };
     await h.rerender();
     expect(h.current.decision).toBe("en-attente");
-    await actAsync(() => dernier().emet("player"));
+    await actAsync(() => dernier().emet(null, "active"));
     expect(h.current.space).toBe("player");
   });
 
@@ -313,7 +359,7 @@ describe("quatre états, et un seul ouvre", () => {
 
   test("appartenance non encadrante lue → `refuse` (un fait, pas une incertitude)", async () => {
     const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
-    await actAsync(() => dernier().emet("player"));
+    await actAsync(() => dernier().emet(null, "active"));
     expect(h.current.autorite).toBe("refuse");
   });
 
@@ -353,7 +399,7 @@ describe("mémoire d'une autorité confirmée — elle n'ouvre rien, elle choisi
     // Un joueur ne doit jamais voir « impossible de vérifier tes accès » : son
     // application sait vivre hors ligne, et il n'a aucun effectif à retrouver.
     const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
-    await actAsync(() => dernier().emet("player"));
+    await actAsync(() => dernier().emet(null, "active"));
     await actAsync(() => dernier().echoue());
     expect(h.current.autorite).toBe("indetermine");
     expect(h.current.autoriteDejaConfirmee).toBe(false);
@@ -362,7 +408,7 @@ describe("mémoire d'une autorité confirmée — elle n'ouvre rien, elle choisi
   test("une lecture aboutie EFFACE la mémoire : retiré puis hors réseau → aucun écran coach", async () => {
     const h = await renderHook(() => useAppSpace({ uid: "u1", clubId: "clubX" }));
     await actAsync(() => dernier().emet("coach"));
-    await actAsync(() => dernier().emet("removed")); // pierre tombale, LUE
+    await actAsync(() => dernier().emet(null, "inactive")); // pierre tombale, LUE
     expect(h.current.autoriteDejaConfirmee).toBe(false);
 
     await actAsync(() => dernier().echoue());
@@ -400,7 +446,7 @@ describe("l'autorité est publiée, et sa perte purge", () => {
     const captureAvant = currentCoachAuthorityToken();
     purges = [];
 
-    await actAsync(() => dernier().emet("removed"));
+    await actAsync(() => dernier().emet(null, "inactive"));
 
     expect(h.current.space).toBe("player");
     expect(purges).toEqual(["revocation"]);
@@ -498,7 +544,7 @@ describe("retour au premier plan — on revalide AVANT de réafficher", () => {
     await actAsync(() => dernier().emet("owner"));
     await bascule("background", "active");
 
-    await actAsync(() => dernier().emet("removed"));
+    await actAsync(() => dernier().emet(null, "inactive"));
     expect(h.current.autorite).toBe("refuse");
     expect(h.current.space).toBe("player");
   });

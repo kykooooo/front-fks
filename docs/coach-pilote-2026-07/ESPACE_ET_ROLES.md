@@ -28,30 +28,61 @@ s'ouvre sur du vide est un mensonge de plus.
 (« je suis coach »), et la croyait sur parole.
 
 **Maintenant** : elle regarde la **feuille de match du club** — l'appartenance,
-`clubs/{club}/members/{toi}` — et lit le rôle qui y est écrit. Ce document-là,
+`clubs/{club}/members/{toi}` — et lit ce qui y est écrit. Ce document-là,
 **aucune application ne peut l'écrire** : seul le serveur y touche (rattachement
 par code d'invitation, transfert de propriété, retrait d'un membre).
 
-La règle tient en une ligne :
+### Deux colonnes sur la feuille de match, pas une
 
-> **Tu vois l'espace coach si — et seulement si — ton appartenance au club dit
-> « propriétaire » ou « encadrant ».**
+Depuis juillet 2026, l'appartenance porte **deux informations séparées**, parce
+que ce sont deux questions différentes :
 
-| Ton rôle sur la feuille de match | Ce que tu vois |
+| Colonne | Ce qu'elle dit | Valeurs |
+|---|---|---|
+| `accessRole` | **est-ce que j'encadre ?** | `owner`, `coach`, ou rien |
+| `playerStatus` | **est-ce que je m'entraîne ici ?** | `active`, `inactive`, ou rien |
+
+**Les deux peuvent être remplies en même temps.** C'est le cas de
+l'entraîneur-joueur — le plus courant en club amateur. Avant, une seule case
+existait : écrire « coach » dedans **effaçait** « joueur ». Le brassard mangeait
+le maillot.
+
+La règle tient maintenant en deux lignes :
+
+> **Tu vois l'espace coach si ton appartenance dit « propriétaire » ou
+> « encadrant ».**
+> **Tu vois l'espace joueur si tu n'encadres pas, ou si tu as un suivi sportif
+> actif dans ce club.**
+
+| Ta feuille de match | Ce que tu vois |
 |---|---|
-| `owner` (propriétaire) | espace **coach** |
-| `coach` (encadrant) | espace **coach** |
-| `player` (joueur) | espace **joueur** |
-| `removed` (retiré du club) | espace **joueur** |
+| `accessRole: owner` (sans suivi) | espace **coach** |
+| `accessRole: coach` (sans suivi) | espace **coach** |
+| aucun `accessRole`, `playerStatus: active` | espace **joueur** |
+| `accessRole: coach` **+** `playerStatus: active` | **les deux**, avec un sélecteur |
+| `accessRole: owner` **+** `playerStatus: active` | **les deux**, avec un sélecteur |
+| pierre tombale (retiré : les deux fermés) | espace **joueur** |
 | aucune appartenance / aucun club | espace **joueur** |
 | appartenance illisible (panne, réseau) | espace **joueur**, le temps de la panne |
 
 Ce n'est **pas** une synchronisation entre deux champs — deux champs tenus en
-accord finissent toujours par diverger. C'est une **dérivation** : il n'y a plus
-qu'une source, et c'est celle que le serveur contrôle.
+accord finissent toujours par diverger. Ce sont deux **axes indépendants**, dont
+chacun répond à une seule question, et l'espace est **dérivé** des deux.
 
 _Où ça vit :_ `domain/appSpace.ts` (la règle, sans Firestore), `hooks/useAppSpace.ts`
 (l'abonnement temps réel), `navigation/RootNavigator.tsx` (l'aiguillage).
+
+### Ce qui a été remplacé, et pourquoi sans migration
+
+L'ancien champ unique `role` (quatre valeurs : `owner`/`coach`/`player`/`removed`)
+**n'existe plus**. Il a été remplacé, pas doublé : le garder aurait laissé
+« player » dans la colonne des permissions, donc gardé la moitié du piège.
+
+**Aucun chemin de compatibilité n'a été écrit**, et c'est vérifiable plutôt que
+supposé : la base de production a été vidée le 21 juillet (clubs et comptes
+supprimés — voir `AUDIT_COACH.md`). Il n'existe aucun document à migrer. Un
+document qui porterait encore l'ancien champ serait lu comme « aucune permission,
+aucun suivi » : fermé, jamais deviné.
 
 ---
 
@@ -98,58 +129,76 @@ navigation. C'est écrit noir sur blanc, et testé contre les vraies règles
 
 ---
 
-## 4. LE CAS QU'IL FAUT REGARDER EN FACE : un propriétaire qui est aussi joueur
+## 4. LE CAS RÉGLÉ : un propriétaire (ou un coach) qui est aussi joueur
 
-C'est la conséquence directe du transfert, et elle n'est **pas** réglée par ce
-lot. Elle est décrite ici pour ne pas être découverte sur le terrain.
+Ce paragraphe décrivait une limite. Il décrit maintenant la solution.
 
-### Ce qui se passe concrètement
+### Ce qui se passait avant
 
 Un club n'a le plus souvent qu'un seul encadrant : le fondateur. Le jour où il
-part, le seul successeur possible est **un joueur**. Le transfert le nomme
-propriétaire — c'est prévu et assumé.
+part, le seul successeur possible est **un joueur**. Le transfert le nommait
+propriétaire — et, à la même seconde, lui **retirait sa propre application
+d'entraînement** : ses séances, son cycle, sa progression, ses tests. Rien
+n'était supprimé, mais plus rien n'était accessible. Il sortait aussi de
+l'effectif suivi, et le club perdait un joueur.
 
-À la seconde où il devient propriétaire :
+La cause n'était pas une décision produit : c'était **une seule case pour deux
+informations**. Écrire « propriétaire » écrasait « joueur », mécaniquement.
 
-- il **gagne** l'espace coach (c'est ce que ce lot répare) ;
-- il **perd l'accès à sa propre application d'entraînement** : ses séances, son
-  cycle, sa progression, ses tests. Rien n'est supprimé — tout dort dans son
-  compte — mais **il ne peut plus y accéder depuis l'application**, parce qu'un
-  compte affiche un espace, jamais les deux ;
-- il **sort de l'effectif suivi** : sa fiche est supprimée du tableau de bord des
-  encadrants et son autorisation d'accès passe à « révoquée ». C'est voulu —
-  céder la propriété d'un club n'est pas accepter d'être suivi par ses
-  coéquipiers — mais ça veut dire que **le club perd un joueur suivi**.
+### Ce qui se passe maintenant
 
-### Est-ce que ce lot rend ce cas plus gênant ? Oui, et il faut le dire
+Les deux informations vivent dans **deux colonnes séparées** (§2). Le transfert de
+propriété **ne touche que la colonne des permissions** :
 
-Avant, le successeur ne changeait pas d'espace : il gardait son application
-joueur, et son espace coach était simplement… absent. Le problème était visible,
-bloquant, et il ne mangeait rien.
+- le nouveau propriétaire **garde son statut de joueur**, donc son suivi, donc sa
+  fiche dans l'effectif, donc son application d'entraînement ;
+- son autorisation d'accès (`coachAccess`) n'est **ni ouverte ni fermée** — le
+  transfert ne parle pas de suivi, il ne décide donc rien à ce sujet ;
+- l'ancien propriétaire, lui aussi, garde ce qu'il avait des deux côtés.
 
-Maintenant la bascule est **automatique et immédiate**. C'est ce qu'on voulait —
-et c'est aussi ce qui rend la perte réelle : le joueur qui accepte le brassard
-perd son entraînement du jour au lendemain, sans écran pour le prévenir.
+C'est vérifié de bout en bout par la séquence **joueur → propriétaire → retiré**
+(`functions/tests/clubOwnership.test.ts`), qui contrôle le suivi **à chaque
+étape**, pas seulement à l'arrivée.
 
-**Le garde-fou existant, à connaître :** le transfert est initié **par le
-propriétaire sortant**, jamais subi. Aujourd'hui il n'existe aucun écran pour le
-faire depuis l'application — le geste passe par l'outil administrateur, donc par
-toi. Autrement dit : **personne ne peut se retrouver basculé par surprise sans
-que tu aies lancé la commande.** Quand l'écran de transfert sera construit, il
-devra porter cet avertissement — c'est la première ligne de son cahier des
-charges.
+### Le sélecteur Joueur / Coach
 
-### Les trois options possibles, aucune n'est implémentée
+Quand une personne a **réellement** les deux espaces, l'application propose un
+sélecteur et **mémorise localement** son dernier choix.
 
-| Option | En clair | Ce que ça coûte |
-|---|---|---|
-| **A. Bascule d'espace** | un interrupteur « Voir mon espace joueur / mon espace coach » dans les réglages | le moins cher, et suffisant pour un club amateur. La dérivation actuelle donne déjà le **droit** aux deux : il ne manque qu'un choix affiché. **Recommandé.** |
-| **B. Double accès permanent** | un onglet coach dans l'application joueur | plus confortable, beaucoup plus lourd : deux univers visuels dans une seule barre d'onglets, et toutes les questions de « qui voit quoi » à reposer écran par écran |
-| **C. Rôle dédié « joueur-encadrant »** | un vrai rôle, avec ses règles | le plus propre sur le papier, le plus coûteux en vrai : ça touche le prédicat d'autorité partagé par les Functions, les règles et l'application. À ne faire que si le terrain le réclame |
+- Il apparaît **uniquement** dans ce cas. Un coach qui ne joue pas ne le voit pas ;
+  un joueur qui n'encadre pas non plus. Un réglage qui ne sert à personne n'est
+  pas affiché.
+- Il est présent **dans les deux espaces** : réglages côté joueur, onglet
+  « Semaine » côté coach. On ne peut pas s'enfermer dans l'un des deux.
+- Par défaut, sans choix mémorisé, l'application ouvre **l'espace coach** : le
+  joueur qui vient d'obtenir le brassard doit **voir** ce qu'il a gagné. Un geste
+  suffit pour revenir à son entraînement, et ce geste est retenu.
+- **Ce choix n'ouvre RIEN.** Il tranche entre deux espaces que le serveur a déjà
+  autorisés. Un compte qui perd l'encadrement bascule vers l'espace joueur *même
+  si* sa préférence dit « coach » ; un encadrant sans suivi reste côté coach
+  *même si* elle dit « joueur ». Les deux pièges sont testés.
+- La préférence est **par compte** (téléphone partagé) et **effacée avec le
+  compte** (suppression de compte).
 
-> **Ce lot ne tranche pas.** Il ferme le contrat (le nouveau propriétaire obtient
-> réellement son espace) et laisse cette décision entière — c'est une décision
-> produit, pas une conséquence technique.
+_Où ça vit :_ `hooks/useAppSpacePreference.ts` (la mémoire),
+`state/appSpaceGate.ts` (le relais depuis la racine),
+`components/AppSpaceSwitch.tsx` (l'écran).
+
+### Comment un encadrant obtient un suivi sportif
+
+En rejoignant l'effectif **comme tout le monde** : il saisit un code d'invitation
+de son club. Le rattachement pose son statut de joueur **sans toucher à ses
+permissions**.
+
+C'est volontaire, et c'est la contrepartie honnête de tout le reste : **devenir
+encadrant n'a jamais valu consentement à être suivi**, et ce lot ne change pas
+ça. Ce qu'il change, c'est l'inverse — devenir encadrant ne **retire** plus le
+suivi de quelqu'un qui l'avait déjà.
+
+Conséquence à connaître : **le fondateur d'un club n'a pas de suivi dans son
+propre club à la création**. S'il veut en avoir un, il utilise son propre code
+d'invitation. C'est un geste de plus, explicite, et personne ne peut le faire à
+sa place.
 
 ---
 
@@ -186,12 +235,26 @@ apprend quoi faire.**
 1. **Aucun écran de transfert.** Le geste reste en ligne de commande
    (`TRANSFERT_PROPRIETE.md` §4). Ce lot ferme le contrat fonctionnel, pas
    l'interface.
-2. **Le cas « propriétaire aussi joueur » n'est pas résolu**, seulement décrit
-   (§4).
+2. **Le fondateur d'un club n'a pas de suivi sportif dans son club** tant qu'il
+   n'a pas utilisé son propre code d'invitation (§4). Aucun écran ne le lui
+   propose aujourd'hui : il faut le savoir, ou le lire ici.
 3. **Le champ `users/{uid}.role` reste écrivable** par son titulaire. Il ne
    décide plus de rien côté application ; plus personne ne l'écrit non plus
    (la création de club a cessé de le poser). Les comptes créés avant ce lot le
-   portent encore : c'est un résidu sans effet.
+   portent encore : c'est un résidu sans effet. Le projecteur serveur, qui le
+   lisait encore pour exclure les profils marqués « coach », **ne le lit plus** —
+   il excluait à tort les entraîneurs-joueurs, et il ne protégeait rien puisque
+   son titulaire l'écrit lui-même.
+4. **Une seule écriture administrateur touche encore ce champ** :
+   `adminTransferClubOwnership` avec l'option `grantCoachSpace`. Elle est sans
+   effet depuis que l'espace est dérivé de l'appartenance ; elle est conservée et
+   documentée dans `functions/src/clubOwnership.ts` (écriture 6), à solder par un
+   lot dédié.
+5. **Un compte peut avoir les deux espaces, jamais deux clubs.**
+   `resolveClubPointer` refuse explicitement un pointeur ambigu plutôt que de
+   choisir le premier de la liste (`domain/coachAuthority.ts`). Le jour où
+   l'appartenance multiple arrivera, il faudra un vrai sélecteur de club — et un
+   test tombera pour le rappeler.
 4. **Une panne de lecture ferme l'espace coach le temps de la panne.** C'est
    volontaire (on n'ouvre pas un espace sur une question sans réponse), c'est
    réversible tout seul, et c'est théorique : sa propre appartenance est toujours
@@ -206,12 +269,24 @@ apprend quoi faire.**
 
 | Fichier | Rôle |
 |---|---|
-| `domain/appSpace.ts` | **la règle** : quel espace, à partir de quel rôle. Aucune dépendance, entièrement testable |
+| `functions/src/clubAuthority.ts` | **les deux axes**, côté serveur : `accessRole`, `playerStatus`, et le prédicat propriétaire |
+| `functions/src/clubOwnership.ts` | le transfert — **un seul axe bouge** |
+| `functions/src/clubMembers.ts` | le retrait — **les deux axes se ferment**, dans la même écriture |
+| `functions/src/projector.ts` | qui entre dans l'effectif suivi : le **statut de joueur**, jamais les permissions |
+| `functions/src/inviteCodes.ts` | le rattachement : il pose le statut de joueur, sans toucher aux permissions |
+| `domain/appSpace.ts` | **la règle** : quels espaces sont ouverts, et lequel s'affiche. Aucune dépendance |
 | `hooks/useAppSpace.ts` | l'abonnement temps réel à sa propre appartenance (pose, nettoyage, changement de compte) |
-| `navigation/RootNavigator.tsx` | l'aiguillage, et l'attente avant d'afficher |
-| `domain/clubRoles.ts` | la liste des rôles d'encadrement — **miroir** de `functions/src/clubAuthority.ts` et de `firestore.rules`, jamais un second prédicat |
+| `hooks/useAppSpacePreference.ts` | la mémoire locale du dernier espace choisi — **par compte**, et sans autorité |
+| `state/appSpaceGate.ts` | le relais depuis la racine vers les deux écrans qui affichent le sélecteur |
+| `components/AppSpaceSwitch.tsx` | le sélecteur Joueur / Coach (rend `null` sans droit aux deux) |
+| `navigation/RootNavigator.tsx` | l'aiguillage, l'attente avant d'afficher, et **l'unique** publication du sélecteur |
+| `domain/clubRoles.ts` | le miroir d'affichage des deux axes — jamais un second prédicat |
 | `firestore.rules` | ce qui rend tout ça possible : chacun lit sa propre appartenance, personne ne l'écrit |
-| `domain/__tests__/appSpace.test.ts` | la règle, rôle par rôle |
+| `domain/__tests__/appSpace.test.ts` | la règle, axe par axe, préférence comprise |
 | `hooks/__tests__/useAppSpace.test.tsx` | la bascule après transfert, le démarrage à froid, le nettoyage de l'abonnement |
+| `hooks/__tests__/useAppSpacePreference.test.tsx` | la mémoire : par compte, résiliente, sans autorité |
+| `components/__tests__/appSpaceSwitch.test.tsx` | le sélecteur : quand il apparaît, quand il disparaît |
+| `navigation/__tests__/appSpaceSwitchWiring.test.ts` | un seul émetteur, et le sélecteur présent dans les deux espaces |
 | `navigation/__tests__/rootNavigatorSpaceWiring.test.ts` | la preuve que le navigateur est bien branché là-dessus, et plus sur l'ancien champ |
-| `firestore-tests/rules.appSpace.test.ts` | les vraies règles, jouées par l'émulateur |
+| `functions/tests/clubOwnership.test.ts` | la séquence **joueur → propriétaire → retiré**, suivi vérifié à chaque étape |
+| `firestore-tests/rules.appSpace.test.ts` | les vraies règles, jouées par l'émulateur (dont `playerStatus` interdit aux clients) |

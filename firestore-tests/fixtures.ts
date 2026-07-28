@@ -227,39 +227,39 @@ export async function seed(testEnv: RulesTestEnvironment): Promise<void> {
     // COACH_A est `ownerUid` du club A, son appartenance porte donc le rôle
     // "owner" — c'est ce qu'écrit désormais la création de club
     // (repositories/clubsRepo.createClubAsCoach), et c'est le SEUL état cohérent
-    // au sens de l'invariant. Un `role: "coach"` ici recréerait exactement
+    // au sens de l'invariant. Un `accessRole: "coach"` ici recréerait exactement
     // l'incohérence que les règles refusent (elle est testée pour elle-même dans
     // rules.clubAuthority.test.ts, jamais glissée dans les fixtures communes).
     // Le propriétaire reste ENCADRANT : `isClubStaff` accepte "owner".
-    await setDoc(doc(db, "clubs", CLUB_A, "members", COACH_A), { uid: COACH_A, role: "owner" });
+    await setDoc(doc(db, "clubs", CLUB_A, "members", COACH_A), { uid: COACH_A, accessRole: "owner" });
     await setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A1), {
-      uid: PLAYER_A1, role: "player", coachAccess: "approved",
+      uid: PLAYER_A1, playerStatus: "active", coachAccess: "approved",
     });
     await setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A2), {
-      uid: PLAYER_A2, role: "player", coachAccess: "approved",
+      uid: PLAYER_A2, playerStatus: "active", coachAccess: "approved",
     });
-    await setDoc(doc(db, "clubs", CLUB_B, "members", COACH_B), { uid: COACH_B, role: "owner" });
+    await setDoc(doc(db, "clubs", CLUB_B, "members", COACH_B), { uid: COACH_B, accessRole: "owner" });
     await setDoc(doc(db, "clubs", CLUB_B, "members", PLAYER_B), {
-      uid: PLAYER_B, role: "player", coachAccess: "not_required",
+      uid: PLAYER_B, playerStatus: "active", coachAccess: "not_required",
     });
 
     // Users (le profil brut porte clubId → utilisé par isCoachOfUser dans les rules)
     await setDoc(doc(db, "users", COACH_A), {
-      uid: COACH_A, clubId: CLUB_A, role: "coach", firstName: "CoachA", profileCompleted: true,
+      uid: COACH_A, clubId: CLUB_A, accessRole: "coach", firstName: "CoachA", profileCompleted: true,
     });
     await setDoc(doc(db, "users", COACH_B), {
-      uid: COACH_B, clubId: CLUB_B, role: "coach", firstName: "CoachB", profileCompleted: true,
+      uid: COACH_B, clubId: CLUB_B, accessRole: "coach", firstName: "CoachB", profileCompleted: true,
     });
     await setDoc(doc(db, "users", PLAYER_A1), {
-      uid: PLAYER_A1, clubId: CLUB_A, role: "player", firstName: "Anna",
+      uid: PLAYER_A1, clubId: CLUB_A, playerStatus: "active", firstName: "Anna",
       position: "MIL", level: "R1", ageCategory: "U15", profileCompleted: true,
     });
     await setDoc(doc(db, "users", PLAYER_A2), {
-      uid: PLAYER_A2, clubId: CLUB_A, role: "player", firstName: "Bea",
+      uid: PLAYER_A2, clubId: CLUB_A, playerStatus: "active", firstName: "Bea",
       ageCategory: "U15", profileCompleted: true,
     });
     await setDoc(doc(db, "users", PLAYER_B), {
-      uid: PLAYER_B, clubId: CLUB_B, role: "player", firstName: "Clea",
+      uid: PLAYER_B, clubId: CLUB_B, playerStatus: "active", firstName: "Clea",
       ageCategory: "U18", profileCompleted: true,
     });
 

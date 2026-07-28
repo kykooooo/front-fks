@@ -75,17 +75,18 @@ beforeEach(async () => {
   await admin(async (ctx) => {
     await setDoc(doc(ctx.firestore(), "clubs", CLUB_A, "members", COACH_A2), {
       uid: COACH_A2,
-      role: "coach",
+      accessRole: "coach",
     });
   });
 });
 
 /** Pose le rôle du membre COACH_A (le propriétaire des fixtures) par l'admin. */
-async function setOwnerRole(role: string | null): Promise<void> {
+/** Pose (ou retire) la PERMISSION D'ENCADREMENT du compte proprietaire. */
+async function setOwnerRole(accessRole: string | null): Promise<void> {
   await admin(async (ctx) => {
     const ref = doc(ctx.firestore(), "clubs", CLUB_A, "members", COACH_A);
-    if (role === null) await deleteDoc(ref);
-    else await setDoc(ref, { uid: COACH_A, role });
+    if (accessRole === null) await deleteDoc(ref);
+    else await setDoc(ref, { uid: COACH_A, accessRole });
   });
 }
 
@@ -179,7 +180,7 @@ describe("C — appartenance propriétaire seule : incohérent, donc refus", () 
     await admin(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "clubs", CLUB_A, "members", COACH_A2), {
         uid: COACH_A2,
-        role: "owner",
+        accessRole: "owner",
       });
     });
     const g = await gestesEncadrement(COACH_A2);
@@ -207,7 +208,7 @@ describe("D — amorçage à la création du club", () => {
     // la règle d'amorçage se fonde donc sur `ownerUid` lu dans le document club,
     // et sur lui seul.
     await assertSucceeds(
-      setDoc(doc(db, "clubs", clubRef.id, "members", NOUVEAU), { uid: NOUVEAU, role: "owner" }),
+      setDoc(doc(db, "clubs", clubRef.id, "members", NOUVEAU), { uid: NOUVEAU, accessRole: "owner" }),
     );
     // Et le prédicat devient vrai : le club est modifiable par son propriétaire.
     await assertSucceeds(setDoc(clubRef, { teamGender: "mixed" }, { merge: true }));
@@ -221,7 +222,7 @@ describe("D — amorçage à la création du club", () => {
     await assertFails(
       setDoc(doc(db, "clubs", clubRef.id, "members", NOUVEAU), {
         uid: NOUVEAU,
-        role: "owner",
+        accessRole: "owner",
         coachAccess: "approved",
       }),
     );
@@ -236,7 +237,7 @@ describe("E — s'écrire propriétaire dans un club dont on n'est pas le ownerU
     await assertFails(
       setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), {
         uid: STRANGER,
-        role: "owner",
+        accessRole: "owner",
       }),
     );
   });
@@ -245,7 +246,7 @@ describe("E — s'écrire propriétaire dans un club dont on n'est pas le ownerU
     await assertFails(
       setDoc(doc(asUser(PLAYER_A1), "clubs", CLUB_A, "members", PLAYER_A1), {
         uid: PLAYER_A1,
-        role: "owner",
+        accessRole: "owner",
       }),
     );
   });
@@ -254,7 +255,7 @@ describe("E — s'écrire propriétaire dans un club dont on n'est pas le ownerU
     await assertFails(
       setDoc(doc(asUser(COACH_A2), "clubs", CLUB_A, "members", COACH_A2), {
         uid: COACH_A2,
-        role: "owner",
+        accessRole: "owner",
       }),
     );
   });
@@ -266,7 +267,7 @@ describe("E — s'écrire propriétaire dans un club dont on n'est pas le ownerU
     await assertFails(
       setDoc(doc(asUser(COACH_A), "clubs", CLUB_A, "members", PLAYER_A1), {
         uid: PLAYER_A1,
-        role: "owner",
+        accessRole: "owner",
       }),
     );
   });
@@ -276,7 +277,7 @@ describe("E — s'écrire propriétaire dans un club dont on n'est pas le ownerU
     await assertFails(
       setDoc(doc(asUser(COACH_A), "clubs", CLUB_A, "members", COACH_A), {
         uid: COACH_A,
-        role: "coach",
+        accessRole: "coach",
       }),
     );
   });
@@ -348,7 +349,7 @@ describe("G — appartenance révoquée par le retrait serveur", () => {
         doc(ctx.firestore(), "clubs", CLUB_A, "members", uid),
         {
           uid,
-          role: "removed",
+          accessRole: null, playerStatus: "inactive",
           coachAccess: "revoked",
           removedAt: 1_753_600_000_000,
           removedBy: COACH_A,
@@ -417,10 +418,10 @@ describe("G — appartenance révoquée par le retrait serveur", () => {
     await retirer(PLAYER_A1);
     const db = asUser(PLAYER_A1);
     await assertFails(
-      setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A1), { uid: PLAYER_A1, role: "player" }),
+      setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A1), { uid: PLAYER_A1, playerStatus: "active" }),
     );
     await assertFails(
-      setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A1), { uid: PLAYER_A1, role: "owner" }),
+      setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A1), { uid: PLAYER_A1, accessRole: "owner" }),
     );
   });
 

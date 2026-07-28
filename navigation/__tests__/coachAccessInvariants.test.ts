@@ -27,7 +27,12 @@ const racine = resolve(__dirname, "..", "..");
 const lire = (rel: string) => readFileSync(resolve(racine, rel), "utf8");
 const navigateur = lire("navigation/RootNavigator.tsx");
 
-const lu = (role: unknown): ClubMembershipReading => ({ statut: "lu", role });
+/** Lecture aboutie : la PERMISSION d'encadrement, plus le statut de joueur. */
+const lu = (accessRole: unknown, playerStatus: unknown = null): ClubMembershipReading => ({
+  statut: "lu",
+  accessRole,
+  playerStatus,
+});
 /** L'espace coach s'ouvre-t-il, pour de vrai, sur cette lecture ? */
 const ouvre = (lecture: ClubMembershipReading) => ouvreEspaceCoach(resolveCoachAuthority(lecture));
 
@@ -37,10 +42,12 @@ describe("INVARIANT 1 — l'existence d'une appartenance ne suffit pas", () => {
     expect(ouvre(lu("owner"))).toBe(true);
     expect(ouvre(lu("coach"))).toBe(true);
     // Appartenance bien réelle, mais sans encadrement : n'ouvre pas.
-    expect(ouvre(lu("player"))).toBe(false);
+    expect(ouvre(lu(null, "active"))).toBe(false);
     // Encadrement révoqué (pierre tombale) : l'appartenance EXISTE encore en
     // base, elle n'est simplement plus active. Elle n'ouvre rien.
-    expect(ouvre(lu("removed"))).toBe(false);
+    expect(ouvre(lu(null, "inactive"))).toBe(false);
+    // ET un ENTRAINEUR-JOUEUR ouvre : son suivi ne dilue pas son encadrement.
+    expect(ouvre(lu("coach", "active"))).toBe(true);
   });
 });
 
@@ -93,7 +100,7 @@ describe("INVARIANT 3 — pendant le chargement ou sur erreur, AUCUN accès par 
 describe("INVARIANT 4 — la pierre tombale fait disparaître l'espace coach en temps réel", () => {
   test("`removed` ferme, sur la même lecture", () => {
     expect(ouvre(lu("coach"))).toBe(true);
-    expect(ouvre(lu("removed"))).toBe(false);
+    expect(ouvre(lu(null, "inactive"))).toBe(false);
   });
 
   test("l'aiguillage est calculé PENDANT le rendu, pas dans un effet", () => {
@@ -102,7 +109,7 @@ describe("INVARIANT 4 — la pierre tombale fait disparaître l'espace coach en 
     // La bascule elle-même est prouvée dans hooks/__tests__/useAppSpace.test.tsx
     // (« la pierre tombale purge, EN TEMPS RÉEL, sur le même montage »).
     const hook = lire("hooks/useAppSpace.ts");
-    const derivation = hook.indexOf("const decision = resolveAppSpace(lecture)");
+    const derivation = hook.indexOf("const decision = resolveAppSpace(lecture, preference)");
     expect(derivation).toBeGreaterThan(-1);
     // La dérivation ne passe par aucun `setState` : elle est faite au rendu.
     expect(hook.slice(derivation, derivation + 400)).not.toContain("setState");

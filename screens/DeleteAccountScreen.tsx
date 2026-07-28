@@ -98,8 +98,17 @@ export default function DeleteAccountScreen() {
         // dont la navigation dérive déjà l'espace affiché.
         const memberSnap = await getDoc(doc(db, "clubs", clubId, "members", uid));
         if (cancelled) return;
-        const myRole = memberSnap.exists() ? (memberSnap.data() as { role?: unknown })?.role : null;
-        const resolvedSpace = resolveAppSpace({ statut: "lu", role: myRole });
+        // LES DEUX AXES, lus ensemble. L'espace coach dépend des permissions
+        // d'encadrement seules — le statut de joueur ne l'ouvre ni ne le ferme.
+        const membre = memberSnap.exists()
+          ? (memberSnap.data() as { accessRole?: unknown; playerStatus?: unknown })
+          : null;
+        const myAccessRole = membre?.accessRole ?? null;
+        const resolvedSpace = resolveAppSpace({
+          statut: "lu",
+          accessRole: myAccessRole,
+          playerStatus: membre?.playerStatus ?? null,
+        });
         if (resolvedSpace !== "coach") return;
         setSpace("coach");
 
@@ -111,7 +120,7 @@ export default function DeleteAccountScreen() {
         const clubSnap = await getDoc(doc(db, "clubs", clubId));
         if (cancelled) return;
         const ownerUid = clubSnap.exists() ? (clubSnap.data() as { ownerUid?: unknown })?.ownerUid : null;
-        setIsCoachOwner(resolveClubOwnerAuthority({ ownerUid, myRole, uid }) === "authorized");
+        setIsCoachOwner(resolveClubOwnerAuthority({ ownerUid, myAccessRole, uid }) === "authorized");
       } catch {
         // Best-effort : conséquences joueur par défaut déjà en place.
       }

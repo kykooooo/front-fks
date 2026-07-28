@@ -28,7 +28,7 @@ const source = readFileSync(
 describe("carte Mon club — le propriétaire ne voit pas « Quitter le club »", () => {
   test("le libellé d'appartenance vient du domaine, pas d'une chaîne écrite en dur", () => {
     expect(source).toMatch(/import\s*\{\s*clubMembershipCopy\s*\}\s*from/);
-    expect(source).toContain("clubMembershipCopy(myRole)");
+    expect(source).toContain("clubMembershipCopy(monAppartenance)");
     // Les anciens textes en dur ont disparu : sinon la carte dirait « Membre de
     // l'effectif » à un propriétaire.
     expect(source).not.toContain('<Text style={styles.clubCode}>Membre de l\'effectif</Text>');
@@ -44,15 +44,18 @@ describe("carte Mon club — le propriétaire ne voit pas « Quitter le club »"
     expect(source).not.toMatch(/disabled=\{[^}]*peutQuitter/);
   });
 
-  test("le rôle est lu sur SA PROPRE appartenance, jamais déduit d'ailleurs", () => {
+  test("les DEUX axes sont lus sur SA PROPRE appartenance, jamais déduits d'ailleurs", () => {
     expect(source).toContain('doc(db, "clubs", clubId, "members", uid)');
+    // Un seul instantané pour les deux champs : les lire séparément laisserait
+    // afficher un état mi-ancien mi-nouveau.
+    expect(source).toContain("lireAppartenance(memberSnap)");
     // Une lecture ratée ne devient pas une affirmation : on retombe sur `null`,
     // donc sur l'affichage neutre de membre.
-    expect(source).toContain("setMyRole(null)");
+    expect(source).toContain("setMonAppartenance({ accessRole: null, playerStatus: null })");
   });
 
   test("le rôle affiché n'accorde aucun droit : aucune écriture n'en dépend", () => {
-    // `myRole` ne sert qu'à l'affichage. S'il gardait une écriture, l'écran
+    // `monAppartenance` ne sert qu'à l'affichage. S'il gardait une écriture, l'écran
     // deviendrait une seconde source d'autorité — et une source qui ment.
     const lignes = source.split("\n").filter((l) => l.includes("myRole"));
     for (const ligne of lignes) {

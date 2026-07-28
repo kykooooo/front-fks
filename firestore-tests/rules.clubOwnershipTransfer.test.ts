@@ -68,7 +68,7 @@ beforeEach(async () => {
   await seed(testEnv);
   await admin(async (ctx) => {
     const db = ctx.firestore();
-    await setDoc(doc(db, "clubs", CLUB_A, "members", COACH_A2), { uid: COACH_A2, role: "coach" });
+    await setDoc(doc(db, "clubs", CLUB_A, "members", COACH_A2), { uid: COACH_A2, accessRole: "coach" });
     // Une directive existante : c'est le geste RÉSERVÉ au propriétaire (delete)
     // qui sert de témoin dans la section C.
     await setDoc(doc(db, "clubs", CLUB_A, "directives", "current"), {
@@ -92,12 +92,12 @@ async function poseEtatApresTransfert(nouveau: string, ancien: string): Promise<
     await setDoc(doc(db, "clubs", CLUB_A), { ownerUid: nouveau }, { merge: true });
     await setDoc(
       doc(db, "clubs", CLUB_A, "members", nouveau),
-      { uid: nouveau, role: "owner", coachAccess: "revoked" },
+      { uid: nouveau, accessRole: "owner", coachAccess: "revoked" },
       { merge: true },
     );
     await setDoc(
       doc(db, "clubs", CLUB_A, "members", ancien),
-      { uid: ancien, role: "coach" },
+      { uid: ancien, accessRole: "coach" },
       { merge: true },
     );
   });
@@ -204,7 +204,7 @@ describe("B — le rôle propriétaire ne se donne pas depuis un client", () => 
     await assertFails(
       setDoc(doc(asUser(COACH_A), "clubs", CLUB_A, "members", PLAYER_A1), {
         uid: PLAYER_A1,
-        role: "owner",
+        accessRole: "owner",
       }),
     );
   });
@@ -214,7 +214,7 @@ describe("B — le rôle propriétaire ne se donne pas depuis un client", () => 
     await assertFails(
       setDoc(doc(asUser(COACH_A), "clubs", CLUB_A, "members", COACH_A), {
         uid: COACH_A,
-        role: "coach",
+        accessRole: "coach",
       }),
     );
   });
@@ -226,7 +226,7 @@ describe("B — le rôle propriétaire ne se donne pas depuis un client", () => 
     await assertFails(
       setDoc(doc(asUser(COACH_A), "clubs", CLUB_A, "members", PLAYER_A1), {
         uid: PLAYER_A1,
-        role: "owner",
+        accessRole: "owner",
       }),
     );
     // Et l'état n'a pas bougé d'un pouce.
@@ -238,7 +238,7 @@ describe("B — le rôle propriétaire ne se donne pas depuis un client", () => 
     await assertFails(
       setDoc(doc(asUser(PLAYER_A1), "clubs", CLUB_A, "members", PLAYER_A1), {
         uid: PLAYER_A1,
-        role: "owner",
+        accessRole: "owner",
       }),
     );
   });
@@ -299,7 +299,7 @@ describe("C — une fois le transfert appliqué par le serveur", () => {
     await assertFails(
       setDoc(doc(asUser(PLAYER_A1), "clubs", CLUB_A, "members", COACH_A), {
         uid: COACH_A,
-        role: "player",
+        playerStatus: "active",
       }),
     );
   });
@@ -323,7 +323,7 @@ describe("D — un `ownerUid` resté seul n'ouvre rien", () => {
       // COACH_A reste `ownerUid`, mais son appartenance ne dit plus "owner".
       await setDoc(doc(ctx.firestore(), "clubs", CLUB_A, "members", COACH_A), {
         uid: COACH_A,
-        role: "coach",
+        accessRole: "coach",
       });
     });
     const g = gestesProprietaire(COACH_A);
@@ -335,7 +335,7 @@ describe("D — un `ownerUid` resté seul n'ouvre rien", () => {
     await admin(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "clubs", CLUB_A, "members", COACH_A2), {
         uid: COACH_A2,
-        role: "owner",
+        accessRole: "owner",
       });
     });
     const g = gestesProprietaire(COACH_A2);

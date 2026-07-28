@@ -45,8 +45,28 @@
 //  6. double soumission qui "echoue" alors qu'elle a reussi — traitee : voir la
 //                                    FENETRE DE REJEU, plus bas.
 //
+// ─── LE TRANSFERT NE TOUCHE QUE LES PERMISSIONS D'ENCADREMENT ───────────────
+// Decision de Kyllian, mot pour mot : « le transfert de propriete ne doit
+// modifier QUE les permissions d'encadrement. Il ne doit JAMAIS retirer
+// automatiquement le suivi sportif du nouveau proprietaire. »
+//
+// Ce module n'ecrit donc PLUS AUCUN des deux champs qui portent le suivi :
+// `playerStatus` reste tel quel des deux cotes, et `coachAccess` n'est plus
+// touche. Un joueur qui devient proprietaire garde son suivi ; l'ancien
+// proprietaire garde le sien s'il en avait un. Un seul axe bouge.
+//
+// CE QUE CA CHANGE PAR RAPPORT AU LOT PRECEDENT, ET POURQUOI C'EST VOULU. Avant,
+// le transfert revoquait l'acces de la cible et supprimait sa projection, au
+// motif que « ceder la propriete d'un club n'est pas accepter d'etre suivi ».
+// C'etait la bonne conclusion sous l'ANCIEN modele, ou devenir proprietaire
+// EFFACAIT le fait d'etre joueur : la personne quittait l'effectif, sa fiche
+// devait donc partir avec elle. Sous le modele a deux axes, elle NE quitte plus
+// l'effectif — elle y reste comme entraineur-joueur, avec le consentement
+// qu'elle avait deja donne en rejoignant. Continuer a revoquer reviendrait a lui
+// retirer son suivi au motif d'un geste qui ne parle pas de suivi.
+//
 // ─── QUEL ROLE RECOIT L'ANCIEN PROPRIETAIRE, ET POURQUOI "coach" ────────────
-// Il devient "coach", pas "player", pas rien.
+// Il devient "coach", pas rien.
 //
 //  . "rien" (appartenance supprimee) est exclu : ce serait retirer un membre
 //    dans le meme geste qu'un transfert, sans pierre tombale, sans revocation
@@ -54,32 +74,30 @@
 //    moitie le travail que `removeClubMember` fait entierement. Le transfert
 //    transfere ; le retrait retire. Deux gestes, dans cet ordre, et le second
 //    fonctionne NORMALEMENT sur l'ancien proprietaire une fois le premier passe.
-//  . "player" est exclu, et c'est le piege du lot : le projecteur serveur
-//    projette les membres de role "player". Retrograder le fondateur en joueur
-//    ferait apparaitre SON PROPRE suivi d'entrainement dans l'effectif consulte
-//    par les encadrants. Un transfert de propriete n'est pas un consentement a
-//    etre suivi.
-//  . "coach" dit la verite : il reste un encadrant du club (`CLUB_STAFF_ROLES`
+//  . "aucune permission" est exclu aussi : ce serait le degrader en simple
+//    membre au passage, alors qu'il n'a rien demande de tel. Le geste ne parle
+//    que du brassard de proprietaire.
+//  . "coach" dit la verite : il reste un encadrant du club (`CLUB_ACCESS_ROLES`
 //    contient "owner" et "coach"), il garde le cadre de semaine, la note privee,
 //    la directive, l'effectif et l'emission de code. Il PERD exactement ce qui
 //    appartient au proprietaire : modifier le document club, supprimer un cadre
-//    ou une directive, et initier un nouveau transfert.
+//    ou une directive, et initier un nouveau transfert. Son `playerStatus`, lui,
+//    n'est pas touche : s'il etait entraineur-joueur, il le reste.
 //
 // ─── QUI EST UN "MEMBRE ADMISSIBLE" ─────────────────────────────────────────
-// Exactement : une appartenance EXISTANTE dans CE club, portant un role ACTIF
-// (owner / coach / player). Donc :
+// Exactement : une appartenance EXISTANTE et ACTIVE dans CE club, c'est-a-dire
+// portant une permission d'encadrement OU un statut de joueur actif. Donc :
 //  . un JOUEUR est admissible. C'est volontaire, et c'est meme le cas nominal :
 //    aujourd'hui aucun chemin — client ou serveur — ne cree un second coach.
 //    Exiger un coach rendrait le transfert inutilisable dans la seule situation
 //    ou on en a besoin.
-//  . une PIERRE TOMBALE (role "removed") n'est PAS admissible : elle n'ouvre
-//    rien, nulle part, et surement pas la propriete du club.
+//  . une PIERRE TOMBALE n'est PAS admissible : elle n'a ni encadrement ni suivi
+//    actif, elle n'ouvre rien, nulle part, et surement pas la propriete du club.
 //  . un compte qui n'a JAMAIS rejoint n'est pas admissible : aucun document.
-//  . la CIBLE devient encadrante, donc elle sort de la projection joueur. Sa
-//    projection residuelle est supprimee dans la meme transaction, et son
-//    `coachAccess` passe a "revoked" — deux verrous independants, exactement
-//    comme au retrait, pour que son suivi personnel cesse d'etre lisible meme si
-//    une reprojection en vol repassait par la.
+//  . la CIBLE devient encadrante SANS cesser d'etre joueuse si elle l'etait. Sa
+//    projection n'est donc supprimee QUE si elle n'a pas (ou plus) de suivi
+//    actif — auquel cas une projection residuelle serait de toute facon une
+//    donnee que plus rien ne justifie.
 //
 // ─── ANTI-ORACLE : POURQUOI LE REFUS DE CIBLE PEUT ETRE PARLANT ─────────────
 // Meme raisonnement qu'au retrait, refait et non recopie. Il n'y a rien a
@@ -96,16 +114,18 @@
 // de plus a maintenir.
 
 import {
-  CLUB_ROLE_COACH,
-  CLUB_ROLE_OWNER,
+  ACCESS_ROLE_FIELD,
+  CLUB_ACCESS_ROLE_COACH,
+  CLUB_ACCESS_ROLE_OWNER,
   clubAuthoritySignal,
   hasOwnerMembership,
   isActiveMembership,
-  normalizeClubRole,
+  isActivePlayer,
+  normalizeAccessRole,
   readOwnerUid,
   resolveOwnerAuthority,
+  type ClubAccessRole,
   type ClubAuthoritySignal,
-  type ClubRole,
 } from "./clubAuthority";
 import {
   ClubMemberError,
@@ -116,12 +136,11 @@ import {
   type MemberDocData,
   type MemberTx,
 } from "./clubMembers";
-import { COACH_ACCESS_FIELD } from "./coachAccess";
 
 // ─── Ce que le transfert ecrit, nomme une fois ──────────────────────────────
 
-/** Le role EXPLICITE recu par l'ancien proprietaire. Jamais implicite, jamais vide. */
-export const PREVIOUS_OWNER_ROLE: ClubRole = CLUB_ROLE_COACH;
+/** La permission EXPLICITE recue par l'ancien proprietaire. Jamais implicite, jamais vide. */
+export const PREVIOUS_OWNER_ROLE: ClubAccessRole = CLUB_ACCESS_ROLE_COACH;
 
 /**
  * Champs d'AUDIT poses sur le document club. Volontairement TROIS, et pas un de
@@ -225,10 +244,22 @@ export type TransferOwnershipResult = {
   newOwnerUid: string;
   /** Proprietaire sortant (la DESIGNATION lue avant l'ecriture), ou null. */
   previousOwnerUid: string | null;
-  /** Role EXPLICITE porte par l'ancien proprietaire APRES le transfert, ou null. */
-  previousOwnerRole: ClubRole | null;
-  /** Role que la cible portait AVANT (utile pour dire « un joueur est devenu proprietaire »). */
-  newOwnerPreviousRole: ClubRole | null;
+  /** Permission EXPLICITE portee par l'ancien proprietaire APRES le transfert, ou null. */
+  previousOwnerRole: ClubAccessRole | null;
+  /**
+   * Permission d'encadrement que la cible portait AVANT le transfert, ou `null`
+   * si elle n'en avait aucune — c'est le cas nominal « un joueur est devenu
+   * proprietaire ». Ce champ ne dit RIEN de son statut de joueur, qui n'a pas
+   * bouge.
+   */
+  newOwnerPreviousRole: ClubAccessRole | null;
+  /**
+   * La cible avait-elle un SUIVI SPORTIF actif au moment du transfert ? `true`
+   * signifie qu'elle devient entraineur-joueur : elle garde sa fiche dans
+   * l'effectif suivi. Expose pour que l'appelant puisse le DIRE, jamais pour
+   * qu'il en deduise un droit.
+   */
+  newOwnerKeepsPlayerStatus: boolean;
   /**
    * `true` si l'etat cible etait DEJA en place : AUCUNE ecriture n'a eu lieu, pas
    * meme un horodatage. Un double appui ne reecrit pas l'histoire de l'audit.
@@ -399,8 +430,9 @@ async function runOwnershipTransfer(
                 clubId,
                 newOwnerUid,
                 previousOwnerUid: uid,
-                previousOwnerRole: normalizeClubRole(actorMembership?.role),
-                newOwnerPreviousRole: normalizeClubRole(target.role),
+                previousOwnerRole: normalizeAccessRole(actorMembership?.[ACCESS_ROLE_FIELD]),
+                newOwnerPreviousRole: normalizeAccessRole(target[ACCESS_ROLE_FIELD]),
+                newOwnerKeepsPlayerStatus: isActivePlayer(target),
                 alreadyTransferred: true,
                 mode,
                 demotedUid: null,
@@ -430,7 +462,11 @@ async function runOwnershipTransfer(
       if (!targetMembership || !isActiveMembership(targetMembership)) {
         return { ok: false, kind: "target-ineligible" };
       }
-      const newOwnerPreviousRole = normalizeClubRole(targetMembership.role);
+      const newOwnerPreviousRole = normalizeAccessRole(targetMembership[ACCESS_ROLE_FIELD]);
+      // LE STATUT DE JOUEUR DE LA CIBLE, LU ET JAMAIS ECRIT. Il decide d'une
+      // seule chose ici : faut-il supprimer une projection residuelle (ecriture
+      // 4) ? Il ne conditionne aucun droit, et le transfert ne le modifie pas.
+      const newOwnerIsActivePlayer = isActivePlayer(targetMembership);
 
       // f. Etat cible DEJA en place et COHERENT : succes, zero ecriture.
       //    Inatteignable en mode proprietaire (la cible serait alors l'appelant,
@@ -444,6 +480,7 @@ async function runOwnershipTransfer(
             previousOwnerUid,
             previousOwnerRole: null,
             newOwnerPreviousRole,
+            newOwnerKeepsPlayerStatus: newOwnerIsActivePlayer,
             alreadyTransferred: true,
             mode,
             demotedUid: null,
@@ -490,31 +527,32 @@ async function runOwnershipTransfer(
         { merge: true },
       );
 
-      // 2. L'appartenance de la CIBLE. `coachAccess: "revoked"` est un second
-      //    verrou, independant du role : la nouvelle proprietaire n'est plus une
-      //    joueuse projetee, et son suivi personnel cesse d'etre lisible par
-      //    l'encadrement meme si une reprojection en vol repassait par la.
+      // 2. L'appartenance de la CIBLE. UN SEUL CHAMP D'AUTORITE BOUGE, et c'est
+      //    exactement le contrat : `accessRole` passe a "owner". `playerStatus`
+      //    et `coachAccess` ne figurent PAS dans cette ecriture — un `merge` qui
+      //    ne les nomme pas ne peut pas les changer. C'est ce qui fait qu'un
+      //    joueur devenu proprietaire garde son suivi sportif.
       tx.set(
         memberPaths.member(clubId, newOwnerUid),
         {
           uid: newOwnerUid,
-          role: CLUB_ROLE_OWNER,
-          [COACH_ACCESS_FIELD]: "revoked",
+          [ACCESS_ROLE_FIELD]: CLUB_ACCESS_ROLE_OWNER,
           [OWNER_SINCE]: now,
           updatedAt: now,
         },
         { merge: true },
       );
 
-      // 3. L'appartenance de l'ANCIEN proprietaire : un role EXPLICITE, jamais un
-      //    trou. Apres cette ecriture, `removeClubMember` fonctionne sur lui
-      //    NORMALEMENT — il n'est plus ni designe, ni porteur du role.
+      // 3. L'appartenance de l'ANCIEN proprietaire : une permission EXPLICITE,
+      //    jamais un trou. Apres cette ecriture, `removeClubMember` fonctionne
+      //    sur lui NORMALEMENT — il n'est plus ni designe, ni porteur du role.
+      //    Son statut de joueur n'est pas nomme, donc pas touche.
       if (demotesPreviousOwner && previousOwnerUid !== null) {
         tx.set(
           memberPaths.member(clubId, previousOwnerUid),
           {
             uid: previousOwnerUid,
-            role: PREVIOUS_OWNER_ROLE,
+            [ACCESS_ROLE_FIELD]: PREVIOUS_OWNER_ROLE,
             [OWNER_UNTIL]: now,
             updatedAt: now,
           },
@@ -522,17 +560,27 @@ async function runOwnershipTransfer(
         );
       }
 
-      // 4. Projection residuelle de la cible. Supprimee ICI plutot que confiee au
-      //    trigger : un trigger est asynchrone, et la donnee doit disparaitre avec
-      //    le geste. Inconditionnelle, comme au retrait : une projection laissee
-      //    par un passage anterieur en "player" doit partir aussi.
-      tx.delete(memberPaths.playerSummary(clubId, newOwnerUid));
+      // 4. Projection residuelle de la cible — CONDITIONNELLE depuis la
+      //    separation des deux axes.
+      //
+      //    . cible SANS suivi actif  -> suppression, ici meme plutot que confiee
+      //      au trigger : un trigger est asynchrone, et une donnee que plus rien
+      //      ne justifie doit disparaitre avec le geste ;
+      //    . cible AVEC suivi actif  -> on NE SUPPRIME PAS. Elle devient
+      //      entraineuse-joueuse, elle reste dans l'effectif suivi, et supprimer
+      //      sa fiche reviendrait a lui retirer son suivi au motif d'un geste qui
+      //      ne parle pas de suivi. Le trigger la reconstruira de toute facon a
+      //      la prochaine ecriture : la supprimer ne ferait que la faire
+      //      clignoter.
+      if (!newOwnerIsActivePlayer) {
+        tx.delete(memberPaths.playerSummary(clubId, newOwnerUid));
+      }
 
       // 5. Reparation nommee (mode administrateur).
       if (demotedUid !== null) {
         tx.set(
           memberPaths.member(clubId, demotedUid),
-          { role: PREVIOUS_OWNER_ROLE, [OWNER_UNTIL]: now, updatedAt: now },
+          { [ACCESS_ROLE_FIELD]: PREVIOUS_OWNER_ROLE, [OWNER_UNTIL]: now, updatedAt: now },
           { merge: true },
         );
       }
@@ -549,10 +597,11 @@ async function runOwnershipTransfer(
       //    tests du transfert dans un lot qui n'a pas ce mandat. Un lot dedie
       //    peut la solder (cf. docs/coach-pilote-2026-07/ESPACE_ET_ROLES.md).
       //
-      //    Ce qui reste VRAI et important : un compte voit un seul espace. Un
-      //    joueur qui devient proprietaire perd l'acces a sa propre app
-      //    d'entrainement — decision produit non tranchee, documentee, jamais
-      //    masquee.
+      //    CE QUI N'EST PLUS VRAI (et c'est ce lot qui l'a change) : « un compte
+      //    voit un seul espace ». Un joueur devenu proprietaire garde son
+      //    `playerStatus`, donc son suivi sportif ET son application
+      //    d'entrainement ; l'application lui propose un selecteur
+      //    Joueur / Coach et memorise localement son dernier choix.
       if (grantCoachSpace) {
         tx.set(memberPaths.user(newOwnerUid), { role: "coach", updatedAt: now }, { merge: true });
       }
@@ -565,6 +614,7 @@ async function runOwnershipTransfer(
           previousOwnerUid,
           previousOwnerRole: demotesPreviousOwner ? PREVIOUS_OWNER_ROLE : null,
           newOwnerPreviousRole,
+          newOwnerKeepsPlayerStatus: newOwnerIsActivePlayer,
           alreadyTransferred: false,
           mode,
           demotedUid,

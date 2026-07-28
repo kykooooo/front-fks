@@ -4,7 +4,7 @@
 // - dry-run par défaut : ne calcule que ce qui SERAIT écrit, n'écrit rien ;
 // - `--apply` obligatoire pour écrire réellement ;
 // - `--clubId=<id>` pour cibler un club ;
-// - parcourt uniquement les members role=player ;
+// - parcourt uniquement les members playerStatus=active (suivi sportif actif) ;
 // - reconstruit via `rebuildPlayerSummary` (même fonction centrale que les triggers) ;
 // - compte scanned/written/skipped/errors ; ne logue AUCUNE donnée sensible.
 //
@@ -13,6 +13,7 @@
 
 import { type Firestore } from "firebase-admin/firestore";
 import { getDb } from "./admin";
+import { PLAYER_STATUS_ACTIVE, PLAYER_STATUS_FIELD } from "./clubAuthority";
 import { paths, SESSION_FETCH_LIMIT } from "./config";
 import { projectPlayerSummary, type RawSessionDoc } from "./projector";
 import { rebuildPlayerSummary } from "./rebuild";
@@ -64,7 +65,12 @@ export async function runBackfill(opts: BackfillOptions): Promise<BackfillStats>
   const clubIds = await listClubIds(db, opts.clubId);
 
   for (const clubId of clubIds) {
-    const membersSnap = await db.collection(paths.members(clubId)).where("role", "==", "player").get();
+    // Effectif SUIVI = statut de joueur actif. Ne dit rien des permissions
+    // d'encadrement : un entraineur-joueur est ici, et c'est voulu.
+    const membersSnap = await db
+      .collection(paths.members(clubId))
+      .where(PLAYER_STATUS_FIELD, "==", PLAYER_STATUS_ACTIVE)
+      .get();
     for (const memberDoc of membersSnap.docs) {
       const playerUid = memberDoc.id;
       stats.scanned += 1;

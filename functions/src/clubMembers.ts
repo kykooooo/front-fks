@@ -23,9 +23,10 @@
 //     planifiees — et un joueur retire continue de s'entrainer, donc les
 //     triggers vont tourner. Avec un document ABSENT, la reprojection lit "pas
 //     de membership" et supprime : correct. Avec une pierre tombale, elle lit un
-//     role qui n'est pas "player" et supprime AUSSI — mais en plus, la lecture
-//     coach est fermee par TROIS verrous independants (role, coachAccess,
-//     appartenance active). On ne depend d'aucun ordre d'evenements.
+//     statut de joueur qui n'est plus "active" et supprime AUSSI — mais en plus,
+//     la lecture coach est fermee par TROIS verrous independants (statut de
+//     joueur, coachAccess, appartenance active). On ne depend d'aucun ordre
+//     d'evenements.
 //  2. "double retrait" et "membre absent" doivent se distinguer. Sans trace, le
 //     second retrait d'un joueur ressemble a un retrait de quelqu'un qui n'a
 //     jamais ete la : deux situations differentes, deux reponses differentes.
@@ -35,20 +36,34 @@
 //     n'est JAMAIS touche — le retrait du club n'est pas une suppression de
 //     compte, et le libelle affiche au coach le dit mot pour mot.
 //
-// ─── CE QUE LE RETRAIT FERME, POINT PAR POINT ───────────────────────────────
-//   . appartenance         -> role "removed" (hors CLUB_ACTIVE_ROLES)
-//                             => `isActiveMember` faux dans les regles : le club,
-//                                le cadre de semaine et la directive deviennent
-//                                illisibles pour lui.
-//   . acces coach associe  -> coachAccess "revoked"
+// ─── LE RETRAIT FERME LES DEUX AXES, EXPLICITEMENT ──────────────────────────
+// Depuis la separation des permissions d'encadrement et du statut de joueur
+// (clubAuthority.ts), une appartenance porte DEUX choses. Retirer quelqu'un qui
+// n'en fermerait qu'une laisserait soit un encadrant sans effectif, soit — bien
+// pire — un suivi sportif toujours projete vers un club qu'on vient de quitter.
+// Le retrait ecrit donc les deux, dans la meme ecriture :
+//
+//   . permissions d'encadrement -> `accessRole: null`
+//                             => `isClubStaff` faux : plus d'effectif, plus de
+//                                note privee, plus de cadre de semaine.
+//   . statut de joueur      -> `playerStatus: "inactive"`
+//                             => `isActivePlayer` faux : le projecteur refuse de
+//                                reconstruire, et `isPlayerMember` (regles) rend
+//                                toute projection residuelle illisible.
+//   . appartenance          -> les deux etant fermes, `isActiveMember` est faux :
+//                                le club, le cadre de semaine et la directive
+//                                deviennent illisibles pour lui.
+//   . acces coach associe   -> coachAccess "revoked"
 //                             => `isCoachAccessGranted` faux (default-deny).
-//   . nouvelle projection  -> le projecteur exige role === "player"
-//                             => tout rebuild ulterieur renvoie null.
-//   . projection existante -> supprimee dans la MEME transaction.
-//   . references / caches  -> users/{playerUid}.clubId remis a null (uniquement
+//   . projection existante  -> supprimee dans la MEME transaction.
+//   . references / caches   -> users/{playerUid}.clubId remis a null (uniquement
 //                             s'il pointe encore vers CE club), donc plus de club
 //                             fantome dans les reglages du joueur, et
 //                             `clubIdOfUser` (triggers.ts) ne renvoie plus rien.
+//
+// Il n'existe PLUS de valeur "removed" : l'etat retire, c'est l'absence des deux
+// axes. C'est ce qui rend impossible d'en oublier un — il n'y a pas d'etiquette
+// unique a poser qui pourrait laisser l'autre champ derriere elle.
 //
 // ─── ANTI-ORACLE : POURQUOI "membre absent" PEUT ETRE DIT ───────────────────
 // Le contrat d'invitation refuse d'avouer l'existence d'un club ou d'un code,
@@ -60,14 +75,15 @@
 // c'est lui qui rend le message honnete sans rouvrir de fuite.
 
 import {
-  CLUB_ROLE_PLAYER,
-  CLUB_ROLE_REMOVED,
+  ACCESS_ROLE_FIELD,
+  PLAYER_STATUS_FIELD,
+  PLAYER_STATUS_INACTIVE,
   clubAuthoritySignal,
   hasOwnerMembership,
   isActiveMembership,
+  isActivePlayer,
   isClubStaff,
   isDesignatedOwner,
-  normalizeClubRole,
   resolveOwnerAuthority,
   type ClubAuthoritySignal,
 } from "./clubAuthority";
@@ -303,13 +319,21 @@ export async function removeClubMember(
       // ── Ecritures ──────────────────────────────────────────────────────────
       // 1. Pierre tombale. `merge` conserve `joinedAt` (trace d'audit) et
       //    n'ajoute AUCUNE donnee de joueur : ce document n'en a jamais porte.
+      //
+      //    LES DEUX AXES SONT FERMES ICI, NOMMEMENT. `accessRole: null` retire
+      //    l'encadrement ; `playerStatus: "inactive"` retire le suivi. Ecrire
+      //    `null` plutot que de supprimer le champ est deliberé : la valeur
+      //    reste LISIBLE (donc auditable), et `normalizeAccessRole(null)` vaut
+      //    `null` — exactement le meme verdict qu'un champ absent.
       tx.set(
         memberPaths.member(clubId, memberUid),
         {
           uid: memberUid,
-          role: CLUB_ROLE_REMOVED,
-          // Deuxieme verrou, independant du role : meme si une lecture future
-          // oubliait de regarder le role, l'acces reste ferme (default-deny).
+          [ACCESS_ROLE_FIELD]: null,
+          [PLAYER_STATUS_FIELD]: PLAYER_STATUS_INACTIVE,
+          // Troisieme verrou, independant des deux autres : meme si une lecture
+          // future oubliait de regarder l'un des axes, l'acces reste ferme
+          // (default-deny).
           [COACH_ACCESS_FIELD]: "revoked",
           removedAt: now,
           removedBy: actorUid,
@@ -358,8 +382,12 @@ export async function removeClubMember(
 /**
  * Le membership decrit-il un joueur ENCORE consultable par le coach ?
  * Exportee pour que les tests de non-regression puissent poser la question dans
- * les memes termes que le projecteur (`role === "player"`).
+ * les memes termes que le projecteur (`playerStatus === "active"`).
+ *
+ * Elle ne regarde PLUS l'encadrement : un entraineur-joueur est projetable, et
+ * c'est le but. Ce qui le protege reste ce qui protege tout le monde —
+ * `coachAccess` et les regles Firestore.
  */
 export function isProjectablePlayer(membership: MemberDocData | null): boolean {
-  return normalizeClubRole(membership?.role) === CLUB_ROLE_PLAYER;
+  return isActivePlayer(membership);
 }

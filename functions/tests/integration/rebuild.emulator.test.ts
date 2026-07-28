@@ -185,7 +185,7 @@ describe("rebuildPlayerSummary — membership / club", () => {
   });
 
   it("champ d'accès ABSENT (membership ancien) → AUCUNE projection écrite", async () => {
-    await db.doc("clubs/clubA/members/playerA1").set({ uid: "playerA1", role: "player" });
+    await db.doc("clubs/clubA/members/playerA1").set({ uid: "playerA1", playerStatus: "active" });
     const res = await rebuildPlayerSummary(
       { clubId: "clubA", playerUid: "playerA1", watermark: wm(1000) },
       db,

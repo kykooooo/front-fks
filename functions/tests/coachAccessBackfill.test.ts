@@ -53,14 +53,14 @@ function magasin(monde: Monde): CoachAccessBackfillStore {
 const monde = (): Monde => ({
   members: {
     // Membership ANCIENS : aucun champ d'autorisation.
-    "clubA/joueur1": { role: "player", coachAccess: undefined },
-    "clubA/joueur2": { role: "player", coachAccess: undefined },
-    "clubA/valeurPourrie": { role: "player", coachAccess: "APPROVED" },
+    "clubA/joueur1": { playerStatus: "active", coachAccess: undefined },
+    "clubA/joueur2": { playerStatus: "active", coachAccess: undefined },
+    "clubA/valeurPourrie": { playerStatus: "active", coachAccess: "APPROVED" },
     // Deja traites : ne doivent pas bouger.
-    "clubA/dejaApprouve": { role: "player", coachAccess: "approved" },
-    "clubA/retire": { role: "player", coachAccess: "revoked" },
+    "clubA/dejaApprouve": { playerStatus: "active", coachAccess: "approved" },
+    "clubA/retire": { playerStatus: "active", coachAccess: "revoked" },
     // Autre club, en mode approval_required (sert aussi au ciblage --clubId).
-    "clubB/autre": { role: "player", coachAccess: undefined },
+    "clubB/autre": { playerStatus: "active", coachAccess: undefined },
   },
   policies: {
     // clubA : politique volontairement ABSENTE -> defaut serveur.

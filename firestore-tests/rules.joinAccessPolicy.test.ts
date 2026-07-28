@@ -68,7 +68,7 @@ beforeEach(async () => {
   await admin(async (ctx) => {
     await setDoc(doc(ctx.firestore(), "clubs", CLUB_A, "members", COACH_A_NON_OWNER), {
       uid: COACH_A_NON_OWNER,
-      role: "coach",
+      accessRole: "coach",
     });
   });
 });

@@ -275,7 +275,7 @@ describe("useCoachClub — autorite du club", () => {
   const CLUB = { name: "AS Test", teamGender: "female", ownerUid: "coach1" };
 
   test("PREDICAT VRAI : ownerUid designe ET appartenance proprietaire", async () => {
-    wireDocs({ club: CLUB, member: { uid: "coach1", role: "owner" } });
+    wireDocs({ club: CLUB, member: { uid: "coach1", accessRole: "owner" } });
     const h = await renderHook(() => useCoachClub({ now }));
 
     expect(h.current.ownerAuthority).toBe("authorized");
@@ -284,7 +284,7 @@ describe("useCoachClub — autorite du club", () => {
   });
 
   test("ownerUid SEUL (appartenance coach) : incoherence NOMMEE", async () => {
-    wireDocs({ club: CLUB, member: { uid: "coach1", role: "coach" } });
+    wireDocs({ club: CLUB, member: { uid: "coach1", accessRole: "coach" } });
     const h = await renderHook(() => useCoachClub({ now }));
 
     expect(h.current.ownerAuthority).toBe("designation-without-membership");
@@ -298,7 +298,7 @@ describe("useCoachClub — autorite du club", () => {
   test("appartenance SEULE (ownerUid designe un autre) : incoherence NOMMEE", async () => {
     wireDocs({
       club: { ...CLUB, ownerUid: "quelquUnDAutre" },
-      member: { uid: "coach1", role: "owner" },
+      member: { uid: "coach1", accessRole: "owner" },
     });
     const h = await renderHook(() => useCoachClub({ now }));
 
@@ -310,7 +310,7 @@ describe("useCoachClub — autorite du club", () => {
   test("coach ordinaire : 'not-owner', et surtout AUCUN bandeau", async () => {
     wireDocs({
       club: { ...CLUB, ownerUid: "unAutreCoach" },
-      member: { uid: "coach1", role: "coach" },
+      member: { uid: "coach1", accessRole: "coach" },
     });
     const h = await renderHook(() => useCoachClub({ now }));
 

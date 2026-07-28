@@ -13,20 +13,22 @@
 // role proprietaire".
 
 import {
-  CLUB_ACTIVE_ROLES,
-  CLUB_ROLE_COACH,
-  CLUB_ROLE_OWNER,
-  CLUB_ROLE_PLAYER,
-  CLUB_ROLE_REMOVED,
-  CLUB_STAFF_ROLES,
+  CLUB_ACCESS_ROLES,
+  CLUB_ACCESS_ROLE_COACH,
+  CLUB_ACCESS_ROLE_OWNER,
+  CLUB_PLAYER_STATUSES,
+  PLAYER_STATUS_ACTIVE,
+  PLAYER_STATUS_INACTIVE,
   clubAuthoritySignal,
   hasOwnerMembership,
   isActiveMembership,
+  isActivePlayer,
   isClubOwnerAuthorized,
   isClubStaff,
   isDesignatedOwner,
   isOwnerAuthorityInconsistent,
-  normalizeClubRole,
+  normalizeAccessRole,
+  normalizePlayerStatus,
   readOwnerUid,
   resolveOwnerAuthority,
 } from "../src/clubAuthority";
@@ -36,20 +38,36 @@ const COACH = "coachSecond";
 const PLAYER = "player1";
 
 const club = (ownerUid: unknown = OWNER) => ({ name: "AS Test", ownerUid });
-const member = (role: unknown) => ({ uid: "x", role });
+
+/**
+ * Appartenance : les DEUX axes, nommes separement. Les fabriquer ensemble est
+ * deliberé — c'est ce qui rend visible, dans chaque cas de test, qu'un axe ne
+ * dit rien de l'autre.
+ */
+const member = (accessRole: unknown, playerStatus: unknown = null) => ({
+  uid: "x",
+  accessRole,
+  playerStatus,
+});
+/** Joueur pur : aucune permission d'encadrement, un suivi sportif actif. */
+const joueur = () => member(null, PLAYER_STATUS_ACTIVE);
+/** Entraineur-joueur : LES DEUX. C'est le cas que ce modele existe pour dire. */
+const entraineurJoueur = () => member(CLUB_ACCESS_ROLE_COACH, PLAYER_STATUS_ACTIVE);
+/** Pierre tombale : les deux axes fermes, ecrits ensemble par le retrait. */
+const tombale = () => member(null, PLAYER_STATUS_INACTIVE);
 
 // ─── 1. Le predicat, cas par cas ────────────────────────────────────────────
 
 describe("predicat d'autorite proprietaire", () => {
   it("PREDICAT VRAI : ownerUid designe ET appartenance proprietaire", () => {
-    expect(resolveOwnerAuthority(club(), member(CLUB_ROLE_OWNER), OWNER)).toBe("authorized");
-    expect(isClubOwnerAuthorized(club(), member(CLUB_ROLE_OWNER), OWNER)).toBe(true);
+    expect(resolveOwnerAuthority(club(), member(CLUB_ACCESS_ROLE_OWNER), OWNER)).toBe("authorized");
+    expect(isClubOwnerAuthorized(club(), member(CLUB_ACCESS_ROLE_OWNER), OWNER)).toBe(true);
   });
 
   it("ownerUid SEUL (appartenance coach) : INCOHERENT, donc refus", () => {
-    const authority = resolveOwnerAuthority(club(), member(CLUB_ROLE_COACH), OWNER);
+    const authority = resolveOwnerAuthority(club(), member(CLUB_ACCESS_ROLE_COACH), OWNER);
     expect(authority).toBe("designation-without-membership");
-    expect(isClubOwnerAuthorized(club(), member(CLUB_ROLE_COACH), OWNER)).toBe(false);
+    expect(isClubOwnerAuthorized(club(), member(CLUB_ACCESS_ROLE_COACH), OWNER)).toBe(false);
     expect(isOwnerAuthorityInconsistent(authority)).toBe(true);
   });
 
@@ -60,22 +78,22 @@ describe("predicat d'autorite proprietaire", () => {
   });
 
   it("appartenance SEULE (ownerUid designe quelqu'un d'autre) : INCOHERENT, donc refus", () => {
-    const authority = resolveOwnerAuthority(club("quelquUnDAutre"), member(CLUB_ROLE_OWNER), OWNER);
+    const authority = resolveOwnerAuthority(club("quelquUnDAutre"), member(CLUB_ACCESS_ROLE_OWNER), OWNER);
     expect(authority).toBe("membership-without-designation");
-    expect(isClubOwnerAuthorized(club("quelquUnDAutre"), member(CLUB_ROLE_OWNER), OWNER)).toBe(
+    expect(isClubOwnerAuthorized(club("quelquUnDAutre"), member(CLUB_ACCESS_ROLE_OWNER), OWNER)).toBe(
       false,
     );
     expect(isOwnerAuthorityInconsistent(authority)).toBe(true);
   });
 
   it("appartenance SEULE (ownerUid absent du document club) : INCOHERENT, donc refus", () => {
-    expect(resolveOwnerAuthority({ name: "AS Test" }, member(CLUB_ROLE_OWNER), OWNER)).toBe(
+    expect(resolveOwnerAuthority({ name: "AS Test" }, member(CLUB_ACCESS_ROLE_OWNER), OWNER)).toBe(
       "membership-without-designation",
     );
   });
 
   it("ni designe ni proprietaire : 'not-owner', et ce n'est PAS une incoherence", () => {
-    const authority = resolveOwnerAuthority(club(), member(CLUB_ROLE_COACH), COACH);
+    const authority = resolveOwnerAuthority(club(), member(CLUB_ACCESS_ROLE_COACH), COACH);
     expect(authority).toBe("not-owner");
     expect(isOwnerAuthorityInconsistent(authority)).toBe(false);
   });
@@ -101,15 +119,21 @@ describe("predicat d'autorite proprietaire", () => {
 
 describe("un proprietaire est de fait encadrant", () => {
   it("la liste d'encadrement contient owner ET coach, et rien d'autre", () => {
-    expect(CLUB_STAFF_ROLES).toEqual([CLUB_ROLE_OWNER, CLUB_ROLE_COACH]);
+    expect(CLUB_ACCESS_ROLES).toEqual([CLUB_ACCESS_ROLE_OWNER, CLUB_ACCESS_ROLE_COACH]);
+    // "player" et "removed" n'y sont PAS, et ne peuvent plus y etre : ce ne sont
+    // pas des permissions d'encadrement. C'est leur presence dans l'ancien champ
+    // unique qui faisait qu'obtenir l'encadrement effacait le fait d'etre joueur.
+    expect(CLUB_ACCESS_ROLES as readonly string[]).not.toContain("player");
+    expect(CLUB_ACCESS_ROLES as readonly string[]).not.toContain("removed");
   });
 
-  it("owner et coach passent ; player, removed, absent et inconnu ne passent pas", () => {
-    expect(isClubStaff(member(CLUB_ROLE_OWNER))).toBe(true);
-    expect(isClubStaff(member(CLUB_ROLE_COACH))).toBe(true);
-    expect(isClubStaff(member(CLUB_ROLE_PLAYER))).toBe(false);
-    expect(isClubStaff(member(CLUB_ROLE_REMOVED))).toBe(false);
+  it("owner et coach passent ; aucune permission, valeur inconnue et absence ne passent pas", () => {
+    expect(isClubStaff(member(CLUB_ACCESS_ROLE_OWNER))).toBe(true);
+    expect(isClubStaff(member(CLUB_ACCESS_ROLE_COACH))).toBe(true);
+    expect(isClubStaff(joueur())).toBe(false);
+    expect(isClubStaff(tombale())).toBe(false);
     expect(isClubStaff(member("OWNER"))).toBe(false); // casse differente = inconnu
+    expect(isClubStaff(member("player"))).toBe(false); // ancienne valeur = inconnue
     expect(isClubStaff({})).toBe(false);
     expect(isClubStaff(null)).toBe(false);
   });
@@ -117,35 +141,98 @@ describe("un proprietaire est de fait encadrant", () => {
   it("l'encadrement ne depend QUE de l'appartenance, jamais de ownerUid", () => {
     // Meme membership, deux clubs differents : le verdict d'encadrement ne bouge
     // pas. C'est ce qui rend `isClubStaff` insensible aux incoherences.
-    expect(isClubStaff(member(CLUB_ROLE_OWNER))).toBe(true);
-    expect(resolveOwnerAuthority(club("autre"), member(CLUB_ROLE_OWNER), OWNER)).toBe(
+    expect(isClubStaff(member(CLUB_ACCESS_ROLE_OWNER))).toBe(true);
+    expect(resolveOwnerAuthority(club("autre"), member(CLUB_ACCESS_ROLE_OWNER), OWNER)).toBe(
       "membership-without-designation",
     );
+  });
+});
+
+// ─── 2 bis. LES DEUX AXES SONT INDEPENDANTS ─────────────────────────────────
+// Le coeur de ce lot. Chaque assertion ici tomberait si l'un des deux champs
+// venait a peser sur l'autre.
+
+describe("permissions d'encadrement et statut de joueur ne se parlent pas", () => {
+  it("un entraineur-joueur est encadrant ET joueur, en meme temps", () => {
+    expect(isClubStaff(entraineurJoueur())).toBe(true);
+    expect(isActivePlayer(entraineurJoueur())).toBe(true);
+  });
+
+  it("un proprietaire-joueur aussi : l'autorite proprietaire ne ferme aucun suivi", () => {
+    const m = member(CLUB_ACCESS_ROLE_OWNER, PLAYER_STATUS_ACTIVE);
+    expect(resolveOwnerAuthority(club(), m, OWNER)).toBe("authorized");
+    expect(isActivePlayer(m)).toBe(true);
+  });
+
+  it("l'encadrement seul ne fabrique AUCUN suivi", () => {
+    expect(isActivePlayer(member(CLUB_ACCESS_ROLE_OWNER))).toBe(false);
+    expect(isActivePlayer(member(CLUB_ACCESS_ROLE_COACH))).toBe(false);
+  });
+
+  it("le suivi seul ne fabrique AUCUNE permission", () => {
+    expect(isClubStaff(joueur())).toBe(false);
+    expect(resolveOwnerAuthority(club("autre"), joueur(), PLAYER)).toBe("not-owner");
+  });
+
+  it("les deux listes de valeurs sont disjointes et fermees", () => {
+    expect(CLUB_PLAYER_STATUSES).toEqual([PLAYER_STATUS_ACTIVE, PLAYER_STATUS_INACTIVE]);
+    for (const statut of CLUB_PLAYER_STATUSES) {
+      expect(CLUB_ACCESS_ROLES as readonly string[]).not.toContain(statut);
+    }
   });
 });
 
 // ─── 3. Appartenance active vs pierre tombale ───────────────────────────────
 
 describe("appartenance active", () => {
-  it("la liste active exclut explicitement la pierre tombale", () => {
-    expect(CLUB_ACTIVE_ROLES).toEqual([CLUB_ROLE_OWNER, CLUB_ROLE_COACH, CLUB_ROLE_PLAYER]);
-    expect(CLUB_ACTIVE_ROLES).not.toContain(CLUB_ROLE_REMOVED);
+  it("appartenance active = encadrement OU suivi actif", () => {
+    expect(isActiveMembership(member(CLUB_ACCESS_ROLE_OWNER))).toBe(true);
+    expect(isActiveMembership(member(CLUB_ACCESS_ROLE_COACH))).toBe(true);
+    expect(isActiveMembership(joueur())).toBe(true);
+    expect(isActiveMembership(entraineurJoueur())).toBe(true);
   });
 
-  it("un membre retire n'est plus un membre actif", () => {
-    expect(isActiveMembership(member(CLUB_ROLE_PLAYER))).toBe(true);
-    expect(isActiveMembership(member(CLUB_ROLE_REMOVED))).toBe(false);
+  it("un membre retire n'est plus un membre actif : LES DEUX axes sont fermes", () => {
+    expect(isActiveMembership(tombale())).toBe(false);
+    expect(isClubStaff(tombale())).toBe(false);
+    expect(isActivePlayer(tombale())).toBe(false);
     expect(isActiveMembership(null)).toBe(false);
+    expect(isActiveMembership({ uid: "x" })).toBe(false); // les deux champs absents
   });
 
-  it("normalizeClubRole est default-deny sur tout ce qui n'est pas un role connu", () => {
-    expect(normalizeClubRole("owner")).toBe(CLUB_ROLE_OWNER);
-    expect(normalizeClubRole(" player ")).toBe(CLUB_ROLE_PLAYER);
-    expect(normalizeClubRole("Player")).toBeNull();
-    expect(normalizeClubRole(true)).toBeNull();
-    expect(normalizeClubRole(undefined)).toBeNull();
-    expect(hasOwnerMembership({ role: "owner " })).toBe(true);
-    expect(hasOwnerMembership({ role: "ownerr" })).toBe(false);
+  it("fermer UN SEUL axe ne suffit pas a retirer quelqu'un — et c'est voulu", () => {
+    // Un retrait qui n'ecrirait que `accessRole: null` laisserait le suivi
+    // projete vers un club qu'on vient de quitter. La suite `clubMembers.test`
+    // verifie que le retrait reel ecrit bien les deux.
+    expect(isActiveMembership(member(null, PLAYER_STATUS_ACTIVE))).toBe(true);
+    expect(isActiveMembership(member(CLUB_ACCESS_ROLE_COACH, PLAYER_STATUS_INACTIVE))).toBe(true);
+  });
+
+  it("les deux normalisations sont default-deny", () => {
+    expect(normalizeAccessRole("owner")).toBe(CLUB_ACCESS_ROLE_OWNER);
+    expect(normalizeAccessRole(" coach ")).toBe(CLUB_ACCESS_ROLE_COACH);
+    expect(normalizeAccessRole("Owner")).toBeNull();
+    expect(normalizeAccessRole("player")).toBeNull();
+    expect(normalizeAccessRole("removed")).toBeNull();
+    expect(normalizeAccessRole(true)).toBeNull();
+    expect(normalizeAccessRole(undefined)).toBeNull();
+    expect(normalizeAccessRole(null)).toBeNull();
+
+    expect(normalizePlayerStatus(" active ")).toBe(PLAYER_STATUS_ACTIVE);
+    expect(normalizePlayerStatus("Active")).toBeNull();
+    expect(normalizePlayerStatus("player")).toBeNull();
+    expect(normalizePlayerStatus(true)).toBeNull();
+    expect(normalizePlayerStatus(null)).toBeNull();
+
+    expect(hasOwnerMembership({ accessRole: "owner " })).toBe(true);
+    expect(hasOwnerMembership({ accessRole: "ownerr" })).toBe(false);
+    // L'ANCIEN CHAMP N'OUVRE PLUS RIEN. Aucun chemin de compatibilite n'a ete
+    // ecrit (la base a ete videe le 21/07) : un document qui le porterait encore
+    // serait lu comme "aucune permission, aucun suivi".
+    expect(hasOwnerMembership({ role: "owner" })).toBe(false);
+    expect(isClubStaff({ role: "coach" })).toBe(false);
+    expect(isActivePlayer({ role: "player" })).toBe(false);
+    expect(isActiveMembership({ role: "player" })).toBe(false);
   });
 });
 

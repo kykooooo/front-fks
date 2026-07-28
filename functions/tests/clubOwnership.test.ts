@@ -50,7 +50,7 @@ import {
   transferClubOwnership,
 } from "../src/clubOwnership";
 import {
-  CLUB_ROLE_REMOVED,
+  PLAYER_STATUS_INACTIVE,
   isClubStaff,
   isClubOwnerAuthorized,
   type ClubAuthoritySignal,
@@ -163,27 +163,27 @@ function baseStore(): FakeStore {
   store.seed(memberPaths.club(CLUB_A), { name: "Club A", ownerUid: OWNER_A });
   store.seed(memberPaths.club(CLUB_B), { name: "Club B", ownerUid: OWNER_B });
 
-  store.seed(memberPaths.member(CLUB_A, OWNER_A), { uid: OWNER_A, role: "owner" });
-  store.seed(memberPaths.member(CLUB_A, COACH_A), { uid: COACH_A, role: "coach" });
+  store.seed(memberPaths.member(CLUB_A, OWNER_A), { uid: OWNER_A, accessRole: "owner" });
+  store.seed(memberPaths.member(CLUB_A, COACH_A), { uid: COACH_A, accessRole: "coach" });
   store.seed(memberPaths.member(CLUB_A, PLAYER_A1), {
     uid: PLAYER_A1,
-    role: "player",
+    playerStatus: "active",
     coachAccess: "approved",
     joinedAt: NOW - 100_000,
   });
   store.seed(memberPaths.member(CLUB_A, PLAYER_A2), {
     uid: PLAYER_A2,
-    role: "player",
+    playerStatus: "active",
     coachAccess: "not_required",
   });
   store.seed(memberPaths.member(CLUB_A, REMOVED_A), {
     uid: REMOVED_A,
-    role: CLUB_ROLE_REMOVED,
+    accessRole: null, playerStatus: "inactive",
     coachAccess: "revoked",
     removedAt: NOW - 50_000,
     removedBy: OWNER_A,
   });
-  store.seed(memberPaths.member(CLUB_B, OWNER_B), { uid: OWNER_B, role: "owner" });
+  store.seed(memberPaths.member(CLUB_B, OWNER_B), { uid: OWNER_B, accessRole: "owner" });
 
   store.seed(memberPaths.user(OWNER_A), { uid: OWNER_A, clubId: CLUB_A, role: "coach" });
   store.seed(memberPaths.user(PLAYER_A1), { uid: PLAYER_A1, clubId: CLUB_A, role: "player" });
@@ -226,7 +226,7 @@ async function capture(fn: () => Promise<unknown>): Promise<ClubMemberError> {
 function porteursDuRole(store: FakeStore, clubId: string): string[] {
   const prefix = `clubs/${clubId}/members/`;
   return [...store.docs.entries()]
-    .filter(([path, stored]) => path.startsWith(prefix) && stored.data.role === "owner")
+    .filter(([path, stored]) => path.startsWith(prefix) && stored.data.accessRole === "owner")
     .map(([path]) => path.slice(prefix.length))
     .sort();
 }
@@ -272,7 +272,11 @@ describe("transfert — le proprietaire initie", () => {
       newOwnerUid: PLAYER_A1,
       previousOwnerUid: OWNER_A,
       previousOwnerRole: "coach",
-      newOwnerPreviousRole: "player",
+      // La cible n'avait AUCUNE permission d'encadrement avant : c'est le cas
+      // nominal « un joueur devient proprietaire ».
+      newOwnerPreviousRole: null,
+      // ... et elle garde son suivi sportif. C'est le contrat de ce lot.
+      newOwnerKeepsPlayerStatus: true,
       alreadyTransferred: false,
       mode: "owner",
       demotedUid: null,
@@ -281,15 +285,20 @@ describe("transfert — le proprietaire initie", () => {
 
     // La designation a bouge.
     expect(designe(store, CLUB_A)).toBe(PLAYER_A1);
-    // Le nouveau porte le role, l'ancien porte un role EXPLICITE.
-    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))?.role).toBe("owner");
-    expect(store.read(memberPaths.member(CLUB_A, OWNER_A))?.role).toBe(PREVIOUS_OWNER_ROLE);
+    // Le nouveau porte la permission, l'ancien en porte une EXPLICITE.
+    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))?.accessRole).toBe("owner");
+    expect(store.read(memberPaths.member(CLUB_A, OWNER_A))?.accessRole).toBe(PREVIOUS_OWNER_ROLE);
     // Un seul proprietaire, et il est reellement autorise.
     expect(exigeUnSeulProprietaire(store, CLUB_A)).toBe(PLAYER_A1);
   });
 
-  it("ferme le suivi personnel du nouveau proprietaire (deux verrous, comme au retrait)", async () => {
+  it("NE TOUCHE PAS le suivi sportif du nouveau proprietaire : il devient entraineur-joueur", async () => {
+    // LE CONTRAT DE CE LOT, mot pour mot : « le transfert de propriete ne doit
+    // modifier QUE les permissions d'encadrement. Il ne doit JAMAIS retirer
+    // automatiquement le suivi sportif du nouveau proprietaire. »
     const store = baseStore();
+    const avantAcces = store.read(memberPaths.member(CLUB_A, PLAYER_A1))?.coachAccess;
+
     await transferClubOwnership(deps(store), {
       actorUid: OWNER_A,
       clubId: CLUB_A,
@@ -297,18 +306,40 @@ describe("transfert — le proprietaire initie", () => {
     });
 
     const membership = store.read(memberPaths.member(CLUB_A, PLAYER_A1));
-    // 1. il n'est plus projetable (le projecteur exige role === "player") ;
-    expect(isProjectablePlayer(membership)).toBe(false);
-    // 2. son autorisation d'acces est revoquee, independamment du role ;
-    expect(membership?.coachAccess).toBe("revoked");
-    // 3. la projection deja produite a disparu avec le geste.
-    expect(store.read(memberPaths.playerSummary(CLUB_A, PLAYER_A1))).toBeNull();
-    // La projection d'une AUTRE joueuse n'est pas touchee.
+    // 1. il reste projetable : sa fiche appartient a l'effectif suivi ;
+    expect(isProjectablePlayer(membership)).toBe(true);
+    expect(membership?.playerStatus).toBe("active");
+    // 2. son autorisation d'acces n'a PAS bouge (ni ouverte, ni fermee) ;
+    expect(membership?.coachAccess).toBe(avantAcces);
+    // 3. la projection deja produite est TOUJOURS la — la supprimer reviendrait
+    //    a retirer un suivi au motif d'un geste qui ne parle pas de suivi ;
+    expect(store.read(memberPaths.playerSummary(CLUB_A, PLAYER_A1))).not.toBeNull();
+    // 4. et il est bel et bien encadrant en meme temps.
+    expect(isClubStaff(membership)).toBe(true);
+    // La projection d'une AUTRE joueuse n'est pas touchee non plus.
     expect(store.read(memberPaths.playerSummary(CLUB_A, PLAYER_A2))).not.toBeNull();
   });
 
-  it("l'ancien proprietaire reste ENCADRANT, il ne devient pas joueur", async () => {
+  it("une cible SANS suivi actif ne garde aucune projection residuelle", async () => {
+    // Le pendant du test precedent : quand il n'y a pas de suivi a preserver,
+    // une projection laissee par un passage anterieur n'a plus rien qui la
+    // justifie, et elle part avec le geste plutot que d'attendre un trigger.
     const store = baseStore();
+    store.seed(memberPaths.member(CLUB_A, COACH_A), { uid: COACH_A, accessRole: "coach" });
+    store.seed(memberPaths.playerSummary(CLUB_A, COACH_A), { playerUid: COACH_A });
+
+    await transferClubOwnership(deps(store), {
+      actorUid: OWNER_A,
+      clubId: CLUB_A,
+      newOwnerUid: COACH_A,
+    });
+
+    expect(store.read(memberPaths.playerSummary(CLUB_A, COACH_A))).toBeNull();
+  });
+
+  it("l'ancien proprietaire reste ENCADRANT, et son propre suivi n'est pas touche", async () => {
+    const store = baseStore();
+    const avant = store.read(memberPaths.member(CLUB_A, OWNER_A));
     await transferClubOwnership(deps(store), {
       actorUid: OWNER_A,
       clubId: CLUB_A,
@@ -322,7 +353,9 @@ describe("transfert — le proprietaire initie", () => {
     expect(isClubOwnerAuthorized(store.read(memberPaths.club(CLUB_A)), ancien, OWNER_A)).toBe(
       false,
     );
-    // Et surtout PAS joueur : son suivi personnel n'entre pas dans l'effectif.
+    // Son statut de joueur est celui qu'il avait : le transfert ne l'invente pas
+    // et ne l'efface pas. Ici il n'en avait aucun, donc il n'en a toujours aucun.
+    expect(ancien?.playerStatus).toBe(avant?.playerStatus ?? undefined);
     expect(isProjectablePlayer(ancien)).toBe(false);
   });
 
@@ -334,21 +367,45 @@ describe("transfert — le proprietaire initie", () => {
       newOwnerUid: COACH_A,
     });
     expect(result.newOwnerPreviousRole).toBe("coach");
+    expect(result.newOwnerKeepsPlayerStatus).toBe(false);
     expect(exigeUnSeulProprietaire(store, CLUB_A)).toBe(COACH_A);
   });
 
-  it("ne touche JAMAIS l'espace applicatif du nouveau proprietaire", async () => {
-    // `users/{uid}.role` decide de l'espace affiche par l'app. Le basculer
-    // retirerait a un joueur actif sa propre app d'entrainement : c'est une
-    // decision produit, jamais une consequence technique du transfert.
+  it("un ENTRAINEUR-JOUEUR peut recevoir la propriete sans rien perdre", async () => {
     const store = baseStore();
+    store.seed(memberPaths.member(CLUB_A, COACH_A), {
+      uid: COACH_A,
+      accessRole: "coach",
+      playerStatus: "active",
+      coachAccess: "not_required",
+    });
+
+    const result = await transferClubOwnership(deps(store), {
+      actorUid: OWNER_A,
+      clubId: CLUB_A,
+      newOwnerUid: COACH_A,
+    });
+
+    expect(result.newOwnerPreviousRole).toBe("coach");
+    expect(result.newOwnerKeepsPlayerStatus).toBe(true);
+    const membership = store.read(memberPaths.member(CLUB_A, COACH_A));
+    expect(membership?.accessRole).toBe("owner");
+    expect(membership?.playerStatus).toBe("active");
+    expect(membership?.coachAccess).toBe("not_required");
+  });
+
+  it("ne touche JAMAIS le document `users/{uid}` du nouveau proprietaire", async () => {
+    // Ce document porte le profil personnel, pas l'autorite. Le transfert n'a
+    // rien a y ecrire — et depuis que l'espace affiche est derive de
+    // l'appartenance, il n'aurait de toute facon aucun effet.
+    const store = baseStore();
+    const avant = store.read(memberPaths.user(PLAYER_A1));
     await transferClubOwnership(deps(store), {
       actorUid: OWNER_A,
       clubId: CLUB_A,
       newOwnerUid: PLAYER_A1,
     });
-    expect(store.read(memberPaths.user(PLAYER_A1))?.role).toBe("player");
-    expect(store.read(memberPaths.user(PLAYER_A1))?.clubId).toBe(CLUB_A);
+    expect(store.read(memberPaths.user(PLAYER_A1))).toEqual(avant);
   });
 });
 
@@ -453,7 +510,7 @@ describe("transfert — etat d'autorite incoherent", () => {
     const store = baseStore();
     // `ownerUid` designe toujours OWNER_A, mais son appartenance n'est plus
     // proprietaire (retrogradee a la main, ou heritee d'un ancien etat).
-    store.seed(memberPaths.member(CLUB_A, OWNER_A), { uid: OWNER_A, role: "coach" });
+    store.seed(memberPaths.member(CLUB_A, OWNER_A), { uid: OWNER_A, accessRole: "coach" });
     const signals: ClubAuthoritySignal[] = [];
 
     const err = await capture(() =>
@@ -481,7 +538,7 @@ describe("transfert — etat d'autorite incoherent", () => {
   it("APPARTENANCE SANS DESIGNATION : refuse, et signale", async () => {
     const store = baseStore();
     // COACH_A porte le role proprietaire, mais la designation nomme OWNER_A.
-    store.seed(memberPaths.member(CLUB_A, COACH_A), { uid: COACH_A, role: "owner" });
+    store.seed(memberPaths.member(CLUB_A, COACH_A), { uid: COACH_A, accessRole: "owner" });
     const signals: ClubAuthoritySignal[] = [];
 
     const err = await capture(() =>
@@ -499,7 +556,7 @@ describe("transfert — etat d'autorite incoherent", () => {
 
   it("le signal ne transporte QUE de quoi reparer (quatre champs, rien d'autre)", async () => {
     const store = baseStore();
-    store.seed(memberPaths.member(CLUB_A, OWNER_A), { uid: OWNER_A, role: "coach" });
+    store.seed(memberPaths.member(CLUB_A, OWNER_A), { uid: OWNER_A, accessRole: "coach" });
     const signals: ClubAuthoritySignal[] = [];
     await capture(() =>
       transferClubOwnership(deps(store, (s) => signals.push(s)), {
@@ -705,7 +762,7 @@ describe("transfert — rejeu apres transfert", () => {
       newOwnerUid: OWNER_A,
     });
     expect(exigeUnSeulProprietaire(store, CLUB_A)).toBe(OWNER_A);
-    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))?.role).toBe(PREVIOUS_OWNER_ROLE);
+    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))?.accessRole).toBe(PREVIOUS_OWNER_ROLE);
   });
 });
 
@@ -837,7 +894,8 @@ describe("transfert — concurrence", () => {
     expect(err.message).toBe(TRANSFER_DENIED_MESSAGE);
     // JAMAIS deux proprietaires : PLAYER_A2 a gagne, PLAYER_A1 est reste joueur.
     expect(exigeUnSeulProprietaire(store, CLUB_A)).toBe(PLAYER_A2);
-    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))?.role).toBe("player");
+    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))?.accessRole).toBeUndefined();
+    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))?.playerStatus).toBe("active");
   });
 
   it("TRANSFERT PENDANT UN RETRAIT — le retrait gagne : la cible devient inadmissible", async () => {
@@ -863,7 +921,8 @@ describe("transfert — concurrence", () => {
 
     expect(err.reason).toBe(TRANSFER_TARGET_INELIGIBLE);
     expect(exigeUnSeulProprietaire(store, CLUB_A)).toBe(OWNER_A);
-    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))?.role).toBe(CLUB_ROLE_REMOVED);
+    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))?.accessRole).toBeNull();
+    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))?.playerStatus).toBe(PLAYER_STATUS_INACTIVE);
   });
 
   it("RETRAIT PENDANT UN TRANSFERT — le transfert gagne : le retrait exige un transfert", async () => {
@@ -949,7 +1008,8 @@ describe("transfert puis retrait de l'ancien proprietaire", () => {
     });
     expect(retrait.alreadyRemoved).toBe(false);
     expect(retrait.clearedUserClub).toBe(true);
-    expect(store.read(memberPaths.member(CLUB_A, OWNER_A))?.role).toBe(CLUB_ROLE_REMOVED);
+    expect(store.read(memberPaths.member(CLUB_A, OWNER_A))?.accessRole).toBeNull();
+    expect(store.read(memberPaths.member(CLUB_A, OWNER_A))?.playerStatus).toBe(PLAYER_STATUS_INACTIVE);
     expect(store.read(memberPaths.member(CLUB_A, OWNER_A))?.coachAccess).toBe("revoked");
     expect(store.read(memberPaths.user(OWNER_A))?.clubId).toBeNull();
 
@@ -998,6 +1058,81 @@ describe("transfert puis retrait de l'ancien proprietaire", () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// 7 bis. LA SEQUENCE COMPLETE : joueur -> proprietaire -> retire
+// ═════════════════════════════════════════════════════════════════════════════
+// Le scenario que ce lot existe pour rendre vrai, joue d'un bout a l'autre. A
+// chaque etape on verifie l'axe SUIVI en plus de l'axe PERMISSIONS : c'est leur
+// independance qui est prouvee ici, pas seulement l'etat final.
+
+describe("sequence joueur -> proprietaire -> retire", () => {
+  it("le suivi sportif survit au brassard, et ne disparait qu'au retrait", async () => {
+    const store = baseStore();
+    const membre = () => store.read(memberPaths.member(CLUB_A, PLAYER_A1));
+
+    // ── Etape 1 : JOUEUR. Aucun encadrement, un suivi actif et projete.
+    expect(isClubStaff(membre())).toBe(false);
+    expect(isProjectablePlayer(membre())).toBe(true);
+    expect(store.read(memberPaths.playerSummary(CLUB_A, PLAYER_A1))).not.toBeNull();
+
+    // ── Etape 2 : PROPRIETAIRE. Il gagne l'encadrement — et GARDE son suivi.
+    const transfert = await transferClubOwnership(deps(store), {
+      actorUid: OWNER_A,
+      clubId: CLUB_A,
+      newOwnerUid: PLAYER_A1,
+    });
+    expect(transfert.newOwnerKeepsPlayerStatus).toBe(true);
+    expect(isClubStaff(membre())).toBe(true);
+    expect(isClubOwnerAuthorized(store.read(memberPaths.club(CLUB_A)), membre(), PLAYER_A1)).toBe(
+      true,
+    );
+    // L'axe suivi n'a pas bouge d'un iota : ni le statut, ni l'autorisation, ni
+    // la fiche deja produite.
+    expect(isProjectablePlayer(membre())).toBe(true);
+    expect(membre()?.coachAccess).toBe("approved");
+    expect(store.read(memberPaths.playerSummary(CLUB_A, PLAYER_A1))).not.toBeNull();
+
+    // ── Etape 2 bis : l'ANCIEN proprietaire garde aussi ce qu'il avait.
+    //     Il n'avait pas de suivi : il n'en gagne pas non plus.
+    expect(isClubStaff(store.read(memberPaths.member(CLUB_A, OWNER_A)))).toBe(true);
+    expect(isProjectablePlayer(store.read(memberPaths.member(CLUB_A, OWNER_A)))).toBe(false);
+
+    // ── Etape 3 : RETIRE. Il faut d'abord rendre le brassard — un proprietaire
+    //     ne se retire pas (ce serait fabriquer l'incoherence que l'invariant
+    //     interdit). C'est le refus TYPE, deja teste ailleurs.
+    const refus = await capture(() =>
+      removeClubMember(deps(store), {
+        actorUid: PLAYER_A1,
+        clubId: CLUB_A,
+        memberUid: PLAYER_A1,
+      }),
+    );
+    expect(refus.reason).toBe(OWNER_TRANSFER_REQUIRED);
+
+    await transferClubOwnership(deps(store), {
+      actorUid: PLAYER_A1,
+      clubId: CLUB_A,
+      newOwnerUid: OWNER_A,
+    });
+    // Redevenu simple encadrant : il a toujours son suivi.
+    expect(isProjectablePlayer(membre())).toBe(true);
+
+    // ... et le retrait, lui, ferme LES DEUX d'un coup.
+    const retrait = await removeClubMember(deps(store), {
+      actorUid: OWNER_A,
+      clubId: CLUB_A,
+      memberUid: PLAYER_A1,
+    });
+    expect(retrait.alreadyRemoved).toBe(false);
+    expect(membre()?.accessRole).toBeNull();
+    expect(membre()?.playerStatus).toBe(PLAYER_STATUS_INACTIVE);
+    expect(isClubStaff(membre())).toBe(false);
+    expect(isProjectablePlayer(membre())).toBe(false);
+    expect(store.read(memberPaths.playerSummary(CLUB_A, PLAYER_A1))).toBeNull();
+    expect(store.read(memberPaths.user(PLAYER_A1))?.clubId).toBeNull();
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
 // 8. LE JOURNAL D'AUDIT — ce qu'il contient, et surtout ce qu'il ne contient PAS
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -1030,11 +1165,23 @@ describe("transfert — audit sobre", () => {
       newOwnerUid: PLAYER_A1,
     });
 
+    // `playerStatus` et `coachAccess` sont la parce qu'ils ETAIENT deja la : le
+    // transfert ne les a ni ajoutes ni retouches (il ne les nomme pas dans son
+    // ecriture en merge). C'est le contrat « un seul axe bouge », lu au niveau
+    // des cles du document.
     expect(Object.keys(store.read(memberPaths.member(CLUB_A, PLAYER_A1)) ?? {}).sort()).toEqual(
-      ["coachAccess", "joinedAt", OWNER_SINCE, "role", "uid", "updatedAt"].sort(),
+      [
+        "accessRole",
+        "coachAccess",
+        "joinedAt",
+        OWNER_SINCE,
+        "playerStatus",
+        "uid",
+        "updatedAt",
+      ].sort(),
     );
     expect(Object.keys(store.read(memberPaths.member(CLUB_A, OWNER_A)) ?? {}).sort()).toEqual(
-      [OWNER_UNTIL, "role", "uid", "updatedAt"].sort(),
+      [OWNER_UNTIL, "accessRole", "uid", "updatedAt"].sort(),
     );
     // `joinedAt` du nouveau proprietaire est CONSERVE (merge) : c'est une trace
     // d'audit, elle n'a pas a disparaitre parce qu'on change de role.
@@ -1055,6 +1202,9 @@ describe("transfert — audit sobre", () => {
         "demotedUid",
         "grantedCoachSpace",
         "mode",
+        // Booleen, jamais une donnee : il dit « la cible garde son suivi », il
+        // ne transporte ni seance, ni prenom, ni etat d'autorisation.
+        "newOwnerKeepsPlayerStatus",
         "newOwnerPreviousRole",
         "newOwnerUid",
         "previousOwnerRole",
@@ -1102,7 +1252,7 @@ describe("transfert — mode administrateur", () => {
   it("retrograde une appartenance proprietaire ORPHELINE quand l'operateur la nomme", async () => {
     const store = baseStore();
     // COACH_A porte le role proprietaire sans etre designe : etat a reparer.
-    store.seed(memberPaths.member(CLUB_A, COACH_A), { uid: COACH_A, role: "owner" });
+    store.seed(memberPaths.member(CLUB_A, COACH_A), { uid: COACH_A, accessRole: "owner" });
 
     const result = await adminTransferClubOwnership(deps(store), {
       clubId: CLUB_A,
@@ -1111,7 +1261,7 @@ describe("transfert — mode administrateur", () => {
     });
 
     expect(result.demotedUid).toBe(COACH_A);
-    expect(store.read(memberPaths.member(CLUB_A, COACH_A))?.role).toBe(PREVIOUS_OWNER_ROLE);
+    expect(store.read(memberPaths.member(CLUB_A, COACH_A))?.accessRole).toBe(PREVIOUS_OWNER_ROLE);
     expect(exigeUnSeulProprietaire(store, CLUB_A)).toBe(PLAYER_A1);
   });
 
@@ -1123,7 +1273,8 @@ describe("transfert — mode administrateur", () => {
       demoteUid: PLAYER_A2,
     });
     expect(result.demotedUid).toBeNull();
-    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A2))?.role).toBe("player");
+    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A2))?.accessRole).toBeUndefined();
+    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A2))?.playerStatus).toBe("active");
   });
 
   it("garde EXACTEMENT les memes exigences sur la cible que le chemin nominal", async () => {

@@ -256,12 +256,12 @@ function seedEffectif(db: FakeDb): void {
   db.seed(memberPaths.club(CLUB_A), { name: "Club A", ownerUid: COACH_A });
   db.seed(memberPaths.club(CLUB_B), { name: "Club B", ownerUid: COACH_B });
 
-  db.seed(memberPaths.member(CLUB_A, COACH_A), { uid: COACH_A, role: "owner" });
-  db.seed(memberPaths.member(CLUB_A, COACH_A2), { uid: COACH_A2, role: "coach" });
-  db.seed(memberPaths.member(CLUB_A, PLAYER_A1), { uid: PLAYER_A1, role: "player" });
-  db.seed(memberPaths.member(CLUB_A, PLAYER_A2), { uid: PLAYER_A2, role: "player" });
-  db.seed(memberPaths.member(CLUB_A, RETIRE_A), { uid: RETIRE_A, role: "removed" });
-  db.seed(memberPaths.member(CLUB_B, COACH_B), { uid: COACH_B, role: "owner" });
+  db.seed(memberPaths.member(CLUB_A, COACH_A), { uid: COACH_A, accessRole: "owner" });
+  db.seed(memberPaths.member(CLUB_A, COACH_A2), { uid: COACH_A2, accessRole: "coach" });
+  db.seed(memberPaths.member(CLUB_A, PLAYER_A1), { uid: PLAYER_A1, playerStatus: "active" });
+  db.seed(memberPaths.member(CLUB_A, PLAYER_A2), { uid: PLAYER_A2, playerStatus: "active" });
+  db.seed(memberPaths.member(CLUB_A, RETIRE_A), { uid: RETIRE_A, accessRole: null, playerStatus: "inactive" });
+  db.seed(memberPaths.member(CLUB_B, COACH_B), { uid: COACH_B, accessRole: "owner" });
 
   db.seed(memberPaths.playerSummary(CLUB_A, PLAYER_A1), { uid: PLAYER_A1, readiness: 71 });
   db.seed(memberPaths.playerSummary(CLUB_A, PLAYER_A2), { uid: PLAYER_A2, readiness: 64 });
@@ -323,7 +323,7 @@ function chargeUsurpatrice(cible: string): Record<string, unknown> {
     userId: cible,
     auth: { uid: cible, token: { uid: cible } },
     request: { auth: { uid: cible } },
-    role: "owner",
+    accessRole: "owner",
     ownerUid: cible,
     isAdmin: true,
     admin: true,
@@ -596,7 +596,7 @@ describe.each(CHEMINS)("%s", (_chemin, invoke) => {
       // Et surtout : le membre de la charge utile n'a pas ete touche.
       expect(mockDb.read(memberPaths.member(CLUB_A, PLAYER_A1))).toEqual({
         uid: PLAYER_A1,
-        role: "player",
+        playerStatus: "active",
       });
     });
 
@@ -753,7 +753,7 @@ describe.each(CHEMINS)("%s", (_chemin, invoke) => {
       );
       expect(err.code).toBe(TRANSFER_DENIED_CODE);
       expect(mockDb.read(memberPaths.club(CLUB_A))?.ownerUid).toBe(COACH_A);
-      expect(mockDb.read(memberPaths.member(CLUB_A, COACH_A2))?.role).toBe("coach");
+      expect(mockDb.read(memberPaths.member(CLUB_A, COACH_A2))?.accessRole).toBe("coach");
     });
 
     it("6.2 un joueur du club est refuse", async () => {
@@ -773,8 +773,8 @@ describe.each(CHEMINS)("%s", (_chemin, invoke) => {
       expect(res.previousOwnerUid).toBe(COACH_A);
       expect(res.mode).toBe("owner");
       expect(mockDb.read(memberPaths.club(CLUB_A))?.ownerUid).toBe(COACH_A2);
-      expect(mockDb.read(memberPaths.member(CLUB_A, COACH_A2))?.role).toBe("owner");
-      expect(mockDb.read(memberPaths.member(CLUB_A, COACH_A))?.role).toBe("coach");
+      expect(mockDb.read(memberPaths.member(CLUB_A, COACH_A2))?.accessRole).toBe("owner");
+      expect(mockDb.read(memberPaths.member(CLUB_A, COACH_A))?.accessRole).toBe("coach");
     });
   });
 
@@ -790,7 +790,8 @@ describe.each(CHEMINS)("%s", (_chemin, invoke) => {
 
       expect(res.alreadyRemoved).toBe(false);
       expect(res.clearedUserClub).toBe(true);
-      expect(mockDb.read(memberPaths.member(CLUB_A, PLAYER_A1))?.role).toBe("removed");
+      expect(mockDb.read(memberPaths.member(CLUB_A, PLAYER_A1))?.accessRole).toBeNull();
+      expect(mockDb.read(memberPaths.member(CLUB_A, PLAYER_A1))?.playerStatus).toBe("inactive");
       expect(mockDb.read(memberPaths.playerSummary(CLUB_A, PLAYER_A1))).toBeNull();
       expect(mockDb.read(memberPaths.user(PLAYER_A1))?.clubId).toBeNull();
     });
@@ -800,7 +801,8 @@ describe.each(CHEMINS)("%s", (_chemin, invoke) => {
         signedBy(COACH_A2, { clubId: CLUB_A, memberUid: PLAYER_A2 }),
       )) as { alreadyRemoved: boolean };
       expect(res.alreadyRemoved).toBe(false);
-      expect(mockDb.read(memberPaths.member(CLUB_A, PLAYER_A2))?.role).toBe("removed");
+      expect(mockDb.read(memberPaths.member(CLUB_A, PLAYER_A2))?.accessRole).toBeNull();
+      expect(mockDb.read(memberPaths.member(CLUB_A, PLAYER_A2))?.playerStatus).toBe("inactive");
     });
 
     it("7.3 un joueur ne peut retirer personne, meme dans son propre club", async () => {
@@ -826,7 +828,7 @@ describe.each(CHEMINS)("%s", (_chemin, invoke) => {
       const err = await refus(appelRetrait(signedBy(COACH_A2, { clubId: CLUB_A, memberUid: COACH_A })));
       expect(err.code).toBe(OWNER_TRANSFER_CODE);
       expect(err.details).toEqual({ reason: OWNER_TRANSFER_REQUIRED });
-      expect(mockDb.read(memberPaths.member(CLUB_A, COACH_A))?.role).toBe("owner");
+      expect(mockDb.read(memberPaths.member(CLUB_A, COACH_A))?.accessRole).toBe("owner");
     });
 
     it("7.7 retirer quelqu'un qui n'est pas de ce club : refus non-trouve, aucune ecriture", async () => {

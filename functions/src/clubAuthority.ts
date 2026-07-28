@@ -4,84 +4,102 @@
 // horloge) : c'est la SEULE source de verite cote serveur de la question
 // "cette personne a-t-elle autorite sur ce club, et a quel titre ?".
 //
-// ─── L'INVARIANT, MOT POUR MOT ──────────────────────────────────────────────
+// ─── DEUX AXES INDEPENDANTS, ET C'EST TOUT LE SUJET ─────────────────────────
+// Une appartenance `clubs/{clubId}/members/{uid}` porte desormais DEUX champs
+// qui ne parlent PAS de la meme chose :
+//
+//   . `accessRole`   : les PERMISSIONS D'ENCADREMENT ("owner" | "coach").
+//                      Absent = aucune permission d'encadrement.
+//   . `playerStatus` : le STATUT DE JOUEUR ("active" | "inactive"), c'est-a-dire
+//                      "cette personne possede-t-elle un suivi sportif dans ce
+//                      club ?". Absent = elle n'en a jamais eu ici.
+//
+// LES DEUX PEUVENT COEXISTER. Un entraineur-joueur — cas courant en club
+// amateur — porte `accessRole: "coach"` ET `playerStatus: "active"`.
+//
+// ─── POURQUOI UN REMPLACEMENT, ET PAS UN CHAMP DE PLUS ──────────────────────
+// L'ancien modele tenait tout dans UN champ `role` a quatre valeurs
+// (owner / coach / player / removed). C'est cette fusion qui produisait le
+// defaut : "player" occupait la meme case que "coach", donc devenir encadrant
+// EFFACAIT mecaniquement le fait d'etre joueur. Le transfert de propriete
+// ecrivait `role: "owner"` et retirait, sans le vouloir et sans le dire, le
+// suivi sportif du nouveau proprietaire.
+//
+// Ajouter `playerStatus` A COTE de `role` aurait laisse la moitie du piege en
+// place : "player" serait reste une valeur de l'axe encadrement (signifiant en
+// realite "aucune permission"), et le rattachement aurait du ecrire
+// conditionnellement — "ecris role: player SAUF si la personne est deja
+// encadrante" — c'est-a-dire deux champs tenus en accord, donc une divergence
+// garantie a terme. On remplace.
+//
+// COUT DE MIGRATION : NUL, et c'est verifiable plutot que suppose. La base de
+// production a ete videe le 21/07 (clubs et users supprimes par Kyllian, cf.
+// memoire projet « Audit mode coach 21/07 » : « prod nettoyee integralement,
+// plus de backfill ni d'annuaire a creer »). Il n'existe donc aucun document
+// `members` portant l'ancien champ `role`. AUCUN chemin de compatibilite n'est
+// ecrit ici : un repli qui accepterait encore `role` laisserait croire a une
+// migration qui n'a pas lieu, et surtout il rouvrirait la fusion des deux axes
+// pour tout document qui le porterait. Un ancien document, s'il en existait un,
+// serait donc lu comme "aucune permission, aucun suivi" — fail-closed.
+//
+// ─── L'INVARIANT PROPRIETAIRE, MOT POUR MOT (inchange) ──────────────────────
 // "Un proprietaire est autorise uniquement si ownerUid le designe ET s'il
 //  possede encore une appartenance active avec le role proprietaire."
 //
 // Deux sources, jamais une seule :
-//   1. clubs/{clubId}.ownerUid          — la designation ;
-//   2. clubs/{clubId}/members/{uid}.role — l'appartenance.
+//   1. clubs/{clubId}.ownerUid                 — la designation ;
+//   2. clubs/{clubId}/members/{uid}.accessRole — l'appartenance.
 //
 // Quand les deux se contredisent, on NE CHOISIT PAS. On refuse, et on signale
 // l'etat pour reparation. Choisir arbitrairement une source, c'est decider en
 // silence laquelle des deux ment — et se tromper une fois sur deux.
 //
-// ownerUid garde son utilite : c'est une reference rapide (qui EST cense etre le
-// proprietaire), et c'est elle qui rend l'incoherence DETECTABLE. Ce qu'elle ne
-// fait plus, c'est accorder un droit toute seule.
-//
-// ─── POURQUOI UN ROLE "owner" A DU NAITRE AVEC CE PREDICAT ──────────────────
-// Avant ce lot, `members/{uid}.role` ne connaissait que "coach" et "player", et
-// le createur du club s'ecrivait lui-meme en "coach". Sous l'invariant, TOUS les
-// clubs existants auraient ete incoherents des la premiere lecture : ownerUid
-// designant quelqu'un qui n'a pas d'appartenance proprietaire. Le role et le
-// predicat arrivent donc dans le meme mouvement, et le chemin de creation de
-// club ecrit desormais "owner" (repositories/clubsRepo.createClubAsCoach).
-// Cout en production : NUL — la base a ete videe le 21/07, il n'existe aucun
-// club a migrer.
-//
 // ─── UN PROPRIETAIRE EST DE FAIT ENCADRANT ──────────────────────────────────
-// `CLUB_STAFF_ROLES` contient "owner" ET "coach". Sans ca, poser le role
+// `CLUB_ACCESS_ROLES` contient "owner" ET "coach". Sans ca, poser le role
 // proprietaire aurait retire au proprietaire l'ecriture du cadre de semaine et
 // de la directive : un trou ouvert en en fermant un autre. Les regles Firestore
 // appliquent la meme liste (fonction `isClubStaff`).
 //
+// ─── LA PIERRE TOMBALE, DANS UN MODELE A DEUX AXES ──────────────────────────
+// Retirer quelqu'un doit fermer LES DEUX : plus d'encadrement ET plus de suivi
+// projete. Le retrait (clubMembers.ts) ecrit donc `accessRole: null` ET
+// `playerStatus: "inactive"`, plus `removedAt` / `removedBy`. Il n'existe plus
+// de valeur "removed" : l'etat retire, c'est l'absence des deux, ce qui rend
+// impossible d'oublier d'en fermer un. Ce qui distingue "retire" de "jamais
+// venu" reste `removedAt`, et rien d'autre.
+//
 // ─── DUPLICATION ASSUMEE AVEC firestore.rules ───────────────────────────────
 // Les regles Firestore ne peuvent pas importer de TypeScript. Le predicat existe
 // donc DEUX fois : ici, et dans firestore.rules (`isClubOwner`, `isClubStaff`,
-// `isActiveMember`). Il n'existe AUCUN verrou automatique d'egalite entre les
-// deux ecritures — exactement la meme situation, et le meme remede, que pour
-// COACH_ACCESS_GRANTING_STATES (cf. coachAccess.ts) : deux suites de tests
-// exercent les MEMES cas des deux cotes
+// `isActiveMember`, `isPlayerMember`). Il n'existe AUCUN verrou automatique
+// d'egalite entre les deux ecritures — exactement la meme situation, et le meme
+// remede, que pour COACH_ACCESS_GRANTING_STATES (cf. coachAccess.ts) : deux
+// suites de tests exercent les MEMES cas des deux cotes
 //   - functions/tests/clubAuthority.test.ts  (ce module) ;
 //   - firestore-tests/rules.clubAuthority.test.ts (les vraies regles).
 // Modifier l'un sans l'autre laisse la base plus stricte que le serveur, donc
 // fail-closed, donc sans danger — mais silencieux. Toucher les deux, toujours.
 
-/** Roles reconnus sur clubs/{clubId}/members/{uid}. */
-export const CLUB_ROLE_OWNER = "owner";
-export const CLUB_ROLE_COACH = "coach";
-export const CLUB_ROLE_PLAYER = "player";
-/**
- * Pierre tombale posee par le retrait serveur (clubMembers.ts). Ce n'est PAS un
- * role d'appartenance : c'est la trace qu'il y en a eu une. Elle n'ouvre rien,
- * nulle part, et c'est ce qui fait que le refus vient de l'ETAT et non d'une
- * course entre le retrait et un trigger de reprojection.
- */
-export const CLUB_ROLE_REMOVED = "removed";
+/** Noms des deux champs, ecrits UNE SEULE FOIS (les fautes de frappe ouvrent des trous). */
+export const ACCESS_ROLE_FIELD = "accessRole";
+export const PLAYER_STATUS_FIELD = "playerStatus";
 
-export const CLUB_ROLES = [
-  CLUB_ROLE_OWNER,
-  CLUB_ROLE_COACH,
-  CLUB_ROLE_PLAYER,
-  CLUB_ROLE_REMOVED,
-] as const;
+/** Permissions d'encadrement reconnues. */
+export const CLUB_ACCESS_ROLE_OWNER = "owner";
+export const CLUB_ACCESS_ROLE_COACH = "coach";
 
-export type ClubRole = (typeof CLUB_ROLES)[number];
+export const CLUB_ACCESS_ROLES = [CLUB_ACCESS_ROLE_OWNER, CLUB_ACCESS_ROLE_COACH] as const;
 
-/** Les roles d'ENCADREMENT. Recopie dans firestore.rules (`isClubStaff`). */
-export const CLUB_STAFF_ROLES: readonly ClubRole[] = [CLUB_ROLE_OWNER, CLUB_ROLE_COACH];
+/** `null` (champ absent) est un etat legitime : "aucune permission d'encadrement". */
+export type ClubAccessRole = (typeof CLUB_ACCESS_ROLES)[number];
 
-/**
- * Les roles d'appartenance ACTIVE. Recopie dans firestore.rules
- * (`isActiveMember`). "removed" en est volontairement absent : un membre retire
- * ne doit plus lire le cadre de semaine, la directive, ni meme le club.
- */
-export const CLUB_ACTIVE_ROLES: readonly ClubRole[] = [
-  CLUB_ROLE_OWNER,
-  CLUB_ROLE_COACH,
-  CLUB_ROLE_PLAYER,
-];
+/** Statut de joueur reconnu. `null` (champ absent) = aucun suivi dans ce club. */
+export const PLAYER_STATUS_ACTIVE = "active";
+export const PLAYER_STATUS_INACTIVE = "inactive";
+
+export const CLUB_PLAYER_STATUSES = [PLAYER_STATUS_ACTIVE, PLAYER_STATUS_INACTIVE] as const;
+
+export type ClubPlayerStatus = (typeof CLUB_PLAYER_STATUSES)[number];
 
 export type ClubDocLike = Record<string, unknown> | null | undefined;
 export type MembershipLike = Record<string, unknown> | null | undefined;
@@ -93,11 +111,20 @@ function str(value: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
-/** Role reconnu, ou `null` (valeur absente, mal typee, ou inconnue). */
-export function normalizeClubRole(value: unknown): ClubRole | null {
+/** Permission d'encadrement reconnue, ou `null` (absente, mal typee, inconnue). */
+export function normalizeAccessRole(value: unknown): ClubAccessRole | null {
   const raw = str(value);
   if (raw === null) return null;
-  return (CLUB_ROLES as readonly string[]).includes(raw) ? (raw as ClubRole) : null;
+  return (CLUB_ACCESS_ROLES as readonly string[]).includes(raw) ? (raw as ClubAccessRole) : null;
+}
+
+/** Statut de joueur reconnu, ou `null` (absent, mal type, inconnu). */
+export function normalizePlayerStatus(value: unknown): ClubPlayerStatus | null {
+  const raw = str(value);
+  if (raw === null) return null;
+  return (CLUB_PLAYER_STATUSES as readonly string[]).includes(raw)
+    ? (raw as ClubPlayerStatus)
+    : null;
 }
 
 /** clubs/{clubId}.ownerUid, ou `null` s'il est absent / illisible. */
@@ -116,15 +143,9 @@ export function isDesignatedOwner(club: ClubDocLike, uid: unknown): boolean {
   return owner !== null && candidate !== null && owner === candidate;
 }
 
-/** L'appartenance porte-t-elle le role proprietaire ? */
+/** L'appartenance porte-t-elle la permission proprietaire ? */
 export function hasOwnerMembership(membership: MembershipLike): boolean {
-  return normalizeClubRole(membership?.role) === CLUB_ROLE_OWNER;
-}
-
-/** Appartenance ACTIVE (owner / coach / player). Une pierre tombale ne l'est pas. */
-export function isActiveMembership(membership: MembershipLike): boolean {
-  const role = normalizeClubRole(membership?.role);
-  return role !== null && CLUB_ACTIVE_ROLES.includes(role);
+  return normalizeAccessRole(membership?.[ACCESS_ROLE_FIELD]) === CLUB_ACCESS_ROLE_OWNER;
 }
 
 /**
@@ -132,12 +153,36 @@ export function isActiveMembership(membership: MembershipLike): boolean {
  * la lecture de l'effectif, la lecture des projections, l'ecriture du cadre de
  * semaine, de la note privee et de la directive.
  *
- * Il ne lit QUE le membership : il ne depend pas de `ownerUid`, donc il ne peut
- * pas etre victime d'une incoherence entre les deux sources.
+ * Il ne lit QUE `accessRole` : il ne depend ni de `ownerUid`, ni du statut de
+ * joueur. Un entraineur-joueur est donc encadrant a part entiere, et le rester
+ * ne doit rien a son suivi sportif.
  */
 export function isClubStaff(membership: MembershipLike): boolean {
-  const role = normalizeClubRole(membership?.role);
-  return role !== null && CLUB_STAFF_ROLES.includes(role);
+  return normalizeAccessRole(membership?.[ACCESS_ROLE_FIELD]) !== null;
+}
+
+/**
+ * L'appartenance porte-t-elle un SUIVI SPORTIF actif ?
+ *
+ * C'est le SEUL predicat qui decide qu'une fiche de suivi doit exister
+ * (projector.ts) et qu'elle est lisible (firestore.rules, `isPlayerMember`).
+ * Il ne regarde PAS `accessRole` : c'est exactement ce qui fait apparaitre un
+ * entraineur-joueur dans l'effectif suivi, comme n'importe quel joueur — et
+ * sous les memes conditions, `coachAccess` compris.
+ */
+export function isActivePlayer(membership: MembershipLike): boolean {
+  return normalizePlayerStatus(membership?.[PLAYER_STATUS_FIELD]) === PLAYER_STATUS_ACTIVE;
+}
+
+/**
+ * Appartenance ACTIVE au club : encadrement OU suivi sportif actif. Recopie
+ * dans firestore.rules (`isActiveMember`).
+ *
+ * Une pierre tombale n'en est pas une : elle n'a ni l'un ni l'autre. Un membre
+ * retire ne doit plus lire le club, ni le cadre de semaine, ni la directive.
+ */
+export function isActiveMembership(membership: MembershipLike): boolean {
+  return isClubStaff(membership) || isActivePlayer(membership);
 }
 
 /**
@@ -145,12 +190,12 @@ export function isClubStaff(membership: MembershipLike): boolean {
  * anomalies qu'il faut nommer plutot que d'ecraser en un simple `false` :
  *
  *  - "authorized"      : les deux sources concordent. Seul cas autorisant.
- *  - "not-owner"       : ni designe, ni porteur du role. Cas nominal d'un coach
- *                        ordinaire ou d'un joueur — ce n'est PAS une anomalie.
+ *  - "not-owner"       : ni designe, ni porteur de la permission. Cas nominal
+ *                        d'un coach ordinaire ou d'un joueur — PAS une anomalie.
  *  - "designation-without-membership" : ownerUid le designe, mais il n'a pas (ou
- *                        plus) l'appartenance proprietaire. INCOHERENT.
- *  - "membership-without-designation" : il porte le role proprietaire, mais
- *                        ownerUid designe quelqu'un d'autre (ou personne).
+ *                        plus) la permission proprietaire. INCOHERENT.
+ *  - "membership-without-designation" : il porte la permission proprietaire,
+ *                        mais ownerUid designe quelqu'un d'autre (ou personne).
  *                        INCOHERENT.
  */
 export type OwnerAuthority =

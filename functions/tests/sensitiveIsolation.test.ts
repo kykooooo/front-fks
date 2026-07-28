@@ -29,7 +29,7 @@ const NOW = new Date("2026-06-30T12:00:00.000Z");
 const PROFILE = {
   uid: "playerA1",
   clubId: "clubA",
-  role: "player",
+  playerStatus: "active",
   firstName: "Anna",
   position: "Milieu",
   level: "Regional",
@@ -221,7 +221,7 @@ const input = (sensible: boolean): ProjectorInput => ({
   clubId: "clubA",
   // Acces autorise : cette sonde teste ce qui SORT d'une projection produite.
   // Le verrou d'autorisation lui-meme est couvert par coachAccess.test.ts.
-  membership: { uid: "playerA1", role: "player", coachAccess: "approved" },
+  membership: { uid: "playerA1", playerStatus: "active", coachAccess: "approved" },
   profile: sensible
     ? { ...PROFILE, pains: [{ zone: "SENTINEL_ZONE_PROFIL", level: 4 }], injuryNote: "SENTINEL_NOTE_PROFIL" }
     : { ...PROFILE },

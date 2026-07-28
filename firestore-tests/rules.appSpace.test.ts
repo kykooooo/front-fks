@@ -72,7 +72,7 @@ beforeEach(async () => {
     // espace coach au lieu de le laisser sur un écran vide.
     await setDoc(doc(ctx.firestore(), "clubs", CLUB_A, "members", RETIRE_A), {
       uid: RETIRE_A,
-      role: "removed",
+      accessRole: null, playerStatus: "inactive",
     });
   });
 });
@@ -80,28 +80,49 @@ beforeEach(async () => {
 // ── A. Chacun lit sa propre appartenance ───────────────────────────────────
 
 describe("A. la dérivation ne demande AUCUN droit nouveau", () => {
+  // LES DEUX AXES sont relus depuis le MÊME document : `accessRole` (permissions
+  // d'encadrement) décide de l'espace coach, `playerStatus` (statut de joueur)
+  // décide de l'espace joueur. C'est ce qui permet aux deux de coexister.
   test.each([
-    ["propriétaire", COACH_A, "owner"],
-    ["joueur", PLAYER_A1, "player"],
-    ["membre retiré (pierre tombale)", RETIRE_A, "removed"],
-  ])("%s lit sa propre appartenance, et y trouve son rôle", async (_nom, uid, role) => {
+    ["propriétaire", COACH_A, "owner", null],
+    ["joueur", PLAYER_A1, null, "active"],
+    ["membre retiré (pierre tombale)", RETIRE_A, null, "inactive"],
+  ])(
+    "%s lit sa propre appartenance, et y trouve ses deux axes",
+    async (_nom, uid, accessRole, playerStatus) => {
+      const snap = await assertSucceeds(getDoc(doc(asUser(uid), "clubs", CLUB_A, "members", uid)));
+      expect(snap.data()?.accessRole ?? null).toBe(accessRole);
+      expect(snap.data()?.playerStatus ?? null).toBe(playerStatus);
+    },
+  );
+
+  test("un ENTRAÎNEUR-JOUEUR lit les DEUX axes à la fois, dans un seul document", async () => {
+    await admin(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "clubs", CLUB_A, "members", "entraineurJoueur"), {
+        uid: "entraineurJoueur",
+        accessRole: "coach",
+        playerStatus: "active",
+        coachAccess: "approved",
+      });
+    });
     const snap = await assertSucceeds(
-      getDoc(doc(asUser(uid), "clubs", CLUB_A, "members", uid)),
+      getDoc(doc(asUser("entraineurJoueur"), "clubs", CLUB_A, "members", "entraineurJoueur")),
     );
-    expect(snap.data()?.role).toBe(role);
+    expect(snap.data()?.accessRole).toBe("coach");
+    expect(snap.data()?.playerStatus).toBe("active");
   });
 
   test("un coach ordinaire lit la sienne aussi (c'est l'ancien propriétaire après transfert)", async () => {
     await admin(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "clubs", CLUB_A, "members", "ancienProprio"), {
         uid: "ancienProprio",
-        role: "coach",
+        accessRole: "coach",
       });
     });
     const snap = await assertSucceeds(
       getDoc(doc(asUser("ancienProprio"), "clubs", CLUB_A, "members", "ancienProprio")),
     );
-    expect(snap.data()?.role).toBe("coach");
+    expect(snap.data()?.accessRole).toBe("coach");
   });
 
   test("un compte sans appartenance lit un document ABSENT, pas un refus", async () => {
@@ -125,7 +146,7 @@ describe("B. l'appartenance est une autorité : aucun client ne l'accorde", () =
     await assertFails(
       setDoc(
         doc(asUser(PLAYER_A1), "clubs", CLUB_A, "members", PLAYER_A1),
-        { uid: PLAYER_A1, role: "coach" },
+        { uid: PLAYER_A1, accessRole: "coach" },
         { merge: true },
       ),
     );
@@ -135,7 +156,7 @@ describe("B. l'appartenance est une autorité : aucun client ne l'accorde", () =
     await assertFails(
       setDoc(
         doc(asUser(PLAYER_A1), "clubs", CLUB_A, "members", PLAYER_A1),
-        { uid: PLAYER_A1, role: "owner" },
+        { uid: PLAYER_A1, accessRole: "owner" },
         { merge: true },
       ),
     );
@@ -145,7 +166,7 @@ describe("B. l'appartenance est une autorité : aucun client ne l'accorde", () =
     await assertFails(
       setDoc(
         doc(asUser(PLAYER_A1), "clubs", CLUB_A, "members", PLAYER_A2),
-        { uid: PLAYER_A2, role: "coach" },
+        { uid: PLAYER_A2, accessRole: "coach" },
         { merge: true },
       ),
     );
@@ -155,7 +176,7 @@ describe("B. l'appartenance est une autorité : aucun client ne l'accorde", () =
     await assertFails(
       setDoc(
         doc(asUser(RETIRE_A), "clubs", CLUB_A, "members", RETIRE_A),
-        { uid: RETIRE_A, role: "coach" },
+        { uid: RETIRE_A, accessRole: "coach" },
         { merge: true },
       ),
     );
@@ -165,7 +186,7 @@ describe("B. l'appartenance est une autorité : aucun client ne l'accorde", () =
     await assertFails(
       setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), {
         uid: STRANGER,
-        role: "owner",
+        accessRole: "owner",
       }),
     );
   });
@@ -195,6 +216,46 @@ describe("C. `users/{uid}.role` est écrivable par son titulaire — donc il ne 
     const membership = await assertSucceeds(
       getDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A1)),
     );
-    expect(membership.data()?.role).toBe("player");
+    // Son appartenance ne porte AUCUNE permission d'encadrement, et c'est elle
+    // que la base et l'application lisent.
+    expect(membership.data()?.accessRole ?? null).toBeNull();
+    expect(membership.data()?.playerStatus).toBe("active");
+  });
+});
+
+// ── D. Le statut de joueur est SERVEUR, comme coachAccess ──────────────────
+// Sans ce verrou, n'importe qui s'inscrirait tout seul dans l'effectif suivi
+// d'un club — c'est-à-dire contournerait le code d'invitation, son expiration,
+// sa révocation, son quota d'usages ET la limitation de tentatives.
+
+describe("D. `playerStatus` n'est écrivable par AUCUN client", () => {
+  test("un joueur ne peut pas se poser lui-même un statut de joueur", async () => {
+    await assertFails(
+      setDoc(
+        doc(asUser(PLAYER_A1), "clubs", CLUB_A, "members", PLAYER_A1),
+        { playerStatus: "active" },
+        { merge: true },
+      ),
+    );
+  });
+
+  test("le PROPRIÉTAIRE non plus, pas même sur son propre document d'amorçage", async () => {
+    await assertFails(
+      setDoc(
+        doc(asUser(COACH_A), "clubs", CLUB_A, "members", COACH_A),
+        { uid: COACH_A, accessRole: "owner", playerStatus: "active" },
+        { merge: true },
+      ),
+    );
+  });
+
+  test("un membre retiré ne peut pas se redonner un statut actif", async () => {
+    await assertFails(
+      setDoc(
+        doc(asUser(RETIRE_A), "clubs", CLUB_A, "members", RETIRE_A),
+        { playerStatus: "active" },
+        { merge: true },
+      ),
+    );
   });
 });

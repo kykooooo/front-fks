@@ -73,7 +73,7 @@ describe("isCoachAccessGranted — default-deny", () => {
   });
 
   it("un membership ANCIEN (sans le champ) n'ouvre rien", () => {
-    expect(isMembershipCoachAccessGranted({ uid: "p1", role: "player" })).toBe(false);
+    expect(isMembershipCoachAccessGranted({ uid: "p1", playerStatus: "active" })).toBe(false);
     expect(isMembershipCoachAccessGranted(null)).toBe(false);
     expect(isMembershipCoachAccessGranted({ [COACH_ACCESS_FIELD]: "approved" })).toBe(true);
   });
@@ -129,11 +129,11 @@ describe("initialCoachAccess — plus AUCUN verrou d'age", () => {
 const baseInput = (over: Partial<ProjectorInput> = {}): ProjectorInput => ({
   playerUid: "playerA1",
   clubId: "clubA",
-  membership: { uid: "playerA1", role: "player", coachAccess: "approved" },
+  membership: { uid: "playerA1", playerStatus: "active", coachAccess: "approved" },
   profile: {
     uid: "playerA1",
     clubId: "clubA",
-    role: "player",
+    playerStatus: "active",
     firstName: "Anna",
     ageCategory: "U15",
     profileCompleted: true,
@@ -156,7 +156,7 @@ describe("projectPlayerSummary — verrou d'autorisation (couche 2)", () => {
     expect(projectPlayerSummary(baseInput())).not.toBeNull();
     expect(
       projectPlayerSummary(
-        baseInput({ membership: { uid: "playerA1", role: "player", coachAccess: "not_required" } }),
+        baseInput({ membership: { uid: "playerA1", playerStatus: "active", coachAccess: "not_required" } }),
       ),
     ).not.toBeNull();
   });
@@ -164,7 +164,7 @@ describe("projectPlayerSummary — verrou d'autorisation (couche 2)", () => {
   it("pending / revoked / champ absent / valeur inconnue -> AUCUNE projection", () => {
     const refus = ["pending", "revoked", "APPROVED", "", undefined];
     for (const coachAccess of refus) {
-      const membership: Record<string, unknown> = { uid: "playerA1", role: "player" };
+      const membership: Record<string, unknown> = { uid: "playerA1", playerStatus: "active" };
       if (coachAccess !== undefined) membership.coachAccess = coachAccess;
       expect(projectPlayerSummary(baseInput({ membership }))).toBeNull();
     }
@@ -176,7 +176,7 @@ describe("projectPlayerSummary — verrou d'autorisation (couche 2)", () => {
     // projection existante : un passage en "revoked" retire la donnee deja
     // projetee, il ne la laisse pas trainer.
     const out = projectPlayerSummary(
-      baseInput({ membership: { uid: "playerA1", role: "player", coachAccess: "revoked" } }),
+      baseInput({ membership: { uid: "playerA1", playerStatus: "active", coachAccess: "revoked" } }),
     );
     expect(out).toBeNull();
   });
@@ -258,7 +258,7 @@ describe("ensureCoachAccessState — reparation, jamais reevaluation", () => {
   });
 
   it("membership ANCIEN sans le champ, club en mode par defaut -> not_required", async () => {
-    const state = mk({ members: { "clubA/p1": { role: "player", coachAccess: undefined } } });
+    const state = mk({ members: { "clubA/p1": { playerStatus: "active", coachAccess: undefined } } });
     const res = await ensureCoachAccessState(fakeStore(state), "clubA", "p1");
     expect(res).toEqual({ action: "updated", from: undefined, to: "not_required" });
     expect(state.writes).toEqual([{ clubId: "clubA", playerUid: "p1", state: "not_required" }]);
@@ -266,7 +266,7 @@ describe("ensureCoachAccessState — reparation, jamais reevaluation", () => {
 
   it("membership ANCIEN sans le champ, club en approval_required -> pending", async () => {
     const state = mk({
-      members: { "clubA/p1": { role: "player", coachAccess: undefined } },
+      members: { "clubA/p1": { playerStatus: "active", coachAccess: undefined } },
       policies: { clubA: "approval_required" },
     });
     const res = await ensureCoachAccessState(fakeStore(state), "clubA", "p1");
@@ -274,14 +274,14 @@ describe("ensureCoachAccessState — reparation, jamais reevaluation", () => {
   });
 
   it("valeur ILLISIBLE -> reparee, jamais laissee telle quelle", async () => {
-    const state = mk({ members: { "clubA/p1": { role: "player", coachAccess: "APPROVED" } } });
+    const state = mk({ members: { "clubA/p1": { playerStatus: "active", coachAccess: "APPROVED" } } });
     const res = await ensureCoachAccessState(fakeStore(state), "clubA", "p1");
     expect(res).toEqual({ action: "updated", from: "APPROVED", to: "not_required" });
   });
 
   it("un approved n'est JAMAIS retouche (aucune ecriture, donc aucun re-declenchement)", async () => {
     const state = mk({
-      members: { "clubA/p1": { role: "player", coachAccess: "approved" } },
+      members: { "clubA/p1": { playerStatus: "active", coachAccess: "approved" } },
       policies: { clubA: "approval_required" },
     });
     const res = await ensureCoachAccessState(fakeStore(state), "clubA", "p1");
@@ -291,7 +291,7 @@ describe("ensureCoachAccessState — reparation, jamais reevaluation", () => {
 
   it("un revoked n'est JAMAIS reveille, meme en mode par defaut", async () => {
     const state = mk({
-      members: { "clubA/p1": { role: "player", coachAccess: "revoked" } },
+      members: { "clubA/p1": { playerStatus: "active", coachAccess: "revoked" } },
       policies: { clubA: "automatic_safe_projection" },
     });
     const res = await ensureCoachAccessState(fakeStore(state), "clubA", "p1");
@@ -301,7 +301,7 @@ describe("ensureCoachAccessState — reparation, jamais reevaluation", () => {
 
   it("un not_required n'est PAS resserre quand le club passe en approval_required", async () => {
     const state = mk({
-      members: { "clubA/p1": { role: "player", coachAccess: "not_required" } },
+      members: { "clubA/p1": { playerStatus: "active", coachAccess: "not_required" } },
       policies: { clubA: "approval_required" },
     });
     const res = await ensureCoachAccessState(fakeStore(state), "clubA", "p1");
@@ -310,7 +310,7 @@ describe("ensureCoachAccessState — reparation, jamais reevaluation", () => {
   });
 
   it("etat deja pose -> la politique du club n'est meme PAS lue (cout nul)", async () => {
-    const state = mk({ members: { "clubA/p1": { role: "player", coachAccess: "pending" } } });
+    const state = mk({ members: { "clubA/p1": { playerStatus: "active", coachAccess: "pending" } } });
     await ensureCoachAccessState(fakeStore(state), "clubA", "p1");
     expect(state.policyReads).toHaveLength(0);
   });
@@ -324,7 +324,7 @@ describe("ensureCoachAccessState — reparation, jamais reevaluation", () => {
   });
 
   it("un coach n'a pas d'etat d'acces a son propre suivi -> ignore", async () => {
-    const state = mk({ members: { "clubA/c1": { role: "coach", coachAccess: undefined } } });
+    const state = mk({ members: { "clubA/c1": { playerStatus: null, coachAccess: undefined } } });
     const res = await ensureCoachAccessState(fakeStore(state), "clubA", "c1");
     expect(res).toEqual({ action: "not-player" });
     expect(state.writes).toHaveLength(0);
@@ -336,8 +336,8 @@ describe("ensureCoachAccessState — reparation, jamais reevaluation", () => {
     // resultat, la signature du port le prouve par la compilation.
     const state = mk({
       members: {
-        "clubA/mineur": { role: "player", coachAccess: undefined },
-        "clubA/adulte": { role: "player", coachAccess: undefined },
+        "clubA/mineur": { playerStatus: "active", coachAccess: undefined },
+        "clubA/adulte": { playerStatus: "active", coachAccess: undefined },
       },
     });
     const store = fakeStore(state);

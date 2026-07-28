@@ -55,6 +55,8 @@
 
 import { createHash, randomBytes as cryptoRandomBytes } from "crypto";
 import {
+  PLAYER_STATUS_ACTIVE,
+  PLAYER_STATUS_FIELD,
   clubAuthoritySignal,
   isClubStaff,
   resolveOwnerAuthority,
@@ -855,11 +857,23 @@ export async function joinClubWithCode(
         tx.set(invitePaths.code(hash), { uses: record.uses + 1 }, { merge: true });
       }
 
+      // LE RATTACHEMENT POSE LE STATUT DE JOUEUR, ET RIEN D'AUTRE.
+      //
+      // `accessRole` n'est PAS nomme dans cette ecriture, donc un `merge` ne peut
+      // pas le changer. Consequence VOULUE et utile : un encadrant qui saisit le
+      // code de son propre club devient entraineur-joueur — il gagne un suivi
+      // sportif sans rien perdre de ses permissions. C'est aujourd'hui le seul
+      // chemin par lequel un fondateur peut entrer dans son propre effectif, et
+      // il passe par un geste explicite de sa part.
+      //
+      // A l'inverse, ecrire ici une permission d'encadrement (meme "aucune")
+      // aurait rouvert exactement le defaut que le modele a deux axes ferme :
+      // un geste qui parle de suivi ne doit pas decider d'un droit.
       tx.set(
         invitePaths.member(record.clubId, uid),
         {
           uid,
-          role: "player",
+          [PLAYER_STATUS_FIELD]: PLAYER_STATUS_ACTIVE,
           joinedAt: now,
           updatedAt: now,
           // ECRIT UNIQUEMENT ICI, cote serveur. Les regles Firestore interdisent

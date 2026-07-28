@@ -13,11 +13,11 @@ const baseInput = (over: Partial<ProjectorInput> = {}): ProjectorInput => ({
   // Sans lui, le projecteur ne produit RIEN (default-deny, cf. coachAccess.test.ts).
   // Il est pose ici pour que ces tests portent sur ce qu'ils testent : le contenu
   // de la projection, une fois l'acces autorise.
-  membership: { uid: "playerA1", role: "player", coachAccess: "approved" },
+  membership: { uid: "playerA1", playerStatus: "active", coachAccess: "approved" },
   profile: {
     uid: "playerA1",
     clubId: "clubA",
-    role: "player",
+    playerStatus: "active",
     firstName: "Anna",
     position: "Milieu", // valeur réelle front (ProfileSetupScreen.tsx:50)
     level: "Regional", // valeur réelle front (ProfileSetupScreen.tsx:51)
@@ -140,7 +140,7 @@ describe("projectPlayerSummary — robustesse valeurs + bornes", () => {
         profile: {
           uid: "playerA1",
           clubId: "clubA",
-          role: "player",
+          playerStatus: "active",
           firstName: 123,
           position: {},
           level: [],
@@ -318,7 +318,7 @@ describe("projectPlayerSummary — anti-fuite (adversarial)", () => {
 
 describe("projectPlayerSummary — membership / profil (P0.3)", () => {
   it("membership non-player → null", () => {
-    expect(projectPlayerSummary(baseInput({ membership: { uid: "playerA1", role: "coach" } }))).toBeNull();
+    expect(projectPlayerSummary(baseInput({ membership: { uid: "playerA1", accessRole: "coach" } }))).toBeNull();
   });
 
   it("membership absent → null", () => {
@@ -341,14 +341,56 @@ describe("projectPlayerSummary — membership / profil (P0.3)", () => {
     ).toBeNull();
   });
 
-  it("profil marqué coach → null", () => {
-    expect(projectPlayerSummary(baseInput({ profile: { ...baseInput().profile, role: "coach" } }))).toBeNull();
+  it("`users/{uid}.role` n'est PLUS regardé — et c'est ce qui rend l'entraîneur-joueur possible", () => {
+    // L'ancienne version refusait de projeter dès que le profil portait
+    // `role: "coach"`. Deux raisons de l'avoir retirée :
+    //  1. ce champ est écrit par son titulaire (les règles autorisent chacun à
+    //     écrire tout son document `users/{uid}`) : il ne protégeait rien ;
+    //  2. il EXCLUAIT un entraîneur-joueur dont le profil porte encore ce
+    //     résidu, sans qu'aucun écran ne puisse l'expliquer.
+    // Ce qui décide reste ce que le serveur contrôle seul : `playerStatus`.
+    expect(
+      projectPlayerSummary(baseInput({ profile: { ...baseInput().profile, role: "coach" } })),
+    ).not.toBeNull();
   });
 
   it("membership player + profil cohérent → projection créée", () => {
     const out = projectPlayerSummary(baseInput({ sessions: [completedRaw()] }));
     expect(out).not.toBeNull();
     expect(out!.latestSession!.status).toBe("done");
+  });
+
+  it("un ENTRAÎNEUR-JOUEUR est projeté comme n'importe quel joueur", () => {
+    // Le but du modèle à deux axes : `accessRole` ne ferme pas le suivi.
+    const out = projectPlayerSummary(
+      baseInput({
+        membership: { ...baseInput().membership, accessRole: "coach" },
+        sessions: [completedRaw()],
+      }),
+    );
+    expect(out).not.toBeNull();
+    expect(out!.playerUid).toBe("playerA1");
+  });
+
+  it("... mais RIEN d'autre ne s'ouvre : coachAccess reste souverain", () => {
+    // La contre-épreuve du test précédent. Le suivi d'un entraîneur-joueur est
+    // soumis EXACTEMENT au même verrou d'autorisation que celui de tout le
+    // monde — devenir encadrant n'accorde rien sur ses propres données.
+    expect(
+      projectPlayerSummary(
+        baseInput({
+          membership: { ...baseInput().membership, accessRole: "coach", coachAccess: "revoked" },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("un encadrant SANS suivi actif n'est pas projeté", () => {
+    expect(
+      projectPlayerSummary(
+        baseInput({ membership: { uid: "playerA1", accessRole: "coach", coachAccess: "approved" } }),
+      ),
+    ).toBeNull();
   });
 });
 

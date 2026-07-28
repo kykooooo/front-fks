@@ -96,11 +96,11 @@ const mkSummary = (uid: string) => ({ ...SUMMARY, playerUid: uid });
 async function seedPlayerWithAccess(uid: string, coachAccess: string): Promise<void> {
   await admin(async (ctx) => {
     const db = ctx.firestore();
-    await setDoc(doc(db, "clubs", CLUB_A, "members", uid), { uid, role: "player", coachAccess });
+    await setDoc(doc(db, "clubs", CLUB_A, "members", uid), { uid, playerStatus: "active", coachAccess });
     await setDoc(doc(db, "users", uid), {
       uid,
       clubId: CLUB_A,
-      role: "player",
+      playerStatus: "active",
       firstName: "Test",
       ageCategory: "U15",
       profileCompleted: true,
@@ -118,11 +118,11 @@ beforeEach(async () => {
   // refus portent tous sur de la donnée RÉELLE.
   await admin(async (ctx) => {
     const db = ctx.firestore();
-    await setDoc(doc(db, "clubs", CLUB_A, "members", COACH_A2), { uid: COACH_A2, role: "coach" });
+    await setDoc(doc(db, "clubs", CLUB_A, "members", COACH_A2), { uid: COACH_A2, accessRole: "coach" });
     await setDoc(doc(db, "users", COACH_A2), {
       uid: COACH_A2,
       clubId: CLUB_A,
-      role: "coach",
+      accessRole: "coach",
       firstName: "CoachBis",
       profileCompleted: true,
     });
@@ -178,7 +178,7 @@ describe("Scénario 2 — utilisateur sans rôle Coach", () => {
     // La seule façon d'être coach est d'être l'owner du club (règle members).
     const db = asUser(PLAYER_A1);
     await assertFails(
-      setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A1), { uid: PLAYER_A1, role: "coach" }),
+      setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A1), { uid: PLAYER_A1, accessRole: "coach" }),
     );
     // Et mentir dans son PROPRE profil (users/{uid}.role = "coach") — écriture
     // autorisée puisque c'est son document — n'ouvre aucune porte : les règles
@@ -218,14 +218,14 @@ describe("Scénario 3 — ancien coach retiré du club", () => {
 
   test("la PIERRE TOMBALE du retrait ferme autant qu'une suppression", async () => {
     // Le retrait serveur ne supprime pas le document : il le désactive
-    // (`role: "removed"`), pour que le refus vienne de l'ÉTAT et non de l'ordre
+    // (`accessRole: null, playerStatus: "inactive"`), pour que le refus vienne de l'ÉTAT et non de l'ordre
     // d'arrivée des événements. Ce test vérifie que « désactivé » vaut bien
     // « parti » du point de vue des règles — sinon la pierre tombale serait un
     // trou déguisé en trace d'audit.
     await admin(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "clubs", CLUB_A, "members", COACH_A2), {
         uid: COACH_A2,
-        role: "removed",
+        accessRole: null, playerStatus: "inactive",
         coachAccess: "revoked",
         removedAt: 1_753_600_000_000,
         removedBy: COACH_A,
@@ -318,7 +318,7 @@ describe("Scénario 5 — mineur en attente", () => {
     const member = await assertSucceeds(
       getDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_PENDING)),
     );
-    expect((member as any).data()?.role).toBe("player");
+    expect((member as any).data()?.playerStatus).toBe("active");
     // …mais aucune donnée de suivi ne sort, alors que la projection est en base.
     await assertFails(getDoc(doc(db, "clubs", CLUB_A, "playerSummaries", PLAYER_PENDING)));
   });
@@ -330,7 +330,7 @@ describe("Scénario 5 — mineur en attente", () => {
       const db = ctx.firestore();
       await setDoc(doc(db, "clubs", CLUB_A, "members", "playerAncien"), {
         uid: "playerAncien",
-        role: "player",
+        playerStatus: "active",
       });
       await setDoc(
         doc(db, "clubs", CLUB_A, "playerSummaries", "playerAncien"),
@@ -365,7 +365,7 @@ describe("Scénario 6 — identifiant de club deviné", () => {
 
     // Et il ne peut pas non plus se fabriquer une entrée.
     await assertFails(
-      setDoc(doc(db, "clubs", CLUB_A, "members", STRANGER), { uid: STRANGER, role: "player" }),
+      setDoc(doc(db, "clubs", CLUB_A, "members", STRANGER), { uid: STRANGER, playerStatus: "active" }),
     );
     // Non authentifié : identique.
     await assertFails(getDoc(doc(asAnon(), "clubs", CLUB_A)));
@@ -453,7 +453,7 @@ describe("Scénario 9 — versant règles : imiter l'écriture serveur est impos
     await assertFails(
       setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), {
         uid: STRANGER,
-        role: "player",
+        playerStatus: "active",
       }),
     );
     // b) l'état d'autorisation d'accès — ni le joueur, ni le coach, ni l'owner.

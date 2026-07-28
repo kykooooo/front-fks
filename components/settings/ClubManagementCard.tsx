@@ -18,6 +18,21 @@ import { ClubDataDisclosure } from "../club/ClubDataDisclosure";
 
 const palette = theme.colors;
 
+/**
+ * Les DEUX axes de l'appartenance, lus dans le MÊME instantané : permissions
+ * d'encadrement (`accessRole`) et statut de joueur (`playerStatus`). Les lire
+ * séparément laisserait afficher un état mi-ancien mi-nouveau — et c'est
+ * précisément la combinaison des deux qui décrit un entraîneur-joueur.
+ */
+function lireAppartenance(snap: { exists: () => boolean; data: () => unknown }): {
+  accessRole: unknown;
+  playerStatus: unknown;
+} {
+  if (!snap.exists()) return { accessRole: null, playerStatus: null };
+  const data = (snap.data() ?? {}) as { accessRole?: unknown; playerStatus?: unknown };
+  return { accessRole: data.accessRole ?? null, playerStatus: data.playerStatus ?? null };
+}
+
 export function ClubManagementCard() {
   const uid = auth.currentUser?.uid ?? null;
 
@@ -25,7 +40,10 @@ export function ClubManagementCard() {
   const [clubName, setClubName] = useState<string | null>(null);
   // Son PROPRE rôle dans le club. Lu pour DIRE la vérité, jamais pour accorder
   // un droit : l'autorité se décide côté serveur et côté règles, jamais ici.
-  const [myRole, setMyRole] = useState<unknown>(null);
+  const [monAppartenance, setMonAppartenance] = useState<{ accessRole: unknown; playerStatus: unknown }>({
+    accessRole: null,
+    playerStatus: null,
+  });
   const [loading, setLoading] = useState(true);
 
   const [inputCode, setInputCode] = useState("");
@@ -64,7 +82,7 @@ export function ClubManagementCard() {
   useEffect(() => {
     if (!clubId || !uid) {
       setClubName(null);
-      setMyRole(null);
+      setMonAppartenance({ accessRole: null, playerStatus: null });
       return;
     }
 
@@ -90,12 +108,12 @@ export function ClubManagementCard() {
       try {
         const memberSnap = await getDoc(doc(db, "clubs", clubId, "members", uid));
         if (cancelled) return;
-        setMyRole(memberSnap.exists() ? (memberSnap.data() as any)?.role : null);
+        setMonAppartenance(lireAppartenance(memberSnap));
       } catch {
         // Lecture ratée : on ne DÉDUIT rien. Sans rôle lu, la carte reste sur son
         // affichage neutre de membre — accuser la base sur un incident réseau
         // serait un mensonge de plus.
-        if (!cancelled) setMyRole(null);
+        if (!cancelled) setMonAppartenance({ accessRole: null, playerStatus: null });
       }
     };
 
@@ -167,7 +185,7 @@ export function ClubManagementCard() {
               // carte cesse de proposer un geste devenu impossible.
               try {
                 const memberSnap = await getDoc(doc(db, "clubs", clubId, "members", uid));
-                setMyRole(memberSnap.exists() ? (memberSnap.data() as any)?.role : null);
+                setMonAppartenance(lireAppartenance(memberSnap));
               } catch {
                 // Rien à conclure d'un second échec : on laisse l'affichage tel quel.
               }
@@ -190,7 +208,7 @@ export function ClubManagementCard() {
 
   // Si le joueur est dans un club
   if (clubId) {
-    const appartenance = clubMembershipCopy(myRole);
+    const appartenance = clubMembershipCopy(monAppartenance);
     return (
       <Card variant="soft" style={styles.card}>
         <View style={styles.clubHeader}>

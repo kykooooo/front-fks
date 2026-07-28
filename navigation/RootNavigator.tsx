@@ -46,6 +46,7 @@ import { setSentryUser } from "../services/monitoring";
 import { onWelcomeReset } from "../services/accountDeletion";
 import { useAppSpace } from "../hooks/useAppSpace";
 import { resolveClubPointer } from "../domain/coachAuthority";
+import { publishAppSpaceSwitch } from "../state/appSpaceGate";
 
 // Firebase
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -372,6 +373,24 @@ export default function RootNavigator() {
   // complet, et docs/coach-pilote-2026-07/ESPACE_ET_ROLES.md pour ce que ça
   // change côté produit.
   const appSpace = useAppSpace({ uid: user?.uid ?? null, clubId });
+
+  // ── LE SÉLECTEUR JOUEUR / COACH, DIFFUSÉ DEPUIS LA RACINE ─────────────────
+  // Le droit aux deux espaces est dérivé ICI, une seule fois. Les deux écrans
+  // qui affichent le sélecteur (réglages joueur, écran Semaine du coach) vivent
+  // loin en dessous : ils s'abonnent au relais plutôt que de redériver l'état,
+  // ce qui aurait ouvert un second abonnement Firestore et une seconde lecture
+  // de la préférence — donc deux états qui se croient tous les deux vrais.
+  // Voir state/appSpaceGate.ts pour le raisonnement complet.
+  const peutChoisirEspace = appSpace.peutChoisirEspace;
+  const espaceAffiche = appSpace.space;
+  const choisirEspace = appSpace.choisirEspace;
+  useEffect(() => {
+    publishAppSpaceSwitch({
+      peutChoisir: peutChoisirEspace,
+      espace: espaceAffiche,
+      choisir: choisirEspace,
+    });
+  }, [peutChoisirEspace, espaceAffiche, choisirEspace]);
 
   // 0) DEV: force welcome screen (déconnecte + reset flag)
   useEffect(() => {

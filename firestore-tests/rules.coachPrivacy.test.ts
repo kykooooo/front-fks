@@ -262,7 +262,7 @@ describe("Témoin : avant la séparation, le texte sensible arrivait vraiment au
         await setDoc(doc(db, "clubs", CLUB_A), { name: "Club A", ownerUid: COACH_A });
         await setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A1), {
           uid: PLAYER_A1,
-          role: "player",
+          playerStatus: "active",
         });
         await setDoc(doc(db, "clubs", CLUB_A, "weekContexts", WEEK_KEY), {
           weekKey: WEEK_KEY,

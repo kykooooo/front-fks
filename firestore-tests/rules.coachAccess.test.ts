@@ -64,12 +64,12 @@ async function seedPlayer(uid: string, coachAccess: string | null): Promise<void
     const db = ctx.firestore();
     await setDoc(doc(db, "clubs", CLUB_A, "members", uid), {
       uid,
-      role: "player",
+      playerStatus: "active",
       // `null` = champ VOLONTAIREMENT absent (membership ancien).
       ...(coachAccess === null ? {} : { coachAccess }),
     });
     await setDoc(doc(db, "users", uid), {
-      uid, clubId: CLUB_A, role: "player", firstName: "Test", ageCategory: "U15", profileCompleted: true,
+      uid, clubId: CLUB_A, playerStatus: "active", firstName: "Test", ageCategory: "U15", profileCompleted: true,
     });
     // La projection EXISTE : sans elle, un refus ne prouverait rien (on refuserait
     // un document inexistant). C'est bien un accès à de la donnée réelle qu'on ferme.
@@ -163,7 +163,7 @@ describe("D — aucun client ne peut écrire l'état d'autorisation", () => {
     const db = asUser(PLAYER_PENDING);
     const ref = doc(db, "clubs", CLUB_A, "members", PLAYER_PENDING);
     // Écriture complète…
-    await assertFails(setDoc(ref, { uid: PLAYER_PENDING, role: "player", coachAccess: "approved" }));
+    await assertFails(setDoc(ref, { uid: PLAYER_PENDING, playerStatus: "active", coachAccess: "approved" }));
     // …mise à jour PARTIELLE (le piège : ne toucher QUE ce champ)…
     await assertFails(updateDoc(ref, { coachAccess: "approved" }));
     // …et suppression du champ (qui ne doit pas non plus rouvrir quoi que ce soit).
@@ -175,7 +175,7 @@ describe("D — aucun client ne peut écrire l'état d'autorisation", () => {
     const db = asUser(COACH_A);
     const ref = doc(db, "clubs", CLUB_A, "members", PLAYER_PENDING);
     await assertFails(updateDoc(ref, { coachAccess: "approved" }));
-    await assertFails(setDoc(ref, { uid: PLAYER_PENDING, role: "player", coachAccess: "approved" }));
+    await assertFails(setDoc(ref, { uid: PLAYER_PENDING, playerStatus: "active", coachAccess: "approved" }));
   });
 
   test("12) l'OWNER du club non plus, même sur son PROPRE document member", async () => {
@@ -185,9 +185,9 @@ describe("D — aucun client ne peut écrire l'état d'autorisation", () => {
     const db = asUser(COACH_A);
     const ref = doc(db, "clubs", CLUB_A, "members", COACH_A);
     // Écriture légitime SANS le champ : toujours autorisée (non-régression).
-    await assertSucceeds(setDoc(ref, { uid: COACH_A, role: "owner" }));
+    await assertSucceeds(setDoc(ref, { uid: COACH_A, accessRole: "owner" }));
     // La même écriture AVEC le champ : refusée.
-    await assertFails(setDoc(ref, { uid: COACH_A, role: "owner", coachAccess: "approved" }));
+    await assertFails(setDoc(ref, { uid: COACH_A, accessRole: "owner", coachAccess: "approved" }));
     // Mise à jour partielle du seul champ : refusée.
     await assertFails(updateDoc(ref, { coachAccess: "not_required" }));
   });
@@ -196,7 +196,7 @@ describe("D — aucun client ne peut écrire l'état d'autorisation", () => {
     // Preuve que la règle interdit le champ, pas l'écriture du document.
     await admin(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "clubs", CLUB_A, "members", COACH_A), {
-        uid: COACH_A, role: "owner", coachAccess: "not_required",
+        uid: COACH_A, accessRole: "owner", coachAccess: "not_required",
       });
     });
     const ref = doc(asUser(COACH_A), "clubs", CLUB_A, "members", COACH_A);

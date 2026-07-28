@@ -32,13 +32,27 @@ const mockFlags: {
   summaryById: {},
   getDocThrows: false,
   detailDoc: { exists: false, data: () => ({}) },
-  memberDoc: { exists: true, data: () => ({ uid: "playerA1", role: "player", coachAccess: "approved" }) },
+  memberDoc: { exists: true, data: () => ({ uid: "playerA1", playerStatus: "active", coachAccess: "approved" }) },
 };
 
-/** Document member tel que le serveur l'écrit (champ omis si `coachAccess === null`). */
+/**
+ * Document member tel que le serveur l'écrit, sur les DEUX AXES.
+ *
+ * La fixture garde un raccourci `role` LISIBLE ("coach", "player"…), traduit ici
+ * vers les champs réels : `accessRole` porte les permissions d'encadrement,
+ * `playerStatus` porte le statut de joueur. Un raccourci inconnu ("staff") ne
+ * produit NI l'un NI l'autre — c'est le cas fail-closed.
+ *
+ * Le raccourci "coach-joueur" produit LES DEUX : c'est l'entraîneur-joueur, et
+ * il doit apparaître dans l'effectif suivi comme n'importe quel joueur.
+ *
+ * Champ `coachAccess` omis si `coachAccess === null` (membership ancien).
+ */
 const memberData = (m: MemberEntry) => ({
   uid: m.id,
-  role: m.role,
+  ...(m.role === "owner" || m.role === "coach" ? { accessRole: m.role } : {}),
+  ...(m.role === "coach-joueur" ? { accessRole: "coach", playerStatus: "active" } : {}),
+  ...(m.role === "player" ? { playerStatus: "active" } : {}),
   ...(m.coachAccess === null ? {} : { coachAccess: m.coachAccess ?? "approved" }),
 });
 
@@ -120,7 +134,7 @@ beforeEach(() => {
   // Défaut membership : joueur rattaché ET autorisé.
   mockFlags.memberDoc = {
     exists: true,
-    data: () => ({ uid: "playerA1", role: "player", coachAccess: "approved" }),
+    data: () => ({ uid: "playerA1", playerStatus: "active", coachAccess: "approved" }),
   };
 });
 
@@ -161,13 +175,16 @@ describe("createClub — plus aucun code d'invitation côté client", () => {
 
 describe("setClubMembership — le membership ne porte plus de preuve", () => {
   test("écrit uid/role sans champ inviteCode (la preuve est l'écriture serveur elle-même)", async () => {
-    await setClubMembership({ clubId: "clubX", uid: "coachA", role: "coach" });
+    await setClubMembership({ clubId: "clubX", uid: "coachA", accessRole: "coach" });
 
     expect(setDocMock).toHaveBeenCalledTimes(1);
     const [ref, payload] = setDocMock.mock.calls[0];
     expect(ref.path).toEqual(["clubs", "clubX", "members", "coachA"]);
     expect(payload).not.toHaveProperty("inviteCode");
-    expect(payload).toMatchObject({ uid: "coachA", role: "coach" });
+    expect(payload).toMatchObject({ uid: "coachA", accessRole: "coach" });
+    // Le STATUT DE JOUEUR n'est jamais écrit par un client : les règles le
+    // refusent, au même titre que `coachAccess`.
+    expect(payload).not.toHaveProperty("playerStatus");
   });
 });
 
@@ -193,7 +210,7 @@ describe("createClubAsCoach — le créateur devient PROPRIÉTAIRE, pas coach", 
     const memberDoc = ecritures.find((e) => e.chemin?.[2] === "members");
     expect(memberDoc?.chemin).toEqual(["clubs", club.id, "members", "coachA"]);
     // LA ligne qui compte : le rôle propriétaire, pas « coach ».
-    expect(memberDoc?.payload).toMatchObject({ uid: "coachA", role: "owner" });
+    expect(memberDoc?.payload).toMatchObject({ uid: "coachA", accessRole: "owner" });
     // Et jamais l'état d'accès coach : les règles refuseraient l'écriture.
     expect(memberDoc?.payload).not.toHaveProperty("coachAccess");
   });

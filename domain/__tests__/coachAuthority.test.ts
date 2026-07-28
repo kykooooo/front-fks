@@ -25,7 +25,13 @@ import {
 } from "../coachAuthority";
 import { resolveAppSpace, type ClubMembershipReading } from "../appSpace";
 
-const lu = (role: unknown): ClubMembershipReading => ({ statut: "lu", role });
+/** Lecture aboutie. Le second axe (statut de joueur) est nomme explicitement :
+ *  aucune assertion de ce fichier ne doit dependre de lui. */
+const lu = (accessRole: unknown, playerStatus: unknown = null): ClubMembershipReading => ({
+  statut: "lu",
+  accessRole,
+  playerStatus,
+});
 
 const TOUS: CoachAuthorityStatut[] = ["chargement", "autorise", "refuse", "indetermine"];
 
@@ -36,9 +42,19 @@ describe("resolveCoachAuthority — quatre etats, jamais trois", () => {
   });
 
   test("appartenance lue et NON encadrante → refuse (un fait, pas une incertitude)", () => {
-    for (const role of ["player", "removed", "admin", "", null, undefined, 42, {}]) {
-      expect(resolveCoachAuthority(lu(role))).toBe("refuse");
+    for (const valeur of ["player", "removed", "admin", "", null, undefined, 42, {}]) {
+      expect(resolveCoachAuthority(lu(valeur))).toBe("refuse");
     }
+    // ... y compris avec un suivi sportif actif : le statut de joueur n'accorde
+    // JAMAIS d'autorite d'encadrement.
+    expect(resolveCoachAuthority(lu(null, "active"))).toBe("refuse");
+  });
+
+  test("un ENTRAINEUR-JOUEUR garde une autorite coach PLEINE", () => {
+    // Son suivi sportif ne dilue rien : l'autorite d'encadrement se lit sur le
+    // seul axe des permissions.
+    expect(resolveCoachAuthority(lu("coach", "active"))).toBe("autorise");
+    expect(resolveCoachAuthority(lu("owner", "active"))).toBe("autorise");
   });
 
   test("premier instantane pas encore arrive → chargement", () => {

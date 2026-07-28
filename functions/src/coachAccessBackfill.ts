@@ -37,7 +37,7 @@ export type MemberRef = { clubId: string; playerUid: string };
  * dans coachAccessBackfillCli.ts).
  */
 export type CoachAccessBackfillStore = MemberAccessStore & {
-  /** Tous les membership role=player, eventuellement bornes a un club. */
+  /** Tous les membership playerStatus=active, eventuellement bornes a un club. */
   listPlayerMembers(clubId?: string): Promise<MemberRef[]>;
 };
 

@@ -124,7 +124,7 @@ describe("Anciennes vulnérabilités HORS périmètre PR-4 — désormais FERMÉ
 
   test("FERMÉ: un connecté NE crée PLUS son membership 'player' (écriture serveur uniquement)", async () => {
     await assertFails(
-      setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), { uid: STRANGER, role: "player" }),
+      setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), { uid: STRANGER, playerStatus: "active" }),
     );
   });
 });

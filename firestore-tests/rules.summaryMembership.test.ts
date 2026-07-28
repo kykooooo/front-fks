@@ -163,17 +163,19 @@ describe("Mini-hardening PR-4 — playerSummaries exige un membership player ACT
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Séquence RÉELLE du lecteur front (repositories/clubsRepo.ts fetchClubPlayerSummaries) :
-// getDocs(members) → filtre role player → getDoc(playerSummaries/{id}) un par un.
+// getDocs(members) → filtre playerStatus actif → getDoc(playerSummaries/{id}) un par un.
 // Prouve, contre les VRAIES rules émulateur (pas un mock), que ce chemin d'accès
 // est autorisé — et fail-closed quand la joueuse part entre les deux étapes.
 describe("Séquence réelle members → summaries (chemin du lecteur coach)", () => {
-  test("7) coach liste members (role player) puis get chaque summary : lisible, pending permis", async () => {
+  test("7) coach liste members (statut de joueur actif) puis get chaque summary : lisible, pending permis", async () => {
     const db = asUser(COACH_A);
 
-    // 1. Effectif : coach lit members ; on ne garde que role player (coach exclu).
+    // 1. Effectif : coach lit members ; on ne garde que les statuts de joueur
+    //    ACTIFS. Un encadrant sans suivi est exclu ; un entraineur-joueur, lui,
+    //    serait garde — c'est exactement ce que le modele a deux axes permet.
     const membersSnap = await assertSucceeds(getDocs(collection(db, "clubs", CLUB_A, "members")));
     const playerIds = (membersSnap as any).docs
-      .filter((d: any) => d.data().role === "player")
+      .filter((d: any) => d.data().playerStatus === "active")
       .map((d: any) => d.id)
       .sort();
     expect(playerIds).toEqual([PLAYER_A1, PLAYER_A2].sort());
@@ -223,7 +225,7 @@ describe("Séquence réelle members → summaries (chemin du lecteur coach)", ()
       // `coachAccess` autorisant : ce test porte sur l'AUTORITÉ, pas sur
       // l'autorisation d'accès (couverte par rules.coachAccess.test.ts).
       await setDoc(doc(fdb, "clubs", CLUB, "members", PLAYER), {
-        uid: PLAYER, role: "player", coachAccess: "not_required",
+        uid: PLAYER, playerStatus: "active", coachAccess: "not_required",
       });
       await setDoc(doc(fdb, "clubs", CLUB, "playerSummaries", PLAYER), { ...SUMMARY, playerUid: PLAYER });
     });
@@ -242,9 +244,9 @@ describe("Séquence réelle members → summaries (chemin du lecteur coach)", ()
     await admin(async (ctx) => {
       const fdb = ctx.firestore();
       await setDoc(doc(fdb, "clubs", CLUB), { name: "Club D", ownerUid: OWNER });
-      await setDoc(doc(fdb, "clubs", CLUB, "members", OWNER), { uid: OWNER, role: "owner" });
+      await setDoc(doc(fdb, "clubs", CLUB, "members", OWNER), { uid: OWNER, accessRole: "owner" });
       await setDoc(doc(fdb, "clubs", CLUB, "members", PLAYER), {
-        uid: PLAYER, role: "player", coachAccess: "not_required",
+        uid: PLAYER, playerStatus: "active", coachAccess: "not_required",
       });
       await setDoc(doc(fdb, "clubs", CLUB, "playerSummaries", PLAYER), { ...SUMMARY, playerUid: PLAYER });
     });

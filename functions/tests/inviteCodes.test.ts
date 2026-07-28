@@ -148,11 +148,11 @@ function baseStore(): FakeStore {
   store.seed(invitePaths.club(CLUB), { name: "AS Test", ownerUid: OWNER });
   // Le proprietaire porte le role "owner" : c'est ce que le PREDICAT D'AUTORITE
   // exige (ownerUid le designe ET son appartenance le confirme), et c'est ce
-  // qu'ecrit desormais la creation de club. Un `role: "coach"` ici serait
+  // qu'ecrit desormais la creation de club. Un `accessRole: "coach"` ici serait
   // exactement l'etat incoherent que le predicat refuse — il est teste comme tel
   // dans "autorite incoherente", plus bas.
-  store.seed(invitePaths.member(CLUB, OWNER), { uid: OWNER, role: "owner" });
-  store.seed(invitePaths.member(CLUB, COACH), { uid: COACH, role: "coach" });
+  store.seed(invitePaths.member(CLUB, OWNER), { uid: OWNER, accessRole: "owner" });
+  store.seed(invitePaths.member(CLUB, COACH), { uid: COACH, accessRole: "coach" });
   return store;
 }
 
@@ -331,7 +331,7 @@ describe("issueClubInviteCode — emission reservee au coach, empreinte seule en
     const store = baseStore();
     await expect(issueInviteCode(deps(store), { uid: COACH, clubId: CLUB })).resolves.toBeTruthy();
 
-    store.seed(invitePaths.member(CLUB, PLAYER), { uid: PLAYER, role: "player" });
+    store.seed(invitePaths.member(CLUB, PLAYER), { uid: PLAYER, playerStatus: "active" });
     const err = await catchInvite(issueInviteCode(deps(store), { uid: PLAYER, clubId: CLUB }));
     expect(err.code).toBe("permission-denied");
   });
@@ -397,7 +397,7 @@ describe("issueClubInviteCode — autorite incoherente", () => {
     // L'etat historique que ce lot supprime : le createur du club s'ecrivait
     // lui-meme en "coach". Il reste ENCADRANT (role coach), mais il n'est plus
     // autorise en tant que PROPRIETAIRE — et l'ecart doit etre signale.
-    store.seed(invitePaths.member(CLUB, OWNER), { uid: OWNER, role: "coach" });
+    store.seed(invitePaths.member(CLUB, OWNER), { uid: OWNER, accessRole: "coach" });
 
     const signals: ClubAuthoritySignal[] = [];
     const err = await catchInvite(
@@ -422,7 +422,7 @@ describe("issueClubInviteCode — autorite incoherente", () => {
 
   test("appartenance 'owner' mais ownerUid designe un autre : REFUS + SIGNAL", async () => {
     const store = baseStore();
-    store.seed(invitePaths.member(CLUB, COACH), { uid: COACH, role: "owner" });
+    store.seed(invitePaths.member(CLUB, COACH), { uid: COACH, accessRole: "owner" });
 
     const signals: ClubAuthoritySignal[] = [];
     const err = await catchInvite(
@@ -484,7 +484,7 @@ describe("joinClubWithInviteCode — chemin nominal", () => {
     });
     expect(store.read(invitePaths.member(CLUB, PLAYER))).toMatchObject({
       uid: PLAYER,
-      role: "player",
+      playerStatus: "active",
       coachAccess: "not_required",
     });
     // Le membership NE PORTE PLUS de code : la preuve d'invitation n'est plus
@@ -587,7 +587,7 @@ describe("joinClubWithInviteCode — chemin nominal", () => {
     const store = baseStore();
     seedCode(store, "ABCDEFGHJK");
     store.seed(invitePaths.member(CLUB, PLAYER), {
-      uid: PLAYER, role: "player", coachAccess: "approved",
+      uid: PLAYER, playerStatus: "active", coachAccess: "approved",
     });
     const rejeu = await joinClubWithCode(deps(store), { uid: PLAYER, rawCode: "ABCDEFGHJK" });
     expect(rejeu.coachAccess).toBe("approved");
@@ -597,7 +597,7 @@ describe("joinClubWithInviteCode — chemin nominal", () => {
     const store2 = baseStore();
     seedCode(store2, "ABCDEFGHJK");
     store2.seed(invitePaths.member(CLUB, PLAYER), {
-      uid: PLAYER, role: "player", coachAccess: "revoked",
+      uid: PLAYER, playerStatus: "active", coachAccess: "revoked",
     });
     const rejeu2 = await joinClubWithCode(deps(store2), { uid: PLAYER, rawCode: "ABCDEFGHJK" });
     expect(rejeu2.coachAccess).toBe("revoked");
@@ -764,7 +764,7 @@ describe("issueClubInviteCode — refus STRICTEMENT identique (oracle d'existenc
 
     for (const c of cases) {
       const store = baseStore();
-      store.seed(invitePaths.member(CLUB, PLAYER), { uid: PLAYER, role: "player" });
+      store.seed(invitePaths.member(CLUB, PLAYER), { uid: PLAYER, playerStatus: "active" });
       const err = await catchInvite(issueInviteCode(deps(store), { uid: c.uid, clubId: c.clubId }));
       expect({ label: c.label, code: err.code, message: err.message }).toEqual({
         label: c.label,

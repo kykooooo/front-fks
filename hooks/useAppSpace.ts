@@ -28,11 +28,19 @@
 // ne porte le rôle — l'autorité vit dans des DOCUMENTS, pas dans le jeton. Un
 // rafraîchissement de jeton relirait donc exactement la même chose, en plus lent.
 //
-// ─── CE QUE CE HOOK N'INTRODUIT PAS ─────────────────────────────────────────
-// Aucune persistance locale de l'espace. Écrire « cet appareil est un espace
+// ─── LA SEULE MÉMOIRE LOCALE, ET CE QU'ELLE NE FAIT PAS ─────────────────────
+// Ce hook ne met JAMAIS en cache l'AUTORITÉ. Écrire « cet appareil est un espace
 // coach » dans AsyncStorage créerait précisément la seconde source de vérité
 // qu'on refuse : un cache client, falsifiable et désynchronisable. Le seul cache
-// en jeu est celui du SDK Firestore, qui est déjà la source, servie hors ligne.
+// d'autorité en jeu est celui du SDK Firestore, qui est déjà la source.
+//
+// Ce qu'il mémorise, depuis le lot « entraîneur-joueur », c'est le DERNIER
+// ESPACE CHOISI (`hooks/useAppSpacePreference`) — et uniquement pour les comptes
+// à qui le serveur ouvre RÉELLEMENT les deux. Cette mémoire n'ouvre rien : elle
+// choisit entre deux écrans déjà autorisés. Un compte qui perd l'encadrement
+// bascule vers l'espace joueur même si sa préférence dit « coach » ; un
+// encadrant sans suivi sportif reste dans l'espace coach même si elle dit
+// « player ». Les deux cas sont testés.
 //
 // ─── CE QUE CE LOT AJOUTE : LA SESSION OUVERTE ──────────────────────────────
 // `services/firebase` initialise Firestore SANS cache local persistant : fermer
@@ -61,15 +69,17 @@ import { doc, onSnapshot } from "firebase/firestore";
 
 import { db } from "../services/firebase";
 import {
-  readMembershipRole,
+  espacesDisponibles,
+  readMembershipAccessRole,
   resolveAppSpace,
   type AppSpace,
   type AppSpaceDecision,
   type ClubMembershipReading,
 } from "../domain/appSpace";
 import { resolveCoachAuthority, type CoachAuthorityStatut } from "../domain/coachAuthority";
-import { isClubStaffRole, type ClubRole } from "../domain/clubRoles";
+import { isClubStaffRole, type ClubAccessRole } from "../domain/clubRoles";
 import { publishCoachAuthority } from "../state/coachAuthorityGate";
+import { useAppSpacePreference } from "./useAppSpacePreference";
 
 /**
  * Délai au-delà duquel une REVALIDATION qui n'a pas abouti devient un
@@ -116,10 +126,24 @@ export type AppSpaceState = {
    * vient d'être coupé du réseau en serait un autre.
    */
   autoriteDejaConfirmee: boolean;
-  /** Rôle d'appartenance lu, ou `null`. Pour DIRE l'état, jamais pour ouvrir un droit. */
-  membershipRole: ClubRole | null;
+  /**
+   * Permission d'encadrement lue, ou `null`. Pour DIRE l'état, jamais pour
+   * ouvrir un droit.
+   */
+  membershipAccessRole: ClubAccessRole | null;
   /** La lecture de l'appartenance a échoué (incident, pas un refus attendu). */
   membershipUnreadable: boolean;
+  /**
+   * La personne a-t-elle RÉELLEMENT les deux espaces ? C'est la seule condition
+   * d'affichage du sélecteur Joueur/Coach — et elle est dérivée du serveur, pas
+   * de la préférence locale.
+   */
+  peutChoisirEspace: boolean;
+  /**
+   * Mémorise l'espace choisi. N'a d'effet que si les deux sont ouverts : la
+   * préférence CHOISIT, elle n'OUVRE jamais (cf. domain/appSpace).
+   */
+  choisirEspace: (espace: AppSpace) => void;
   /** Repose l'abonnement et repasse par `chargement` (bouton « Réessayer »). */
   revalider: () => void;
 };
@@ -250,14 +274,18 @@ export function useAppSpace(
       (snap) => {
         if (annule) return;
         arreterMinuteur();
-        const role = snap.exists() ? snap.data()?.role : null;
+        // LES DEUX AXES SONT LUS ENSEMBLE, depuis le même instantané : c'est ce
+        // qui rend impossible d'afficher un état mi-ancien mi-nouveau.
+        const donnees = snap.exists() ? snap.data() : null;
+        const accessRole = donnees?.accessRole ?? null;
+        const playerStatus = donnees?.playerStatus ?? null;
         setRecu({
           cle,
           cleBase,
-          lecture: { statut: "lu", role },
+          lecture: { statut: "lu", accessRole, playerStatus },
           // Une lecture ABOUTIE fait autorité dans les deux sens : elle pose la
           // mémoire pour un encadrant, et elle l'efface pour tous les autres.
-          confirmeCoach: isClubStaffRole(role),
+          confirmeCoach: isClubStaffRole(accessRole),
         });
       },
       () => {
@@ -288,9 +316,16 @@ export function useAppSpace(
       ? recu.lecture
       : { statut: "en-attente" };
 
-  const decision = resolveAppSpace(lecture);
+  // La préférence locale ne pèse QUE sur le cas « les deux espaces sont
+  // ouverts » (cf. domain/appSpace). Le hook est monté inconditionnellement —
+  // les hooks React n'admettent pas d'être appelés sous condition — mais son
+  // attente n'est consultée que dans ce cas-là.
+  const { preference, choisirEspace } = useAppSpacePreference(uid);
+
+  const espaces = espacesDisponibles(lecture);
+  const decision = resolveAppSpace(lecture, preference);
   const autorite = resolveCoachAuthority(lecture);
-  const membershipRole = readMembershipRole(lecture);
+  const membershipAccessRole = readMembershipAccessRole(lecture);
   const autoriteDejaConfirmee = Boolean(cleBase && recu?.cleBase === cleBase && recu.confirmeCoach);
 
   // ── PUBLICATION DE L'AUTORITÉ (et donc de la purge) ───────────────────────
@@ -298,7 +333,7 @@ export function useAppSpace(
   // statut ou rôle. Deux instantanés identiques ne le bougent pas : une lecture
   // coach en vol sous une autorité stable doit pouvoir aboutir, sinon le
   // garde-fou deviendrait un blocage permanent.
-  const identite = `${uid ?? ""}|${clubId ?? ""}|${autorite}|${membershipRole ?? ""}`;
+  const identite = `${uid ?? ""}|${clubId ?? ""}|${autorite}|${membershipAccessRole ?? ""}`;
   const identiteRef = useRef<string | null>(null);
   const jetonRef = useRef(0);
   useEffect(() => {
@@ -316,8 +351,12 @@ export function useAppSpace(
     space: decision === "coach" ? "coach" : "player",
     autorite,
     autoriteDejaConfirmee,
-    membershipRole,
+    membershipAccessRole,
     membershipUnreadable: lecture.statut === "illisible",
+    // DÉRIVÉ DU SERVEUR, jamais de la préférence : le sélecteur n'apparaît que
+    // si les deux espaces sont réellement ouverts.
+    peutChoisirEspace: espaces.coach && espaces.joueur,
+    choisirEspace,
     revalider,
   };
 }

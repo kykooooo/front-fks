@@ -50,6 +50,7 @@ import { CoachStateBlock } from "../../components/coach/CoachStateBlock";
 import { CoachStatusPill } from "../../components/coach/CoachStatusPill";
 import { CoachSignalRow } from "../../components/coach/CoachSignalRow";
 import { CoachLegalFooter } from "../../components/coach/CoachLegalFooter";
+import { AppSpaceSwitch } from "../../components/AppSpaceSwitch";
 import {
   coachColors,
   coachLayout,
@@ -1480,6 +1481,13 @@ export default function CoachWeekScreen() {
             </Text>
           ) : null}
         </CoachSectionCard>
+
+        {/* Sélecteur Joueur / Coach. Ne s'affiche QUE pour un entraîneur-joueur
+            (droit serveur aux deux espaces) ; il rend `null` pour tous les
+            autres. Il vit ici, dans l'onglet « réglages de fait » de l'espace
+            coach, et non dans un onglet opérationnel où il volerait de
+            l'attention à la file de lecture. */}
+        <AppSpaceSwitch variant="coach" testID="app-space-switch-coach" />
 
         {/* Mentions légales / confidentialité / suppression de compte. Ces accès
             vivaient dans le pied de page de l'ancien écran coach unique ; ils

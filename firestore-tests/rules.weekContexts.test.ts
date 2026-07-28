@@ -306,7 +306,7 @@ describe("Témoin : la règle d'avant laissait vraiment passer la récolte", () 
         await setDoc(doc(db, "clubs", CLUB_A), { name: "Club A", ownerUid: COACH_A });
         await setDoc(doc(db, "clubs", CLUB_A, "members", PLAYER_A1), {
           uid: PLAYER_A1,
-          role: "player",
+          playerStatus: "active",
         });
         for (const weekKey of [WEEK_KEY, WEEK_PAST_1, WEEK_PAST_2]) {
           await setDoc(doc(db, "clubs", CLUB_A, "weekContexts", weekKey), {

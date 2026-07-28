@@ -95,10 +95,10 @@ function baseStore(): SimpleStore {
   // Les proprietaires portent le role "owner" : le PREDICAT D'AUTORITE exige que
   // `ownerUid` et l'appartenance concordent, et c'est ce qu'ecrit la creation de
   // club. COACH_A2 reste un coach ordinaire, non proprietaire.
-  store.seed(invitePaths.member(CLUB_A, COACH_A), { uid: COACH_A, role: "owner" });
-  store.seed(invitePaths.member(CLUB_A, COACH_A2), { uid: COACH_A2, role: "coach" });
-  store.seed(invitePaths.member(CLUB_A, PLAYER_A1), { uid: PLAYER_A1, role: "player" });
-  store.seed(invitePaths.member(CLUB_B, COACH_B), { uid: COACH_B, role: "owner" });
+  store.seed(invitePaths.member(CLUB_A, COACH_A), { uid: COACH_A, accessRole: "owner" });
+  store.seed(invitePaths.member(CLUB_A, COACH_A2), { uid: COACH_A2, accessRole: "coach" });
+  store.seed(invitePaths.member(CLUB_A, PLAYER_A1), { uid: PLAYER_A1, playerStatus: "active" });
+  store.seed(invitePaths.member(CLUB_B, COACH_B), { uid: COACH_B, accessRole: "owner" });
   return store;
 }
 
@@ -178,7 +178,7 @@ describe("9.a — issueClubInviteCode appelee directement", () => {
     // l'emission : une charge utile malformee et un club interdit doivent etre
     // indiscernables (cf. 9.12).
     const store = baseStore();
-    const forge = { clubId: CLUB_A, uid: COACH_A, role: "coach" } as unknown;
+    const forge = { clubId: CLUB_A, uid: COACH_A, accessRole: "coach" } as unknown;
     const err = await catchInvite(issueInviteCode(deps(store), { uid: STRANGER, clubId: forge }));
     expect(err.code).toBe(ISSUE_REJECTED_CODE);
     expect(err.message).toBe(ISSUE_REJECTED_MESSAGE);

@@ -5,6 +5,7 @@
 // (`CoachPlayerSummaryCore`) ou `null`. Construit chaque champ EXPLICITEMENT :
 // aucun spread de source, aucune clé inconnue recopiée.
 
+import { isActivePlayer } from "./clubAuthority";
 import { isMembershipCoachAccessGranted } from "./coachAccess";
 import {
   boundBlockCount,
@@ -331,15 +332,22 @@ function readDeviationReasons(execution: RawDoc): string[] {
 export function projectPlayerSummary(input: ProjectorInput): CoachPlayerSummaryCore | null {
   const { playerUid, clubId, membership, profile, sessions, plannedSessions } = input;
 
-  // 1) Membership requis + role player STRICT.
+  // 1) Membership requis + STATUT DE JOUEUR ACTIF, strictement.
+  //
+  // C'est le STATUT qui decide, jamais les permissions d'encadrement : un
+  // entraineur-joueur (`accessRole: "coach"` ET `playerStatus: "active"`) doit
+  // apparaitre dans l'effectif suivi comme n'importe quel joueur. C'est le but
+  // du modele a deux axes (cf. clubAuthority.ts) — et ca n'ouvre RIEN d'autre :
+  // sa fiche reste soumise a `coachAccess` (juste en dessous) et aux memes
+  // regles Firestore que celle de tout le monde.
   //
   // C'est aussi ce qui rend le RETRAIT d'un membre insensible aux courses : le
-  // retrait pose une pierre tombale (`role: "removed"`, cf. clubMembers.ts), et
-  // toute reprojection ulterieure — declenchee par une seance que le joueur
-  // continue d'enregistrer — relit ce role, renvoie `null`, donc SUPPRIME la
-  // projection au lieu de la recreer. Le refus vient de l'ETAT, pas de l'ordre
-  // d'arrivee des evenements.
-  if (!membership || membership.role !== "player") return null;
+  // retrait pose une pierre tombale (`playerStatus: "inactive"`, cf.
+  // clubMembers.ts), et toute reprojection ulterieure — declenchee par une
+  // seance que le joueur continue d'enregistrer — relit ce statut, renvoie
+  // `null`, donc SUPPRIME la projection au lieu de la recreer. Le refus vient de
+  // l'ETAT, pas de l'ordre d'arrivee des evenements.
+  if (!isActivePlayer(membership)) return null;
 
   // 1 bis) AUTORISATION D'ACCÈS (default-deny). Deuxième couche de verrou, la
   // première étant les règles Firestore. On la met AVANT toute lecture du profil
@@ -347,11 +355,23 @@ export function projectPlayerSummary(input: ProjectorInput): CoachPlayerSummaryC
   // pas autorisant. Un membership ANCIEN, sans le champ, ne passe pas.
   if (!isMembershipCoachAccessGranted(membership)) return null;
 
-  // 2) Cohérence membership/profil (P0.3) : le profil DOIT exister, pointer vers
-  //    CE club, et ne pas être coach. Sinon aucune projection (l'appelant supprime).
+  // 2) Cohérence membership/profil (P0.3) : le profil DOIT exister et pointer
+  //    vers CE club. Sinon aucune projection (l'appelant supprime).
+  //
+  //    L'ANCIENNE CONDITION `profile.role === "coach"` A ÉTÉ RETIRÉE, et il faut
+  //    dire pourquoi plutôt que de la faire disparaître :
+  //     . elle lisait `users/{uid}.role`, un champ que son titulaire ÉCRIT
+  //       LUI-MÊME (firestore.rules autorise chacun à écrire tout son document
+  //       `users/{uid}`). Un champ falsifiable ne protège rien : il ne pouvait
+  //       qu'exclure quelqu'un, jamais empêcher une fuite ;
+  //     . elle EMPÊCHAIT désormais la fonctionnalité. Un entraîneur-joueur dont
+  //       le profil porte encore ce résidu (`role: "coach"`, posé par une
+  //       ancienne version de l'app) aurait été silencieusement retiré de
+  //       l'effectif suivi, sans qu'aucun écran ne puisse l'expliquer.
+  //    Ce qui décide reste ce que le serveur contrôle seul : `playerStatus`
+  //    (ci-dessus) et `coachAccess`.
   if (!profile) return null;
   if (str(profile.clubId) !== clubId) return null;
-  if (profile.role === "coach") return null;
 
   // 3) Identité sportive — allowlists serveur strictes (jamais de texte client brut).
   const firstName = sanitizeFirstName(profile.firstName);

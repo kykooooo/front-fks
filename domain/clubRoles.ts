@@ -1,7 +1,7 @@
 // domain/clubRoles.ts
 //
-// Rôles d'appartenance à un club, côté application, et le PRÉDICAT D'AUTORITÉ
-// qui va avec.
+// Appartenance à un club, côté application : les DEUX AXES, et le PRÉDICAT
+// D'AUTORITÉ qui va avec.
 //
 // TROISIÈME et dernière copie du même contrat, assumée comme telle :
 //   1. functions/src/clubAuthority.ts — la décision serveur ;
@@ -13,52 +13,82 @@
 // est désigné propriétaire mais son appartenance ne le dit pas ») et à ne jamais
 // promettre un bouton que le serveur refusera. Un écran plus permissif que le
 // serveur produit une erreur inexpliquée ; un écran plus strict cache une
-// fonction qui marche. Les deux se corrigent en gardant cette liste alignée.
+// fonction qui marche. Les deux se corrigent en gardant ces listes alignées.
 //
-// L'INVARIANT, mot pour mot : « un propriétaire est autorisé uniquement si
-// ownerUid le désigne ET s'il possède encore une appartenance active avec le
-// rôle propriétaire ».
+// ─── LES DEUX AXES ──────────────────────────────────────────────────────────
+// `clubs/{clubId}/members/{uid}` porte deux champs indépendants :
+//
+//   . `accessRole`   : les PERMISSIONS D'ENCADREMENT ("owner" | "coach").
+//                      Absent = aucune permission. Décide de l'espace coach.
+//   . `playerStatus` : le STATUT DE JOUEUR ("active" | "inactive"), c'est-à-dire
+//                      « cette personne a-t-elle un suivi sportif dans ce
+//                      club ? ». Absent = elle n'en a jamais eu ici.
+//
+// LES DEUX PEUVENT COEXISTER : un entraîneur-joueur — cas courant en club
+// amateur — porte `accessRole: "coach"` ET `playerStatus: "active"`. L'ancien
+// champ unique `role` (owner/coach/player/removed) a disparu : c'est sa fusion
+// des deux axes qui faisait qu'obtenir l'encadrement effaçait le fait d'être
+// joueur.
+//
+// L'INVARIANT PROPRIÉTAIRE, mot pour mot : « un propriétaire est autorisé
+// uniquement si ownerUid le désigne ET s'il possède encore une appartenance
+// active avec le rôle propriétaire ».
 
-export const CLUB_ROLE_OWNER = "owner";
-export const CLUB_ROLE_COACH = "coach";
-export const CLUB_ROLE_PLAYER = "player";
-/** Pierre tombale posée par le retrait serveur. N'ouvre rien, nulle part. */
-export const CLUB_ROLE_REMOVED = "removed";
+export const CLUB_ACCESS_ROLE_OWNER = "owner";
+export const CLUB_ACCESS_ROLE_COACH = "coach";
 
-export const CLUB_ROLES = [
-  CLUB_ROLE_OWNER,
-  CLUB_ROLE_COACH,
-  CLUB_ROLE_PLAYER,
-  CLUB_ROLE_REMOVED,
-] as const;
+/**
+ * Les permissions d'encadrement, de la plus large à la plus étroite. Il n'y a
+ * PAS de valeur « aucune » : l'absence de permission est l'absence de champ, ce
+ * qui rend impossible d'écrire « aucune » par erreur là où on attendait un rôle.
+ */
+export const CLUB_ACCESS_ROLES = [CLUB_ACCESS_ROLE_OWNER, CLUB_ACCESS_ROLE_COACH] as const;
 
-export type ClubRole = (typeof CLUB_ROLES)[number];
+export type ClubAccessRole = (typeof CLUB_ACCESS_ROLES)[number];
 
-/** Rôles d'ENCADREMENT : le propriétaire est un encadrant, par construction. */
-export const CLUB_STAFF_ROLES: readonly ClubRole[] = [CLUB_ROLE_OWNER, CLUB_ROLE_COACH];
+export const PLAYER_STATUS_ACTIVE = "active";
+export const PLAYER_STATUS_INACTIVE = "inactive";
 
-/** Rôles d'appartenance ACTIVE. "removed" en est volontairement absent. */
-export const CLUB_ACTIVE_ROLES: readonly ClubRole[] = [
-  CLUB_ROLE_OWNER,
-  CLUB_ROLE_COACH,
-  CLUB_ROLE_PLAYER,
-];
+export const CLUB_PLAYER_STATUSES = [PLAYER_STATUS_ACTIVE, PLAYER_STATUS_INACTIVE] as const;
 
-/** Rôle reconnu, ou `null` (absent, mal typé, inconnu) — default-deny. */
-export function normalizeClubRole(value: unknown): ClubRole | null {
+export type ClubPlayerStatus = (typeof CLUB_PLAYER_STATUSES)[number];
+
+/** Permission reconnue, ou `null` (absente, mal typée, inconnue) — default-deny. */
+export function normalizeAccessRole(value: unknown): ClubAccessRole | null {
   if (typeof value !== "string") return null;
   const raw = value.trim();
-  return (CLUB_ROLES as readonly string[]).includes(raw) ? (raw as ClubRole) : null;
+  return (CLUB_ACCESS_ROLES as readonly string[]).includes(raw) ? (raw as ClubAccessRole) : null;
 }
 
+/** Statut reconnu, ou `null` (absent, mal typé, inconnu) — default-deny. */
+export function normalizePlayerStatus(value: unknown): ClubPlayerStatus | null {
+  if (typeof value !== "string") return null;
+  const raw = value.trim();
+  return (CLUB_PLAYER_STATUSES as readonly string[]).includes(raw)
+    ? (raw as ClubPlayerStatus)
+    : null;
+}
+
+/** Cette valeur d'`accessRole` donne-t-elle l'encadrement ? (owner OU coach) */
 export function isClubStaffRole(value: unknown): boolean {
-  const role = normalizeClubRole(value);
-  return role !== null && CLUB_STAFF_ROLES.includes(role);
+  return normalizeAccessRole(value) !== null;
 }
 
-export function isActiveClubRole(value: unknown): boolean {
-  const role = normalizeClubRole(value);
-  return role !== null && CLUB_ACTIVE_ROLES.includes(role);
+/** Ce `playerStatus` décrit-il un suivi sportif ACTIF dans ce club ? */
+export function isActivePlayerStatus(value: unknown): boolean {
+  return normalizePlayerStatus(value) === PLAYER_STATUS_ACTIVE;
+}
+
+/**
+ * Appartenance ACTIVE : encadrement OU suivi actif. Miroir de `isActiveMember`
+ * (règles) et `isActiveMembership` (serveur). Une pierre tombale — les deux
+ * fermés — n'en est pas une.
+ */
+export function isActiveClubMembership(params: {
+  accessRole: unknown;
+  playerStatus: unknown;
+}): boolean {
+  return isClubStaffRole(params.accessRole) || isActivePlayerStatus(params.playerStatus);
 }
 
 /**
@@ -76,15 +106,15 @@ export type ClubOwnerAuthority =
 export function resolveClubOwnerAuthority(params: {
   /** clubs/{clubId}.ownerUid tel que lu. */
   ownerUid: unknown;
-  /** clubs/{clubId}/members/{uid}.role tel que lu. */
-  myRole: unknown;
+  /** clubs/{clubId}/members/{uid}.accessRole tel que lu. */
+  myAccessRole: unknown;
   /** uid du compte connecté. */
   uid: unknown;
 }): ClubOwnerAuthority {
   const owner = typeof params.ownerUid === "string" ? params.ownerUid.trim() : "";
   const me = typeof params.uid === "string" ? params.uid.trim() : "";
   const designated = owner !== "" && me !== "" && owner === me;
-  const holdsRole = normalizeClubRole(params.myRole) === CLUB_ROLE_OWNER;
+  const holdsRole = normalizeAccessRole(params.myAccessRole) === CLUB_ACCESS_ROLE_OWNER;
 
   if (designated && holdsRole) return "authorized";
   if (designated) return "designation-without-membership";
@@ -110,14 +140,18 @@ export function isClubOwnerAuthorityInconsistent(authority: ClubOwnerAuthority):
  * chez qui il ne pouvait JAMAIS marcher, et l'échec s'affichait en « Réessaie »,
  * c'est-à-dire un conseil faux.
  *
- * Ce n'était visible de personne avant ce lot, puisqu'un propriétaire est un
- * coach et ne voit pas cet écran. Le transfert change ça : un JOUEUR peut
- * désormais devenir propriétaire, et il garde l'application joueur.
+ * DEUX AXES, DEUX PHRASES. Le statut affiché combine désormais la permission
+ * d'encadrement ET le statut de joueur : dire « Encadrant du club » à un
+ * entraîneur-joueur serait une demi-vérité, et c'est précisément la demi-vérité
+ * que ce lot supprime du modèle de données.
  *
  * Cette fonction n'accorde aucun droit — elle dit la vérité, et elle enlève un
  * bouton plutôt que de laisser une erreur l'expliquer.
  */
-export function clubMembershipCopy(role: unknown): {
+export function clubMembershipCopy(params: {
+  accessRole: unknown;
+  playerStatus: unknown;
+}): {
   /** Ligne d'état sous le nom du club. */
   statut: string;
   /** Pastille de rôle. */
@@ -127,28 +161,30 @@ export function clubMembershipCopy(role: unknown): {
   /** Pourquoi il ne l'est pas, et quel geste faire. `null` s'il l'est. */
   empechement: string | null;
 } {
-  switch (normalizeClubRole(role)) {
-    case CLUB_ROLE_OWNER:
+  const joueur = isActivePlayerStatus(params.playerStatus);
+
+  switch (normalizeAccessRole(params.accessRole)) {
+    case CLUB_ACCESS_ROLE_OWNER:
       return {
-        statut: "Propriétaire du club",
-        badge: "Propriétaire",
+        statut: joueur ? "Propriétaire du club, et joueur de l'effectif" : "Propriétaire du club",
+        badge: joueur ? "Propriétaire-joueur" : "Propriétaire",
         peutQuitter: false,
         empechement:
           "Tu es propriétaire de ce club. Pour le quitter, la propriété doit d'abord être transférée à un autre membre — contacte le support FKS.",
       };
-    case CLUB_ROLE_COACH:
+    case CLUB_ACCESS_ROLE_COACH:
       return {
-        statut: "Encadrant du club",
-        badge: "Encadrant",
+        statut: joueur ? "Encadrant du club, et joueur de l'effectif" : "Encadrant du club",
+        badge: joueur ? "Encadrant-joueur" : "Encadrant",
         peutQuitter: true,
         empechement: null,
       };
     default:
-      // « player », « removed » et rôle illisible : on ne promet aucun statut
-      // particulier, et le départ volontaire reste offert (le serveur tranche).
+      // Aucune permission d'encadrement. On ne promet aucun statut particulier,
+      // et le départ volontaire reste offert (le serveur tranche).
       return {
-        statut: "Membre de l'effectif",
-        badge: "Membre",
+        statut: joueur ? "Joueur de l'effectif" : "Membre du club",
+        badge: joueur ? "Joueur" : "Membre",
         peutQuitter: true,
         empechement: null,
       };

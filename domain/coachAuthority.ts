@@ -69,7 +69,11 @@ export function resolveCoachAuthority(lecture: ClubMembershipReading): CoachAuth
     case "aucun-club":
       return "refuse";
     case "lu":
-      return isClubStaffRole(lecture.role) ? "autorise" : "refuse";
+      // SEULES les permissions d'encadrement sont regardées. Le statut de
+      // joueur n'entre pas ici : un entraineur-joueur garde son autorite coach
+      // pleine et entiere, et un joueur pur n'en obtient jamais. Melanger les
+      // deux axes rouvrirait exactement le defaut que le modele vient de fermer.
+      return isClubStaffRole(lecture.accessRole) ? "autorise" : "refuse";
   }
 }
 

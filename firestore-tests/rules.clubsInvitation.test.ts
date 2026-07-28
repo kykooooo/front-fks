@@ -85,7 +85,7 @@ const asAnon = () => testEnv.unauthenticatedContext().firestore();
 
 const playerMemberDoc = (uid: string, extra: Record<string, unknown> = {}) => ({
   uid,
-  role: "player",
+  playerStatus: "active",
   ...extra,
 });
 
@@ -180,14 +180,14 @@ describe("3) Membership player : plus AUCUNE écriture cliente", () => {
     await assertFails(
       setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), {
         uid: STRANGER,
-        role: "coach",
+        accessRole: "coach",
       }),
     );
     // Même un membre player du club ne peut pas se promouvoir.
     await assertFails(
       setDoc(doc(asUser(PLAYER_A1), "clubs", CLUB_A, "members", PLAYER_A1), {
         uid: PLAYER_A1,
-        role: "coach",
+        accessRole: "coach",
       }),
     );
   });
@@ -197,7 +197,7 @@ describe("3) Membership player : plus AUCUNE écriture cliente", () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "clubs", CLUB_A, "members", STRANGER), {
         uid: STRANGER,
-        role: "player",
+        playerStatus: "active",
         joinedAt: 1_753_600_000_000,
       });
     });
@@ -222,7 +222,7 @@ describe("4) Chemins légitimes préservés", () => {
     // Le club ne porte PLUS de code d'invitation : la Function l'émet à part.
     await assertSucceeds(setDoc(clubRef, { name: "Club Neuf", ownerUid: NEWCOACH }));
     await assertSucceeds(
-      setDoc(doc(db, "clubs", clubRef.id, "members", NEWCOACH), { uid: NEWCOACH, role: "owner" }),
+      setDoc(doc(db, "clubs", clubRef.id, "members", NEWCOACH), { uid: NEWCOACH, accessRole: "owner" }),
     );
     // Et le voilà encadrant : le rôle propriétaire ouvre le cadre de semaine.
     await assertSucceeds(
@@ -245,7 +245,7 @@ describe("4) Chemins légitimes préservés", () => {
     const clubRef = doc(collection(db, "clubs"));
     await assertSucceeds(setDoc(clubRef, { name: "Club Neuf 2", ownerUid: NEWCOACH }));
     await assertFails(
-      setDoc(doc(db, "clubs", clubRef.id, "members", NEWCOACH), { uid: NEWCOACH, role: "coach" }),
+      setDoc(doc(db, "clubs", clubRef.id, "members", NEWCOACH), { uid: NEWCOACH, accessRole: "coach" }),
     );
   });
 
@@ -257,20 +257,20 @@ describe("4) Chemins légitimes préservés", () => {
     await assertFails(
       setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), {
         uid: STRANGER,
-        role: "owner",
+        accessRole: "owner",
       }),
     );
     await assertFails(
       setDoc(doc(asUser(PLAYER_A1), "clubs", CLUB_A, "members", PLAYER_A1), {
         uid: PLAYER_A1,
-        role: "owner",
+        accessRole: "owner",
       }),
     );
     // Et on ne promeut pas non plus QUELQU'UN D'AUTRE au rôle propriétaire.
     await assertFails(
       setDoc(doc(asUser(COACH_A), "clubs", CLUB_A, "members", PLAYER_A1), {
         uid: PLAYER_A1,
-        role: "owner",
+        accessRole: "owner",
       }),
     );
   });
@@ -279,7 +279,7 @@ describe("4) Chemins légitimes préservés", () => {
     await assertFails(
       setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), {
         uid: STRANGER,
-        role: "coach",
+        accessRole: "coach",
       }),
     );
   });

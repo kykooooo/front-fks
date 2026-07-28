@@ -21,6 +21,7 @@ import {
 } from "../domain/types";
 import { parseCoachPlayerSummary, type CoachPlayerSummary } from "../domain/coachSummary";
 import { isCoachAccessGranted } from "../domain/coachAccess";
+import { isActivePlayerStatus, type ClubAccessRole } from "../domain/clubRoles";
 import {
   COACH_NOTES_COLLECTION,
   clampCoachPrivateNote,
@@ -41,13 +42,6 @@ export type ClubDoc = {
   name: string;
   ownerUid: string;
 };
-
-/**
- * Rôles écrivables depuis le client. "removed" n'y figure PAS : la pierre
- * tombale du retrait est posée par le serveur seul (Cloud Function
- * `removeClubMember`), jamais par une application.
- */
-export type ClubRole = "owner" | "coach" | "player";
 
 /**
  * Crée le club. Il ne porte PLUS de code d'invitation.
@@ -91,19 +85,31 @@ export async function createClub(opts: { name: string; ownerUid: string }): Prom
  * `CLUB_STAFF_ROLES` (serveur) font du propriétaire un encadrant à part entière :
  * il garde l'écriture du cadre de semaine, de la note privée et de la directive.
  *
- * Le rattachement d'un JOUEUR ne passe plus par ici : il est écrit par la Cloud
- * Function `joinClubWithInviteCode`, après vérification serveur du code
- * (expiration, révocation, quota d'usages, limitation de tentatives). Appeler
- * cette fonction avec `role: "player"` sera refusé par le serveur — c'est
- * volontaire, et c'est ce qui empêche de contourner ces quatre garde-fous.
+ * CE CHEMIN N'ÉCRIT QUE L'AXE ENCADREMENT (`accessRole`). Le STATUT DE JOUEUR
+ * (`playerStatus`) est interdit à tout client par les règles Firestore, au même
+ * titre que `coachAccess` : il est posé par la Cloud Function
+ * `joinClubWithInviteCode`, après vérification serveur du code (expiration,
+ * révocation, quota d'usages, limitation de tentatives). Un client qui pourrait
+ * l'écrire contournerait ces quatre garde-fous et s'inscrirait tout seul dans
+ * l'effectif suivi d'un club.
+ *
+ * Conséquence côté produit, assumée : le fondateur d'un club n'a PAS de suivi
+ * sportif dans son propre club à la création. S'il veut en avoir un (le cas de
+ * l'entraîneur-joueur), il saisit un code d'invitation de son club comme
+ * n'importe qui — un geste explicite, qui ajoute le suivi sans rien retirer à
+ * ses permissions.
  */
-export async function setClubMembership(opts: { clubId: string; uid: string; role: ClubRole }) {
+export async function setClubMembership(opts: {
+  clubId: string;
+  uid: string;
+  accessRole: ClubAccessRole;
+}) {
   const memberRef = doc(db, "clubs", opts.clubId, "members", opts.uid);
   await setDoc(
     memberRef,
     {
       uid: opts.uid,
-      role: opts.role,
+      accessRole: opts.accessRole,
       joinedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     },
@@ -157,7 +163,7 @@ export async function removeClubMembership(opts: { clubId: string; uid: string }
  * Crée un club et rattache l'utilisateur comme PROPRIÉTAIRE en une seule
  * opération :
  *  - clubs/{clubId}                  { ownerUid }
- *  - clubs/{clubId}/members/{uid}    (role: "owner")  ← les DEUX sources posées
+ *  - clubs/{clubId}/members/{uid}    (accessRole: "owner")  ← les DEUX sources posées
  *  - users/{uid} { clubId, profileCompleted: true }
  *
  * Les deux sources du prédicat d'autorité sont écrites dans le même mouvement :
@@ -183,7 +189,7 @@ export async function createClubAsCoach(opts: {
   coachName?: string | null;
 }): Promise<ClubDoc> {
   const club = await createClub({ name: opts.name, ownerUid: opts.uid });
-  await setClubMembership({ clubId: club.id, uid: opts.uid, role: "owner" });
+  await setClubMembership({ clubId: club.id, uid: opts.uid, accessRole: "owner" });
 
   const coachName = String(opts.coachName ?? "").trim();
   await setDoc(
@@ -295,7 +301,7 @@ async function mapWithConcurrency<T, R>(
 /**
  * Effectif → résumés joueurs, aligné sur la règle stricte playerSummaries.
  *  1. lit clubs/{clubId}/members (borné) ;
- *  2. ne garde que role === "player" (exclut coach / rôle invalide) ;
+ *  2. ne garde que playerStatus === "active" (suivi sportif réel) ;
  *  3. lit CHAQUE clubs/{clubId}/playerSummaries/{memberId} directement (concurrence bornée),
  *     via le lecteur doc unique (intégrité playerUid === memberId, parse défensif, zéro fallback) ;
  *  4. membre sans summary / payload malformé → compté dans `pendingCount` (projection non prête, jamais dropé) ;
@@ -331,7 +337,13 @@ export async function fetchClubPlayerSummaries(
     const snap = await getDocs(
       query(collection(db, "clubs", clubId, "members"), limit(MEMBERS_FETCH_LIMIT)),
     );
-    const players = snap.docs.filter((d) => (d.data() as { role?: unknown })?.role === "player");
+        // EFFECTIF SUIVI = statut de joueur actif, jamais les permissions
+    // d'encadrement. Un entraîneur-joueur (accessRole "coach" + playerStatus
+    // "active") est donc dans cette liste, exactement comme les autres joueurs —
+    // et sa fiche reste soumise à coachAccess, juste en dessous.
+    const players = snap.docs.filter((d) =>
+      isActivePlayerStatus((d.data() as { playerStatus?: unknown })?.playerStatus),
+    );
     // Partition SERVEUR : autorisé / non autorisé. On ne demande la projection
     // que des joueurs autorisés — demander les autres produirait un refus des
     // règles, qu'on compterait à tort comme une erreur de lecture.

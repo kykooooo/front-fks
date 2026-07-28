@@ -31,10 +31,16 @@
 // n'importe donc NI firebase-admin NI firebase-functions — le branchement
 // Firestore vit dans triggers.ts.
 
+import { PLAYER_STATUS_ACTIVE, normalizePlayerStatus } from "./clubAuthority";
 import { normalizeCoachAccess, resolveCoachAccess, type CoachAccessState } from "./coachAccess";
 
 export type MemberSnapshot = {
-  role: unknown;
+  /**
+   * `clubs/{clubId}/members/{uid}.playerStatus`. C'est le STATUT DE JOUEUR, pas
+   * les permissions d'encadrement : un entraineur-joueur a bien un suivi a
+   * autoriser, et il doit donc recevoir un etat d'autorisation comme les autres.
+   */
+  playerStatus: unknown;
   coachAccess: unknown;
 };
 
@@ -70,8 +76,12 @@ export async function ensureCoachAccessState(
 ): Promise<CoachAccessSyncResult> {
   const member = await store.readMember(clubId, playerUid);
   if (!member) return { action: "no-member" };
-  // Un coach n'a pas de suivi joueur a autoriser : le champ n'a pas de sens pour lui.
-  if (member.role !== "player") return { action: "not-player" };
+  // Sans suivi sportif actif, il n'y a rien a autoriser : le champ n'a pas de
+  // sens pour un encadrant qui ne s'entraine pas dans ce club, ni pour une
+  // pierre tombale. Un entraineur-joueur, lui, passe par ici comme les autres.
+  if (normalizePlayerStatus(member.playerStatus) !== PLAYER_STATUS_ACTIVE) {
+    return { action: "not-player" };
+  }
 
   // Etat deja pose et lisible : on s'arrete AVANT de lire le club.
   const existing = normalizeCoachAccess(member.coachAccess);

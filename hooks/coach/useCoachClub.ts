@@ -258,16 +258,18 @@ export function useCoachClub(options?: UseCoachClubOptions): CoachClubState {
       // la base sur un incident réseau serait exactement le genre de mensonge que
       // le reste de l'espace coach s'interdit. En cas d'échec, on retombe donc
       // sur « pas propriétaire », qui n'affirme rien et n'affiche aucun bandeau.
-      let myRole: unknown = null;
+      let myAccessRole: unknown = null;
       let membershipRead = true;
       try {
         const memberSnap = await getDoc(doc(db, "clubs", clubId, "members", uid));
-        myRole = memberSnap.exists() ? (memberSnap.data() as Record<string, unknown>)?.role : null;
+        myAccessRole = memberSnap.exists()
+          ? (memberSnap.data() as Record<string, unknown>)?.accessRole
+          : null;
       } catch {
         membershipRead = false;
       }
       const ownerAuthority: ClubOwnerAuthority = membershipRead
-        ? resolveClubOwnerAuthority({ ownerUid, myRole, uid })
+        ? resolveClubOwnerAuthority({ ownerUid, myAccessRole, uid })
         : "not-owner";
 
       // Cadre de la semaine : best-effort. Son échec ne casse PAS le contexte club

@@ -7,6 +7,7 @@
 
 import { onDocumentWritten, type FirestoreEvent, type Change, type DocumentSnapshot } from "firebase-functions/v2/firestore";
 import { getDb } from "./admin";
+import { PLAYER_STATUS_FIELD } from "./clubAuthority";
 import { COACH_ACCESS_FIELD, type CoachAccessState } from "./coachAccess";
 import { JOIN_ACCESS_POLICY_FIELD } from "./joinAccessPolicy";
 import { ensureCoachAccessState, type MemberAccessStore } from "./coachAccessSync";
@@ -38,7 +39,7 @@ function memberAccessStore(): MemberAccessStore {
       const snap = await db.doc(paths.member(clubId, playerUid)).get();
       if (!snap.exists) return null;
       const data = (snap.data() ?? {}) as Record<string, unknown>;
-      return { role: data.role, coachAccess: data[COACH_ACCESS_FIELD] };
+      return { playerStatus: data[PLAYER_STATUS_FIELD], coachAccess: data[COACH_ACCESS_FIELD] };
     },
     async readClubPolicy(clubId: string) {
       const snap = await db.doc(paths.club(clubId)).get();

@@ -28,7 +28,13 @@ import {
   type MemberStore,
   type MemberTx,
 } from "../src/clubMembers";
-import { CLUB_ROLE_REMOVED, type ClubAuthoritySignal } from "../src/clubAuthority";
+import {
+  PLAYER_STATUS_INACTIVE,
+  isActiveMembership,
+  isActivePlayer,
+  isClubStaff,
+  type ClubAuthoritySignal,
+} from "../src/clubAuthority";
 import { projectPlayerSummary } from "../src/projector";
 
 // ─── Faux magasin transactionnel ────────────────────────────────────────────
@@ -86,21 +92,21 @@ function baseStore(): FakeStore {
   store.seed(memberPaths.club(CLUB_A), { name: "Club A", ownerUid: OWNER_A });
   store.seed(memberPaths.club(CLUB_B), { name: "Club B", ownerUid: OWNER_B });
 
-  store.seed(memberPaths.member(CLUB_A, OWNER_A), { uid: OWNER_A, role: "owner" });
-  store.seed(memberPaths.member(CLUB_A, COACH_A), { uid: COACH_A, role: "coach" });
+  store.seed(memberPaths.member(CLUB_A, OWNER_A), { uid: OWNER_A, accessRole: "owner" });
+  store.seed(memberPaths.member(CLUB_A, COACH_A), { uid: COACH_A, accessRole: "coach" });
   store.seed(memberPaths.member(CLUB_A, PLAYER_A1), {
     uid: PLAYER_A1,
-    role: "player",
+    playerStatus: "active",
     coachAccess: "not_required",
     joinedAt: NOW - 100_000,
   });
   store.seed(memberPaths.member(CLUB_A, PLAYER_A2), {
     uid: PLAYER_A2,
-    role: "player",
+    playerStatus: "active",
     coachAccess: "approved",
   });
-  store.seed(memberPaths.member(CLUB_B, OWNER_B), { uid: OWNER_B, role: "owner" });
-  store.seed(memberPaths.member(CLUB_B, PLAYER_B), { uid: PLAYER_B, role: "player" });
+  store.seed(memberPaths.member(CLUB_B, OWNER_B), { uid: OWNER_B, accessRole: "owner" });
+  store.seed(memberPaths.member(CLUB_B, PLAYER_B), { uid: PLAYER_B, playerStatus: "active" });
 
   store.seed(memberPaths.user(PLAYER_A1), { uid: PLAYER_A1, clubId: CLUB_A, firstName: "Anna" });
   store.seed(memberPaths.user(PLAYER_A2), { uid: PLAYER_A2, clubId: CLUB_A, firstName: "Bea" });
@@ -152,16 +158,23 @@ describe("retrait d'un membre — matrice des appelants", () => {
       clearedUserClub: true,
     });
 
-    // a. appartenance desactivee (pierre tombale), joinedAt conserve pour l'audit
+    // a. appartenance desactivee (pierre tombale), joinedAt conserve pour l'audit.
+    //    LES DEUX AXES sont fermes dans la MEME ecriture : plus d'encadrement
+    //    (`accessRole: null`) ET plus de suivi (`playerStatus: "inactive"`).
     const membership = store.read(memberPaths.member(CLUB_A, PLAYER_A1));
     expect(membership).toMatchObject({
       uid: PLAYER_A1,
-      role: CLUB_ROLE_REMOVED,
+      accessRole: null,
+      playerStatus: "inactive",
       coachAccess: "revoked",
       removedAt: NOW,
       removedBy: COACH_A,
       joinedAt: NOW - 100_000,
     });
+    expect(isClubStaff(membership)).toBe(false);
+    expect(isActivePlayer(membership)).toBe(false);
+    expect(isActiveMembership(membership)).toBe(false);
+    expect(isProjectablePlayer(membership)).toBe(false);
 
     // b. projection existante supprimee
     expect(store.read(memberPaths.playerSummary(CLUB_A, PLAYER_A1))).toBeNull();
@@ -170,9 +183,9 @@ describe("retrait d'un membre — matrice des appelants", () => {
     expect(store.read(memberPaths.user(PLAYER_A1))).toMatchObject({ clubId: null });
 
     // d. AUCUN AUTRE MEMBRE n'a bouge
-    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A2))).toMatchObject({ role: "player" });
+    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A2))).toMatchObject({ playerStatus: "active" });
     expect(store.read(memberPaths.playerSummary(CLUB_A, PLAYER_A2))).not.toBeNull();
-    expect(store.read(memberPaths.member(CLUB_A, COACH_A))).toMatchObject({ role: "coach" });
+    expect(store.read(memberPaths.member(CLUB_A, COACH_A))).toMatchObject({ accessRole: "coach" });
   });
 
   it("PROPRIETAIRE AUTORISE (predicat complet vrai) : le retrait passe aussi", async () => {
@@ -199,7 +212,7 @@ describe("retrait d'un membre — matrice des appelants", () => {
     expect(err.message).toBe(REMOVE_DENIED_MESSAGE);
     expect(err.reason).toBeNull();
 
-    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))).toMatchObject({ role: "player" });
+    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))).toMatchObject({ playerStatus: "active" });
     expect(store.read(memberPaths.playerSummary(CLUB_A, PLAYER_A1))).not.toBeNull();
     expect(store.read(memberPaths.user(PLAYER_A1))).toMatchObject({ clubId: CLUB_A });
   });
@@ -214,7 +227,7 @@ describe("retrait d'un membre — matrice des appelants", () => {
       }),
     );
     expect(err.code).toBe(REMOVE_DENIED_CODE);
-    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A2))).toMatchObject({ role: "player" });
+    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A2))).toMatchObject({ playerStatus: "active" });
   });
 
   it("INCONNU (aucune appartenance) : meme refus, meme message", async () => {
@@ -302,7 +315,7 @@ describe("retrait d'un membre — matrice des appelants", () => {
     // Le message est PARLANT : c'est le seul refus qui doit nommer le geste.
     expect(err.message).toMatch(/transf/i);
     // Et le proprietaire est toujours la.
-    expect(store.read(memberPaths.member(CLUB_A, OWNER_A))).toMatchObject({ role: "owner" });
+    expect(store.read(memberPaths.member(CLUB_A, OWNER_A))).toMatchObject({ accessRole: "owner" });
   });
 
   it("RETRAIT DU PROPRIETAIRE PAR LUI-MEME : meme echec type", async () => {
@@ -332,7 +345,7 @@ describe("retrait d'un membre — matrice des appelants", () => {
       }),
     );
     expect(err.reason).toBe(OWNER_TRANSFER_REQUIRED);
-    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A2))).toMatchObject({ role: "player" });
+    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A2))).toMatchObject({ playerStatus: "active" });
   });
 });
 
@@ -343,7 +356,7 @@ describe("retrait — appelant dont l'autorite est incoherente", () => {
     const store = baseStore();
     // Etat historique exact que le lot supprime : le createur du club s'ecrivait
     // en "coach". On refuse, on signale, on ne tranche pas.
-    store.seed(memberPaths.member(CLUB_A, OWNER_A), { uid: OWNER_A, role: "coach" });
+    store.seed(memberPaths.member(CLUB_A, OWNER_A), { uid: OWNER_A, accessRole: "coach" });
 
     const signals: ClubAuthoritySignal[] = [];
     const err = await capture(() =>
@@ -363,12 +376,12 @@ describe("retrait — appelant dont l'autorite est incoherente", () => {
         action: "removeClubMember",
       },
     ]);
-    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))).toMatchObject({ role: "player" });
+    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))).toMatchObject({ playerStatus: "active" });
   });
 
   it("appartenance 'owner' mais ownerUid designe un autre : REFUS + SIGNAL", async () => {
     const store = baseStore();
-    store.seed(memberPaths.member(CLUB_A, COACH_A), { uid: COACH_A, role: "owner" });
+    store.seed(memberPaths.member(CLUB_A, COACH_A), { uid: COACH_A, accessRole: "owner" });
 
     const signals: ClubAuthoritySignal[] = [];
     const err = await capture(() =>
@@ -461,7 +474,7 @@ describe("acces coach et reprojection APRES le retrait", () => {
   });
 
   it("un membership INTACT projette toujours (preuve que le test ci-dessus mesure bien le retrait)", () => {
-    const intact = { uid: PLAYER_A1, role: "player", coachAccess: "not_required" };
+    const intact = { uid: PLAYER_A1, playerStatus: "active", coachAccess: "not_required" };
     expect(projectPlayerSummary(projectorInput(intact))).not.toBeNull();
   });
 });
@@ -494,7 +507,7 @@ describe("references et caches", () => {
     });
     expect(result.clearedUserClub).toBe(false);
     expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))).toMatchObject({
-      role: CLUB_ROLE_REMOVED,
+      accessRole: null, playerStatus: "inactive",
     });
   });
 
@@ -553,7 +566,7 @@ describe("entrees hostiles", () => {
       expect(parMembre.code).toBe(REMOVE_DENIED_CODE);
     }
     // Aucune lecture n'a rien change.
-    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))).toMatchObject({ role: "player" });
+    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))).toMatchObject({ playerStatus: "active" });
   });
 
   it("club inexistant : MEME refus que 'pas encadrant' (aucun oracle d'existence)", async () => {
@@ -588,6 +601,6 @@ describe("entrees hostiles", () => {
       ),
     );
     expect(err.code).toBe("unavailable");
-    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))).toMatchObject({ role: "player" });
+    expect(store.read(memberPaths.member(CLUB_A, PLAYER_A1))).toMatchObject({ playerStatus: "active" });
   });
 });
