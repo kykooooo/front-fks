@@ -30,11 +30,25 @@ export { deleteAccount } from "./deleteAccount";
 // résoudre un code, ni écrire un membership "player" (cf. firestore.rules).
 export { issueClubInviteCode, joinClubWithInviteCode } from "./clubInvites";
 
-// Retrait d'un membre du club : 100 % serveur également. Révoquer un code
-// n'expulse personne — l'accès repose sur l'EXISTENCE du document de membre, et
-// seule cette callable sait le désactiver, supprimer la projection déjà produite
-// et nettoyer la référence du joueur vers son club, le tout en une transaction.
-export { removeClubMember } from "./clubMembersApi";
+// LES TROIS FORMES DE RETRAIT : 100 % serveur également. Révoquer un code
+// n'expulse personne — l'accès repose sur l'EXISTENCE et sur le CONTENU du
+// document de membre, et seules ces callables savent l'écrire.
+//
+// TROIS points d'entrée, et non un seul avec un paramètre d'action. Le geste
+// n'est donc jamais une valeur venue du client (rien à valider, rien à usurper),
+// et chacun exécute une transaction réellement distincte :
+//  . `removeClubMember`      — retrait COMPLET : les deux axes fermés, la
+//    projection purgée, `users/{uid}.clubId` détaché. Signature INCHANGÉE.
+//  . `deactivateClubPlayer`  — arrête le SUIVI DE JOUEUR, conserve l'encadrement.
+//    Seul des trois à ne PAS exiger le transfert de propriété : un président qui
+//    arrête de jouer ne transfère pas son club.
+//  . `revokeClubStaffAccess` — retire les PERMISSIONS D'ENCADREMENT, conserve le
+//    suivi de joueur (l'entraîneur-joueur garde sa fiche dans l'effectif).
+export {
+  removeClubMember,
+  deactivateClubPlayer,
+  revokeClubStaffAccess,
+} from "./clubMembersApi";
 
 // Transfert de propriété du club : 100 % serveur, une seule transaction pour la
 // désignation (`ownerUid`), le rôle du nouveau propriétaire et celui de l'ancien.

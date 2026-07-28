@@ -658,3 +658,101 @@ describe("revalidation qui n'aboutit pas — on ne reste pas suspendu", () => {
     expect(h.current.autorite).toBe("autorise");
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// LES TROIS FORMES DE RETRAIT, VUES DEPUIS LE TÉLÉPHONE DE LA PERSONNE
+//
+// Le serveur écrit trois états différents ; c'est ici qu'on vérifie que
+// l'application en tire trois conséquences différentes — et surtout que la PURGE
+// de l'état coach se déclenche sur la bonne, et sur elle seule.
+//
+// LE PIÈGE, ÉCRIT NOIR SUR BLANC : arrêter le SUIVI DE JOUEUR d'un
+// entraîneur-joueur NE DOIT PAS purger son espace coach. Il ne perd rien de son
+// encadrement, et une purge lui viderait l'effectif sous les yeux sans raison.
+// ════════════════════════════════════════════════════════════════════════════
+
+describe("les trois gestes, côté application : ce qui purge et ce qui ne purge pas", () => {
+  test("ARRÊT DU SUIVI d'un entraîneur-joueur : AUCUNE purge, l'espace coach reste", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "uTroisGestes", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach", "active"));
+    expect(h.current.space).toBe("coach");
+    // Les deux espaces lui sont ouverts : le sélecteur est là.
+    expect(h.current.peutChoisirEspace).toBe(true);
+    const capture = currentCoachAuthorityToken();
+    purges = [];
+
+    // Le serveur a écrit `playerStatus: "inactive"`, et RIEN d'autre.
+    await actAsync(() => dernier().emet("coach", "inactive"));
+
+    expect(purges).toEqual([]);
+    expect(h.current.space).toBe("coach");
+    expect(h.current.autorite).toBe("autorise");
+    expect(h.current.membershipAccessRole).toBe("coach");
+    // Une lecture coach partie avant le geste reste applicable : rien de ce
+    // qu'elle rapporte n'a cessé d'être autorisé.
+    expect(canCommitCoachData(capture)).toBe(true);
+    // Ce qui change, et c'est tout : il n'a plus de suivi, donc plus de choix.
+    expect(h.current.peutChoisirEspace).toBe(false);
+  });
+
+  test("RETRAIT DES ACCÈS D'ENCADREMENT d'un entraîneur-joueur : purge, et bascule vers le joueur", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "uTroisGestes", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach", "active"));
+    const capture = currentCoachAuthorityToken();
+    purges = [];
+
+    // Le serveur a écrit `accessRole: null`, et RIEN d'autre.
+    await actAsync(() => dernier().emet(null, "active"));
+
+    expect(purges).toEqual(["revocation"]);
+    expect(h.current.space).toBe("player");
+    expect(h.current.autorite).toBe("refuse");
+    expect(h.current.membershipAccessRole).toBeNull();
+    expect(canCommitCoachData(capture)).toBe(false);
+    // Il garde son application d'entraînement : il est toujours joueur du club.
+    expect(h.current.decision).toBe("player");
+  });
+
+  test("RETRAIT COMPLET : purge, et plus rien d'ouvert côté encadrement", async () => {
+    const h = await renderHook(() => useAppSpace({ uid: "uTroisGestes", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach", "active"));
+    purges = [];
+
+    // Pierre tombale : les deux axes fermés dans la même écriture.
+    await actAsync(() => dernier().emet(null, "inactive"));
+
+    expect(purges).toEqual(["revocation"]);
+    expect(h.current.space).toBe("player");
+    expect(h.current.peutChoisirEspace).toBe(false);
+    expect(canCommitCoachData(currentCoachAuthorityToken())).toBe(false);
+  });
+
+  test("un ENCADRANT PUR dont on arrête le « suivi » ne bouge pas d'un pouce", async () => {
+    // Cas de rejeu : le serveur ne réécrit rien (idempotence), mais si un
+    // instantané repasse, l'application ne doit rien conclure de nouveau.
+    const h = await renderHook(() => useAppSpace({ uid: "uTroisGestes", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("coach"));
+    const capture = currentCoachAuthorityToken();
+    purges = [];
+
+    await actAsync(() => dernier().emet("coach", "inactive"));
+
+    expect(purges).toEqual([]);
+    expect(h.current.space).toBe("coach");
+    expect(currentCoachAuthorityToken()).toBe(capture);
+  });
+
+  test("le PROPRIÉTAIRE qui arrête de jouer reste propriétaire à l'écran", async () => {
+    // Le geste légitime du lot : il ne transfère rien, il ne perd rien.
+    const h = await renderHook(() => useAppSpace({ uid: "uTroisGestes", clubId: "clubX" }));
+    await actAsync(() => dernier().emet("owner", "active"));
+    purges = [];
+
+    await actAsync(() => dernier().emet("owner", "inactive"));
+
+    expect(purges).toEqual([]);
+    expect(h.current.space).toBe("coach");
+    expect(h.current.membershipAccessRole).toBe("owner");
+    expect(h.current.autorite).toBe("autorise");
+  });
+});

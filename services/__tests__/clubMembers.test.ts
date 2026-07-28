@@ -22,8 +22,11 @@ jest.mock("../firebase", () => ({ app: {}, auth: {}, db: {} }));
 
 import {
   OWNER_TRANSFER_REQUIRED,
+  STAFF_OWNER_ONLY,
+  deactivateClubPlayer,
   readRemoveFailureReason,
   removeClubMember,
+  revokeClubStaffAccess,
 } from "../clubMembers";
 
 /** Erreur telle que la produit le SDK callable. */
@@ -175,6 +178,112 @@ describe("removeClubMember", () => {
       expect(res.message).not.toContain("permissions");
       // Un message français utile finit par une invitation à agir.
       expect(res.message.length).toBeGreaterThan(20);
+    }
+  });
+});
+
+// ─── LES TROIS GESTES : TROIS CALLABLES, ET AUCUN PARAMÈTRE D'ACTION ─────────
+//
+// Le point de conception vérifié ici : le geste n'est JAMAIS une valeur dans la
+// charge utile. C'est le NOM de la fonction appelée. Un attaquant qui rejoue une
+// requête ne peut donc pas transformer un « arrêt du suivi » en « retrait
+// complet » en changeant un champ — il n'y a pas de champ à changer.
+
+/** Nom de la callable réellement demandée au SDK (2e argument de `httpsCallable`). */
+function callableAppelee(): string {
+  expect(mockHttpsCallable).toHaveBeenCalled();
+  const args = mockHttpsCallable.mock.calls[0] as unknown as [unknown, string];
+  return args[1];
+}
+
+describe("les trois gestes appellent trois callables distinctes", () => {
+  test("chaque geste vise SA callable, avec la même charge utile minimale", async () => {
+    const cas: Array<[(c: string, m: string) => Promise<unknown>, string]> = [
+      [removeClubMember, "removeClubMember"],
+      [deactivateClubPlayer, "deactivateClubPlayer"],
+      [revokeClubStaffAccess, "revokeClubStaffAccess"],
+    ];
+    for (const [geste, nom] of cas) {
+      mockCall.mockReset();
+      mockHttpsCallable.mockClear();
+      mockCall.mockResolvedValue({ data: {} });
+
+      await geste("clubX", "playerY");
+
+      expect(callableAppelee()).toBe(nom);
+      // AUCUN champ d'action : deux clés, et rien d'autre.
+      expect(mockCall).toHaveBeenCalledWith({ clubId: "clubX", memberUid: "playerY" });
+      expect(Object.keys(mockCall.mock.calls[0][0] as object).sort()).toEqual([
+        "clubId",
+        "memberUid",
+      ]);
+    }
+  });
+
+  test("chaque geste lit SON drapeau de rejeu, et ignore celui des autres", async () => {
+    // Le serveur nomme le rejeu dans SES mots ; le front ramène les trois à la
+    // même question. Lire le mauvais champ afficherait « déjà fait » sur un geste
+    // qui vient réellement d'avoir lieu.
+    mockCall.mockResolvedValue({ data: { alreadyInactive: true } });
+    await expect(deactivateClubPlayer("clubX", "p1")).resolves.toEqual({
+      ok: true,
+      alreadyRemoved: true,
+    });
+    await expect(removeClubMember("clubX", "p1")).resolves.toEqual({
+      ok: true,
+      alreadyRemoved: false,
+    });
+
+    mockCall.mockResolvedValue({ data: { alreadyRevoked: true } });
+    await expect(revokeClubStaffAccess("clubX", "p1")).resolves.toEqual({
+      ok: true,
+      alreadyRemoved: true,
+    });
+    await expect(deactivateClubPlayer("clubX", "p1")).resolves.toEqual({
+      ok: true,
+      alreadyRemoved: false,
+    });
+  });
+
+  test("STAFF_OWNER_ONLY : reconnu au jeton, message qui nomme le propriétaire", async () => {
+    mockCall.mockRejectedValue(
+      callableError("functions/failed-precondition", { reason: STAFF_OWNER_ONLY }),
+    );
+    for (const geste of [removeClubMember, deactivateClubPlayer, revokeClubStaffAccess]) {
+      const res = await geste("clubX", "coachY");
+      if (res.ok) throw new Error("refus attendu");
+      expect(res.reason).toBe("staffOwnerOnly");
+      expect(res.message).toMatch(/propriétaire/i);
+      expect(res.message).not.toContain("Missing");
+    }
+  });
+
+  test("les deux jetons ne se confondent pas", () => {
+    expect(
+      readRemoveFailureReason(
+        callableError("functions/failed-precondition", { reason: STAFF_OWNER_ONLY }),
+      ),
+    ).toBe("staffOwnerOnly");
+    expect(
+      readRemoveFailureReason(
+        callableError("functions/failed-precondition", { reason: OWNER_TRANSFER_REQUIRED }),
+      ),
+    ).toBe("ownerTransferRequired");
+    // Jeton inconnu : on ne prétend rien, refus générique.
+    expect(
+      readRemoveFailureReason(
+        callableError("functions/failed-precondition", { reason: "STAFF_OWNER_ONLY_BIS" }),
+      ),
+    ).toBe("denied");
+  });
+
+  test("aucun des trois gestes ne lève, quelle que soit la panne", async () => {
+    mockCall.mockRejectedValue("panne brute");
+    for (const geste of [removeClubMember, deactivateClubPlayer, revokeClubStaffAccess]) {
+      await expect(geste("clubX", "p1")).resolves.toMatchObject({
+        ok: false,
+        reason: "unavailable",
+      });
     }
   });
 });

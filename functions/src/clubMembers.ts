@@ -1,6 +1,65 @@
 // functions/src/clubMembers.ts
 //
-// RETRAIT REEL D'UN MEMBRE — coeur metier PUR.
+// LES TROIS FORMES DE RETRAIT — coeur metier PUR.
+//
+// ─── POURQUOI TROIS GESTES ET NON UN ────────────────────────────────────────
+// Depuis la separation des permissions d'encadrement et du statut de joueur
+// (clubAuthority.ts), « retirer un membre » est devenu AMBIGU. Pour un
+// entraineur-joueur — le cas courant en club amateur — il faut pouvoir
+// distinguer trois intentions qui n'ont rien a voir :
+//
+//   1. ARRETER SON SUIVI DE JOUEUR (`deactivateClubPlayer`) : il ne joue plus,
+//      mais il continue d'encadrer. `playerStatus` -> "inactive". Ses
+//      permissions d'encadrement ne sont PAS nommees dans l'ecriture, donc pas
+//      touchees : il garde son espace Coach.
+//   2. REVOQUER SES PERMISSIONS D'ENCADREMENT (`revokeClubStaffAccess`) : il
+//      n'est plus entraineur, mais il reste joueur de l'effectif.
+//      `accessRole` -> null. `playerStatus` n'est PAS nomme : son suivi
+//      continue, sa fiche reste dans l'effectif suivi.
+//   3. LE RETIRER COMPLETEMENT (`removeClubMember`) : les DEUX axes fermes, la
+//      projection purgee, et le club detache de son profil.
+//
+// Exigence de Kyllian, mot pour mot : « ces trois actions NE DOIVENT PAS
+// produire la meme transaction ». C'est structurel ici, pas conventionnel :
+// TROIS fonctions, TROIS corps de transaction, TROIS callables. Il n'existe
+// aucun parametre d'action venu du client — donc rien a valider, rien a
+// usurper : le geste est choisi par le POINT D'ENTREE, que le runtime callable
+// route lui-meme. Un drapeau dans la charge utile aurait fait exactement
+// l'inverse : une transaction commune modulee par une valeur cliente.
+//
+// Ce que les trois PARTAGENT, en revanche, est ecrit une seule fois
+// (`lireEtAutoriser`) : l'ordre des lectures, le predicat d'autorite, la
+// protection du proprietaire et la matrice acteur x cible. Trois copies de ce
+// socle auraient ete trois endroits ou se tromper.
+//
+// ─── LA MATRICE ACTEUR x CIBLE, UNE SEULE REGLE POUR LES TROIS ──────────────
+//   . cible SANS permission d'encadrement -> tout encadrant du club, ou la
+//     personne elle-meme ;
+//   . cible AVEC permission d'encadrement -> le PROPRIETAIRE autorise, ou la
+//     personne elle-meme.
+//
+// Pourquoi un coach ne touche pas a un autre coach : ce serait une escalade
+// LATERALE — deux encadrants pourraient se verrouiller mutuellement hors du
+// club, et le premier a appuyer gagnerait. La composition de l'encadrement a un
+// seul responsable, le proprietaire. Se retirer SOI-MEME reste toujours permis :
+// c'est une reduction de ses propres droits, jamais une prise de pouvoir.
+//
+// ─── LE PIEGE DU PROPRIETAIRE : DEUX GESTES SUR TROIS ───────────────────────
+// OWNER_TRANSFER_REQUIRED protege ce qui ferait perdre au club son
+// proprietaire : la revocation de son encadrement, et son retrait complet. Il
+// NE protege PAS le troisieme : un proprietaire qui arrete de jouer
+// (`deactivateClubPlayer` sur lui-meme) ne transfere pas son club pour autant —
+// un president qui raccroche les crampons reste president. Les trois cas sont
+// testes nommement.
+//
+// ─── LA REGLE DE PROJECTION QUI GOUVERNE TOUT CA ────────────────────────────
+// « Le projecteur suit UNIQUEMENT le statut joueur, puis applique
+//   l'autorisation d'acces. Les permissions d'encadrement ne rendent JAMAIS une
+//   fiche consultable. » (projector.ts, verrouille par test)
+// C'est ce qui fait qu'arreter le suivi supprime la fiche, et que revoquer
+// l'encadrement ne la touche pas.
+//
+// ─── RETRAIT COMPLET (le geste historique) ──────────────────────────────────
 //
 // Comme inviteCodes.ts, ce fichier ne connait NI firebase-admin NI
 // firebase-functions : il travaille sur un port minimal (`MemberStore`), ce qui
@@ -168,6 +227,82 @@ export const OWNER_TRANSFER_CODE: ClubMemberErrorCode = "failed-precondition";
 export const OWNER_TRANSFER_MESSAGE =
   "Impossible de retirer le proprietaire du club. Transfere d'abord la propriete a un autre encadrant, puis retire ce compte.";
 
+// ─── Les trois gestes, nommes une seule fois ────────────────────────────────
+
+/**
+ * Les trois gestes. Ce type ne traverse JAMAIS le reseau : il n'est pas un
+ * parametre d'appel, c'est le nom interne du chemin d'ecriture. Chaque geste a
+ * sa propre callable, donc son propre point d'entree — un client ne « choisit »
+ * pas un geste dans une charge utile, il appelle une fonction ou une autre.
+ */
+export type ClubMemberGesture =
+  | "removeClubMember"
+  | "deactivateClubPlayer"
+  | "revokeClubStaffAccess";
+
+/**
+ * Refus d'AUTORITE, par geste. Le message dit ce qui est refuse, jamais
+ * pourquoi : appelant non encadrant, encadrant d'un autre club, club
+ * inexistant, identifiant malforme et etat d'autorite incoherent produisent
+ * tous EXACTEMENT le meme objet (cf. `removeDeniedError`).
+ */
+export const GESTURE_DENIED_MESSAGE: Record<ClubMemberGesture, string> = {
+  removeClubMember: REMOVE_DENIED_MESSAGE,
+  deactivateClubPlayer:
+    "Arret du suivi impossible : cette action demande d'etre encadrant de ce club.",
+  revokeClubStaffAccess:
+    "Retrait des acces d'encadrement impossible : cette action demande d'etre encadrant de ce club.",
+};
+
+/** Panne du magasin, par geste. Meme code, meme absence d'information. */
+export const GESTURE_UNAVAILABLE_MESSAGE: Record<ClubMemberGesture, string> = {
+  removeClubMember: REMOVE_UNAVAILABLE_MESSAGE,
+  deactivateClubPlayer: "L'arret du suivi est momentanement indisponible. Reessaie.",
+  revokeClubStaffAccess:
+    "Le retrait des acces d'encadrement est momentanement indisponible. Reessaie.",
+};
+
+/**
+ * Protection du proprietaire, par geste. Le jeton machine est le MEME
+ * (OWNER_TRANSFER_REQUIRED) : le front n'a qu'une chose a reconnaitre, et le
+ * geste a faire est identique dans les deux cas. Seule la phrase change, parce
+ * qu'elle nomme ce qui vient d'etre refuse.
+ *
+ * `deactivateClubPlayer` n'y figure PAS, et c'est le coeur de ce lot : arreter
+ * le suivi de joueur d'un proprietaire ne lui retire aucun droit sur le club.
+ */
+export const OWNER_TRANSFER_MESSAGE_PAR_GESTE: Record<
+  "removeClubMember" | "revokeClubStaffAccess",
+  string
+> = {
+  removeClubMember: OWNER_TRANSFER_MESSAGE,
+  revokeClubStaffAccess:
+    "Impossible de retirer les acces d'encadrement du proprietaire du club. Transfere d'abord la propriete a un autre encadrant.",
+};
+
+/**
+ * Jeton d'echec TYPE de la matrice acteur x cible : la cible fait partie de
+ * l'ENCADREMENT, et l'appelant n'est ni le proprietaire ni la personne
+ * concernee.
+ *
+ * Ce refus est PARLANT — il nomme le geste a faire — et ce n'est pas un oracle :
+ * seul un encadrant de CE club l'atteint, et les regles Firestore lui donnent
+ * deja la lecture complete de `members` (il sait donc qui encadre). Il n'apprend
+ * rien qu'il ne puisse lire.
+ */
+export const STAFF_OWNER_ONLY = "STAFF_OWNER_ONLY";
+
+export const STAFF_OWNER_ONLY_CODE: ClubMemberErrorCode = "failed-precondition";
+
+export const STAFF_OWNER_ONLY_MESSAGE: Record<ClubMemberGesture, string> = {
+  removeClubMember:
+    "Ce compte fait partie de l'encadrement du club. Seul le proprietaire peut le retirer.",
+  deactivateClubPlayer:
+    "Ce compte fait partie de l'encadrement du club. Seul le proprietaire peut arreter son suivi de joueur.",
+  revokeClubStaffAccess:
+    "Seul le proprietaire du club peut retirer les acces d'encadrement d'un autre encadrant.",
+};
+
 /** Raisons INTERNES d'un refus d'autorite. Elles ne sortent JAMAIS de ce module. */
 export type RemoveDenialReason =
   | "malformed-club-id"
@@ -185,8 +320,30 @@ export function removeDeniedError(_reason: RemoveDenialReason): ClubMemberError 
   return new ClubMemberError(REMOVE_DENIED_CODE, REMOVE_DENIED_MESSAGE);
 }
 
-export function ownerTransferRequiredError(): ClubMemberError {
-  return new ClubMemberError(OWNER_TRANSFER_CODE, OWNER_TRANSFER_MESSAGE, OWNER_TRANSFER_REQUIRED);
+/** Meme refus, pour un geste donne. `reason` reste ignore, pour la meme raison. */
+export function gestureDeniedError(
+  geste: ClubMemberGesture,
+  _reason: RemoveDenialReason,
+): ClubMemberError {
+  return new ClubMemberError(REMOVE_DENIED_CODE, GESTURE_DENIED_MESSAGE[geste]);
+}
+
+export function ownerTransferRequiredError(
+  geste: "removeClubMember" | "revokeClubStaffAccess" = "removeClubMember",
+): ClubMemberError {
+  return new ClubMemberError(
+    OWNER_TRANSFER_CODE,
+    OWNER_TRANSFER_MESSAGE_PAR_GESTE[geste],
+    OWNER_TRANSFER_REQUIRED,
+  );
+}
+
+export function staffOwnerOnlyError(geste: ClubMemberGesture): ClubMemberError {
+  return new ClubMemberError(
+    STAFF_OWNER_ONLY_CODE,
+    STAFF_OWNER_ONLY_MESSAGE[geste],
+    STAFF_OWNER_ONLY,
+  );
 }
 
 // ─── Forme des identifiants ─────────────────────────────────────────────────
@@ -202,7 +359,211 @@ export function isPlausibleId(value: unknown): value is string {
   return !trimmed.includes("/") && !trimmed.includes("..");
 }
 
-// ─── Retrait ────────────────────────────────────────────────────────────────
+// ─── Traces d'audit, nommees une seule fois ─────────────────────────────────
+//
+// Chaque geste pose SA PROPRE trace. Trois paires de champs plutot qu'une seule,
+// parce qu'un journal qui melangerait « retire du club » et « ne joue plus » ne
+// permettrait plus de dire lequel des trois gestes a eu lieu — et c'est
+// exactement la distinction que ce lot introduit.
+
+/** Retrait COMPLET. Les seules traces conservees, et elles ne disent rien du joueur. */
+export const REMOVED_AT_FIELD = "removedAt";
+export const REMOVED_BY_FIELD = "removedBy";
+
+/** Arret du SUIVI DE JOUEUR. */
+export const PLAYER_DEACTIVATED_AT_FIELD = "playerDeactivatedAt";
+export const PLAYER_DEACTIVATED_BY_FIELD = "playerDeactivatedBy";
+
+/** Revocation des PERMISSIONS D'ENCADREMENT. */
+export const STAFF_REVOKED_AT_FIELD = "staffRevokedAt";
+export const STAFF_REVOKED_BY_FIELD = "staffRevokedBy";
+
+// ─── Socle commun aux trois gestes ──────────────────────────────────────────
+
+/** Refus possibles, communs aux trois gestes. */
+type GestureDenial =
+  | { kind: "denied"; reason: RemoveDenialReason; signal: ClubAuthoritySignal | null }
+  | { kind: "member-missing" }
+  | { kind: "owner-transfer-required" }
+  | { kind: "staff-owner-only" };
+
+type GestureOutcome<T> = { ok: true; result: T } | ({ ok: false } & GestureDenial);
+
+type Prelude =
+  | {
+      ok: true;
+      club: MemberDocData;
+      /** Appartenance de l'APPELANT. Identique a `target` quand il agit sur lui-meme. */
+      actorMembership: MemberDocData | null;
+      /** Appartenance de la CIBLE, garantie existante. */
+      target: MemberDocData;
+      estSoiMeme: boolean;
+      /** L'appelant est-il le proprietaire AUTORISE (les deux sources concordent) ? */
+      acteurProprietaire: boolean;
+    }
+  | ({ ok: false } & GestureDenial);
+
+/**
+ * LECTURES ET AUTORITE — la partie que les trois gestes partagent, ecrite une
+ * seule fois. Elle n'ECRIT RIEN : elle lit, elle juge, elle rend la matiere.
+ *
+ * L'ORDRE FAIT PARTIE DU CONTRAT :
+ *   a. le club existe (sinon : MEME refus que « pas encadrant » — le distinguer
+ *      apprendrait a un curieux qu'un identifiant de club existe) ;
+ *   b. autorite de l'appelant SUR CE CLUB, AVANT toute lecture de la cible
+ *      (anti-oracle, cf. en-tete de fichier) ;
+ *   c. existence reelle de la cible dans CE club ;
+ *   d. protection du proprietaire, quand le geste la demande ;
+ *   e. matrice acteur x cible : une cible ENCADRANTE n'est touchee que par le
+ *      proprietaire, ou par elle-meme.
+ *
+ * ─── L'ANTI-ORACLE SURVIT A L'AUTORISATION « SOI-MEME » ────────────────────
+ * Ouvrir les gestes a « soi-meme » aurait pu rouvrir une fuite : un inconnu
+ * aurait pu distinguer « ce club n'existe pas » (refus d'autorite) de « ce club
+ * existe mais je n'y suis pas » (cible absente), et donc ENUMERER les clubs.
+ * C'est ferme par construction : un appelant qui n'est pas encadrant n'est
+ * autorise que si son PROPRE document d'appartenance existe, et dans ce cas la
+ * cible EST ce document. Le refus « membre absent » n'est donc atteignable que
+ * par un encadrant de ce club, a propos d'un uid lu dans son propre effectif.
+ */
+async function lireEtAutoriser(
+  tx: MemberTx,
+  params: {
+    geste: ClubMemberGesture;
+    clubId: string;
+    actorUid: string;
+    memberUid: string;
+    /** Le geste retire-t-il au proprietaire ce qui fait de lui un proprietaire ? */
+    protegeProprietaire: boolean;
+  },
+): Promise<Prelude> {
+  const { geste, clubId, actorUid, memberUid } = params;
+
+  // a. Le club existe.
+  const club = await tx.get(memberPaths.club(clubId));
+  if (!club) return { ok: false, kind: "denied", reason: "club-missing", signal: null };
+
+  const actorMembership = await tx.get(memberPaths.member(clubId, actorUid));
+
+  // b. AUTORITE. Verifiee AVANT de toucher a la cible.
+  const authority = resolveOwnerAuthority(club, actorMembership, actorUid);
+  const signal = clubAuthoritySignal({ clubId, uid: actorUid, action: geste }, authority);
+  if (signal) {
+    // Etat incoherent : on REFUSE et on signale. Ne pas trancher entre les deux
+    // sources est le coeur de l'invariant ; laisser passer un geste destructeur
+    // sur un club dont l'autorite est douteuse le contredirait.
+    return { ok: false, kind: "denied", reason: "authority-inconsistent", signal };
+  }
+
+  const acteurEncadrant = isClubStaff(actorMembership);
+  const estSoiMeme = actorUid === memberUid;
+  // Un encadrant de CE club, ou quelqu'un qui agit sur sa PROPRE appartenance
+  // EXISTANTE. Un encadrant d'un AUTRE club n'a par construction aucun
+  // membership ici, et un inconnu n'en a nulle part.
+  if (!acteurEncadrant && !(estSoiMeme && actorMembership !== null)) {
+    return { ok: false, kind: "denied", reason: "not-staff", signal: null };
+  }
+
+  // c. La cible appartient-elle REELLEMENT a ce club ? Sur le chemin
+  //    « soi-meme », la cible EST l'appartenance de l'appelant : on la reutilise
+  //    plutot que de la relire, ce qui interdit toute divergence entre les deux
+  //    lectures d'un meme document.
+  const target = estSoiMeme
+    ? actorMembership
+    : await tx.get(memberPaths.member(clubId, memberUid));
+  if (!target) return { ok: false, kind: "member-missing" };
+
+  // d. PROTECTION DU PROPRIETAIRE. Volontairement LARGE : l'une OU l'autre des
+  //    deux sources suffit a declencher le refus. Sur un etat coherent les deux
+  //    disent la meme chose ; sur un etat abime, refuser reste le seul geste sur
+  //    — on ne veut surtout pas qu'une incoherence devienne le chemin par lequel
+  //    un club perd son proprietaire.
+  if (
+    params.protegeProprietaire &&
+    (isDesignatedOwner(club, memberUid) || hasOwnerMembership(target))
+  ) {
+    return { ok: false, kind: "owner-transfer-required" };
+  }
+
+  const acteurProprietaire = authority === "authorized";
+
+  // e. MATRICE ACTEUR x CIBLE. Toucher a l'appartenance d'un ENCADRANT demande
+  //    d'etre le proprietaire — ou d'etre cet encadrant. Un coach qui degraderait
+  //    un autre coach serait une escalade laterale : le premier a appuyer
+  //    gagnerait.
+  if (!estSoiMeme && isClubStaff(target) && !acteurProprietaire) {
+    return { ok: false, kind: "staff-owner-only" };
+  }
+
+  return { ok: true, club, actorMembership, target, estSoiMeme, acteurProprietaire };
+}
+
+/**
+ * Traduction UNIQUE d'un refus en erreur publique, et signalement eventuel.
+ * Appelee HORS transaction : un rejeu pour contention ne doit pas multiplier les
+ * lignes de journal.
+ */
+function throwGestureDenial(
+  deps: ClubMemberDeps,
+  geste: ClubMemberGesture,
+  failure: GestureDenial,
+): never {
+  if (failure.kind === "member-missing") {
+    throw new ClubMemberError(MEMBER_NOT_FOUND_CODE, MEMBER_NOT_FOUND_MESSAGE);
+  }
+  if (failure.kind === "owner-transfer-required") {
+    // Inatteignable pour `deactivateClubPlayer` (il ne demande jamais la
+    // protection) — le repli garde le type honnete sans inventer de message.
+    throw ownerTransferRequiredError(
+      geste === "revokeClubStaffAccess" ? "revokeClubStaffAccess" : "removeClubMember",
+    );
+  }
+  if (failure.kind === "staff-owner-only") throw staffOwnerOnlyError(geste);
+
+  if (failure.signal) deps.onInconsistency?.(failure.signal);
+  throw gestureDeniedError(geste, failure.reason);
+}
+
+/**
+ * Enveloppe commune : forme des identifiants, transaction, traduction des
+ * pannes. Le CORPS de la transaction, lui, est propre a chaque geste — c'est
+ * exactement ce que Kyllian exige (« ces trois actions ne doivent pas produire
+ * la meme transaction »).
+ */
+async function executerGeste<T>(
+  deps: ClubMemberDeps,
+  params: { geste: ClubMemberGesture; actorUid: string; clubId: unknown; memberUid: unknown },
+  corps: (
+    tx: MemberTx,
+    contexte: { clubId: string; memberUid: string; actorUid: string; now: number },
+  ) => Promise<GestureOutcome<T>>,
+): Promise<T> {
+  const geste = params.geste;
+  const actorUid = String(params.actorUid ?? "").trim();
+  if (!actorUid) throw new ClubMemberError("unauthenticated", "Connexion requise.");
+
+  if (!isPlausibleId(params.clubId)) throw gestureDeniedError(geste, "malformed-club-id");
+  if (!isPlausibleId(params.memberUid)) throw gestureDeniedError(geste, "malformed-member-id");
+  const clubId = params.clubId.trim();
+  const memberUid = params.memberUid.trim();
+
+  const now = deps.now();
+
+  let outcome: GestureOutcome<T>;
+  try {
+    outcome = await deps.store.runTransaction<GestureOutcome<T>>((tx) =>
+      corps(tx, { clubId, memberUid, actorUid, now }),
+    );
+  } catch (err) {
+    if (err instanceof ClubMemberError) throw err;
+    throw new ClubMemberError(REMOVE_UNAVAILABLE_CODE, GESTURE_UNAVAILABLE_MESSAGE[geste]);
+  }
+
+  if (outcome.ok) return outcome.result;
+  throwGestureDenial(deps, geste, outcome);
+}
+
+// ─── Geste 1 : RETRAIT COMPLET ──────────────────────────────────────────────
 
 export type RemoveMemberResult = {
   clubId: string;
@@ -221,12 +582,6 @@ export type RemoveMemberResult = {
    */
   clearedUserClub: boolean;
 };
-
-type RemoveTxOutcome =
-  | { ok: true; result: RemoveMemberResult }
-  | { ok: false; kind: "denied"; reason: RemoveDenialReason; signal: ClubAuthoritySignal | null }
-  | { ok: false; kind: "member-missing" }
-  | { ok: false; kind: "owner-transfer-required" };
 
 /**
  * Retire (desactive) l'appartenance d'un membre d'un club.
@@ -247,63 +602,24 @@ export async function removeClubMember(
   deps: ClubMemberDeps,
   params: { actorUid: string; clubId: unknown; memberUid: unknown },
 ): Promise<RemoveMemberResult> {
-  const actorUid = String(params.actorUid ?? "").trim();
-  if (!actorUid) throw new ClubMemberError("unauthenticated", "Connexion requise.");
+  return executerGeste<RemoveMemberResult>(
+    deps,
+    { geste: "removeClubMember", ...params },
+    async (tx, { clubId, memberUid, actorUid, now }) => {
+      const prelude = await lireEtAutoriser(tx, {
+        geste: "removeClubMember",
+        clubId,
+        actorUid,
+        memberUid,
+        // LE GESTE RETIRE SES POUVOIRS AU PROPRIETAIRE : la protection s'applique.
+        protegeProprietaire: true,
+      });
+      if (!prelude.ok) return prelude;
 
-  if (!isPlausibleId(params.clubId)) throw removeDeniedError("malformed-club-id");
-  if (!isPlausibleId(params.memberUid)) throw removeDeniedError("malformed-member-id");
-  const clubId = params.clubId.trim();
-  const memberUid = params.memberUid.trim();
-
-  const now = deps.now();
-
-  let outcome: RemoveTxOutcome;
-  try {
-    outcome = await deps.store.runTransaction<RemoveTxOutcome>(async (tx) => {
-      // ── Lectures d'abord (contrainte Firestore) ────────────────────────────
-      const club = await tx.get(memberPaths.club(clubId));
-      if (!club) {
-        // Club inexistant : MEME refus que "pas encadrant". Le distinguer
-        // apprendrait a un curieux qu'un identifiant de club existe.
-        return { ok: false, kind: "denied", reason: "club-missing", signal: null };
-      }
-
-      const actorMembership = await tx.get(memberPaths.member(clubId, actorUid));
-
-      // a. AUTORITE. Verifiee AVANT de toucher a la cible (cf. anti-oracle,
-      //    en-tete de fichier).
-      const authority = resolveOwnerAuthority(club, actorMembership, actorUid);
-      const signal = clubAuthoritySignal(
-        { clubId, uid: actorUid, action: "removeClubMember" },
-        authority,
-      );
-      if (signal) {
-        // Etat incoherent : on REFUSE et on signale. Ne pas trancher entre les
-        // deux sources est le coeur de l'invariant ; laisser passer un geste
-        // destructeur sur un club dont l'autorite est douteuse le contredirait.
-        return { ok: false, kind: "denied", reason: "authority-inconsistent", signal };
-      }
-      // Encadrant = appartenance active portant "owner" ou "coach", dans CE club.
-      // Un encadrant d'un AUTRE club n'a par construction aucun membership ici.
-      if (!isClubStaff(actorMembership)) {
-        return { ok: false, kind: "denied", reason: "not-staff", signal: null };
-      }
-
-      // b. La cible appartient-elle REELLEMENT a ce club ?
-      const targetMembership = await tx.get(memberPaths.member(clubId, memberUid));
-      if (!targetMembership) return { ok: false, kind: "member-missing" };
-
-      // c. PROTECTION DU PROPRIETAIRE. Volontairement LARGE : l'une OU l'autre
-      //    des deux sources suffit a declencher le refus. Sur un etat coherent
-      //    les deux disent la meme chose ; sur un etat abime, refuser reste le
-      //    seul geste sur : on ne veut surtout pas qu'une incoherence devienne
-      //    le chemin par lequel un club perd son proprietaire.
-      if (isDesignatedOwner(club, memberUid) || hasOwnerMembership(targetMembership)) {
-        return { ok: false, kind: "owner-transfer-required" };
-      }
-
-      // d. Idempotence : deja retire -> aucune ecriture, succes annonce comme tel.
-      if (!isActiveMembership(targetMembership)) {
+      // Idempotence : deja retire -> AUCUNE ecriture, succes annonce comme tel.
+      // « Deja retire » se lit sur l'ETAT (les deux axes fermes), jamais sur la
+      // presence de `removedAt` : c'est l'etat qui refuse, pas la trace.
+      if (!isActiveMembership(prelude.target)) {
         return {
           ok: true,
           result: { clubId, memberUid, alreadyRemoved: true, clearedUserClub: false },
@@ -335,8 +651,8 @@ export async function removeClubMember(
           // future oubliait de regarder l'un des axes, l'acces reste ferme
           // (default-deny).
           [COACH_ACCESS_FIELD]: "revoked",
-          removedAt: now,
-          removedBy: actorUid,
+          [REMOVED_AT_FIELD]: now,
+          [REMOVED_BY_FIELD]: actorUid,
           updatedAt: now,
         },
         { merge: true },
@@ -347,8 +663,11 @@ export async function removeClubMember(
       //    asynchrone, et la donnee doit disparaitre avec le geste.
       tx.delete(memberPaths.playerSummary(clubId, memberUid));
 
-      // 3. Reference du joueur vers son club. Sans ca, il garde un club fantome
-      //    dans ses reglages, et `clubIdOfUser` (triggers.ts) continue de
+      // 3. Reference du joueur vers son club. C'est le SEUL des trois gestes qui
+      //    la touche : les deux gestes partiels laissent la personne DANS le
+      //    club, donc son profil doit continuer de le designer. Sans ce
+      //    nettoyage-ci, un membre reellement parti garderait un club fantome
+      //    dans ses reglages, et `clubIdOfUser` (triggers.ts) continuerait de
       //    designer ce club a chaque seance enregistree.
       if (clearedUserClub) {
         tx.set(memberPaths.user(memberUid), { clubId: null, updatedAt: now }, { merge: true });
@@ -358,25 +677,197 @@ export async function removeClubMember(
         ok: true,
         result: { clubId, memberUid, alreadyRemoved: false, clearedUserClub },
       };
-    });
-  } catch (err) {
-    if (err instanceof ClubMemberError) throw err;
-    throw new ClubMemberError(REMOVE_UNAVAILABLE_CODE, REMOVE_UNAVAILABLE_MESSAGE);
-  }
+    },
+  );
+}
 
-  if (outcome.ok) return outcome.result;
+// ─── Geste 2 : ARRETER LE SUIVI DE JOUEUR ───────────────────────────────────
 
-  if (outcome.kind === "member-missing") {
-    throw new ClubMemberError(MEMBER_NOT_FOUND_CODE, MEMBER_NOT_FOUND_MESSAGE);
-  }
-  if (outcome.kind === "owner-transfer-required") {
-    throw ownerTransferRequiredError();
-  }
+export type DeactivatePlayerResult = {
+  clubId: string;
+  memberUid: string;
+  /**
+   * `true` si le suivi etait DEJA arrete (rejeu du geste). Aucune ecriture, et
+   * la trace du premier arret n'est pas reecrite.
+   */
+  alreadyInactive: boolean;
+  /**
+   * La personne CONSERVE-t-elle des permissions d'encadrement apres ce geste ?
+   * Expose pour que l'ecran puisse DIRE ce qui est conserve — jamais pour en
+   * deduire un droit (le serveur reste seul juge, a chaque appel).
+   */
+  keepsStaffAccess: boolean;
+};
 
-  // Signalement HORS transaction : un rejeu pour contention ne doit pas
-  // multiplier les lignes de journal.
-  if (outcome.signal) deps.onInconsistency?.(outcome.signal);
-  throw removeDeniedError(outcome.reason);
+/**
+ * ARRETE LE SUIVI SPORTIF d'un membre, sans toucher a son encadrement.
+ *
+ * CE QU'IL FERME : `playerStatus` -> "inactive" (donc plus de projection, et
+ * `isPlayerMember` rend illisible toute projection residuelle) et `coachAccess`
+ * -> "revoked" (troisieme verrou, default-deny, exactement comme au retrait
+ * complet). La projection deja produite est supprimee DANS la transaction.
+ *
+ * CE QU'IL CONSERVE, ET C'EST TOUT L'INTERET : `accessRole` n'est PAS nomme dans
+ * l'ecriture — un `merge` qui ne le nomme pas ne peut pas le changer. Un
+ * entraineur-joueur garde donc integralement son espace Coach. `users/{uid}.clubId`
+ * n'est pas touche non plus : la personne reste membre du club.
+ *
+ * CE QU'IL N'EXIGE PAS, ET C'EST LE PIEGE DE CE LOT : aucune protection du
+ * proprietaire. Un president qui arrete de jouer ne transfere pas son club.
+ *
+ * CONSEQUENCE ASSUMEE, la meme qu'au retrait complet : `coachAccess: "revoked"`
+ * survit a un futur rattachement (`resolveCoachAccess` conserve tout etat deja
+ * pose, cf. coachAccess.ts). Une personne dont on a arrete le suivi puis qui
+ * ressaisit un code d'invitation redevient joueuse SANS redevenir consultable —
+ * il faudra une decision explicite. Ce n'est pas un effet nouveau de ce lot :
+ * c'est exactement le comportement du retrait complet depuis son origine.
+ */
+export async function deactivateClubPlayer(
+  deps: ClubMemberDeps,
+  params: { actorUid: string; clubId: unknown; memberUid: unknown },
+): Promise<DeactivatePlayerResult> {
+  return executerGeste<DeactivatePlayerResult>(
+    deps,
+    { geste: "deactivateClubPlayer", ...params },
+    async (tx, { clubId, memberUid, actorUid, now }) => {
+      const prelude = await lireEtAutoriser(tx, {
+        geste: "deactivateClubPlayer",
+        clubId,
+        actorUid,
+        memberUid,
+        // AUCUNE PROTECTION DU PROPRIETAIRE. Ce geste ne retire aucun pouvoir sur
+        // le club : il n'y a donc rien a transferer d'abord.
+        protegeProprietaire: false,
+      });
+      if (!prelude.ok) return prelude;
+
+      const keepsStaffAccess = isClubStaff(prelude.target);
+
+      // Idempotence : aucun suivi actif -> AUCUNE ecriture.
+      if (!isActivePlayer(prelude.target)) {
+        return {
+          ok: true,
+          result: { clubId, memberUid, alreadyInactive: true, keepsStaffAccess },
+        };
+      }
+
+      // ── Ecritures ──────────────────────────────────────────────────────────
+      // 1. UN SEUL AXE BOUGE. `accessRole` est absent de cette ecriture, donc
+      //    intact. `coachAccess` accompagne le statut : les deux parlent du meme
+      //    sujet — la consultation du suivi — et les separer laisserait un verrou
+      //    ouvert derriere l'autre.
+      tx.set(
+        memberPaths.member(clubId, memberUid),
+        {
+          uid: memberUid,
+          [PLAYER_STATUS_FIELD]: PLAYER_STATUS_INACTIVE,
+          [COACH_ACCESS_FIELD]: "revoked",
+          [PLAYER_DEACTIVATED_AT_FIELD]: now,
+          [PLAYER_DEACTIVATED_BY_FIELD]: actorUid,
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+
+      // 2. La fiche de suivi disparait AVEC le geste, pas quand un trigger
+      //    voudra bien passer. Une reprojection ulterieure relira le statut et
+      //    renverra `null` : le refus vient de l'ETAT, pas d'une course.
+      tx.delete(memberPaths.playerSummary(clubId, memberUid));
+
+      return {
+        ok: true,
+        result: { clubId, memberUid, alreadyInactive: false, keepsStaffAccess },
+      };
+    },
+  );
+}
+
+// ─── Geste 3 : REVOQUER LES PERMISSIONS D'ENCADREMENT ───────────────────────
+
+export type RevokeStaffAccessResult = {
+  clubId: string;
+  memberUid: string;
+  /** `true` si la personne n'avait DEJA plus d'encadrement (rejeu). Zero ecriture. */
+  alreadyRevoked: boolean;
+  /**
+   * La personne CONSERVE-t-elle un suivi sportif actif apres ce geste ? `true`
+   * signifie qu'elle reste dans l'effectif suivi comme n'importe quel joueur.
+   */
+  keepsPlayerStatus: boolean;
+};
+
+/**
+ * RETIRE LES PERMISSIONS D'ENCADREMENT, sans toucher au suivi sportif.
+ *
+ * CE QU'IL FERME : `accessRole` -> null. La personne perd l'espace Coach —
+ * immediatement, sans reconnexion : `hooks/useAppSpace` est abonne a ce document
+ * et la purge de l'etat coach (`state/coachAuthorityGate`) est la CONSEQUENCE
+ * MECANIQUE de la perte d'autorite, pas un appel separe qu'on pourrait oublier.
+ *
+ * CE QU'IL CONSERVE : `playerStatus` et `coachAccess` ne sont PAS nommes dans
+ * l'ecriture. La projection n'est PAS supprimee. Un entraineur-joueur reste donc
+ * dans l'effectif suivi, avec sa fiche, exactement comme avant — c'est la
+ * moitie du contrat que le retrait unique ne savait pas exprimer.
+ *
+ * QUI PEUT LE FAIRE : le proprietaire, ou la personne elle-meme (demission). Un
+ * coach ne degrade pas un autre coach (cf. la matrice, en-tete de fichier).
+ *
+ * LE PROPRIETAIRE EST PROTEGE : lui retirer l'encadrement fabriquerait un club
+ * dont `ownerUid` designe quelqu'un sans appartenance proprietaire — exactement
+ * l'etat que l'invariant interdit. Refus TYPE OWNER_TRANSFER_REQUIRED, y compris
+ * quand il se le fait a lui-meme.
+ */
+export async function revokeClubStaffAccess(
+  deps: ClubMemberDeps,
+  params: { actorUid: string; clubId: unknown; memberUid: unknown },
+): Promise<RevokeStaffAccessResult> {
+  return executerGeste<RevokeStaffAccessResult>(
+    deps,
+    { geste: "revokeClubStaffAccess", ...params },
+    async (tx, { clubId, memberUid, actorUid, now }) => {
+      const prelude = await lireEtAutoriser(tx, {
+        geste: "revokeClubStaffAccess",
+        clubId,
+        actorUid,
+        memberUid,
+        // LE GESTE RETIRE SES POUVOIRS AU PROPRIETAIRE : transfert d'abord.
+        protegeProprietaire: true,
+      });
+      if (!prelude.ok) return prelude;
+
+      const keepsPlayerStatus = isActivePlayer(prelude.target);
+
+      // Idempotence : plus aucune permission -> AUCUNE ecriture.
+      if (!isClubStaff(prelude.target)) {
+        return {
+          ok: true,
+          result: { clubId, memberUid, alreadyRevoked: true, keepsPlayerStatus },
+        };
+      }
+
+      // ── Ecriture UNIQUE ────────────────────────────────────────────────────
+      // Un seul axe, un seul document, et surtout : PAS de suppression de
+      // projection. Retirer la fiche d'un entraineur-joueur au motif qu'il n'est
+      // plus entraineur reviendrait a lui retirer son suivi pour un geste qui ne
+      // parle pas de suivi.
+      tx.set(
+        memberPaths.member(clubId, memberUid),
+        {
+          uid: memberUid,
+          [ACCESS_ROLE_FIELD]: null,
+          [STAFF_REVOKED_AT_FIELD]: now,
+          [STAFF_REVOKED_BY_FIELD]: actorUid,
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+
+      return {
+        ok: true,
+        result: { clubId, memberUid, alreadyRevoked: false, keepsPlayerStatus },
+      };
+    },
+  );
 }
 
 /**

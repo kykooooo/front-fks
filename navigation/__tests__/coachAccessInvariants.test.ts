@@ -117,13 +117,25 @@ describe("INVARIANT 4 — la pierre tombale fait disparaître l'espace coach en 
 });
 
 describe("INVARIANT 5 — les actions sensibles sont autorisées côté SERVEUR, jamais par la navigation", () => {
-  test("le retrait d'un membre appelle le serveur sans pré-juger du rôle", () => {
+  test("les TROIS formes de retrait appellent le serveur sans pré-juger du rôle", () => {
     const hook = lire("hooks/coach/useRemoveClubMember.ts");
     // Aucun prédicat de rôle ici : le front qui anticipe un refus finit toujours
     // par se tromper dans un sens (bouton caché à tort) ou dans l'autre
-    // (promesse non tenue).
+    // (promesse non tenue). Vrai des trois gestes, pas seulement du retrait
+    // complet — c'est la porte que le lot « trois retraits » vient d'ouvrir.
     expect(hook).not.toMatch(/isClubStaffRole|CLUB_STAFF_ROLES|role\s*===\s*"(owner|coach)"/);
-    expect(hook).toContain("removeClubMemberCall(clubId, memberUid)");
+    expect(hook).not.toMatch(/ownerUid|isDesignatedOwner|resolveClubOwnerAuthority/);
+    // L'appel part vers le service, avec la cible et rien d'autre.
+    expect(hook).toContain("APPEL_PAR_GESTE[geste](clubId, memberUid)");
+    // Et les trois gestes visent trois fonctions de service distinctes : le geste
+    // n'est jamais un paramètre glissé dans une charge utile commune.
+    for (const appel of [
+      "removeClubMemberCall",
+      "deactivateClubPlayerCall",
+      "revokeClubStaffAccessCall",
+    ]) {
+      expect(hook).toContain(appel);
+    }
   });
 
   test("la dérivation d'espace n'accorde aucun droit : elle choisit un écran", () => {

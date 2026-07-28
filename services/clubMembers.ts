@@ -1,7 +1,20 @@
 // services/clubMembers.ts
 //
-// Unique porte d'entrée FRONT du retrait d'un membre du club. Un seul appel,
-// vers la Cloud Function `removeClubMember` (region europe-west4).
+// Unique porte d'entrée FRONT des TROIS FORMES DE RETRAIT. Trois appels, vers
+// trois Cloud Functions distinctes (région europe-west4) :
+//
+//   . `deactivateClubPlayer`  — arrêter le SUIVI DE JOUEUR (il ne joue plus,
+//     mais il continue d'encadrer si c'était le cas) ;
+//   . `revokeClubStaffAccess` — retirer les PERMISSIONS D'ENCADREMENT (il n'est
+//     plus entraîneur, mais il reste joueur de l'effectif) ;
+//   . `removeClubMember`      — le RETRAIT COMPLET : les deux, plus le
+//     détachement du club.
+//
+// TROIS APPELS ET NON UN PARAMÈTRE D'ACTION. Le geste n'est jamais une valeur
+// que ce fichier compose et envoie : c'est le NOM de la fonction appelée. Il n'y
+// a donc rien qu'un attaquant puisse substituer dans la charge utile pour
+// obtenir un autre geste que celui demandé — et côté serveur, rien à valider en
+// allowlist. C'est la raison principale du découpage.
 //
 // RÈGLE ABSOLUE DE CE FICHIER, la même que services/clubInvites.ts : le front ne
 // juge JAMAIS le geste. Il ne décide pas localement qu'un joueur « est
@@ -28,19 +41,22 @@ import { app } from "./firebase";
 /** Région des Cloud Functions — alignée sur functions/src/config.ts (REGION). */
 const FUNCTIONS_REGION = "europe-west4";
 
-/** Nom de la callable — aligné sur functions/src/index.ts. */
+/** Noms des callables — alignés sur functions/src/index.ts. */
 const REMOVE_CALLABLE = "removeClubMember";
+const DEACTIVATE_CALLABLE = "deactivateClubPlayer";
+const REVOKE_STAFF_CALLABLE = "revokeClubStaffAccess";
 
 /**
- * Jeton machine de l'échec typé, tel que le serveur l'émet
- * (functions/src/clubMembers.OWNER_TRANSFER_REQUIRED). Recopié ici parce que le
- * front ne peut pas importer le code des Functions ; verrouillé par un test des
- * deux côtés.
+ * Jetons machine des échecs typés, tels que le serveur les émet
+ * (functions/src/clubMembers). Recopiés ici parce que le front ne peut pas
+ * importer le code des Functions ; verrouillés par un test des deux côtés.
  */
 export const OWNER_TRANSFER_REQUIRED = "OWNER_TRANSFER_REQUIRED";
+export const STAFF_OWNER_ONLY = "STAFF_OWNER_ONLY";
 
 export type RemoveMemberFailureReason =
-  | "ownerTransferRequired" // le seul refus qui nomme sa cause
+  | "ownerTransferRequired" // il faut transférer la propriété d'abord
+  | "staffOwnerOnly" // la cible encadre : seul le propriétaire y touche
   | "denied" // pas encadrant de ce club (ou état d'autorité à réparer)
   | "notMember" // ce membre n'est pas (ou plus) dans l'effectif
   | "unauthenticated"
@@ -55,6 +71,8 @@ export type RemoveMemberOutcome =
 const REMOVE_MESSAGES: Record<RemoveMemberFailureReason, string> = {
   ownerTransferRequired:
     "Ce compte est le propriétaire du club : il ne peut pas être retiré. Transférez d'abord la propriété à un autre encadrant.",
+  staffOwnerOnly:
+    "Ce compte fait partie de l'encadrement du club. Seul le propriétaire du club peut modifier ses accès.",
   denied:
     "Retrait impossible avec ce compte. Actualisez l'écran : si le club n'apparaît plus, c'est qu'il n'est plus accessible avec ce compte.",
   notMember:
@@ -64,23 +82,27 @@ const REMOVE_MESSAGES: Record<RemoveMemberFailureReason, string> = {
   unavailable: "Impossible de joindre le serveur. Vérifiez votre connexion et réessayez.",
 };
 
-/** Le serveur a-t-il renvoyé l'échec TYPÉ du propriétaire ? */
-function isOwnerTransferRequired(err: unknown): boolean {
+/** Jeton machine porté par `details.reason`, ou `null`. */
+function readErrorToken(err: unknown): string | null {
   const details = (err as { details?: unknown } | null)?.details;
   if (details && typeof details === "object" && !Array.isArray(details)) {
-    return (details as { reason?: unknown }).reason === OWNER_TRANSFER_REQUIRED;
+    const reason = (details as { reason?: unknown }).reason;
+    return typeof reason === "string" ? reason : null;
   }
-  return false;
+  return null;
 }
 
 /**
  * Traduit l'erreur callable en raison métier.
  *
- * L'échec typé est reconnu au JETON, pas au code d'erreur seul : le code
- * `failed-precondition` pourrait un jour servir à autre chose, le jeton non.
+ * Les échecs typés sont reconnus au JETON, pas au code d'erreur seul : le code
+ * `failed-precondition` porte maintenant DEUX refus distincts, et il en portera
+ * peut-être d'autres. Le jeton, lui, ne bouge pas.
  */
 export function readRemoveFailureReason(err: unknown): RemoveMemberFailureReason {
-  if (isOwnerTransferRequired(err)) return "ownerTransferRequired";
+  const token = readErrorToken(err);
+  if (token === OWNER_TRANSFER_REQUIRED) return "ownerTransferRequired";
+  if (token === STAFF_OWNER_ONLY) return "staffOwnerOnly";
 
   const raw = (err as { code?: unknown } | null)?.code;
   const code = typeof raw === "string" ? raw.replace(/^functions\//, "") : "";
@@ -126,8 +148,32 @@ async function invoke<TRes>(
 }
 
 /**
- * Retire un membre de l'effectif du club. Ne LÈVE JAMAIS : l'écran doit pouvoir
- * afficher un refus sans que la fiche joueur se démonte.
+ * Corps commun des trois gestes : appeler, traduire, ne JAMAIS lever — l'écran
+ * doit pouvoir afficher un refus sans que la fiche joueur se démonte.
+ *
+ * Le drapeau de rejeu ne porte pas le même nom d'un geste à l'autre
+ * (`alreadyRemoved` / `alreadyInactive` / `alreadyRevoked`) : chaque serveur dit
+ * ce qui était déjà fait, dans SES mots. Le front les ramène à une seule
+ * question — « est-ce que ce geste avait déjà été fait ? » — parce que c'est la
+ * seule chose que l'écran a besoin de dire autrement.
+ */
+async function appelerGeste(
+  callable: string,
+  clubId: string,
+  memberUid: string,
+  champRejeu: string,
+): Promise<RemoveMemberOutcome> {
+  try {
+    const res = await invoke<Record<string, unknown>>(callable, { clubId, memberUid });
+    return { ok: true, alreadyRemoved: res.data?.[champRejeu] === true };
+  } catch (err) {
+    const reason = readRemoveFailureReason(err);
+    return { ok: false, reason, message: REMOVE_MESSAGES[reason] };
+  }
+}
+
+/**
+ * RETRAIT COMPLET : les deux axes fermés, la fiche purgée, le club détaché.
  *
  * `alreadyRemoved` distingue un vrai retrait d'un rejeu (double appui, retour
  * en arrière) : l'écran le dit autrement, au lieu d'annoncer deux fois le même
@@ -137,14 +183,27 @@ export async function removeClubMember(
   clubId: string,
   memberUid: string,
 ): Promise<RemoveMemberOutcome> {
-  try {
-    const res = await invoke<{ alreadyRemoved?: unknown }>(REMOVE_CALLABLE, {
-      clubId,
-      memberUid,
-    });
-    return { ok: true, alreadyRemoved: res.data?.alreadyRemoved === true };
-  } catch (err) {
-    const reason = readRemoveFailureReason(err);
-    return { ok: false, reason, message: REMOVE_MESSAGES[reason] };
-  }
+  return appelerGeste(REMOVE_CALLABLE, clubId, memberUid, "alreadyRemoved");
+}
+
+/**
+ * ARRÊTER LE SUIVI DE JOUEUR. La personne quitte l'effectif suivi ; si elle
+ * encadre le club, elle continue de l'encadrer.
+ */
+export async function deactivateClubPlayer(
+  clubId: string,
+  memberUid: string,
+): Promise<RemoveMemberOutcome> {
+  return appelerGeste(DEACTIVATE_CALLABLE, clubId, memberUid, "alreadyInactive");
+}
+
+/**
+ * RETIRER LES ACCÈS D'ENCADREMENT. La personne perd l'espace coach ; si elle est
+ * joueuse de l'effectif, son suivi continue exactement comme avant.
+ */
+export async function revokeClubStaffAccess(
+  clubId: string,
+  memberUid: string,
+): Promise<RemoveMemberOutcome> {
+  return appelerGeste(REVOKE_STAFF_CALLABLE, clubId, memberUid, "alreadyRevoked");
 }

@@ -90,7 +90,12 @@ jest.mock("../src/admin", () => ({
 // exactement request.auth.uid » par instrumentation, et pas par lecture du code.
 jest.mock("../src/clubMembers", () => {
   const actual = jest.requireActual<typeof import("../src/clubMembers")>("../src/clubMembers");
-  return { ...actual, removeClubMember: jest.fn(actual.removeClubMember) };
+  return {
+    ...actual,
+    removeClubMember: jest.fn(actual.removeClubMember),
+    deactivateClubPlayer: jest.fn(actual.deactivateClubPlayer),
+    revokeClubStaffAccess: jest.fn(actual.revokeClubStaffAccess),
+  };
 });
 
 jest.mock("../src/clubOwnership", () => {
@@ -119,7 +124,14 @@ import {
   joinClubWithInviteCode,
   joinClubWithInviteCodeHandler,
 } from "../src/clubInvites";
-import { removeClubMember, removeClubMemberHandler } from "../src/clubMembersApi";
+import {
+  deactivateClubPlayer,
+  deactivateClubPlayerHandler,
+  removeClubMember,
+  removeClubMemberHandler,
+  revokeClubStaffAccess,
+  revokeClubStaffAccessHandler,
+} from "../src/clubMembersApi";
 import { transferClubOwnership, transferClubOwnershipHandler } from "../src/clubOwnershipApi";
 import { deleteAccount, deleteAccountHandler } from "../src/deleteAccount";
 import * as deployed from "../src/index";
@@ -361,11 +373,13 @@ async function refus(promise: Promise<unknown>): Promise<HttpsError> {
 }
 
 const removeSpy = clubMembersCore.removeClubMember as unknown as jest.Mock;
+const suiviSpy = clubMembersCore.deactivateClubPlayer as unknown as jest.Mock;
+const encadrementSpy = clubMembersCore.revokeClubStaffAccess as unknown as jest.Mock;
 const transferSpy = clubOwnershipCore.transferClubOwnership as unknown as jest.Mock;
 const issueSpy = inviteCore.issueInviteCode as unknown as jest.Mock;
 const joinSpy = inviteCore.joinClubWithCode as unknown as jest.Mock;
 
-const TOUS_LES_ESPIONS = [removeSpy, transferSpy, issueSpy, joinSpy];
+const TOUS_LES_ESPIONS = [removeSpy, suiviSpy, encadrementSpy, transferSpy, issueSpy, joinSpy];
 
 /** Le 2e argument recu par le coeur : c'est la ou vit l'identite transmise. */
 function paramsCoeur(spy: jest.Mock, index = 0): Record<string, unknown> {
@@ -388,6 +402,8 @@ beforeEach(() => {
 describe("0 — l'enveloppe testee est celle qui part en production", () => {
   it("0.1 index.ts exporte EXACTEMENT les objets interroges ici", () => {
     expect(deployed.removeClubMember).toBe(removeClubMember);
+    expect(deployed.deactivateClubPlayer).toBe(deactivateClubPlayer);
+    expect(deployed.revokeClubStaffAccess).toBe(revokeClubStaffAccess);
     expect(deployed.transferClubOwnership).toBe(transferClubOwnership);
     expect(deployed.issueClubInviteCode).toBe(issueClubInviteCode);
     expect(deployed.joinClubWithInviteCode).toBe(joinClubWithInviteCode);
@@ -397,6 +413,8 @@ describe("0 — l'enveloppe testee est celle qui part en production", () => {
   it("0.2 chaque callable deployee expose le traitement reel via .run", () => {
     for (const fn of [
       removeClubMember,
+      deactivateClubPlayer,
+      revokeClubStaffAccess,
       transferClubOwnership,
       issueClubInviteCode,
       joinClubWithInviteCode,
@@ -412,6 +430,8 @@ describe("0 — l'enveloppe testee est celle qui part en production", () => {
     // chose qu'on peut fournir, c'est la requete — dont `auth` est remplie par
     // le runtime en production, jamais par le client.
     expect(removeClubMemberHandler.length).toBe(1);
+    expect(deactivateClubPlayerHandler.length).toBe(1);
+    expect(revokeClubStaffAccessHandler.length).toBe(1);
     expect(transferClubOwnershipHandler.length).toBe(1);
     expect(issueClubInviteCodeHandler.length).toBe(1);
     expect(joinClubWithInviteCodeHandler.length).toBe(1);
@@ -448,6 +468,10 @@ describe("0 — l'enveloppe testee est celle qui part en production", () => {
 
 describe.each(CHEMINS)("%s", (_chemin, invoke) => {
   const appelRetrait = (req: unknown) => invoke(removeClubMember, removeClubMemberHandler, req);
+  const appelArretSuivi = (req: unknown) =>
+    invoke(deactivateClubPlayer, deactivateClubPlayerHandler, req);
+  const appelRetraitEncadrement = (req: unknown) =>
+    invoke(revokeClubStaffAccess, revokeClubStaffAccessHandler, req);
   const appelTransfert = (req: unknown) =>
     invoke(transferClubOwnership, transferClubOwnershipHandler, req);
   const appelEmission = (req: unknown) =>
@@ -458,6 +482,8 @@ describe.each(CHEMINS)("%s", (_chemin, invoke) => {
 
   const TOUTES: Array<[string, (req: unknown) => Promise<unknown>, unknown]> = [
     ["removeClubMember", appelRetrait, { clubId: CLUB_A, memberUid: PLAYER_A1 }],
+    ["deactivateClubPlayer", appelArretSuivi, { clubId: CLUB_A, memberUid: PLAYER_A1 }],
+    ["revokeClubStaffAccess", appelRetraitEncadrement, { clubId: CLUB_A, memberUid: PLAYER_A1 }],
     ["transferClubOwnership", appelTransfert, { clubId: CLUB_A, newOwnerUid: COACH_A2 }],
     ["issueClubInviteCode", appelEmission, { clubId: CLUB_A }],
     ["joinClubWithInviteCode", appelRattachement, { code: CODE_CLUB_A }],
@@ -511,7 +537,7 @@ describe.each(CHEMINS)("%s", (_chemin, invoke) => {
     ];
 
     it.each(IDENTITES_INEXPLOITABLES)(
-      "2.1 %s est refuse par les cinq portes, sans aucune ecriture",
+      "2.1 %s est refuse par les sept portes, sans aucune ecriture",
       async (_nom, auth) => {
         const avant = mockDb.snapshot();
         for (const [, appel, data] of TOUTES) {
@@ -836,6 +862,130 @@ describe.each(CHEMINS)("%s", (_chemin, invoke) => {
       const err = await refus(appelRetrait(signedBy(COACH_A, { clubId: CLUB_A, memberUid: COACH_B })));
       expect(err.code).toBe(MEMBER_NOT_FOUND_CODE);
       expect(mockDb.snapshot()).toBe(avant);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 7 bis — LES DEUX AUTRES FORMES DE RETRAIT
+  //
+  // Ce qui se joue ici, et qui ne se voit nulle part ailleurs : chaque callable
+  // execute SA transaction. Le geste n'est pas une valeur de la charge utile,
+  // c'est le point d'entree — donc il n'y a rien a usurper, et c'est verifie.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("7 bis — arret du suivi et retrait des acces d'encadrement", () => {
+    it("7b.1 arret du suivi : le statut joueur tombe, l'encadrement et le club NE BOUGENT PAS", async () => {
+      // Un entraineur-joueur : les deux axes portes par la meme appartenance.
+      mockDb.seed(memberPaths.member(CLUB_A, COACH_A2), {
+        uid: COACH_A2,
+        accessRole: "coach",
+        playerStatus: "active",
+        coachAccess: "not_required",
+      });
+      mockDb.seed(memberPaths.user(COACH_A2), { uid: COACH_A2, clubId: CLUB_A });
+      mockDb.seed(memberPaths.playerSummary(CLUB_A, COACH_A2), { uid: COACH_A2, readiness: 55 });
+
+      const res = (await appelArretSuivi(
+        signedBy(COACH_A, { clubId: CLUB_A, memberUid: COACH_A2 }),
+      )) as { alreadyInactive: boolean; keepsStaffAccess: boolean };
+
+      expect(res).toMatchObject({ alreadyInactive: false, keepsStaffAccess: true });
+      const membre = mockDb.read(memberPaths.member(CLUB_A, COACH_A2));
+      expect(membre?.playerStatus).toBe("inactive");
+      expect(membre?.accessRole).toBe("coach"); // INTACT
+      expect(mockDb.read(memberPaths.playerSummary(CLUB_A, COACH_A2))).toBeNull();
+      expect(mockDb.read(memberPaths.user(COACH_A2))?.clubId).toBe(CLUB_A); // INTACT
+      // Une seule transaction est partie, et c'est la bonne.
+      expect(suiviSpy).toHaveBeenCalledTimes(1);
+      expect(removeSpy).not.toHaveBeenCalled();
+      expect(encadrementSpy).not.toHaveBeenCalled();
+    });
+
+    it("7b.2 retrait des acces d'encadrement par le PROPRIETAIRE : le suivi joueur reste", async () => {
+      mockDb.seed(memberPaths.member(CLUB_A, COACH_A2), {
+        uid: COACH_A2,
+        accessRole: "coach",
+        playerStatus: "active",
+        coachAccess: "not_required",
+      });
+      mockDb.seed(memberPaths.playerSummary(CLUB_A, COACH_A2), { uid: COACH_A2, readiness: 55 });
+
+      const res = (await appelRetraitEncadrement(
+        signedBy(COACH_A, { clubId: CLUB_A, memberUid: COACH_A2 }),
+      )) as { alreadyRevoked: boolean; keepsPlayerStatus: boolean };
+
+      expect(res).toMatchObject({ alreadyRevoked: false, keepsPlayerStatus: true });
+      const membre = mockDb.read(memberPaths.member(CLUB_A, COACH_A2));
+      expect(membre?.accessRole).toBeNull();
+      expect(membre?.playerStatus).toBe("active"); // INTACT
+      expect(membre?.coachAccess).toBe("not_required"); // INTACT
+      // LA FICHE RESTE : il est encore joueur de l'effectif.
+      expect(mockDb.read(memberPaths.playerSummary(CLUB_A, COACH_A2))).not.toBeNull();
+    });
+
+    it("7b.3 un encadrant ne touche pas a un autre encadrant : echec TYPE, aucune ecriture", async () => {
+      const avant = mockDb.snapshot();
+      const err = await refus(
+        appelRetraitEncadrement(signedBy(COACH_A2, { clubId: CLUB_A, memberUid: COACH_A })),
+      );
+      // Le proprietaire est protege AVANT tout : c'est le transfert qu'on lui
+      // demande, pas de passer par le proprietaire.
+      expect(err.code).toBe(OWNER_TRANSFER_CODE);
+      expect(mockDb.snapshot()).toBe(avant);
+    });
+
+    it("7b.4 LE PIEGE : le proprietaire arrete SON PROPRE suivi, et reste proprietaire", async () => {
+      mockDb.seed(memberPaths.member(CLUB_A, COACH_A), {
+        uid: COACH_A,
+        accessRole: "owner",
+        playerStatus: "active",
+        coachAccess: "not_required",
+      });
+
+      const res = (await appelArretSuivi(
+        signedBy(COACH_A, { clubId: CLUB_A, memberUid: COACH_A }),
+      )) as { alreadyInactive: boolean; keepsStaffAccess: boolean };
+
+      expect(res).toMatchObject({ alreadyInactive: false, keepsStaffAccess: true });
+      expect(mockDb.read(memberPaths.member(CLUB_A, COACH_A))?.accessRole).toBe("owner");
+      expect(mockDb.read(memberPaths.club(CLUB_A))?.ownerUid).toBe(COACH_A);
+      // Le meme compte, sur le RETRAIT COMPLET, se voit toujours refuser.
+      const err = await refus(appelRetrait(signedBy(COACH_A, { clubId: CLUB_A, memberUid: COACH_A })));
+      expect(err.details).toEqual({ reason: OWNER_TRANSFER_REQUIRED });
+    });
+
+    it("7b.5 USURPATION DU GESTE : aucun champ de la charge utile ne change le geste execute", async () => {
+      // On demande l'arret du suivi en glissant, dans la charge utile, tout ce
+      // qu'un attaquant pourrait esperer voir interprete comme « fais plutot un
+      // retrait complet ». La callable appelee reste la seule chose qui decide.
+      const res = (await appelArretSuivi(
+        signedBy(COACH_A, {
+          clubId: CLUB_A,
+          memberUid: PLAYER_A1,
+          geste: "removeClubMember",
+          action: "removeClubMember",
+          gesture: "retrait-complet",
+          mode: "admin",
+          removeCompletely: true,
+          clearUserClub: true,
+          accessRole: null,
+        }),
+      )) as { alreadyInactive: boolean };
+
+      expect(res.alreadyInactive).toBe(false);
+      const membre = mockDb.read(memberPaths.member(CLUB_A, PLAYER_A1));
+      expect(membre?.playerStatus).toBe("inactive");
+      // Le retrait complet n'a PAS eu lieu : ni pierre tombale d'encadrement,
+      // ni detachement du club.
+      expect(membre?.removedAt).toBeUndefined();
+      expect(mockDb.read(memberPaths.user(PLAYER_A1))?.clubId).toBe(CLUB_A);
+      expect(removeSpy).not.toHaveBeenCalled();
+      // Et le coeur n'a recu que les trois champs du contrat.
+      expect(Object.keys(paramsCoeur(suiviSpy)).sort()).toEqual([
+        "actorUid",
+        "clubId",
+        "memberUid",
+      ]);
     });
   });
 

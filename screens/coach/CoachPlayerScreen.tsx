@@ -58,7 +58,10 @@ import {
 } from "../../components/coach/coachTheme";
 import { useCoachPlayer } from "../../hooks/coach/useCoachPlayer";
 import { useCoachNowMs } from "../../hooks/coach/useCoachNowMs";
-import { useRemoveClubMember } from "../../hooks/coach/useRemoveClubMember";
+import {
+  useClubMemberGeste,
+  type ClubMemberGeste,
+} from "../../hooks/coach/useRemoveClubMember";
 import {
   buildExecutionBreakdown,
   buildFreshness,
@@ -227,7 +230,7 @@ export default function CoachPlayerScreen() {
           <HistoriqueSection evenements={timeline} />
           <AssiduiteSection assiduite={view.assiduite} />
           <ActionsSection onBack={onBack} onRefresh={refresh} refreshing={isRefreshing} />
-          <RetraitSection
+          <EffectifSection
             clubId={clubId}
             playerUid={playerUid}
             prenom={(view.prenom ?? "").trim()}
@@ -887,29 +890,125 @@ function ActionBouton({
   );
 }
 
-// ─── 7 bis. Retrait de l'effectif ────────────────────────────────────────────
+// ─── 7 bis. Effectif du club : LES TROIS FORMES DE RETRAIT ───────────────────
 //
-// LA SEULE ÉCRITURE DE CET ÉCRAN, et elle est irréversible côté club. Trois
-// exigences la gouvernent :
+// LES SEULES ÉCRITURES DE CET ÉCRAN, et elles sont irréversibles côté club.
 //
-//  1. DIRE CE QUE ÇA FAIT, ET SURTOUT CE QUE ÇA NE FAIT PAS. « Retirer du club »
-//     et « supprimer le compte » sont deux gestes que rien ne distingue dans le
-//     vocabulaire courant. Le second n'existe pas ici — un joueur retiré garde
-//     son compte FKS, son historique et ses séances. C'est écrit à l'écran, en
-//     toutes lettres, AVANT la confirmation.
-//  2. CONFIRMER AVANT D'AGIR. La confirmation est un second geste explicite dans
-//     la carte, pas une boîte système : elle laisse le texte sous les yeux au
-//     moment où l'on décide, au lieu de le remplacer par deux boutons nus.
-//  3. NE JAMAIS ANTICIPER LE VERDICT. L'action est proposée à tout le monde ;
-//     c'est le serveur qui refuse, et son refus est affiché tel quel. Masquer le
-//     bouton « au cas où » aurait demandé de dupliquer le prédicat d'autorité
-//     dans l'écran — donc de le laisser dériver.
+// ─── POURQUOI TROIS GESTES, ET NON UN ───────────────────────────────────────
+// « Retirer un membre » est ambigu depuis qu'une personne peut être encadrante
+// ET joueuse. Un seul bouton obligeait le coach à deviner ce qu'il allait
+// casser : arrêter le suivi d'un entraîneur-joueur lui retirait aussi son espace
+// coach, sans que rien ne le dise. Trois gestes, trois portées, trois phrases.
 //
-// Le cas du PROPRIÉTAIRE arrive ici par la voie normale : le serveur répond
-// l'échec typé OWNER_TRANSFER_REQUIRED, et `services/clubMembers` le traduit en
-// une phrase qui nomme le geste à faire (transférer la propriété d'abord).
+// ─── LA HIÉRARCHIE, QUI EST LE VRAI SUJET D'INTERFACE ───────────────────────
+// Trois boutons côte à côte auraient remplacé une ambiguïté par une hésitation.
+// L'écran les classe donc par fréquence ET par gravité :
+//  . « Arrêter le suivi » — le geste COURANT (un joueur a quitté l'équipe) reste
+//    immédiat : un appui pour ouvrir la confirmation, un pour confirmer ;
+//  . les deux gestes LOURDS vivent derrière un dépliant « Autres actions » : il
+//    faut trois appuis, dont un qui ne fait rien d'autre que révéler. On ne les
+//    déclenche pas par erreur en visant le bouton d'à côté.
+// Aucune couleur nouvelle : le geste courant reprend le ton des actions, les
+// deux lourds le ton `danger` déjà défini dans le thème coach.
+//
+// ─── CE QUE CHAQUE CONFIRMATION DOIT DIRE ───────────────────────────────────
+// Deux paragraphes, toujours : CE QUE ÇA FAIT, et CE QUE ÇA CONSERVE. Le second
+// n'est pas une politesse — c'est lui qui distingue les trois gestes, et c'est
+// exactement l'information qui manquait. La phrase verrouillée (« le retrait du
+// club ne supprime JAMAIS le compte FKS ») reste écrite noir sur blanc.
+//
+// ─── NE JAMAIS ANTICIPER LE VERDICT ─────────────────────────────────────────
+// Les trois actions sont proposées à tout le monde ; c'est le serveur qui
+// refuse, et son refus est affiché tel quel. Masquer un bouton « au cas où »
+// aurait demandé de dupliquer le prédicat d'autorité dans l'écran — donc de le
+// laisser dériver. Le PROPRIÉTAIRE et l'ENCADRANT arrivent donc ici par la voie
+// normale : échecs typés OWNER_TRANSFER_REQUIRED et STAFF_OWNER_ONLY, que
+// `services/clubMembers` traduit en phrases qui nomment le geste à faire.
 
-function RetraitSection({
+/** Ce que l'écran dit d'un geste, avant et après. Écrit une seule fois. */
+type GesteCopy = {
+  /** Libellé du bouton qui OUVRE la confirmation. */
+  bouton: string;
+  /** Aide vocale de ce bouton (lecteur d'écran). */
+  hint: string;
+  titre: (nom: string) => string;
+  /** CE QUE ÇA FAIT. */
+  fait: (nom: string) => string;
+  /** CE QUE ÇA CONSERVE. */
+  conserve: (nom: string) => string;
+  /** Libellé du bouton de confirmation. */
+  confirmer: string;
+  enCours: string;
+  succes: (nom: string) => string;
+  dejaFait: (nom: string) => string;
+  toastTitre: string;
+  toastDejaFait: string;
+  toastMessage: (nom: string) => string;
+};
+
+const GESTE_COPY: Record<ClubMemberGeste, GesteCopy> = {
+  "arret-suivi": {
+    bouton: "Arrêter le suivi",
+    hint: "Retire ce joueur de l'effectif suivi. Son compte FKS n'est pas supprimé.",
+    titre: (nom) => `Arrêter le suivi de ${nom} ?`,
+    fait: (nom) =>
+      `Ce que fait ce geste : ${nom} sort de l'effectif suivi. Sa fiche disparaît de votre liste et vous ne verrez plus ses séances.`,
+    conserve: (nom) =>
+      `Ce qui est conservé : son compte FKS, ses séances et son historique personnel restent intacts. Si ${nom} fait partie de l'encadrement du club, il garde tous ses accès d'encadrant.`,
+    confirmer: "Confirmer l'arrêt du suivi",
+    enCours: "Arrêt…",
+    succes: (nom) =>
+      `Le suivi de ${nom} est arrêté. Son compte FKS, ses séances et son historique personnel n'ont pas été touchés.`,
+    dejaFait: (nom) => `${nom} ne faisait déjà plus partie de l'effectif suivi de ce club.`,
+    toastTitre: "Suivi arrêté",
+    toastDejaFait: "Déjà arrêté",
+    toastMessage: (nom) => `${nom} ne fait plus partie de l'effectif suivi. Son compte FKS reste intact.`,
+  },
+  "retrait-encadrement": {
+    bouton: "Retirer les accès d'encadrement",
+    hint: "Retire les droits d'encadrement de ce compte. Son suivi de joueur, s'il en a un, continue.",
+    titre: (nom) => `Retirer les accès d'encadrement de ${nom} ?`,
+    fait: (nom) =>
+      `Ce que fait ce geste : ${nom} perd l'espace coach — plus d'effectif, plus de cadre de la semaine, plus de directive. Le changement est immédiat, sans reconnexion.`,
+    conserve: (nom) =>
+      `Ce qui est conservé : si ${nom} est joueur de l'effectif, son suivi continue exactement comme avant et sa fiche reste ici. Son compte FKS n'est jamais supprimé.`,
+    confirmer: "Confirmer le retrait des accès",
+    enCours: "Retrait…",
+    succes: (nom) =>
+      `${nom} n'a plus les accès d'encadrement de ce club. S'il est joueur de l'effectif, son suivi continue.`,
+    dejaFait: (nom) => `${nom} n'avait déjà plus d'accès d'encadrement sur ce club.`,
+    toastTitre: "Accès d'encadrement retirés",
+    toastDejaFait: "Déjà retirés",
+    toastMessage: (nom) => `${nom} n'encadre plus ce club. Son compte FKS reste intact.`,
+  },
+  "retrait-complet": {
+    bouton: "Retirer du club",
+    hint: "Retire ce membre du club : suivi et encadrement. Le compte FKS du joueur n'est pas supprimé.",
+    titre: (nom) => `Retirer ${nom} de l'effectif ?`,
+    fait: (nom) =>
+      `Ce que fait ce retrait : ${nom} ne fait plus partie de l'effectif de ce club, ni comme joueur ni comme encadrant. Vous ne verrez plus son suivi, et il ne verra plus le cadre de la semaine ni la directive.`,
+    // La phrase que le produit doit tenir, mot pour mot.
+    conserve: () =>
+      "Le retrait du club ne supprime JAMAIS le compte FKS du joueur. Son compte, ses séances et son historique personnel lui appartiennent et restent intacts.",
+    confirmer: "Confirmer le retrait",
+    enCours: "Retrait…",
+    succes: (nom) =>
+      `${nom} a été retiré de l'effectif. Son compte FKS, ses séances et son historique personnel n'ont pas été touchés.`,
+    dejaFait: (nom) => `${nom} ne faisait déjà plus partie de l'effectif de ce club.`,
+    toastTitre: "Membre retiré",
+    toastDejaFait: "Déjà retiré",
+    toastMessage: (nom) => `${nom} ne fait plus partie de l'effectif. Son compte FKS reste intact.`,
+  },
+};
+
+/** Suffixes de testID, alignés sur les noms de gestes. */
+const GESTE_TESTID: Record<ClubMemberGeste, string> = {
+  "arret-suivi": "suivi",
+  "retrait-encadrement": "encadrement",
+  "retrait-complet": "retrait",
+};
+
+function EffectifSection({
   clubId,
   playerUid,
   prenom,
@@ -920,34 +1019,57 @@ function RetraitSection({
   prenom: string;
   onRetireEtRevenir: () => void;
 }) {
-  const [confirmation, setConfirmation] = useState(false);
-  const { phase, isRemoving, remove, reset } = useRemoveClubMember(clubId, playerUid);
+  // Quel geste a sa confirmation ouverte, s'il y en a un. UN SEUL à la fois :
+  // deux confirmations ouvertes côte à côte, ce serait le choix multiple qu'on
+  // vient justement d'éviter.
+  const [confirmation, setConfirmation] = useState<ClubMemberGeste | null>(null);
+  const [autresOuvertes, setAutresOuvertes] = useState(false);
+
+  // Un hook par geste : chacun garde son propre état, attaché à sa propre cible
+  // (club, membre, geste). Le « fait » de l'un ne peut donc pas s'afficher sous
+  // le bouton de l'autre.
+  const suivi = useClubMemberGeste("arret-suivi", clubId, playerUid);
+  const encadrement = useClubMemberGeste("retrait-encadrement", clubId, playerUid);
+  const complet = useClubMemberGeste("retrait-complet", clubId, playerUid);
+  const etats: Record<ClubMemberGeste, ReturnType<typeof useClubMemberGeste>> = {
+    "arret-suivi": suivi,
+    "retrait-encadrement": encadrement,
+    "retrait-complet": complet,
+  };
+
   const nom = prenom || "ce joueur";
 
-  // Le retrait a abouti : on le dit ici ET on ramène le coach vers l'effectif,
-  // qui relira la liste. Le toast est le seul message qui survit à la navigation.
-  const dejaAnnonceRef = useRef(false);
+  // Un geste a abouti : on le dit ici ET par un toast — le seul message qui
+  // survit à la navigation vers l'effectif.
+  const abouti = (["arret-suivi", "retrait-encadrement", "retrait-complet"] as const).find(
+    (geste) => etats[geste].phase.kind === "done",
+  );
+  const dejaAnnonceRef = useRef<string | null>(null);
   useEffect(() => {
-    if (phase.kind !== "done" || dejaAnnonceRef.current) return;
-    dejaAnnonceRef.current = true;
+    if (!abouti) return;
+    const phase = etats[abouti].phase;
+    if (phase.kind !== "done" || dejaAnnonceRef.current === abouti) return;
+    dejaAnnonceRef.current = abouti;
+    const copy = GESTE_COPY[abouti];
     showToast({
       type: "success",
-      title: phase.alreadyRemoved ? "Déjà retiré" : "Membre retiré",
+      title: phase.alreadyRemoved ? copy.toastDejaFait : copy.toastTitre,
       // Le rappel « le compte n'est pas supprimé » est répété ICI aussi : c'est
       // le moment où le doute arrive, une fois le geste fait.
-      message: phase.alreadyRemoved
-        ? `${nom} ne faisait déjà plus partie de l'effectif.`
-        : `${nom} ne fait plus partie de l'effectif. Son compte FKS reste intact.`,
+      message: phase.alreadyRemoved ? copy.dejaFait(nom) : copy.toastMessage(nom),
     });
-  }, [phase, nom]);
+    // `etats` est reconstruit à chaque rendu : le dépendre ferait tourner l'effet
+    // en boucle. `abouti` et la phase qu'il désigne suffisent à dater l'annonce.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abouti, nom]);
 
-  if (phase.kind === "done") {
+  if (abouti) {
+    const phase = etats[abouti].phase;
+    const copy = GESTE_COPY[abouti];
     return (
       <CoachSectionCard title="Effectif du club" testID="coach-player-retrait">
-        <Text style={styles.retraitTexte} numberOfLines={4}>
-          {phase.alreadyRemoved
-            ? `${nom} ne faisait déjà plus partie de l'effectif de ce club.`
-            : `${nom} a été retiré de l'effectif. Son compte FKS, ses séances et son historique personnel n'ont pas été touchés.`}
+        <Text style={styles.retraitTexte} numberOfLines={5} testID="coach-player-geste-fait">
+          {phase.kind === "done" && phase.alreadyRemoved ? copy.dejaFait(nom) : copy.succes(nom)}
         </Text>
         <View style={styles.actions}>
           <ActionBouton
@@ -961,60 +1083,109 @@ function RetraitSection({
     );
   }
 
+  if (confirmation) {
+    const copy = GESTE_COPY[confirmation];
+    const { phase, isRemoving, remove, reset } = etats[confirmation];
+    return (
+      <CoachSectionCard title="Effectif du club" testID="coach-player-retrait">
+        <Text style={styles.retraitTitreConfirme} numberOfLines={3}>
+          {copy.titre(nom)}
+        </Text>
+        <Text style={styles.retraitTexte} numberOfLines={6} testID="coach-player-retrait-portee">
+          {copy.fait(nom)}
+        </Text>
+        {/* CE QUI EST CONSERVÉ. Pour le retrait complet, c'est la phrase
+            verrouillée par test, mot pour mot. */}
+        <Text style={styles.retraitTexteFort} numberOfLines={6} testID="coach-player-retrait-compte">
+          {copy.conserve(nom)}
+        </Text>
+        {phase.kind === "failed" ? (
+          <Text style={styles.retraitErreur} numberOfLines={4} testID="coach-player-retrait-erreur">
+            {phase.message}
+          </Text>
+        ) : null}
+        <View style={styles.actions}>
+          <ActionBouton
+            icone="close-outline"
+            label="Annuler"
+            onPress={() => {
+              reset();
+              setConfirmation(null);
+            }}
+            hint="Ferme la confirmation sans rien changer"
+            disabled={isRemoving}
+            testID="coach-player-retrait-annuler"
+          />
+          <RetraitBouton
+            label={isRemoving ? copy.enCours : copy.confirmer}
+            onPress={remove}
+            disabled={isRemoving}
+            testID={`coach-player-${GESTE_TESTID[confirmation]}-confirmer`}
+          />
+        </View>
+      </CoachSectionCard>
+    );
+  }
+
   return (
     <CoachSectionCard title="Effectif du club" testID="coach-player-retrait">
-      {confirmation ? (
-        <>
-          <Text style={styles.retraitTitreConfirme} numberOfLines={2}>
-            {`Retirer ${nom} de l'effectif ?`}
+      <Text style={styles.retraitTexte} numberOfLines={4}>
+        {`Arrêter le suivi de ${nom} met fin à son suivi côté club. Son compte FKS n'est jamais concerné.`}
+      </Text>
+      <View style={styles.actions}>
+        <ActionBouton
+          icone="person-remove-outline"
+          label={GESTE_COPY["arret-suivi"].bouton}
+          onPress={() => setConfirmation("arret-suivi")}
+          hint={GESTE_COPY["arret-suivi"].hint}
+          testID="coach-player-suivi-ouvrir"
+        />
+      </View>
+
+      {/* LE DÉPLIANT. Les gestes lourds ne sont pas cachés — ils sont RANGÉS, et
+          il faut un appui de plus pour les atteindre. */}
+      <Pressable
+        onPress={() => setAutresOuvertes((ouvert) => !ouvert)}
+        accessibilityRole="button"
+        accessibilityLabel="Autres actions sur ce compte"
+        accessibilityHint="Affiche le retrait des accès d'encadrement et le retrait complet du club"
+        accessibilityState={{ expanded: autresOuvertes }}
+        style={styles.deplierZone}
+        testID="coach-player-autres-ouvrir"
+      >
+        <Ionicons
+          name={autresOuvertes ? "chevron-up-outline" : "chevron-down-outline"}
+          size={14}
+          color={coachColors.sub}
+        />
+        <Text style={styles.deplierTexte} numberOfLines={1}>
+          Autres actions sur ce compte
+        </Text>
+      </Pressable>
+
+      {autresOuvertes ? (
+        <View style={styles.autresActions} testID="coach-player-autres">
+          <Text style={styles.retraitTexte} numberOfLines={4}>
+            {`Ces deux actions vont plus loin que l'arrêt du suivi. Elles ne suppriment jamais le compte FKS de ${nom}.`}
           </Text>
-          <Text style={styles.retraitTexte} numberOfLines={6} testID="coach-player-retrait-portee">
-            {`Ce que fait ce retrait : ${nom} ne fait plus partie de l'effectif de ce club. Vous ne verrez plus son suivi, et il ne verra plus le cadre de la semaine ni la directive.`}
-          </Text>
-          {/* La phrase que le produit doit tenir, écrite noir sur blanc. */}
-          <Text style={styles.retraitTexteFort} numberOfLines={4} testID="coach-player-retrait-compte">
-            Le retrait du club ne supprime JAMAIS le compte FKS du joueur. Son compte, ses séances et
-            son historique personnel lui appartiennent et restent intacts.
-          </Text>
-          {phase.kind === "failed" ? (
-            <Text style={styles.retraitErreur} numberOfLines={4} testID="coach-player-retrait-erreur">
-              {phase.message}
-            </Text>
-          ) : null}
           <View style={styles.actions}>
-            <ActionBouton
-              icone="close-outline"
-              label="Annuler"
-              onPress={() => {
-                reset();
-                setConfirmation(false);
-              }}
-              hint="Ferme la confirmation sans rien changer"
-              disabled={isRemoving}
-              testID="coach-player-retrait-annuler"
-            />
             <RetraitBouton
-              label={isRemoving ? "Retrait…" : "Confirmer le retrait"}
-              onPress={remove}
-              disabled={isRemoving}
-              testID="coach-player-retrait-confirmer"
+              label={GESTE_COPY["retrait-encadrement"].bouton}
+              onPress={() => setConfirmation("retrait-encadrement")}
+              hint={GESTE_COPY["retrait-encadrement"].hint}
+              testID="coach-player-encadrement-ouvrir"
             />
           </View>
-        </>
-      ) : (
-        <>
-          <Text style={styles.retraitTexte} numberOfLines={4}>
-            {`Retirer ${nom} de l'effectif met fin au suivi côté club. Son compte FKS n'est pas concerné.`}
-          </Text>
           <View style={styles.actions}>
             <RetraitBouton
-              label="Retirer du club"
-              onPress={() => setConfirmation(true)}
+              label={GESTE_COPY["retrait-complet"].bouton}
+              onPress={() => setConfirmation("retrait-complet")}
+              hint={GESTE_COPY["retrait-complet"].hint}
               testID="coach-player-retrait-ouvrir"
             />
           </View>
-        </>
-      )}
+        </View>
+      ) : null}
     </CoachSectionCard>
   );
 }
@@ -1028,11 +1199,14 @@ function RetraitSection({
 function RetraitBouton({
   label,
   onPress,
+  hint = "Retire ce membre de l'effectif du club. Le compte FKS du joueur n'est pas supprimé.",
   disabled = false,
   testID,
 }: {
   label: string;
   onPress: () => void;
+  /** Aide vocale : chaque geste dit ce qu'il fait, jamais une phrase générique. */
+  hint?: string;
   disabled?: boolean;
   testID?: string;
 }) {
@@ -1042,7 +1216,7 @@ function RetraitBouton({
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityHint="Retire ce membre de l'effectif du club. Le compte FKS du joueur n'est pas supprimé."
+      accessibilityHint={hint}
       accessibilityState={{ disabled }}
       style={({ pressed }) => [
         styles.action,
@@ -1053,7 +1227,13 @@ function RetraitBouton({
       testID={testID}
     >
       <Ionicons name="person-remove-outline" size={16} color={coachColors.danger} />
-      <Text style={[styles.actionLabel, styles.actionLabelRetrait]} numberOfLines={1}>
+      {/* Deux lignes autorisées : « Retirer les accès d'encadrement » ne tient
+          pas sur une ligne quand la police système grossit, et un libellé
+          d'action tronqué au milieu est pire qu'un bouton plus haut. */}
+      <Text
+        style={[styles.actionLabel, styles.actionLabelRetrait, styles.actionLabelLong]}
+        numberOfLines={2}
+      >
         {label}
       </Text>
     </Pressable>
@@ -1473,6 +1653,32 @@ const styles = StyleSheet.create({
     backgroundColor: coachColors.dangerSoft,
   },
   actionLabelRetrait: { color: coachColors.danger },
+  // Libellé long : il rétrécit et passe à la ligne au lieu d'être coupé.
+  actionLabelLong: { flexShrink: 1, paddingVertical: coachSpacing.xs },
+
+  // Dépliant « Autres actions » : discret par construction (pas de fond, pas de
+  // bordure), mais avec une vraie zone tactile de 44 pt.
+  deplierZone: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: coachSpacing.xs,
+    minHeight: coachLayout.minTouchSize,
+    marginTop: coachSpacing.xs,
+  },
+  deplierTexte: {
+    flexShrink: 1,
+    fontSize: coachType.legende.fontSize,
+    lineHeight: coachType.legende.lineHeight,
+    fontWeight: "600",
+    color: coachColors.sub,
+  },
+  autresActions: {
+    gap: coachSpacing.xs,
+    paddingTop: coachSpacing.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: coachColors.borderSoft,
+  },
+
   retraitTitreConfirme: {
     fontSize: coachType.corpsFort.fontSize,
     lineHeight: coachType.corpsFort.lineHeight,

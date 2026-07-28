@@ -37,10 +37,13 @@ jest.mock("../../../repositories/clubsRepo", () => ({
   fetchClubPlayerSummary: jest.fn(),
 }));
 
-// Retrait d'un membre : la SEULE écriture de cet écran. On mocke le service
-// (jamais le hook) pour exercer réellement l'enchaînement écran → hook → appel.
+// Les TROIS formes de retrait : les seules écritures de cet écran. On mocke le
+// service (jamais le hook) pour exercer réellement l'enchaînement
+// écran → hook → appel, et pour vérifier QUEL appel part.
 jest.mock("../../../services/clubMembers", () => ({
   removeClubMember: jest.fn(),
+  deactivateClubPlayer: jest.fn(),
+  revokeClubStaffAccess: jest.fn(),
 }));
 
 const mockNav: {
@@ -60,7 +63,11 @@ const mockNav: {
 };
 
 import { fetchClubPlayerSummary } from "../../../repositories/clubsRepo";
-import { removeClubMember } from "../../../services/clubMembers";
+import {
+  deactivateClubPlayer,
+  removeClubMember,
+  revokeClubStaffAccess,
+} from "../../../services/clubMembers";
 import { makeSummary } from "../../../domain/coachView/__tests__/fixtures";
 import { addDaysToKey } from "../../../domain/coachView";
 import { toDateKey } from "../../../utils/dateHelpers";
@@ -75,6 +82,8 @@ import type { CoachPlayerSummary } from "../../../domain/coachSummary";
 
 const fetchMock = fetchClubPlayerSummary as jest.MockedFunction<typeof fetchClubPlayerSummary>;
 const removeMock = removeClubMember as jest.MockedFunction<typeof removeClubMember>;
+const suiviMock = deactivateClubPlayer as jest.MockedFunction<typeof deactivateClubPlayer>;
+const encadrementMock = revokeClubStaffAccess as jest.MockedFunction<typeof revokeClubStaffAccess>;
 
 // Métriques figées : sans elles, SafeAreaProvider attend une mesure native qui
 // n'arrive jamais en test et ne rend aucun enfant.
@@ -649,17 +658,23 @@ describe("CoachPlayerScreen — libellés d'identité accentués", () => {
   });
 });
 
-// ─── RETRAIT DE L'EFFECTIF ───────────────────────────────────────────────────
+// ─── LES TROIS FORMES DE RETRAIT ─────────────────────────────────────────────
 //
-// La seule ÉCRITURE de cet écran. Ce que ces tests protègent :
+// Les seules ÉCRITURES de cet écran. Ce que ces tests protègent :
 //  1. LA DISTINCTION QUI COMPTE. « Retirer du club » et « supprimer le compte »
 //     sont indiscernables dans le vocabulaire courant. La phrase « le retrait du
 //     club ne supprime JAMAIS le compte FKS du joueur » doit être à l'écran,
 //     AVANT la confirmation. Elle est verrouillée ici, mot pour mot.
-//  2. LA CONFIRMATION : un seul appui ne retire personne.
-//  3. LE REFUS DU PROPRIÉTAIRE, affiché tel que le serveur le formule — c'est le
-//     seul refus qui nomme le geste à faire.
-//  4. AUCUNE ANTICIPATION : l'écran propose l'action à tout le monde, il ne
+//  2. LA HIÉRARCHIE. Le geste courant (arrêter le suivi) est immédiat ; les deux
+//     gestes lourds demandent un appui de plus, sur un dépliant qui ne fait rien
+//     d'autre que révéler.
+//  3. CHAQUE CONFIRMATION DIT CE QU'ELLE CONSERVE. C'est la moitié de
+//     l'information qui manquait au geste unique, et c'est ce qui distingue les
+//     trois.
+//  4. UN GESTE = UN APPEL. Confirmer l'arrêt du suivi n'appelle jamais le retrait
+//     complet, et réciproquement.
+//  5. LES REFUS TYPÉS, affichés tels que le serveur les formule.
+//  6. AUCUNE ANTICIPATION : l'écran propose les actions à tout le monde, il ne
 //     duplique pas le prédicat d'autorité, il affiche le verdict du serveur.
 
 function noeudParTestID(node: unknown, testID: string): any {
@@ -704,65 +719,193 @@ async function appuyer(renderer: TestRenderer.ReactTestRenderer, testID: string)
   });
 }
 
-describe("CoachPlayerScreen — retrait de l'effectif", () => {
-  test("l'action existe, et rien n'est appelé tant que personne n'appuie", async () => {
-    fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
-    const tree = await render();
-    expect(flatText(tree)).toContain("Retirer du club");
-    expect(removeMock).not.toHaveBeenCalled();
-  });
+/** Ouvre le dépliant « Autres actions », puis le geste demandé. */
+async function ouvrirGesteLourd(
+  renderer: TestRenderer.ReactTestRenderer,
+  testID: string,
+): Promise<void> {
+  await appuyer(renderer, "coach-player-autres-ouvrir");
+  await appuyer(renderer, testID);
+}
 
-  test("un premier appui CONFIRME au lieu de retirer", async () => {
+describe("CoachPlayerScreen — hiérarchie des trois gestes", () => {
+  test("le geste COURANT est immédiat, les deux gestes lourds sont rangés", async () => {
     fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
     const renderer = await rendreAvecRenderer();
 
-    await appuyer(renderer, "coach-player-retrait-ouvrir");
+    // Visible d'emblée : un seul geste, le plus courant.
+    const avant = flatText(renderer.toJSON());
+    expect(avant).toContain("Arrêter le suivi");
+    expect(avant).toContain("Autres actions sur ce compte");
+    // Les deux gestes lourds ne sont PAS à portée d'un doigt qui vise à côté.
+    expect(noeudParTestID(renderer.toJSON(), "coach-player-encadrement-ouvrir")).toBeNull();
+    expect(noeudParTestID(renderer.toJSON(), "coach-player-retrait-ouvrir")).toBeNull();
+
+    // Le dépliant ne fait QUE révéler : aucun appel serveur.
+    await appuyer(renderer, "coach-player-autres-ouvrir");
+    const apres = flatText(renderer.toJSON());
+    expect(apres).toContain("Retirer les accès d'encadrement");
+    expect(apres).toContain("Retirer du club");
+    expect(removeMock).not.toHaveBeenCalled();
+    expect(suiviMock).not.toHaveBeenCalled();
+    expect(encadrementMock).not.toHaveBeenCalled();
+  });
+
+  test("aucun des trois n'agit sur un premier appui : la confirmation est obligatoire", async () => {
+    fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
+
+    const suivi = await rendreAvecRenderer();
+    await appuyer(suivi, "coach-player-suivi-ouvrir");
+    expect(flatText(suivi.toJSON())).toContain("Arrêter le suivi de Anna ?");
+    expect(suiviMock).not.toHaveBeenCalled();
+
+    const encadrement = await rendreAvecRenderer();
+    await ouvrirGesteLourd(encadrement, "coach-player-encadrement-ouvrir");
+    expect(flatText(encadrement.toJSON())).toContain(
+      "Retirer les accès d'encadrement de Anna ?",
+    );
+    expect(encadrementMock).not.toHaveBeenCalled();
+
+    const complet = await rendreAvecRenderer();
+    await ouvrirGesteLourd(complet, "coach-player-retrait-ouvrir");
+    expect(flatText(complet.toJSON())).toContain("Retirer Anna de l'effectif ?");
+    expect(removeMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("CoachPlayerScreen — chaque confirmation dit ce qu'elle CONSERVE", () => {
+  test("ARRÊT DU SUIVI : dit que les accès d'encadrant sont gardés", async () => {
+    fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
+    const renderer = await rendreAvecRenderer();
+    await appuyer(renderer, "coach-player-suivi-ouvrir");
 
     const texte = flatText(renderer.toJSON());
-    expect(texte).toContain("Retirer Anna de l'effectif ?");
-    expect(texte).toContain("Confirmer le retrait");
-    expect(removeMock).not.toHaveBeenCalled();
+    expect(texte).toContain("sort de l'effectif suivi");
+    expect(texte).toContain("il garde tous ses accès d'encadrant");
+    expect(texte).toContain("son compte FKS, ses séances et son historique personnel restent intacts");
   });
 
-  test("la confirmation DIT que le compte FKS n'est pas supprimé", async () => {
+  test("RETRAIT DES ACCÈS D'ENCADREMENT : dit que le suivi de joueur continue", async () => {
     fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
     const renderer = await rendreAvecRenderer();
-    await appuyer(renderer, "coach-player-retrait-ouvrir");
+    await ouvrirGesteLourd(renderer, "coach-player-encadrement-ouvrir");
+
+    const texte = flatText(renderer.toJSON());
+    expect(texte).toContain("perd l'espace coach");
+    expect(texte).toContain("son suivi continue exactement comme avant");
+    expect(texte).toContain("Son compte FKS n'est jamais supprimé");
+  });
+
+  test("RETRAIT COMPLET : la phrase verrouillée est là, mot pour mot", async () => {
+    fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
+    const renderer = await rendreAvecRenderer();
+    await ouvrirGesteLourd(renderer, "coach-player-retrait-ouvrir");
 
     const texte = flatText(renderer.toJSON());
     expect(texte).toContain("Le retrait du club ne supprime JAMAIS le compte FKS du joueur");
+    expect(texte).toContain("son historique personnel lui appartiennent et restent intacts");
     // Les deux portées sont DISTINGUÉES, jamais mélangées.
     expect(texte).toContain("ne fait plus partie de l'effectif de ce club");
-    expect(texte).toContain("son historique personnel lui appartiennent et restent intacts");
+    expect(texte).toContain("ni comme joueur ni comme encadrant");
   });
 
-  test("annuler ne retire personne et referme la confirmation", async () => {
+  test("les trois textes de portée sont bornés (règle d'or)", async () => {
     fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
-    const renderer = await rendreAvecRenderer();
-    await appuyer(renderer, "coach-player-retrait-ouvrir");
-    await appuyer(renderer, "coach-player-retrait-annuler");
+    const cas: Array<[string, boolean]> = [
+      ["coach-player-suivi-ouvrir", false],
+      ["coach-player-encadrement-ouvrir", true],
+      ["coach-player-retrait-ouvrir", true],
+    ];
+    for (const [testID, lourd] of cas) {
+      const renderer = await rendreAvecRenderer();
+      if (lourd) await ouvrirGesteLourd(renderer, testID);
+      else await appuyer(renderer, testID);
 
+      for (const cible of ["coach-player-retrait-portee", "coach-player-retrait-compte"]) {
+        const noeud = noeudParTestID(renderer.toJSON(), cible);
+        expect(noeud).not.toBeNull();
+        expect(typeof noeud.props.numberOfLines).toBe("number");
+      }
+    }
+  });
+});
+
+describe("CoachPlayerScreen — un geste, un appel", () => {
+  test("confirmer l'ARRÊT DU SUIVI n'appelle QUE ce service", async () => {
+    fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
+    suiviMock.mockResolvedValue({ ok: true, alreadyRemoved: false });
+    const renderer = await rendreAvecRenderer();
+
+    await appuyer(renderer, "coach-player-suivi-ouvrir");
+    await appuyer(renderer, "coach-player-suivi-confirmer");
+
+    expect(suiviMock).toHaveBeenCalledWith("club1", "u1");
     expect(removeMock).not.toHaveBeenCalled();
+    expect(encadrementMock).not.toHaveBeenCalled();
     const texte = flatText(renderer.toJSON());
-    expect(texte).not.toContain("Confirmer le retrait");
-    expect(texte).toContain("Retirer du club");
+    expect(texte).toContain("Le suivi de Anna est arrêté");
+    expect(texte).toContain("n'ont pas été touchés");
   });
 
-  test("confirmer appelle le serveur avec le club et le joueur de la ROUTE", async () => {
+  test("confirmer le RETRAIT DES ACCÈS n'appelle QUE ce service", async () => {
+    fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
+    encadrementMock.mockResolvedValue({ ok: true, alreadyRemoved: false });
+    const renderer = await rendreAvecRenderer();
+
+    await ouvrirGesteLourd(renderer, "coach-player-encadrement-ouvrir");
+    await appuyer(renderer, "coach-player-encadrement-confirmer");
+
+    expect(encadrementMock).toHaveBeenCalledWith("club1", "u1");
+    expect(removeMock).not.toHaveBeenCalled();
+    expect(suiviMock).not.toHaveBeenCalled();
+    expect(flatText(renderer.toJSON())).toContain("n'a plus les accès d'encadrement de ce club");
+  });
+
+  test("confirmer le RETRAIT COMPLET appelle le serveur avec le club et le joueur de la ROUTE", async () => {
     fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
     removeMock.mockResolvedValue({ ok: true, alreadyRemoved: false });
     const renderer = await rendreAvecRenderer();
 
-    await appuyer(renderer, "coach-player-retrait-ouvrir");
+    await ouvrirGesteLourd(renderer, "coach-player-retrait-ouvrir");
     await appuyer(renderer, "coach-player-retrait-confirmer");
 
     expect(removeMock).toHaveBeenCalledWith("club1", "u1");
+    expect(suiviMock).not.toHaveBeenCalled();
+    expect(encadrementMock).not.toHaveBeenCalled();
     const texte = flatText(renderer.toJSON());
     expect(texte).toContain("a été retiré de l'effectif");
     expect(texte).toContain("n'ont pas été touchés");
   });
 
-  test("REFUS PROPRIÉTAIRE : le message du serveur est affiché tel quel", async () => {
+  test("annuler ne fait rien du tout, et referme la confirmation", async () => {
+    fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
+    const renderer = await rendreAvecRenderer();
+
+    await appuyer(renderer, "coach-player-suivi-ouvrir");
+    await appuyer(renderer, "coach-player-retrait-annuler");
+
+    expect(suiviMock).not.toHaveBeenCalled();
+    const texte = flatText(renderer.toJSON());
+    expect(texte).not.toContain("Confirmer l'arrêt du suivi");
+    expect(texte).toContain("Arrêter le suivi");
+  });
+
+  test("REJEU : « déjà fait » n'est pas annoncé comme un nouveau geste", async () => {
+    fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
+    suiviMock.mockResolvedValue({ ok: true, alreadyRemoved: true });
+    const renderer = await rendreAvecRenderer();
+
+    await appuyer(renderer, "coach-player-suivi-ouvrir");
+    await appuyer(renderer, "coach-player-suivi-confirmer");
+
+    const texte = flatText(renderer.toJSON());
+    expect(texte).toContain("ne faisait déjà plus partie de l'effectif suivi");
+    expect(texte).not.toContain("Le suivi de Anna est arrêté");
+  });
+});
+
+describe("CoachPlayerScreen — les refus du serveur, affichés tels quels", () => {
+  test("REFUS PROPRIÉTAIRE sur le retrait complet : le message du serveur est affiché", async () => {
     fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
     removeMock.mockResolvedValue({
       ok: false,
@@ -772,53 +915,59 @@ describe("CoachPlayerScreen — retrait de l'effectif", () => {
     });
     const renderer = await rendreAvecRenderer();
 
-    await appuyer(renderer, "coach-player-retrait-ouvrir");
+    await ouvrirGesteLourd(renderer, "coach-player-retrait-ouvrir");
     await appuyer(renderer, "coach-player-retrait-confirmer");
 
     const texte = flatText(renderer.toJSON());
     expect(texte).toContain("propriétaire du club");
     expect(texte).toContain("Transférez d'abord la propriété");
     // L'écran n'annonce PAS un succès qui n'a pas eu lieu.
-    expect(texte).not.toContain("a été retiré de l'effectif");
+    expect(texte).not.toContain("a été retiré de l'effectif.");
   });
 
-  test("REFUS D'AUTORITÉ : message affiché, et le geste reste possible", async () => {
+  test("REFUS « seul le propriétaire » sur les accès d'encadrement : affiché tel quel", async () => {
     fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
-    removeMock.mockResolvedValue({
+    encadrementMock.mockResolvedValue({
+      ok: false,
+      reason: "staffOwnerOnly",
+      message:
+        "Ce compte fait partie de l'encadrement du club. Seul le propriétaire du club peut modifier ses accès.",
+    });
+    const renderer = await rendreAvecRenderer();
+
+    await ouvrirGesteLourd(renderer, "coach-player-encadrement-ouvrir");
+    await appuyer(renderer, "coach-player-encadrement-confirmer");
+
+    expect(flatText(renderer.toJSON())).toContain("Seul le propriétaire du club");
+    // Un refus n'est pas une impasse : le bouton reste là.
+    expect(
+      noeudParTestID(renderer.toJSON(), "coach-player-encadrement-confirmer"),
+    ).not.toBeNull();
+  });
+
+  test("REFUS D'AUTORITÉ sur l'arrêt du suivi : message affiché, geste toujours possible", async () => {
+    fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
+    suiviMock.mockResolvedValue({
       ok: false,
       reason: "denied",
       message: "Retrait impossible avec ce compte.",
     });
     const renderer = await rendreAvecRenderer();
 
-    await appuyer(renderer, "coach-player-retrait-ouvrir");
-    await appuyer(renderer, "coach-player-retrait-confirmer");
+    await appuyer(renderer, "coach-player-suivi-ouvrir");
+    await appuyer(renderer, "coach-player-suivi-confirmer");
 
     expect(flatText(renderer.toJSON())).toContain("Retrait impossible avec ce compte.");
-    // Un refus n'est pas une impasse : le bouton reste là.
-    expect(noeudParTestID(renderer.toJSON(), "coach-player-retrait-confirmer")).not.toBeNull();
-  });
-
-  test("REJEU : « déjà retiré » n'est pas annoncé comme un nouveau retrait", async () => {
-    fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
-    removeMock.mockResolvedValue({ ok: true, alreadyRemoved: true });
-    const renderer = await rendreAvecRenderer();
-
-    await appuyer(renderer, "coach-player-retrait-ouvrir");
-    await appuyer(renderer, "coach-player-retrait-confirmer");
-
-    const texte = flatText(renderer.toJSON());
-    expect(texte).toContain("ne faisait déjà plus partie de l'effectif");
-    expect(texte).not.toContain("a été retiré de l'effectif");
+    expect(noeudParTestID(renderer.toJSON(), "coach-player-suivi-confirmer")).not.toBeNull();
   });
 
   test("le message d'erreur venant du serveur reste borné (règle d'or)", async () => {
     fetchMock.mockResolvedValue({ summary: summaireSansExecution(), unavailable: false });
-    removeMock.mockResolvedValue({ ok: false, reason: "denied", message: "x".repeat(400) });
+    encadrementMock.mockResolvedValue({ ok: false, reason: "denied", message: "x".repeat(400) });
     const renderer = await rendreAvecRenderer();
 
-    await appuyer(renderer, "coach-player-retrait-ouvrir");
-    await appuyer(renderer, "coach-player-retrait-confirmer");
+    await ouvrirGesteLourd(renderer, "coach-player-encadrement-ouvrir");
+    await appuyer(renderer, "coach-player-encadrement-confirmer");
 
     const erreur = noeudParTestID(renderer.toJSON(), "coach-player-retrait-erreur");
     expect(erreur).not.toBeNull();

@@ -12,13 +12,23 @@ import { renderHook, flush, deferred, actAsync } from "./hookHarness";
 
 jest.mock("../../../services/clubMembers", () => ({
   removeClubMember: jest.fn(),
+  deactivateClubPlayer: jest.fn(),
+  revokeClubStaffAccess: jest.fn(),
 }));
 
-import { removeClubMember } from "../../../services/clubMembers";
-import { useRemoveClubMember } from "../useRemoveClubMember";
+import {
+  deactivateClubPlayer,
+  removeClubMember,
+  revokeClubStaffAccess,
+} from "../../../services/clubMembers";
+import { useClubMemberGeste, useRemoveClubMember } from "../useRemoveClubMember";
 import type { RemoveMemberOutcome } from "../../../services/clubMembers";
 
 const removeMock = removeClubMember as jest.MockedFunction<typeof removeClubMember>;
+const suiviMock = deactivateClubPlayer as jest.MockedFunction<typeof deactivateClubPlayer>;
+const encadrementMock = revokeClubStaffAccess as jest.MockedFunction<
+  typeof revokeClubStaffAccess
+>;
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -172,6 +182,89 @@ describe("useRemoveClubMember — l'état n'appartient qu'à sa cible", () => {
     await actAsync(() => h.current.remove());
     expect(removeMock).not.toHaveBeenCalled();
     expect(h.current.phase).toEqual({ kind: "idle" });
+    await h.unmount();
+  });
+});
+
+// ─── LES TROIS GESTES ────────────────────────────────────────────────────────
+//
+// L'invariant ajouté ici : le GESTE fait partie de la cible d'un état. Deux
+// gestes montés sur la MÊME fiche ne doivent jamais partager un « fait » — sinon
+// « suivi arrêté » s'afficherait sous le bouton « retirer du club ».
+
+describe("useClubMemberGeste — un geste, un service, un état", () => {
+  test("chaque geste appelle SON service, et lui seul", async () => {
+    const cas = [
+      ["arret-suivi", suiviMock],
+      ["retrait-encadrement", encadrementMock],
+      ["retrait-complet", removeMock],
+    ] as const;
+
+    for (const [geste, attendu] of cas) {
+      jest.clearAllMocks();
+      attendu.mockResolvedValue({ ok: true, alreadyRemoved: false });
+      const h = await renderHook(() => useClubMemberGeste(geste, "clubX", "p1"));
+
+      await actAsync(() => h.current.remove());
+      await flush();
+
+      expect(attendu).toHaveBeenCalledWith("clubX", "p1");
+      expect(h.current.phase).toEqual({ kind: "done", alreadyRemoved: false });
+      for (const [, autre] of cas) {
+        if (autre !== attendu) expect(autre).not.toHaveBeenCalled();
+      }
+      await h.unmount();
+    }
+  });
+
+  test("changement de GESTE sur la même fiche : l'état du précédent n'est PAS affiché", async () => {
+    suiviMock.mockResolvedValue({ ok: true, alreadyRemoved: false });
+    const h = await renderHook(() => useClubMemberGeste("arret-suivi", "clubX", "p1"));
+
+    await actAsync(() => h.current.remove());
+    await flush();
+    expect(h.current.phase).toEqual({ kind: "done", alreadyRemoved: false });
+
+    // Même club, même joueur, AUTRE geste : rien n'a eu lieu de ce côté-là.
+    await h.rerender(() => useClubMemberGeste("retrait-complet", "clubX", "p1"));
+    expect(h.current.phase).toEqual({ kind: "idle" });
+    expect(h.current.isRemoving).toBe(false);
+
+    // Et l'état du premier geste est retrouvé intact en y revenant.
+    await h.rerender(() => useClubMemberGeste("arret-suivi", "clubX", "p1"));
+    expect(h.current.phase).toEqual({ kind: "done", alreadyRemoved: false });
+    await h.unmount();
+  });
+
+  test("un refus typé remonte tel quel, sans être traduit une seconde fois", async () => {
+    encadrementMock.mockResolvedValue({
+      ok: false,
+      reason: "staffOwnerOnly",
+      message: "Seul le propriétaire du club peut modifier ses accès.",
+    });
+    const h = await renderHook(() => useClubMemberGeste("retrait-encadrement", "clubX", "c2"));
+
+    await actAsync(() => h.current.remove());
+    await flush();
+
+    expect(h.current.phase).toEqual({
+      kind: "failed",
+      reason: "staffOwnerOnly",
+      message: "Seul le propriétaire du club peut modifier ses accès.",
+    });
+    await h.unmount();
+  });
+
+  test("useRemoveClubMember reste l'alias du retrait COMPLET", async () => {
+    removeMock.mockResolvedValue({ ok: true, alreadyRemoved: false });
+    const h = await renderHook(() => useRemoveClubMember("clubX", "p1"));
+
+    await actAsync(() => h.current.remove());
+    await flush();
+
+    expect(removeMock).toHaveBeenCalledWith("clubX", "p1");
+    expect(suiviMock).not.toHaveBeenCalled();
+    expect(encadrementMock).not.toHaveBeenCalled();
     await h.unmount();
   });
 });

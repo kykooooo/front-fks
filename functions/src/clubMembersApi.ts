@@ -19,7 +19,9 @@ import { readCallerUid } from "./callableIdentity";
 import type { ClubAuthoritySignal } from "./clubAuthority";
 import {
   ClubMemberError,
+  deactivateClubPlayer as deactivateClubPlayerCore,
   removeClubMember as removeClubMemberCore,
+  revokeClubStaffAccess as revokeClubStaffAccessCore,
   type MemberDocData,
   type MemberStore,
   type MemberTx,
@@ -147,3 +149,89 @@ export const removeClubMemberHandler = async (
 };
 
 export const removeClubMember = onCall({ region: REGION }, removeClubMemberHandler);
+
+/**
+ * ARRET DU SUIVI DE JOUEUR. Callable SEPAREE, et c'est le point de conception de
+ * ce lot : le geste n'est pas un parametre de `removeClubMember`, c'est un autre
+ * point d'entree. Consequences directes :
+ *  . aucune valeur d'action ne vient du client, donc rien a valider en allowlist
+ *    et rien a usurper — le routage est fait par le runtime callable ;
+ *  . la transaction executee est REELLEMENT distincte (clubMembers.ts), pas une
+ *    transaction commune modulee par un drapeau.
+ *
+ * `removeClubMember` garde exactement sa signature et sa semantique : aucun
+ * changement de contrat pour les applications deja deployees.
+ */
+export const deactivateClubPlayerHandler = async (
+  request: CallableRequest<{ clubId?: unknown; memberUid?: unknown }>,
+) => {
+  const uid = readCallerUid(request);
+  if (!uid) throw new HttpsError("unauthenticated", "Connexion requise.");
+
+  try {
+    const result = await deactivateClubPlayerCore(
+      {
+        store: createMemberStore(getDb()),
+        now: Date.now,
+        onInconsistency: logClubAuthorityInconsistency,
+      },
+      {
+        actorUid: uid,
+        clubId: request.data?.clubId,
+        memberUid: request.data?.memberUid,
+      },
+    );
+    logger.info("clubMembers: suivi joueur arrete", {
+      clubId: result.clubId,
+      actorUid: uid,
+      memberUid: result.memberUid,
+      alreadyInactive: result.alreadyInactive,
+      keepsStaffAccess: result.keepsStaffAccess,
+    });
+    return result;
+  } catch (err) {
+    throw toHttpsError(err);
+  }
+};
+
+export const deactivateClubPlayer = onCall({ region: REGION }, deactivateClubPlayerHandler);
+
+/**
+ * REVOCATION DES PERMISSIONS D'ENCADREMENT. Troisieme point d'entree, meme
+ * motif. La trace journalisee dit ce que le geste CONSERVE (`keepsPlayerStatus`)
+ * autant que ce qu'il ferme : c'est la seule facon de relire un journal et de
+ * savoir lequel des trois gestes a eu lieu.
+ */
+export const revokeClubStaffAccessHandler = async (
+  request: CallableRequest<{ clubId?: unknown; memberUid?: unknown }>,
+) => {
+  const uid = readCallerUid(request);
+  if (!uid) throw new HttpsError("unauthenticated", "Connexion requise.");
+
+  try {
+    const result = await revokeClubStaffAccessCore(
+      {
+        store: createMemberStore(getDb()),
+        now: Date.now,
+        onInconsistency: logClubAuthorityInconsistency,
+      },
+      {
+        actorUid: uid,
+        clubId: request.data?.clubId,
+        memberUid: request.data?.memberUid,
+      },
+    );
+    logger.info("clubMembers: acces d'encadrement retires", {
+      clubId: result.clubId,
+      actorUid: uid,
+      memberUid: result.memberUid,
+      alreadyRevoked: result.alreadyRevoked,
+      keepsPlayerStatus: result.keepsPlayerStatus,
+    });
+    return result;
+  } catch (err) {
+    throw toHttpsError(err);
+  }
+};
+
+export const revokeClubStaffAccess = onCall({ region: REGION }, revokeClubStaffAccessHandler);
