@@ -84,6 +84,29 @@ supprimés — voir `AUDIT_COACH.md`). Il n'existe aucun document à migrer. Un
 document qui porterait encore l'ancien champ serait lu comme « aucune permission,
 aucun suivi » : fermé, jamais deviné.
 
+#### ⚠️ Cette phrase était vraie le 21 juillet. Elle se **recompte** avant chaque déploiement
+
+« Il n'existe aucun document à migrer » est une **observation datée**, pas une
+propriété du code. Elle peut être fausse le jour du déploiement : un club pilote
+créé entre-temps par l'ancienne version aurait écrit des appartenances à l'ancien
+schéma. Elles seraient lues fermées — donc sans danger pour la sécurité, mais
+**un coach pilote perdrait son club sans qu'aucun message ne le dise**. « Sans
+danger » et « sans conséquence » ne sont pas la même chose.
+
+Cette page **ne suffit donc pas** à autoriser un déploiement. Ce qui l'autorise,
+c'est un **préflight** qui recompte l'hypothèse à l'instant :
+
+```bash
+node lib/ancienSchemaPreflightCli.js --projet=<projectId> --limite=500
+```
+
+Lecture seule, aucune écriture possible, aucun identifiant en sortie. Verdict à
+trois états et **code de sortie** : `PROPRE` (0) = l'hypothèse est vérifiée, on
+peut déployer ; `RESIDU` (2) et `INCERTAIN` (3) = **on ne déploie pas**. Le mode
+d'emploi complet, et ce qu'on fait quand le compte n'est pas zéro, sont dans
+`INTEGRATION_BOUCLE.md` §5 (étape 1). Détail important : **la migration
+correspondante n'existe pas** — elle reste à écrire.
+
 ---
 
 ## 3. Ce que ça donne, cas par cas
@@ -288,5 +311,8 @@ apprend quoi faire.**
 | `components/__tests__/appSpaceSwitch.test.tsx` | le sélecteur : quand il apparaît, quand il disparaît |
 | `navigation/__tests__/appSpaceSwitchWiring.test.ts` | un seul émetteur, et le sélecteur présent dans les deux espaces |
 | `navigation/__tests__/rootNavigatorSpaceWiring.test.ts` | la preuve que le navigateur est bien branché là-dessus, et plus sur l'ancien champ |
+| `functions/src/ancienSchemaPreflight.ts` | le **préflight** : recompte les appartenances à l'ancien schéma. Dernier endroit du code qui connaît encore le vocabulaire `role` — pour compter, jamais pour décider d'un droit |
+| `functions/src/ancienSchemaPreflightCli.ts` | la commande à lancer avant de déployer (lecture seule, verdict + code de sortie) |
+| `functions/tests/ancienSchemaPreflight.test.ts` | le compte exact, le verdict `INCERTAIN` sur lecture tronquée, la reprise sans trou ni doublon, l'absence de fuite |
 | `functions/tests/clubOwnership.test.ts` | la séquence **joueur → propriétaire → retiré**, suivi vérifié à chaque étape |
 | `firestore-tests/rules.appSpace.test.ts` | les vraies règles, jouées par l'émulateur (dont `playerStatus` interdit aux clients) |

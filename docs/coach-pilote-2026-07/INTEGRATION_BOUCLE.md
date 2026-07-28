@@ -590,22 +590,106 @@ Deux lots partent en même temps : **l'invitation serveur** (déjà décrite dan
 `CONTRAT_INVITATION.md` §6) et **l'autorisation d'accès** (`AUTORISATION_ACCES.md` §7).
 Ils s'enchaînent, et l'ordre n'est pas une préférence.
 
+Et **avant les deux**, une mesure qui peut tout arrêter : le **préflight du
+schéma d'appartenance** (étape 1). Ces lots reposent sur une hypothèse — « la
+base ne contient aucune appartenance à l'ancien schéma » — qui était vraie le
+21 juillet. On ne la suppose plus le jour du déploiement : on la recompte.
+
 ### La règle, en une phrase
 
-> **Migration des accès d'abord (à blanc puis pour de vrai), Cloud Functions
-> ensuite, front en OTA, règles Firestore en dernier.**
+> **Préflight du schéma d'appartenance d'abord (il peut tout arrêter), migration
+> des accès ensuite (à blanc puis pour de vrai), Cloud Functions après, front en
+> OTA, règles Firestore en dernier.**
 
 ### Le tableau, dans l'ordre
 
 | # | Action | Commande | Pourquoi à cette place |
 |---|---|---|---|
 | **0** | **Prévenir le coach pilote** | un appel, pas une commande | Au déploiement, tous les joueurs déjà rattachés deviennent **non consultables** (champ absent → refus, `firestore.rules:56-60`). C'est voulu. Ça doit être **annoncé avant**, pas découvert. |
-| **1** | **Simuler** la migration des accès | `node lib/coachAccessBackfillCli.js --projet=<projet> --clubId=<club> --limite=200` | N'écrit rien. On lit les compteurs, on vérifie qu'ils ressemblent à l'effectif réel, et on **note le nombre** affiché (« Le perimetre COMPLET fait N document(s) »). `--projet` et `--limite` sont **obligatoires**, sans valeur par défaut : voir `AUTORISATION_ACCES.md` §7.2. |
-| **2** | **Appliquer** la migration, un club à la fois | `node lib/coachAccessBackfillCli.js --projet=<projet> --clubId=<club> --limite=200 --attendu=<N> --apply --je-confirme=<projet>` | `<N>` est le nombre lu à l'étape 1 : si le réel s'en écarte, la commande refuse **avant d'écrire**. Pose `not_required` (mode par défaut) ou `pending` (club en `approval_required`). **Jamais `approved`.** Fait AVANT le reste : sinon le coach perd tout son effectif d'un coup. Sur une cible de production, ajouter `--oui-je-vise-la-production`. Interrompue ? La reprise est décrite dans `AUTORISATION_ACCES.md` §7.2. |
-| **3** | **Déployer les Functions** | `firebase deploy --only functions` | Personne ne les appelle encore : ça ne casse rien. Ça met en place les deux callables d'invitation **et** le réalignement automatique de l'accès (`functions/src/triggers.ts:95`). |
-| **4** | **Publier le front** en OTA | `eas update --channel testflight` | L'ancien front continue de fonctionner tant que l'étape 5 n'est pas faite. |
-| **5** | **Déployer les règles** | `firebase deploy --only firestore:rules` | **C'est l'étape qui ferme réellement les portes** : l'oracle de code club, le self-join, et la lecture des projections sans autorisation. |
-| **6** | **Approuver** les mineurs, un par un | console Firebase + registre papier | Aucun écran ne le fait, délibérément (`AUTORISATION_ACCES.md` §7.3). |
+| **1** | **PRÉFLIGHT** : reste-t-il des appartenances à l'ancien schéma ? | `node lib/ancienSchemaPreflightCli.js --projet=<projet> --limite=500` | **Lecture seule** (aucune écriture possible : le port n'a pas de méthode d'écriture, donc ni `--apply` ni `--je-confirme`). Recompte l'hypothèse sur laquelle repose l'absence de chemin de compatibilité. **Verdict autre que `PROPRE` = on s'arrête ici** — voir ci-dessous. |
+| **2** | **Simuler** la migration des accès | `node lib/coachAccessBackfillCli.js --projet=<projet> --clubId=<club> --limite=200` | N'écrit rien. On lit les compteurs, on vérifie qu'ils ressemblent à l'effectif réel, et on **note le nombre** affiché (« Le perimetre COMPLET fait N document(s) »). `--projet` et `--limite` sont **obligatoires**, sans valeur par défaut : voir `AUTORISATION_ACCES.md` §7.2. |
+| **3** | **Appliquer** la migration, un club à la fois | `node lib/coachAccessBackfillCli.js --projet=<projet> --clubId=<club> --limite=200 --attendu=<N> --apply --je-confirme=<projet>` | `<N>` est le nombre lu à l'étape 2 : si le réel s'en écarte, la commande refuse **avant d'écrire**. Pose `not_required` (mode par défaut) ou `pending` (club en `approval_required`). **Jamais `approved`.** Fait AVANT le reste : sinon le coach perd tout son effectif d'un coup. Sur une cible de production, ajouter `--oui-je-vise-la-production`. Interrompue ? La reprise est décrite dans `AUTORISATION_ACCES.md` §7.2. |
+| **4** | **Déployer les Functions** | `firebase deploy --only functions` | Personne ne les appelle encore : ça ne casse rien. Ça met en place les deux callables d'invitation **et** le réalignement automatique de l'accès (`functions/src/triggers.ts:95`). |
+| **5** | **Publier le front** en OTA | `eas update --channel testflight` | L'ancien front continue de fonctionner tant que l'étape 6 n'est pas faite. |
+| **6** | **Déployer les règles** | `firebase deploy --only firestore:rules` | **C'est l'étape qui ferme réellement les portes** : l'oracle de code club, le self-join, et la lecture des projections sans autorisation. |
+| **7** | **Approuver** les mineurs, un par un | console Firebase + registre papier | Aucun écran ne le fait, délibérément (`AUTORISATION_ACCES.md` §7.3). |
+
+### Étape 1 en détail — le préflight du schéma d'appartenance
+
+**Ce qu'il vérifie.** Le modèle d'appartenance a été **remplacé** : l'ancien champ
+unique `role` (`owner`/`coach`/`player`/`removed`) a laissé la place à deux axes,
+`accessRole` et `playerStatus` (`ESPACE_ET_ROLES.md` §2). Aucun chemin de
+compatibilité n'a été écrit, et cette décision repose sur **une observation datée
+du 21 juillet** : « la base a été vidée, il n'existe aucun document à migrer ».
+
+**Pourquoi on la recompte.** Cette observation peut être fausse le jour du
+déploiement — un club pilote créé entre-temps par l'ancienne version aurait écrit
+des appartenances à l'ancien schéma. Le nouveau code les lirait comme « aucune
+permission, aucun suivi » : **fail-closed**, donc sans danger pour la sécurité,
+mais **un coach perdrait son club en silence**. Ne jamais supposer que la base
+sera encore vide le jour du déploiement : c'est exactement ce que cette étape
+remplace par une mesure.
+
+**Ce qu'on lit.** Des compteurs, jamais des noms — la commande n'imprime aucun
+identifiant d'utilisateur (seule exception : le curseur de reprise, et uniquement
+si le plafond a été atteint).
+
+```
+[preflightAncienSchema] appartenances lues         : 128
+[preflightAncienSchema] ANCIEN schema (champ role) : 0     ← LE chiffre
+[preflightAncienSchema] VERDICT : PROPRE
+```
+
+**Le verdict, et le code de sortie** (un enchaînement de déploiement peut s'y
+arrêter sans lire la sortie) :
+
+| Verdict | Code | Ce qu'on fait |
+|---|---|---|
+| `PROPRE` | **0** | L'hypothèse est vérifiée **à l'instant**. On passe à l'étape 2. |
+| `RESIDU` | **2** | **STOP.** Il reste des documents à l'ancien schéma. Voir ci-dessous. |
+| `INCERTAIN` | **3** | **STOP.** Rien trouvé, mais **tout n'a pas été lu** (plafond atteint, ou document illisible). « Rien trouvé » n'est pas « rien à trouver » : on termine le parcours avant de conclure. |
+| refus | **1** | Cible absente / différente de l'environnement, plafond absent, options contradictoires. **Rien n'a été lu, aucun verdict n'a été prononcé.** |
+
+**Le plafond est obligatoire** (`--limite=<n>`, sans valeur par défaut) et le
+parcours se reprend par curseur, comme les autres outils administrateur :
+
+```bash
+# si la sortie dit ARRET SUR PLAFOND, elle donne le point exact :
+node lib/ancienSchemaPreflightCli.js --projet=<projet> --limite=500 \
+  --reprendre-apres=<clubId>/<uid>
+```
+
+⚠️ Le déploiement n'est autorisé que si **toutes** les tranches disent `PROPRE`.
+Une seule tranche `INCERTAIN` suffit à ne pas déployer.
+
+#### Si le compte n'est pas zéro : ce qu'on fait, et ce qui n'existe pas
+
+Il faut le dire franchement plutôt que de laisser croire qu'il suffirait de
+lancer quelque chose :
+
+> **La migration de l'ancien schéma vers les deux axes N'EXISTE PAS. Elle reste
+> à écrire.** Il n'y a aucune commande à lancer, aucun script à réveiller.
+
+Dans ce cas :
+
+1. **On ne déploie pas.** Ni les Functions, ni les règles, ni le front. L'ancien
+   code continue de fonctionner sur l'ancien schéma ; c'est la seule situation
+   cohérente tant que la migration n'est pas écrite.
+2. **On ne bricole pas les documents à la main** dans la console Firebase. À la
+   main, on oublie un axe : écrire `accessRole` sans `playerStatus` retire son
+   suivi à un entraîneur-joueur, et c'est précisément le défaut que le nouveau
+   modèle ferme.
+3. **On décide** entre deux chemins, avec les chiffres du préflight sous les yeux
+   (`ANCIEN schema`, `dont mixtes`) :
+   - **écrire la migration** (un outil sur le modèle de `coachAccessBackfill.ts` :
+     cible obligatoire, simulation par défaut, plafond, curseur, compteur attendu,
+     confirmation nominative) — le chemin normal dès qu'il y a de vrais clubs ;
+   - **repartir d'une base vide**, si et seulement si le compte est petit, connu,
+     et que les clubs concernés sont des essais internes — donc reproduire
+     l'opération du 21 juillet, en connaissance de cause, puis **relancer le
+     préflight** pour le vérifier.
+4. **On relance le préflight** après coup. Un `PROPRE` obtenu après action vaut
+   mieux qu'un `PROPRE` supposé avant.
 
 ### Pourquoi les règles en dernier — et jamais avant le front
 
@@ -631,6 +715,19 @@ Donc si on déploie les Functions avant d'avoir posé les états, la première
 disparaître **avant** qu'on ait pu poser `not_required` sur les majeurs. En
 inversant, la perte de visibilité se limite aux mineurs — ce qui est précisément
 le but.
+
+### Pourquoi le préflight avant même la migration des accès
+
+Parce que la migration des accès **ne verrait pas le problème**. Elle ne parcourt
+que les appartenances portant `playerStatus == "active"` — un champ du **nouveau**
+modèle. Une appartenance restée à l'ancien schéma ne le porte pas : elle est
+donc **invisible** pour elle, et le serait aussi pour ses compteurs. Elle
+passerait, en annonçant un effectif traité qui n'est pas l'effectif réel.
+
+C'est la raison pour laquelle le préflight fait son propre parcours, **sans
+aucun filtre** (`functions/src/ancienSchemaPreflightCli.ts`) : filtrer sur un
+champ du nouveau modèle reviendrait à prononcer `PROPRE` précisément sur les
+documents qu'on cherche.
 
 ### Rebuild natif nécessaire ?
 
@@ -660,9 +757,17 @@ native de `package.json`, ni `eas.json`, ni `ios/`, ni `android/`). L'OTA suffit
    (`functions/node_modules` absent de ce worktree). Ils sont à l'étape 4.
 4. **Le script de migration des accès n'a jamais été exécuté.** Aucune donnée
    réelle lue ou modifiée. Son exécution est une décision humaine.
-5. **Le test de contrat ne répare rien.** Il fait du bruit quand la boucle change
+5. **Le préflight du schéma d'appartenance n'a jamais été exécuté non plus.**
+   Il est écrit et testé uniquement sur des données inventées
+   (`functions/tests/ancienSchemaPreflight.test.ts`). Ce qu'il prouve à ce stade :
+   qu'il compte juste, qu'il refuse de conclure sur une lecture tronquée, et
+   qu'il ne peut pas écrire. Ce qu'il ne dit pas encore : l'état réel de la base
+   — c'est justement ce que l'étape 1 va chercher, le jour du déploiement.
+   **Et la migration correspondante n'existe pas** : si le préflight trouve
+   quelque chose, il n'y a rien à lancer, il y a quelque chose à écrire.
+6. **Le test de contrat ne répare rien.** Il fait du bruit quand la boucle change
    de forme. La décision reste humaine.
-6. **Les poids restent recopiés à deux endroits** (boucle et coach) et, pour les
+7. **Les poids restent recopiés à deux endroits** (boucle et coach) et, pour les
    règles, une **troisième fois à la main** dans `firestore.rules` pour la liste
    des états autorisants. Ce sont des tests qui tiennent ces accords, pas le
    compilateur.
