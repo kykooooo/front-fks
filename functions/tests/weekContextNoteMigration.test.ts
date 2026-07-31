@@ -553,13 +553,15 @@ describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveCl
   const CLUBS_REPO_SOURCE = readFileSync(CLUBS_REPO_PATH, "utf8");
 
   /**
-   * Indice JUSTE APRES l'accolade fermante correspondant a l'accolade ouvrante
-   * en position `debut` (qui DOIT etre un "{"). Ignore les accolades trouvees
-   * a l'interieur d'une chaine ('...', "...", `...`) pour ne pas se faire
-   * piéger par un texte contenant "{" ou "}".
+   * Indice JUSTE APRES le delimiteur fermant correspondant au delimiteur
+   * ouvrant en position `debut` (qui DOIT etre `ouvrant`). Ignore les
+   * delimiteurs trouves a l'interieur d'une chaine ('...', "...", `...`) pour
+   * ne pas se faire piéger par un texte contenant "{"/"}" ou "("/")".
+   * Generique : sert aux accolades d'un objet ET aux parentheses d'un appel
+   * de fonction (`setDoc(...)`), meme logique, meme risque de piege.
    */
-  function finAccoladeEquilibree(texte: string, debut: number): number {
-    if (texte[debut] !== "{") throw new Error("Position de depart invalide (attendu '{')");
+  function finDelimiteurEquilibre(texte: string, debut: number, ouvrant: string, fermant: string): number {
+    if (texte[debut] !== ouvrant) throw new Error(`Position de depart invalide (attendu '${ouvrant}')`);
     let profondeur = 0;
     let i = debut;
     for (; i < texte.length; i += 1) {
@@ -573,13 +575,96 @@ describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveCl
         }
         continue;
       }
-      if (c === "{") profondeur += 1;
-      else if (c === "}") {
+      if (c === ouvrant) profondeur += 1;
+      else if (c === fermant) {
         profondeur -= 1;
         if (profondeur === 0) return i + 1;
       }
     }
-    throw new Error("Accolade fermante introuvable");
+    throw new Error(`Delimiteur fermant '${fermant}' introuvable`);
+  }
+
+  function finAccoladeEquilibree(texte: string, debut: number): number {
+    return finDelimiteurEquilibre(texte, debut, "{", "}");
+  }
+
+  /** Meme garantie que `finAccoladeEquilibree`, pour les parentheses d'un appel. */
+  function finParenEquilibree(texte: string, debut: number): number {
+    return finDelimiteurEquilibre(texte, debut, "(", ")");
+  }
+
+  /**
+   * Retire les commentaires `//...` et `/* ... *\/` d'un texte, SAUF quand ils
+   * apparaissent a l'interieur d'une chaine ('...', "...", `...`) — une chaine
+   * qui contient litteralement "//" ne doit jamais etre tronquee. Un
+   * commentaire n'est jamais une cle de payload : sans ce nettoyage, un simple
+   * `// commentaire` glisse dans `segmentsTopLevel` comme un segment top-level
+   * qui ne matche ni un spread ni `cle: valeur`, et fait tomber
+   * `extraireClesObjet` en erreur « forme non reconnue » — un FAUX POSITIF du
+   * verrou (le test rougirait pour la mauvaise raison : un commentaire n'est
+   * pas une derive de contrat).
+   */
+  function retirerCommentaires(texte: string): string {
+    let resultat = "";
+    let i = 0;
+    while (i < texte.length) {
+      const c = texte[i];
+      if (c === '"' || c === "'" || c === "`") {
+        const guillemet = c;
+        let j = i + 1;
+        while (j < texte.length && texte[j] !== guillemet) {
+          if (texte[j] === "\\") j += 1;
+          j += 1;
+        }
+        resultat += texte.slice(i, Math.min(j + 1, texte.length));
+        i = j + 1;
+        continue;
+      }
+      if (c === "/" && texte[i + 1] === "/") {
+        // Jusqu'a la fin de ligne EXCLUE : le "\n" est laisse en place pour ne
+        // pas coller deux tokens qui se retrouvaient sur des lignes distinctes.
+        while (i < texte.length && texte[i] !== "\n") i += 1;
+        continue;
+      }
+      if (c === "/" && texte[i + 1] === "*") {
+        const fin = texte.indexOf("*/", i + 2);
+        i = fin < 0 ? texte.length : fin + 2;
+        resultat += " "; // evite de coller deux tokens adjacents
+        continue;
+      }
+      resultat += c;
+      i += 1;
+    }
+    return resultat;
+  }
+
+  /**
+   * Meme texte, mais avec le CONTENU de chaque chaine remplace par des espaces
+   * (longueur preservee, pour ne pas decaler les indices utiles aux messages
+   * d'erreur). Sert a chercher un motif d'appel (`.set(`, `runTransaction(`...)
+   * sans se faire piéger par une chaine qui contiendrait litteralement ce texte.
+   */
+  function masquerChaines(texte: string): string {
+    let resultat = "";
+    let i = 0;
+    while (i < texte.length) {
+      const c = texte[i];
+      if (c === '"' || c === "'" || c === "`") {
+        const guillemet = c;
+        let j = i + 1;
+        while (j < texte.length && texte[j] !== guillemet) {
+          if (texte[j] === "\\") j += 1;
+          j += 1;
+        }
+        const finChaine = Math.min(j + 1, texte.length);
+        resultat += " ".repeat(finChaine - i);
+        i = finChaine;
+        continue;
+      }
+      resultat += c;
+      i += 1;
+    }
+    return resultat;
   }
 
   /** Corps complet (bloc `{ ... }`) d'une fonction exportee, retrouve dans `source`. */
@@ -603,15 +688,75 @@ describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveCl
     return source.slice(debutCorps, finCorps);
   }
 
-  /** Objet passe en 2e argument du premier `setDoc(` trouve dans un corps de fonction. */
-  function objetPayloadSetDoc(corpsFn: string): string {
-    const appel = corpsFn.indexOf("setDoc(");
-    if (appel < 0) throw new Error("Aucun appel setDoc trouve dans ce corps de fonction");
-    const debutObjet = corpsFn.indexOf("{", appel);
-    if (debutObjet < 0) throw new Error("Objet de payload introuvable apres setDoc(");
-    const finObjet = finAccoladeEquilibree(corpsFn, debutObjet);
-    // Contenu STRICTEMENT entre les accolades (finObjet pointe juste apres le "}").
-    return corpsFn.slice(debutObjet + 1, finObjet - 1);
+  /** `setDoc(` / `updateDoc(` : les DEUX seules ecritures Firestore dont ce
+   * fichier sait lire statiquement le payload (l'objet de donnees suit
+   * immediatement la reference du document). */
+  const RE_APPEL_ECRITURE_RECONNU = /\b(setDoc|updateDoc)\s*\(/g;
+
+  /**
+   * TOUTE forme d'ecriture Firestore que ce fichier ne sait PAS lire
+   * statiquement : `addDoc`/`deleteDoc`/`writeBatch`/`runTransaction`, ou un
+   * appel de methode caracteristique d'un batch/d'une transaction
+   * (`batch.set(`, `tx.update(`, `transaction.delete(`...). Volontairement
+   * plus large que necessaire : mieux vaut un faux positif genant qu'une
+   * ecriture invisible pour le verrou.
+   */
+  const RE_ECRITURE_NON_RECONNUE =
+    /\b(addDoc|deleteDoc|writeBatch|runTransaction)\s*\(|[)\]\w]\s*\.\s*(set|update|delete)\s*\(/g;
+
+  /**
+   * FAIL-CLOSED : leve si le corps de fonction contient une ecriture que ce
+   * fichier ne sait pas lire statiquement (cf. `RE_ECRITURE_NON_RECONNUE`).
+   * Sans ce garde-fou, une ecriture ajoutee via `writeBatch`/`runTransaction`/
+   * `addDoc` resterait invisible du verrou — celui-ci ne regarderait QUE les
+   * `setDoc`/`updateDoc` qu'il sait parcourir, et resterait vert en silence
+   * sur tout le reste. Les commentaires et le contenu des chaines sont
+   * neutralises avant la recherche : un commentaire ou une chaine qui
+   * mentionne "runTransaction(" ne doit jamais faire tomber le verrou.
+   */
+  function verifierAucuneEcritureNonReconnue(corpsFn: string): void {
+    const texte = masquerChaines(retirerCommentaires(corpsFn));
+    RE_ECRITURE_NON_RECONNUE.lastIndex = 0;
+    const trouve = RE_ECRITURE_NON_RECONNUE.exec(texte);
+    if (trouve) {
+      const extrait = corpsFn.slice(trouve.index, trouve.index + trouve[0].length).trim();
+      throw new Error(
+        `forme d'ecriture non reconnue dans le corps de la fonction (verrou fail-closed) : "${extrait}" — ` +
+          `seuls setDoc(...) et updateDoc(...) sont lus statiquement ici ; etends l'extraction ou normalise l'ecriture`,
+      );
+    }
+  }
+
+  /**
+   * Objets de donnees (texte STRICTEMENT entre accolades) de TOUTES les
+   * ecritures `setDoc(...)`/`updateDoc(...)` trouvees dans un corps de
+   * fonction, dans l'ordre d'apparition. Une fonction peut ecrire plusieurs
+   * documents, ou le meme document en plusieurs appels : ne regarder que le
+   * PREMIER `setDoc` laissait toute ecriture suivante hors radar — un
+   * deuxieme `setDoc`/`updateDoc` ajoutant une cle hors contrat passait
+   * inapercu, suite verte a tort.
+   */
+  function objetsPayloadEcriture(corpsFn: string): string[] {
+    const texte = retirerCommentaires(corpsFn);
+    const objets: string[] = [];
+    RE_APPEL_ECRITURE_RECONNU.lastIndex = 0;
+    let appel: RegExpExecArray | null;
+    while ((appel = RE_APPEL_ECRITURE_RECONNU.exec(texte))) {
+      const nomAppel = appel[1];
+      const debutParen = appel.index + appel[0].length - 1; // position du "(" ouvrant
+      const finAppel = finParenEquilibree(texte, debutParen);
+      const debutObjet = texte.indexOf("{", debutParen);
+      if (debutObjet < 0 || debutObjet >= finAppel) {
+        throw new Error(
+          `${nomAppel}(...) : payload non litteral (aucun objet "{...}" trouve dans cet appel) — le verrou ne sait pas le lire statiquement`,
+        );
+      }
+      const finObjet = finAccoladeEquilibree(texte, debutObjet);
+      // Contenu STRICTEMENT entre les accolades (finObjet pointe juste apres le "}").
+      objets.push(texte.slice(debutObjet + 1, finObjet - 1));
+      RE_APPEL_ECRITURE_RECONNU.lastIndex = finAppel; // reprend APRES cet appel, jamais dedans
+    }
+    return objets;
   }
 
   /** Decoupe un corps d'objet en segments top-level, en respectant chaines et imbrications. */
@@ -715,7 +860,10 @@ describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveCl
   function extraireClesObjet(corpsObjet: string): ClesEcriture {
     const ecrites: string[] = [];
     const supprimees: string[] = [];
-    for (const segment of segmentsTopLevel(corpsObjet)) {
+    // Un commentaire n'est jamais une cle : retire AVANT de couper en segments,
+    // sinon un `// commentaire` isole se retrouve seul dans son segment (ou
+    // colle au segment suivant) et ne matche ni un spread ni `cle: valeur`.
+    for (const segment of segmentsTopLevel(retirerCommentaires(corpsObjet))) {
       const trimmed = segment.trim();
       if (!trimmed) continue;
       if (trimmed.startsWith("...")) {
@@ -737,11 +885,36 @@ describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveCl
     return { ecrites: [...new Set(ecrites)], supprimees: [...new Set(supprimees)] };
   }
 
+  /**
+   * Union des cles ECRITES et SUPPRIMEES par TOUTES les ecritures
+   * `setDoc`/`updateDoc` d'un corps de fonction (une fonction peut ecrire
+   * plusieurs documents, ou le meme document en plusieurs appels). Fail-closed
+   * en deux temps : d'abord `verifierAucuneEcritureNonReconnue` (toute forme
+   * d'ecriture que ce fichier ne sait pas lire fait tomber le test), puis une
+   * absence totale de `setDoc`/`updateDoc` reconnu fait tomber le test aussi
+   * (une fonction cense ecrire qui n'ecrit visiblement rien n'est pas un
+   * verrou qui passe, c'est un verrou qui ne verrouille plus rien).
+   */
+  function clesEcritesDansCorpsFonction(corpsFn: string): ClesEcriture {
+    verifierAucuneEcritureNonReconnue(corpsFn);
+    const payloads = objetsPayloadEcriture(corpsFn);
+    if (payloads.length === 0) {
+      throw new Error("Aucune ecriture setDoc/updateDoc trouvee dans ce corps de fonction");
+    }
+    const ecrites = new Set<string>();
+    const supprimees = new Set<string>();
+    for (const payload of payloads) {
+      const trouve = extraireClesObjet(payload);
+      trouve.ecrites.forEach((c) => ecrites.add(c));
+      trouve.supprimees.forEach((c) => supprimees.add(c));
+    }
+    return { ecrites: [...ecrites], supprimees: [...supprimees] };
+  }
+
   /** Cles reellement ecrites par saveClubWeekContext, lues DANS `source`. */
   function clesEcritesParSaveClubWeekContext(source: string): ClesEcriture {
     const corps = corpsFonction(source, "saveClubWeekContext");
-    const payload = objetPayloadSetDoc(corps);
-    return extraireClesObjet(payload);
+    return clesEcritesDansCorpsFonction(corps);
   }
 
   test("saveClubWeekContext existe toujours a l'endroit attendu (sinon le verrou ne verrouille rien)", () => {
@@ -784,7 +957,7 @@ describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveCl
     // La mutation a bien eu lieu : sinon le test suivant ne prouverait rien.
     expect(corpsMute).not.toBe(corpsOriginal);
 
-    const { ecrites } = extraireClesObjet(objetPayloadSetDoc(corpsMute));
+    const { ecrites } = extraireClesObjet(objetsPayloadEcriture(corpsMute)[0]);
     expect(ecrites).toContain("champFantome");
     expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
   });
@@ -805,7 +978,7 @@ describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveCl
     );
     expect(corpsMute).not.toBe(corpsOriginal);
 
-    const { ecrites } = extraireClesObjet(objetPayloadSetDoc(corpsMute));
+    const { ecrites } = extraireClesObjet(objetsPayloadEcriture(corpsMute)[0]);
     expect(ecrites).toContain("champSpread");
     expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
   });
@@ -839,5 +1012,94 @@ describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveCl
       expect(ecrites).toContain(champ);
     }
     expect(ecrites.length).toBe(WEEK_CONTEXT_CONTRACT_FIELDS.length);
+  });
+
+  // ── LE VERROU COUVRE TOUTES LES ECRITURES, PAS SEULEMENT LA PREMIERE ────
+  // Avant cette section, `objetPayloadSetDoc` ne regardait que le PREMIER
+  // `setDoc(` du corps de fonction : une deuxieme ecriture vers le meme
+  // document (un deuxieme `setDoc`, ou un `updateDoc`) ajoutant une cle hors
+  // contrat passait totalement inapercue, suite verte a tort. Les deux tests
+  // ci-dessous mutent une COPIE en memoire (jamais le fichier sur disque) pour
+  // le prouver : `saveClubWeekContext` n'a aujourd'hui qu'une seule ecriture,
+  // ces mutations simulent un futur ou elle en aurait deux.
+
+  // Le fichier source est en CRLF (Windows) : toute mutation par substring doit
+  // matcher la fin de l'appel `setDoc` via une regex tolerante a `\r?\n`,
+  // jamais un `\n` en dur qui ne matcherait rien sur ce depot et laisserait
+  // silencieusement `corpsMute === corpsOriginal` (le `.not.toBe` ci-dessous
+  // est justement le garde-fou qui l'aurait revele).
+  const RE_FIN_APPEL_SETDOC = /\{ merge: true \}\r?\n\s*\);/;
+
+  test("mord si une DEUXIEME ecriture (setDoc) ajoute une cle hors contrat", () => {
+    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
+    const corpsMute = corpsOriginal.replace(
+      RE_FIN_APPEL_SETDOC,
+      (m) => `${m}\n  await setDoc(ref, { champFantomeDeuxiemeEcriture: opts.uid });`,
+    );
+    expect(corpsMute).not.toBe(corpsOriginal);
+
+    const { ecrites } = clesEcritesDansCorpsFonction(corpsMute);
+    expect(ecrites).toContain("champFantomeDeuxiemeEcriture");
+    expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
+  });
+
+  test("mord si une ecriture updateDoc ajoute une cle hors contrat", () => {
+    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
+    const corpsMute = corpsOriginal.replace(
+      RE_FIN_APPEL_SETDOC,
+      (m) => `${m}\n  await updateDoc(ref, { champFantomeUpdateDoc: opts.uid });`,
+    );
+    expect(corpsMute).not.toBe(corpsOriginal);
+
+    const { ecrites } = clesEcritesDansCorpsFonction(corpsMute);
+    expect(ecrites).toContain("champFantomeUpdateDoc");
+    expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
+  });
+
+  test("fail-closed : une ecriture BATCH/TRANSACTION non reconnue fait tomber le test, message explicite", () => {
+    // `batch.set(...)`/`transaction.update(...)` sont des ecritures Firestore
+    // tout aussi reelles qu'un `setDoc` — ce fichier ne sait pas lire leur
+    // payload statiquement, donc il ne doit JAMAIS les ignorer en silence.
+    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
+    const corpsMute = corpsOriginal.replace(
+      RE_FIN_APPEL_SETDOC,
+      (m) => `${m}\n  batch.set(ref, { champBatch: opts.uid });`,
+    );
+    expect(corpsMute).not.toBe(corpsOriginal);
+
+    expect(() => clesEcritesDansCorpsFonction(corpsMute)).toThrow(/forme d'ecriture non reconnue/);
+  });
+
+  test("fail-closed : addDoc/writeBatch/runTransaction font aussi tomber le test (autre API d'ecriture)", () => {
+    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
+    for (const appelSuspect of [
+      'await addDoc(collection(db, "clubs"), { champAddDoc: opts.uid });',
+      "const batch = writeBatch(db);",
+      "await runTransaction(db, async (tx) => { tx.set(ref, { x: 1 }); });",
+    ]) {
+      const corpsMute = corpsOriginal.replace(RE_FIN_APPEL_SETDOC, (m) => `${m}\n  ${appelSuspect}`);
+      expect(corpsMute).not.toBe(corpsOriginal);
+      expect(() => clesEcritesDansCorpsFonction(corpsMute)).toThrow(/forme d'ecriture non reconnue/);
+    }
+  });
+
+  test("un commentaire // dans le payload n'est PAS pris pour une forme non reconnue (faux positif desamorce)", () => {
+    // Preuve inverse des tests fail-closed ci-dessus : un simple commentaire
+    // n'est pas une ecriture non reconnue, ni une cle mal formee. Sans le
+    // nettoyage `retirerCommentaires`, ce commentaire glissait dans un segment
+    // top-level et faisait tomber `extraireClesObjet` en erreur — un faux
+    // positif du verrou, pas une vraie derive de contrat.
+    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
+    // Substring sur UNE seule ligne (`clubId: opts.clubId,`) : pas de `\n` en
+    // dur a faire matcher contre le CRLF du fichier source.
+    const corpsMute = corpsOriginal.replace(
+      "clubId: opts.clubId,",
+      "// commentaire de dev, jamais une cle\n      clubId: opts.clubId, // idem, en fin de ligne\n      /* et un bloc, tant qu'on y est */",
+    );
+    expect(corpsMute).not.toBe(corpsOriginal);
+
+    const { ecrites, supprimees } = clesEcritesDansCorpsFonction(corpsMute);
+    expect([...ecrites].sort()).toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
+    expect(supprimees).toEqual(["note"]);
   });
 });
