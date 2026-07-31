@@ -72,3 +72,54 @@ describe("resolveResetVariants — jamais de variante inventee", () => {
     expect(variants.map((v) => v.id)).toEqual(["reset_valide"]);
   });
 });
+
+describe("resolveResetVariants — sous-titre jamais fabrique (RPE/fatigue invente)", () => {
+  test("backend fournit un subtitle explicite : repris tel quel, meme avec un durationMin different", () => {
+    const v2: Pick<FKS_NextSessionV2, "resetVariants"> = {
+      resetVariants: [{ id: "reset_epaules", title: "Épaules", subtitle: "Sous-titre backend", durationMin: 22 }],
+    };
+    const variants = resolveResetVariants(v2);
+    expect(variants[0].subtitle).toBe("Sous-titre backend");
+  });
+
+  test("pas de subtitle backend mais un durationMin reel : sous-titre sobre '~X min', jamais de RPE invente", () => {
+    const v2: Pick<FKS_NextSessionV2, "resetVariants"> = {
+      resetVariants: [{ id: "reset_core", title: "Core", durationMin: 9 }],
+    };
+    const variants = resolveResetVariants(v2);
+    expect(variants[0].subtitle).toBe("~9 min");
+  });
+
+  test("ni subtitle ni durationMin backend : PAS de sous-titre du tout (pas de RPE ni de 'zero fatigue' invente)", () => {
+    const v2: Pick<FKS_NextSessionV2, "resetVariants"> = {
+      resetVariants: [{ id: "reset_appuis", title: "Appuis (backend)" }],
+    };
+    const variants = resolveResetVariants(v2);
+    expect(variants[0].subtitle).toBeUndefined();
+  });
+
+  test("durationMin a 0 ou negatif : traite comme absent, pas de '~0 min'", () => {
+    const v2: Pick<FKS_NextSessionV2, "resetVariants"> = {
+      resetVariants: [
+        { id: "reset_zero", title: "Zero", durationMin: 0 },
+        { id: "reset_neg", title: "Neg", durationMin: -5 },
+      ],
+    };
+    const variants = resolveResetVariants(v2);
+    expect(variants[0].subtitle).toBeUndefined();
+    expect(variants[1].subtitle).toBeUndefined();
+  });
+
+  test("aucun sous-titre genere ne contient jamais de RPE ni 'zero fatigue' invente", () => {
+    const cas: Array<Pick<FKS_NextSessionV2, "resetVariants">> = [
+      { resetVariants: [{ id: "a", title: "A" }] },
+      { resetVariants: [{ id: "b", title: "B", durationMin: 16 }] },
+      { resetVariants: [{ id: "c", title: "C", durationMin: 12 }] },
+    ];
+    for (const v2 of cas) {
+      const serialise = JSON.stringify(resolveResetVariants(v2));
+      expect(serialise).not.toContain("RPE");
+      expect(serialise).not.toContain("fatigue");
+    }
+  });
+});
