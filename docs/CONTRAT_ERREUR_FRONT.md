@@ -50,7 +50,7 @@ le `message` porte le corps de réponse HTTP brut).
 ### §2.1 — Les champs
 
 Le corps contrat, tel que produit par les tests (`erreurContrat` /
-`corpsContrat`, `screens/newSession/__tests__/echecGeneration.test.ts:31-53`),
+`corpsContrat`, `screens/newSession/__tests__/echecGeneration.test.ts:33-56`),
 porte huit champs :
 
 ```json
@@ -87,7 +87,7 @@ Les trois champs restants (`error`, `failedStep`, `traceId`) sont
 - `failedStep` est un détail d'implémentation backend (ex. `planner.openai`,
   `pools.token`) — jamais montré au joueur, jamais inspecté par le front
   (`requestId conserve pour le support, jamais le failedStep`, test
-  `echecGeneration.test.ts:272-285`).
+  `echecGeneration.test.ts:275-288`).
 - `traceId` n'est actuellement lu nulle part côté front (seul `requestId`
   est utilisé pour la référence support affichée).
 
@@ -109,7 +109,7 @@ Deux cas sortent délibérément du contrat et sont traités par le front lui-m�
 **avant** toute tentative de lecture du corps :
 
 1. **Authentification** (`brut.code === "AUTH_REQUIRED"` ou `brut.status === 401`,
-   `echecGeneration.ts:301-303`) : ces réponses portent un jeton technique
+   `echecGeneration.ts:302-304`) : ces réponses portent un jeton technique
    dans leur `message` (`missing_auth`, `invalid_id_token`…) qu'il ne faut
    surtout pas montrer. Le front écrit son propre texte
    (`echecAuthentification()`), toujours, sans essayer de parser le corps.
@@ -137,7 +137,7 @@ liste de codes concurrente**.
 ### §3.1 — Catégories
 
 Trois catégories, et seulement trois (`CategorieEchec`,
-`echecGeneration.ts:19`, `CATEGORIES`, `echecGeneration.ts:144`) :
+`echecGeneration.ts:20`, `CATEGORIES`, `echecGeneration.ts:144`) :
 
 | Catégorie | Signification | Effet sur les actions (§4.3) |
 |---|---|---|
@@ -189,7 +189,7 @@ type d'erreur : `VALIDATION` → `modifier_contraintes` en tête ; `AUTH` →
 `se_reconnecter` en tête ; les autres → `reessayer` en tête. Toutes se
 terminent par `retour_accueil`.
 
-`decisionApresEchec()` (`echecGeneration.ts:435-458`) ajoute ensuite
+`decisionApresEchec()` (`echecGeneration.ts:442`) ajoute ensuite
 `reprendre_seance` en **deuxième position** (juste après l'action
 principale, jamais devant) quand une vraie séance déjà persistée peut être
 rouverte (§5.3).
@@ -211,7 +211,7 @@ selon la complexité).
 
 ### §5.3 — Reprise d'une vraie séance déjà persistée
 
-`chercherRepriseSeance()` (`echecGeneration.ts:361-407`) est distinct d'un
+`chercherRepriseSeance()` (`echecGeneration.ts:368-414`) est distinct d'un
 ré-essai : il ne relance rien, il cherche si une séance **déjà prescrite,
 validée et persistée** peut simplement être rouverte plutôt que perdue à
 cause d'une panne réseau/affichage qui a suivi. Refusée si :
@@ -233,10 +233,10 @@ séance existait déjà avant la panne.
 
 Quand le contrat backend est présent (§2), son champ `message` est montré au
 joueur **sans modification** (`EchecGeneration.messageJoueur = corps.message`,
-`echecGeneration.ts:235-244`) — c'est le backend qui rédige le texte définitif
+`echecGeneration.ts:313-323`) — c'est le backend qui rédige le texte définitif
 dans ce cas. `CarteEchecGeneration` l'affiche dans un seul bloc de texte,
 jamais tronqué au-delà de 6 lignes (`numberOfLines={6}`,
-`screens/newSession/ui/CarteEchecGeneration.tsx:61-63`).
+`screens/newSession/ui/CarteEchecGeneration.tsx:66`).
 
 Quand il n'y a **pas** de corps contrat (§2.2), le front rédige lui-même le
 texte (`MESSAGES`, `echecGeneration.ts:129-142`) — toujours sur le même
@@ -278,7 +278,7 @@ seance }` ou `null`) pour que l'écran puisse câbler ce rejeu sans que
 
 Une génération coûte de l'argent : deux appuis ne doivent jamais produire
 deux requêtes concurrentes. `creerVerrouGeneration()`
-(`echecGeneration.ts:472-485`) fournit un verrou **synchrone** (pas un état
+(`echecGeneration.ts:479-492`) fournit un verrou **synchrone** (pas un état
 React, qui serait périmé dans le même tick) : `prendre()` renvoie `false` si
 le verrou est déjà tenu, `rendre()` le libère une fois la requête réellement
 retombée (bloc `finally`). Dix appuis rapides ne produisent qu'une seule
