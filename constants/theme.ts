@@ -6,6 +6,8 @@ type ThemeColors = {
   card: string;
   cardSoft: string;
   border: string;
+  /** Bordure des éléments INTERACTIFS uniquement (inputs, chips, choices) — 3,04:1 sur `bg`. `border` reste réservé aux séparateurs décoratifs. */
+  borderStrong: string;
   borderSoft: string;
   text: string;
   sub: string;
@@ -15,6 +17,8 @@ type ThemeColors = {
   /** Couleur d'action clé (CTA) + alertes — orange FKS, réservé aux boutons primaires. */
   cta: string;
   ctaSoft: string;
+  /** Teinte de marque orange d'origine, conservée pour les surfaces non textuelles (hors CTA — cf. `cta` qui porte le texte). */
+  brand: string;
   success: string;
   warn: string;
   danger: string;
@@ -28,20 +32,26 @@ type ThemeColors = {
 // DA claire premium (par défaut) : blanc/gris froid très léger (fini le beige),
 // accent bleu profond pour l'ambient (états actifs, liens, highlights),
 // orange réservé aux CTA/alertes via `cta`.
+// DA Polish (direction A, 2026-07) : cta/muted/border/accentSoft recalculés pour
+// passer les 6 échecs de contraste WCAG mesurés sur le parcours d'inscription
+// (cf. scratchpad/da-inscription/contrast*.js) — ratios exacts en commentaire
+// sur chaque valeur.
 const lightColors: ThemeColors = {
   bg: "#F5F7FA",
   bgSoft: "#ffffff",
   card: "#ffffff",
   cardSoft: "#F1F4F8",
-  border: "#E2E7EE",
+  border: "#DDE3EB",
+  borderStrong: "#7E90A8",
   borderSoft: "#EAEEF4",
   text: "#141A24",
   sub: "#586374",
-  muted: "#8A93A1",
+  muted: "#5F6875",
   accent: "#2A4D8F",
-  accentSoft: "#E9EEF7",
-  cta: "#F2741B",
-  ctaSoft: "rgba(242,116,27,0.14)",
+  accentSoft: "#D6E0F2",
+  cta: "#C85014",
+  ctaSoft: "rgba(200,80,20,0.12)",
+  brand: "#F2741B",
   success: "#15803D",
   warn: "#D97706",
   danger: "#DC2626",
@@ -52,13 +62,16 @@ const lightColors: ThemeColors = {
   textMuted: "#586374",
 };
 
-// Dark conservé comme option. Accent bleu clair (cohérence brand), CTA orange.
+// Dark conservé comme option (Réglages). Hors périmètre DA Polish (parcours
+// d'inscription en clair uniquement) — borderStrong/brand ajoutés seulement
+// pour satisfaire ThemeColors, valeurs non retravaillées.
 const darkColors: ThemeColors = {
   bg: "#070707",
   bgSoft: "#0b0b0e",
   card: "#111114",
   cardSoft: "#15161a",
   border: "#232327",
+  borderStrong: "#3a3a42",
   borderSoft: "#2c2c33",
   text: "#f9fafb",
   sub: "#a1a1aa",
@@ -67,6 +80,7 @@ const darkColors: ThemeColors = {
   accentSoft: "rgba(110,151,224,0.18)",
   cta: "#ff7a1a",
   ctaSoft: "rgba(255,122,26,0.18)",
+  brand: "#ff7a1a",
   success: "#f5b942",
   warn: "#fbbf24",
   danger: "#fb7185",
