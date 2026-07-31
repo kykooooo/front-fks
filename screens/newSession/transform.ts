@@ -1,7 +1,7 @@
 import { EXERCISE_BANK } from "../../engine/exerciseBank";
 import type { Exercise, Session } from "../../domain/types";
 import { modalityFromBlockType, normalizeFocus, prettifyName, toPlannedIntensity } from "./helpers";
-import type { FKS_Block, FKS_NextSessionV2 } from "./types";
+import type { FKS_NextSessionV2 } from "./types";
 
 /** Guard: retourne fallback si la valeur n'est pas un nombre fini > 0 */
 const safeDur = (v: unknown, fallback: number): number =>
@@ -16,32 +16,6 @@ export function v2ToLocalSession(
   const pickFallbackExercise = (modality: string) =>
     EXERCISE_BANK.find((ex) => ex.modality === modality && !seenExerciseIds.has(ex.id)) ??
     EXERCISE_BANK.find((ex) => !seenExerciseIds.has(ex.id));
-  const ensureMinItems = (
-    items: Exercise[],
-    modality: Exercise["modality"],
-    blockDurationMin: number,
-    blockIdx: number
-  ) => {
-    const minItems = blockDurationMin < 6 ? 1 : 2;
-    const safe = items.filter(Boolean);
-    while (safe.length < minItems) {
-      const fb = pickFallbackExercise(modality);
-      if (!fb) break;
-      const idx = safe.length;
-      const id = `${fb.id}_extra_${blockIdx}_${idx}`;
-      seenExerciseIds.add(fb.id);
-      safe.push({
-        id,
-        name: fb.name,
-        modality,
-        intensity: (v2.intensity ?? "moderate") as Exercise["intensity"],
-        sets: 3,
-        reps: 8,
-        restSec: 60,
-      });
-    }
-    return safe;
-  };
 
   const blocks: Exercise[] = Array.isArray(v2.blocks)
     ? v2.blocks.flatMap((block, blockIdx) => {
@@ -56,7 +30,7 @@ export function v2ToLocalSession(
         );
 
         if (!Array.isArray(block.items) || block.items.length === 0) {
-          const solo = [
+          return [
             {
               id: `${block.id || blockType || "block"}_${blockIdx}`,
               name: block.goal || blockType || "Bloc",
@@ -69,10 +43,13 @@ export function v2ToLocalSession(
               notes: block.notes || undefined,
             } as Exercise,
           ];
-          return ensureMinItems(solo, modality, safeDur(block.durationMin, 10), blockIdx);
         }
 
-        const mapped = block.items.map((item, i) => {
+        // Un bloc avec 1 item légitime SERT 1 item : plus de complétion
+        // artificielle à 2 (ensureMinItems, supprimé — mesure sur 620 séances
+        // réelles, docs/CONTRAT_ERREUR_FRONT.md : un protocole VMA 6x800m est
+        // légitimement UN item).
+        return block.items.map((item, i) => {
           let friendlyName = prettifyName(
             item.name ||
               item.exerciseId ||
@@ -153,8 +130,6 @@ export function v2ToLocalSession(
             notes: item.notes ?? undefined,
           } as Exercise;
         }).filter(Boolean) as Exercise[];
-
-        return ensureMinItems(mapped, modality, safeDur(block.durationMin, 10), blockIdx);
       })
     : [];
 
