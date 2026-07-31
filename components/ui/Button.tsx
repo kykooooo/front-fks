@@ -190,10 +190,15 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.3,
   },
+  // DA Polish : 800 -> 700 (plafond de graisse du parcours d'inscription,
+  // theme.typography.section). Button.tsx est le seul bouton des 4 écrans
+  // d'inscription (direction A §1.5) — ce changement se propage aussi aux
+  // 17 autres écrans qui importent Button (assumé, cf. doc de direction).
   labelLg: {
-    fontSize: 17,
-    fontWeight: "800",
-    letterSpacing: 0.3,
+    fontSize: theme.typography.section.fontSize,
+    fontWeight: theme.typography.section.fontWeight,
+    lineHeight: theme.typography.section.lineHeight,
+    letterSpacing: theme.typography.section.letterSpacing,
   },
   accessory: {
     marginHorizontal: 2,

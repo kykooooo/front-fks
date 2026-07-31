@@ -148,13 +148,25 @@ export let theme = {
     xxl: 24,
     pill: 999,
   },
+  // Échelle typographique (DA Polish, lot 0 §1.1) — 6 tokens, plafond 700.
+  // Remplace l'ancienne échelle (display/h1/h2/body/caption/micro, jusqu'à
+  // 800) qui était du code mort (0 usage dans tout le dépôt) : chaque écran
+  // redéclarait ses tailles à la main, jusqu'à 900. Devient obligatoire dans
+  // les 4 écrans du parcours d'inscription (Welcome/Register/Login/Setup).
   typography: {
-    display: { fontSize: 28, lineHeight: 32, fontWeight: "800" as const },
-    h1: { fontSize: 22, lineHeight: 28, fontWeight: "800" as const },
-    h2: { fontSize: 18, lineHeight: 24, fontWeight: "700" as const },
-    body: { fontSize: 14, lineHeight: 20, fontWeight: "500" as const },
-    caption: { fontSize: 12, lineHeight: 16, fontWeight: "500" as const },
-    micro: { fontSize: 10, lineHeight: 14, fontWeight: "600" as const },
+    display: { fontSize: 28, lineHeight: 34, fontWeight: "700" as const, letterSpacing: -0.4 },
+    title: { fontSize: 22, lineHeight: 28, fontWeight: "700" as const, letterSpacing: -0.3 },
+    section: { fontSize: 17, lineHeight: 22, fontWeight: "700" as const, letterSpacing: 0 },
+    bodyStrong: { fontSize: 15, lineHeight: 21, fontWeight: "600" as const, letterSpacing: 0 },
+    body: { fontSize: 15, lineHeight: 22, fontWeight: "400" as const, letterSpacing: 0 },
+    label: {
+      fontSize: 13,
+      lineHeight: 16,
+      fontWeight: "600" as const,
+      letterSpacing: 0.4,
+      textTransform: "uppercase" as const,
+    },
+    caption: { fontSize: 12, lineHeight: 16, fontWeight: "500" as const, letterSpacing: 0 },
   },
   shadow: { ...lightShadow },
 };
