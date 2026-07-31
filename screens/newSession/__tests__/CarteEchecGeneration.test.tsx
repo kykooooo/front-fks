@@ -1,5 +1,11 @@
 // screens/newSession/__tests__/CarteEchecGeneration.test.tsx
 //
+// NB : `react-test-renderer` n'est pas declare en devDependency dans
+// package.json — il resout uniquement de facon transitive via jest-expo. Le
+// typecheck ne casse pas grace a `types/react-test-renderer.d.ts` (shim
+// partage, voir ce fichier pour le detail). A declarer explicitement en
+// devDependency au prochain `npm install` planifie (P2 assume).
+//
 // Preuve de rendu legere (react-test-renderer, meme approche que
 // screens/__tests__/SessionLiveScreen.itemRow.test.tsx sur la branche
 // boucle-suivi-joueur) pour la carte d'echec de generation. Ce composant est
@@ -143,7 +149,7 @@ describe("CarteEchecGeneration — message et actions du contrat, jamais de séa
     const bouton = pressableForLabel(tree, "Modifier mon lieu ou mon matériel");
     expect(bouton).toBeTruthy();
     act(() => {
-      bouton!.props.onPress();
+      (bouton!.props.onPress as () => void)();
     });
 
     expect(handlers.onModifierContraintes).toHaveBeenCalledTimes(1);
