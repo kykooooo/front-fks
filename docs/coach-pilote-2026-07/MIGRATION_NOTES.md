@@ -60,13 +60,18 @@ droit de contenir :
 
 ```
 weekKey · clubId · createdBy · trainingIntensity · weekGoal ·
-matchThisWeekend · createdAt · updatedAt
+matchThisWeekend · updatedAt
 ```
 
 **Tout le reste qui contient du texte est traité comme une note** et déplacé.
 
 > Analogie : plutôt que de lister les objets interdits dans le sac (impossible,
-> on en oublie), on liste les 8 objets autorisés. Tout ce qui dépasse sort.
+> on en oublie), on liste les 7 objets autorisés. Tout ce qui dépasse sort.
+
+> `createdAt` a été retiré de cette liste le 2026-07-31 : le champ n'était
+> jamais écrit par `saveClubWeekContext` (front), il n'aurait donc jamais dû
+> figurer dans le contrat. Un test verrouille désormais mécaniquement cette
+> liste contre le code réel (cf. `weekContextNoteMigration.ts`).
 
 Ce choix se trompe **du bon côté** : au pire, on déplace un champ qui n'était pas
 vraiment une note — vers un endroit privé, sans rien perdre.
@@ -517,12 +522,16 @@ aucune base, aucun émulateur) :
    conflit, l'ancienne note devient la note privée visible du coach : il la
    retrouve normalement. En cas de conflit, il faut la console Firebase (cas C de
    l'étape 8).
-7. **La liste des 8 champs autorisés est recopiée à la main** depuis l'écriture
+7. **La liste des 7 champs autorisés est recopiée à la main** depuis l'écriture
    du cadre de semaine côté application (`repositories/clubsRepo.ts`). Si un jour
    un champ légitime est ajouté au cadre sans être ajouté à cette liste, la
    commande le prendrait pour une note et le déplacerait. Ce n'est pas
    destructeur (rien n'est perdu), mais c'est à savoir : **ajouter un champ au
-   cadre = l'ajouter aussi à `WEEK_CONTEXT_CONTRACT_FIELDS`**.
+   cadre = l'ajouter aussi à `WEEK_CONTEXT_CONTRACT_FIELDS`**. Depuis le
+   2026-07-31, un test (`weekContextNoteMigration.test.ts`, section VERROU) lit
+   le source de `clubsRepo.ts` et compare mécaniquement les deux listes : la
+   dérive silencieuse (un champ ajouté d'un seul côté) fait rougir la suite au
+   lieu d'attendre qu'un humain la remarque.
 8. **Le verrou de cible protège des accidents, pas d'une volonté.** Il rattrape le
    mauvais terminal, la commande copiée-collée, le `--apply` tapé trop vite. Il
    n'empêche pas quelqu'un de décider sciemment de viser la production : c'est

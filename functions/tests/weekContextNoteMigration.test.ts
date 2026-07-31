@@ -16,8 +16,13 @@
 //  7. compteurs exacts, champ par champ ;
 //  8. aucun contenu de note dans la sortie ;
 //  9. si la suppression echoue, la copie n'est PAS conservee (tout ou rien) ;
-// 10. l'audit final prouve qu'il ne reste rien de lisible par un joueur.
+// 10. l'audit final prouve qu'il ne reste rien de lisible par un joueur ;
+// 11. VERROU MECANIQUE : WEEK_CONTEXT_CONTRACT_FIELDS colle exactement aux
+//     cles reellement ecrites par repositories/clubsRepo.saveClubWeekContext
+//     (front) — lu par scan statique de son source, jamais recopie a la main.
 
+import { readFileSync } from "fs";
+import { join } from "path";
 import {
   auditWeekContextNotes,
   detecterTextesHorsContrat,
@@ -462,5 +467,210 @@ describe("l'outil reste un outil : aucune route reseau", () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const api = Object.keys(require("../src/weekContextNoteMigration"));
     expect(api.filter((k) => /directive|publi|share|expose/i.test(k))).toEqual([]);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 11. VERROU — le contrat colle aux cles REELLEMENT ecrites par le front
+// ════════════════════════════════════════════════════════════════════════════
+//
+// WEEK_CONTEXT_CONTRACT_FIELDS est une recopie a la main de ce qu'ecrit
+// repositories/clubsRepo.saveClubWeekContext (front). Une recopie a la main
+// derive en silence : c'est exactement comme ca que `createdAt` s'est retrouve
+// dans le contrat alors que saveClubWeekContext ne l'a JAMAIS ecrit (corrige le
+// 2026-07-31). Cette section lit le VRAI source de clubsRepo.ts et prouve que
+// les deux listes restent identiques — meme technique que le scan de
+// `firestore-tests/rules.userDocument.test.ts` (extraction depuis le source,
+// pas depuis une copie qu'on pourrait oublier de mettre a jour).
+describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveClubWeekContext", () => {
+  const CLUBS_REPO_PATH = join(__dirname, "..", "..", "repositories", "clubsRepo.ts");
+  const CLUBS_REPO_SOURCE = readFileSync(CLUBS_REPO_PATH, "utf8");
+
+  /**
+   * Indice JUSTE APRES l'accolade fermante correspondant a l'accolade ouvrante
+   * en position `debut` (qui DOIT etre un "{"). Ignore les accolades trouvees
+   * a l'interieur d'une chaine ('...', "...", `...`) pour ne pas se faire
+   * piéger par un texte contenant "{" ou "}".
+   */
+  function finAccoladeEquilibree(texte: string, debut: number): number {
+    if (texte[debut] !== "{") throw new Error("Position de depart invalide (attendu '{')");
+    let profondeur = 0;
+    let i = debut;
+    for (; i < texte.length; i += 1) {
+      const c = texte[i];
+      if (c === '"' || c === "'" || c === "`") {
+        const guillemet = c;
+        i += 1;
+        while (i < texte.length && texte[i] !== guillemet) {
+          if (texte[i] === "\\") i += 1;
+          i += 1;
+        }
+        continue;
+      }
+      if (c === "{") profondeur += 1;
+      else if (c === "}") {
+        profondeur -= 1;
+        if (profondeur === 0) return i + 1;
+      }
+    }
+    throw new Error("Accolade fermante introuvable");
+  }
+
+  /** Corps complet (bloc `{ ... }`) d'une fonction exportee, retrouve dans `source`. */
+  function corpsFonction(source: string, nom: string): string {
+    const marqueur = `function ${nom}(`;
+    const debutSignature = source.indexOf(marqueur);
+    if (debutSignature < 0) throw new Error(`Fonction ${nom} introuvable dans le source fourni`);
+    // Referme la liste de PARAMETRES (peut contenir un type objet avec ses
+    // propres accolades, ex: `opts: { clubId: string; ... }`) — on ne compte
+    // donc que les parentheses, jamais les accolades, a cette etape.
+    let i = debutSignature + marqueur.length;
+    let profondeurParens = 1;
+    while (i < source.length && profondeurParens > 0) {
+      if (source[i] === "(") profondeurParens += 1;
+      else if (source[i] === ")") profondeurParens -= 1;
+      i += 1;
+    }
+    const debutCorps = source.indexOf("{", i);
+    if (debutCorps < 0) throw new Error(`Corps de ${nom} introuvable`);
+    const finCorps = finAccoladeEquilibree(source, debutCorps);
+    return source.slice(debutCorps, finCorps);
+  }
+
+  /** Objet passe en 2e argument du premier `setDoc(` trouve dans un corps de fonction. */
+  function objetPayloadSetDoc(corpsFn: string): string {
+    const appel = corpsFn.indexOf("setDoc(");
+    if (appel < 0) throw new Error("Aucun appel setDoc trouve dans ce corps de fonction");
+    const debutObjet = corpsFn.indexOf("{", appel);
+    if (debutObjet < 0) throw new Error("Objet de payload introuvable apres setDoc(");
+    const finObjet = finAccoladeEquilibree(corpsFn, debutObjet);
+    // Contenu STRICTEMENT entre les accolades (finObjet pointe juste apres le "}").
+    return corpsFn.slice(debutObjet + 1, finObjet - 1);
+  }
+
+  /** Decoupe un corps d'objet en segments top-level, en respectant chaines et imbrications. */
+  function segmentsTopLevel(corps: string): string[] {
+    const segments: string[] = [];
+    let profondeur = 0;
+    let debutSegment = 0;
+    let i = 0;
+    while (i < corps.length) {
+      const c = corps[i];
+      if (c === '"' || c === "'" || c === "`") {
+        const guillemet = c;
+        i += 1;
+        while (i < corps.length && corps[i] !== guillemet) {
+          if (corps[i] === "\\") i += 1;
+          i += 1;
+        }
+        i += 1;
+        continue;
+      }
+      if (c === "{" || c === "(" || c === "[") profondeur += 1;
+      else if (c === "}" || c === ")" || c === "]") profondeur -= 1;
+      else if (c === "," && profondeur === 0) {
+        segments.push(corps.slice(debutSegment, i));
+        i += 1;
+        debutSegment = i;
+        continue;
+      }
+      i += 1;
+    }
+    const dernier = corps.slice(debutSegment);
+    if (dernier.trim()) segments.push(dernier);
+    return segments;
+  }
+
+  type ClesEcriture = { ecrites: string[]; supprimees: string[] };
+
+  /**
+   * Cles top-level d'un objet litteral : `ecrites` porte une vraie valeur,
+   * `supprimees` porte un `deleteField()` — c'est une SUPPRESSION, pas un champ
+   * du contrat (cas de `note` dans saveClubWeekContext).
+   */
+  function extraireClesObjet(corpsObjet: string): ClesEcriture {
+    const ecrites: string[] = [];
+    const supprimees: string[] = [];
+    for (const segment of segmentsTopLevel(corpsObjet)) {
+      const trimmed = segment.trim();
+      if (!trimmed) continue;
+      const m = trimmed.match(/^([A-Za-z_$][\w$]*)\s*:\s*([\s\S]*)$/);
+      if (!m) continue; // propriete raccourcie (`{ opts }`) : pas utilisee ici
+      const [, cle, valeur] = m;
+      if (/^deleteField\(\s*\)$/.test(valeur.trim())) supprimees.push(cle);
+      else ecrites.push(cle);
+    }
+    return { ecrites, supprimees };
+  }
+
+  /** Cles reellement ecrites par saveClubWeekContext, lues DANS `source`. */
+  function clesEcritesParSaveClubWeekContext(source: string): ClesEcriture {
+    const corps = corpsFonction(source, "saveClubWeekContext");
+    const payload = objetPayloadSetDoc(corps);
+    return extraireClesObjet(payload);
+  }
+
+  test("saveClubWeekContext existe toujours a l'endroit attendu (sinon le verrou ne verrouille rien)", () => {
+    expect(CLUBS_REPO_SOURCE).toContain("function saveClubWeekContext(");
+  });
+
+  test("`note` est une SUPPRESSION (deleteField()), jamais une cle ecrite", () => {
+    const { ecrites, supprimees } = clesEcritesParSaveClubWeekContext(CLUBS_REPO_SOURCE);
+    expect(supprimees).toEqual(["note"]);
+    expect(ecrites).not.toContain("note");
+  });
+
+  test("LE VERROU : les cles ecrites == WEEK_CONTEXT_CONTRACT_FIELDS, exactement", () => {
+    const { ecrites } = clesEcritesParSaveClubWeekContext(CLUBS_REPO_SOURCE);
+    expect([...ecrites].sort()).toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
+  });
+
+  test("`createdAt` n'est plus dans le contrat — il n'a jamais ete ecrit par le code", () => {
+    // Le bug reel corrige ici : `createdAt` vivait dans le contrat sans jamais
+    // etre pose par saveClubWeekContext. Sans lui, un vieux document qui porte
+    // encore un `createdAt` d'une autre origine (ex: Admin SDK) n'est plus pris
+    // pour un champ legitime.
+    expect(WEEK_CONTEXT_CONTRACT_FIELDS).not.toContain("createdAt");
+    const { ecrites } = clesEcritesParSaveClubWeekContext(CLUBS_REPO_SOURCE);
+    expect(ecrites).not.toContain("createdAt");
+  });
+
+  // ── LA PREUVE QUE LE VERROU MORD ─────────────────────────────────────────
+  // Les deux tests ci-dessous ne touchent JAMAIS le fichier sur disque : ils
+  // mutent une COPIE en memoire du texte source (jamais ecrite), puis relancent
+  // exactement la meme extraction. Si le verrou ne detectait pas ces
+  // divergences fabriquees, il ne detecterait pas non plus une vraie derive.
+
+  test("mord si le CODE ecrit une cle absente du contrat (ex: futur champFantome)", () => {
+    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
+    const corpsMute = corpsOriginal.replace(
+      "weekKey: opts.weekKey,",
+      "weekKey: opts.weekKey,\n      champFantome: opts.uid,",
+    );
+    // La mutation a bien eu lieu : sinon le test suivant ne prouverait rien.
+    expect(corpsMute).not.toBe(corpsOriginal);
+
+    const { ecrites } = extraireClesObjet(objetPayloadSetDoc(corpsMute));
+    expect(ecrites).toContain("champFantome");
+    expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
+  });
+
+  test("mord si le CONTRAT porte une cle que le code n'ecrit jamais (le bug `createdAt` reproduit)", () => {
+    // Reproduit EXACTEMENT l'incident corrige par ce commit, sur une COPIE :
+    // le tableau reel exporte par le module n'est jamais modifie.
+    const contratAvecFantome = [...WEEK_CONTEXT_CONTRACT_FIELDS, "createdAt"];
+    const { ecrites } = clesEcritesParSaveClubWeekContext(CLUBS_REPO_SOURCE);
+    expect([...ecrites].sort()).not.toEqual([...contratAvecFantome].sort());
+  });
+
+  test("reecrire la MEME valeur qu'un champ deja dans le contrat ne casse rien (temoin positif)", () => {
+    // Sans ce temoin, un verrou trop strict pourrait rougir sur un simple
+    // reformatage du code (ex: reordonner les cles) sans qu'aucune derive
+    // reelle n'existe.
+    const { ecrites } = clesEcritesParSaveClubWeekContext(CLUBS_REPO_SOURCE);
+    for (const champ of WEEK_CONTEXT_CONTRACT_FIELDS) {
+      expect(ecrites).toContain(champ);
+    }
+    expect(ecrites.length).toBe(WEEK_CONTEXT_CONTRACT_FIELDS.length);
   });
 });

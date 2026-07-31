@@ -49,8 +49,15 @@
 /**
  * LE CONTRAT du cadre de semaine : tout ce qu'un document `weekContexts/{k}`
  * a le droit de porter. Recopie de repositories/clubsRepo.saveClubWeekContext
- * (front) — les deux doivent rester d'accord, et un test verrouille cette liste
- * pour qu'on ne l'elargisse pas par distraction.
+ * (front) — les deux doivent rester d'accord.
+ *
+ * Verrouille MECANIQUEMENT (functions/tests/weekContextNoteMigration.test.ts,
+ * section VERROU) : un test lit le source de clubsRepo.ts, extrait les cles
+ * reellement ecrites par saveClubWeekContext et les compare a cette liste
+ * champ par champ. Ne JAMAIS ajouter un champ ici sans l'ajouter aussi au
+ * payload de saveClubWeekContext (et inversement) : le test rougit sinon.
+ * `createdAt` a ete retire le 2026-07-31 — le champ n'a jamais ete ecrit par
+ * saveClubWeekContext, il n'aurait donc jamais du figurer dans ce contrat.
  *
  * `note` n'y est PAS : c'est precisement le champ qu'on chasse.
  */
@@ -61,7 +68,6 @@ export const WEEK_CONTEXT_CONTRACT_FIELDS: readonly string[] = [
   "trainingIntensity",
   "weekGoal",
   "matchThisWeekend",
-  "createdAt",
   "updatedAt",
 ];
 
