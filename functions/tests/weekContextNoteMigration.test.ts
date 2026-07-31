@@ -19,12 +19,15 @@
 // 10. l'audit final prouve qu'il ne reste rien de lisible par un joueur ;
 // 11. VERROU MECANIQUE : WEEK_CONTEXT_CONTRACT_FIELDS colle exactement aux
 //     cles reellement ecrites par repositories/clubsRepo.saveClubWeekContext
-//     (front) — lu par scan statique de son source, jamais recopie a la main.
+//     (front) — lu par scan statique de son source, jamais recopie a la main ;
+// 12. un champ HERITE CONNU (`createdAt`) est archive comme le reste mais
+//     n'est JAMAIS promu note visible : une date ISO n'est pas une note.
 
 import { readFileSync } from "fs";
 import { join } from "path";
 import {
   auditWeekContextNotes,
+  CHAMPS_HERITES_CONNUS,
   detecterTextesHorsContrat,
   runWeekContextNoteMigration,
   WEEK_CONTEXT_CONTRACT_FIELDS,
@@ -222,6 +225,69 @@ describe("2-3. copie vers le coach-only, suppression dans la MEME transaction", 
     expect(base[cheminCadre].note).toBe(NOTE_SENSIBLE);
     expect(stats.erreurs).toBe(1);
     expect(stats.migres).toBe(0);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// 12. Un champ HERITE CONNU (`createdAt`) n'est jamais promu note visible.
+//
+// `createdAt` a ete retire de WEEK_CONTEXT_CONTRACT_FIELDS le 2026-07-31 (cf.
+// section 11) parce que `saveClubWeekContext` ne l'a jamais ecrit. Consequence
+// directe : un vieux document qui porte encore un `createdAt` EN CHAINE (une
+// autre origine que le front, ex: Admin SDK) devient desormais un champ « hors
+// contrat » aux yeux de `detecterTextesHorsContrat` — exactement comme une
+// vraie note. Sans traitement special, un document SANS note mais AVEC ce
+// `createdAt` aurait vu sa date ISO choisie comme `principale` et ecrite comme
+// note VISIBLE du coach (`base[cheminNote].note === "2020-01-01T00:00:00.000Z"`).
+// Cette section prouve que ce n'est plus le cas : le champ est bien deplace
+// (archive dans `legacyImport`, retire du document public), mais jamais
+// affiche comme si un coach l'avait ecrit.
+describe("12. champs HERITES CONNUS (createdAt) : archives, jamais promus note visible", () => {
+  const cheminCadre = "clubs/clubA/weekContexts/2026-07-20";
+  const cheminNote = "clubs/clubA/coachNotes/2026-07-20";
+  const refs: WeekContextRef[] = [{ clubId: "clubA", weekKey: "2026-07-20" }];
+  const CREATED_AT_HERITE = "2020-01-01T00:00:00.000Z";
+
+  it("`createdAt` fait bien partie des champs herites connus (temoin)", () => {
+    expect(CHAMPS_HERITES_CONNUS).toContain("createdAt");
+  });
+
+  it("doc avec createdAt STRING et SANS note : archive, mais AUCUNE note visible creee", async () => {
+    const base: Base = { [cheminCadre]: cadre({ createdAt: CREATED_AT_HERITE }) };
+    const stats = await runWeekContextNoteMigration(magasin(base, refs), { apply: true, now });
+
+    // Le champ a bien ete detecte et deplace : le document public est propre.
+    expect(stats.migres).toBe(1);
+    expect(base[cheminCadre].createdAt).toBeUndefined();
+    expect(base[cheminNote].legacyImport).toMatchObject({ champs: { createdAt: CREATED_AT_HERITE } });
+
+    // Mais la date n'est PAS devenue une note : c'est la faille qu'on ferme ici.
+    expect(base[cheminNote].note).toBeUndefined();
+    expect(stats.conflits).toBe(0);
+  });
+
+  it("doc avec createdAt ET une vraie note : la vraie note est promue, createdAt reste archive seulement", async () => {
+    const base: Base = {
+      [cheminCadre]: cadre({ createdAt: CREATED_AT_HERITE, note: NOTE_SENSIBLE }),
+    };
+    const stats = await runWeekContextNoteMigration(magasin(base, refs), { apply: true, now });
+
+    expect(base[cheminNote].note).toBe(NOTE_SENSIBLE);
+    expect(base[cheminNote].legacyImport).toMatchObject({
+      champs: { createdAt: CREATED_AT_HERITE, note: NOTE_SENSIBLE },
+    });
+    expect(stats.migres).toBe(1);
+    expect(stats.conflits).toBe(0);
+  });
+
+  it("relance apres coup : le document sans note reste sans note visible (idempotent)", async () => {
+    const base: Base = { [cheminCadre]: cadre({ createdAt: CREATED_AT_HERITE }) };
+    await runWeekContextNoteMigration(magasin(base, refs), { apply: true, now });
+    const stats2 = await runWeekContextNoteMigration(magasin(base, refs), { apply: true, now });
+
+    expect(stats2.migres).toBe(0);
+    expect(stats2.dejaMigres).toBe(1);
+    expect(base[cheminNote].note).toBeUndefined();
   });
 });
 
@@ -584,9 +650,57 @@ describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveCl
   type ClesEcriture = { ecrites: string[]; supprimees: string[] };
 
   /**
+   * Cles portees par un SEGMENT SPREAD (`...expr`) d'un objet litteral :
+   * `...(opts.uid ? { a: opts.uid } : {})`, `...(cond ? {a} : {b: deleteField()})`,
+   * `...extra(...)`. Un spread FUSIONNE ses cles au niveau ou il apparait — c'est
+   * exactement ce que fait JavaScript a l'execution — donc on cherche TOUT objet
+   * litteral `{ ... }` present dans l'expression du spread (les deux branches d'un
+   * ternaire, une expression parenthesee, peu importe l'imbrication) et on
+   * recycle `extraireClesObjet` sur son contenu : si cet objet contient lui-meme
+   * un spread, il est deroule pareil, recursivement.
+   *
+   * Un spread qui ne contient AUCUN objet litteral visible (`...opts.extra`, une
+   * variable dont la forme n'est pas connue statiquement) ne peut rien reveler :
+   * il est ignore, comme avant — c'est une limite assumee de l'analyse statique,
+   * pas un trou du verrou (aucun champ du contrat actuel n'est ecrit ainsi).
+   */
+  function clesEcritesParSpread(segmentSpread: string): ClesEcriture {
+    const ecrites: string[] = [];
+    const supprimees: string[] = [];
+    const expression = segmentSpread.replace(/^\.\.\./, "");
+    let i = 0;
+    while (i < expression.length) {
+      const c = expression[i];
+      if (c === '"' || c === "'" || c === "`") {
+        const guillemet = c;
+        i += 1;
+        while (i < expression.length && expression[i] !== guillemet) {
+          if (expression[i] === "\\") i += 1;
+          i += 1;
+        }
+        i += 1;
+        continue;
+      }
+      if (c === "{") {
+        const fin = finAccoladeEquilibree(expression, i);
+        const trouve = extraireClesObjet(expression.slice(i + 1, fin - 1));
+        ecrites.push(...trouve.ecrites);
+        supprimees.push(...trouve.supprimees);
+        i = fin;
+        continue;
+      }
+      i += 1;
+    }
+    return { ecrites, supprimees };
+  }
+
+  /**
    * Cles top-level d'un objet litteral : `ecrites` porte une vraie valeur,
    * `supprimees` porte un `deleteField()` — c'est une SUPPRESSION, pas un champ
-   * du contrat (cas de `note` dans saveClubWeekContext).
+   * du contrat (cas de `note` dans saveClubWeekContext). Un segment SPREAD
+   * (`...(cond ? { cle: ... } : ...)`) est deroule par `clesEcritesParSpread` :
+   * sans ca, une cle ajoutee derriere un spread conditionnel n'apparaissait dans
+   * AUCUNE des deux listes et le verrou ne la voyait jamais deriver.
    */
   function extraireClesObjet(corpsObjet: string): ClesEcriture {
     const ecrites: string[] = [];
@@ -594,13 +708,19 @@ describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveCl
     for (const segment of segmentsTopLevel(corpsObjet)) {
       const trimmed = segment.trim();
       if (!trimmed) continue;
+      if (trimmed.startsWith("...")) {
+        const trouve = clesEcritesParSpread(trimmed);
+        ecrites.push(...trouve.ecrites);
+        supprimees.push(...trouve.supprimees);
+        continue;
+      }
       const m = trimmed.match(/^([A-Za-z_$][\w$]*)\s*:\s*([\s\S]*)$/);
       if (!m) continue; // propriete raccourcie (`{ opts }`) : pas utilisee ici
       const [, cle, valeur] = m;
       if (/^deleteField\(\s*\)$/.test(valeur.trim())) supprimees.push(cle);
       else ecrites.push(cle);
     }
-    return { ecrites, supprimees };
+    return { ecrites: [...new Set(ecrites)], supprimees: [...new Set(supprimees)] };
   }
 
   /** Cles reellement ecrites par saveClubWeekContext, lues DANS `source`. */
@@ -653,6 +773,39 @@ describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveCl
     const { ecrites } = extraireClesObjet(objetPayloadSetDoc(corpsMute));
     expect(ecrites).toContain("champFantome");
     expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
+  });
+
+  test("mord si le CODE ecrit une cle via un SPREAD CONDITIONNEL (`...(cond ? { cle } : ...)`)", () => {
+    // Un simple `key: value` n'est pas la seule facon d'ajouter un champ au
+    // payload : `...(opts.uid ? { champSpread: opts.uid } : {})` le fait tout
+    // aussi bien, et une extraction qui ne regarde que les segments `cle:` tout
+    // court passe totalement a cote (elle ignore le segment spread en silence).
+    // Verifie AVANT tout que ce cas etait bien un trou : sans le derouleur de
+    // spread, cette meme mutation laissait `ecrites` identique au contrat et le
+    // test suivant aurait echoue a tort — c'est exactement l'incident vecu sur
+    // `repositories/clubsRepo.ts` (preuve en dehors du fichier, cf. rapport).
+    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
+    const corpsMute = corpsOriginal.replace(
+      "note: deleteField(),",
+      "note: deleteField(),\n      ...(opts.uid ? { champSpread: opts.uid } : {}),",
+    );
+    expect(corpsMute).not.toBe(corpsOriginal);
+
+    const { ecrites } = extraireClesObjet(objetPayloadSetDoc(corpsMute));
+    expect(ecrites).toContain("champSpread");
+    expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
+  });
+
+  test("un spread conditionnel dont AUCUNE branche n'est retenue (deleteField()) reste une suppression", () => {
+    // Temoin : un spread peut aussi porter une suppression, pas seulement une
+    // ecriture. `...(cond ? { note: deleteField() } : {})` doit ranger `note`
+    // dans `supprimees`, pas dans `ecrites` — meme regle que pour un `deleteField()`
+    // ecrit directement.
+    const { ecrites, supprimees } = extraireClesObjet(
+      "weekKey: opts.weekKey,\n...(opts.flag ? { note: deleteField() } : {}),",
+    );
+    expect(supprimees).toEqual(["note"]);
+    expect(ecrites).toEqual(["weekKey"]);
   });
 
   test("mord si le CONTRAT porte une cle que le code n'ecrit jamais (le bug `createdAt` reproduit)", () => {

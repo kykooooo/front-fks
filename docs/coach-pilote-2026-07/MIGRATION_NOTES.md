@@ -194,7 +194,7 @@ encore une note lisible par les joueurs. C'est **le** chiffre de la décision.
   alors que le pilote compte quelques clubs) → quelque chose n'est pas compris,
   demande une relecture avant d'écrire ;
 - `champsDetectes` contient un champ **légitime** que quelqu'un aurait ajouté au
-  cadre de semaine sans l'ajouter à la liste des 8 → voir §7, limite 7.
+  cadre de semaine sans l'ajouter à la liste des 7 → voir §7, limite 7.
 
 ---
 
@@ -285,7 +285,7 @@ que c'est propre**, et il ne faut pas l'écrire dans un compte rendu.
 
 Le verdict `PROPRE` de l'étape 5 est **la preuve principale** : il relit
 **chaque** cadre de semaine de **chaque** club et vérifie qu'il ne reste **aucun
-texte hors des 8 champs autorisés**. Pas « aucun champ nommé `note` » : **aucun
+texte hors des 7 champs autorisés**. Pas « aucun champ nommé `note` » : **aucun
 texte**, quel que soit son nom. Et il refuse de dire `PROPRE` s'il n'a pas tout
 lu.
 
@@ -299,7 +299,7 @@ Trois preuves s'empilent, et il faut les trois :
 
 Contre-vérification manuelle, si tu veux la faire toi-même (2 minutes, console
 Firebase) : ouvre `clubs/<un club>/weekContexts/<une semaine ancienne>`. Tu dois
-y voir **uniquement** les 8 champs autorisés. Ouvre ensuite
+y voir **uniquement** les 7 champs autorisés. Ouvre ensuite
 `clubs/<le même club>/coachNotes/<la même semaine>` : le texte est là.
 
 **Ce qui doit faire ARRÊTER :** un champ inattendu qui traîne encore dans un
@@ -540,3 +540,15 @@ aucune base, aucun émulateur) :
    seul sens qui compte ici — rejouer la même migration — les deux donnent le
    même résultat, et c'est ce que vérifie le test d'idempotence. Mais un test qui
    passe sur une imitation reste un test sur une imitation.
+10. **`createdAt` est un champ HÉRITÉ CONNU, jamais promu note visible.** Retirer
+    `createdAt` de `WEEK_CONTEXT_CONTRACT_FIELDS` (limite 7 ci-dessus) a un effet
+    de bord : un vieux document qui porte encore ce champ (une autre origine que
+    l'application, ex. Admin SDK) devient « hors contrat » comme une vraie note.
+    Sans traitement particulier, un document SANS note mais AVEC ce `createdAt`
+    aurait vu sa date ISO choisie comme note visible du coach — une date affichée
+    comme si un coach l'avait écrite. `CHAMPS_HERITES_CONNUS` (dans
+    `weekContextNoteMigration.ts`) liste les champs qu'on sait ne JAMAIS être une
+    note : ils sont toujours **archivés** dans `legacyImport` comme le reste (rien
+    n'est perdu), mais jamais choisis comme `principale` — donc jamais écrits dans
+    `note`. Testé section 12 de `weekContextNoteMigration.test.ts` (doc avec
+    `createdAt` et sans note → aucune note visible créée).

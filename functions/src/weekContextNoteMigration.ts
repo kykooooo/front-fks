@@ -71,6 +71,21 @@ export const WEEK_CONTEXT_CONTRACT_FIELDS: readonly string[] = [
   "updatedAt",
 ];
 
+/**
+ * Champs HERITES CONNUS : jamais ecrits par `saveClubWeekContext`, mais un
+ * document ANCIEN peut les porter depuis une autre origine (ex: un `createdAt`
+ * pose par l'Admin SDK avant que ce champ soit retire du contrat le 2026-07-31,
+ * cf. WEEK_CONTEXT_CONTRACT_FIELDS ci-dessus). Ce ne sont PAS des variantes de
+ * note comme `notes`/`coachNote` : ce sont des champs SYSTEME dont on connait
+ * le sens, et ce sens n'est jamais « texte ecrit par un coach ».
+ *
+ * Traitement : archives comme le reste (dans `legacyImport.champs`, retires du
+ * document public) mais JAMAIS choisis comme note VISIBLE — une date ISO
+ * affichee comme note serait pire que la fuite qu'on repare. Voir
+ * `migrerUnCadre` : `principale` exclut ces champs de la selection.
+ */
+export const CHAMPS_HERITES_CONNUS: readonly string[] = ["createdAt"];
+
 /** Un texte trouve hors contrat. `chemin` = champ d'origine (jamais le contenu). */
 export type TexteHorsContrat = { chemin: string; texte: string };
 
@@ -251,11 +266,23 @@ export async function migrerUnCadre(
     }
 
     // Note principale : celle du champ `note` si elle existe, sinon la premiere
-    // dans l'ordre stable des chemins. Deterministe, donc rejouable.
-    const principale = textes.find((t) => t.chemin === "note") ?? textes[0];
+    // dans l'ordre stable des chemins — mais JAMAIS un champ HERITE CONNU
+    // (`createdAt`) : ce n'est pas une note ecrite par un coach, c'est une date
+    // systeme. Sans cette exclusion, un vieux document qui ne porte QUE ce champ
+    // (aucune vraie note) verrait sa date affichee comme note visible du coach.
+    // `null` si tout ce qui a ete trouve est un champ herite connu : le champ
+    // est quand meme archive plus bas (`champsImportes`), simplement jamais
+    // promu.
+    const eligiblesPourNoteVisible = textes.filter(
+      (t) => !CHAMPS_HERITES_CONNUS.includes(champRacine(t.chemin)),
+    );
+    const principale =
+      eligiblesPourNoteVisible.find((t) => t.chemin === "note") ??
+      eligiblesPourNoteVisible[0] ??
+      null;
     const noteExistante =
       typeof notePrivee?.note === "string" ? (notePrivee.note as string).trim() : "";
-    const conflit = noteExistante !== "" && noteExistante !== principale.texte;
+    const conflit = principale !== null && noteExistante !== "" && noteExistante !== principale.texte;
 
     // Les textes importes sont ranges PAR CHAMP D'ORIGINE. Un second passage
     // ecrirait les memes clefs avec les memes valeurs : l'operation est
@@ -278,9 +305,11 @@ export async function migrerUnCadre(
       weekKey: ref.weekKey,
       clubId: ref.clubId,
       legacyImport: importe,
-      // On ne pose la note visible QUE si la semaine n'en a pas deja une : le
-      // coach a pu ecrire depuis, et sa version recente fait foi.
-      ...(noteExistante === "" ? { note: principale.texte } : {}),
+      // On ne pose la note visible QUE si la semaine n'en a pas deja une (le
+      // coach a pu ecrire depuis, et sa version recente fait foi) ET qu'il y a
+      // effectivement une note eligible (`principale` non nul) : un document qui
+      // ne porte qu'un champ herite connu n'obtient AUCUNE note visible.
+      ...(principale !== null && noteExistante === "" ? { note: principale.texte } : {}),
     };
 
     tx.merge(cheminNote, payload);
