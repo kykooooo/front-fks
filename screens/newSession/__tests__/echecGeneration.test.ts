@@ -51,8 +51,9 @@ const corpsContrat = (params: {
 
 const erreurContrat = (
   status: number,
-  params: Parameters<typeof corpsContrat>[0]
-) => new BackendError(status, "Unprocessable Entity", corpsContrat(params));
+  params: Parameters<typeof corpsContrat>[0],
+  retryAfterS?: number
+) => new BackendError(status, "Unprocessable Entity", corpsContrat(params), undefined, retryAfterS);
 
 /* ─── Fabriques de séances ─────────────────────────────────────────────── */
 
@@ -284,6 +285,57 @@ describe("lireEchecGeneration — codes types du contrat backend", () => {
     );
     expect(echec.requestId).toBe("5e9b0f31");
     expect(echec.messageJoueur).not.toContain("schema.validation");
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 1ter. LOT 4 (c) — un 429 TYPÉ garde son Retry-After
+ * Avant ce fix, le chemin "corps contrat présent" forçait attendreS à null
+ * quoi qu'il arrive — un 429 qui portait À LA FOIS un corps typé ET un
+ * en-tête Retry-After perdait ce délai, alors que le §2.2 (429 SANS corps)
+ * le respectait déjà correctement.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+describe("lireEchecGeneration — 429 type conserve le Retry-After (lot 4c)", () => {
+  test("429 avec corps type ET Retry-After : attendreS preserve, pas ecrase a null", () => {
+    const echec = lireEchecGeneration(
+      erreurContrat(
+        429,
+        {
+          code: "SESSION_GENERATION_RATE_LIMITED",
+          category: "transitoire",
+          retryable: true,
+          message: "Tu as lancé plusieurs générations coup sur coup. Rien n'a été ajouté à ton programme.",
+        },
+        15
+      )
+    );
+    expect(echec.source).toBe("contrat");
+    expect(echec.code).toBe("SESSION_GENERATION_RATE_LIMITED");
+    expect(echec.attendreS).toBe(15);
+  });
+
+  test("corps type SANS Retry-After (ex: 422 sportif) : attendreS reste null, comportement inchange", () => {
+    const echec = lireEchecGeneration(
+      erreurContrat(422, {
+        code: "NO_VALID_PRESCRIPTION",
+        category: "sportif",
+        retryable: false,
+        message: "Rien n'a été ajouté à ton programme.",
+      })
+    );
+    expect(echec.attendreS).toBeNull();
+  });
+
+  test("Retry-After a 0 ou negatif : traite comme absent (jamais 'patiente 0 seconde')", () => {
+    const echecZero = lireEchecGeneration(
+      erreurContrat(
+        429,
+        { code: "RATE_LIMITED", category: "transitoire", retryable: true, message: "Rien n'a été ajouté à ton programme." },
+        0
+      )
+    );
+    expect(echecZero.attendreS).toBeNull();
   });
 });
 

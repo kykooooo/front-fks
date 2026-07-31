@@ -132,19 +132,40 @@ describe("verrou : aucune seance de secours fabriquee cote app", () => {
     expect(coupables).toEqual([]);
   });
 
-  test("le catch de generation n'ecrit plus rien", () => {
+  test("AUCUN catch de NewSessionScreen n'ecrit une seance (generation, reset, reessai, cache)", () => {
+    // NewSessionScreen.tsx a plusieurs chemins d'ecriture qui peuvent echouer
+    // APRES une generation payee : handleGenerate, handleSelectResetVariant,
+    // reessayerEnregistrement (lot 1), useCachedSession (lot 4). Chacun doit
+    // fermer proprement (catch → decisionApresEchec → setEchec, jamais une
+    // ecriture). Un scan du seul PREMIER catch du fichier ne verrouillerait
+    // que le premier trouve dans l'ordre du fichier — celui-ci les verrouille
+    // TOUS, par position, pour qu'un futur handler qui en ajoute un nouveau
+    // sans fermeture propre casse la CI au lieu de passer inapercu.
     const ecran = CONTENUS.find((f) => f.chemin === "screens/NewSessionScreen.tsx");
     expect(ecran).toBeDefined();
-    const catchGeneration = ecran!.texte.slice(
-      ecran!.texte.indexOf("} catch (err: any) {"),
-      ecran!.texte.indexOf("} finally {", ecran!.texte.indexOf("} catch (err: any) {"))
-    );
-    expect(catchGeneration.length).toBeGreaterThan(0);
-    for (const ecriture of ["pushSession(", "persistPlanned(", "setLastAiSessionV2(", "processV2("]) {
-      expect(catchGeneration).not.toContain(ecriture);
+    const texte = ecran!.texte;
+
+    const motifCatch = /\}\s*catch\s*\([^)]*\)\s*\{/g;
+    const positions: number[] = [];
+    let correspondance: RegExpExecArray | null;
+    while ((correspondance = motifCatch.exec(texte))) {
+      positions.push(correspondance.index);
     }
-    // Et aucune navigation vers l'écran de séance depuis le chemin d'erreur.
-    expect(catchGeneration).not.toContain('nav.navigate("SessionPreview"');
-    expect(catchGeneration).not.toContain('nav.navigate("SessionLive"');
+    // Garde-fou du test lui-même : au 31/07/2026 il y en a quatre. Si ce
+    // nombre baisse, c'est que le test ne trouve plus les catch attendus —
+    // pas que l'écran en a réellement moins.
+    expect(positions.length).toBeGreaterThanOrEqual(4);
+
+    for (const debut of positions) {
+      const finBloc = texte.indexOf("} finally {", debut);
+      expect(finBloc).toBeGreaterThan(debut);
+      const bloc = texte.slice(debut, finBloc);
+      for (const ecriture of ["pushSession(", "persistPlanned(", "setLastAiSessionV2(", "processV2("]) {
+        expect(bloc).not.toContain(ecriture);
+      }
+      // Et aucune navigation vers l'écran de séance depuis un chemin d'erreur.
+      expect(bloc).not.toContain('nav.navigate("SessionPreview"');
+      expect(bloc).not.toContain('nav.navigate("SessionLive"');
+    }
   });
 });

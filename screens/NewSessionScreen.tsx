@@ -241,6 +241,11 @@ export default function NewSessionScreen() {
 
   const handleSelectResetVariant = async (variantId: string) => {
     if (!resetChoice) return;
+    // Même verrou anti-double-clic que la génération : cette action écrit
+    // (persistPlanned + navigation) — un double-tap sur une carte ne doit
+    // jamais lancer deux écritures concurrentes.
+    if (!verrouRef.current.prendre()) return;
+    setRequeteEnVol(true);
     setGenerating(true);
     const chosen =
       resetChoice.variants.find((v) => v.id === variantId) ?? resetChoice.variants[0];
@@ -256,35 +261,68 @@ export default function NewSessionScreen() {
         resetVariantId: chosen.id,
       },
     };
+    const location = resetChoice.location;
     setResetChoice(null);
     setDebugAgent(resetChoice.debug);
-    await processV2({
-      v2: merged,
-      location: resetChoice.location,
-      phase,
-      now,
-      clubTrainingDays,
-      tsb,
-      alreadyAppliedToday,
-      pushSession,
-      persistPlanned,
-      setLastAiSessionV2,
-      navigate: ({ v2, plannedDateISO, sessionId }) =>
-        nav.navigate("SessionPreview", {
-          v2,
-          plannedDateISO,
-          sessionId,
-        }),
-      alertPlanified: (dateISO: string) => {
-        showToast({ type: "info", title: "Planifiée pour demain", message: `Séance planifiée pour le ${dateISO}.` });
-      },
-    });
-    trackEvent("session_generate_success", {
-      cycleId: cycleId ?? "none",
-      location: resetChoice.location,
-      resetVariantId: chosen.id,
-    });
-    await trackFirstSessionGeneratedIfNeeded();
+    try {
+      await processV2({
+        v2: merged,
+        location,
+        phase,
+        now,
+        clubTrainingDays,
+        tsb,
+        alreadyAppliedToday,
+        pushSession,
+        persistPlanned,
+        setLastAiSessionV2,
+        navigate: ({ v2, plannedDateISO, sessionId }) =>
+          nav.navigate("SessionPreview", {
+            v2,
+            plannedDateISO,
+            sessionId,
+          }),
+        alertPlanified: (dateISO: string) => {
+          showToast({ type: "info", title: "Planifiée pour demain", message: `Séance planifiée pour le ${dateISO}.` });
+        },
+      });
+      trackEvent("session_generate_success", {
+        cycleId: cycleId ?? "none",
+        location,
+        resetVariantId: chosen.id,
+      });
+      await trackFirstSessionGeneratedIfNeeded();
+    } catch (err: any) {
+      // Même fermeture que handleGenerate : aucune écriture depuis ce catch,
+      // juste un état d'échec honnête (voir echecGeneration.ts). Sans ce
+      // catch, une panne ici finissait en rejection non gérée avec l'overlay
+      // de chargement bloqué indéfiniment.
+      const decision = decisionApresEchec({
+        erreur: err,
+        sessions,
+        todayKey: toDateKey(now),
+        uid: getAuth().currentUser?.uid ?? null,
+      });
+      trackEvent("session_generate_error", {
+        cycleId: cycleId ?? "none",
+        code: decision.echec.code ?? "client",
+        categorie: decision.echec.categorie,
+        retryable: decision.echec.retryable,
+      });
+      if (__DEV__) {
+        console.error("Choix de variante reset echoue", {
+          code: decision.echec.code,
+          categorie: decision.echec.categorie,
+          message: err?.message,
+        });
+      }
+      setEchec(decision);
+    } finally {
+      setGenerating(false);
+      setWakingServer(false);
+      verrouRef.current.rendre();
+      setRequeteEnVol(false);
+    }
   };
 
   /** ------------------------------------------------------------------
@@ -633,8 +671,24 @@ export default function NewSessionScreen() {
       });
       trackEvent("session_generate_from_cache", { cycleId });
       await trackFirstSessionGeneratedIfNeeded();
-    } catch {
-      showToast({ type: "error", title: "Erreur", message: "Impossible de charger la séance en cache." });
+    } catch (err: any) {
+      // Même fermeture que handleGenerate : un toast générique masquait le
+      // vrai état (rien persisté ? déjà persisté ?) — decisionApresEchec rend
+      // la même carte honnête que le reste du parcours de génération.
+      const decision = decisionApresEchec({
+        erreur: err,
+        sessions,
+        todayKey: toDateKey(now),
+        uid: getAuth().currentUser?.uid ?? null,
+      });
+      if (__DEV__) {
+        console.error("Chargement de la seance en cache echoue", {
+          code: decision.echec.code,
+          categorie: decision.echec.categorie,
+          message: err?.message,
+        });
+      }
+      setEchec(decision);
     } finally {
       setGenerating(false);
     }

@@ -294,6 +294,7 @@ export function lireEchecGeneration(erreur: unknown): EchecGeneration {
     code?: string;
     status?: number;
     message?: string;
+    retryAfterS?: number;
   };
 
   // Authentification : le front écrit son propre texte (§2.2), le `message`
@@ -305,6 +306,12 @@ export function lireEchecGeneration(erreur: unknown): EchecGeneration {
   // Le contrat backend, quand il est là, fait foi.
   const corps = lireCorpsContrat(brut.message);
   if (corps) {
+    // Un 429 peut porter À LA FOIS un corps typé (§2.1) ET un en-tête
+    // Retry-After (posé par safeFetch sur `retryAfterS`) : le corps typé ne
+    // doit pas écraser cette information à `null`, sinon le joueur perd le
+    // délai à respecter alors que le backend l'a bien communiqué.
+    const attendreS =
+      typeof brut.retryAfterS === "number" && brut.retryAfterS > 0 ? brut.retryAfterS : null;
     return {
       source: "contrat",
       code: corps.code,
@@ -312,7 +319,7 @@ export function lireEchecGeneration(erreur: unknown): EchecGeneration {
       retryable: corps.retryable,
       messageJoueur: corps.message,
       requestId: corps.requestId,
-      attendreS: null,
+      attendreS,
       actions: actionsDuContrat(corps),
     };
   }
