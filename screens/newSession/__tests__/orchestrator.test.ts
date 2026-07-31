@@ -37,7 +37,7 @@ function creerParamsBase() {
     alreadyAppliedToday: false,
     location: "home",
     pushSession: jest.fn(),
-    persistPlanned: jest.fn(async () => {}),
+    persistPlanned: jest.fn(async (_payload: any) => {}) as jest.Mock<Promise<void>, [any]>,
     setLastAiSessionV2: jest.fn(),
     navigate: jest.fn(),
     alertPlanified: jest.fn(),
@@ -59,7 +59,7 @@ describe("processV2 — persistance réussie, affichage réussi (chemin nominal)
 describe("processV2 — panne de PERSISTANCE (Firestore KO après génération payée)", () => {
   test("leve EchecPostGeneration étape persistance, et n'affiche/ne pousse RIEN", async () => {
     const params = creerParamsBase();
-    params.persistPlanned = jest.fn(async () => {
+    params.persistPlanned = jest.fn(async (_payload: any) => {
       throw Object.assign(new Error("firestore/unavailable"), { code: "firestore/unavailable" });
     });
 
