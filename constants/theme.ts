@@ -151,10 +151,21 @@ export let theme = {
     sm: 8,
     md: 12,
     lg: 16,
+    // xl2 (DA Polish) : gouttière unifiée du parcours d'inscription (20px) —
+    // marche intermédiaire vers le 16 du Home, cf. constants/theme.ts usages.
+    xl2: 20,
     xl: 24,
     xxl: 32,
   },
   radius: {
+    // DA Polish : le parcours d'inscription (Welcome/Register/Login/Setup)
+    // n'utilise plus que 4 valeurs — md / lg / xxl / pill. `sm` et `xl` sont
+    // CONSERVÉS ici : l'audit de direction les disait inutilisés (0 usage)
+    // mais c'est faux hors périmètre — `radius.sm` et `radius.xl` sont
+    // consommés par PrebuiltSessionDetailScreen, BlockCard, BatteryCard,
+    // CycleTimingBanner, TestHeader, ExerciseDetailModal (7 sites, aucun dans
+    // le périmètre de ce chantier). Les supprimer casserait la compilation
+    // de ces écrans hors scope — non fait, corrigé par rapport au doc source.
     sm: 8,
     md: 12,
     lg: 16,

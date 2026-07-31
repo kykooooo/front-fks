@@ -141,8 +141,11 @@ const styles = StyleSheet.create({
   fullWidth: {
     width: "100%",
   },
+  // DA Polish : 0.6 -> 0.4 (échelle d'opacité unifiée du parcours d'inscription,
+  // lot0 §1.3 — press=0.7, disabled=0.4). Se propage aux 17 autres écrans qui
+  // importent Button (même logique assumée que labelLg/cta, cf. §1.5).
   disabled: {
-    opacity: 0.6,
+    opacity: 0.4,
   },
   primary: {
     backgroundColor: theme.colors.cta,
