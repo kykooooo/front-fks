@@ -1,5 +1,7 @@
 import { getAuth } from "firebase/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
+import { Platform } from "react-native";
 import { BACKEND_URL, backendAuthHeaders } from "../../config/backend";
 import { BACKEND_EXERCISE_IDS } from "../../engine/backendExerciseIds";
 import { EXERCISE_BY_ID } from "../../engine/exerciseBank";
@@ -183,6 +185,19 @@ export function prepareBackendContext(
   return { context: prepared, location };
 }
 
+// Best-effort : sert à ventiler la métrique de compatibilité serveur par
+// version d'app côté back. Certaines plateformes (navigateur web) refusent
+// l'override de "User-Agent" et l'ignorent silencieusement — ce n'est jamais
+// une raison de faire échouer l'appel, donc on ne laisse rien throw ici.
+function appUserAgentHeader(): Record<string, string> {
+  try {
+    const version = Constants.expoConfig?.version ?? "0.0.0";
+    return { "User-Agent": `FKS/${version} (${Platform.OS})` };
+  } catch {
+    return {};
+  }
+}
+
 export async function fetchV2(
   context: Record<string, unknown>,
   options?: { onRetry?: (reason: "timeout" | "network") => void }
@@ -199,6 +214,7 @@ export async function fetchV2(
       "Content-Type": "application/json",
       ...backendAuthHeaders(),
       ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+      ...appUserAgentHeader(),
     },
     body: JSON.stringify({ userId, context }),
   };

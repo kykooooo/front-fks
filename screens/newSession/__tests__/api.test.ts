@@ -139,6 +139,35 @@ describe("fetchV2 — reveil serveur (cold start)", () => {
 // chaque re-génération repayait un appel LLM.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// En-tête User-Agent applicatif ("FKS/<version> (<platform>)") : permet à la
+// métrique de compatibilité serveur de ventiler par version d'app.
+// ---------------------------------------------------------------------------
+
+describe("fetchV2 — en-tête User-Agent applicatif", () => {
+  afterEach(() => {
+    global.fetch = originalFetch;
+    jest.restoreAllMocks();
+  });
+
+  test("le header User-Agent est envoyé au format FKS/<version> (<platform>)", async () => {
+    let capturedHeaders: Record<string, string> | undefined;
+    global.fetch = jest.fn().mockImplementation((_url: string, opts: any) => {
+      capturedHeaders = opts?.headers;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ v2: V2_MINIMAL_VALIDE }),
+      });
+    }) as any;
+
+    await fetchV2({ some: "ctx" });
+
+    expect(capturedHeaders?.["User-Agent"]).toBeDefined();
+    expect(capturedHeaders?.["User-Agent"]).toMatch(/^FKS\/\S+ \(\S+\)$/);
+  });
+});
+
 describe("hashContext — stabilité du cache", () => {
   const baseCtx = {
     goal: "force",
