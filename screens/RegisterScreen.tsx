@@ -303,7 +303,7 @@ export default function RegisterScreen({ navigation }: Props) {
               <Text style={styles.footerText}>Déjà un compte ?</Text>
               <Pressable
                 onPress={() => navigation.navigate("Login")}
-                style={({ pressed }) => [styles.footerLinkHit, pressed && styles.linkPressed]}
+                style={({ pressed }) => pressed && styles.linkPressed}
                 hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
               >
                 <Text style={styles.footerLink}>Connecte-toi</Text>
@@ -325,7 +325,6 @@ const styles = StyleSheet.create({
   // visible arrivait après relâchement, via le state) — cf. audit tactile.
   iconPressed: { opacity: 0.5 },
   linkPressed: { opacity: 0.6 },
-  footerLinkHit: { paddingVertical: 2 },
   title: { fontSize: 24, fontWeight: "800", color: palette.text, textAlign: "center" },
   subtitle: { fontSize: 14, color: palette.sub, textAlign: "center", marginBottom: 24 },
   form: { gap: 12 },

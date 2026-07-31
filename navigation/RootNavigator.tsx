@@ -442,10 +442,12 @@ export default function RootNavigator() {
   //    connecté voit flasher l'écran Login à chaque démarrage à froid
   //    (user reste null tant que onAuthStateChanged n'a pas résolu).
   // Couvre aussi la fenêtre post-inscription/connexion (onAuthStateChanged
-  // a déjà un user, on attend la 1ère réponse Firestore sur profileCompleted) :
-  // même libellé rassurant plutôt qu'un spinner nu, sans distinguer les cas
-  // (pas de nouvel état à faire courir avec la logique auth).
-  if (initializing) return <Splash label="Préparation de ton compte…" />;
+  // a déjà un user, on attend la 1ère réponse Firestore sur profileCompleted).
+  // Cette branche se déclenche à CHAQUE démarrage à froid pour un utilisateur
+  // déjà inscrit (pas seulement à l'inscription) : libellé neutre, vrai pour
+  // tous les cas de cette branche (pas de nouvel état à faire courir avec la
+  // logique auth pour distinguer inscription/login/restauration).
+  if (initializing) return <Splash label="Chargement de ton profil…" />;
 
   // 5bis) Pas connecté → Auth stack (Welcome intégré dans le stack pour back navigation)
   if (!user) {
