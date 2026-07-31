@@ -34,7 +34,7 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
 - **Cycles** : blocs “football/medball” retires (coherence avec l’objectif prepa physique).
 - **Auth flow pro** :
   - Welcome dirige maintenant vers la bonne entree (`Register` ou `Login`) selon le CTA choisi.
-  - Ecrans `Login/Register/Onboarding/Welcome` passes en style premium dark coherent (sans dependance image externe).
+  - Ecrans `Login/Register/Welcome` passes en style premium **clair** coherent (sans dependance image externe). DA claire par defaut (bg `#F5F7FA`, accent bleu `#2A4D8F`, CTA orange `#F2741B` "reserve aux CTA/alertes" — `constants/theme.ts:28-53`) ; le dark n'est qu'une option Reglages (`themeMode: "light"` par defaut — `state/settingsStore.ts:17,33`). *(Corrige 2026-07-31 : la mention "dark coherent" etait fausse sur main.)*
   - Stack auth simplifiee (`headerShown: false`) pour garder une UI maitrisee.
 - **Inscription/connexion plus fiables** :
   - Boutons submit desactives tant que les champs ne sont pas valides.
@@ -144,7 +144,7 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
     trainingDefaults.ts      # Constantes ATL0, CTL0, poids externes
 
   /constants
-    theme.ts                 # Design system (couleurs, radius, spacing)
+    theme.ts                 # Design system (couleurs, radius). ⚠️ `theme.spacing` et `theme.typography` sont morts : 0 usage hors de ce fichier (verifie 2026-07-31, `grep -rn "theme\.spacing\|theme\.typography"` = vide).
     feedback.ts              # Limites RPE/fatigue/douleur
     warmups.ts               # Templates echauffements
 
@@ -247,7 +247,7 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
 ## Parcours Utilisateur (Frontend)
 
 ### Onboarding
-Welcome -> Login/Register -> Setup profil (poste, niveau, pied fort, objectif, charge club/match, materiel, code club) -> Onboarding slides
+Welcome (carrousel de 3 slides, affiche EN PREMIER — `screens/WelcomeScreen.tsx:2,25-44,108-121`) -> Login/Register -> Setup profil (poste, niveau, pied fort, objectif, charge club/match, materiel, code club) -> Home. *(Corrige 2026-07-31 : il n'existe pas d'ecran "Onboarding slides" separe apres le setup profil — `WelcomeScreen` EST le carrousel de slides, et il precede Login/Register dans `navigation/RootNavigator.tsx:436-443`. Une fois `ProfileSetupScreen` complete, on va direct sur l'app joueur — `navigation/RootNavigator.tsx:452-481`.)*
 
 ### App (100% mode joueur, mode coach retire)
 - **Home** : StatusBar (phase + TSB + match) -> Hero photo (chips Semaine/Serie/Match) -> ReadinessHero (ATL/CTL/TSB + sparkline) -> CTA intelligent -> Carte Progression -> Card Prochaine seance
