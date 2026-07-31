@@ -141,8 +141,11 @@ const styles = StyleSheet.create({
   fullWidth: {
     width: "100%",
   },
+  // DA Polish : 0.6 -> 0.4 (échelle d'opacité unifiée du parcours d'inscription,
+  // lot0 §1.3 — press=0.7, disabled=0.4). Se propage aux 17 autres écrans qui
+  // importent Button (même logique assumée que labelLg/cta, cf. §1.5).
   disabled: {
-    opacity: 0.6,
+    opacity: 0.4,
   },
   primary: {
     backgroundColor: theme.colors.cta,
@@ -190,10 +193,15 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.3,
   },
+  // DA Polish : 800 -> 700 (plafond de graisse du parcours d'inscription,
+  // theme.typography.section). Button.tsx est le seul bouton des 4 écrans
+  // d'inscription (direction A §1.5) — ce changement se propage aussi aux
+  // 17 autres écrans qui importent Button (assumé, cf. doc de direction).
   labelLg: {
-    fontSize: 17,
-    fontWeight: "800",
-    letterSpacing: 0.3,
+    fontSize: theme.typography.section.fontSize,
+    fontWeight: theme.typography.section.fontWeight,
+    lineHeight: theme.typography.section.lineHeight,
+    letterSpacing: theme.typography.section.letterSpacing,
   },
   accessory: {
     marginHorizontal: 2,
