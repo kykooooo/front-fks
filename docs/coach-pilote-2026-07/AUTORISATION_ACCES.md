@@ -699,11 +699,12 @@ normalement.
    projection). C'est le prix de la distinction honnête entre « non autorisé » et
    « erreur ». Sur l'effectif, le coût est **nul** : le champ voyage dans la
    requête `members` qu'on faisait déjà.
-6. **Deux écrans hérités non branchés** (`screens/CoachHomeScreen.tsx`,
-   `screens/CoachPlayerDetailScreen.tsx`) n'affichent pas ce nouvel état. Ils ne
-   sont référencés par aucune route (`navigation/RootNavigator.tsx`,
-   `navigation/CoachTabs.tsx`) : aucun utilisateur ne peut les atteindre. À
-   supprimer un jour, sur une branche dédiée.
+6. **Les deux écrans hérités non branchés ont été supprimés du dépôt**
+   (`screens/CoachHomeScreen.tsx`, `screens/CoachPlayerDetailScreen.tsx`) : ils
+   n'étaient référencés par aucune route depuis la refonte
+   (`navigation/RootNavigator.tsx`, `navigation/CoachTabs.tsx`), donc aucun
+   utilisateur ne pouvait les atteindre. Leur trace reste consultable via
+   `git show 724c062:<fichier>` (état avant refonte, cf. `AUDIT_COACH.md`).
 7. **La callable de rattachement renvoie `coachAccess`** au joueur
    (`functions/src/inviteCodes.ts`). **Aucun écran ne l'utilise encore.** Le jour
    où on voudra dire au joueur « ton coach ne verra pas encore ton suivi »,

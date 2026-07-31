@@ -893,7 +893,6 @@ describe("G. Verrou anti-dérive entre l'inventaire et la liste blanche", () => 
       "hooks/coach/useCoachClub.ts": { role: "lecture" },
       "hooks/useClubDirective.ts": { role: "lecture" },
       "navigation/RootNavigator.tsx": { role: "lecture" },
-      "screens/CoachHomeScreen.tsx": { role: "lecture" },
       "screens/DeleteAccountScreen.tsx": { role: "lecture" },
       "services/aiContext.ts": { role: "lecture" },
       // Branche boucle de suivi joueur (pré-déclarée, cf. ci-dessus).

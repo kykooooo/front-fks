@@ -51,6 +51,13 @@ l'onglet Semaine, mais à cet instant précis il peut très bien le rater.
 
 ### 1.2 L'écran principal — `CoachHomeScreen`
 
+> **Écran supprimé du dépôt (juillet 2026).** Cette section décrit l'état
+> **avant refonte** (commit `724c062`, cf. l'avertissement en tête de document).
+> `CoachHomeScreen.tsx` n'était déjà plus routé depuis la refonte
+> `screens/coach/` ; il a depuis été retiré (`git show 724c062:screens/CoachHomeScreen.tsx`
+> pour le relire). Les écrans réels sont aujourd'hui `CoachTodayScreen` /
+> `CoachRosterScreen` / `CoachWeekScreen` (`navigation/CoachTabs.tsx`).
+
 Dès que le profil porte `role === "coach"`, l'app bascule sur la pile coach
 (`navigation/RootNavigator.tsx:445-448`). Cette pile n'a **pas de barre
 d'onglets** : c'est un simple empilement d'écrans
@@ -90,6 +97,11 @@ Tout en bas : mentions légales, confidentialité, suppression de compte
 (`684-708`).
 
 ### 1.3 La fiche joueur — `CoachPlayerDetailScreen`
+
+> **Écran supprimé du dépôt (juillet 2026).** Même remarque qu'en 1.2 : état
+> avant refonte, fichier retiré (`git show 724c062:screens/CoachPlayerDetailScreen.tsx`
+> pour le relire). L'écran réel est aujourd'hui `screens/coach/CoachPlayerScreen.tsx`
+> (route `CoachPlayerDetail`, cf. `navigation/RootNavigator.tsx`).
 
 **1 tap** depuis n'importe quelle ligne de liste
 (`screens/CoachHomeScreen.tsx:522-525` et `583-586`).
@@ -250,6 +262,11 @@ elle-même est un signal purement chromatique, et le vert de "Adaptée"
 alléger", ce qui mérite plutôt de la neutralité.
 
 #### P2-2. L'aperçu vide promet une fonctionnalité qui n'existe pas — et qui serait interdite
+
+> **Résolu par suppression (juillet 2026) : ce n'est plus dans le dépôt.**
+> `CoachHomeScreen.tsx`, qui portait ce texte, a été retiré car non routé
+> (cf. note en 1.2). L'aggravant décrit ci-dessous a donc disparu avec le
+> fichier — noté ici pour que le point P2-2 reste lisible comme trace d'audit.
 
 Quand le club est vide, l'app affiche une maquette grisée avec la légende :
 "Assiduité, ressenti agrégé et alertes à relancer apparaîtront ici, joueur par
