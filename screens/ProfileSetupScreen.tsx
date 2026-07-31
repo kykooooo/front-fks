@@ -1,5 +1,5 @@
 // screens/ProfileSetupScreen.tsx
-// Setup profil multi-étapes — image de foot en fond, même DA que le reste de l'app
+// Setup profil multi-étapes — même DA que le reste de l'app
 
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -20,9 +20,10 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Screen } from "../components/ui/Screen";
+import { Button } from "../components/ui/Button";
+import { BrandMark } from "../components/ui/BrandMark";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { getAuth, signOut } from "firebase/auth";
 import { useHaptics } from "../hooks/useHaptics";
 import { auth as firebaseAuth, db } from "../services/firebase";
@@ -60,6 +61,14 @@ import { trackEvent } from "../services/analytics";
 // reste demandé ici : il nourrit le contexte IA + la reco de lieu.
 const TOTAL_STEPS = 4;
 const palette = theme.colors;
+
+// Poids approximatifs de densité par étape, en nombre de zones interactives
+// (DA Polish, direction A) : la barre "Étape n/4" linéaire annonçait 25% à
+// l'étape 1 alors qu'elle concentre ~60% des champs du parcours (audit DA
+// 2026-07, §4.12 — Identité: ~15 zones vs Salle: ~3). La barre reflète
+// maintenant l'effort réel, sans déplacer aucun champ entre étapes.
+const STEP_DENSITY_WEIGHTS = [15, 8, 5, 3] as const;
+const STEP_DENSITY_TOTAL = STEP_DENSITY_WEIGHTS.reduce((sum, w) => sum + w, 0);
 
 /* ─── Steps config ─── */
 const STEPS: { label: string; icon: keyof typeof Ionicons.glyphMap; subtitle: string }[] = [
@@ -475,6 +484,13 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   // texte), Chip est en-dessous (~37pt, padding 10) — très sollicité (poste,
   // catégorie, niveau, jours, objectif...). hitSlop agrandit la zone tactile
   // sans toucher au visuel (mêmes couleurs/tailles).
+  //
+  // Grammaire de sélection (DA Polish, direction A §2) : `Choice` pour tout
+  // choix UNIQUE (ligne pleine largeur + checkmark-circle) ; `Chip` réservé
+  // aux choix COURTS et MULTIPLES/NUMÉRIQUES où une grille compacte a du
+  // sens (jours de la semaine, séances/semaine). Catégorie et Pied fort
+  // étaient en Chip sans que cette logique s'applique (choix uniques
+  // courts) — passés en Choice.
   const Choice = ({ label: lbl, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) => (
     <TouchableOpacity
       style={[styles.choice, selected && styles.choiceSelected]}
@@ -536,11 +552,9 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
             ))}
 
             <Text style={styles.fieldLabel}>Catégorie</Text>
-            <View style={styles.chipRow}>
-              {SELECTABLE_AGE_CATEGORIES.map((c) => (
-                <Chip key={c} label={c} selected={ageCategory === c} onPress={() => setAgeCategory(c)} />
-              ))}
-            </View>
+            {SELECTABLE_AGE_CATEGORIES.map((c) => (
+              <Choice key={c} label={c} selected={ageCategory === c} onPress={() => setAgeCategory(c)} />
+            ))}
 
             {/* Consentement parental — affiché uniquement pour une catégorie
                  SÉLECTIONNABLE < 15 ans (RGPD). Un legacy U13 ne voit rien ici
@@ -554,13 +568,14 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                 <View style={styles.consentBox}>
                   <Pressable
                     onPress={() => { hapticSelect(); setParentalConsentChecked(!parentalConsentChecked); }}
+                    style={styles.consentCheckbox}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: parentalConsentChecked }}
                   >
                     <Ionicons
                       name={parentalConsentChecked ? "checkbox" : "square-outline"}
-                      size={22}
+                      size={20}
                       color={parentalConsentChecked ? palette.accent : palette.muted}
                     />
                   </Pressable>
@@ -581,11 +596,9 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
             ))}
 
             <Text style={styles.fieldLabel}>Pied fort</Text>
-            <View style={styles.chipRow}>
-              {dominantFeet.map((f) => (
-                <Chip key={f} label={f} selected={dominantFoot === f} onPress={() => setDominantFoot(f)} />
-              ))}
-            </View>
+            {dominantFeet.map((f) => (
+              <Choice key={f} label={f} selected={dominantFoot === f} onPress={() => setDominantFoot(f)} />
+            ))}
 
             <TouchableOpacity
               style={styles.coachLink}
@@ -609,8 +622,11 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                 </Text>
                 <Text style={styles.cycleHint}>Gère ton cycle depuis l'accueil ou le profil.</Text>
               </View>
+              {/* Lien texte accent (DA Polish §1.5) — c'était le seul bouton
+                  *outline bleu* du parcours, en concurrence directe avec
+                  "Suivant" au milieu de l'étape. */}
               <TouchableOpacity
-                style={styles.cycleButton}
+                style={styles.cycleLink}
                 onPress={() => navigation.navigate("CycleModal", { mode: cycleLabel ? "manage" : "select", origin: "profile" })}
                 activeOpacity={0.7}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -710,7 +726,8 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   };
 
   const isLastStep = step === TOTAL_STEPS - 1;
-  const progressPercent = ((step + 1) / TOTAL_STEPS) * 100;
+  const progressPercent =
+    (STEP_DENSITY_WEIGHTS.slice(0, step + 1).reduce((sum, w) => sum + w, 0) / STEP_DENSITY_TOTAL) * 100;
   // RGPD < 15 ans : "Suivant" désactivé tant que la case parentale n'est pas
   // cochée à l'étape catégorie. Toujours false pour U17/U18/Senior — et pour un
   // legacy U13 (showParentalConsent=false : la case est cachée, le désactiver
@@ -728,7 +745,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                  masquée en mode édition où le header natif "Profil" fait doublon) ─── */}
             {!isEditMode && (
               <View style={styles.topBar}>
-                <Text style={styles.brand}>FKS</Text>
+                <BrandMark size="sm" style={styles.brandMark} />
                 <TouchableOpacity
                   style={styles.logoutBtn}
                   onPress={handleLogout}
@@ -748,12 +765,10 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                   <Text style={styles.progressName}>{STEPS[step].label}</Text>
                 </View>
                 <View style={styles.progressBarBg}>
-                  <LinearGradient
-                    colors={[palette.accent, "#ff9a4a"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={[styles.progressBarFill, { width: `${progressPercent}%` }]}
-                  />
+                  {/* Aplat accent (DA Polish lot0 §1.4) : le dégradé bleu->orange
+                      violait "orange réservé aux CTA" (theme.ts) sur un élément
+                      qui n'est pas un CTA. */}
+                  <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
                 </View>
               </View>
 
@@ -768,14 +783,11 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
                   {/* Step header */}
                   <View style={styles.stepHeader}>
-                    <LinearGradient
-                      colors={[palette.accent, "#ff9a4a"]}
-                      style={styles.stepIconCircle}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                    >
-                      <Ionicons name={STEPS[step].icon} size={28} color="#fff" />
-                    </LinearGradient>
+                    {/* Aplat accentSoft + icône accent (DA Polish lot0 §1.4),
+                        cohérent avec le Home qui n'a aucun dégradé. */}
+                    <View style={styles.stepIconCircle}>
+                      <Ionicons name={STEPS[step].icon} size={24} color={palette.accent} />
+                    </View>
                     <View>
                       <Text style={styles.stepTitle}>{STEPS[step].label}</Text>
                       <Text style={styles.stepSubtitle}>{STEPS[step].subtitle}</Text>
@@ -802,32 +814,30 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                     <Ionicons name="chevron-back" size={20} color={palette.sub} />
                     <Text style={styles.backText}>Retour</Text>
                   </TouchableOpacity>
-                ) : (
-                  <View style={{ flex: 1 }} />
-                )}
+                ) : null}
 
-                <TouchableOpacity
-                  style={[styles.nextButton, (loading || consentBlocksNext) && { opacity: 0.4 }]}
-                  onPress={isLastStep ? handleSave : goNext}
-                  disabled={loading || consentBlocksNext}
-                  activeOpacity={0.85}
-                >
-                  <LinearGradient
-                    colors={[palette.accent, "#ff9a4a"]}
-                    style={styles.nextButtonGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                  >
-                    <Text style={styles.nextButtonText}>
-                      {isLastStep ? (loading ? "Enregistrement..." : "Terminer") : "Suivant"}
-                    </Text>
-                    <Ionicons
-                      name={isLastStep ? "checkmark-circle" : "arrow-forward"}
-                      size={20}
-                      color="#fff"
-                    />
-                  </LinearGradient>
-                </TouchableOpacity>
+                {/* Étape 1 (DA Polish) : pleine largeur — avant, un `<View
+                    flex:1/>` vide à gauche laissait "Suivant" occuper les 2/3
+                    droits, un CTA seul et décentré qui lisait "pas fini". */}
+                <View style={step > 0 ? styles.nextButtonWrap : styles.nextButtonWrapFull}>
+                  <Button
+                    label={isLastStep ? "Terminer" : "Suivant"}
+                    onPress={isLastStep ? handleSave : goNext}
+                    disabled={loading || consentBlocksNext}
+                    variant="primary"
+                    size="lg"
+                    fullWidth
+                    style={styles.ctaShadowOff}
+                    rightAccessory={
+                      <Ionicons
+                        name={isLastStep ? "checkmark-circle" : "arrow-forward"}
+                        size={20}
+                        color="#fff"
+                      />
+                    }
+                    accessibilityLabel={isLastStep ? "Terminer la configuration du profil" : "Étape suivante"}
+                  />
+                </View>
               </View>
 
             </View>
@@ -872,7 +882,9 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
         <LoadingOverlay
           visible={loading}
-          message="Enregistrement de ton profil..."
+          variant="light"
+          estimatedDurationMs={2000}
+          message="Enregistrement de ton profil…"
           submessage="Configuration initiale en cours."
         />
       </Screen>
@@ -891,14 +903,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 24,
+    paddingHorizontal: theme.spacing.xl2,
     paddingTop: 8,
   },
-  brand: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: palette.text,
-    letterSpacing: 2,
+  brandMark: {
+    textAlign: "left",
   },
   logoutBtn: {
     flexDirection: "row",
@@ -915,7 +924,7 @@ const styles = StyleSheet.create({
 
   /* Progress */
   progressSection: {
-    paddingHorizontal: 24,
+    paddingHorizontal: theme.spacing.xl2,
     paddingTop: 16,
     paddingBottom: 12,
     gap: 10,
@@ -931,21 +940,19 @@ const styles = StyleSheet.create({
     color: palette.sub,
   },
   progressName: {
-    fontSize: 13,
-    fontWeight: "700",
+    ...theme.typography.label,
     color: palette.accent,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
   },
   progressBarBg: {
     height: 6,
-    borderRadius: 3,
+    borderRadius: theme.radius.pill,
     backgroundColor: palette.borderSoft,
     overflow: "hidden",
   },
   progressBarFill: {
     height: "100%",
-    borderRadius: 3,
+    borderRadius: theme.radius.pill,
+    backgroundColor: palette.accent,
   },
 
   /* Scroll */
@@ -973,18 +980,17 @@ const styles = StyleSheet.create({
   stepIconCircle: {
     width: 56,
     height: 56,
-    borderRadius: 18,
+    borderRadius: theme.radius.lg,
+    backgroundColor: palette.accentSoft,
     justifyContent: "center",
     alignItems: "center",
-    ...theme.shadow.accent,
   },
   stepTitle: {
-    fontSize: 24,
-    fontWeight: "800",
+    ...theme.typography.title,
     color: palette.text,
   },
   stepSubtitle: {
-    fontSize: 14,
+    ...theme.typography.body,
     color: palette.sub,
     marginTop: 2,
   },
@@ -992,7 +998,7 @@ const styles = StyleSheet.create({
   /* Card */
   card: {
     borderRadius: theme.radius.xxl,
-    padding: 20,
+    padding: theme.spacing.xl2,
     backgroundColor: palette.card,
     borderWidth: 1,
     borderColor: palette.border,
@@ -1003,23 +1009,21 @@ const styles = StyleSheet.create({
 
   /* Fields */
   fieldLabel: {
-    fontSize: 13,
-    fontWeight: "700",
+    ...theme.typography.label,
     color: palette.sub,
     marginTop: 14,
     marginBottom: 8,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
   },
   input: {
     borderWidth: 1,
-    borderColor: palette.borderSoft,
+    borderColor: palette.borderStrong,
     borderRadius: theme.radius.md,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 15,
     color: palette.text,
     backgroundColor: palette.cardSoft,
+    minHeight: 52,
   },
 
   /* Choice */
@@ -1027,7 +1031,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 18,
     borderWidth: 1,
-    borderColor: palette.borderSoft,
+    borderColor: palette.borderStrong,
     borderRadius: theme.radius.md,
     marginBottom: 8,
     backgroundColor: "transparent",
@@ -1041,12 +1045,12 @@ const styles = StyleSheet.create({
   },
   choiceText: {
     color: palette.text,
-    fontSize: 15,
+    fontSize: theme.typography.body.fontSize,
     flex: 1,
   },
   choiceTextSelected: {
     color: palette.accent,
-    fontWeight: "700",
+    fontWeight: theme.typography.bodyStrong.fontWeight,
   },
 
   /* Chip */
@@ -1069,7 +1073,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: theme.radius.md,
     borderWidth: 1,
-    borderColor: palette.borderSoft,
+    borderColor: palette.borderStrong,
     backgroundColor: "transparent",
   },
   chipSelected: {
@@ -1097,7 +1101,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     backgroundColor: palette.cardSoft,
     borderWidth: 1,
-    borderColor: palette.borderSoft,
+    borderColor: palette.borderStrong,
   },
   cycleLabel: {
     color: palette.text,
@@ -1110,13 +1114,11 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: 2,
   },
-  cycleButton: {
+  // Lien texte accent (DA Polish §1.5) — remplace l'ancien bouton outline
+  // bleu, seul bouton de ce type du parcours.
+  cycleLink: {
     paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: palette.accent,
-    backgroundColor: "transparent",
+    paddingHorizontal: 4,
   },
   cycleButtonText: {
     color: palette.accent,
@@ -1125,10 +1127,9 @@ const styles = StyleSheet.create({
   },
 
   hintText: {
+    ...theme.typography.caption,
     color: palette.sub,
-    fontSize: 13,
     marginTop: 8,
-    fontStyle: "italic",
   },
 
   /* Consentement parental (RGPD < 15 ans) */
@@ -1145,14 +1146,17 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: theme.radius.md,
     borderWidth: 1,
-    borderColor: palette.borderSoft,
+    borderColor: palette.borderStrong,
     backgroundColor: palette.cardSoft,
   },
+  // marginTop: 1 (audit visuel DA Polish) : la case (22px) dépassait
+  // d'~4px au-dessus de la première ligne du texte — réalignée (case
+  // ramenée à 20px en plus, cf. échelle d'icônes §1.3).
+  consentCheckbox: { marginTop: 1 },
   consentText: {
     flex: 1,
     color: palette.sub,
-    fontSize: 13,
-    lineHeight: 18,
+    ...theme.typography.caption,
   },
   consentLink: {
     color: palette.accent,
@@ -1175,8 +1179,7 @@ const styles = StyleSheet.create({
     borderBottomColor: palette.borderSoft,
   },
   privacyModalTitle: {
-    fontSize: 17,
-    fontWeight: "800",
+    ...theme.typography.section,
     color: palette.text,
   },
   privacyModalContent: {
@@ -1207,10 +1210,11 @@ const styles = StyleSheet.create({
     marginTop: 18,
     paddingVertical: 10,
   },
+  // Descend en pied de carte, dépriorisé en caption (DA Polish §1.5) : ce
+  // lien concurrençait visuellement "Suivant" à 13/700.
   coachLinkText: {
+    ...theme.typography.caption,
     color: palette.accent,
-    fontSize: 13,
-    fontWeight: "700",
   },
 
   /* Footer */
@@ -1218,7 +1222,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    paddingHorizontal: 20,
+    paddingHorizontal: theme.spacing.xl2,
     paddingVertical: 14,
     borderTopWidth: 1,
     borderTopColor: palette.borderSoft,
@@ -1236,23 +1240,20 @@ const styles = StyleSheet.create({
     color: palette.sub,
     fontWeight: "600",
   },
-  nextButton: {
-    flex: 2,
-    borderRadius: theme.radius.lg,
-    overflow: "hidden",
-    ...theme.shadow.accent,
-  },
-  nextButtonGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-  },
-  nextButtonText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#fff",
+  // "Suivant" — même composant Button que les 3 autres CTA du parcours
+  // (DA Polish §1.5, "le changement le plus visible de la direction A") :
+  // il ne change plus de forme/couleur/taille de texte à chaque écran.
+  nextButtonWrap: { flex: 2 },
+  // Étape 1 (DA Polish §1.6.4) : plus de `<View flex:1/>` vide à gauche —
+  // "Suivant" occupe la largeur pleine au lieu des 2/3 droits seulement.
+  nextButtonWrapFull: { flex: 1 },
+  // Neutralise le halo orange de Button.primary (theme.shadow.accent porte
+  // l'orange du dark, `#ff7a1a` — DA Polish lot0 §1.4). Local à cet écran :
+  // Button.tsx garde son ombre par défaut pour ses 17 autres appelants.
+  ctaShadowOff: {
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0,
   },
 });

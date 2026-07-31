@@ -9,14 +9,11 @@ import {
   Pressable,
   StyleSheet,
   Animated,
-  Platform,
-  KeyboardAvoidingView,
   TouchableWithoutFeedback,
   Keyboard,
   ScrollView,
   ActivityIndicator,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AuthStackParamList } from "../navigation/RootNavigator";
@@ -30,6 +27,9 @@ import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
 import { trackEvent } from "../services/analytics";
 import { STORAGE_KEYS } from "../constants/storage";
+import { Screen } from "../components/ui/Screen";
+import { Button } from "../components/ui/Button";
+import { BrandMark } from "../components/ui/BrandMark";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Register">;
 const palette = theme.colors;
@@ -148,218 +148,225 @@ export default function RegisterScreen({ navigation }: Props) {
   const strengthLabels = ["", "Faible", "Moyen", "Fort"];
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <ScrollView
-            contentContainerStyle={styles.scroll}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
+    <Screen keyboardAvoiding style={styles.safe}>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Gabarit d'en-tête identique à Login (DA Polish) : zone de hauteur
+              fixe même quand canGoBack() est faux (arrivée par navigation.reset
+              depuis Welcome) — avant, la flèche ET son espace disparaissaient,
+              ce qui décalait titre/CTA par rapport à Login. */}
+          <View style={styles.headerRow}>
             {navigation.canGoBack() ? (
               <Pressable
                 onPress={() => navigation.goBack()}
                 style={({ pressed }) => [styles.back, pressed && styles.iconPressed]}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Ionicons name="chevron-back" size={24} color={palette.sub} />
+                <Ionicons name="chevron-back" size={20} color={palette.sub} />
               </Pressable>
             ) : null}
+          </View>
 
-            <Text style={styles.title}>Crée ton compte</Text>
-            <Text style={styles.subtitle}>Rejoins ton club ou configure ton profil FKS.</Text>
+          <BrandMark size="sm" style={styles.brandMark} />
+          <Text style={styles.title}>Crée ton compte</Text>
+          <Text style={styles.subtitle}>Rejoins ton club ou configure ton profil FKS.</Text>
 
-            <Animated.View style={[styles.form, { transform: [{ translateX: shake }] }]}>
-              <View style={styles.inputWrap}>
-                <Ionicons name="person-outline" size={18} color={palette.muted} style={styles.icon} />
-                <TextInput
-                  placeholder="Prénom"
-                  placeholderTextColor={palette.muted}
-                  value={name}
-                  onChangeText={setName}
-                  autoComplete="name"
-                  returnKeyType="next"
-                  onSubmitEditing={() => emailRef.current?.focus()}
-                  style={styles.input}
-                />
-              </View>
+          <Animated.View style={[styles.form, { transform: [{ translateX: shake }] }]}>
+            <View style={styles.inputWrap}>
+              <Ionicons name="person-outline" size={16} color={palette.muted} style={styles.icon} />
+              <TextInput
+                placeholder="Prénom"
+                placeholderTextColor={palette.muted}
+                value={name}
+                onChangeText={setName}
+                autoComplete="name"
+                returnKeyType="next"
+                onSubmitEditing={() => emailRef.current?.focus()}
+                style={styles.input}
+              />
+            </View>
 
-              <View style={styles.inputWrap}>
-                <Ionicons name="mail-outline" size={18} color={palette.muted} style={styles.icon} />
-                <TextInput
-                  ref={emailRef}
-                  placeholder="Email"
-                  placeholderTextColor={palette.muted}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  autoComplete="email"
-                  value={email}
-                  onChangeText={setEmail}
-                  returnKeyType="next"
-                  onSubmitEditing={() => pwdRef.current?.focus()}
-                  style={styles.input}
-                />
-              </View>
-              {email.length > 0 && !emailLooksValid ? (
-                <Text style={styles.error}>Format email invalide</Text>
-              ) : null}
+            <View style={styles.inputWrap}>
+              <Ionicons name="mail-outline" size={16} color={palette.muted} style={styles.icon} />
+              <TextInput
+                ref={emailRef}
+                placeholder="Email"
+                placeholderTextColor={palette.muted}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoComplete="email"
+                value={email}
+                onChangeText={setEmail}
+                returnKeyType="next"
+                onSubmitEditing={() => pwdRef.current?.focus()}
+                style={styles.input}
+              />
+            </View>
+            {email.length > 0 && !emailLooksValid ? (
+              <Text style={styles.error}>Format email invalide</Text>
+            ) : null}
 
-              <View style={styles.inputWrap}>
-                <Ionicons name="lock-closed-outline" size={18} color={palette.muted} style={styles.icon} />
-                <TextInput
-                  ref={pwdRef}
-                  placeholder="Mot de passe"
-                  placeholderTextColor={palette.muted}
-                  secureTextEntry={!showPwd}
-                  autoComplete="new-password"
-                  value={pwd}
-                  onChangeText={setPwd}
-                  returnKeyType="go"
-                  onSubmitEditing={() => {
-                    if (!loading && canSubmit) void onRegister();
-                  }}
-                  style={styles.input}
-                />
-                <Pressable
-                  onPress={() => setShowPwd(!showPwd)}
-                  style={({ pressed }) => [styles.eye, pressed && styles.iconPressed]}
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                >
-                  <Ionicons
-                    name={showPwd ? "eye-off-outline" : "eye-outline"}
-                    size={20}
-                    color={palette.muted}
-                  />
-                </Pressable>
-              </View>
-              {pwd.length > 0 ? (
-                <View style={styles.strengthRow}>
-                  <View style={styles.strengthBars}>
-                    {[1, 2, 3].map((level) => (
-                      <View
-                        key={level}
-                        style={[
-                          styles.strengthBar,
-                          { backgroundColor: pwdStrength >= level ? strengthColors[pwdStrength] : palette.borderSoft },
-                        ]}
-                      />
-                    ))}
-                  </View>
-                  <Text style={[styles.strengthLabel, { color: strengthColors[pwdStrength] }]}>
-                    {strengthLabels[pwdStrength]}
-                  </Text>
-                </View>
-              ) : null}
-
-              {/* Consentement RGPD explicite (données santé collectées ensuite) */}
-              <View style={styles.consentRow}>
-                <Pressable
-                  onPress={() => setConsentAccepted(!consentAccepted)}
-                  style={({ pressed }) => pressed && styles.iconPressed}
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: consentAccepted }}
-                >
-                  <Ionicons
-                    name={consentAccepted ? "checkbox" : "square-outline"}
-                    size={22}
-                    color={consentAccepted ? palette.accent : palette.muted}
-                  />
-                </Pressable>
-                <Text style={styles.consentText}>
-                  J'accepte la{" "}
-                  <Text style={styles.consentLink} onPress={() => navigation.navigate("PrivacyPolicy")}>
-                    politique de confidentialité
-                  </Text>{" "}
-                  et les{" "}
-                  <Text style={styles.consentLink} onPress={() => navigation.navigate("LegalNotice")}>
-                    mentions légales
-                  </Text>
-                  .
-                </Text>
-              </View>
-
+            <View style={styles.inputWrap}>
+              <Ionicons name="lock-closed-outline" size={16} color={palette.muted} style={styles.icon} />
+              <TextInput
+                ref={pwdRef}
+                placeholder="Mot de passe"
+                placeholderTextColor={palette.muted}
+                secureTextEntry={!showPwd}
+                autoComplete="new-password"
+                value={pwd}
+                onChangeText={setPwd}
+                returnKeyType="go"
+                onSubmitEditing={() => {
+                  if (!loading && canSubmit) void onRegister();
+                }}
+                style={styles.input}
+              />
               <Pressable
-                onPress={onRegister}
-                disabled={loading || !canSubmit}
-                style={({ pressed }) => [
-                  styles.cta,
-                  pressed && styles.ctaPressed,
-                  (loading || !canSubmit) && styles.ctaDisabled,
-                ]}
+                onPress={() => setShowPwd(!showPwd)}
+                style={({ pressed }) => [styles.eye, pressed && styles.iconPressed]}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
-                {loading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.ctaText}>Suivant</Text>
-                )}
-              </Pressable>
-            </Animated.View>
-
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>Déjà un compte ?</Text>
-              <Pressable
-                onPress={() => navigation.navigate("Login")}
-                style={({ pressed }) => pressed && styles.linkPressed}
-                hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
-              >
-                <Text style={styles.footerLink}>Connecte-toi</Text>
+                <Ionicons
+                  name={showPwd ? "eye-off-outline" : "eye-outline"}
+                  size={20}
+                  color={palette.muted}
+                />
               </Pressable>
             </View>
-          </ScrollView>
-        </TouchableWithoutFeedback>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+            {pwd.length > 0 ? (
+              <View style={styles.strengthRow}>
+                <View style={styles.strengthBars}>
+                  {[1, 2, 3].map((level) => (
+                    <View
+                      key={level}
+                      style={[
+                        styles.strengthBar,
+                        { backgroundColor: pwdStrength >= level ? strengthColors[pwdStrength] : palette.borderSoft },
+                      ]}
+                    />
+                  ))}
+                </View>
+                <Text style={[styles.strengthLabel, { color: strengthColors[pwdStrength] }]}>
+                  {strengthLabels[pwdStrength]}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* Consentement RGPD explicite (données santé collectées ensuite) */}
+            <View style={styles.consentRow}>
+              <Pressable
+                onPress={() => setConsentAccepted(!consentAccepted)}
+                style={({ pressed }) => [styles.consentCheckbox, pressed && styles.iconPressed]}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: consentAccepted }}
+              >
+                <Ionicons
+                  name={consentAccepted ? "checkbox" : "square-outline"}
+                  size={20}
+                  color={consentAccepted ? palette.accent : palette.muted}
+                />
+              </Pressable>
+              <Text style={styles.consentText}>
+                J'accepte la{" "}
+                <Text style={styles.consentLink} onPress={() => navigation.navigate("PrivacyPolicy")}>
+                  politique de confidentialité
+                </Text>{" "}
+                et les{" "}
+                <Text style={styles.consentLink} onPress={() => navigation.navigate("LegalNotice")}>
+                  mentions légales
+                </Text>
+                .
+              </Text>
+            </View>
+
+            <Button
+              label={loading ? "" : "Suivant"}
+              onPress={onRegister}
+              disabled={loading || !canSubmit}
+              variant="primary"
+              size="lg"
+              fullWidth
+              style={[styles.ctaShadowOff, styles.ctaSpacing]}
+              leftAccessory={loading ? <ActivityIndicator size="small" color="#fff" /> : undefined}
+              accessibilityLabel="Créer mon compte"
+            />
+          </Animated.View>
+
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Déjà un compte ?</Text>
+            <Pressable
+              onPress={() => navigation.navigate("Login")}
+              style={({ pressed }) => pressed && styles.linkPressed}
+              hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
+            >
+              <Text style={styles.footerLink}>Connecte-toi</Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </TouchableWithoutFeedback>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: palette.bg },
-  scroll: { flexGrow: 1, paddingHorizontal: 24, justifyContent: "center", gap: 8 },
-  back: { alignSelf: "flex-start", padding: 8, marginBottom: 16 },
+  safe: { backgroundColor: palette.bg },
+  scroll: { flexGrow: 1, paddingHorizontal: theme.spacing.xl2, justifyContent: "center", gap: 8 },
+  // Zone de hauteur fixe (DA Polish) : identique que la flèche retour soit
+  // affichée ou non, pour que titre/CTA ne sautent plus en Y entre Register
+  // et Login selon canGoBack().
+  headerRow: { height: 40, justifyContent: "center" },
+  back: { alignSelf: "flex-start", padding: 8 },
   // Retour visuel au press (cibles tactiles auditées 2026-07) : les Pressable
   // ci-dessus n'avaient aucun feedback pendant l'appui (le seul changement
   // visible arrivait après relâchement, via le state) — cf. audit tactile.
-  iconPressed: { opacity: 0.5 },
-  linkPressed: { opacity: 0.6 },
-  title: { fontSize: 24, fontWeight: "800", color: palette.text, textAlign: "center" },
-  subtitle: { fontSize: 14, color: palette.sub, textAlign: "center", marginBottom: 24 },
-  form: { gap: 12 },
+  // DA Polish : opacité de press unifiée à 0.7 (lot0 §1.3, supprime 0.5/0.6).
+  iconPressed: { opacity: 0.7 },
+  linkPressed: { opacity: 0.7 },
+  brandMark: { marginBottom: theme.spacing.lg },
+  title: { ...theme.typography.title, color: palette.text, textAlign: "center" },
+  subtitle: { ...theme.typography.body, color: palette.sub, textAlign: "center", marginBottom: theme.spacing.xl },
+  form: { gap: theme.spacing.md },
   inputWrap: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: palette.cardSoft,
     borderWidth: 1,
-    borderColor: palette.borderSoft,
+    borderColor: palette.borderStrong,
     borderRadius: theme.radius.md,
     paddingHorizontal: 14,
+    minHeight: 52,
   },
   icon: { marginRight: 10 },
   input: { flex: 1, paddingVertical: 14, color: palette.text, fontSize: 15 },
   eye: { padding: 4 },
-  error: { color: palette.danger, fontSize: 12, fontWeight: "600", marginLeft: 4 },
+  error: { ...theme.typography.caption, color: palette.danger, marginLeft: 4 },
   strengthRow: { flexDirection: "row", alignItems: "center", gap: 10, marginLeft: 4 },
   strengthBars: { flexDirection: "row", gap: 4 },
-  strengthBar: { width: 32, height: 4, borderRadius: 2 },
+  strengthBar: { width: 32, height: 4, borderRadius: theme.radius.pill },
   strengthLabel: { fontSize: 12, fontWeight: "600" },
   consentRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginTop: 4, marginLeft: 4 },
-  consentText: { flex: 1, color: palette.sub, fontSize: 12, lineHeight: 17 },
+  // marginTop: 1 (audit tactile/visuel) : la case (20px) dépassait d'~4px au-
+  // dessus de la première ligne du texte (lineHeight 16) — réalignée.
+  consentCheckbox: { marginTop: 1 },
+  consentText: { flex: 1, color: palette.sub, ...theme.typography.caption },
   consentLink: { color: palette.accent, fontWeight: "700", textDecorationLine: "underline" },
-  cta: {
-    backgroundColor: palette.cta,
-    borderRadius: theme.radius.pill,
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 8,
-    ...theme.shadow.accent,
+  // Neutralise le halo orange de Button.primary (theme.shadow.accent porte
+  // l'orange du dark, `#ff7a1a` — DA Polish lot0 §1.4). Local à cet écran :
+  // Button.tsx garde son ombre par défaut pour ses 17 autres appelants.
+  ctaShadowOff: {
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0,
   },
-  ctaPressed: { transform: [{ scale: 0.96 }] },
-  ctaDisabled: { opacity: 0.6 },
-  ctaText: { fontSize: 16, fontWeight: "700", color: "#fff" },
-  footer: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: 32, paddingVertical: 16 },
-  footerText: { color: palette.sub, fontSize: 14 },
-  footerLink: { color: palette.accent, fontSize: 14, fontWeight: "700" },
+  ctaSpacing: { marginTop: 8 },
+  footer: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: theme.spacing.xxl, paddingVertical: theme.spacing.lg },
+  footerText: { ...theme.typography.body, color: palette.sub },
+  footerLink: { color: palette.accent, fontSize: 15, fontWeight: "700" },
 });
