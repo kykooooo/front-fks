@@ -290,8 +290,13 @@ requête entrante (test `dix appuis rapides = une seule requete`).
 
 - La forme exacte que le backend `fks` envoie aujourd'hui (voir l'avertissement
   en tête de fichier) — sujet backend, hors périmètre.
-- `screens/newSession/transform.ts` (mise en forme de la séance une fois
-  générée avec succès) — décision produit en attente, non traité ici.
+- Le détail interne de `screens/newSession/transform.ts` (mise en forme de la
+  séance une fois générée avec succès) n'est pas documenté champ par champ
+  ici. Depuis le 31/07/2026, il n'y fabrique plus rien : un exercise_id
+  dupliqué, un item sans aucune donnée de charge, ou un `blocks` vide après
+  réduction (atteignable via un variant de reset) lèvent le même corps typé
+  `code: "SESSION_SCHEMA_INVALID"` que `api.ts` (juste au-dessus), lu par
+  `lireEchecGeneration` (§2) sans code dédié dans `echecGeneration.ts`.
 - La navigation de `se_reconnecter` et l'idempotence de requête côté backend.
 - **Où** est détectée une réparation silencieuse de schéma Zod (les
   sentinelles, le seuil `SEUIL_SENTINELLES_REPARATION`) : ça vit dans
