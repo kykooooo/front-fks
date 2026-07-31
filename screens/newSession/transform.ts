@@ -171,22 +171,22 @@ export function v2ToLocalSession(
       })
     : [];
 
+  if (blocks.length === 0) {
+    // Plus de placeholder « Séance à confirmer » fabriqué ici. Chemin
+    // atteignable : `api.ts` refuse déjà `blocks` vide au niveau racine
+    // (`estSeanceReparee`), mais un variant de reset peut arriver ici avec
+    // `blocks: []` — NewSessionScreen.tsx construit `chosen.blocks ??
+    // resetChoice.v2.blocks`, et `??` ne retombe PAS sur le v2 validé quand
+    // `chosen.blocks` vaut `[]` (tableau vide, pas null/undefined). Même refus
+    // typé que les autres cas : rien n'est fabriqué à la place.
+    throw refusTypeTransform(
+      "Le serveur a renvoyé une séance sans aucun bloc. Rien n'a été ajouté à ton programme. Réessaie dans quelques instants.",
+      "transform.blocks_vides"
+    );
+  }
+
   const baseModality = normalizeFocus(v2.focusPrimary || "run");
   const baseIntensity = toPlannedIntensity(v2.intensity) as Exercise["intensity"];
-  const placeholder: Exercise = {
-    id: "placeholder_1",
-    name: v2.title?.trim() || "Séance à confirmer",
-    modality: baseModality,
-    intensity: baseIntensity,
-    sets: 1,
-    reps: 1,
-    durationSec: Math.max(
-      300,
-      Math.round(safeDur(v2.durationMin, 30) * 60 * 0.3)
-    ),
-  };
-
-  const exos = blocks.length > 0 ? blocks : [placeholder];
 
   const id = `planned_${plannedDateISO}_${Math.random()
     .toString(36)
@@ -207,6 +207,6 @@ export function v2ToLocalSession(
     dateISO: `${plannedDateISO}T12:00:00`, // midi local : évite le recul d'un jour via toDateKey dans les fuseaux UTC-
     completed: false,
     volumeScore,
-    exercises: exos,
+    exercises: blocks,
   } as Session;
 }

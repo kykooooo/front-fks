@@ -15,6 +15,11 @@ import { EchecPostGeneration } from "../echecGeneration";
 import { processV2, rejouerApresEchecPostGeneration } from "../orchestrator";
 import type { FKS_NextSessionV2 } from "../types";
 
+// blocks non vide et exploitable : depuis DOCTRINE Option C,
+// v2ToLocalSession (transform.ts) refuse (typé) une séance sans bloc plutôt
+// que de fabriquer un placeholder — ces tests portent sur la persistance et
+// l'affichage post-génération, pas sur la transformation elle-même, donc le
+// fixture doit rester un v2 qui transforme avec succès.
 const v2: FKS_NextSessionV2 = {
   version: "v2",
   title: "Force bas du corps",
@@ -22,7 +27,16 @@ const v2: FKS_NextSessionV2 = {
   focusPrimary: "strength",
   durationMin: 30,
   rpeTarget: 6,
-  blocks: [],
+  blocks: [
+    {
+      id: "block_1",
+      type: "strength",
+      goal: "Force bas du corps",
+      intensity: "moderate",
+      durationMin: 20,
+      items: [{ name: "Squat", sets: 3, reps: 8 }],
+    },
+  ],
 };
 
 const now = new Date("2026-07-27T10:00:00.000Z");

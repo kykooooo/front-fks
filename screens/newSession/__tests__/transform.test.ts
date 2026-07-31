@@ -12,6 +12,8 @@
 //   transformation au lieu de disparaître en silence — mais le dosage par
 //   défaut backend run/mobility (sets:null + work_s) DOIT continuer de
 //   passer (work_s est une charge à lui seul, indépendamment de sets).
+// - POINT 4 : `blocks` vide (après réduction) fait échouer la transformation
+//   au lieu de fabriquer un placeholder « Séance à confirmer ».
 
 import type { Session } from "../../../domain/types";
 import { lireEchecGeneration } from "../echecGeneration";
@@ -230,5 +232,27 @@ describe("v2ToLocalSession — dosage par defaut backend run/mobility (sets:null
 
     expect(session.exercises).toHaveLength(1);
     expect(session.exercises[0].durationSec).toBe(300);
+  });
+});
+
+describe("v2ToLocalSession — plus aucun placeholder « Séance à confirmer » fabrique", () => {
+  test("blocks vide fait echouer la transformation (refus type), pas de seance generique", () => {
+    const v2 = v2Avec([]);
+
+    let capturee: unknown;
+    try {
+      v2ToLocalSession(v2, PHASE, DATE);
+    } catch (err) {
+      capturee = err;
+    }
+
+    expect(capturee).toBeDefined();
+    verifierRefusType(capturee);
+  });
+
+  test("v2.blocks absent (pas un tableau) fait aussi echouer la transformation", () => {
+    const v2 = { ...v2Avec([]), blocks: undefined as any };
+
+    expect(() => v2ToLocalSession(v2, PHASE, DATE)).toThrow();
   });
 });

@@ -125,21 +125,10 @@ export async function processV2(
   const sessionFromV2 = v2ToLocalSession(v2, phase as any, plannedDateISO);
   const sessionWithAi = { ...sessionFromV2, aiV2: v2 } as any;
 
-  const exercisesPlanned: Exercise[] =
-    Array.isArray(sessionFromV2.exercises) &&
-    sessionFromV2.exercises.length > 0
-      ? sessionFromV2.exercises
-      : [
-          {
-            id: "placeholder_1",
-            name: "Séance à confirmer",
-            modality: "run",
-            intensity: "easy",
-            sets: 1,
-            reps: 1,
-            durationSec: 300,
-          },
-        ];
+  // v2ToLocalSession lève (refus typé, docs/CONTRAT_ERREUR_FRONT.md §2.1)
+  // plutôt que de renvoyer une séance sans exercice — voir transform.ts.
+  // `exercises` est donc garanti non vide ici ; plus de placeholder fabriqué.
+  const exercisesPlanned: Exercise[] = sessionFromV2.exercises;
 
   const phaseForPayload: PlannedPhase = (
     ["Playlist", "Construction", "Progression", "Performance", "Deload"] as const
