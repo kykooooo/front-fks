@@ -1,8 +1,7 @@
 // screens/PrebuiltSessionsScreen.tsx — orchestrator (refactored from 1838 → ~200 lines)
 import React, { useMemo, useState, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import { Screen } from "../components/ui/Screen";
-import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useRoutineBadges } from "../hooks/useRoutineBadges";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,17 +17,15 @@ import {
   type Prebuilt,
 } from "./prebuilt/prebuiltConfig";
 import { PREBUILT_SESSIONS } from "./prebuilt/prebuiltSessions";
-import { AnimatedCategoryCard } from "./prebuilt/components/AnimatedCategoryCard";
+import { CategoryTile } from "./prebuilt/components/CategoryTile";
 import { CategorySection } from "./prebuilt/components/CategorySection";
 import { BadgesCard } from "./prebuilt/components/BadgesCard";
 
 const palette = theme.colors;
 
 export default function PrebuiltSessionsScreen() {
-  const sessions = useSessionsStore((s) => s.sessions);
-  const pending = sessions.filter((s) => !s.completed);
   const nav = useNavigation<any>();
-  const [selectedCategory, setSelectedCategory] = useState<string>("Tous");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [animationKey, setAnimationKey] = useState(0);
   const badges = useRoutineBadges();
   const haptics = useHaptics();
@@ -36,6 +33,9 @@ export default function PrebuiltSessionsScreen() {
   useFocusEffect(
     useCallback(() => {
       setAnimationKey((k) => k + 1);
+      // Pas de reset de selectedCategory au blur : ouvrir un détail de routine
+      // blur l'écran sans le démonter, et l'utilisateur doit retrouver sa liste
+      // au retour. Quitter l'écran (pop) démonte et réinitialise naturellement.
     }, [])
   );
 
@@ -67,40 +67,36 @@ export default function PrebuiltSessionsScreen() {
       });
   }, []);
 
-  const categories = useMemo(() => {
-    const fromSessions = grouped.map(([category, list]) => ({
-      category,
-      count: list.length,
-      config: CATEGORY_CONFIG[category] ?? {
-        icon: "sparkles" as keyof typeof Ionicons.glyphMap,
-        gradient: ["#6b7280", "#9ca3af"] as [string, string],
-        tagline: "",
-      },
-    }));
-    return [
-      {
-        category: "Tous",
-        count: PREBUILT_SESSIONS.length,
-        config: {
-          icon: "apps" as keyof typeof Ionicons.glyphMap,
-          gradient: ["#ff7a1a", "#ff9a4a"] as [string, string],
-          tagline: "Toutes les routines",
+  const categories = useMemo(
+    () =>
+      grouped.map(([category, list]) => ({
+        category,
+        count: list.length,
+        config: CATEGORY_CONFIG[category] ?? {
+          icon: "sparkles" as keyof typeof Ionicons.glyphMap,
+          gradient: ["#6b7280", "#9ca3af"] as [string, string],
+          tagline: "",
         },
-      },
-      ...fromSessions,
-    ];
-  }, [grouped]);
+      })),
+    [grouped]
+  );
 
   const handleRoutinePress = useCallback((routine: Prebuilt) => {
     haptics.impactLight();
     nav.navigate("PrebuiltSessionDetail", { session: routine });
   }, [haptics, nav]);
 
-  const filteredGroups = useMemo(
-    () =>
-      grouped.filter(([category]) =>
-        selectedCategory === "Tous" ? true : selectedCategory === category
-      ),
+  const handleCategoryPress = useCallback((category: string) => {
+    setSelectedCategory(category);
+  }, []);
+
+  const handleBack = useCallback(() => {
+    haptics.impactLight();
+    setSelectedCategory(null);
+  }, [haptics]);
+
+  const selectedGroup = useMemo(
+    () => grouped.find(([category]) => category === selectedCategory) ?? null,
     [grouped, selectedCategory]
   );
 
@@ -110,92 +106,89 @@ export default function PrebuiltSessionsScreen() {
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Routines & extras</Text>
-          <Text style={styles.headerSubtitle}>
-            Compléments express à ton cycle
-          </Text>
-        </View>
+        {selectedGroup === null ? (
+          <>
+            {/* Header */}
+            <View style={styles.header}>
+              <Text style={styles.headerTitle}>Routines & extras</Text>
+              <Text style={styles.headerSubtitle}>
+                Compléments express à ton cycle
+              </Text>
+            </View>
 
-        {/* Badges or Intro */}
-        {badges.total > 0 ? (
-          <BadgesCard badges={badges} />
-        ) : (
-          <Card variant="soft" style={styles.introCard}>
-            <View style={styles.introHeader}>
-              <View style={styles.introIconCircle}>
-                <Ionicons name="bulb" size={20} color="#f59e0b" />
+            {/* Badges or Intro */}
+            {badges.total > 0 ? (
+              <BadgesCard badges={badges} />
+            ) : (
+              <Card variant="soft" style={styles.introCard}>
+                <View style={styles.introHeader}>
+                  <View style={styles.introIconCircle}>
+                    <Ionicons name="bulb" size={20} color="#f59e0b" />
+                  </View>
+                  <View style={styles.introTextContainer}>
+                    <Text style={styles.introTitle}>Compléments intelligents</Text>
+                    <Text style={styles.introDescription}>
+                      Ces routines s'ajoutent à ton cycle pour optimiser ta prépa : échauffement, récup, prévention des blessures...
+                    </Text>
+                  </View>
+                </View>
+              </Card>
+            )}
+
+            {/* Quick stats */}
+            <View style={styles.statsRow}>
+              <View style={styles.statChip}>
+                <Ionicons name="sparkles" size={14} color={palette.accent} />
+                <Text style={styles.statText}>
+                  <Text style={styles.statHighlight}>{PREBUILT_SESSIONS.length}</Text> routines
+                </Text>
               </View>
-              <View style={styles.introTextContainer}>
-                <Text style={styles.introTitle}>Compléments intelligents</Text>
-                <Text style={styles.introDescription}>
-                  Ces routines s'ajoutent à ton cycle pour optimiser ta prépa : échauffement, récup, prévention des blessures...
+              <View style={styles.statChip}>
+                <Ionicons name="layers" size={14} color="#14b8a6" />
+                <Text style={styles.statText}>
+                  <Text style={styles.statHighlight}>{grouped.length}</Text> catégories
                 </Text>
               </View>
             </View>
-          </Card>
-        )}
 
-        {/* Quick stats */}
-        <View style={styles.statsRow}>
-          <View style={styles.statChip}>
-            <Ionicons name="sparkles" size={14} color={palette.accent} />
-            <Text style={styles.statText}>
-              <Text style={styles.statHighlight}>{PREBUILT_SESSIONS.length}</Text> routines
-            </Text>
-          </View>
-          <View style={styles.statChip}>
-            <Ionicons name="layers" size={14} color="#14b8a6" />
-            <Text style={styles.statText}>
-              <Text style={styles.statHighlight}>{grouped.length}</Text> catégories
-            </Text>
-          </View>
-        </View>
+            {/* Category grid */}
+            <View style={styles.categoryGrid} key={animationKey}>
+              {categories.map((item, index) => (
+                <CategoryTile
+                  key={item.category}
+                  category={item.category}
+                  count={item.count}
+                  config={item.config}
+                  index={index}
+                  onPress={() => handleCategoryPress(item.category)}
+                />
+              ))}
+            </View>
 
-        {/* Category filter */}
-        <View style={styles.filtersSection}>
-          <Text style={styles.filtersSectionTitle}>Catégories</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filtersRow}
-            key={animationKey}
-          >
-            {categories.map((item, index) => (
-              <AnimatedCategoryCard
-                key={item.category}
-                category={item.category}
-                count={item.count}
-                config={item.config}
-                index={index}
-                isActive={selectedCategory === item.category}
-                onPress={() => setSelectedCategory(item.category)}
-              />
-            ))}
-          </ScrollView>
-        </View>
+            {/* Tip */}
+            <View style={styles.tipContainer}>
+              <Ionicons name="information-circle-outline" size={14} color={palette.sub} />
+              <Text style={styles.tipText}>
+                Ces routines sont des compléments à ton entraînement principal. Choisis une catégorie pour voir les routines disponibles.
+              </Text>
+            </View>
+          </>
+        ) : (
+          <>
+            {/* Back */}
+            <TouchableOpacity style={styles.backRow} onPress={handleBack} activeOpacity={0.7}>
+              <Ionicons name="chevron-back" size={20} color={palette.sub} />
+              <Text style={styles.backText}>Toutes les catégories</Text>
+            </TouchableOpacity>
 
-        {/* Routines by category */}
-        <View style={styles.routinesContainer} key={`${animationKey}-${selectedCategory}`}>
-          {filteredGroups.map(([category, list], idx) => (
             <CategorySection
-              key={category}
-              category={category}
-              routines={list}
-              baseIndex={idx}
+              category={selectedGroup[0]}
+              routines={selectedGroup[1]}
+              baseIndex={0}
               onRoutinePress={handleRoutinePress}
             />
-          ))}
-        </View>
-
-        {/* Tip */}
-        <View style={styles.tipContainer}>
-          <Ionicons name="information-circle-outline" size={14} color={palette.sub} />
-          <Text style={styles.tipText}>
-            Ces routines sont des compléments à ton entraînement principal. Utilise-les pour t'échauffer, récupérer ou prévenir les blessures.
-          </Text>
-        </View>
+          </>
+        )}
 
         <View style={{ height: 24 }} />
       </ScrollView>
@@ -278,22 +271,22 @@ const styles = StyleSheet.create({
     marginTop: 4,
     lineHeight: 18,
   },
-  filtersSection: {
-    gap: 8,
+  categoryGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
   },
-  filtersSectionTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: palette.sub,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  filtersRow: {
-    gap: 8,
+  backRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    alignSelf: "flex-start",
     paddingVertical: 4,
   },
-  routinesContainer: {
-    gap: 20,
+  backText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: palette.sub,
   },
   tipContainer: {
     flexDirection: "row",

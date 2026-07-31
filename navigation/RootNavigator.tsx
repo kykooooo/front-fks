@@ -24,6 +24,7 @@ import WelcomeScreen from "../screens/WelcomeScreen";
 import SessionLiveScreen from "../screens/SessionLiveScreen";
 import SessionSummaryScreen from "../screens/SessionSummaryScreen";
 import SettingsScreen from "../screens/SettingsScreen";
+import DeleteAccountScreen from "../screens/DeleteAccountScreen";
 import LegalNoticeScreen from "../screens/LegalNoticeScreen";
 import PrivacyPolicyScreen from "../screens/PrivacyPolicyScreen";
 import RoutineScreen from "../screens/RoutineScreen";
@@ -33,12 +34,14 @@ import CoachHomeScreen from "../screens/CoachHomeScreen";
 import CoachOnboardingScreen from "../screens/CoachOnboardingScreen";
 import CoachPlayerDetailScreen from "../screens/CoachPlayerDetailScreen";
 import { theme } from "../constants/theme";
+import { STORAGE_KEYS } from "../constants/storage";
 import { DEV_FLAGS } from "../config/devFlags";
 import { Ionicons } from "@expo/vector-icons";
 import { useSyncStore } from "../state/stores/useSyncStore";
 import { SwipeTabsWrapper } from "../components/SwipeTabsWrapper";
 import { setAnalyticsUserId } from "../services/analytics";
 import { setSentryUser } from "../services/monitoring";
+import { onWelcomeReset } from "../services/accountDeletion";
 
 // Firebase
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -79,6 +82,7 @@ export type AppStackParamList = {
     };
   };
   Settings: undefined;
+  DeleteAccount: undefined;
   Routine: undefined;
   GenerateSession: undefined;
   SessionHistory: undefined;
@@ -107,6 +111,7 @@ export type CoachStackParamList = {
   // Coach-safe : on ne transmet plus de profil brut, seulement les clés de lecture
   // de la projection (clubs/{clubId}/playerSummaries/{playerUid}).
   CoachPlayerDetail: { clubId: string; playerUid: string };
+  DeleteAccount: undefined;
   LegalNotice: undefined;
   PrivacyPolicy: undefined;
 };
@@ -115,7 +120,7 @@ const AppStack = createNativeStackNavigator<AppStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const CoachStack = createNativeStackNavigator<CoachStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
-const WELCOME_KEY = "fks_welcome_done";
+const WELCOME_KEY = STORAGE_KEYS.WELCOME_DONE;
 const PLAYER_TAB_ORDER: Array<keyof TabParamList> = ["Home", "NewSession", "Profile"];
 
 function MainTabs() {
@@ -198,6 +203,7 @@ function AppNavigator() {
       <AppStack.Screen name="SessionLive" component={SessionLiveScreen} options={{ headerShown: true, title: "Séance en cours" }} />
       <AppStack.Screen name="SessionSummary" component={SessionSummaryScreen} options={{ headerShown: true, title: "Résumé" }} />
       <AppStack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: true, title: "Paramètres" }} />
+      <AppStack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ headerShown: true, title: "Supprimer mon compte" }} />
       <AppStack.Screen name="LegalNotice" component={LegalNoticeScreen} options={{ headerShown: true, title: "Mentions légales" }} />
       <AppStack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={{ headerShown: true, title: "Confidentialité" }} />
       <AppStack.Screen name="Routine" component={RoutineScreen} options={{ headerShown: true, title: "Semaine & Progression" }} />
@@ -244,6 +250,7 @@ function CoachNavigator() {
     >
       <CoachStack.Screen name="CoachHome" component={CoachHomeScreen} />
       <CoachStack.Screen name="CoachPlayerDetail" component={CoachPlayerDetailScreen} options={{ headerShown: true, title: "Joueur" }} />
+      <CoachStack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ headerShown: true, title: "Supprimer mon compte" }} />
       <CoachStack.Screen name="LegalNotice" component={LegalNoticeScreen} options={{ headerShown: true, title: "Mentions légales" }} />
       <CoachStack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={{ headerShown: true, title: "Confidentialité" }} />
     </CoachStack.Navigator>
@@ -318,6 +325,9 @@ function Splash() {
 export default function RootNavigator() {
   const [user, setUser] = useState<User | null>(null);
   const [initializing, setInitializing] = useState(true);
+  // AUDIT P0-2 : true dès que onAuthStateChanged a répondu UNE première fois.
+  // Distinct de `initializing` (qui repasse à true pendant l'attente du profil).
+  const [authResolved, setAuthResolved] = useState(false);
   const [profileCompleted, setProfileCompleted] = useState<boolean | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [welcomeDone, setWelcomeDone] = useState<boolean | null>(null);
@@ -337,6 +347,7 @@ export default function RootNavigator() {
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
+      setAuthResolved(true);
       if (!u) {
         setProfileCompleted(null);
         setRole(null);
@@ -351,10 +362,17 @@ export default function RootNavigator() {
     return unsubAuth;
   }, []);
 
-  // Nettoie l'état local quand l'utilisateur change
+  // Nettoie l'état local quand l'utilisateur change.
+  // AUDIT P0-2 : JAMAIS avant la PREMIÈRE résolution de onAuthStateChanged.
+  // Au boot, `user` vaut null par défaut alors que Firebase n'a pas encore
+  // répondu : appeler resetForUser(null) ici déclenchait un wipe "logout" sur
+  // un état indéterminé (snapshot sauvegardé puis stores vidés, restauration
+  // perdue si l'auth résolvait pendant la fenêtre). Le wipe logout n'a lieu
+  // que sur un null CONFIRMÉ par Firebase (vrai logout / session expirée).
   useEffect(() => {
+    if (!authResolved) return;
     resetTrainingStore(user?.uid ?? null);
-  }, [resetTrainingStore, user?.uid]);
+  }, [authResolved, resetTrainingStore, user?.uid]);
 
   // 1bis) Welcome local flag
   useEffect(() => {
@@ -367,6 +385,12 @@ export default function RootNavigator() {
       }
     })();
   }, []);
+
+  // 1ter) Suppression de compte : la purge locale efface WELCOME_DONE dans
+  // AsyncStorage, mais `welcomeDone` (lu UNE fois au boot) resterait `true` en
+  // mémoire → l'utilisateur atterrirait sur Login au lieu de Welcome. Le
+  // service émet cet événement après la purge pour resynchroniser l'état.
+  useEffect(() => onWelcomeReset(() => setWelcomeDone(false)), []);
 
   // 2) Écoute temps réel du doc profil: users/{uid}
   useEffect(() => {

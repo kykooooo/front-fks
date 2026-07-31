@@ -238,6 +238,19 @@ describe("buildCompletedSessionFirestorePayload", () => {
     expect(fb.durationMin).toBe(48);
   });
 
+  test("durationMin top-level persisté (AUDIT P1-1 — lu par estimateDurationMin)", () => {
+    const s = makeSession({ durationMin: 60, feedback: baseFeedback });
+    const payload = buildCompletedSessionFirestorePayload(s);
+    expect(payload.durationMin).toBe(60);
+  });
+
+  test("durationMin NaN/absent → pas de champ top-level (jamais de NaN dans Firestore)", () => {
+    const sNaN = makeSession({ durationMin: Number.NaN as unknown as number });
+    expect(buildCompletedSessionFirestorePayload(sNaN).durationMin).toBeUndefined();
+    const sAbsent = makeSession({ durationMin: undefined });
+    expect(buildCompletedSessionFirestorePayload(sAbsent).durationMin).toBeUndefined();
+  });
+
   test("session sans metrics ne plante pas (rétrocompat sessions legacy)", () => {
     const s = makeSession({ feedback: baseFeedback, metrics: undefined });
     const payload = buildCompletedSessionFirestorePayload(s);

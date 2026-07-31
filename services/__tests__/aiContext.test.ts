@@ -167,6 +167,52 @@ describe("buildRecentFksSessionSummary", () => {
     expect(summary.feedback?.pain).toBeUndefined();
     expect(summary.pain_level_after).toBeUndefined();
   });
+
+  test("feedback.recovery_perceived part bien si session.feedback.recoveryPerceived est renseigne (verrou anti-regression)", () => {
+    // Verrouille la lecture cote aiContextHelpers : le bug historique (design doc
+    // INDIVIDUALISATION_FINE_DESIGN.md §1.3) etait cote ecriture (useFeedbackSave.ts
+    // n'ecrivait jamais recoveryPerceived sur session.feedback, seulement `sleep`) —
+    // verrouille separement dans screens/feedback/__tests__/feedbackScales.test.ts.
+    // Ce test verrouille que, une fois le champ present sur la session, il part bien
+    // au format backend attendu.
+    const session = makeSession({
+      feedback: { ...baseFeedback, recoveryPerceived: 4 } as SessionFeedback,
+    });
+    const summary = buildRecentFksSessionSummary(session, "playlist");
+    expect(summary.feedback?.recovery_perceived).toBe(4);
+  });
+
+  test("feedback.recovery_perceived absent si session.feedback.sleep seul est renseigne (le champ legacy ne suffit pas)", () => {
+    const session = makeSession({
+      feedback: { ...baseFeedback, sleep: 2, recoveryPerceived: undefined } as unknown as SessionFeedback,
+    });
+    const summary = buildRecentFksSessionSummary(session, "playlist");
+    expect(summary.feedback?.recovery_perceived).toBeUndefined();
+  });
+
+  test("cycle et archetype_id partent depuis aiV2 (memoire anti-repetition moins aveugle)", () => {
+    const session = makeSession({
+      aiV2: { archetypeId: "force_lower_A", playerContext: { cycleKey: "force" } },
+    });
+    const summary = buildRecentFksSessionSummary(session, "playlist");
+    expect(summary.cycle).toBe("force");
+    expect(summary.archetype_id).toBe("force_lower_A");
+  });
+
+  test("cycle et archetype_id absents si non portes par la session (jamais invente)", () => {
+    const session = makeSession({ aiV2: undefined });
+    const summary = buildRecentFksSessionSummary(session, "playlist");
+    expect(summary.cycle).toBeUndefined();
+    expect(summary.archetype_id).toBeUndefined();
+  });
+
+  test("cycle lit aussi le snake_case backend brut (aiV2.playerContext.cycle_key)", () => {
+    const session = makeSession({
+      aiV2: { playerContext: { cycle_key: "endurance" } },
+    });
+    const summary = buildRecentFksSessionSummary(session, "playlist");
+    expect(summary.cycle).toBe("endurance");
+  });
 });
 
 describe("buildRecentFksSessionsPayload (limite + integration)", () => {

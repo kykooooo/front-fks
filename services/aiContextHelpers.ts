@@ -11,6 +11,10 @@ import { toDateKey, lastNDates } from "../utils/dateHelpers";
 import type { Session, Exercise, ClubTrainingIntensity, ClubWeekGoal, ClubTeamGender, DailyFeedback, InjuryRecord } from "../domain/types";
 import { normalizeClubTrainingIntensity, normalizeClubWeekGoal } from "../domain/types";
 import { INJURY_AREA_TO_BACKEND_PAIN, mapAreaToPain, type BackendPainToken } from "../shared/injuryMapping";
+// Import type-only : aucun cout runtime (erase par tsc/babel), evite un import
+// reel de services/ vers screens/ (testConfig.ts importe @expo/vector-icons
+// pour le typage des icones de groupe, inutile ici).
+import type { TestEntry, FieldKey } from "../screens/tests/testConfig";
 
 // ---- Contexte club (semaine) ----------------------------------------------
 
@@ -119,6 +123,14 @@ export interface FKS_RecentSessionSummary {
   ai?: {
     rpe_target?: number;
   };
+
+  // Historique enrichi (repare la memoire anti-repetition backend, cf.
+  // INDIVIDUALISATION_FINE_DESIGN.md §7.1 : "cycle"/"archetype_id" absents
+  // aujourd'hui). Omis si non disponible sur la session locale — jamais invente.
+  /** Goal canonique (fondation/force/endurance/explosivite/saison) du cycle actif au moment de la seance. */
+  cycle?: string;
+  /** Identifiant d'archetype backend ayant genere la seance. */
+  archetype_id?: string;
 }
 
 // ---- Helpers internes -------------------------------------------------------
@@ -168,6 +180,14 @@ function firstStringArrayFromPaths(
     if (values.length > 0) return Array.from(new Set(values));
   }
   return undefined;
+}
+
+function firstStringFromPaths(root: unknown, paths: string[][]): string | null {
+  for (const path of paths) {
+    const raw = readPath(root, path);
+    if (typeof raw === "string" && raw.trim()) return raw.trim();
+  }
+  return null;
 }
 
 // ---- Normalisations / extractions exposees ---------------------------------
@@ -306,6 +326,37 @@ export function readSessionRpeTarget(session: Session): number | null {
   ]);
 }
 
+/**
+ * Lit l'archetype_id ayant genere la seance (aiV2.archetypeId, deja stocke
+ * localement depuis `snakeToCamel(parsed.data)` dans screens/newSession/api.ts
+ * -> orchestrator.ts attache tout `v2` sur `session.aiV2`). Absent = null,
+ * jamais invente.
+ */
+export function readSessionArchetypeId(session: Session): string | null {
+  return firstStringFromPaths(session, [
+    ["aiV2", "archetypeId"],
+    ["aiV2", "archetype_id"],
+    ["archetypeId"],
+    ["archetype_id"],
+  ]);
+}
+
+/**
+ * Lit le cycle canonique actif au moment de la seance. Source : le
+ * `player_context.cycle_key` deterministe renvoye par le backend a chaque
+ * generation, deja present dans `session.aiV2.playerContext.cycleKey` (camelCase
+ * via snakeToCamel) meme si rien ne l'affiche encore cote UI. Absent = null.
+ */
+export function readSessionCycle(session: Session): string | null {
+  return firstStringFromPaths(session, [
+    ["aiV2", "playerContext", "cycleKey"],
+    ["aiV2", "playerContext", "cycle_key"],
+    ["aiV2", "cycleKey"],
+    ["aiV2", "cycle_key"],
+    ["cycle"],
+  ]);
+}
+
 function readSessionSorenessZones(session: Session): string[] | undefined {
   return firstStringArrayFromPaths(session, [
     ["feedback", "soreness_zones_after"],
@@ -397,6 +448,8 @@ export function buildRecentFksSessionSummary(
   const feedbackPayload = buildRecentFeedbackPayload(s, rpeVal);
   const metricsPayload = readSessionMetrics(s);
   const rpeTarget = readSessionRpeTarget(s);
+  const archetypeId = readSessionArchetypeId(s);
+  const cycle = readSessionCycle(s);
 
   const label = s?.title ? String(s.title) : `Séance ${focus}`;
 
@@ -416,6 +469,8 @@ export function buildRecentFksSessionSummary(
     ...(feedbackPayload ? { feedback: feedbackPayload } : {}),
     ...(metricsPayload ? { metrics: metricsPayload } : {}),
     ...(rpeTarget !== null ? { ai: { rpe_target: rpeTarget } } : {}),
+    ...(cycle ? { cycle } : {}),
+    ...(archetypeId ? { archetype_id: archetypeId } : {}),
   };
 }
 
@@ -567,3 +622,114 @@ export function collectActivePainConstraints(
 
   return { pains: [...tokens].sort(), injuryMaxSeverity };
 }
+
+// ---- Tests terrain -> constraints.field_tests -------------------------------
+//
+// Cf. INDIVIDUALISATION_FINE_DESIGN.md §7.1 : `field_tests[] = [{key, value, unit, ts}]`,
+// max 6, "dernier de chaque type <= 90 j". Source front : AsyncStorage
+// `fks_tests_v1_{uid}` (screens/tests/hooks/useTestsStorage.ts), lu hors-hook via
+// `readTestsRaw()` (deja utilise par ProfileScreen.tsx pour le meme besoin).
+// Regle : on n'envoie que ce qui existe, aucune invention, aucun clamp de valeur
+// (le backend borne deja la calibration cote moteur, cf. §4.1 C1).
+
+export type FKS_FieldTestEntry = {
+  key: string;
+  value: number;
+  unit: string;
+  /** Date du test (ISO 8601). Le backend gere l'expiration (90 j, cf. design doc). */
+  ts: string;
+};
+
+/** Fenetre de fraicheur alignee sur la calibration backend (§4.1 : expiration 90 j). */
+export const FIELD_TESTS_MAX_AGE_DAYS = 90;
+/** Cap taille payload (design doc §7.1 : "max 6"). */
+export const FIELD_TESTS_MAX_ENTRIES = 6;
+
+const MS_PER_DAY = 86_400_000;
+
+/** Cles de test mesurables (toutes les cles de TestEntry sauf `notes`, texte libre). */
+type MeasurableFieldKey = Exclude<FieldKey, "notes">;
+
+// Source de verite des unites : screens/tests/testConfig.ts (FIELD_DEFS[].unit).
+// Duplique ici (valeurs, pas de type) pour eviter un import runtime services -> screens ;
+// TestEntry/FieldKey ci-dessus restent en `import type` (cout zero, verifie a la compilation
+// que les cles suivent bien le meme contrat).
+const FIELD_TEST_UNITS: Record<MeasurableFieldKey, string> = {
+  broadJumpCm: "cm",
+  tripleJumpCm: "cm",
+  cmjCm: "cm",
+  lateralBoundCm: "cm",
+  sprint10s: "s",
+  sprint20s: "s",
+  sprint30s: "s",
+  tTest_s: "s",
+  test505_s: "s",
+  endurance6min_m: "m",
+  yoYoIR1_m: "m",
+  run1km_s: "s",
+  gobletKg: "kg",
+  gobletReps: "",
+  splitKg: "kg",
+  splitReps: "",
+  trapbar3rmKg: "kg",
+};
+
+const FIELD_TEST_KEYS = Object.keys(FIELD_TEST_UNITS) as MeasurableFieldKey[];
+
+/**
+ * Construit `field_tests[]` depuis les entrees brutes AsyncStorage (`TestEntry[]`,
+ * non triees, potentiellement legacy/corrompues — lecture 100% defensive).
+ *
+ * Regles :
+ *  - une entree sans `ts` fini > 0 est ignoree ;
+ *  - une entree plus vieille que `FIELD_TESTS_MAX_AGE_DAYS` est ignoree ;
+ *  - pour chaque cle de test, seule la valeur la PLUS RECENTE (parmi les entrees
+ *    valides) est retenue ;
+ *  - le tableau final est trie par date desc et cape a `FIELD_TESTS_MAX_ENTRIES`
+ *    (si plus de cles ont une valeur fraiche que la limite, les plus recentes
+ *    gagnent — c'est le signal le plus pertinent).
+ *
+ * Pure : aucune dependance store/AsyncStorage (le call site lit `readTestsRaw()`
+ * et passe le JSON parse ici).
+ */
+export function buildFieldTestsPayload(
+  entries: unknown,
+  nowMs: number = Date.now()
+): FKS_FieldTestEntry[] {
+  if (!Array.isArray(entries) || entries.length === 0) return [];
+
+  type ValidEntry = { ts: number; record: UnknownRecord };
+  const valid: ValidEntry[] = [];
+  for (const raw of entries as unknown[]) {
+    const record = asRecord(raw);
+    if (!record) continue;
+    const ts = finiteNumber(record.ts);
+    if (ts === null || ts <= 0) continue;
+    const ageDays = (nowMs - ts) / MS_PER_DAY;
+    if (ageDays < 0 || ageDays > FIELD_TESTS_MAX_AGE_DAYS) continue;
+    valid.push({ ts, record });
+  }
+  valid.sort((a, b) => b.ts - a.ts); // plus recent d'abord
+
+  const byKey = new Map<MeasurableFieldKey, FKS_FieldTestEntry>();
+  for (const { ts, record } of valid) {
+    for (const key of FIELD_TEST_KEYS) {
+      if (byKey.has(key)) continue; // deja la valeur la + recente pour cette cle
+      const value = finiteNumber(record[key]);
+      if (value === null || value <= 0) continue;
+      byKey.set(key, {
+        key,
+        value,
+        unit: FIELD_TEST_UNITS[key],
+        ts: new Date(ts).toISOString(),
+      });
+    }
+  }
+
+  return Array.from(byKey.values())
+    .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
+    .slice(0, FIELD_TESTS_MAX_ENTRIES);
+}
+
+// Reexport type pour les call sites qui veulent typer le JSON.parse(readTestsRaw()).
+export type { TestEntry };

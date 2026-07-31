@@ -1,5 +1,8 @@
 // screens/feedback/feedbackScales.ts
 // Constantes et helpers partagés pour le feedback
+import { toRPE1to10, toRating1to5, toRating0to5 } from '../../domain/types';
+import type { SessionFeedback } from '../../domain/types';
+import { FEEDBACK_LIMITS } from '../../constants/feedback';
 
 export const clamp = (v: number, min: number, max: number) =>
   Math.max(min, Math.min(max, v));
@@ -51,3 +54,35 @@ export const RECOVERY_SCALE: SegmentedOption[] = [
   { value: 4, label: 'Bien' },
   { value: 5, label: 'Excellent' },
 ];
+
+/**
+ * Construit le `SessionFeedback` stocké sur `session.feedback` (local + Firestore).
+ *
+ * Verrou anti-régression : `recoveryPerceived` DOIT être écrit ici, en plus du
+ * champ legacy `sleep` (1-5, même échelle). C'est `recoveryPerceived` que
+ * `buildRecentFeedbackPayload` (services/aiContextHelpers.ts) lit pour
+ * transmettre `feedback.recovery_perceived` au backend — l'oubli de ce champ
+ * rendait `recovery_perceived` mort silencieusement en prod (aucune session ne
+ * le portait), cf. INDIVIDUALISATION_FINE_DESIGN.md §1.3 : "recovery_perceived
+ * jamais transmis. Écrit dans session.feedback.sleep, lu comme recoveryPerceived".
+ * Extrait en fonction pure (au lieu d'un objet littéral dupliqué dans
+ * useFeedbackSave.ts) pour pouvoir le tester sans monter le hook complet.
+ */
+export const buildSessionFeedback = (params: {
+  rpe: number;
+  fatigue: number;
+  pain0to5: number;
+  recovery: number;
+  durationClamped?: number;
+}): SessionFeedback => {
+  const fb: SessionFeedback = {
+    rpe: toRPE1to10(params.rpe),
+    fatigue: toRating1to5(params.fatigue),
+    sleep: toRating1to5(params.recovery),
+    pain: toRating0to5(params.pain0to5),
+    createdAt: new Date().toISOString(),
+    recoveryPerceived: clamp(params.recovery, FEEDBACK_LIMITS.recoveryMin, FEEDBACK_LIMITS.recoveryMax),
+  };
+  if (params.durationClamped != null) fb.durationMin = params.durationClamped;
+  return fb;
+};

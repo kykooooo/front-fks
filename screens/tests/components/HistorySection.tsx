@@ -1,25 +1,40 @@
 // screens/tests/components/HistorySection.tsx
+// Historique unifié (Phase C) : UNE timeline, toutes entrées confondues —
+// avant, `entriesForPlaylist` filtrait par cycle actif et "cachait" les
+// anciennes valeurs dès qu'on changeait de cycle. Chaque ligne affiche les
+// champs réellement présents dans CETTE entrée (une entrée peut être la
+// batterie socle complète, ou un seul test optionnel saisi à part) + un tag
+// discret du cycle actif au moment du test, si connu (informationnel seul).
 import React from "react";
 import { View, Text, StyleSheet, Animated } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
-import { formatEntryTimestamp, getUnitForField } from "../testHelpers";
+import { Badge } from "../../../components/ui/Badge";
+import { SectionHeader } from "../../../components/ui/SectionHeader";
+import { formatEntryTimestamp, formatEntryValue, getUnitForField, shouldHideUnitSuffix } from "../testHelpers";
 import {
-  PLAYLISTS, PLAYLIST_FIELDS, FIELD_BY_KEY, SHORT_LABELS,
-  type TestEntry, type PlaylistId,
+  FIELD_DEFS, FIELD_BY_KEY, PLAYLISTS, SHORT_LABELS,
+  type TestEntry, type FieldKey,
 } from "../testConfig";
 
 const palette = theme.colors;
 
 type Props = {
-  entriesForPlaylist: TestEntry[];
-  selectedPlaylist: PlaylistId;
+  entries: TestEntry[];
   cardAnim: Animated.Value;
 };
 
-export function HistorySection({ entriesForPlaylist, selectedPlaylist, cardAnim }: Props) {
-  if (entriesForPlaylist.length === 0) return null;
+const MAX_ROWS = 6;
+const MAX_FIELDS_PER_ROW = 4;
+
+const hasValue = (entry: TestEntry, key: FieldKey): boolean => {
+  const v = (entry as any)[key];
+  if (v === undefined || v === null || v === "") return false;
+  return Number.isFinite(Number(v));
+};
+
+export function HistorySection({ entries, cardAnim }: Props) {
+  if (entries.length === 0) return null;
 
   return (
     <Animated.View
@@ -35,76 +50,71 @@ export function HistorySection({ entriesForPlaylist, selectedPlaylist, cardAnim 
         ],
       }}
     >
-      <Card variant="surface" style={styles.historyCard}>
-        <View style={styles.historyHeader}>
-          <Ionicons name="time-outline" size={16} color={palette.accent} />
-          <View>
-            <Text style={styles.sectionTitle}>Historique récent</Text>
-            <Text style={styles.sectionSub}>
-              {PLAYLISTS[selectedPlaylist].label}
-            </Text>
-          </View>
-        </View>
-        <View style={{ gap: 8, marginTop: 10 }}>
-          {entriesForPlaylist.slice(0, 5).map((e, idx) => (
-            <View key={`${e.ts}-${idx}`} style={styles.historyRow}>
-              <View>
-                <Text style={styles.historyDate}>
-                  {formatEntryTimestamp(e.ts, "dd/MM/yyyy")}
-                </Text>
-                <Text style={styles.historyTime}>
-                  {formatEntryTimestamp(e.ts, "HH:mm")}
+      <View style={styles.section}>
+        <SectionHeader
+          title="Historique"
+          right={<Badge label={`${entries.length} relevé${entries.length > 1 ? "s" : ""}`} />}
+        />
+        <Card variant="surface" style={styles.historyCard}>
+          {entries.slice(0, MAX_ROWS).map((e, idx) => {
+            const rowKeys = FIELD_DEFS.map((f) => f.key).filter((key) => hasValue(e, key));
+            const shown = rowKeys.slice(0, MAX_FIELDS_PER_ROW);
+            const extra = rowKeys.length - shown.length;
+            const valuesText =
+              shown
+                .map((key) => {
+                  const unit = shouldHideUnitSuffix(key) ? "" : getUnitForField(key);
+                  const label = SHORT_LABELS[key] ?? FIELD_BY_KEY[key]?.label ?? key;
+                  return `${label} ${formatEntryValue(key, (e as any)[key])}${unit}`;
+                })
+                .join(" · ") + (extra > 0 ? ` +${extra}` : "");
+            const provenance = e.playlist ? PLAYLISTS[e.playlist]?.label : null;
+            return (
+              <View
+                key={`${e.ts}-${idx}`}
+                style={[
+                  styles.historyRow,
+                  idx === Math.min(entries.length, MAX_ROWS) - 1 && styles.historyRowLast,
+                ]}
+              >
+                <View>
+                  <Text style={styles.historyDate}>
+                    {formatEntryTimestamp(e.ts, "dd/MM/yyyy")}
+                  </Text>
+                  <Text style={styles.historyTime}>
+                    {formatEntryTimestamp(e.ts, "HH:mm")}
+                    {provenance ? ` · ${provenance}` : ""}
+                  </Text>
+                </View>
+                <Text style={styles.historyValues} numberOfLines={2}>
+                  {valuesText || "--"}
                 </Text>
               </View>
-              <Text style={styles.historyValues}>
-                {PLAYLIST_FIELDS[selectedPlaylist]
-                  .slice(0, 3)
-                  .map((key) => {
-                    const val = (e as any)[key];
-                    if (val === undefined || val === null || val === "") return null;
-                    const unit = getUnitForField(key);
-                    const label = SHORT_LABELS[key] ?? FIELD_BY_KEY[key]?.label ?? key;
-                    return `${label} ${val}${unit ? unit : ""}`;
-                  })
-                  .filter(Boolean)
-                  .join(" · ") || "--"}
-              </Text>
-            </View>
-          ))}
-        </View>
-      </Card>
+            );
+          })}
+        </Card>
+      </View>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
+  section: { gap: 10 },
   historyCard: {
-    borderRadius: 16,
+    borderRadius: theme.radius.lg,
     padding: 14,
-  },
-  sectionTitle: {
-    color: palette.text,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  sectionSub: {
-    color: palette.sub,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  historyHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-    marginBottom: 4,
   },
   historyRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(31, 36, 48, 0.6)",
+    borderBottomColor: palette.borderSoft,
+  },
+  historyRowLast: {
+    borderBottomWidth: 0,
+    paddingBottom: 0,
   },
   historyDate: {
     color: palette.text,
@@ -119,5 +129,7 @@ const styles = StyleSheet.create({
     color: palette.text,
     fontSize: 12,
     textAlign: "right",
+    flexShrink: 1,
+    marginLeft: 10,
   },
 });

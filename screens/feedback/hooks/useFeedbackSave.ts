@@ -8,7 +8,7 @@ import { useSessionsStore } from '../../../state/stores/useSessionsStore';
 import { useFeedbackStore } from '../../../state/stores/useFeedbackStore';
 import { applyFeedback } from '../../../state/orchestrators/applyFeedback';
 import type { InjuryRecord, Modality, SessionFeedback } from '../../../domain/types';
-import { DEFAULT_MODALITY_WEIGHTS, toRPE1to10, toRating1to5, toRating0to5 } from '../../../domain/types';
+import { DEFAULT_MODALITY_WEIGHTS } from '../../../domain/types';
 import { FEEDBACK_LIMITS } from '../../../constants/feedback';
 import { updateTrainingLoad } from '../../../engine/loadModel';
 import { showErrorWithRetry, classifyError, ErrorType, retryWithBackoff } from '../../../utils/errorHandler';
@@ -17,7 +17,7 @@ import { enqueueAction } from '../../../utils/offlineQueue';
 import { trackEvent } from '../../../services/analytics';
 import { MICROCYCLES, getPathwayById } from '../../../domain/microcycles';
 import { auth, db } from '../../../services/firebase';
-import { clamp } from '../feedbackScales';
+import { clamp, buildSessionFeedback } from '../feedbackScales';
 
 type SaveParams = {
   targetSessionId: string | undefined;
@@ -160,14 +160,7 @@ export function useFeedbackSave(params: SaveParams) {
         );
       }
 
-      const fb: SessionFeedback = {
-        rpe: toRPE1to10(rpe),
-        fatigue: toRating1to5(fatigue),
-        sleep: toRating1to5(recovery),
-        pain: toRating0to5(pain0to5),
-        createdAt: new Date().toISOString(),
-      };
-      if (durationClamped != null) fb.durationMin = durationClamped;
+      const fb: SessionFeedback = buildSessionFeedback({ rpe, fatigue, pain0to5, recovery, durationClamped });
 
       const res = await Promise.resolve(addFeedback(targetSessionId, fb));
       if (!res) {
@@ -276,14 +269,7 @@ export function useFeedbackSave(params: SaveParams) {
 
       if (appError.type === ErrorType.NETWORK) {
         const pain0to5 = clamp(pain, FEEDBACK_LIMITS.painMin ?? 0, FEEDBACK_LIMITS.painMax ?? 5);
-        const fb: SessionFeedback = {
-          rpe: toRPE1to10(rpe),
-          fatigue: toRating1to5(fatigue),
-          sleep: toRating1to5(recovery),
-          pain: toRating0to5(pain0to5),
-          createdAt: new Date().toISOString(),
-        };
-        if (durationClamped != null) fb.durationMin = durationClamped;
+        const fb: SessionFeedback = buildSessionFeedback({ rpe, fatigue, pain0to5, recovery, durationClamped });
         await enqueueAction('feedback', { sessionId: targetSessionId, feedback: fb });
         showToast({ type: 'info', title: 'Enregistré hors-ligne', message: 'Ton feedback sera synchronisé dès que tu seras reconnecté.' });
         navigation.goBack();

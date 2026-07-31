@@ -15,7 +15,8 @@ import {
 import type { CompletedSession } from "../../repositories/sessionsRepo";
 import { savePlannedSessionToFirestore } from "../../services/plannedSessionsRepo";
 import { isClubDay } from "../../utils/dateHelpers";
-import { normalizeSessionsFromFirestore } from "./syncHelpers";
+import { normalizeSessionsFromFirestore, reconcileMicrocycleSessionIndex } from "./syncHelpers";
+import { mapIncomingPlannedSessions, mergePlannedIntoLocalSessions } from "./plannedMergeHelpers";
 import {
   buildCompletedSessionFirestorePayload,
   resolvePlannedPersistGuardrails,
@@ -30,7 +31,6 @@ import { useDebugStore } from "./useDebugStore";
 import { useFeedbackStore } from "./useFeedbackStore";
 import type { SyncState, ExternalState } from "./types";
 import type { PersistPlannedPayload } from "./types";
-import type { Session } from "../../domain/types";
 import { createMigratedStorage } from "./storage";
 import { onStoreHydrated } from "../orchestrators/rehydrate";
 import { userProfileSchema, logValidationIssues } from "../../schemas/firestoreSchemas";
@@ -214,6 +214,23 @@ export const useSyncStore = create<SyncState>()(
                 useSessionsStore.getState().setActivePathway(pathwayId, pathwayIndex);
               }
 
+              // AUDIT P1-4 : relire microcycleSessionIndex (avant : write-only →
+              // réinstallation / nouveau device = progression cycle retombée à
+              // 0/12). Lu APRÈS la synchro du goal ci-dessus : un changement de
+              // cycle distant remet d'abord l'index local à 0 (setMicrocycleGoal),
+              // puis l'index distant du nouveau cycle s'applique proprement.
+              // max(local, distant) : le doc profil peut retarder, on ne
+              // rétrograde jamais une progression locale plus avancée
+              // (cf. reconcileMicrocycleSessionIndex).
+              const localMicroIdx = useSessionsStore.getState().microcycleSessionIndex;
+              const reconciledMicroIdx = reconcileMicrocycleSessionIndex(
+                localMicroIdx,
+                data.microcycleSessionIndex
+              );
+              if (reconciledMicroIdx != null && reconciledMicroIdx !== localMicroIdx) {
+                useSessionsStore.getState().setMicrocycleSessionIndex(reconciledMicroIdx);
+              }
+
               const autoExternalConfig: ExternalState["autoExternalConfig"] = {
                 club:
                   typeof data.clubTypicalRPE === "number" && typeof data.clubTypicalDurationMin === "number"
@@ -231,7 +248,12 @@ export const useSyncStore = create<SyncState>()(
                 matchDay,
                 autoExternalConfig,
                 ageCategory: data.ageCategory ?? null,
+                clubTrainingsPerWeek: typeof data.clubTrainingsPerWeek === "number" ? data.clubTrainingsPerWeek : null,
+                matchesPerWeek: typeof data.matchesPerWeek === "number" ? data.matchesPerWeek : null,
                 targetFksSessionsPerWeek: data.targetFksSessionsPerWeek ?? null,
+                gymEquipment: Array.isArray(data.gymEquipment) ? data.gymEquipment : [],
+                homeEquipment: Array.isArray(data.homeEquipment) ? data.homeEquipment : [],
+                hasGymAccess: data.hasGymAccess ?? null,
               });
             },
             (err: unknown) => {
@@ -261,51 +283,16 @@ export const useSyncStore = create<SyncState>()(
 
           const unsubPlanned = watchPlannedSessions(user.uid, (list) => {
             if (!_active) return;
+            // AUDIT P0-1 : logique extraite en helpers PURS (plannedMergeHelpers)
+            // pour être testable — règle d'or : une séance locale complétée
+            // n'est JAMAIS écartée par ce watcher, et seuls les docs encore
+            // `status: 'planned'` (ou sans status, compat) redescendent.
             const today = toDateKey(todayISO());
+            const incoming = mapIncomingPlannedSessions(list, today);
 
-            const incoming = (list ?? [])
-              .filter((p) => {
-                const dayKey = toDateKey((p.date ?? "").toString());
-                return dayKey >= today;
-              })
-              .map((p): Session => ({
-                id: p.id,
-                date: p.date,
-                dateISO: p.date,
-                focus: p.focus as Session["focus"],
-                phase: p.phase,
-                intensity: p.intensity,
-                volumeScore: p.plannedLoad ?? 0,
-                exercises: (p.exercises ?? []) as Session["exercises"],
-                completed: false,
-                aiV2: p.ai as Record<string, unknown> | undefined,
-              }));
-
-            const incomingIds = new Set(incoming.map((p) => p.id));
-
-            useSessionsStore.setState((state) => {
-              const local = state.sessions ?? [];
-              const completedLocalIds = new Set(
-                local.filter((s) => s.completed).map((s) => s.id)
-              );
-              const completedDayKeys = new Set(
-                local
-                  .filter((s) => s.completed)
-                  .map((s) => toDateKey((s.dateISO ?? s.date ?? "").toString()))
-                  .filter(Boolean)
-              );
-
-              const planned = incoming
-                .filter((p) => !completedLocalIds.has(p.id))
-                .filter((p) => {
-                  const dayKey = toDateKey((p.dateISO ?? "").toString());
-                  return !completedDayKeys.has(dayKey);
-                });
-
-              const plannedIds = new Set(planned.map((p) => p.id));
-              const nonPlanned = local.filter((s) => !plannedIds.has(s.id) && !incomingIds.has(s.id));
-              return { sessions: [...planned, ...nonPlanned] };
-            });
+            useSessionsStore.setState((state) => ({
+              sessions: mergePlannedIntoLocalSessions(state.sessions ?? [], incoming),
+            }));
           });
 
           // Stockage dual : module-level (race-proof) + Zustand state (backward compat)

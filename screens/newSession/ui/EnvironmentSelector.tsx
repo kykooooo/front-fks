@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { palette } from "../theme";
 import type { EnvironmentSelection } from "../types";
-import { MICROCYCLES, isMicrocycleId, type MicrocycleId } from "../../../domain/microcycles";
+import { MICROCYCLES, isMicrocycleId, getRecommendedLocation, type MicrocycleId } from "../../../domain/microcycles";
 
 type Props = {
   environment: EnvironmentSelection;
@@ -64,6 +64,8 @@ export function EnvironmentSelector({
   const cycle = currentCycleId && isMicrocycleId(currentCycleId)
     ? MICROCYCLES[currentCycleId]
     : null;
+  // Lieu conseillé pour le cycle actif (non bloquant, purement informatif).
+  const recommended = cycle ? getRecommendedLocation(cycle.id) : null;
 
   const toggle = (key: "gym" | "pitch" | "home") => {
     if (!allowedSet.has(key)) return;
@@ -96,6 +98,7 @@ export function EnvironmentSelector({
         {filteredLocations.map((location) => {
           const selected = environment.includes(location.id);
           const cycleDescription = cycle?.locationDescriptions?.[location.id];
+          const isRecommended = recommended?.location === location.id;
 
           return (
             <TouchableOpacity
@@ -138,6 +141,21 @@ export function EnvironmentSelector({
                   )}
                 </View>
               </View>
+
+              {/* Recommandation de lieu selon le cycle actif (non bloquant) */}
+              {isRecommended && (
+                <View style={styles.recommendedRow}>
+                  <View style={[styles.recommendedBadge, { backgroundColor: location.bgColor }]}>
+                    <Ionicons name="star" size={11} color={location.color} />
+                    <Text style={[styles.recommendedBadgeText, { color: location.color }]}>
+                      Recommandé
+                    </Text>
+                  </View>
+                  {recommended?.reason && (
+                    <Text style={styles.recommendedReason}>{recommended.reason}</Text>
+                  )}
+                </View>
+              )}
 
               {/* Cycle-specific focus (if available) */}
               {cycleDescription && (
@@ -262,6 +280,29 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",
+  },
+  recommendedRow: {
+    gap: 4,
+  },
+  recommendedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  recommendedBadgeText: {
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  recommendedReason: {
+    fontSize: 12,
+    color: palette.sub,
+    lineHeight: 16,
   },
   focusBadge: {
     flexDirection: "row",

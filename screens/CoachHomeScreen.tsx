@@ -267,6 +267,7 @@ export default function CoachHomeScreen() {
 
   const teamLabel = getTeamPlayerLabel(teamGender);
   const memberWord = teamGender === "female" ? "joueuse" : teamGender === "male" ? "joueur" : "membre";
+  const memberArticle = teamGender === "female" ? "la" : "le";
   // Effectif = projections prêtes + projections en cours de synchronisation (même calcul que l'onglet Effectif).
   const rosterCount = summaries.length + summariesPending;
 
@@ -482,7 +483,7 @@ export default function CoachHomeScreen() {
     return (
     <>
       <Text style={styles.sectionTitle}>Séances générées</Text>
-      <Text style={styles.weekExplain}>FKS génère la séance au moment où la joueuse la lance.</Text>
+      <Text style={styles.weekExplain}>FKS génère la séance au moment où {memberArticle} {memberWord} la lance.</Text>
       <Card variant="soft" style={styles.summaryCard}>
         <View style={styles.summaryRow}>
           <SummaryStat value={summary.planned} label="Prêtes" icon="checkmark-done-outline" color={palette.accent} />
@@ -677,6 +678,34 @@ export default function CoachHomeScreen() {
       </View>
 
       {tab === "semaine" ? renderSemaine() : tab === "seances" ? renderSeances() : renderEffectif()}
+
+      {/* Accès légal + suppression de compte — invisible ailleurs dans l'espace
+          coach (pas de tab bar, pas d'écran Paramètres coach dédié pour l'instant). */}
+      <View style={styles.legalFooter}>
+        <TouchableOpacity
+          onPress={() => { haptics.impactLight(); navigation.navigate("LegalNotice"); }}
+          hitSlop={8}
+          accessibilityLabel="Mentions légales"
+        >
+          <Text style={styles.legalLink}>Mentions légales</Text>
+        </TouchableOpacity>
+        <Text style={styles.legalDot}>·</Text>
+        <TouchableOpacity
+          onPress={() => { haptics.impactLight(); navigation.navigate("PrivacyPolicy"); }}
+          hitSlop={8}
+          accessibilityLabel="Politique de confidentialité"
+        >
+          <Text style={styles.legalLink}>Confidentialité</Text>
+        </TouchableOpacity>
+        <Text style={styles.legalDot}>·</Text>
+        <TouchableOpacity
+          onPress={() => { haptics.impactLight(); navigation.navigate("DeleteAccount"); }}
+          hitSlop={8}
+          accessibilityLabel="Supprimer mon compte"
+        >
+          <Text style={[styles.legalLink, styles.legalLinkDanger]}>Supprimer mon compte</Text>
+        </TouchableOpacity>
+      </View>
     </ScreenContainer>
   );
 }
@@ -1140,6 +1169,28 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     color: palette.sub,
     textAlign: "left",
+  },
+  // ── Pied de page : accès légal + suppression de compte ──
+  legalFooter: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 20,
+    paddingBottom: 8,
+  },
+  legalLink: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: palette.sub,
+  },
+  legalLinkDanger: {
+    color: palette.danger,
+  },
+  legalDot: {
+    fontSize: 12,
+    color: palette.muted,
   },
   // ── Bandeau "projections en cours de synchronisation" (neutre, sans UID) ──
   pendingCard: {

@@ -15,7 +15,10 @@ import {
   Platform,
   KeyboardAvoidingView,
   BackHandler,
+  Modal,
+  Pressable,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Screen } from "../components/ui/Screen";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,14 +30,35 @@ import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { LoadingOverlay } from "../components/ui/LoadingOverlay";
 import { findClubByInviteCode, normalizeInviteCode, setClubMembership } from "../repositories/clubsRepo";
 import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
-import { AGE_CATEGORIES } from "../domain/types";
+// Catégories proposées au sélecteur : U13 retirée (décision produit 2026-07, cf.
+// domain/types.ts). Un profil déjà en 'U13' n'apparaît sélectionné dans aucun
+// chip ci-dessous → l'étape 0 le bloque tant qu'il n'a pas repick une catégorie.
+import { SELECTABLE_AGE_CATEGORIES } from "../domain/types";
+// Consentement parental RGPD (< 15 ans). Sa liste interne garde "U13" en
+// défense en profondeur (profil legacy U13 qui repick) : code mort inoffensif
+// tant que U13 n'est pas sélectionnable, voulu — cf. domain/parentalConsent.ts.
+import {
+  requiresParentalConsent,
+  isParentalConsentBlocking,
+  consentCheckedAfterCategoryChange,
+  isStoredParentalConsent,
+  buildParentalConsent,
+  type ParentalConsent,
+} from "../domain/parentalConsent";
+import { PRIVACY_POLICY } from "../utils/legalContent";
 import { recommendMicrocycle } from "../domain/recommendMicrocycle";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { showToast } from "../utils/toast";
 import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
+import { trackEvent } from "../services/analytics";
 
-const TOTAL_STEPS = 5;
+// 5 → 4 étapes (mai 2026) : le matériel (29 cases, ≥1 obligatoire) sort du
+// setup — cf. docs/onboarding-design.md §4.6/§4.3 (design validé par le
+// fondateur). Le lieu + le matériel se choisissent à la première génération
+// (NewSessionScreen), là où l'app a déjà les bons défauts. L'accès salle
+// reste demandé ici : il nourrit le contexte IA + la reco de lieu.
+const TOTAL_STEPS = 4;
 const palette = theme.colors;
 
 /* ─── Steps config ─── */
@@ -43,7 +67,6 @@ const STEPS: { label: string; icon: keyof typeof Ionicons.glyphMap; subtitle: st
   { label: "Objectif", icon: "flag-outline", subtitle: "Quel est ton but ?" },
   { label: "Club", icon: "people-outline", subtitle: "Tes entraînements & matchs" },
   { label: "Salle", icon: "barbell-outline", subtitle: "Ton accès salle" },
-  { label: "Matériel", icon: "home-outline", subtitle: "Ton équipement hors salle" },
 ];
 
 /* ─── Constants ─── */
@@ -73,41 +96,6 @@ const OBJECTIVE_DISPLAY_LABELS: Partial<Record<(typeof objectives)[number], stri
   "Gagner en vitesse / explosivite": "Gagner en vitesse / explosivité",
   "Reprendre apres une blessure": "Reprendre après une blessure",
 };
-
-const gymEquipmentOptions = [
-  { id: "barbell", label: "Barre + poids libres" },
-  { id: "squat_rack", label: "Rack à squat" },
-  { id: "bench", label: "Banc de musculation" },
-  { id: "dumbbells_light", label: "Haltères légers (≤ 10 kg)" },
-  { id: "dumbbells_medium", label: "Haltères moyens (10-25 kg)" },
-  { id: "dumbbells_heavy", label: "Haltères lourds (≥ 25 kg)" },
-  { id: "kettlebell", label: "Kettlebells" },
-  { id: "leg_press", label: "Presse (leg press)" },
-  { id: "cable_machine", label: "Poulies / câble" },
-  { id: "smith_machine", label: "Smith machine" },
-  { id: "pullup_bar", label: "Barre de tractions" },
-  { id: "box_plyo", label: "Box plyo" },
-  { id: "bosu", label: "BOSU" },
-  { id: "foam_roller", label: "Foam roller / rouleau" },
-  { id: "yoga_mat", label: "Tapis de sol" },
-];
-
-const homeEquipmentOptions = [
-  { id: "field", label: "Terrain herbe / synthé" },
-  { id: "street_area", label: "City / bitume / parking" },
-  { id: "indoor_small", label: "Petit espace intérieur" },
-  { id: "cones", label: "Cônes" },
-  { id: "flat_markers", label: "Plots plats" },
-  { id: "speed_ladder", label: "Échelle de rythme" },
-  { id: "mini_hurdles", label: "Petites haies" },
-  { id: "minibands", label: "Mini-bands" },
-  { id: "long_bands", label: "Élastiques longs" },
-  { id: "home_dumbbells", label: "Haltères (chez toi)" },
-  { id: "home_kettlebell", label: "Kettlebell (chez toi)" },
-  { id: "sandbag", label: "Sac de sable / sandbag" },
-  { id: "home_foam_roller", label: "Foam roller (chez toi)" },
-  { id: "home_yoga_mat", label: "Tapis de sol (chez toi)" },
-];
 
 const daysOfWeek = [
   { id: "mon", label: "Lun" }, { id: "tue", label: "Mar" }, { id: "wed", label: "Mer" },
@@ -146,6 +134,12 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   const [clubInviteCode, setClubInviteCode] = useState("");
   const [position, setPosition] = useState("");
   const [ageCategory, setAgeCategory] = useState("");
+  // Consentement parental (RGPD < 15 ans) : case cochée dans l'UI + modal politique.
+  const [parentalConsentChecked, setParentalConsentChecked] = useState(false);
+  const [privacyVisible, setPrivacyVisible] = useState(false);
+  // Preuve déjà stockée en Firestore (prefill) : réutilisée au save pour ne pas
+  // réécrire acceptedAt à chaque édition du profil (la preuve d'origine prime).
+  const storedParentalConsentRef = useRef<ParentalConsent | null>(null);
   const [level, setLevel] = useState("");
   const [dominantFoot, setDominantFoot] = useState("");
   const [mainObjective, setMainObjective] = useState("");
@@ -156,6 +150,11 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   const [clubTrainingDays, setClubTrainingDays] = useState<string[]>([]);
   const [matchDays, setMatchDays] = useState<string[]>([]);
   const [hasGymAccess, setHasGymAccess] = useState<"oui" | "occasionnel" | "non" | "">("");
+  // gymEquipment/homeEquipment/hasHomeEquipment : plus de grille dans le setup
+  // (docs/onboarding-design.md §4.6, "les 29 cases de matériel disparaissent").
+  // Ces états ne sont plus modifiables ici — on les garde uniquement pour
+  // repasser sans perte au save une valeur déjà en base (édition d'un profil
+  // pré-existant). Un nouveau profil part sur des défauts sûrs ([] / false).
   const [gymEquipment, setGymEquipment] = useState<string[]>([]);
   const [hasHomeEquipment, setHasHomeEquipment] = useState<"oui" | "non" | "">("");
   const [homeEquipment, setHomeEquipment] = useState<string[]>([]);
@@ -164,6 +163,8 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
   const shake = useRef(new Animated.Value(0)).current;
   const stepFade = useRef(new Animated.Value(1)).current;
+  // Départ du chrono setup (funnel analytics), consommé par profile_completed.
+  const setupStartRef = useRef(Date.now());
 
   const cycleId = isMicrocycleId(activeCycleGoal) ? activeCycleGoal : null;
   const cycleLabel = cycleId ? MICROCYCLES[cycleId].label : null;
@@ -186,6 +187,18 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       if (typeof d.clubId === "string") setClubId(d.clubId);
       if (typeof d.position === "string") setPosition(d.position);
       if (typeof d.ageCategory === "string") setAgeCategory(d.ageCategory);
+      // Consentement parental déjà donné (édition d'un profil U15 existant) :
+      // on pré-coche pour ne pas redemander, et on garde la preuve d'origine.
+      if (isStoredParentalConsent(d.parentalConsent)) {
+        storedParentalConsentRef.current = d.parentalConsent;
+        if (
+          typeof d.ageCategory === "string" &&
+          requiresParentalConsent(d.ageCategory) &&
+          d.parentalConsent.ageCategoryAtConsent === d.ageCategory
+        ) {
+          setParentalConsentChecked(true);
+        }
+      }
       if (typeof d.level === "string") setLevel(d.level);
       if (typeof d.dominantFoot === "string") setDominantFoot(d.dominantFoot);
       if (typeof d.mainObjective === "string") setMainObjective(d.mainObjective);
@@ -228,9 +241,26 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
     if (hasGymAccess === "non") setGymEquipment([]);
   }, [hasGymAccess]);
 
+  // Changement de catégorie : pas de consentement fantôme. Quitter U15 décoche ;
+  // y revenir impose de re-cocher explicitement (logique pure testée dans
+  // domain/__tests__/parentalConsent.test.ts).
+  useEffect(() => {
+    setParentalConsentChecked((cur) => consentCheckedAfterCategoryChange(ageCategory, cur));
+  }, [ageCategory]);
+
   useEffect(() => {
     if (hasHomeEquipment === "non") setHomeEquipment([]);
   }, [hasHomeEquipment]);
+
+  // Prédicat UNIQUE pour toute la surface consentement (case affichée + bouton
+  // "Suivant" désactivé). Gaté sur SELECTABLE : un profil legacy 'U13' ne voit
+  // PAS la case et son bouton reste actif → au tap, validateStep le bloque sur
+  // "Choisis ta catégorie" (le seul garde pertinent tant qu'il n'a pas repick).
+  // Sans ce gate, isParentalConsentBlocking('U13', false) désactiverait le
+  // bouton sans case visible = soft-lock.
+  const showParentalConsent =
+    (SELECTABLE_AGE_CATEGORIES as readonly string[]).includes(ageCategory) &&
+    requiresParentalConsent(ageCategory);
 
   /* ─── Helpers ─── */
   const fail = (title: string, message?: string) => {
@@ -257,7 +287,14 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       case 0:
         if (!firstName.trim()) { fail("Champs manquants", "Merci d'indiquer ton prénom."); return false; }
         if (!positions.includes(position as any)) { fail("Champs manquants", "Choisis ton poste."); return false; }
-        if (!AGE_CATEGORIES.includes(ageCategory as any)) { fail("Champs manquants", "Choisis ta catégorie."); return false; }
+        // Chemin de décision unique, ordonné : (1) catégorie sélectionnable
+        // (un profil legacy U13 échoue ici → il doit repick), (2) seulement
+        // ensuite, consentement parental si la catégorie choisie est < 15 ans.
+        if (!SELECTABLE_AGE_CATEGORIES.includes(ageCategory as any)) { fail("Champs manquants", "Choisis ta catégorie."); return false; }
+        if (isParentalConsentBlocking(ageCategory, parentalConsentChecked)) {
+          fail("Accord parental requis", "Coche la case pour confirmer l'accord de ton parent ou responsable légal.");
+          return false;
+        }
         if (!levels.includes(level as any)) { fail("Champs manquants", "Indique ton niveau."); return false; }
         if (!dominantFeet.includes(dominantFoot as any)) { fail("Champs manquants", "Choisis ton pied fort."); return false; }
         return true;
@@ -277,12 +314,9 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
         return true;
       }
       case 3:
+        // Plus de validation matériel (docs/onboarding-design.md §4.6) : le
+        // matériel se choisit à la première génération, jamais un blocage ici.
         if (!hasGymAccess) { fail("Champs manquants", "Indique si tu as accès à une salle."); return false; }
-        if (hasGymAccess !== "non" && gymEquipment.length === 0) { fail("Champs manquants", "Sélectionne au moins un matériel en salle."); return false; }
-        return true;
-      case 4:
-        if (!hasHomeEquipment) { fail("Champs manquants", "Indique si tu as du matériel hors salle."); return false; }
-        if (hasHomeEquipment === "oui" && homeEquipment.length === 0) { fail("Champs manquants", "Sélectionne au moins un matériel."); return false; }
         return true;
       default:
         return true;
@@ -291,6 +325,9 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
   const goNext = () => {
     if (!validateStep()) return;
+    if (!isEditMode) {
+      trackEvent("profile_step_completed", { step: step + 1, stepLabel: STEPS[step].label, totalSteps: TOTAL_STEPS });
+    }
     haptics.impactMedium();
     if (step < TOTAL_STEPS - 1) animateTransition(step + 1);
   };
@@ -327,6 +364,9 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   /* ─── Save ─── */
   const handleSave = async () => {
     if (!validateStep()) return;
+    if (!isEditMode) {
+      trackEvent("profile_step_completed", { step: step + 1, stepLabel: STEPS[step].label, totalSteps: TOTAL_STEPS });
+    }
     const targetFksSessions = Number(targetFksSessionsPerWeek);
     const trainings = Number(clubTrainingsPerWeek);
     const matches = Number(matchesPerWeek);
@@ -347,6 +387,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       let resolvedClubId: string | null = clubId?.trim() ? clubId.trim() : null;
       if (normalizedInvite) {
         const club = await findClubByInviteCode(normalizedInvite);
+        trackEvent("club_code_checked", { valid: Boolean(club) });
         if (!club) {
           fail("Code club invalide", "Aucun club ne correspond à ce code.");
           // Retour automatique à l'étape du code club (avec scroll top via animateTransition)
@@ -355,7 +396,8 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
           return;
         }
         resolvedClubId = club.id;
-        await setClubMembership({ clubId: club.id, uid: user.uid, role: "player" });
+        // inviteCode = preuve d'invitation exigée par les rules (anti self-join).
+        await setClubMembership({ clubId: club.id, uid: user.uid, role: "player", inviteCode: club.inviteCode });
       }
 
       await setDoc(doc(db, "users", user.uid), {
@@ -369,9 +411,18 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
         hasClubTrainings, clubTrainingDays,
         matchDay: matchDays[0] ?? null, matchDays,
         hasGymAccess: hasGymAccess === "oui" ? "regular" : hasGymAccess === "occasionnel" ? "occasional" : "none",
+        // Repasse tel quel (pas d'UI ici pour les modifier) : [] / false pour
+        // un nouveau profil, valeur prefillée inchangée pour un profil édité
+        // — jamais undefined, jamais de perte silencieuse de données existantes.
         gymEquipment,
         hasHomeEquipment: hasHomeEquipment === "oui",
         homeEquipment,
+        // Preuve de consentement parental (RGPD < 15 ans). Hors catégories
+        // mineures, le champ n'est pas touché : une preuve historique éventuelle
+        // reste en base (accountability), merge:true ne l'efface pas.
+        ...(requiresParentalConsent(ageCategory)
+          ? { parentalConsent: buildParentalConsent(ageCategory, storedParentalConsentRef.current) }
+          : {}),
         profileCompleted: true,
         ...(autoCycleId
           ? {
@@ -387,7 +438,16 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
         updatedAt: serverTimestamp(),
       }, { merge: true });
 
-      if (autoCycleId) setMicrocycleGoal(autoCycleId);
+      if (autoCycleId) {
+        setMicrocycleGoal(autoCycleId);
+        trackEvent("cycle_reco_shown", { cycleId: autoCycleId });
+      }
+
+      if (!isEditMode) {
+        trackEvent("profile_completed", {
+          durationSec: Math.round((Date.now() - setupStartRef.current) / 1000),
+        });
+      }
 
       haptics.success();
       showToast({ type: "success", title: "Profil enregistré", message: "Configuration terminée !" });
@@ -467,10 +527,43 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
             <Text style={styles.fieldLabel}>Catégorie</Text>
             <View style={styles.chipRow}>
-              {AGE_CATEGORIES.map((c) => (
+              {SELECTABLE_AGE_CATEGORIES.map((c) => (
                 <Chip key={c} label={c} selected={ageCategory === c} onPress={() => setAgeCategory(c)} />
               ))}
             </View>
+
+            {/* Consentement parental — affiché uniquement pour une catégorie
+                 SÉLECTIONNABLE < 15 ans (RGPD). Un legacy U13 ne voit rien ici
+                 tant qu'il n'a pas repick (cf. showParentalConsent). */}
+            {showParentalConsent && (
+              <>
+                <Text style={styles.fieldLabel}>Accord parental</Text>
+                <Text style={styles.consentHint}>
+                  Avant 15 ans, l'accord de ton parent ou responsable légal est obligatoire pour utiliser FKS.
+                </Text>
+                <View style={styles.consentBox}>
+                  <Pressable
+                    onPress={() => { hapticSelect(); setParentalConsentChecked(!parentalConsentChecked); }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: parentalConsentChecked }}
+                  >
+                    <Ionicons
+                      name={parentalConsentChecked ? "checkbox" : "square-outline"}
+                      size={22}
+                      color={parentalConsentChecked ? palette.accent : palette.muted}
+                    />
+                  </Pressable>
+                  <Text style={styles.consentText}>
+                    Je confirme que mon parent ou responsable légal a lu et accepté la{" "}
+                    <Text style={styles.consentLink} onPress={() => setPrivacyVisible(true)}>
+                      politique de confidentialité
+                    </Text>{" "}
+                    de FKS.
+                  </Text>
+                </View>
+              </>
+            )}
 
             <Text style={styles.fieldLabel}>Niveau</Text>
             {levels.map((l) => (
@@ -590,36 +683,12 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
               <Chip label="Non" selected={hasGymAccess === "non"} onPress={() => setHasGymAccess("non")} />
             </View>
 
-            {hasGymAccess !== "" && hasGymAccess !== "non" && (
-              <>
-                <Text style={styles.fieldLabel}>Matériel disponible en salle</Text>
-                {gymEquipmentOptions.map((o) => (
-                  <Choice key={o.id} label={o.label} selected={gymEquipment.includes(o.id)}
-                    onPress={() => toggleInList(o.id, gymEquipment, setGymEquipment)} />
-                ))}
-              </>
-            )}
-          </>
-        );
-
-      case 4:
-        return (
-          <>
-            <Text style={styles.fieldLabel}>As-tu du matériel chez toi / sur le terrain ?</Text>
-            <View style={styles.chipRow}>
-              <Chip label="Oui" selected={hasHomeEquipment === "oui"} onPress={() => setHasHomeEquipment("oui")} />
-              <Chip label="Non" selected={hasHomeEquipment === "non"} onPress={() => setHasHomeEquipment("non")} />
-            </View>
-
-            {hasHomeEquipment === "oui" && (
-              <>
-                <Text style={styles.fieldLabel}>Matériel hors salle</Text>
-                {homeEquipmentOptions.map((o) => (
-                  <Choice key={o.id} label={o.label} selected={homeEquipment.includes(o.id)}
-                    onPress={() => toggleInList(o.id, homeEquipment, setHomeEquipment)} />
-                ))}
-              </>
-            )}
+            {/* Plus de grille de matériel dans le setup : elle se choisit à la
+                première génération (NewSessionScreen), avec les bons défauts
+                selon le lieu. */}
+            <Text style={styles.hintText}>
+              Le matériel exact, tu le choisiras au moment de ta séance.
+            </Text>
           </>
         );
 
@@ -630,6 +699,12 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
   const isLastStep = step === TOTAL_STEPS - 1;
   const progressPercent = ((step + 1) / TOTAL_STEPS) * 100;
+  // RGPD < 15 ans : "Suivant" désactivé tant que la case parentale n'est pas
+  // cochée à l'étape catégorie. Toujours false pour U17/U18/Senior — et pour un
+  // legacy U13 (showParentalConsent=false : la case est cachée, le désactiver
+  // le soft-lockerait ; c'est validateStep qui le bloque sur la catégorie).
+  const consentBlocksNext =
+    step === 0 && showParentalConsent && isParentalConsentBlocking(ageCategory, parentalConsentChecked);
 
   return (
     <Screen style={styles.safeArea}>
@@ -710,9 +785,9 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                 )}
 
                 <TouchableOpacity
-                  style={[styles.nextButton, loading && { opacity: 0.4 }]}
+                  style={[styles.nextButton, (loading || consentBlocksNext) && { opacity: 0.4 }]}
                   onPress={isLastStep ? handleSave : goNext}
-                  disabled={loading}
+                  disabled={loading || consentBlocksNext}
                   activeOpacity={0.85}
                 >
                   <LinearGradient
@@ -736,6 +811,42 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
             </View>
           </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
+
+        {/* Politique de confidentialité en modal locale : la route "PrivacyPolicy"
+             n'est pas enregistrée dans le stack onboarding (profil non complété),
+             on affiche donc le même contenu (utils/legalContent) sans navigation. */}
+        <Modal
+          visible={privacyVisible}
+          animationType="slide"
+          onRequestClose={() => setPrivacyVisible(false)}
+        >
+          <SafeAreaView style={styles.privacyModalSafe}>
+            <View style={styles.privacyModalHeader}>
+              <Text style={styles.privacyModalTitle}>Confidentialité</Text>
+              <TouchableOpacity
+                onPress={() => setPrivacyVisible(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Fermer"
+              >
+                <Ionicons name="close" size={24} color={palette.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={styles.privacyModalContent} showsVerticalScrollIndicator={false}>
+              {PRIVACY_POLICY.map((section) => (
+                <View key={section.title} style={styles.privacySection}>
+                  <Text style={styles.privacySectionTitle}>{section.title}</Text>
+                  {section.body.map((line, idx) => (
+                    <Text key={`${section.title}_${idx}`} style={styles.privacyLine}>
+                      {line}
+                    </Text>
+                  ))}
+                </View>
+              ))}
+            </ScrollView>
+          </SafeAreaView>
+        </Modal>
 
         <LoadingOverlay
           visible={loading}
@@ -985,6 +1096,73 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 8,
     fontStyle: "italic",
+  },
+
+  /* Consentement parental (RGPD < 15 ans) */
+  consentHint: {
+    color: palette.sub,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  consentBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    padding: 12,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.cardSoft,
+  },
+  consentText: {
+    flex: 1,
+    color: palette.sub,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  consentLink: {
+    color: palette.accent,
+    fontWeight: "700",
+    textDecorationLine: "underline",
+  },
+
+  /* Modal politique de confidentialité */
+  privacyModalSafe: {
+    flex: 1,
+    backgroundColor: palette.bg,
+  },
+  privacyModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: palette.borderSoft,
+  },
+  privacyModalTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: palette.text,
+  },
+  privacyModalContent: {
+    padding: 20,
+    paddingBottom: 40,
+    gap: 16,
+  },
+  privacySection: {
+    gap: 6,
+  },
+  privacySectionTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: palette.text,
+  },
+  privacyLine: {
+    fontSize: 13,
+    color: palette.sub,
+    lineHeight: 19,
   },
 
   /* Lien coach */

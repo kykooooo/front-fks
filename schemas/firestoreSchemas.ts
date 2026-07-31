@@ -49,6 +49,13 @@ export const userProfileSchema = z.object({
   // Catégorie d'âge (FKS Club) — optionnelle pour compat anciens profils.
   // Valeur invalide → null (jamais de crash, jamais de catégorie inventée).
   ageCategory: z.enum(AGE_CATEGORIES).nullable().optional().catch(null),
+  // Preuve de consentement parental (RGPD mineurs < 15 ans, cf. domain/parentalConsent).
+  // Lecture tolérante : absent sur tous les profils existants → null, jamais d'erreur.
+  parentalConsent: z.object({
+    accepted: z.boolean().catch(false),
+    acceptedAt: z.string().nullable().optional().catch(null),
+    ageCategoryAtConsent: z.string().nullable().optional().catch(null),
+  }).nullable().optional().catch(null),
 
   // Training schedule
   clubTrainingDays: z.array(dowString).catch([]),
@@ -138,6 +145,11 @@ export const completedSessionSchema = z.object({
   plannedLoad: z.number().min(0).optional().catch(undefined),
   exercises: z.array(exerciseSchema).catch([]),
   rpe: z.number().min(1).max(10).nullable().optional().catch(null),
+  // Durée effective top-level (AUDIT P1-1) : lue en premier par
+  // estimateDurationMin pour le calcul de charge. Validée explicitement pour
+  // qu'une valeur corrompue ne contamine jamais ATL/CTL/TSB (catch → absent,
+  // le fallback feedback.durationMin prend le relais).
+  durationMin: z.number().min(0).optional().catch(undefined),
   feedback: sessionFeedbackSchema,
   ai: z.record(z.string(), z.unknown()).nullable().optional().catch(null),
   // Blueprint IA complet (output backend), garde rpeTarget pour readSessionRpeTarget.

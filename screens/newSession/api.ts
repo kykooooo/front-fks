@@ -29,9 +29,18 @@ export const buildAllowedExercisesPayload = () =>
 const SESSION_CACHE_KEY = "fks_session_cache_v1";
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-function hashContext(context: Record<string, unknown>): string {
-  // Exclure allowed_exercises (toujours identique ~20KB) et flags debug du hash
-  const { allowed_exercises, debug, debug_allow_all_exercises, ...rest } = context;
+/** Exporté pour les tests (stabilité du hash de cache). */
+export function hashContext(context: Record<string, unknown>): string {
+  // Exclure du hash : allowed_exercises (toujours identique ~20KB), flags debug,
+  // et les horloges nowISO/devNowISO — elles changent à chaque milliseconde,
+  // donc les garder rendait le cache inatteignable (chaque re-génération
+  // repayait un appel LLM alors que le contexte réel était identique).
+  const rest: Record<string, unknown> = { ...context };
+  delete rest.allowed_exercises;
+  delete rest.debug;
+  delete rest.debug_allow_all_exercises;
+  delete rest.nowISO;
+  delete rest.devNowISO;
   const str = JSON.stringify(rest);
   let h = 5381;
   for (let i = 0; i < str.length; i++) {
@@ -105,11 +114,21 @@ export function prepareBackendContext(
   selectedEquipment: string[],
   environment: string[]
 ) {
-  const normalizedEquipment = Array.from(
-    new Set(
-      selectedEquipment.flatMap((id) => [id])
-    )
-  );
+  // Salle : l'UI promet « Équipement standard inclus par défaut » (haltères,
+  // barres, bancs, machines) — le payload doit donc TOUJOURS porter gym_full,
+  // en plus des sélections explicites. Sans lui, le backend filtre strictement
+  // sur la sélection (ex: ["barbell"] seule) et la séance salle est appauvrie
+  // en silence. Côté backend, gym_full n'inclut PAS medball (zéro ballon).
+  const withGymDefaults = environment.includes("gym")
+    ? [...selectedEquipment, "gym_full", "bodyweight"]
+    : selectedEquipment;
+  // "Sans matériel" (terrain/maison sans coche) est un choix assumé : le
+  // moteur gère nativement le poids du corps, donc le payload ne doit
+  // jamais partir avec une liste vide — cf. EquipmentSelector (plus aucun
+  // blocage "Matériel requis" côté UI).
+  const normalizedEquipment = withGymDefaults.length > 0
+    ? Array.from(new Set(withGymDefaults))
+    : ["bodyweight"];
   const resolvedGoal = ctx.profile?.goal ?? ctx.goal ?? "fondation";
   const constraints = ctx.constraints as Record<string, unknown> | undefined;
   const profile = ctx.profile as Record<string, unknown>;
@@ -165,7 +184,8 @@ export function prepareBackendContext(
 }
 
 export async function fetchV2(
-  context: Record<string, unknown>
+  context: Record<string, unknown>,
+  options?: { onRetry?: (reason: "timeout" | "network") => void }
 ): Promise<{ v2: FKS_NextSessionV2; debug: Record<string, unknown> }> {
   const auth = getAuth();
   const userId = auth.currentUser?.uid ?? "test-user-dev";
@@ -187,8 +207,14 @@ export async function fetchV2(
   try {
     r = await safeFetch(url, fetchOptions, 90000);
   } catch (firstError: any) {
-    // Si timeout (cold start probable), retry une fois
-    if (firstError.code === "ETIMEDOUT") {
+    // Retry une fois sur timeout OU échec réseau : un cold start Render peut
+    // dépasser la limite système iOS (~60s) AVANT notre AbortController (90s),
+    // ce qui sort en "Network request failed"/"Failed to fetch" plutôt qu'en
+    // ETIMEDOUT — le 2e essai tombe sur un serveur déjà réveillé.
+    const isTimeout = firstError.code === "ETIMEDOUT";
+    const isNetwork = firstError.code === "NETWORK_ERROR";
+    if (isTimeout || isNetwork) {
+      options?.onRetry?.(isTimeout ? "timeout" : "network");
       r = await safeFetch(url, fetchOptions, 90000);
     } else {
       throw firstError;

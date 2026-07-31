@@ -1,35 +1,34 @@
 // screens/tests/components/OverviewCard.tsx
+// "Dernière performance" — historique unifié (Phase C) : chaque champ affiche
+// sa PROPRE dernière valeur connue et sa propre date, tous cycles/entrées
+// confondus (avant : un seul instantané `lastEntry`, filtré par playlist —
+// changer de cycle "cachait" les valeurs des autres champs). Le delta (vs.
+// test précédent) reste calculé par champ, indépendamment des autres.
 import React from "react";
 import { View, Text, StyleSheet, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
-import { formatEntryTimestamp, getUnitForField, isBetterDelta } from "../testHelpers";
-import { getGroupConfig, FIELD_BY_KEY, type TestEntry, type FieldKey, type FieldConfig } from "../testConfig";
+import { Badge } from "../../../components/ui/Badge";
+import { SectionHeader } from "../../../components/ui/SectionHeader";
+import { formatEntryTimestamp, formatEntryValue, getUnitForField, isBetterDelta, shouldHideUnitSuffix, type FieldSample } from "../testHelpers";
+import { getGroupConfig, type FieldKey, type FieldConfig } from "../testConfig";
 
 const palette = theme.colors;
 
 type GroupedField = { title: string; fields: FieldConfig[] };
 
 type Props = {
-  lastEntry: TestEntry;
-  lastTwo: TestEntry[];
+  latestTs: number;
+  latestNotes: string | null;
+  hasComparison: boolean;
+  fieldSamples: Partial<Record<FieldKey, FieldSample[]>>;
   groupedFields: GroupedField[];
   cardAnim: Animated.Value;
 };
 
-export function OverviewCard({ lastEntry, lastTwo, groupedFields, cardAnim }: Props) {
-  const renderDelta = (key: FieldKey) => {
-    if (lastTwo.length < 2) return null;
-    const curr = lastTwo[0]?.[key];
-    const prev = lastTwo[1]?.[key];
-    if (curr === undefined || prev === undefined) return null;
-
-    const currNum = Number(curr);
-    const prevNum = Number(prev);
-    if (!Number.isFinite(currNum) || !Number.isFinite(prevNum)) return null;
-
+export function OverviewCard({ latestTs, latestNotes, hasComparison, fieldSamples, groupedFields, cardAnim }: Props) {
+  const renderDelta = (key: FieldKey, currNum: number, prevNum: number) => {
     const delta = currNum - prevNum;
     if (delta === 0) return null;
 
@@ -44,7 +43,7 @@ export function OverviewCard({ lastEntry, lastTwo, groupedFields, cardAnim }: Pr
           {arrow} {sign}
           {Math.abs(delta).toFixed(2)} {unit}
         </Text>
-        <Text style={styles.deltaSub}>vs. dernier test</Text>
+        <Text style={styles.deltaSub}>vs. précédent</Text>
       </View>
     );
   };
@@ -63,128 +62,83 @@ export function OverviewCard({ lastEntry, lastTwo, groupedFields, cardAnim }: Pr
         ],
       }}
     >
-      <Card variant="surface" style={styles.overviewCard}>
-        <View style={styles.overviewHeaderRow}>
-          <View style={styles.overviewTitleRow}>
-            <Ionicons name="trophy-outline" size={16} color="#f59e0b" />
-            <View>
-              <Text style={styles.sectionTitle}>Dernière performance</Text>
-              <Text style={styles.sectionSub}>
-                {lastTwo.length > 1
-                  ? "Comparée au test précédent"
-                  : "Premier test enregistré"}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.overviewPill}>
-            <Text style={styles.overviewPillLabel}>Test</Text>
-            <Text style={styles.overviewPillDate}>
-              {formatEntryTimestamp(lastEntry.ts, "dd/MM")}
-            </Text>
-          </View>
-        </View>
+      <View style={styles.section}>
+        <SectionHeader
+          title="Dernière performance"
+          right={<Badge label={formatEntryTimestamp(latestTs, "dd/MM")} />}
+        />
+        <Card variant="surface" style={styles.overviewCard}>
+          <Text style={styles.overviewCaption}>
+            {hasComparison ? "Dernières valeurs connues, tous tests confondus" : "Premier test enregistré"}
+          </Text>
 
-        <View style={{ gap: 16, marginTop: 12 }}>
-          {groupedFields.map((group) => {
-            const cfg = getGroupConfig(group.fields[0]?.group ?? "");
-            return (
+          <View style={{ gap: 16, marginTop: 10 }}>
+            {groupedFields.map((group) => {
+              const cfg = getGroupConfig(group.fields[0]?.group ?? "");
+              return (
               <View key={group.title} style={styles.overviewGroup}>
                 <View style={styles.groupHeader}>
-                  <LinearGradient
-                    colors={cfg.colors}
-                    style={styles.groupIcon}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name={cfg.icon} size={14} color="#fff" />
-                  </LinearGradient>
+                  <View style={[styles.groupIcon, { backgroundColor: cfg.tintSoft }]}>
+                    <Ionicons name={cfg.icon} size={14} color={cfg.tint} />
+                  </View>
                   <Text style={styles.groupTitle}>{group.title}</Text>
                 </View>
                 <View style={{ gap: 8 }}>
                   {group.fields.map((f) => {
-                    const val = lastEntry[f.key];
-                    if (val === undefined) return null;
-                    const unit = getUnitForField(f.key);
+                    const samples = fieldSamples[f.key];
+                    if (!samples || samples.length === 0) return null;
+                    const latest = samples[0];
+                    const prev = samples[1];
+                    const unit = shouldHideUnitSuffix(f.key) ? "" : getUnitForField(f.key);
+                    const isStale = latest.ts !== latestTs;
                     return (
                       <View key={f.key} style={styles.overviewMetricRow}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.overviewMetricLabel}>{f.label}</Text>
                           <Text style={styles.overviewMetricValue}>
-                            {val}
+                            {formatEntryValue(f.key, latest.value)}
                             {unit ? ` ${unit}` : ""}
                           </Text>
+                          {isStale ? (
+                            <Text style={styles.overviewMetricDate}>
+                              {formatEntryTimestamp(latest.ts, "dd/MM")}
+                            </Text>
+                          ) : null}
                         </View>
-                        {renderDelta(f.key)}
+                        {prev ? renderDelta(f.key, latest.value, prev.value) : null}
                       </View>
                     );
                   })}
                 </View>
               </View>
-            );
-          })}
+              );
+            })}
 
-          {lastEntry.notes ? (
-            <View style={styles.overviewNotesBlock}>
-              <View style={styles.groupHeader}>
-                <Ionicons name="document-text-outline" size={14} color={palette.sub} />
-                <Text style={styles.groupTitle}>Notes du jour</Text>
+            {latestNotes ? (
+              <View style={styles.overviewNotesBlock}>
+                <View style={styles.groupHeader}>
+                  <Ionicons name="document-text-outline" size={14} color={palette.sub} />
+                  <Text style={styles.groupTitle}>Dernières notes</Text>
+                </View>
+                <Text style={styles.overviewNotesText}>{latestNotes}</Text>
               </View>
-              <Text style={styles.overviewNotesText}>{lastEntry.notes}</Text>
-            </View>
-          ) : null}
-        </View>
-      </Card>
+            ) : null}
+          </View>
+        </Card>
+      </View>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  sectionTitle: {
-    color: palette.text,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  sectionSub: {
-    color: palette.sub,
-    fontSize: 12,
-    marginTop: 2,
-  },
+  section: { gap: 10 },
   overviewCard: {
-    borderRadius: 16,
+    borderRadius: theme.radius.lg,
     padding: 14,
-    gap: 10,
   },
-  overviewHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 10,
-  },
-  overviewTitleRow: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-  },
-  overviewPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: palette.cardSoft,
-    borderWidth: 1,
-    borderColor: palette.border,
-    alignItems: "flex-end",
-  },
-  overviewPillLabel: {
+  overviewCaption: {
     color: palette.sub,
-    fontSize: 9,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-  },
-  overviewPillDate: {
-    color: palette.text,
     fontSize: 12,
-    fontWeight: "700",
   },
   overviewGroup: {
     gap: 8,
@@ -198,7 +152,7 @@ const styles = StyleSheet.create({
   groupIcon: {
     width: 26,
     height: 26,
-    borderRadius: 8,
+    borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -223,9 +177,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginTop: 2,
   },
+  overviewMetricDate: {
+    color: palette.sub,
+    fontSize: 10,
+    marginTop: 1,
+  },
   overviewNotesBlock: {
     marginTop: 6,
-    borderRadius: 10,
+    borderRadius: theme.radius.md,
     padding: 10,
     backgroundColor: palette.cardSoft,
     borderWidth: 1,
@@ -240,7 +199,7 @@ const styles = StyleSheet.create({
   deltaChip: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 999,
+    borderRadius: theme.radius.pill,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.cardSoft,

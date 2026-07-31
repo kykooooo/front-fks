@@ -13,7 +13,7 @@ import {
 import type { RouteProp } from '@react-navigation/native';
 import { CommonActions, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { AppStackParamList } from '../navigation/RootNavigator';
 import { useLoadStore } from '../state/stores/useLoadStore';
 import { useSessionsStore } from '../state/stores/useSessionsStore';
@@ -31,6 +31,9 @@ import { useNavGuard } from '../hooks/useNavGuard';
 import type { SessionTimerHandle } from '../components/session/SessionTimer';
 import { getCycleTheme } from '../constants/cycleTheme';
 import { buildResetExplain } from './newSession/resetExplain';
+import { readRecoveryTips } from './newSession/helpers';
+import { useTestsStorage } from './tests/hooks/useTestsStorage';
+import { pickLatestTestValues } from './sessionPreview/testReferenceMapping';
 
 import {
   type Block,
@@ -66,10 +69,18 @@ function SessionPreviewScreen({ route }: { route: SessionPreviewRoute }) {
 function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
   const { v2, plannedDateISO, sessionId } = route.params;
   const nav = useNavigation<any>();
+  // Insets via hook : le composant SafeAreaView (tous bords par défaut) monté
+  // dans ce transparentModal animé appliquait l'inset du haut en retard par
+  // intermittence → croix sous la Dynamic Island, intouchable (même bug que
+  // FeedbackScreen, corrigé à l'identique).
+  const insets = useSafeAreaInsets();
   const guardNav = useNavGuard();
   const title = v2.title || 'Séance personnalisée';
   const subtitle = v2.subtitle;
   const blocks: Block[] = Array.isArray(v2.blocks) ? v2.blocks : [];
+  // Conseils de récup : racine v2.recoveryTips (contrat backend actuel) avec
+  // compat postSession.recoveryTips — cf. readRecoveryTips.
+  const recoveryTips = readRecoveryTips(v2);
   const soundsEnabled = useSettingsStore((s) => s.soundsEnabled);
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
   const phase = useSessionsStore((s) => s.phase);
@@ -79,6 +90,10 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
   const matchDays = useExternalStore((s) => s.matchDays ?? []);
   const sessions = useSessionsStore((s) => s.sessions);
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  // Références de test terrain affichées sous les exercices concernés (pur affichage,
+  // aucune logique moteur — cf. testReferenceMapping.ts).
+  const { entries: testEntries } = useTestsStorage();
+  const latestTestValues = useMemo(() => pickLatestTestValues(testEntries), [testEntries]);
   // Thème couleur de l'écran de séance, dérivé du cycle servi (sinon cycle actif → fallback Force).
   const cycleTheme = getCycleTheme(microcycleGoal);
   const currentSession = sessionId ? sessions.find((s: any) => s.id === sessionId) : null;
@@ -275,10 +290,6 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
     const focusRaw = v2.focusPrimary ?? v2.focusSecondary;
     const focus = typeof focusRaw === 'string' ? focusRaw : undefined;
     const location = typeof v2.location === 'string' ? v2.location : undefined;
-    const recoveryTips =
-      Array.isArray(v2.postSession?.recoveryTips) && v2.postSession!.recoveryTips!.length > 0
-        ? v2.postSession!.recoveryTips
-        : undefined;
     guardNav(() =>
       nav.navigate('SessionSummary', {
         sessionId,
@@ -303,10 +314,26 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
         allowBackdropDismiss
         allowSwipeDismiss
       >
-        <SafeAreaView style={styles.safeArea}>
+        <View
+          style={[
+            styles.safeArea,
+            {
+              paddingTop: Math.max(insets.top, 12),
+              paddingBottom: Math.max(insets.bottom, 8),
+              paddingLeft: insets.left,
+              paddingRight: insets.right,
+            },
+          ]}
+        >
           <View style={styles.modalHeaderRow}>
             <Text style={styles.modalHeaderTitle}>Séance</Text>
-            <TouchableOpacity onPress={() => nav.goBack()} style={styles.modalClose}>
+            <TouchableOpacity
+              onPress={() => nav.goBack()}
+              style={styles.modalClose}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel="Fermer la séance"
+            >
               <Ionicons name="close" size={22} color={palette.text} />
             </TouchableOpacity>
           </View>
@@ -435,6 +462,7 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
                       onGoToExercise={goToExercise}
                       getPulse={getPulse}
                       cycleTheme={cycleTheme}
+                      testValues={latestTestValues}
                     />
                   ))}
                 </>
@@ -487,11 +515,11 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
 
               {/* Post session */}
               {(v2.postSession?.mobility && v2.postSession.mobility.length > 0) ||
-               (v2.postSession?.recoveryTips && v2.postSession.recoveryTips.length > 0) ? (
+               (recoveryTips && recoveryTips.length > 0) ? (
                 <Card variant="soft" style={styles.coachCard}>
                   <SectionHeader title="Post-séance" />
                   <View style={{ gap: 6 }}>
-                    {v2.postSession?.recoveryTips?.map((tip: string, i: number) => (
+                    {recoveryTips?.map((tip: string, i: number) => (
                       <View key={`rec_${i}`} style={styles.recoveryTipRow}>
                         <Ionicons name="leaf-outline" size={13} color="#14b8a6" />
                         <Text style={styles.recoveryTipText}>{tip}</Text>
@@ -523,7 +551,7 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
               </View>
             </Animated.View>
           </ScrollView>
-        </SafeAreaView>
+        </View>
       </ModalContainer>
     </View>
   );

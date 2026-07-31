@@ -56,3 +56,18 @@ describe("classifyError — status 429 (rate limit)", () => {
     expect(appError.type).toBe(ErrorType.SERVER);
   });
 });
+
+describe("classifyError — \"Failed to fetch\" (message natif fetch web)", () => {
+  test("classe une erreur \"Failed to fetch\" en NETWORK, pas en UNKNOWN", () => {
+    const err = new TypeError("Failed to fetch");
+    const appError = classifyError(err);
+    expect(appError.type).toBe(ErrorType.NETWORK);
+    expect(appError.type).not.toBe(ErrorType.UNKNOWN);
+  });
+
+  test("une \"Failed to fetch\" est marquée retryable", () => {
+    const err = new TypeError("Failed to fetch");
+    const appError = classifyError(err);
+    expect(appError.retryable).toBe(true);
+  });
+});

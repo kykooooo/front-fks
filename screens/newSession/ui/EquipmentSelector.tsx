@@ -7,11 +7,15 @@ import type { EnvironmentSelection } from "../types";
 
 type CatalogItem = { id: string; label: string; source: "gym" | "pitch" | "home" | "both" };
 
-// Équipement spécial salle (pas dans toutes les salles)
+// Équipement spécial salle (pas dans toutes les salles).
+// NOTE contrat : la banque backend exige l'id "sled" (aucun alias "power_sled"
+// pour l'instant — alias à ajouter côté backend, ne pas renommer ici sans
+// coordination). Le toggle "landmine" a été retiré : aucun équipement backend
+// ne porte cet id (le landmine press est gaté par "barbell", déjà couvert par
+// gym_full envoyé d'office en salle).
 const GYM_SPECIAL_EQUIPMENT = [
   { id: "power_sled", label: "Traîneau / Sled", icon: "navigate", description: "Pour sprints résistés" },
   { id: "trap_bar", label: "Trap bar / Hex bar", icon: "git-commit", description: "Deadlifts, shrugs" },
-  { id: "landmine", label: "Landmine", icon: "arrow-up", description: "Rotations, presses" },
   { id: "cable_machine", label: "Poulie / Cable", icon: "swap-vertical", description: "Tirage, rotations" },
 ];
 
@@ -62,6 +66,12 @@ export function EquipmentSelector({
     return environment.includes(item.source as any);
   });
 
+  // "Sans matériel" est un choix assumé (poids du corps), pas un oubli :
+  // on l'affiche dès que rien ne vient compléter le poids du corps
+  // (salle = toujours équipée par défaut, donc jamais concernée).
+  const hasHomeEquipmentSelected = selectedEquipment.some((id) => HOME_EQUIPMENT.some((h) => h.id === id));
+  const showBodyweightHint = !isGym && !pitchSmallGearEnabled && !hasHomeEquipmentSelected;
+
   const toggle = (id: string) => {
     onSelect(
       selectedEquipment.includes(id)
@@ -75,33 +85,10 @@ export function EquipmentSelector({
       showToast({ type: "warn", title: "Lieu requis", message: "Choisis un lieu avant de valider." });
       return;
     }
-    // Gym = standard equipment always included → no validation needed
-    // Pitch = needs small gear toggle OR gym selected
-    // Home = needs equipment OR gym/pitch with gear
-    const hasGym = environment.includes("gym");
-    const hasPitch = environment.includes("pitch");
-    const hasHome = environment.includes("home");
-    const hasHomeEquipment = selectedEquipment.some(id => HOME_EQUIPMENT.some(h => h.id === id));
-
-    // If gym is selected, we always have equipment (standard included)
-    if (hasGym) {
-      onValidateContext();
-      return;
-    }
-
-    // No gym: check pitch and home requirements
-    if (hasPitch && !pitchSmallGearEnabled && hasHome && !hasHomeEquipment) {
-      showToast({ type: "warn", title: "Matériel requis", message: "Active le matériel terrain ou sélectionne un équipement maison." });
-      return;
-    }
-    if (hasPitch && !pitchSmallGearEnabled && !hasHome) {
-      showToast({ type: "warn", title: "Matériel requis", message: "Active le petit matériel terrain." });
-      return;
-    }
-    if (hasHome && !hasHomeEquipment && !hasPitch) {
-      showToast({ type: "warn", title: "Matériel requis", message: "Sélectionne au moins un équipement maison." });
-      return;
-    }
+    // Aucun blocage matériel : terrain sans petit matériel = OK (course/appuis
+    // au poids du corps), maison sans coche = OK (poids du corps). Le moteur
+    // gère nativement le bodyweight, donc "sans matériel" est un choix
+    // assumé, jamais un blocage.
     onValidateContext();
   };
 
@@ -325,6 +312,16 @@ export function EquipmentSelector({
               );
             })}
           </View>
+        </View>
+      )}
+
+      {/* "Sans matériel" assumé, pas oublié */}
+      {showBodyweightHint && (
+        <View style={styles.bodyweightHint}>
+          <Ionicons name="body" size={16} color={palette.sub} />
+          <Text style={styles.bodyweightHintText}>
+            Aucun matériel ? La séance sera au poids du corps.
+          </Text>
         </View>
       )}
 
@@ -581,6 +578,21 @@ const styles = StyleSheet.create({
   },
   chipTextSelected: {
     color: palette.accent,
+  },
+  bodyweightHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: palette.cardSoft,
+  },
+  bodyweightHintText: {
+    flex: 1,
+    fontSize: 12,
+    color: palette.sub,
+    lineHeight: 16,
   },
   validateButton: {
     flexDirection: "row",

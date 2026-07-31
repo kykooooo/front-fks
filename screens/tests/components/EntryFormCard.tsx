@@ -2,15 +2,17 @@
 import React from "react";
 import { View, Text, StyleSheet, TextInput, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
+import { Badge } from "../../../components/ui/Badge";
 import { Button } from "../../../components/ui/Button";
 import { getGroupConfig, FIELD_BY_KEY, type FieldKey, type StepId, type TestEntry } from "../testConfig";
+import { minSecToSeconds, secondsToMinSec } from "../testHelpers";
 
 const palette = theme.colors;
 
 type Props = {
+  title?: string;
   stepIndex: number;
   steps: StepId[];
   progressRatio: number;
@@ -24,6 +26,7 @@ type Props = {
 };
 
 export function EntryFormCard({
+  title = "Batterie en cours",
   stepIndex, steps, progressRatio, form,
   onFormChange, onNext, onPrev, onSkip, onHaptic, cardAnim,
 }: Props) {
@@ -36,6 +39,22 @@ export function EntryFormCard({
     : currentField?.protocol ?? "";
   const stepUnit = isNotesStep ? "" : currentField?.unit ?? "";
   const currentFieldKey = !isNotesStep ? (currentStep as FieldKey) : null;
+
+  // Le 1 km se saisit en minutes + secondes (le stockage reste en secondes,
+  // compatible avec l'historique existant et les bornes min/max du champ).
+  const isRun1km = currentFieldKey === "run1km_s";
+  const run1kmTotalRaw = isRun1km ? Number(form.run1km_s) : NaN;
+  const hasRun1kmValue = isRun1km && Number.isFinite(run1kmTotalRaw) && run1kmTotalRaw > 0;
+  const run1kmParts = hasRun1kmValue ? secondsToMinSec(run1kmTotalRaw) : { minutes: 0, seconds: 0 };
+  const run1kmMinStr = hasRun1kmValue ? String(run1kmParts.minutes) : "";
+  const run1kmSecStr = hasRun1kmValue ? String(run1kmParts.seconds) : "";
+
+  const updateRun1km = (nextMinStr: string, nextSecStr: string) => {
+    const min = nextMinStr === "" ? 0 : parseInt(nextMinStr, 10);
+    const sec = nextSecStr === "" ? 0 : parseInt(nextSecStr, 10);
+    const total = minSecToSeconds(Number.isFinite(min) ? min : 0, Number.isFinite(sec) ? sec : 0);
+    onFormChange("run1km_s", total > 0 ? String(total) : "");
+  };
 
   return (
     <Animated.View
@@ -55,38 +74,34 @@ export function EntryFormCard({
         <View style={styles.entryHeader}>
           <View style={styles.entryTitleRow}>
             <Ionicons name="play-circle-outline" size={18} color={palette.accent} />
-            <Text style={styles.sectionTitle}>Batterie en cours</Text>
+            <Text style={styles.sectionTitle}>{title}</Text>
           </View>
-          <View style={styles.entryStepBadge}>
-            <Text style={styles.entryStep}>
-              {Math.min(stepIndex + 1, steps.length)}/{steps.length}
-            </Text>
-          </View>
+          <Badge label={`${Math.min(stepIndex + 1, steps.length)}/${steps.length}`} />
         </View>
         <View style={styles.entryProgressTrack}>
-          <LinearGradient
-            colors={["#ff7a1a", "#ff9a4a"]}
-            style={[styles.entryProgressFill, { width: `${progressRatio * 100}%` }]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
+          <View
+            style={[
+              styles.entryProgressFill,
+              { width: `${progressRatio * 100}%`, backgroundColor: palette.accent },
+            ]}
           />
         </View>
 
         <View style={styles.entryBody}>
           {currentField && (
             <View style={styles.entryFieldHeader}>
-              <LinearGradient
-                colors={getGroupConfig(currentField.group).colors}
-                style={styles.entryFieldIcon}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
+              <View
+                style={[
+                  styles.entryFieldIcon,
+                  { backgroundColor: getGroupConfig(currentField.group).tintSoft },
+                ]}
               >
                 <Ionicons
                   name={getGroupConfig(currentField.group).icon}
                   size={16}
-                  color="#fff"
+                  color={getGroupConfig(currentField.group).tint}
                 />
-              </LinearGradient>
+              </View>
               <Text style={styles.entryLabel}>{stepLabel}</Text>
             </View>
           )}
@@ -102,6 +117,31 @@ export function EntryFormCard({
               value={form.notes ?? ""}
               onChangeText={(txt) => onFormChange("notes", txt)}
             />
+          ) : isRun1km ? (
+            <View style={styles.entryInputRow}>
+              <TextInput
+                style={[styles.input, styles.entryInput]}
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor={palette.sub}
+                value={run1kmMinStr}
+                onChangeText={(txt) => updateRun1km(txt.replace(/[^0-9]/g, ""), run1kmSecStr)}
+              />
+              <View style={styles.entryUnitPill}>
+                <Text style={styles.entryUnitText}>min</Text>
+              </View>
+              <TextInput
+                style={[styles.input, styles.entryInput]}
+                keyboardType="numeric"
+                placeholder="00"
+                placeholderTextColor={palette.sub}
+                value={run1kmSecStr}
+                onChangeText={(txt) => updateRun1km(run1kmMinStr, txt.replace(/[^0-9]/g, ""))}
+              />
+              <View style={styles.entryUnitPill}>
+                <Text style={styles.entryUnitText}>s</Text>
+              </View>
+            </View>
           ) : (
             <View style={styles.entryInputRow}>
               <TextInput
@@ -130,7 +170,7 @@ export function EntryFormCard({
             size="sm"
             variant="ghost"
           />
-          {!isNotesStep ? (
+          {!isNotesStep && stepIndex < steps.length - 1 ? (
             <Button
               label="Passer"
               onPress={() => { onSkip(); onHaptic(); }}
@@ -152,7 +192,7 @@ export function EntryFormCard({
 
 const styles = StyleSheet.create({
   entryCard: {
-    borderRadius: 16,
+    borderRadius: theme.radius.lg,
     padding: 14,
     gap: 12,
   },
@@ -171,28 +211,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  entryStepBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: palette.accentSoft,
-    borderWidth: 1,
-    borderColor: palette.accent,
-  },
-  entryStep: {
-    color: palette.accent,
-    fontSize: 12,
-    fontWeight: "700",
-  },
   entryProgressTrack: {
     height: 6,
-    borderRadius: 999,
+    borderRadius: theme.radius.pill,
     backgroundColor: palette.borderSoft,
     overflow: "hidden",
   },
   entryProgressFill: {
     height: "100%",
-    backgroundColor: palette.accent,
+    borderRadius: theme.radius.pill,
   },
   entryBody: {
     gap: 8,

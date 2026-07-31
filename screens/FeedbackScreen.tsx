@@ -14,7 +14,7 @@ import {
   Animated,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import type { RouteProp } from '@react-navigation/native';
@@ -54,6 +54,11 @@ const COLORS = theme.colors;
 
 function FeedbackScreen() {
   const navigation = useNavigation<any>();
+  // Insets via hook (provider racine, fiable dès le 1er rendu) : le composant
+  // SafeAreaView edges=['top'] appliquait l'inset en retard dans ce modal
+  // transparent animé → header/croix collés sous la Dynamic Island, croix
+  // intouchable par intermittence.
+  const insets = useSafeAreaInsets();
   const route = useRoute<RouteProp<AppStackParamList, 'Feedback'>>();
   const haptics = useHaptics();
   const { isOnline, queueCount } = useNetworkStatus();
@@ -227,10 +232,26 @@ function FeedbackScreen() {
         allowBackdropDismiss
         allowSwipeDismiss
       >
-        <SafeAreaView style={styles.safeArea} edges={['top', 'right', 'left', 'bottom']}>
+        <View
+          style={[
+            styles.safeArea,
+            {
+              paddingTop: Math.max(insets.top, 12),
+              paddingBottom: Math.max(insets.bottom, 8),
+              paddingLeft: insets.left,
+              paddingRight: insets.right,
+            },
+          ]}
+        >
           <View style={styles.modalHeaderRow}>
             <Text style={styles.modalHeaderTitle}>Feedback</Text>
-            <TouchableOpacity onPress={confirmClose} style={styles.modalClose} accessibilityRole="button" accessibilityLabel="Fermer le feedback">
+            <TouchableOpacity
+              onPress={confirmClose}
+              style={styles.modalClose}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel="Fermer le feedback"
+            >
               <Ionicons name="close" size={22} color={COLORS.text} />
             </TouchableOpacity>
           </View>
@@ -356,7 +377,7 @@ function FeedbackScreen() {
             message="Enregistrement de ton feedback..."
             submessage="Mise à jour de ta charge d'entraînement en cours."
           />
-        </SafeAreaView>
+        </View>
       </ModalContainer>
     </View>
   );

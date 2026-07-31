@@ -9,7 +9,7 @@ export const LEGAL_NOTICE: LegalSection[] = [
     body: [
       "Nom : Le Bris Kyllian",
       "Email : kyllian@fks-app.com",
-      "Adresse : 12 rue Julius et Ethel Rosenberg",
+      "Adresse : 12 rue Julius et Ethel Rosenberg, 76700 Gonfreville-l'Orcher",
       "Pays : France",
     ],
   },
@@ -39,7 +39,7 @@ export const PRIVACY_POLICY: LegalSection[] = [
     body: [
       "Nom : Le Bris Kyllian",
       "Email : kyllian@fks-app.com",
-      "Adresse : 12 rue Julius et Ethel Rosenberg",
+      "Adresse : 12 rue Julius et Ethel Rosenberg, 76700 Gonfreville-l'Orcher",
       "Pays : France",
     ],
   },
@@ -87,6 +87,14 @@ export const PRIVACY_POLICY: LegalSection[] = [
       "Droit d'accès, de rectification, d'effacement.",
       "Droit d'opposition à certains traitements.",
       "Contact : kyllian@fks-app.com",
+    ],
+  },
+  {
+    title: "Mineurs de moins de 15 ans",
+    body: [
+      "En France, un mineur de moins de 15 ans ne peut pas consentir seul au traitement de ses données personnelles.",
+      "Si tu as moins de 15 ans, ton parent ou responsable légal doit lire et accepter cette politique avant que tu utilises FKS. L'application te demande de le confirmer lors de la configuration de ton profil.",
+      "Ton parent ou responsable légal peut exercer à tout moment tes droits (accès, rectification, effacement) en écrivant à : kyllian@fks-app.com",
     ],
   },
   {
