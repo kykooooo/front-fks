@@ -19,15 +19,17 @@
 // 10. l'audit final prouve qu'il ne reste rien de lisible par un joueur ;
 // 11. VERROU MECANIQUE : WEEK_CONTEXT_CONTRACT_FIELDS colle exactement aux
 //     cles reellement ecrites par repositories/clubsRepo.saveClubWeekContext
-//     (front) — lu par scan statique de son source, jamais recopie a la main.
-//     Scan de TEXTE, fail-closed : l'en-tete de la section 11 dit precisement
-//     de quels mecanismes il est fait (M1/M2) et ce qui reste une limite
-//     declaree — a lire avant de lui faire confiance ;
+//     (front) — lu en PARSANT son source avec le compilateur TypeScript
+//     (`ts.createSourceFile`), jamais recopie a la main, et plus jamais par
+//     scan de texte. Fail-closed : l'en-tete de la section 11 donne son
+//     MODELE DE MENACE, ses trois gardes (G1/G2/G3) et les limites qui
+//     restent reelles — a lire avant de lui faire confiance ;
 // 12. un champ HERITE CONNU (`createdAt`) est archive comme le reste mais
 //     n'est JAMAIS promu note visible : une date ISO n'est pas une note.
 
 import { readFileSync } from "fs";
 import { join } from "path";
+import ts from "typescript";
 import {
   auditWeekContextNotes,
   CHAMPS_HERITES_CONNUS,
@@ -145,8 +147,8 @@ describe("1. detection : le contrat en liste BLANCHE, pas les noms en liste noir
   });
 
   it("un horodatage Firestore n'est pas du texte", () => {
-    const ts = { toDate: () => new Date("2026-07-20T08:00:00.000Z") };
-    expect(detecterTextesHorsContrat(cadre({ vieilHorodatage: ts }))).toEqual([]);
+    const horodatage = { toDate: () => new Date("2026-07-20T08:00:00.000Z") };
+    expect(detecterTextesHorsContrat(cadre({ vieilHorodatage: horodatage }))).toEqual([]);
   });
 });
 
@@ -549,292 +551,104 @@ describe("l'outil reste un outil : aucune route reseau", () => {
 // dans le contrat alors que saveClubWeekContext ne l'a JAMAIS ecrit (corrige le
 // 2026-07-31). Cette section lit le VRAI source de clubsRepo.ts et compare.
 //
-// ── CE QUE CE VERROU COUVRE, EXACTEMENT ─────────────────────────────────────
-// L'analyse est un scan de TEXTE, pas un compilateur. Elle tient sur DEUX
-// mecanismes, tous les deux fail-closed (en cas de doute, le test TOMBE ; il ne
-// « passe » jamais en ayant vu moins que la realite) :
+// ── MODELE DE MENACE (a lire AVANT de faire confiance a ce verrou) ──────────
+// Ce verrou attrape la derive ACCIDENTELLE et les refactors ordinaires : on
+// ajoute un champ au payload, on renomme une cle, on deplace une ecriture, on
+// passe par un helper — et le contrat cote functions ne suit pas. C'est CA
+// qu'il protege, et c'est tout ce qu'il pretend proteger.
+// Un contributeur activement MALVEILLANT peut contourner n'importe quel test
+// qu'il peut editer (il edite le test, ou le contrat, ou les deux) : ce n'est
+// pas le sujet, et aucune analyse statique ne changera ca. Ce qui protege de
+// ce cas-la, ce sont les regles Firestore et la revue de code, pas ce fichier.
 //
-//  M1. LECTURE DU PAYLOAD PAR POSITION D'ARGUMENT. Pour chaque `setDoc(...)` /
-//      `updateDoc(...)` du corps, les ARGUMENTS top-level sont decoupes (memes
-//      regles que `segmentsTopLevel` : chaines, imbrications, parentheses), et
-//      c'est l'argument d'INDEX 1 qui est lu — jamais « la premiere accolade
-//      trouvee ». Cet argument DOIT etre un objet litteral `{ ... }` ; toute
-//      autre forme (ternaire, `Object.assign(...)`, variable, appel, `{...} as
-//      X`) fait TOMBER le test avec le segment fautif dans le message.
-//      Ce mecanisme ferme le bug de conception precedent : le verrou localisait
-//      le payload par `indexOf("{")`, donc `setDoc(ref, payload, { merge: true })`
-//      lui faisait lire `{ merge: true }` comme s'il s'agissait du contrat.
+// ── COMMENT (AST, plus aucun scan de texte) ─────────────────────────────────
+// Le source est PARSE par le compilateur TypeScript (`ts.createSourceFile`) et
+// toute l'analyse se fait sur l'AST. Cinq passes de regex ont perdu la course
+// contre la syntaxe JS : un leurre `function saveClubWeekContext(` glisse dans
+// un COMMENTAIRE, `(0, alias)(...)`, `ns["setDoc"](...)`, un tagged template,
+// et — dans l'autre sens — un FAUX POSITIF sur une simple apostrophe francaise
+// dans un commentaire. Un parseur ne se fait avoir par aucun des cinq : un
+// commentaire n'est pas un noeud, une apostrophe dans un commentaire n'existe
+// pas, et une forme d'appel exotique est un noeud d'un TYPE precis — donc
+// refusable explicitement plutot qu'ignoree en silence.
 //
-//  M2. LISTE BLANCHE FERMEE DES APPELS DU CORPS. Tout appel de fonction present
-//      dans le corps de `saveClubWeekContext` dont le callee n'est pas dans
-//      `APPELS_AUTORISES` fait TOMBER le test. Sans ca, la detection des
-//      ecritures restait purement NOMINALE (« je cherche le mot setDoc ») : un
-//      helper local (`await ecrireCadre(ref, opts)`) ou un alias d'import
-//      (`import { setDoc as ecrireDoc }`) ecrivait sans jamais etre vu. La
-//      liste blanche est relevee sur le corps REEL et figee ; elle est verifiee
-//      par un test temoin (`appelsDuCorps`), donc toute evolution legitime du
-//      code oblige a la relire a la main.
+// Trois gardes, tous FAIL-CLOSED (en cas de doute le test TOMBE ; il ne
+// « passe » jamais en ayant vu MOINS que la realite) :
 //
-// Ces deux mecanismes se completent : M2 ferme « l'ecriture cachee derriere un
-// nom inconnu », M1 ferme « l'ecriture visible dont le payload n'est pas
-// lisible statiquement ». S'y ajoute le garde-fou historique
-// `verifierAucuneEcritureNonReconnue` (addDoc/writeBatch/runTransaction,
-// `batch.set(`...), conserve tel quel.
+//  G1. LA FONCTION EST TROUVEE DANS L'AST, jamais par `indexOf`. Une
+//      declaration commentee, ou son nom dans une chaine, ne sont pas des
+//      noeuds : invisibles. Zero declaration trouvee = echec (le verrou ne
+//      verrouille plus rien) ; plusieurs = echec aussi (il ne sait pas
+//      laquelle est la vraie).
 //
-// ── CE QUI RESTE UNE LIMITE DECLAREE (et n'est donc PAS couvert) ────────────
-//  L1. Un spread d'expression sans objet litteral visible (`...opts.extra`) ne
-//      revele aucune cle : il est ignore (cf. `clesEcritesParSpread`). Aucun
-//      champ du contrat actuel n'est ecrit ainsi.
-//  L2. L'analyse est INTRA-procedurale et intra-fichier : ce qui se passe DANS
-//      une fonction appelee n'est pas suivi. M2 compense en refusant l'appel
-//      lui-meme, il ne le comprend pas.
-//  L3. Le contenu des chaines (y compris l'interieur d'un `${...}` de template)
-//      est neutralise avant toute recherche : un appel ecrit a l'interieur d'un
-//      template litteral serait invisible. Le corps reel n'en contient aucun.
-//  L4. Le verrou lit `saveClubWeekContext` et elle seule : une ecriture dans le
-//      meme document faite depuis une AUTRE fonction du repo n'est pas vue.
+//  G2. LISTE BLANCHE FERMEE DES APPELS. Chaque `CallExpression` et chaque
+//      `TaggedTemplateExpression` du corps est examine, dans l'ordre du source :
+//        - callee = identifiant simple present dans `APPELS_AUTORISES` → tolere ;
+//        - callee = identifiant simple ABSENT de la liste → echec
+//          « appel non whitelisté » (helper local, alias d'import, `addDoc`,
+//          `writeBatch`, `runTransaction`…) ;
+//        - TOUTE autre forme de callee → echec « forme d'appel non
+//          analysable ». Par construction `(0, setDoc)(...)` (parenthesee),
+//          `ns["setDoc"](...)` (calculee), `batch.set(...)` (membre),
+//          `Object.assign(...)` (membre) et un tagged template tombent tous
+//          ici : le verrou ne pretend pas les comprendre, il les refuse.
+//
+//  G3. LE PAYLOAD EST L'ARGUMENT D'INDEX 1, ET C'EST UN OBJET LITTERAL.
+//      Pour chaque `setDoc`/`updateDoc`, `arguments[1]` DOIT etre un
+//      `ObjectLiteralExpression` — une variable, un ternaire, un `{...} as X`,
+//      un appel : echec. C'est ce qui ferme le bug de conception d'origine
+//      (localiser le payload par « la premiere accolade » faisait lire
+//      `{ merge: true }`, donc comparer le contrat a la cle `merge`).
+//      Les cles sont ensuite lues sur l'AST :
+//        - `PropertyAssignment` a nom identifiant OU chaine litterale — les
+//          DEUX sont parfaitement lisibles ici (`"champ-quote": v` est extrait
+//          et compare au contrat, la ou le scan de texte le rejetait) ;
+//        - `ShorthandPropertyAssignment` (`champCourt,`) ;
+//        - `SpreadAssignment` dont l'expression est un objet litteral :
+//          recursion, ses cles fusionnent au niveau du dessus comme a
+//          l'execution.
+//      Une cle CALCULEE (`[k]: v`) ou un spread d'expression NON litterale
+//      (`...opts.extra`, `...(cond ? {} : {})`) : echec explicite, jamais un
+//      silence — ils peuvent nommer n'importe quel champ.
+//      Une cle dont la valeur est `deleteField()` compte comme SUPPRIMEE, pas
+//      comme un champ du contrat (c'est le cas de `note`).
+//
+// ── LES LIMITES QUI RESTENT, ET ELLES SONT REELLES ──────────────────────────
+//  L1. PORTEE. Le verrou lit `saveClubWeekContext` et ELLE SEULE. Une ecriture
+//      dans `clubs/{clubId}/weekContexts/{weekKey}` faite depuis une autre
+//      fonction, un autre fichier, un script, ou l'Admin SDK cote serveur,
+//      n'est pas vue par ce test.
+//  L2. INTRA-PROCEDURAL. Le verrou ne suit pas ce que FAIT une fonction
+//      appelee ; G2 la refuse, il ne la comprend pas. Consequence directe :
+//      toute evolution legitime du code oblige a relire `APPELS_AUTORISES` a
+//      la main (le temoin `textesAppels` est la pour rendre ca visible).
+//  L3. CLES, PAS DONNEES. Ce verrou compare des NOMS DE CHAMPS. Ce qui est
+//      reellement stocke depend des valeurs a l'execution ; il ne dit rien de
+//      leur contenu.
 describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveClubWeekContext", () => {
   const CLUBS_REPO_PATH = join(__dirname, "..", "..", "repositories", "clubsRepo.ts");
   const CLUBS_REPO_SOURCE = readFileSync(CLUBS_REPO_PATH, "utf8");
+  const NOM_FONCTION = "saveClubWeekContext";
 
   /**
-   * Indice JUSTE APRES le delimiteur fermant correspondant au delimiteur
-   * ouvrant en position `debut` (qui DOIT etre `ouvrant`). Ignore les
-   * delimiteurs trouves a l'interieur d'une chaine ('...', "...", `...`) pour
-   * ne pas se faire piéger par un texte contenant "{"/"}" ou "("/")".
-   * Generique : sert aux accolades d'un objet ET aux parentheses d'un appel
-   * de fonction (`setDoc(...)`), meme logique, meme risque de piege.
-   */
-  function finDelimiteurEquilibre(texte: string, debut: number, ouvrant: string, fermant: string): number {
-    if (texte[debut] !== ouvrant) throw new Error(`Position de depart invalide (attendu '${ouvrant}')`);
-    let profondeur = 0;
-    let i = debut;
-    for (; i < texte.length; i += 1) {
-      const c = texte[i];
-      if (c === '"' || c === "'" || c === "`") {
-        const guillemet = c;
-        i += 1;
-        while (i < texte.length && texte[i] !== guillemet) {
-          if (texte[i] === "\\") i += 1;
-          i += 1;
-        }
-        continue;
-      }
-      if (c === ouvrant) profondeur += 1;
-      else if (c === fermant) {
-        profondeur -= 1;
-        if (profondeur === 0) return i + 1;
-      }
-    }
-    throw new Error(`Delimiteur fermant '${fermant}' introuvable`);
-  }
-
-  function finAccoladeEquilibree(texte: string, debut: number): number {
-    return finDelimiteurEquilibre(texte, debut, "{", "}");
-  }
-
-  /** Meme garantie que `finAccoladeEquilibree`, pour les parentheses d'un appel. */
-  function finParenEquilibree(texte: string, debut: number): number {
-    return finDelimiteurEquilibre(texte, debut, "(", ")");
-  }
-
-  /**
-   * Retire les commentaires `//...` et `/* ... *\/` d'un texte, SAUF quand ils
-   * apparaissent a l'interieur d'une chaine ('...', "...", `...`) — une chaine
-   * qui contient litteralement "//" ne doit jamais etre tronquee. Un
-   * commentaire n'est jamais une cle de payload : sans ce nettoyage, un simple
-   * `// commentaire` glisse dans `segmentsTopLevel` comme un segment top-level
-   * qui ne matche ni un spread ni `cle: valeur`, et fait tomber
-   * `extraireClesObjet` en erreur « forme non reconnue » — un FAUX POSITIF du
-   * verrou (le test rougirait pour la mauvaise raison : un commentaire n'est
-   * pas une derive de contrat).
-   */
-  function retirerCommentaires(texte: string): string {
-    let resultat = "";
-    let i = 0;
-    while (i < texte.length) {
-      const c = texte[i];
-      if (c === '"' || c === "'" || c === "`") {
-        const guillemet = c;
-        let j = i + 1;
-        while (j < texte.length && texte[j] !== guillemet) {
-          if (texte[j] === "\\") j += 1;
-          j += 1;
-        }
-        resultat += texte.slice(i, Math.min(j + 1, texte.length));
-        i = j + 1;
-        continue;
-      }
-      if (c === "/" && texte[i + 1] === "/") {
-        // Jusqu'a la fin de ligne EXCLUE : le "\n" est laisse en place pour ne
-        // pas coller deux tokens qui se retrouvaient sur des lignes distinctes.
-        while (i < texte.length && texte[i] !== "\n") i += 1;
-        continue;
-      }
-      if (c === "/" && texte[i + 1] === "*") {
-        const fin = texte.indexOf("*/", i + 2);
-        i = fin < 0 ? texte.length : fin + 2;
-        resultat += " "; // evite de coller deux tokens adjacents
-        continue;
-      }
-      resultat += c;
-      i += 1;
-    }
-    return resultat;
-  }
-
-  /**
-   * Meme texte, mais avec le CONTENU de chaque chaine remplace par des espaces
-   * (longueur preservee, pour ne pas decaler les indices utiles aux messages
-   * d'erreur). Sert a chercher un motif d'appel (`.set(`, `runTransaction(`...)
-   * sans se faire piéger par une chaine qui contiendrait litteralement ce texte.
-   */
-  function masquerChaines(texte: string): string {
-    let resultat = "";
-    let i = 0;
-    while (i < texte.length) {
-      const c = texte[i];
-      if (c === '"' || c === "'" || c === "`") {
-        const guillemet = c;
-        let j = i + 1;
-        while (j < texte.length && texte[j] !== guillemet) {
-          if (texte[j] === "\\") j += 1;
-          j += 1;
-        }
-        const finChaine = Math.min(j + 1, texte.length);
-        resultat += " ".repeat(finChaine - i);
-        i = finChaine;
-        continue;
-      }
-      resultat += c;
-      i += 1;
-    }
-    return resultat;
-  }
-
-  /** Corps complet (bloc `{ ... }`) d'une fonction exportee, retrouve dans `source`. */
-  function corpsFonction(source: string, nom: string): string {
-    const marqueur = `function ${nom}(`;
-    const debutSignature = source.indexOf(marqueur);
-    if (debutSignature < 0) throw new Error(`Fonction ${nom} introuvable dans le source fourni`);
-    // Referme la liste de PARAMETRES (peut contenir un type objet avec ses
-    // propres accolades, ex: `opts: { clubId: string; ... }`) — on ne compte
-    // donc que les parentheses, jamais les accolades, a cette etape.
-    let i = debutSignature + marqueur.length;
-    let profondeurParens = 1;
-    while (i < source.length && profondeurParens > 0) {
-      if (source[i] === "(") profondeurParens += 1;
-      else if (source[i] === ")") profondeurParens -= 1;
-      i += 1;
-    }
-    const debutCorps = source.indexOf("{", i);
-    if (debutCorps < 0) throw new Error(`Corps de ${nom} introuvable`);
-    const finCorps = finAccoladeEquilibree(source, debutCorps);
-    return source.slice(debutCorps, finCorps);
-  }
-
-  /** `setDoc(` / `updateDoc(` : les DEUX seules ecritures Firestore dont ce
-   * fichier sait lire statiquement le payload (l'objet de donnees suit
-   * immediatement la reference du document). */
-  const RE_APPEL_ECRITURE_RECONNU = /\b(setDoc|updateDoc)\s*\(/g;
-
-  /**
-   * TOUTE forme d'ecriture Firestore que ce fichier ne sait PAS lire
-   * statiquement : `addDoc`/`deleteDoc`/`writeBatch`/`runTransaction`, ou un
-   * appel de methode caracteristique d'un batch/d'une transaction
-   * (`batch.set(`, `tx.update(`, `transaction.delete(`...). Volontairement
-   * plus large que necessaire : mieux vaut un faux positif genant qu'une
-   * ecriture invisible pour le verrou.
-   */
-  const RE_ECRITURE_NON_RECONNUE =
-    /\b(addDoc|deleteDoc|writeBatch|runTransaction)\s*\(|[)\]\w]\s*\.\s*(set|update|delete)\s*\(/g;
-
-  /**
-   * FAIL-CLOSED : leve si le corps de fonction contient une ecriture que ce
-   * fichier ne sait pas lire statiquement (cf. `RE_ECRITURE_NON_RECONNUE`).
-   * Sans ce garde-fou, une ecriture ajoutee via `writeBatch`/`runTransaction`/
-   * `addDoc` resterait invisible du verrou — celui-ci ne regarderait QUE les
-   * `setDoc`/`updateDoc` qu'il sait parcourir, et resterait vert en silence
-   * sur tout le reste. Les commentaires et le contenu des chaines sont
-   * neutralises avant la recherche : un commentaire ou une chaine qui
-   * mentionne "runTransaction(" ne doit jamais faire tomber le verrou.
-   */
-  function verifierAucuneEcritureNonReconnue(corpsFn: string): void {
-    const texte = masquerChaines(retirerCommentaires(corpsFn));
-    RE_ECRITURE_NON_RECONNUE.lastIndex = 0;
-    const trouve = RE_ECRITURE_NON_RECONNUE.exec(texte);
-    if (trouve) {
-      const extrait = corpsFn.slice(trouve.index, trouve.index + trouve[0].length).trim();
-      throw new Error(
-        `forme d'ecriture non reconnue dans le corps de la fonction (verrou fail-closed) : "${extrait}" — ` +
-          `seuls setDoc(...) et updateDoc(...) sont lus statiquement ici ; etends l'extraction ou normalise l'ecriture`,
-      );
-    }
-  }
-
-  // ── M2 : LISTE BLANCHE FERMEE DES APPELS DU CORPS ────────────────────────
-
-  /**
-   * Les SEULS appels de fonction tolerés dans le corps de
+   * Les SEULS appels de fonction toleres dans le corps de
    * `saveClubWeekContext`. Liste relevee sur le corps REEL (`doc`, `setDoc`,
    * `deleteField`, `serverTimestamp`) puis figee, plus `updateDoc` qui est
-   * l'autre ecriture que M1 sait lire. Tout le reste fait tomber le test.
-   *
-   * Pourquoi une liste blanche et pas « je cherche le mot setDoc » : la
-   * detection nominale ne voit que ce qu'elle a nomme. Un helper local
-   * (`await ecrireCadre(ref, opts)`) ou un alias d'import
-   * (`import { setDoc as ecrireDoc }`) ecrit exactement comme `setDoc`, sans
-   * jamais porter son nom — invisible pour une liste enumeree, refuse par une
-   * liste blanche. C'est un refus, pas une comprehension : le verrou ne suit
-   * PAS ce que fait la fonction appelee (limite L2).
+   * l'autre ecriture dont G3 sait lire le payload. Tout le reste fait tomber
+   * le test (cf. G2 / limite L2).
    */
-  const APPELS_AUTORISES = new Set(["setDoc", "updateDoc", "doc", "deleteField", "serverTimestamp"]);
+  const APPELS_AUTORISES = new Set(["doc", "setDoc", "deleteField", "serverTimestamp", "updateDoc"]);
 
-  /**
-   * Mots-cles du langage qui peuvent etre suivis d'une parenthese sans etre un
-   * appel de fonction (`if (...)`, `return (...)`, `typeof (...)`,
-   * `async (...) => ...`). Les ignorer evite un faux positif de M2 sur de la
-   * syntaxe ordinaire. Contrepartie assumee : une fonction qui porterait
-   * litteralement un de ces noms (seul `async` est un identifiant legal) ne
-   * serait pas signalee.
-   */
-  const MOTS_CLES_NON_APPEL = new Set([
-    "if", "for", "while", "switch", "catch", "return", "typeof", "await", "new", "delete",
-    "void", "yield", "instanceof", "in", "of", "do", "else", "case", "throw", "async", "function",
-  ]);
+  /** Les deux appels dont le 2e argument EST le payload de donnees. */
+  const APPELS_ECRITURE = new Set(["setDoc", "updateDoc"]);
 
-  /** Un identifiant (eventuellement une chaine `a.b.c`) colle a une "(". */
-  const RE_APPEL_QUELCONQUE = /[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*\(/g;
+  type ClesEcriture = { ecrites: string[]; supprimees: string[] };
 
-  /**
-   * Tous les callees appeles dans un corps de fonction, dans l'ordre, doublons
-   * compris. Commentaires retires et CONTENU des chaines neutralise avant la
-   * recherche : ni un commentaire ni une chaine qui mentionne `foo(` ne doit
-   * compter comme un appel.
-   */
-  function appelsDuCorps(corpsFn: string): string[] {
-    const texte = masquerChaines(retirerCommentaires(corpsFn));
-    const appels: string[] = [];
-    RE_APPEL_QUELCONQUE.lastIndex = 0;
-    let trouve: RegExpExecArray | null;
-    while ((trouve = RE_APPEL_QUELCONQUE.exec(texte))) {
-      const callee = trouve[0].slice(0, -1).replace(/\s+/g, "");
-      if (!MOTS_CLES_NON_APPEL.has(callee)) appels.push(callee);
-    }
-    return appels;
-  }
+  /** Fonction analysable : declaration classique, ou fonction affectee a un const. */
+  type NoeudFonction = ts.FunctionDeclaration | ts.FunctionExpression | ts.ArrowFunction;
 
-  /** FAIL-CLOSED (M2) : un seul appel hors liste blanche fait tomber le test. */
-  function verifierAppelsWhitelistes(corpsFn: string, nomFonction: string): void {
-    for (const callee of appelsDuCorps(corpsFn)) {
-      if (APPELS_AUTORISES.has(callee)) continue;
-      throw new Error(
-        `appel non whitelisté dans ${nomFonction} : ${callee} — un helper ou un alias peut cacher une écriture`,
-      );
-    }
-  }
-
-  // ── M1 : LECTURE DU PAYLOAD PAR POSITION D'ARGUMENT ──────────────────────
+  /** Ce dont toute l'analyse a besoin : l'arbre, la fonction, son corps. */
+  type CibleAnalyse = { sf: ts.SourceFile; fn: NoeudFonction; corps: ts.Node };
 
   /** Extrait borne, pour garder les messages d'erreur lisibles. */
   function extraitCourt(texte: string): string {
@@ -843,239 +657,345 @@ describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveCl
   }
 
   /**
-   * Corps de l'objet litteral passe en 2e ARGUMENT d'un appel d'ecriture
-   * (`setDoc(ref, PAYLOAD, ...)`, `updateDoc(ref, PAYLOAD)`), retourne
-   * STRICTEMENT entre ses accolades.
+   * G1 — la fonction ciblee, retrouvee DANS L'AST du source fourni.
    *
-   * C'est la correction du bug de conception : la version precedente localisait
-   * le payload avec `indexOf("{")`, donc la PREMIERE accolade de l'appel. Sur
-   * `setDoc(ref, payload, { merge: true })` elle lisait `{ merge: true }` et
-   * concluait, en silence, que le contrat valait `merge`. Ici l'argument est
-   * designe par sa POSITION, et sa forme est EXIGEE : tout ce qui n'est pas un
-   * objet litteral (ternaire, `Object.assign(...)`, variable, appel,
-   * `{...} as X`) fait tomber le test en nommant le segment fautif.
+   * `ts.createSourceFile` suffit : on n'a besoin d'aucune resolution de type,
+   * seulement de la forme syntaxique exacte. Les erreurs de syntaxe sont
+   * verifiees parce qu'un source a moitie parse produit un arbre a moitie vrai
+   * — et un verrou a moitie vrai est un verrou vert a tort.
    */
-  function payloadLitteralDeAppel(nomAppel: string, texteArguments: string): string {
-    const args = segmentsTopLevel(texteArguments);
-    if (args.length < 2) {
+  function cible(source: string, nom = NOM_FONCTION): CibleAnalyse {
+    const sf = ts.createSourceFile("clubsRepo.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const diagnostics = (sf as unknown as { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics ?? [];
+    if (diagnostics.length > 0) {
       throw new Error(
-        `${nomAppel}(...) : moins de 2 arguments, aucun payload en 2e position — "${extraitCourt(texteArguments)}"`,
+        `clubsRepo.ts n'est pas parsable (${diagnostics.length} erreur(s) de syntaxe) : ` +
+          `le verrou refuse d'analyser un arbre incomplet`,
       );
     }
-    const brut = args[1].trim();
-    const echoue = (raison: string) => {
-      throw new Error(
-        `${nomAppel}(...) : le 2e argument n'est pas un objet litteral "{ ... }" (${raison}) — ` +
-          `le verrou ne sait pas lire ce payload statiquement : "${extraitCourt(brut)}"`,
-      );
+
+    const trouves: NoeudFonction[] = [];
+    const visiter = (n: ts.Node): void => {
+      if (ts.isFunctionDeclaration(n) && n.name?.text === nom) trouves.push(n);
+      if (
+        ts.isVariableDeclaration(n) &&
+        ts.isIdentifier(n.name) &&
+        n.name.text === nom &&
+        n.initializer &&
+        (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer))
+      ) {
+        trouves.push(n.initializer);
+      }
+      ts.forEachChild(n, visiter);
     };
-    if (brut[0] !== "{") echoue("il ne commence pas par une accolade");
-    const finObjet = finAccoladeEquilibree(brut, 0);
-    if (finObjet !== brut.length) echoue("du code suit l'accolade fermante");
-    return brut.slice(1, finObjet - 1);
+    visiter(sf);
+
+    if (trouves.length === 0) {
+      throw new Error(
+        `fonction ${nom} introuvable dans l'AST de clubsRepo.ts — ` +
+          `un nom en commentaire ou dans une chaine n'est PAS une declaration`,
+      );
+    }
+    if (trouves.length > 1) {
+      throw new Error(
+        `${trouves.length} declarations de ${nom} dans l'AST : le verrou ne sait pas laquelle verrouiller`,
+      );
+    }
+    const fn = trouves[0];
+    const corps = fn.body;
+    if (!corps) throw new Error(`la declaration de ${nom} n'a pas de corps`);
+    return { sf, fn, corps };
   }
 
   /**
-   * Objets de donnees (texte STRICTEMENT entre accolades) de TOUTES les
-   * ecritures `setDoc(...)`/`updateDoc(...)` trouvees dans un corps de
-   * fonction, dans l'ordre d'apparition. Une fonction peut ecrire plusieurs
-   * documents, ou le meme document en plusieurs appels : ne regarder que le
-   * PREMIER `setDoc` laissait toute ecriture suivante hors radar — un
-   * deuxieme `setDoc`/`updateDoc` ajoutant une cle hors contrat passait
-   * inapercu, suite verte a tort.
+   * G2 — parcourt TOUS les appels du corps dans l'ordre du source et appelle
+   * `surAppel(nom)` pour chacun.
    *
-   * Le motif d'appel est cherche sur une copie dont le CONTENU des chaines est
-   * neutralise (longueur preservee, donc indices identiques) : une chaine qui
-   * contiendrait litteralement "setDoc(" ne doit pas etre prise pour un appel.
-   */
-  function objetsPayloadEcriture(corpsFn: string): string[] {
-    const texte = retirerCommentaires(corpsFn);
-    const masque = masquerChaines(texte); // meme longueur : les indices restent valides
-    const objets: string[] = [];
-    RE_APPEL_ECRITURE_RECONNU.lastIndex = 0;
-    let appel: RegExpExecArray | null;
-    while ((appel = RE_APPEL_ECRITURE_RECONNU.exec(masque))) {
-      const nomAppel = appel[1];
-      const debutParen = appel.index + appel[0].length - 1; // position du "(" ouvrant
-      const finAppel = finParenEquilibree(texte, debutParen);
-      // Texte STRICTEMENT entre les parentheses de l'appel (finAppel pointe
-      // juste apres le ")").
-      objets.push(payloadLitteralDeAppel(nomAppel, texte.slice(debutParen + 1, finAppel - 1)));
-      RE_APPEL_ECRITURE_RECONNU.lastIndex = finAppel; // reprend APRES cet appel, jamais dedans
-    }
-    return objets;
-  }
-
-  /** Decoupe un corps d'objet en segments top-level, en respectant chaines et imbrications. */
-  function segmentsTopLevel(corps: string): string[] {
-    const segments: string[] = [];
-    let profondeur = 0;
-    let debutSegment = 0;
-    let i = 0;
-    while (i < corps.length) {
-      const c = corps[i];
-      if (c === '"' || c === "'" || c === "`") {
-        const guillemet = c;
-        i += 1;
-        while (i < corps.length && corps[i] !== guillemet) {
-          if (corps[i] === "\\") i += 1;
-          i += 1;
-        }
-        i += 1;
-        continue;
-      }
-      if (c === "{" || c === "(" || c === "[") profondeur += 1;
-      else if (c === "}" || c === ")" || c === "]") profondeur -= 1;
-      else if (c === "," && profondeur === 0) {
-        segments.push(corps.slice(debutSegment, i));
-        i += 1;
-        debutSegment = i;
-        continue;
-      }
-      i += 1;
-    }
-    const dernier = corps.slice(debutSegment);
-    if (dernier.trim()) segments.push(dernier);
-    return segments;
-  }
-
-  type ClesEcriture = { ecrites: string[]; supprimees: string[] };
-
-  /**
-   * Cles portees par un SEGMENT SPREAD (`...expr`) d'un objet litteral :
-   * `...(opts.uid ? { a: opts.uid } : {})`, `...(cond ? {a} : {b: deleteField()})`,
-   * `...extra(...)`. Un spread FUSIONNE ses cles au niveau ou il apparait — c'est
-   * exactement ce que fait JavaScript a l'execution — donc on cherche TOUT objet
-   * litteral `{ ... }` present dans l'expression du spread (les deux branches d'un
-   * ternaire, une expression parenthesee, peu importe l'imbrication) et on
-   * recycle `extraireClesObjet` sur son contenu : si cet objet contient lui-meme
-   * un spread, il est deroule pareil, recursivement.
+   * FAIL-CLOSED sur la FORME : toute construction d'appel dont le callee n'est
+   * pas un identifiant simple leve immediatement. On ne peut pas confronter a
+   * une liste blanche ce qu'on ne sait pas nommer — `(0, setDoc)(...)`,
+   * `ns["setDoc"](...)`, `batch.set(...)` et les tagged templates sont donc
+   * refuses PAR CONSTRUCTION, sans avoir a les enumerer un par un (c'est
+   * exactement ce qu'une liste de motifs regex n'arrivait pas a faire).
    *
-   * Un spread qui ne contient AUCUN objet litteral visible (`...opts.extra`, une
-   * variable dont la forme n'est pas connue statiquement) ne peut rien reveler :
-   * il est ignore, comme avant — c'est une limite assumee de l'analyse statique,
-   * pas un trou du verrou (aucun champ du contrat actuel n'est ecrit ainsi).
+   * Le callee est examine AVANT de descendre dans les arguments : sur
+   * `runTransaction(db, async (tx) => tx.set(...))`, c'est `runTransaction`
+   * qui est signale, pas le `tx.set` interieur.
    */
-  function clesEcritesParSpread(segmentSpread: string): ClesEcriture {
-    const ecrites: string[] = [];
-    const supprimees: string[] = [];
-    const expression = segmentSpread.replace(/^\.\.\./, "");
-    let i = 0;
-    while (i < expression.length) {
-      const c = expression[i];
-      if (c === '"' || c === "'" || c === "`") {
-        const guillemet = c;
-        i += 1;
-        while (i < expression.length && expression[i] !== guillemet) {
-          if (expression[i] === "\\") i += 1;
-          i += 1;
-        }
-        i += 1;
-        continue;
-      }
-      if (c === "{") {
-        const fin = finAccoladeEquilibree(expression, i);
-        const trouve = extraireClesObjet(expression.slice(i + 1, fin - 1));
-        ecrites.push(...trouve.ecrites);
-        supprimees.push(...trouve.supprimees);
-        i = fin;
-        continue;
-      }
-      i += 1;
-    }
-    return { ecrites, supprimees };
-  }
-
-  /**
-   * Cles top-level d'un objet litteral : `ecrites` porte une vraie valeur,
-   * `supprimees` porte un `deleteField()` — c'est une SUPPRESSION, pas un champ
-   * du contrat (cas de `note` dans saveClubWeekContext). Un segment SPREAD
-   * (`...(cond ? { cle: ... } : ...)`) est deroule par `clesEcritesParSpread` :
-   * sans ca, une cle ajoutee derriere un spread conditionnel n'apparaissait dans
-   * AUCUNE des deux listes et le verrou ne la voyait jamais deriver.
-   *
-   * ECHOUE OUVERT, PAS FERME : un segment top-level non vide qui n'est ni un
-   * spread, ni de la forme `identifiant: valeur` (une cle entre guillemets
-   * `"x": v`, une cle calculee `[expr]: v`, etc.) ne doit JAMAIS etre ignore en
-   * silence — sinon le verrou peut rester vert en ayant simplement vu MOINS de
-   * cles que ce que le payload ecrit vraiment. On fait donc echouer
-   * l'extraction avec un message explicite plutot que de `continue`r. La seule
-   * limite qui reste assumee telle quelle est celle de `clesEcritesParSpread` :
-   * un spread sans objet litteral visible (`...opts.extra`) ne revele rien
-   * statiquement (cf. sa doc juste au-dessus).
-   */
-  function extraireClesObjet(corpsObjet: string): ClesEcriture {
-    const ecrites: string[] = [];
-    const supprimees: string[] = [];
-    // Un commentaire n'est jamais une cle : retire AVANT de couper en segments,
-    // sinon un `// commentaire` isole se retrouve seul dans son segment (ou
-    // colle au segment suivant) et ne matche ni un spread ni `cle: valeur`.
-    for (const segment of segmentsTopLevel(retirerCommentaires(corpsObjet))) {
-      const trimmed = segment.trim();
-      if (!trimmed) continue;
-      if (trimmed.startsWith("...")) {
-        const trouve = clesEcritesParSpread(trimmed);
-        ecrites.push(...trouve.ecrites);
-        supprimees.push(...trouve.supprimees);
-        continue;
-      }
-      const m = trimmed.match(/^([A-Za-z_$][\w$]*)\s*:\s*([\s\S]*)$/);
-      if (!m) {
+  function parcourirAppels({ sf, corps }: CibleAnalyse, surAppel: (nom: string) => void): void {
+    const visiter = (n: ts.Node): void => {
+      if (ts.isTaggedTemplateExpression(n)) {
         throw new Error(
-          `forme non reconnue dans le payload de saveClubWeekContext : ${trimmed} — étends l'extraction ou normalise l'écriture`,
+          `forme d'appel non analysable dans ${NOM_FONCTION} : ${extraitCourt(n.getText(sf))} ` +
+            `(tagged template : il appelle sa fonction sans parenthese)`,
         );
       }
-      const [, cle, valeur] = m;
-      if (/^deleteField\(\s*\)$/.test(valeur.trim())) supprimees.push(cle);
-      else ecrites.push(cle);
+      if (ts.isCallExpression(n)) {
+        if (!ts.isIdentifier(n.expression)) {
+          throw new Error(
+            `forme d'appel non analysable dans ${NOM_FONCTION} : ${extraitCourt(n.expression.getText(sf))} — ` +
+              `seul un appel a un identifiant simple peut etre confronte a la liste blanche`,
+          );
+        }
+        surAppel(n.expression.text);
+      }
+      ts.forEachChild(n, visiter);
+    };
+    visiter(corps);
+  }
+
+  /** G2 — un seul appel hors liste blanche fait tomber le test. */
+  function verifierAppelsWhitelistes(c: CibleAnalyse): void {
+    parcourirAppels(c, (callee) => {
+      if (APPELS_AUTORISES.has(callee)) return;
+      throw new Error(
+        `appel non whitelisté dans ${NOM_FONCTION} : ${callee} — un helper ou un alias peut cacher une écriture`,
+      );
+    });
+  }
+
+  /**
+   * G3 — les objets litteraux passes en 2e ARGUMENT de chaque `setDoc`/
+   * `updateDoc` du corps, dans l'ordre. Une fonction peut ecrire plusieurs
+   * documents, ou le meme en plusieurs appels : ne regarder que le PREMIER
+   * laissait toute ecriture suivante hors radar.
+   */
+  function payloadsEcriture({ sf, corps }: CibleAnalyse): ts.ObjectLiteralExpression[] {
+    const payloads: ts.ObjectLiteralExpression[] = [];
+    const visiter = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && APPELS_ECRITURE.has(n.expression.text)) {
+        const nomAppel = n.expression.text;
+        if (n.arguments.length < 2) {
+          throw new Error(
+            `${nomAppel}(...) : moins de 2 arguments, aucun payload en 2e position — "${extraitCourt(n.getText(sf))}"`,
+          );
+        }
+        const argument = n.arguments[1];
+        if (!ts.isObjectLiteralExpression(argument)) {
+          throw new Error(
+            `${nomAppel}(...) : le 2e argument n'est pas un objet litteral "{ ... }" ` +
+              `(${ts.SyntaxKind[argument.kind]}) — le verrou ne sait pas lire ce payload statiquement : ` +
+              `"${extraitCourt(argument.getText(sf))}"`,
+          );
+        }
+        payloads.push(argument);
+      }
+      ts.forEachChild(n, visiter);
+    };
+    visiter(corps);
+    return payloads;
+  }
+
+  /** Nom d'une cle de propriete, ou `null` si elle est CALCULEE (donc illisible ici). */
+  function nomDeCle(nom: ts.PropertyName): string | null {
+    if (ts.isIdentifier(nom)) return nom.text;
+    if (ts.isStringLiteral(nom) || ts.isNoSubstitutionTemplateLiteral(nom)) return nom.text;
+    if (ts.isNumericLiteral(nom)) return nom.text;
+    return null;
+  }
+
+  /** `deleteField()` — une SUPPRESSION de champ, pas un champ du contrat. */
+  function estDeleteField(expr: ts.Expression): boolean {
+    return (
+      ts.isCallExpression(expr) &&
+      ts.isIdentifier(expr.expression) &&
+      expr.expression.text === "deleteField" &&
+      expr.arguments.length === 0
+    );
+  }
+
+  function deparenthese(expr: ts.Expression): ts.Expression {
+    let courant = expr;
+    while (ts.isParenthesizedExpression(courant)) courant = courant.expression;
+    return courant;
+  }
+
+  /**
+   * G3 — cles portees par un objet litteral. `ecrites` porte une vraie valeur,
+   * `supprimees` porte un `deleteField()`.
+   *
+   * Toute propriete dont le nom ou la forme n'est pas lisible statiquement fait
+   * TOMBER l'extraction : rester vert en ayant vu moins de cles que le payload
+   * n'en ecrit vraiment est exactement le mode de defaillance que ce verrou
+   * doit rendre impossible.
+   */
+  function clesObjetLitteral(obj: ts.ObjectLiteralExpression, sf: ts.SourceFile): ClesEcriture {
+    const ecrites: string[] = [];
+    const supprimees: string[] = [];
+    for (const prop of obj.properties) {
+      if (ts.isPropertyAssignment(prop)) {
+        const cle = nomDeCle(prop.name);
+        if (cle === null) {
+          throw new Error(
+            `cle non lisible statiquement dans le payload de ${NOM_FONCTION} : ${extraitCourt(prop.getText(sf))} — ` +
+              `une cle calculee peut nommer n'importe quel champ`,
+          );
+        }
+        if (estDeleteField(prop.initializer)) supprimees.push(cle);
+        else ecrites.push(cle);
+        continue;
+      }
+      if (ts.isShorthandPropertyAssignment(prop)) {
+        ecrites.push(prop.name.text);
+        continue;
+      }
+      if (ts.isSpreadAssignment(prop)) {
+        const expression = deparenthese(prop.expression);
+        if (!ts.isObjectLiteralExpression(expression)) {
+          throw new Error(
+            `spread non lisible statiquement dans le payload de ${NOM_FONCTION} : ` +
+              `${extraitCourt(prop.getText(sf))} — seul un spread d'objet litteral revele ses cles`,
+          );
+        }
+        const trouve = clesObjetLitteral(expression, sf);
+        ecrites.push(...trouve.ecrites);
+        supprimees.push(...trouve.supprimees);
+        continue;
+      }
+      throw new Error(
+        `forme de propriete non reconnue dans le payload de ${NOM_FONCTION} : ${extraitCourt(prop.getText(sf))}`,
+      );
     }
     return { ecrites: [...new Set(ecrites)], supprimees: [...new Set(supprimees)] };
   }
 
   /**
-   * Union des cles ECRITES et SUPPRIMEES par TOUTES les ecritures
-   * `setDoc`/`updateDoc` d'un corps de fonction (une fonction peut ecrire
-   * plusieurs documents, ou le meme document en plusieurs appels).
+   * Union des cles ECRITES et SUPPRIMEES par toutes les ecritures de
+   * `saveClubWeekContext`, lue dans le SOURCE fourni (le vrai fichier, ou une
+   * copie mutee en memoire).
    *
-   * Fail-closed en QUATRE temps, du filet le plus large au plus precis :
-   *  1. `verifierAucuneEcritureNonReconnue` : autre API d'ecriture
-   *     (addDoc/writeBatch/runTransaction, `batch.set(`...) ;
-   *  2. M2 `verifierAppelsWhitelistes` : appel dont le nom n'est pas dans la
-   *     liste blanche — helper local ou alias d'import ;
-   *  3. M1, dans `objetsPayloadEcriture` : 2e argument qui n'est pas un objet
-   *     litteral ;
-   *  4. absence totale de `setDoc`/`updateDoc` reconnu (une fonction censee
-   *     ecrire qui n'ecrit visiblement rien n'est pas un verrou qui passe,
-   *     c'est un verrou qui ne verrouille plus rien).
+   * Fail-closed en quatre temps : G1 (fonction introuvable, ambigue, ou source
+   * non parsable), G2 (appel non whitelisté / forme non analysable), G3
+   * (payload ou cle non lisible), puis « aucune ecriture trouvee » — une
+   * fonction censee ecrire qui n'ecrit visiblement rien n'est pas un verrou qui
+   * passe, c'est un verrou qui ne verrouille plus rien.
    */
-  function clesEcritesDansCorpsFonction(
-    corpsFn: string,
-    nomFonction = "saveClubWeekContext",
-  ): ClesEcriture {
-    verifierAucuneEcritureNonReconnue(corpsFn);
-    verifierAppelsWhitelistes(corpsFn, nomFonction);
-    const payloads = objetsPayloadEcriture(corpsFn);
+  function clesEcritesParSaveClubWeekContext(source: string): ClesEcriture {
+    const c = cible(source);
+    verifierAppelsWhitelistes(c);
+    const payloads = payloadsEcriture(c);
     if (payloads.length === 0) {
-      throw new Error("Aucune ecriture setDoc/updateDoc trouvee dans ce corps de fonction");
+      throw new Error(`Aucune ecriture setDoc/updateDoc trouvee dans ${NOM_FONCTION}`);
     }
     const ecrites = new Set<string>();
     const supprimees = new Set<string>();
     for (const payload of payloads) {
-      const trouve = extraireClesObjet(payload);
-      trouve.ecrites.forEach((c) => ecrites.add(c));
-      trouve.supprimees.forEach((c) => supprimees.add(c));
+      const trouve = clesObjetLitteral(payload, c.sf);
+      trouve.ecrites.forEach((k) => ecrites.add(k));
+      trouve.supprimees.forEach((k) => supprimees.add(k));
     }
     return { ecrites: [...ecrites], supprimees: [...supprimees] };
   }
 
-  /** Cles reellement ecrites par saveClubWeekContext, lues DANS `source`. */
-  function clesEcritesParSaveClubWeekContext(source: string): ClesEcriture {
-    const corps = corpsFonction(source, "saveClubWeekContext");
-    return clesEcritesDansCorpsFonction(corps);
+  /** Texte des payloads d'ecriture — sonde de test, pour montrer CE QUI est lu. */
+  function textesPayloads(source: string): string[] {
+    const c = cible(source);
+    return payloadsEcriture(c).map((p) => p.getText(c.sf));
   }
 
-  test("saveClubWeekContext existe toujours a l'endroit attendu (sinon le verrou ne verrouille rien)", () => {
-    expect(CLUBS_REPO_SOURCE).toContain("function saveClubWeekContext(");
+  /** Noms des appels du corps, dans l'ordre — temoin de test de la liste blanche. */
+  function textesAppels(source: string): string[] {
+    const noms: string[] = [];
+    parcourirAppels(cible(source), (nom) => noms.push(nom));
+    return noms;
+  }
+
+  /** Message d'erreur leve par `fn`, ou "" si `fn` n'a rien leve. */
+  function messageLeve(fn: () => unknown): string {
+    try {
+      fn();
+      return "";
+    } catch (e) {
+      return (e as Error).message;
+    }
+  }
+
+  // ── OUTILLAGE DE MUTATION ────────────────────────────────────────────────
+  // Les preuves ci-dessous ne touchent JAMAIS le fichier sur disque : elles
+  // mutent une COPIE en memoire du texte source, puis relancent exactement la
+  // meme analyse. Les bornes de la fonction sont lues sur l'AST, donc une
+  // mutation atterrit toujours DANS `saveClubWeekContext` et nulle part
+  // ailleurs.
+
+  /**
+   * Applique `muter` au TEXTE de `saveClubWeekContext` et recolle le resultat
+   * dans une copie du source. Jette si la mutation est inoperante : une preuve
+   * par mutation qui n'a rien mute ne prouve rien (le fichier est en CRLF, un
+   * `\n` en dur dans un motif ne matcherait rien).
+   */
+  function muterFonction(source: string, muter: (texteFonction: string) => string): string {
+    const { sf, fn } = cible(source);
+    const debut = fn.getStart(sf);
+    const fin = fn.getEnd();
+    const avant = source.slice(debut, fin);
+    const apres = muter(avant);
+    if (apres === avant) {
+      throw new Error("mutation de test inoperante : le motif cible n'a pas matche dans saveClubWeekContext");
+    }
+    return source.slice(0, debut) + apres + source.slice(fin);
+  }
+
+  /** Fin de l'appel `setDoc` reel — point d'insertion d'une instruction supplementaire. */
+  const RE_FIN_APPEL_SETDOC = /\{ merge: true \}\r?\n\s*\);/;
+
+  /** Le payload REEL du `setDoc` (objet litteral, 2e argument), pour le remplacer. */
+  const RE_PAYLOAD_SETDOC = /(await setDoc\(\s*ref,\s*)(\{[\s\S]*?\},)(\s*\{ merge: true \})/;
+
+  /** Remplace le PAYLOAD du setDoc reel par autre chose, sur une copie en memoire. */
+  function remplacerPayload(source: string, remplacement: string): string {
+    return muterFonction(source, (texte) =>
+      texte.replace(RE_PAYLOAD_SETDOC, (_m, avant, _payload, apres) => `${avant}${remplacement}${apres}`),
+    );
+  }
+
+  /** Ajoute une instruction juste apres l'appel `setDoc` reel. */
+  function ajouterApresSetDoc(source: string, instruction: string): string {
+    return muterFonction(source, (texte) => texte.replace(RE_FIN_APPEL_SETDOC, (m) => `${m}\n  ${instruction}`));
+  }
+
+  /** Remplace la ligne `clubId: opts.clubId,` du payload reel par `texteInsere`. */
+  function insererDansPayload(source: string, texteInsere: string): string {
+    return muterFonction(source, (texte) => texte.replace("clubId: opts.clubId,", () => texteInsere));
+  }
+
+  /**
+   * Insere du texte JUSTE AVANT la vraie declaration (donc hors de la
+   * fonction). Le point d'insertion est lu sur l'AST, pas par `indexOf` sur le
+   * nom : sinon un leurre en commentaire — precisement ce que ces mutations
+   * fabriquent — capterait l'ancre et l'insertion atterrirait DANS le
+   * commentaire.
+   */
+  function insererAvantLaFonction(source: string, texteInsere: string): string {
+    const { sf, fn } = cible(source);
+    const debut = fn.getStart(sf);
+    return source.slice(0, debut) + texteInsere + source.slice(debut);
+  }
+
+  /**
+   * Echange les DEUX PREMIERES cles du payload reel, bornes lues sur l'AST.
+   * Volontairement independant des noms de champs : un reformatage doit rester
+   * vert quel que soit l'ordre dans lequel le fichier se trouve deja.
+   */
+  function reordonnerDeuxPremieresCles(source: string): string {
+    const c = cible(source);
+    const payload = payloadsEcriture(c)[0];
+    const [p1, p2] = payload.properties;
+    if (!p1 || !p2) throw new Error("mutation de test inoperante : moins de 2 cles dans le payload");
+    const d1 = p1.getStart(c.sf);
+    const d2 = p2.getStart(c.sf);
+    return (
+      source.slice(0, d1) +
+      source.slice(d2, p2.getEnd()) +
+      source.slice(p1.getEnd(), d2) +
+      source.slice(d1, p1.getEnd()) +
+      source.slice(p2.getEnd())
+    );
+  }
+
+  // ── LE CONTRAT, SUR LE FICHIER REEL ──────────────────────────────────────
+
+  test("G1 : saveClubWeekContext est une VRAIE declaration dans l'AST (sinon le verrou ne verrouille rien)", () => {
+    expect(() => cible(CLUBS_REPO_SOURCE)).not.toThrow();
   });
 
   test("`note` est une SUPPRESSION (deleteField()), jamais une cle ecrite", () => {
@@ -1099,71 +1019,17 @@ describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveCl
     expect(ecrites).not.toContain("createdAt");
   });
 
-  // ── LA PREUVE QUE LE VERROU MORD ─────────────────────────────────────────
-  // Les deux tests ci-dessous ne touchent JAMAIS le fichier sur disque : ils
-  // mutent une COPIE en memoire du texte source (jamais ecrite), puis relancent
-  // exactement la meme extraction. Si le verrou ne detectait pas ces
-  // divergences fabriquees, il ne detecterait pas non plus une vraie derive.
-
-  test("mord si le CODE ecrit une cle absente du contrat (ex: futur champFantome)", () => {
-    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
-    const corpsMute = corpsOriginal.replace(
-      "weekKey: opts.weekKey,",
-      "weekKey: opts.weekKey,\n      champFantome: opts.uid,",
-    );
-    // La mutation a bien eu lieu : sinon le test suivant ne prouverait rien.
-    expect(corpsMute).not.toBe(corpsOriginal);
-
-    const { ecrites } = extraireClesObjet(objetsPayloadEcriture(corpsMute)[0]);
-    expect(ecrites).toContain("champFantome");
-    expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
-  });
-
-  test("mord si le CODE ecrit une cle via un SPREAD CONDITIONNEL (`...(cond ? { cle } : ...)`)", () => {
-    // Un simple `key: value` n'est pas la seule facon d'ajouter un champ au
-    // payload : `...(opts.uid ? { champSpread: opts.uid } : {})` le fait tout
-    // aussi bien, et une extraction qui ne regarde que les segments `cle:` tout
-    // court passe totalement a cote (elle ignore le segment spread en silence).
-    // Verifie AVANT tout que ce cas etait bien un trou : sans le derouleur de
-    // spread, cette meme mutation laissait `ecrites` identique au contrat et le
-    // test suivant aurait echoue a tort — c'est exactement l'incident vecu sur
-    // `repositories/clubsRepo.ts` (preuve en dehors du fichier, cf. rapport).
-    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
-    const corpsMute = corpsOriginal.replace(
-      "note: deleteField(),",
-      "note: deleteField(),\n      ...(opts.uid ? { champSpread: opts.uid } : {}),",
-    );
-    expect(corpsMute).not.toBe(corpsOriginal);
-
-    const { ecrites } = extraireClesObjet(objetsPayloadEcriture(corpsMute)[0]);
-    expect(ecrites).toContain("champSpread");
-    expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
-  });
-
-  test("un spread conditionnel dont AUCUNE branche n'est retenue (deleteField()) reste une suppression", () => {
-    // Temoin : un spread peut aussi porter une suppression, pas seulement une
-    // ecriture. `...(cond ? { note: deleteField() } : {})` doit ranger `note`
-    // dans `supprimees`, pas dans `ecrites` — meme regle que pour un `deleteField()`
-    // ecrit directement.
-    const { ecrites, supprimees } = extraireClesObjet(
-      "weekKey: opts.weekKey,\n...(opts.flag ? { note: deleteField() } : {}),",
-    );
-    expect(supprimees).toEqual(["note"]);
-    expect(ecrites).toEqual(["weekKey"]);
-  });
-
   test("mord si le CONTRAT porte une cle que le code n'ecrit jamais (le bug `createdAt` reproduit)", () => {
-    // Reproduit EXACTEMENT l'incident corrige par ce commit, sur une COPIE :
-    // le tableau reel exporte par le module n'est jamais modifie.
+    // Reproduit l'incident sur une COPIE : le tableau reel exporte par le
+    // module n'est jamais modifie.
     const contratAvecFantome = [...WEEK_CONTEXT_CONTRACT_FIELDS, "createdAt"];
     const { ecrites } = clesEcritesParSaveClubWeekContext(CLUBS_REPO_SOURCE);
     expect([...ecrites].sort()).not.toEqual([...contratAvecFantome].sort());
   });
 
-  test("reecrire la MEME valeur qu'un champ deja dans le contrat ne casse rien (temoin positif)", () => {
+  test("temoin positif : chaque champ du contrat est bien ecrit, et rien de plus", () => {
     // Sans ce temoin, un verrou trop strict pourrait rougir sur un simple
-    // reformatage du code (ex: reordonner les cles) sans qu'aucune derive
-    // reelle n'existe.
+    // reformatage du code sans qu'aucune derive reelle n'existe.
     const { ecrites } = clesEcritesParSaveClubWeekContext(CLUBS_REPO_SOURCE);
     for (const champ of WEEK_CONTEXT_CONTRACT_FIELDS) {
       expect(ecrites).toContain(champ);
@@ -1171,269 +1037,285 @@ describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveCl
     expect(ecrites.length).toBe(WEEK_CONTEXT_CONTRACT_FIELDS.length);
   });
 
-  // ── LE VERROU COUVRE TOUTES LES ECRITURES, PAS SEULEMENT LA PREMIERE ────
-  // Avant cette section, `objetPayloadSetDoc` ne regardait que le PREMIER
-  // `setDoc(` du corps de fonction : une deuxieme ecriture vers le meme
-  // document (un deuxieme `setDoc`, ou un `updateDoc`) ajoutant une cle hors
-  // contrat passait totalement inapercue, suite verte a tort. Les deux tests
-  // ci-dessous mutent une COPIE en memoire (jamais le fichier sur disque) pour
-  // le prouver : `saveClubWeekContext` n'a aujourd'hui qu'une seule ecriture,
-  // ces mutations simulent un futur ou elle en aurait deux.
+  test("G3 temoin : le payload lu est bien le 2e argument, JAMAIS `{ merge: true }`", () => {
+    const c = cible(CLUBS_REPO_SOURCE);
+    const payloads = payloadsEcriture(c);
+    expect(payloads).toHaveLength(1);
 
-  // Le fichier source est en CRLF (Windows) : toute mutation par substring doit
-  // matcher la fin de l'appel `setDoc` via une regex tolerante a `\r?\n`,
-  // jamais un `\n` en dur qui ne matcherait rien sur ce depot et laisserait
-  // silencieusement `corpsMute === corpsOriginal` (le `.not.toBe` ci-dessous
-  // est justement le garde-fou qui l'aurait revele).
-  const RE_FIN_APPEL_SETDOC = /\{ merge: true \}\r?\n\s*\);/;
+    const { ecrites } = clesObjetLitteral(payloads[0], c.sf);
+    expect(ecrites).toContain("weekKey");
+    expect(ecrites).toContain("trainingIntensity");
+    // La sonde : `merge` appartient au 3e argument (les options de setDoc). La
+    // verification porte sur les CLES EXTRAITES, pas sur le texte du payload —
+    // un commentaire qui contient le mot « merge » n'est pas une derive de
+    // contrat, et ne doit pas faire rougir le verrou.
+    expect(ecrites).not.toContain("merge");
+  });
+
+  test("G2 temoin : le corps reel n'appelle QUE des fonctions de la liste blanche", () => {
+    // La liste blanche est figee a la main : ce temoin la rend auditable et
+    // oblige a la relire si le code evolue (limite L2).
+    expect(textesAppels(CLUBS_REPO_SOURCE)).toEqual(["doc", "setDoc", "deleteField", "serverTimestamp"]);
+    for (const callee of textesAppels(CLUBS_REPO_SOURCE)) {
+      expect(APPELS_AUTORISES.has(callee)).toBe(true);
+    }
+  });
+
+  // ── LE VERROU MORD : DERIVE DE CLES ──────────────────────────────────────
+
+  test("mord si le CODE ecrit une cle absente du contrat (ex: futur champFantome)", () => {
+    const mute = insererDansPayload(CLUBS_REPO_SOURCE, "clubId: opts.clubId,\n      champFantome: opts.uid,");
+    const { ecrites } = clesEcritesParSaveClubWeekContext(mute);
+    expect(ecrites).toContain("champFantome");
+    expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
+  });
 
   test("mord si une DEUXIEME ecriture (setDoc) ajoute une cle hors contrat", () => {
-    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
-    const corpsMute = corpsOriginal.replace(
-      RE_FIN_APPEL_SETDOC,
-      (m) => `${m}\n  await setDoc(ref, { champFantomeDeuxiemeEcriture: opts.uid });`,
+    // `saveClubWeekContext` n'a aujourd'hui qu'une seule ecriture : cette
+    // mutation simule un futur ou elle en aurait deux.
+    const mute = ajouterApresSetDoc(
+      CLUBS_REPO_SOURCE,
+      "await setDoc(ref, { champFantomeDeuxiemeEcriture: opts.uid });",
     );
-    expect(corpsMute).not.toBe(corpsOriginal);
-
-    const { ecrites } = clesEcritesDansCorpsFonction(corpsMute);
+    const { ecrites } = clesEcritesParSaveClubWeekContext(mute);
     expect(ecrites).toContain("champFantomeDeuxiemeEcriture");
     expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
   });
 
   test("mord si une ecriture updateDoc ajoute une cle hors contrat", () => {
-    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
-    const corpsMute = corpsOriginal.replace(
-      RE_FIN_APPEL_SETDOC,
-      (m) => `${m}\n  await updateDoc(ref, { champFantomeUpdateDoc: opts.uid });`,
-    );
-    expect(corpsMute).not.toBe(corpsOriginal);
-
-    const { ecrites } = clesEcritesDansCorpsFonction(corpsMute);
+    const mute = ajouterApresSetDoc(CLUBS_REPO_SOURCE, "await updateDoc(ref, { champFantomeUpdateDoc: opts.uid });");
+    const { ecrites } = clesEcritesParSaveClubWeekContext(mute);
     expect(ecrites).toContain("champFantomeUpdateDoc");
     expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
   });
 
-  test("fail-closed : une ecriture BATCH/TRANSACTION non reconnue fait tomber le test, message explicite", () => {
-    // `batch.set(...)`/`transaction.update(...)` sont des ecritures Firestore
-    // tout aussi reelles qu'un `setDoc` — ce fichier ne sait pas lire leur
-    // payload statiquement, donc il ne doit JAMAIS les ignorer en silence.
-    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
-    const corpsMute = corpsOriginal.replace(
-      RE_FIN_APPEL_SETDOC,
-      (m) => `${m}\n  batch.set(ref, { champBatch: opts.uid });`,
+  test("une cle QUOTEE est LUE et comparee au contrat (l'AST sait la lire, le scan de texte la rejetait)", () => {
+    // Progres net sur le scan de texte : `"champ-quote": v` n'est plus une
+    // « forme non reconnue » qui faisait rougir le verrou pour la mauvaise
+    // raison — c'est une cle, elle est extraite, et elle sort du contrat.
+    const mute = insererDansPayload(CLUBS_REPO_SOURCE, 'clubId: opts.clubId,\n      "champ-quote": opts.uid,');
+    const { ecrites } = clesEcritesParSaveClubWeekContext(mute);
+    expect(ecrites).toContain("champ-quote");
+    expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
+  });
+
+  test("une cle SHORTHAND (`champCourt,`) est lue comme une cle ecrite", () => {
+    const mute = muterFonction(CLUBS_REPO_SOURCE, (texte) =>
+      texte
+        .replace("const ref = doc(", () => "const champCourt = opts.uid;\n  const ref = doc(")
+        .replace("clubId: opts.clubId,", () => "clubId: opts.clubId,\n      champCourt,"),
     );
-    expect(corpsMute).not.toBe(corpsOriginal);
-
-    expect(() => clesEcritesDansCorpsFonction(corpsMute)).toThrow(/forme d'ecriture non reconnue/);
+    const { ecrites } = clesEcritesParSaveClubWeekContext(mute);
+    expect(ecrites).toContain("champCourt");
+    expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
   });
 
-  test("fail-closed : addDoc/writeBatch/runTransaction font aussi tomber le test (autre API d'ecriture)", () => {
-    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
-    for (const appelSuspect of [
-      'await addDoc(collection(db, "clubs"), { champAddDoc: opts.uid });',
-      "const batch = writeBatch(db);",
-      "await runTransaction(db, async (tx) => { tx.set(ref, { x: 1 }); });",
-    ]) {
-      const corpsMute = corpsOriginal.replace(RE_FIN_APPEL_SETDOC, (m) => `${m}\n  ${appelSuspect}`);
-      expect(corpsMute).not.toBe(corpsOriginal);
-      expect(() => clesEcritesDansCorpsFonction(corpsMute)).toThrow(/forme d'ecriture non reconnue/);
-    }
-  });
-
-  test("un commentaire // dans le payload n'est PAS pris pour une forme non reconnue (faux positif desamorce)", () => {
-    // Preuve inverse des tests fail-closed ci-dessus : un simple commentaire
-    // n'est pas une ecriture non reconnue, ni une cle mal formee. Sans le
-    // nettoyage `retirerCommentaires`, ce commentaire glissait dans un segment
-    // top-level et faisait tomber `extraireClesObjet` en erreur — un faux
-    // positif du verrou, pas une vraie derive de contrat.
-    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
-    // Substring sur UNE seule ligne (`clubId: opts.clubId,`) : pas de `\n` en
-    // dur a faire matcher contre le CRLF du fichier source.
-    const corpsMute = corpsOriginal.replace(
-      "clubId: opts.clubId,",
-      "// commentaire de dev, jamais une cle\n      clubId: opts.clubId, // idem, en fin de ligne\n      /* et un bloc, tant qu'on y est */",
+  test("un SPREAD d'objet litteral est deroule : ses cles et ses deleteField() remontent", () => {
+    const mute = insererDansPayload(
+      CLUBS_REPO_SOURCE,
+      "clubId: opts.clubId,\n      ...{ champSpreadLitteral: opts.uid, ancienChamp: deleteField() },",
     );
-    expect(corpsMute).not.toBe(corpsOriginal);
-
-    const { ecrites, supprimees } = clesEcritesDansCorpsFonction(corpsMute);
-    expect([...ecrites].sort()).toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
-    expect(supprimees).toEqual(["note"]);
+    const { ecrites, supprimees } = clesEcritesParSaveClubWeekContext(mute);
+    expect(ecrites).toContain("champSpreadLitteral");
+    expect([...supprimees].sort()).toEqual(["ancienChamp", "note"]);
   });
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // M1 — LE PAYLOAD EST L'ARGUMENT D'INDEX 1, PAS « LA PREMIERE ACCOLADE »
-  // ══════════════════════════════════════════════════════════════════════════
-  // Le bug de conception ferme ici : le verrou localisait le payload avec
-  // `indexOf("{")`. Des que le 2e argument n'etait pas deja une accolade
-  // (variable, ternaire, Object.assign), la premiere accolade rencontree etait
-  // celle des OPTIONS — `{ merge: true }` — et le verrou comparait donc le
-  // contrat a la cle `merge`, en silence, sans jamais rougir.
+  // ── LE VERROU MORD : FORMES NON LISIBLES (FAIL-CLOSED) ───────────────────
 
-  /** Le payload REEL du `setDoc` de saveClubWeekContext (objet litteral, 2e argument). */
-  const RE_PAYLOAD_SETDOC = /(await setDoc\(\s*ref,\s*)(\{[\s\S]*?\},)(\s*\{ merge: true \})/;
-
-  /**
-   * Remplace le PAYLOAD du setDoc reel par autre chose, sur une COPIE en
-   * memoire. Jette si le motif ne matche pas : une mutation inoperante rendrait
-   * la preuve creuse (le test « passerait » en n'ayant rien mute du tout).
-   */
-  function remplacerPayload(corps: string, remplacement: string): string {
-    const mute = corps.replace(RE_PAYLOAD_SETDOC, (_m, avant, _payload, apres) => `${avant}${remplacement}${apres}`);
-    if (mute === corps) throw new Error("mutation de test inoperante : le motif du payload n'a pas matche");
-    return mute;
-  }
-
-  /** Message d'erreur leve par `fn`, ou "" si `fn` n'a rien leve. */
-  function messageLeve(fn: () => unknown): string {
-    try {
-      fn();
-      return "";
-    } catch (e) {
-      return (e as Error).message;
-    }
-  }
-
-  test("M1 temoin : le payload lu est bien le 2e argument, JAMAIS `{ merge: true }`", () => {
-    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
-    const payloads = objetsPayloadEcriture(corpsOriginal);
-
-    expect(payloads).toHaveLength(1);
-    expect(payloads[0]).toContain("weekKey");
-    expect(payloads[0]).toContain("trainingIntensity");
-    // La sonde : `merge` appartient au 3e argument (les options), il ne doit
-    // jamais se retrouver dans le texte pris pour le payload.
-    expect(payloads[0]).not.toContain("merge");
-    expect(extraireClesObjet(payloads[0]).ecrites).not.toContain("merge");
+  test("fail-closed : une cle CALCULEE (`[expr]: v`) fait tomber le test, elle peut nommer n'importe quoi", () => {
+    const mute = insererDansPayload(CLUBS_REPO_SOURCE, "clubId: opts.clubId,\n      [opts.uid]: true,");
+    expect(messageLeve(() => clesEcritesParSaveClubWeekContext(mute))).toMatch(/cle non lisible statiquement/);
   });
 
-  test("M1 mord si le payload est un TERNAIRE (aucune des deux branches n'est lue en douce)", () => {
-    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
-    const corpsMute = remplacerPayload(
-      corpsOriginal,
+  test("fail-closed : un SPREAD CONDITIONNEL n'est pas litteral, donc refuse (jamais ignore en silence)", () => {
+    // `...(opts.uid ? { champSpread: opts.uid } : {})` ajoute un champ tout
+    // aussi bien qu'un `cle: valeur`. Le scan de texte tentait de deviner les
+    // deux branches ; l'AST refuse net, parce qu'une branche non litterale
+    // rendrait l'extraction incomplete sans que personne ne le sache.
+    const mute = insererDansPayload(
+      CLUBS_REPO_SOURCE,
+      "clubId: opts.clubId,\n      ...(opts.uid ? { champSpread: opts.uid } : {}),",
+    );
+    const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
+    expect(message).toMatch(/spread non lisible statiquement/);
+    expect(message).toContain("champSpread");
+  });
+
+  test("fail-closed : le payload est un TERNAIRE (aucune des deux branches n'est lue en douce)", () => {
+    const mute = remplacerPayload(
+      CLUBS_REPO_SOURCE,
       "opts.uid ? { champTernaireA: opts.uid } : { champTernaireB: opts.uid },",
     );
-
-    const message = messageLeve(() => clesEcritesDansCorpsFonction(corpsMute));
+    const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
     expect(message).toMatch(/le 2e argument n'est pas un objet litteral/);
     expect(message).toContain("champTernaireA"); // le segment fautif est dans le message
   });
 
-  test("M1 mord si le payload est un Object.assign(...)", () => {
-    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
-    const corpsMute = remplacerPayload(corpsOriginal, "Object.assign({}, { champAssign: opts.uid }),");
-
-    // M1, pris isolement, refuse deja ce payload...
-    expect(() => objetsPayloadEcriture(corpsMute)).toThrow(/le 2e argument n'est pas un objet litteral/);
-    // ...et dans la chaine complete c'est M2 qui parle en premier, parce qu'un
-    // appel `Object.assign` n'a rien a faire dans cette fonction. Les deux
-    // messages nomment le vrai probleme ; aucun des deux ne laisse passer.
-    expect(messageLeve(() => clesEcritesDansCorpsFonction(corpsMute))).toMatch(
-      /appel non whitelisté dans saveClubWeekContext : Object\.assign/,
+  test("fail-closed : le payload est une VARIABLE — et le message nomme la variable, pas `merge`", () => {
+    // LE cas qui prouve la correction du bug de conception d'origine : en
+    // localisant le payload par « la premiere accolade », ce corps mute donnait
+    // `ecrites === ["merge"]` sans rien lever, le verrou comparant le contrat
+    // aux OPTIONS de setDoc.
+    const mute = muterFonction(CLUBS_REPO_SOURCE, (texte) =>
+      texte
+        .replace(RE_PAYLOAD_SETDOC, (_m, avant, _payload, apres) => `${avant}payloadCache,${apres}`)
+        .replace("await setDoc(", () => "const payloadCache = { champCache: opts.uid };\n  await setDoc("),
     );
-  });
-
-  test("M1 mord si le payload est une VARIABLE — et le message nomme la variable, pas `merge`", () => {
-    // LE cas qui prouve la correction du bug de conception. Avec l'ancienne
-    // localisation par `indexOf("{")`, ce corps mute donnait `ecrites === ["merge"]`
-    // sans rien lever : le verrou comparait le contrat aux OPTIONS de setDoc.
-    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
-    const corpsMute = remplacerPayload(corpsOriginal, "payloadCache,").replace(
-      "await setDoc(",
-      "const payloadCache = { champCache: opts.uid };\n  await setDoc(",
-    );
-    expect(corpsMute).toContain("payloadCache,");
-
-    const message = messageLeve(() => clesEcritesDansCorpsFonction(corpsMute));
+    const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
     expect(message).toMatch(/le 2e argument n'est pas un objet litteral/);
     expect(message).toContain("payloadCache");
-    // Le message dit le VRAI probleme (payload non litteral), il ne part pas
-    // sur une fausse piste en parlant de `merge`.
     expect(message).not.toContain("merge");
   });
 
-  test("M1 mord si du code suit l'accolade fermante (`{...} as Record<string, unknown>`)", () => {
-    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
-    const corpsMute = remplacerPayload(
-      corpsOriginal,
-      "{ champCaste: opts.uid } as Record<string, unknown>,",
-    );
-
-    expect(messageLeve(() => clesEcritesDansCorpsFonction(corpsMute))).toMatch(
-      /le 2e argument n'est pas un objet litteral .*du code suit l'accolade fermante/,
-    );
+  test("fail-closed : le payload est un `{...} as Record<string, unknown>`", () => {
+    const mute = remplacerPayload(CLUBS_REPO_SOURCE, "{ champCaste: opts.uid } as Record<string, unknown>,");
+    const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
+    expect(message).toMatch(/le 2e argument n'est pas un objet litteral/);
+    expect(message).toContain("champCaste");
   });
 
-  test("M1 mord si l'appel d'ecriture n'a pas de 2e argument du tout", () => {
-    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
-    const corpsMute = corpsOriginal.replace(
-      RE_FIN_APPEL_SETDOC,
-      (m) => `${m}\n  await updateDoc(refConstruiteAilleurs);`,
-    );
-    expect(corpsMute).not.toBe(corpsOriginal);
-
-    expect(messageLeve(() => clesEcritesDansCorpsFonction(corpsMute))).toMatch(
+  test("fail-closed : un appel d'ecriture sans 2e argument du tout", () => {
+    const mute = ajouterApresSetDoc(CLUBS_REPO_SOURCE, "await updateDoc(ref);");
+    expect(messageLeve(() => clesEcritesParSaveClubWeekContext(mute))).toMatch(
       /updateDoc\(\.\.\.\) : moins de 2 arguments/,
     );
   });
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // M2 — LISTE BLANCHE FERMEE DES APPELS DU CORPS
-  // ══════════════════════════════════════════════════════════════════════════
-  // Avant M2, la detection des ecritures etait purement NOMINALE : le verrou
-  // cherchait les mots `setDoc`/`updateDoc`. Un helper local ou un alias
-  // d'import ecrit exactement pareil sans jamais porter ces noms — invisible.
+  // ── LE VERROU MORD : APPELS (G2) ─────────────────────────────────────────
 
-  test("M2 temoin : le corps reel n'appelle QUE des fonctions de la liste blanche", () => {
-    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
-    // La liste blanche est figee a la main : ce temoin la rend auditable et
-    // oblige a la relire si le code evolue.
-    expect(appelsDuCorps(corpsOriginal)).toEqual(["doc", "setDoc", "deleteField", "serverTimestamp"]);
-    for (const callee of appelsDuCorps(corpsOriginal)) {
-      expect(APPELS_AUTORISES.has(callee)).toBe(true);
-    }
-    expect(() => verifierAppelsWhitelistes(corpsOriginal, "saveClubWeekContext")).not.toThrow();
-  });
-
-  test("M2 mord si un HELPER LOCAL est appele (il pourrait ecrire sans qu'on le voie)", () => {
-    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
-    const corpsMute = corpsOriginal.replace(
-      RE_FIN_APPEL_SETDOC,
-      (m) => `${m}\n  await ecrireCadreHelper(ref, opts);`,
-    );
-    expect(corpsMute).not.toBe(corpsOriginal);
-
-    // Le payload du vrai setDoc reste parfaitement lisible : sans M2, la suite
+  test("G2 mord si un HELPER LOCAL est appele (il pourrait ecrire sans qu'on le voie)", () => {
+    const mute = ajouterApresSetDoc(CLUBS_REPO_SOURCE, "await ecrireCadreHelper(ref, opts);");
+    // Le payload du vrai setDoc reste parfaitement lisible : sans G2, la suite
     // resterait VERTE alors qu'une ecriture entiere est passee par le helper.
-    expect(() => objetsPayloadEcriture(corpsMute)).not.toThrow();
-    expect(messageLeve(() => clesEcritesDansCorpsFonction(corpsMute))).toMatch(
+    expect(() => textesPayloads(mute)).not.toThrow();
+    expect(messageLeve(() => clesEcritesParSaveClubWeekContext(mute))).toMatch(
       /appel non whitelisté dans saveClubWeekContext : ecrireCadreHelper — un helper ou un alias peut cacher une écriture/,
     );
   });
 
-  test("M2 mord si setDoc est importe sous un ALIAS (`import { setDoc as ecrireDoc }`)", () => {
-    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
-    const corpsMute = corpsOriginal.replace("await setDoc(", "await ecrireDoc(");
-    expect(corpsMute).not.toBe(corpsOriginal);
-
-    expect(messageLeve(() => clesEcritesDansCorpsFonction(corpsMute))).toMatch(
+  test("G2 mord si setDoc est importe sous un ALIAS (`import { setDoc as ecrireDoc }`)", () => {
+    const mute = muterFonction(CLUBS_REPO_SOURCE, (texte) => texte.replace("await setDoc(", () => "await ecrireDoc("));
+    expect(messageLeve(() => clesEcritesParSaveClubWeekContext(mute))).toMatch(
       /appel non whitelisté dans saveClubWeekContext : ecrireDoc/,
     );
   });
 
-  test("M2 ne se declenche PAS sur un commentaire ou une chaine qui mentionne un appel", () => {
-    // Faux positif desamorce : `appelsDuCorps` travaille sur un texte dont les
-    // commentaires sont retires et le contenu des chaines neutralise.
-    const corpsOriginal = corpsFonction(CLUBS_REPO_SOURCE, "saveClubWeekContext");
-    const corpsMute = corpsOriginal.replace(
-      "clubId: opts.clubId,",
-      'clubId: opts.clubId, // ne pas utiliser helperInterdit(ref)\n      trace: "appel ecrireDoc(ref) documente ici",',
-    );
-    expect(corpsMute).not.toBe(corpsOriginal);
+  test("G2 mord sur addDoc / writeBatch / runTransaction (autres API d'ecriture Firestore)", () => {
+    for (const [instruction, attendu] of [
+      ['await addDoc(collection(db, "clubs"), { champAddDoc: opts.uid });', /addDoc/],
+      ["const batch = writeBatch(db);", /writeBatch/],
+      ["await runTransaction(db, async (tx) => { tx.set(ref, { x: 1 }); });", /runTransaction/],
+    ] as const) {
+      const mute = ajouterApresSetDoc(CLUBS_REPO_SOURCE, instruction);
+      const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
+      expect(message).toMatch(/appel non whitelisté/);
+      expect(message).toMatch(attendu);
+    }
+  });
 
-    expect(appelsDuCorps(corpsMute)).toEqual(["doc", "setDoc", "deleteField", "serverTimestamp"]);
-    // La cle `trace` est bien vue, elle : le verrou rougit pour la BONNE raison
-    // (une cle hors contrat), pas pour un appel imaginaire.
-    const { ecrites } = clesEcritesDansCorpsFonction(corpsMute);
-    expect(ecrites).toContain("trace");
+  test("G2 mord sur un appel de MEMBRE (`batch.set(...)`, `Object.assign(...)`) : forme non analysable", () => {
+    for (const [instruction, attendu] of [
+      ["batch.set(ref, { champBatch: opts.uid });", "batch.set"],
+      ["Object.assign(ref, { champAssign: opts.uid });", "Object.assign"],
+    ] as const) {
+      const mute = ajouterApresSetDoc(CLUBS_REPO_SOURCE, instruction);
+      const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
+      expect(message).toMatch(/forme d'appel non analysable dans saveClubWeekContext/);
+      expect(message).toContain(attendu);
+    }
+  });
+
+  // ── LES QUATRE PIEGES QUI AVAIENT BATTU LE SCAN DE TEXTE ─────────────────
+
+  test("PIEGE 1 — un LEURRE en commentaire ne deplace plus l'analyse (un commentaire n'est pas un noeud)", () => {
+    // La regex localisait la fonction par `indexOf("function saveClubWeekContext(")`
+    // : ce commentaire, place AVANT la vraie declaration, lui faisait analyser
+    // un faux corps. Pour un parseur il n'existe pas — le verrou reste VERT sur
+    // le vrai payload, et c'est le bon verdict.
+    const mute = insererAvantLaFonction(
+      CLUBS_REPO_SOURCE,
+      "// export async function saveClubWeekContext(opts: any) {\n" +
+        "//   await setDoc(ref, { champLeurre: opts.uid }, { merge: true });\n" +
+        "// }\n",
+    );
+    expect(mute).not.toBe(CLUBS_REPO_SOURCE);
+
+    const { ecrites, supprimees } = clesEcritesParSaveClubWeekContext(mute);
+    expect([...ecrites].sort()).toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
+    expect(supprimees).toEqual(["note"]);
+    expect(ecrites).not.toContain("champLeurre");
+  });
+
+  test("PIEGE 1bis — un VRAI doublon de declaration, lui, fait tomber le test (G1)", () => {
+    // Le pendant du leurre : si le nom apparait deux fois pour de vrai, le
+    // verrou ne choisit pas au hasard, il refuse.
+    const mute = insererAvantLaFonction(
+      CLUBS_REPO_SOURCE,
+      "export async function saveClubWeekContext(o: { uid: string }): Promise<void> {\n" +
+        "  await setDoc(doc(db), { champDoublon: o.uid }, { merge: true });\n" +
+        "}\n",
+    );
+    expect(messageLeve(() => clesEcritesParSaveClubWeekContext(mute))).toMatch(
+      /2 declarations de saveClubWeekContext dans l'AST/,
+    );
+  });
+
+  test("PIEGE 2 — `(0, alias)(...)` : callee parenthese, forme non analysable", () => {
+    // L'astuce classique pour appeler une fonction en cassant toute detection
+    // par nom. En AST le callee est une `ParenthesizedExpression` : refuse.
+    const mute = muterFonction(CLUBS_REPO_SOURCE, (texte) =>
+      texte.replace("await setDoc(", () => "await (0, setDoc)("),
+    );
+    const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
+    expect(message).toMatch(/forme d'appel non analysable dans saveClubWeekContext/);
+    expect(message).toContain("(0, setDoc)");
+  });
+
+  test('PIEGE 3 — `ns["setDoc"](...)` : callee calcule, forme non analysable', () => {
+    const mute = muterFonction(CLUBS_REPO_SOURCE, (texte) =>
+      texte.replace("await setDoc(", () => 'await ns["setDoc"]('),
+    );
+    const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
+    expect(message).toMatch(/forme d'appel non analysable dans saveClubWeekContext/);
+    expect(message).toContain('ns["setDoc"]');
+  });
+
+  test("PIEGE 4 — un TAGGED TEMPLATE appelle sa fonction sans parenthese : refuse aussi", () => {
+    const mute = ajouterApresSetDoc(CLUBS_REPO_SOURCE, "await ecrireCadre`setDoc ${ref}`;");
+    const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
+    expect(message).toMatch(/forme d'appel non analysable dans saveClubWeekContext/);
+    expect(message).toMatch(/tagged template/);
+  });
+
+  // ── LES DEUX ANTI-FAUX-POSITIFS ──────────────────────────────────────────
+  // Un verrou qui rougit pour la mauvaise raison finit desactive. Ces deux
+  // temoins fixent ce qui doit rester VERT.
+
+  test("ANTI-FAUX-POSITIF 1 — des commentaires francais (apostrophes comprises) ne changent RIEN", () => {
+    // La derniere passe de regex tombait sur l'apostrophe de « l'ecran » : elle
+    // la prenait pour une ouverture de chaine et avalait tout le reste du
+    // fichier. Un parseur ne lit meme pas l'interieur d'un commentaire.
+    const mute = insererDansPayload(
+      CLUBS_REPO_SOURCE,
+      "// on n'ecrit plus la note ici : c'est l'ecran coach qui s'en charge,\n" +
+        "      // et l'audit d'apres-coup n'en trouve plus rien qu'un joueur puisse lire\n" +
+        "      /* rappel : le merge conserve ce qu'on n'ecrit pas — d'ou le deleteField() */\n" +
+        "      clubId: opts.clubId, // idem, en fin de ligne, avec l'apostrophe qui va bien",
+    );
+
+    const { ecrites, supprimees } = clesEcritesParSaveClubWeekContext(mute);
+    expect([...ecrites].sort()).toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
+    expect(supprimees).toEqual(["note"]);
+    expect(textesAppels(mute)).toEqual(["doc", "setDoc", "deleteField", "serverTimestamp"]);
+  });
+
+  test("ANTI-FAUX-POSITIF 2 — reordonner les cles du payload reel ne change RIEN", () => {
+    // Le verrou compare des ENSEMBLES de cles : un reformatage n'est pas une
+    // derive de contrat, il ne doit pas rougir.
+    const mute = reordonnerDeuxPremieresCles(CLUBS_REPO_SOURCE);
+    expect(mute).not.toBe(CLUBS_REPO_SOURCE);
+    const { ecrites, supprimees } = clesEcritesParSaveClubWeekContext(mute);
+    expect([...ecrites].sort()).toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
+    expect(supprimees).toEqual(["note"]);
   });
 });
