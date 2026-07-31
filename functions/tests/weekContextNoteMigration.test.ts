@@ -701,6 +701,16 @@ describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveCl
    * (`...(cond ? { cle: ... } : ...)`) est deroule par `clesEcritesParSpread` :
    * sans ca, une cle ajoutee derriere un spread conditionnel n'apparaissait dans
    * AUCUNE des deux listes et le verrou ne la voyait jamais deriver.
+   *
+   * ECHOUE OUVERT, PAS FERME : un segment top-level non vide qui n'est ni un
+   * spread, ni de la forme `identifiant: valeur` (une cle entre guillemets
+   * `"x": v`, une cle calculee `[expr]: v`, etc.) ne doit JAMAIS etre ignore en
+   * silence — sinon le verrou peut rester vert en ayant simplement vu MOINS de
+   * cles que ce que le payload ecrit vraiment. On fait donc echouer
+   * l'extraction avec un message explicite plutot que de `continue`r. La seule
+   * limite qui reste assumee telle quelle est celle de `clesEcritesParSpread` :
+   * un spread sans objet litteral visible (`...opts.extra`) ne revele rien
+   * statiquement (cf. sa doc juste au-dessus).
    */
   function extraireClesObjet(corpsObjet: string): ClesEcriture {
     const ecrites: string[] = [];
@@ -715,7 +725,11 @@ describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveCl
         continue;
       }
       const m = trimmed.match(/^([A-Za-z_$][\w$]*)\s*:\s*([\s\S]*)$/);
-      if (!m) continue; // propriete raccourcie (`{ opts }`) : pas utilisee ici
+      if (!m) {
+        throw new Error(
+          `forme non reconnue dans le payload de saveClubWeekContext : ${trimmed} — étends l'extraction ou normalise l'écriture`,
+        );
+      }
       const [, cle, valeur] = m;
       if (/^deleteField\(\s*\)$/.test(valeur.trim())) supprimees.push(cle);
       else ecrites.push(cle);
