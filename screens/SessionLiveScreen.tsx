@@ -390,7 +390,11 @@ type BlockCardProps = {
   onOpenActions: (blockIndex: number, itemIndex: number, item: BlockItem) => void;
 };
 
-const BlockCard = React.memo(function BlockCard({
+// Exporte (nommee) uniquement pour permettre un test de rendu leger de la
+// ligne d'item (contrat de layout : numberOfLines, flex:1, pas de largeur
+// figee cote actions) -- cf. screens/__tests__/SessionLiveScreen.itemRow.test.tsx.
+// Comportement/props inchanges, toujours utilisee via l'export default du module.
+export const BlockCard = React.memo(function BlockCard({
   block,
   blockIndex,
   blockWidth,
@@ -629,7 +633,7 @@ const BlockCard = React.memo(function BlockCard({
                         style={styles.itemMoreButton}
                         hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                         accessibilityRole="button"
-                        accessibilityLabel={`Adapter ${itemName} : remplacer, adapter ou passer cet exercice`}
+                        accessibilityLabel={`Options pour ${itemName} : adapter, sauter, ou signaler que tu ne peux pas le faire`}
                       >
                         <Ionicons name="options-outline" size={14} color={palette.text} />
                         <Text style={styles.itemMoreButtonText}>Adapter</Text>

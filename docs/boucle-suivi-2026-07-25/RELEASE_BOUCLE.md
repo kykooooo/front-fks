@@ -60,9 +60,10 @@ Voir TESTS_BOUCLE.md : **843 tests verts (59 suites), tsc 0 erreur, eslint 0 nou
 
 **Partiellement vérifié** : build + revues adversariales ligne à ligne + 843 tests. Le parcours tactile complet reste à faire en **passe téléphone avec Kyllian** (Expo Go/TestFlight) :
 1. Générer une séance → la lancer → cocher normalement → Terminer → « Tout s'est passé comme prévu » → vérifier Summary (« réalisée à 100 % ») → feedback (carte résumé) → Progression (« Ton suivi » + décision).
-2. Relancer une séance → « ⋯ » sur un exo de force → « Je ne peux pas » → matériel → vérifier la proposition + la carte remplacée → Terminer → vérifier « Original → Remplacement » au Summary.
+2. Relancer une séance → pill « Adapter » sur un exo de force → « Je ne peux pas faire cet exercice » → matériel → vérifier la proposition + la carte remplacée → Terminer → vérifier « Original → Remplacement » au Summary.
 3. Marquer une douleur au feedback → vérifier la décision « pas d'augmentation » dans Progression.
 4. Double-taper « Valider » au feedback → une seule séance enregistrée.
+5. Écran étroit 320 px : vérifier la lisibilité d'un item multi-séries (nom long, colonne d'actions empilant « Fiche » et le pill « Adapter ») — pas de débordement, pas de texte tronqué illisible.
 
 ## Cohabitation 8,5 — constat final
 
