@@ -108,13 +108,26 @@ export function v2ToLocalSession(
             ? Math.round((item.durationMin as number) * 60)
             : undefined;
 
+          // `effectiveWork` NE DOIT PAS être subordonné à `setsVal` : le dosage
+          // par défaut backend run/mobility (sets:null + work_s:240) n'a pas de
+          // sets numérique, mais work_s EST une charge à lui seul (un effort
+          // continu, implicitement 1x). Seul `reps` reste couplé à `setsVal`
+          // ("sets x reps" — un nombre de répétitions seul, sans savoir combien
+          // de séries, n'est pas une charge exploitable).
           const hasAnyLoad =
-            (setsVal && (typeof item.reps === "number" || typeof effectiveWork === "number")) ||
+            (setsVal && typeof item.reps === "number") ||
+            typeof effectiveWork === "number" ||
             hasDurationMin ||
-            parsedWork ||
-            parsedRest;
+            typeof parsedWork === "number" ||
+            typeof parsedRest === "number";
           if (!hasAnyLoad) {
-            return null;
+            // Un item prescrit sans AUCUNE donnée de charge (ni sets+reps, ni
+            // travail, ni durée, ni work/rest parsé) ne disparaît plus en
+            // silence.
+            throw refusTypeTransform(
+              "Le serveur a renvoyé un exercice sans aucune charge (séries, répétitions ou durée). Rien n'a été ajouté à ton programme. Réessaie dans quelques instants.",
+              "transform.item_sans_charge"
+            );
           }
 
           const rawExerciseId: string | null =
@@ -154,7 +167,7 @@ export function v2ToLocalSession(
                 : parsedRest,
             notes: item.notes ?? undefined,
           } as Exercise;
-        }).filter(Boolean) as Exercise[];
+        });
       })
     : [];
 

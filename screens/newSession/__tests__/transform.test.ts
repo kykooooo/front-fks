@@ -8,6 +8,10 @@
 // - POINT 2 : un exercise_id dupliqué fait échouer la transformation avec le
 //   même corps typé que screens/newSession/api.ts (SESSION_SCHEMA_INVALID),
 //   au lieu d'être remplacé en silence par un exercice de secours.
+// - POINT 3 : un item sans AUCUNE donnée de charge fait échouer la
+//   transformation au lieu de disparaître en silence — mais le dosage par
+//   défaut backend run/mobility (sets:null + work_s) DOIT continuer de
+//   passer (work_s est une charge à lui seul, indépendamment de sets).
 
 import type { Session } from "../../../domain/types";
 import { lireEchecGeneration } from "../echecGeneration";
@@ -148,5 +152,83 @@ describe("v2ToLocalSession — exercise_id duplique : refus type, rien fabrique"
     const session = v2ToLocalSession(v2, PHASE, DATE);
 
     expect(session.exercises).toHaveLength(2);
+  });
+});
+
+describe("v2ToLocalSession — item sans aucune charge : refus type", () => {
+  test("item sans sets, reps, duree ni work/rest fait echouer la transformation", () => {
+    const v2 = v2Avec([
+      {
+        id: "block_vide",
+        type: "mobility",
+        goal: "Mobilité",
+        intensity: "easy",
+        durationMin: 10,
+        items: [{ name: "Exercice sans charge" }],
+      },
+    ]);
+
+    let capturee: unknown;
+    try {
+      v2ToLocalSession(v2, PHASE, DATE);
+    } catch (err) {
+      capturee = err;
+    }
+
+    expect(capturee).toBeDefined();
+    verifierRefusType(capturee);
+  });
+
+  test("item avec seulement des sets (sans reps ni work ni duree) fait aussi echouer", () => {
+    const v2 = v2Avec([
+      {
+        id: "block_sets_seuls",
+        type: "strength",
+        goal: "Force",
+        intensity: "hard",
+        durationMin: 10,
+        items: [{ name: "Exercice incomplet", sets: 3 }],
+      },
+    ]);
+
+    expect(() => v2ToLocalSession(v2, PHASE, DATE)).toThrow();
+  });
+});
+
+describe("v2ToLocalSession — dosage par defaut backend run/mobility (sets:null + work_s) : DOIT passer", () => {
+  test("item avec seulement work_s (sets null) est reconnu comme une charge, pas de refus", () => {
+    const v2 = v2Avec([
+      {
+        id: "block_run",
+        type: "run",
+        goal: "Footing",
+        intensity: "easy",
+        durationMin: 20,
+        items: [{ name: "Course continue", sets: null, workS: 240 }],
+      },
+    ]);
+
+    const session = v2ToLocalSession(v2, PHASE, DATE);
+
+    expect(session.exercises).toHaveLength(1);
+    expect(session.exercises[0].durationSec).toBe(240);
+  });
+
+  test("item avec seulement duration_min (pas de sets ni work) est aussi reconnu comme une charge", () => {
+    const v2 = v2Avec([
+      {
+        id: "block_mobility",
+        type: "mobility",
+        goal: "Mobilité",
+        intensity: "easy",
+        durationMin: 10,
+        items: [{ name: "Mobilité hanches", durationMin: 5 }],
+      },
+    ]);
+
+    const session = v2ToLocalSession(v2, PHASE, DATE);
+
+    expect(session.exercises).toHaveLength(1);
+    expect(session.exercises[0].durationSec).toBe(300);
   });
 });
