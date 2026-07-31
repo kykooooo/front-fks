@@ -4,9 +4,10 @@
 // emulateur (le module ne connait ni Firestore ni horloge).
 //
 // Le versant REGLES exerce les MEMES cas contre les vraies regles jouees par
-// l'emulateur : firestore-tests/rules.clubAuthority.test.ts. Les deux suites
-// sont le seul verrou de la duplication assumee entre clubAuthority.ts et
-// firestore.rules — il n'en existe aucun d'automatique.
+// l'emulateur : firestore-tests/rules.clubAuthority.test.ts. Cette derniere
+// porte EN PLUS un verrou litteral (section H) qui compare CLUB_ACCESS_ROLES
+// et PLAYER_STATUS_ACTIVE aux fonctions nommees `clubAccessRoles()` /
+// `activePlayerStatus()` de firestore.rules.
 //
 // L'invariant teste, mot pour mot : "un proprietaire est autorise uniquement si
 // ownerUid le designe ET s'il possede encore une appartenance active avec le

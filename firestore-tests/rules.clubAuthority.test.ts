@@ -20,7 +20,9 @@
 //   D. amorçage à la création du club → la SEULE exception, et elle est étroite ;
 //   E. tentative hostile de s'écrire propriétaire → REFUS ;
 //   F. le propriétaire est de fait ENCADRANT (élargissement d'`isCoach`) ;
-//   G. la pierre tombale du retrait ferme tout ce que l'appartenance ouvrait.
+//   G. la pierre tombale du retrait ferme tout ce que l'appartenance ouvrait ;
+//   H. VERROU ANTI-DÉRIVE — les listes recopiées à la main (rôles, statut actif)
+//      sont comparées littéralement à functions/src/clubAuthority.ts.
 
 import { readFileSync } from "fs";
 import { resolve } from "path";
@@ -42,6 +44,20 @@ import {
   seed,
   seedPlayerSummary,
 } from "./fixtures";
+import { CLUB_ACCESS_ROLES, PLAYER_STATUS_ACTIVE } from "../functions/src/clubAuthority";
+
+const RULES_PATH = resolve(__dirname, "..", "firestore.rules");
+const RULES_SOURCE = readFileSync(RULES_PATH, "utf8");
+
+/** Extrait les chaînes littérales du corps d'une fonction des règles. */
+function champsDeLaRegle(nomFonction: string): string[] {
+  const debut = RULES_SOURCE.indexOf(`function ${nomFonction}()`);
+  if (debut < 0) throw new Error(`Fonction ${nomFonction} absente de firestore.rules`);
+  const fin = RULES_SOURCE.indexOf("\n    }", debut);
+  if (fin < 0) throw new Error(`Fin de ${nomFonction} introuvable`);
+  const corps = RULES_SOURCE.slice(debut, fin);
+  return (corps.match(/"[^"]+"/g) ?? []).map((s) => s.slice(1, -1));
+}
 
 let testEnv: RulesTestEnvironment;
 
@@ -56,7 +72,7 @@ beforeAll(async () => {
   }
   testEnv = await initializeTestEnvironment({
     projectId: PROJECT_ID,
-    firestore: { rules: readFileSync(resolve(__dirname, "..", "firestore.rules"), "utf8") },
+    firestore: { rules: RULES_SOURCE },
   });
 });
 
@@ -431,5 +447,24 @@ describe("G — appartenance révoquée par le retrait serveur", () => {
     const g = await gestesEncadrement(COACH_A);
     await assertSucceeds(g.listeEffectif());
     await assertSucceeds(getDoc(doc(asUser("playerA2"), "clubs", CLUB_A)));
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// H. VERROU ANTI-DÉRIVE — le prédicat des règles == l'inventaire de clubAuthority.ts
+// ═════════════════════════════════════════════════════════════════════════════
+describe("H. Verrou anti-dérive entre clubAuthority.ts et firestore.rules", () => {
+  test("les permissions d'encadrement qui rendent `isClubStaff` vrai sont identiques des deux côtés", () => {
+    expect(champsDeLaRegle("clubAccessRoles").sort()).toEqual([...CLUB_ACCESS_ROLES].sort());
+  });
+
+  test("le statut de joueur qui ouvre un droit (`isPlayerMember`/`isActiveMember`) est identique des deux côtés", () => {
+    // Pas de comparaison à CLUB_PLAYER_STATUSES ici : aucune règle ne teste
+    // jamais l'égalité à "inactive", seulement la DIFFÉRENCE avec "active"
+    // (une pierre tombale ouvre un droit en cessant d'être active, pas en
+    // valant explicitement "inactive"). Le seul littéral à verrouiller est donc
+    // PLAYER_STATUS_ACTIVE, cf. le commentaire de `activePlayerStatus` dans
+    // firestore.rules.
+    expect(champsDeLaRegle("activePlayerStatus")).toEqual([PLAYER_STATUS_ACTIVE]);
   });
 });

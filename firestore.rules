@@ -82,6 +82,25 @@ service cloud.firestore {
         myAccessRole(clubId) == "owner";
     }
 
+    // Permissions d'encadrement reconnues — liste recopiée de
+    // functions/src/clubAuthority.CLUB_ACCESS_ROLES (les règles ne peuvent pas
+    // importer de TypeScript ; un test verrouille l'accord :
+    // firestore-tests/rules.clubAuthority.test.ts). Isolée dans sa propre
+    // fonction pour que ce test puisse en extraire les littéraux par leur nom.
+    function clubAccessRoles() {
+      return ["owner", "coach"];
+    }
+
+    // Le SEUL statut de joueur qui ouvre un droit — recopié de
+    // functions/src/clubAuthority.PLAYER_STATUS_ACTIVE. `PLAYER_STATUS_INACTIVE`
+    // n'a pas d'équivalent ici : aucune règle ne teste jamais son égalité, une
+    // pierre tombale ouvre un droit en étant DIFFÉRENTE de "active", pas en
+    // valant "inactive" (cf. `isPlayerMember` plus bas). Même verrou que
+    // `clubAccessRoles` : firestore-tests/rules.clubAuthority.test.ts.
+    function activePlayerStatus() {
+      return "active";
+    }
+
     // ENCADREMENT. Le propriétaire EST encadrant : sans cette ligne, poser le
     // rôle propriétaire lui retirerait l'écriture du cadre de semaine et de la
     // directive — un trou ouvert en en fermant un autre.
@@ -89,7 +108,7 @@ service cloud.firestore {
     // possible entre deux sources), ni du statut de joueur — un entraîneur-joueur
     // est encadrant à part entière, et le rester ne doit rien à son suivi.
     function isClubStaff(clubId) {
-      return myAccessRole(clubId) in ["owner", "coach"];
+      return myAccessRole(clubId) in clubAccessRoles();
     }
 
     // Appartenance ACTIVE au club : encadrement OU suivi sportif actif.
@@ -98,7 +117,7 @@ service cloud.firestore {
     // le retrait RÉEL — il ferme les deux axes d'une seule écriture, donc cette
     // fonction devient fausse quoi qu'il arrive ensuite.
     function isActiveMember(clubId) {
-      return isClubStaff(clubId) || myPlayerStatus(clubId) == "active";
+      return isClubStaff(clubId) || myPlayerStatus(clubId) == activePlayerStatus();
     }
 
     // La personne ciblée a-t-elle un SUIVI SPORTIF ACTIF dans ce club ?
@@ -121,7 +140,7 @@ service cloud.firestore {
     function isPlayerMember(clubId, playerUid) {
       return exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid)) &&
         get(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid))
-          .data.get("playerStatus", "") == "active";
+          .data.get("playerStatus", "") == activePlayerStatus();
     }
 
     // ── AUTORISATION D'ACCÈS AUX DONNÉES DE SUIVI (default-deny) ─────────────
@@ -134,8 +153,15 @@ service cloud.firestore {
     // Valeurs : "pending" | "approved" | "revoked" | "not_required".
     // SEULES "approved" et "not_required" ouvrent la lecture — liste recopiée de
     // functions/src/coachAccess.COACH_ACCESS_GRANTING_STATES (les règles ne
-    // peuvent pas importer de TypeScript ; un test verrouille l'accord).
+    // peuvent pas importer de TypeScript ; un test verrouille l'accord :
+    // firestore-tests/rules.coachAccess.test.ts).
     //
+    // Isolée dans sa propre fonction (et non inline dans `isCoachAccessGranted`)
+    // pour que le test d'accord puisse en extraire les littéraux par leur nom.
+    function coachAccessGrantingStates() {
+      return ["approved", "not_required"];
+    }
+
     // FAIL-CLOSED SUR CHAMP ABSENT : `.get(champ, "")` renvoie "" quand le champ
     // n'existe pas, et "" n'est pas dans la liste → REFUS. C'est ce qui protège
     // les membership ANCIENS, écrits avant l'existence de ce champ : ils
@@ -145,7 +171,7 @@ service cloud.firestore {
     function isCoachAccessGranted(clubId, playerUid) {
       return exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid)) &&
         get(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid))
-          .data.get("coachAccess", "") in ["approved", "not_required"];
+          .data.get("coachAccess", "") in coachAccessGrantingStates();
     }
 
     // ── POLITIQUE DE RATTACHEMENT DU CLUB ───────────────────────────────────

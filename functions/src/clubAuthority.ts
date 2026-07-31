@@ -71,14 +71,16 @@
 // ─── DUPLICATION ASSUMEE AVEC firestore.rules ───────────────────────────────
 // Les regles Firestore ne peuvent pas importer de TypeScript. Le predicat existe
 // donc DEUX fois : ici, et dans firestore.rules (`isClubOwner`, `isClubStaff`,
-// `isActiveMember`, `isPlayerMember`). Il n'existe AUCUN verrou automatique
-// d'egalite entre les deux ecritures — exactement la meme situation, et le meme
-// remede, que pour COACH_ACCESS_GRANTING_STATES (cf. coachAccess.ts) : deux
-// suites de tests exercent les MEMES cas des deux cotes
+// `isActiveMember`, `isPlayerMember`). Deux suites de tests exercent les MEMES
+// cas des deux cotes :
 //   - functions/tests/clubAuthority.test.ts  (ce module) ;
 //   - firestore-tests/rules.clubAuthority.test.ts (les vraies regles).
-// Modifier l'un sans l'autre laisse la base plus stricte que le serveur, donc
-// fail-closed, donc sans danger — mais silencieux. Toucher les deux, toujours.
+// Cette derniere porte EN PLUS un verrou litteral (section H, meme remede que
+// COACH_ACCESS_GRANTING_STATES cf. coachAccess.ts) : CLUB_ACCESS_ROLES et
+// PLAYER_STATUS_ACTIVE y sont compares, chaine par chaine, aux fonctions
+// nommees `clubAccessRoles()` / `activePlayerStatus()` de firestore.rules.
+// Modifier l'un sans l'autre fait donc echouer ce test — plus un refus
+// silencieux (fail-closed, mais muet). Toucher les deux, toujours.
 
 /** Noms des deux champs, ecrits UNE SEULE FOIS (les fautes de frappe ouvrent des trous). */
 export const ACCESS_ROLE_FIELD = "accessRole";

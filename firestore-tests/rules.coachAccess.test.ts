@@ -15,6 +15,12 @@
 // Rappel de portée : ce fichier teste des PERMISSIONS. Le calcul de l'état
 // initial (pending quand l'âge est inconnu) vit dans la Cloud Function et ses
 // tests unitaires (functions/tests/coachAccess.test.ts).
+//
+//  E. VERROU ANTI-DÉRIVE — la liste des états qui ouvrent la lecture est
+//     recopiée à la main dans firestore.rules (les règles ne peuvent pas
+//     importer de TypeScript). Rien ne la maintenait égale à
+//     functions/src/coachAccess.COACH_ACCESS_GRANTING_STATES ; ce test compare
+//     les DEUX littéralement, à chaque exécution.
 
 import { readFileSync } from "fs";
 import { resolve } from "path";
@@ -26,6 +32,20 @@ import {
 } from "@firebase/rules-unit-testing";
 import { doc, getDoc, setDoc, updateDoc, deleteField } from "firebase/firestore";
 import { PROJECT_ID, CLUB_A, COACH_A, PLAYER_A1, SUMMARY, seed, seedPlayerSummary } from "./fixtures";
+import { COACH_ACCESS_GRANTING_STATES } from "../functions/src/coachAccess";
+
+const RULES_PATH = resolve(__dirname, "..", "firestore.rules");
+const RULES_SOURCE = readFileSync(RULES_PATH, "utf8");
+
+/** Extrait les chaînes littérales du corps d'une fonction des règles. */
+function champsDeLaRegle(nomFonction: string): string[] {
+  const debut = RULES_SOURCE.indexOf(`function ${nomFonction}()`);
+  if (debut < 0) throw new Error(`Fonction ${nomFonction} absente de firestore.rules`);
+  const fin = RULES_SOURCE.indexOf("\n    }", debut);
+  if (fin < 0) throw new Error(`Fin de ${nomFonction} introuvable`);
+  const corps = RULES_SOURCE.slice(debut, fin);
+  return (corps.match(/"[^"]+"/g) ?? []).map((s) => s.slice(1, -1));
+}
 
 let testEnv: RulesTestEnvironment;
 
@@ -44,7 +64,7 @@ beforeAll(async () => {
   }
   testEnv = await initializeTestEnvironment({
     projectId: PROJECT_ID,
-    firestore: { rules: readFileSync(resolve(__dirname, "..", "firestore.rules"), "utf8") },
+    firestore: { rules: RULES_SOURCE },
   });
 });
 
@@ -211,6 +231,17 @@ describe("D — aucun client ne peut écrire l'état d'autorisation", () => {
   test("14) la projection elle-même reste inécrivable par tout client (rappel)", async () => {
     await assertFails(
       setDoc(summaryRef(asUser(COACH_A), PLAYER_A1), { ...mkSummary(PLAYER_A1), firstName: "Hack" }),
+    );
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// E. VERROU ANTI-DÉRIVE — la liste des règles == l'inventaire de la Cloud Function
+// ═════════════════════════════════════════════════════════════════════════════
+describe("E. Verrou anti-dérive entre coachAccess.ts et firestore.rules", () => {
+  test("les états qui ouvrent la lecture sont identiques des deux côtés", () => {
+    expect(champsDeLaRegle("coachAccessGrantingStates").sort()).toEqual(
+      [...COACH_ACCESS_GRANTING_STATES].sort(),
     );
   });
 });

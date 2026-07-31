@@ -55,12 +55,13 @@ export type CoachAccessState = (typeof COACH_ACCESS_STATES)[number];
  * Les DEUX seuls etats qui ouvrent la lecture du suivi.
  *
  * Cette liste est recopiee A LA MAIN dans firestore.rules (les regles ne peuvent
- * pas importer de TypeScript). Il n'existe donc AUCUN verrou automatique
- * d'egalite entre les deux ecritures : ce qui les tient, ce sont deux suites de
- * tests qui exercent les MEMES valeurs des deux cotes
- * (functions/tests/coachAccess.test.ts et firestore-tests/rules.coachAccess.test.ts).
- * Ajouter un etat autorisant ici SANS toucher les regles laisserait la base le
- * refuser — fail-closed, donc sans danger, mais silencieux : reporte toujours.
+ * pas importer de TypeScript), dans la fonction nommee `coachAccessGrantingStates()`.
+ * Deux suites de tests exercent les MEMES valeurs des deux cotes
+ * (functions/tests/coachAccess.test.ts et firestore-tests/rules.coachAccess.test.ts),
+ * et cette derniere porte EN PLUS un verrou litteral (section E) qui compare
+ * cette constante au contenu de `coachAccessGrantingStates()`. Ajouter un etat
+ * autorisant ici SANS toucher les regles fait donc echouer ce test — plus un
+ * refus silencieux.
  */
 export const COACH_ACCESS_GRANTING_STATES: readonly CoachAccessState[] = ["approved", "not_required"];
 

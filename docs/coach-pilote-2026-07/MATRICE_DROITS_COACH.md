@@ -222,10 +222,14 @@ Conséquences traitées dans le même lot :
    depuis un joueur du club, et depuis un coach du club.
 4. **Source unique, duplication assumée.** Le prédicat vit une fois côté serveur
    (`functions/src/clubAuthority.ts`, module pur) et une fois dans
-   `firestore.rules` (les règles ne peuvent pas importer de TypeScript). Aucun
-   verrou automatique ne les maintient égales : ce qui les tient, ce sont deux
-   suites qui exercent les **mêmes cas** — exactement la situation, et le même
-   remède, que pour `COACH_ACCESS_GRANTING_STATES`.
+   `firestore.rules` (les règles ne peuvent pas importer de TypeScript). Deux
+   suites exercent les **mêmes cas** de comportement —
+   `functions/tests/clubAuthority.test.ts` et
+   `firestore-tests/rules.clubAuthority.test.ts` — et cette dernière porte
+   **désormais aussi un verrou littéral** (section H) : `CLUB_ACCESS_ROLES` et
+   `PLAYER_STATUS_ACTIVE` sont comparés, chaîne par chaîne, aux fonctions
+   nommées `clubAccessRoles()` / `activePlayerStatus()` de `firestore.rules`.
+   Même remède que pour `COACH_ACCESS_GRANTING_STATES` (limite 7 ci-dessous).
 5. **Signalement d'incohérence.** Un état où `ownerUid` désigne quelqu'un sans
    appartenance propriétaire (ou l'inverse) **refuse** l'accès et laisse une trace
    serveur (`logger.error`, identifiants + nature de l'écart, rien d'autre). Il
@@ -461,10 +465,12 @@ blocage).
 
 Les règles Firestore ne peuvent pas importer de TypeScript : la liste
 `["approved", "not_required"]` existe donc **deux fois**, dans
-`functions/src/coachAccess.ts:53` et dans `firestore.rules:59`. Rien ne vérifie
-automatiquement qu'elles restent identiques ; ce sont deux suites de tests
-exerçant les mêmes valeurs des deux côtés qui les tiennent. Oublier de reporter un
-ajout ferait **refuser** la base (donc sans danger), mais en silence.
+`functions/src/coachAccess.ts:53` et dans `firestore.rules` (fonction nommée
+`coachAccessGrantingStates()`). **Un verrou littéral compare désormais les
+deux** : `firestore-tests/rules.coachAccess.test.ts` §E extrait la liste de la
+fonction des règles et la compare, chaîne par chaîne, à
+`COACH_ACCESS_GRANTING_STATES`. Un oubli de report casse ce test au lieu de se
+propager en silence.
 
 _Héritée du lot précédent, rappelée ici pour que la matrice soit complète._
 
