@@ -24,6 +24,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["node_modules/expo/bin/cli", "start", "--web"],
       "port": 8081
+    },
+    {
+      "name": "expo-web-boot",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/expo/bin/cli", "start", "--web", "--port", "8092"],
+      "port": 8092
     }
   ],
   "autoVerify": false
