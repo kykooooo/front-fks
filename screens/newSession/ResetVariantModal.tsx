@@ -28,7 +28,7 @@ export function ResetVariantModal({ variants, onSelect, onCancel, explain }: Pro
         >
           <Text style={styles.resetTitle}>Séance Prime (reset)</Text>
           <Text style={styles.resetSubtitle}>
-            Choisis la variante légère du jour (RPE 3–4 · 12–16 min · zéro fatigue)
+            Choisis la variante légère du jour
           </Text>
 
           {explain ? (

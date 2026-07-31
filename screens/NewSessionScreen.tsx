@@ -170,6 +170,12 @@ export default function NewSessionScreen() {
   const [setupDone, setSetupDone] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [wakingServer, setWakingServer] = useState(false);
+  // Rejeu d'enregistrement (reessayerEnregistrement) : contrairement a
+  // handleGenerate, ce rejeu n'a pas de jeton d'annulation (generationIdRef) —
+  // il va au bout quoi qu'il arrive. L'overlay ne doit donc jamais y proposer
+  // un bouton "Annuler" qui mentirait au joueur ("Génération annulée" alors
+  // que le rejeu continue et peut naviguer juste après).
+  const [rejeuEnCours, setRejeuEnCours] = useState(false);
   const [resetChoice, setResetChoice] = useState<ResetChoiceState>(null);
   // État d'échec : une panne reste une panne. Jamais de séance fabriquée ici.
   const [echec, setEchec] = useState<DecisionApresEchec | null>(null);
@@ -607,6 +613,9 @@ export default function NewSessionScreen() {
     // travailler — écran inerte, surtout gênant hors-ligne/persistance
     // lente. Même overlay que handleGenerate.
     setGenerating(true);
+    // Ce rejeu n'est pas annulable (pas de jeton generationIdRef) : l'overlay
+    // ne doit pas proposer "Annuler" ici, voir rejeuEnCours plus haut.
+    setRejeuEnCours(true);
     setEchec(null);
     try {
       await rejouerApresEchecPostGeneration(postGeneration, {
@@ -635,6 +644,7 @@ export default function NewSessionScreen() {
       setEchec(decision);
     } finally {
       setGenerating(false);
+      setRejeuEnCours(false);
       verrouRef.current.rendre();
       setRequeteEnVol(false);
     }
@@ -964,10 +974,17 @@ export default function NewSessionScreen() {
           "Vérification et finalisation...",
         ]}
         overrideMessage={
-          wakingServer ? "Le serveur se réveille, encore quelques secondes..." : undefined
+          rejeuEnCours
+            ? "Enregistrement..."
+            : wakingServer
+            ? "Le serveur se réveille, encore quelques secondes..."
+            : undefined
         }
         estimatedDurationMs={25000}
-        onCancel={cancelGeneration}
+        // Pas de bouton "Annuler" pendant le rejeu d'enregistrement : il n'a
+        // pas de jeton d'annulation et va au bout quoi qu'il arrive — un
+        // "Annuler" y mentirait ("Génération annulée" alors que ça continue).
+        onCancel={rejeuEnCours ? undefined : cancelGeneration}
       />
     </Screen>
   );
