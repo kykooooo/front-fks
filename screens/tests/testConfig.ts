@@ -1,24 +1,42 @@
 // screens/tests/testConfig.ts
 import { Ionicons } from "@expo/vector-icons";
+import type { AgeCategory } from "../../domain/types";
 
+// Meme pattern que BLOCK_CONFIG (components/session/blockConfig.ts) : icone + tint
+// plein + tint "soft" pour le fond du cercle. Plus de paire de couleurs gradient
+// (langage BlockCard = teintes plates, jamais de LinearGradient decoratif).
 export type GroupConfig = {
   icon: keyof typeof Ionicons.glyphMap;
-  colors: [string, string];
   tint: string;
+  tintSoft: string;
 };
 
 export const GROUP_CONFIG: Record<string, GroupConfig> = {
-  sauts: { icon: "rocket-outline", colors: ["#8b5cf6", "#a78bfa"], tint: "#8b5cf6" },
-  vitesse: { icon: "flash-outline", colors: ["#ff7a1a", "#ff9a4a"], tint: "#ff7a1a" },
-  endurance: { icon: "heart-outline", colors: ["#06b6d4", "#22d3ee"], tint: "#06b6d4" },
-  force: { icon: "barbell-outline", colors: ["#ef4444", "#f87171"], tint: "#ef4444" },
-  agilite: { icon: "git-branch-outline", colors: ["#16a34a", "#4ade80"], tint: "#16a34a" },
-  power: { icon: "trending-up-outline", colors: ["#f59e0b", "#fbbf24"], tint: "#f59e0b" },
+  sauts: { icon: "rocket-outline", tint: "#8b5cf6", tintSoft: "rgba(139,92,246,0.12)" },
+  vitesse: { icon: "flash-outline", tint: "#ff7a1a", tintSoft: "rgba(255,122,26,0.12)" },
+  endurance: { icon: "heart-outline", tint: "#06b6d4", tintSoft: "rgba(6,182,212,0.12)" },
+  force: { icon: "barbell-outline", tint: "#ef4444", tintSoft: "rgba(239,68,68,0.12)" },
+  agilite: { icon: "git-branch-outline", tint: "#16a34a", tintSoft: "rgba(22,163,74,0.12)" },
+  power: { icon: "trending-up-outline", tint: "#f59e0b", tintSoft: "rgba(245,158,11,0.12)" },
 };
 
 export const getGroupConfig = (group: string): GroupConfig =>
-  GROUP_CONFIG[group] ?? { icon: "ellipse-outline", colors: ["#6b7280", "#9ca3af"], tint: "#6b7280" };
+  GROUP_CONFIG[group] ?? { icon: "ellipse-outline", tint: "#6b7280", tintSoft: "rgba(107,114,128,0.12)" };
 
+// Titres de section pour grouper des champs par famille (Overview + section
+// "Aller plus loin"). Un seul endroit pour ce libellé (avant dupliqué inline).
+export const GROUP_TITLES: Record<FieldConfig["group"], string> = {
+  sauts: "Sauts / Explosivité",
+  vitesse: "Vitesse linéaire",
+  endurance: "Endurance aérobie",
+  force: "Force repère",
+  agilite: "Agilité / COD",
+  power: "Puissance",
+};
+
+// PlaylistId reste utile uniquement pour taguer/lire le champ `playlist` d'une
+// entrée historique (quel cycle était actif au moment du test) — CE N'EST PLUS
+// UN FILTRE ni un sélecteur de batterie (Phase C : batterie unique pour tous).
 export type PlaylistId =
   | "fondation"
   | "force"
@@ -74,7 +92,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     group: "sauts",
     min: 20,
     max: 500,
-    protocol: "3 essais, meilleur saut. Bras libres, atterrissage stable.",
+    protocol:
+      "Trace une ligne de départ (scotch, trait, tee-shirt au sol). Pieds joints, prends de l'élan avec les bras et saute le plus loin possible. Mesure du talon le plus proche à la ligne. 3 essais, garde le meilleur, repos 1 min entre chaque.",
   },
   {
     key: "tripleJumpCm",
@@ -83,7 +102,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     group: "sauts",
     min: 50,
     max: 1500,
-    protocol: "3 essais, prise d'élan courte, note le meilleur.",
+    protocol:
+      "Même ligne de départ que le saut en longueur. Enchaîne 3 bonds pieds joints sans t'arrêter, mesure la distance totale jusqu'au dernier appui. 3 essais, garde le meilleur, repos 1-2 min entre chaque.",
   },
   {
     key: "cmjCm",
@@ -92,7 +112,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     group: "power",
     min: 5,
     max: 200,
-    protocol: "3 essais, mains sur hanches si possible. Note le meilleur.",
+    protocol:
+      "Debout, mains sur les hanches. Fléchis puis saute directement le plus haut possible (pas de temps d'arrêt en bas). Mesure avec une appli de saut au sol, ou une marque à la main tendue sur un mur avant/après. 3 essais, garde le meilleur, repos 1 min entre chaque.",
   },
   {
     key: "lateralBoundCm",
@@ -101,7 +122,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     group: "sauts",
     min: 20,
     max: 400,
-    protocol: "3 essais par côté, note la meilleure distance.",
+    protocol:
+      "Départ sur un pied, élan, saute le plus loin possible sur le côté et réceptionne sur l'autre pied sans perdre l'équilibre. Mesure la distance. 3 essais par côté, garde la meilleure distance de chaque côté, repos 1 min entre essais.",
   },
   {
     key: "sprint10s",
@@ -111,7 +133,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     lowerIsBetter: true,
     min: 0.5,
     max: 120,
-    protocol: "2-3 essais, repos 2-3 min. Chrono manuel ok.",
+    protocol:
+      "Pose deux repères à 10 m (sacs, plots, tee-shirts). Départ arrêté. Fais-toi chronométrer ou filme-toi. 2-3 essais, garde le meilleur, repos 2-3 min entre chaque.",
   },
   {
     key: "sprint20s",
@@ -121,7 +144,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     lowerIsBetter: true,
     min: 0.5,
     max: 120,
-    protocol: "2 essais, repos 3 min. Départ identique.",
+    protocol:
+      "Pose deux repères à 20 m. Départ arrêté, chronométré ou filmé. 2 essais qualité max, repos 3 min entre chaque.",
   },
   {
     key: "sprint30s",
@@ -131,7 +155,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     lowerIsBetter: true,
     min: 0.5,
     max: 120,
-    protocol: "2 essais, repos 3-4 min. Qualité max.",
+    protocol:
+      "Pose deux repères à 30 m. Départ arrêté, chronométré ou filmé. 2 essais qualité max, repos 3-4 min entre chaque.",
   },
   {
     key: "tTest_s",
@@ -141,7 +166,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     lowerIsBetter: true,
     min: 0.5,
     max: 120,
-    protocol: "2 essais, repos 3 min. Technique propre.",
+    protocol:
+      "Place 4 plots en T (5 m devant, 5 m de chaque côté). Sprint avant, pas chassés latéraux, recul en arrière. Chronomètre du 1er au dernier plot franchi. 2 essais, repos 3 min, technique propre avant vitesse.",
   },
   {
     key: "test505_s",
@@ -151,7 +177,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     lowerIsBetter: true,
     min: 0.5,
     max: 120,
-    protocol: "2 essais par côté, repos 2-3 min.",
+    protocol:
+      "Lance-toi sur 10 m, déclenche le chrono à 5 m de la ligne de demi-tour, change d'appui et reviens sur 5 m. Chronomètre l'aller-retour des 5 derniers mètres. 2 essais par côté, repos 2-3 min.",
   },
   {
     key: "endurance6min_m",
@@ -160,7 +187,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     group: "endurance",
     min: 100,
     max: 3000,
-    protocol: "Distance totale en 6 min. Allure stable.",
+    protocol:
+      "Chronomètre 6 minutes. Cours à l'allure la plus rapide que tu peux tenir sur toute la durée (un rythme soutenu et régulier, pas un sprint qui s'effondre). Note la distance totale parcourue (terrain balisé, repères connus ou appli GPS).",
   },
   {
     key: "yoYoIR1_m",
@@ -169,17 +197,19 @@ export const FIELD_DEFS: FieldConfig[] = [
     group: "endurance",
     min: 40,
     max: 5000,
-    protocol: "Protocole Yo-Yo IR1, note la distance totale.",
+    protocol:
+      "Test avancé (club) : navettes de 20 m à vitesse croissante rythmées par un bip audio dédié, avec 10 s de récupération active entre chaque palier. Nécessite un fichier audio Yo-Yo IR1 et idéalement un partenaire pour garder le rythme. Note la distance totale parcourue avant l'arrêt.",
   },
   {
     key: "run1km_s",
-    label: "1 km (s)",
+    label: "1 km",
     unit: "s",
     group: "endurance",
     lowerIsBetter: true,
     min: 90,
     max: 3600,
-    protocol: "1 km chrono, allure continue. Note le temps.",
+    protocol:
+      "Chronomètre 1 km sur un parcours plat et connu (piste, terrain, route calme). Allure continue du début à la fin, sans sprint final raté. Renseigne le temps en minutes et secondes.",
   },
   {
     key: "gobletKg",
@@ -188,7 +218,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     group: "force",
     min: 1,
     max: 150,
-    protocol: "Charge pour 8-10 reps propres.",
+    protocol:
+      "Tiens une charge (haltère, kettlebell) contre la poitrine. Descends en squat complet, contrôlé, puis remonte. Choisis une charge que tu peux lever 8-10 fois avec une technique propre, sans t'effondrer sur les dernières reps.",
   },
   {
     key: "gobletReps",
@@ -197,7 +228,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     group: "force",
     min: 1,
     max: 100,
-    protocol: "Reps avec la charge choisie, tempo contrôlé.",
+    protocol:
+      "Avec la charge choisie ci-dessus, fais un maximum de répétitions propres (amplitude complète, tempo contrôlé). Arrête dès que la technique se dégrade.",
   },
   {
     key: "splitKg",
@@ -206,7 +238,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     group: "force",
     min: 1,
     max: 200,
-    protocol: "Charge pour 6-8 reps / jambe, amplitude propre.",
+    protocol:
+      "Position fente avant (un pied devant, un pied derrière), charge tenue le long du corps ou sur les épaules. Descends jusqu'à ce que le genou arrière frôle le sol, remonte. Choisis une charge que tu peux lever 6-8 fois par jambe proprement.",
   },
   {
     key: "splitReps",
@@ -215,7 +248,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     group: "force",
     min: 1,
     max: 100,
-    protocol: "Reps par jambe avec la charge choisie.",
+    protocol:
+      "Avec la charge choisie, fais un maximum de répétitions propres par jambe (amplitude complète). Change de jambe seulement une fois la série terminée.",
   },
   {
     key: "trapbar3rmKg",
@@ -224,7 +258,8 @@ export const FIELD_DEFS: FieldConfig[] = [
     group: "force",
     min: 10,
     max: 400,
-    protocol: "Monte en 3-4 séries, 3RM propre, pas d'échec.",
+    protocol:
+      "Réservé aux séniors avec accès à une salle. Charge progressive sur 3-4 séries d'échauffement, puis trouve la charge maximale que tu peux soulever 3 fois avec une technique stricte, sans aide et sans t'effondrer. Arrête avant l'échec technique.",
   },
 ];
 
@@ -233,6 +268,8 @@ export const FIELD_BY_KEY = FIELD_DEFS.reduce<Record<FieldKey, FieldConfig>>((ac
   return acc;
 }, {} as Record<FieldKey, FieldConfig>);
 
+// Label de provenance pour une entrée historique (cf. `TestEntry.playlist`) —
+// affichage informatif seul (tag discret dans l'historique), plus un sélecteur.
 export const PLAYLISTS: Record<PlaylistId, { label: string; subtitle: string }> = {
   fondation: { label: "Fondation", subtitle: "Base physique / S&C + endurance" },
   force: { label: "Force", subtitle: "Force max + charges lourdes" },
@@ -241,66 +278,119 @@ export const PLAYLISTS: Record<PlaylistId, { label: string; subtitle: string }> 
   saison: { label: "Saison / Maintien", subtitle: "Maintenir la forme sans se cramer" },
 };
 
-export const PLAYLIST_FIELDS: Record<PlaylistId, FieldKey[]> = {
-  fondation: [
-    "broadJumpCm",
-    "sprint10s",
-    "sprint20s",
-    "endurance6min_m",
-    "gobletKg",
-    "gobletReps",
-    "splitKg",
-    "splitReps",
-  ],
-  force: ["gobletKg", "gobletReps", "splitKg", "splitReps", "trapbar3rmKg"],
-  explosivite: [
-    "cmjCm",
-    "broadJumpCm",
-    "sprint10s",
-    "sprint30s",
-    "trapbar3rmKg",
-    "splitKg",
-  ],
-  endurance: ["yoYoIR1_m", "endurance6min_m", "run1km_s"],
-  saison: ["yoYoIR1_m", "endurance6min_m", "sprint10s", "cmjCm"],
+// ─────────────────────────── Batterie unique (Phase C) ───────────────────────────
+// Décision produit (juillet 2026) : les batteries PAR CYCLE créaient de la friction
+// et fragmentaient l'historique (changer de cycle "cachait" les anciennes valeurs).
+// Une seule batterie socle pour tous, quel que soit le cycle actif + une section
+// "Aller plus loin" optionnelle pour le reste des tests existants.
+
+/**
+ * Le socle : 3 tests, identiques pour tous, ~15 min, mesurables sans matériel.
+ * Ordre = ordre d'exécution conseillé (puissance/vitesse à froid, endurance en
+ * dernier — le test aérobie fatigue et ne doit pas polluer les deux premiers).
+ */
+export const CORE_FIELD_KEYS = [
+  "broadJumpCm",
+  "sprint10s",
+  "endurance6min_m",
+] as const satisfies readonly FieldKey[];
+
+/** Une ligne "pourquoi" par test socle — coach honnête, jamais de blabla. */
+export const CORE_FIELD_WHY: Record<(typeof CORE_FIELD_KEYS)[number], string> = {
+  broadJumpCm: "Ta puissance de jambes, mesurable sans le moindre matériel.",
+  sprint10s: "Ta vitesse, la qualité n°1 en foot — ce chrono sert de référence dans tes séances.",
+  endurance6min_m: "L'IA s'en sert pour calibrer les allures de course de tes séances (ta VMA).",
 };
 
-export const PLAYLIST_PLAN: Record<PlaylistId, string[]> = {
-  fondation: [
-    "Échauffement structuré (mobilité + activation + lignes droites)",
-    "Sauts : broad jump",
-    "Vitesse : 10-20 m",
-    "Pause 5-8 min (hydratation)",
-    "Endurance : 6 min",
-    "Force repère : goblet squat ou split squat",
-  ],
-  force: [
-    "Échauffement force (mobilité + activation)",
-    "Test principal : trap bar 3RM (ou charge lourde 3-5 reps)",
-    "Repos 6-8 min",
-    "Test secondaire : goblet/split squat (qualité technique)",
-  ],
-  explosivite: [
-    "Échauffement nerveux : gammes + 3 lignes droites",
-    "Sauts : CMJ + broad jump",
-    "Vitesse : 10-30 m (qualité max)",
-    "Pause 6-8 min",
-    "Force/power : trap bar 3RM (ou charge lourde 3-5 reps)",
-  ],
-  endurance: [
-    "Échauffement progressif 10-12 min",
-    "Test principal : Yo-Yo IR1 ou 6 min",
-    "Récupération 6-8 min",
-    "Test secondaire : 1 km (temps)",
-  ],
-  saison: [
-    "Échauffement progressif 8-10 min",
-    "Test endurance : 6 min ou Yo-Yo IR1",
-    "Pause 5-6 min",
-    "Test vitesse : 10 m",
-    "Test puissance : CMJ",
-  ],
+/** Déroulé conseillé du socle — fixe, identique pour tous (plus de variante par cycle). */
+export const CORE_PLAN: string[] = [
+  "Échauffement structuré (mobilité + activation + lignes droites) — 8-10 min",
+  "Saut en longueur : 3 essais, garde le meilleur",
+  "Sprint 10 m : 2-3 essais qualité, repos 2-3 min entre chaque",
+  "Pause 5-6 min (hydratation, récupération)",
+  "Endurance 6 min : allure la plus rapide et régulière que tu peux tenir",
+];
+
+/**
+ * Section "Aller plus loin" : tous les autres tests, repliés par défaut. Le
+ * Yo-Yo IR1 reste retiré (décision Phase A) — jamais proposé, même ici.
+ */
+export const OPTIONAL_FIELD_KEYS: FieldKey[] = [
+  "sprint20s",
+  "sprint30s",
+  "cmjCm",
+  "tripleJumpCm",
+  "lateralBoundCm",
+  "tTest_s",
+  "test505_s",
+  "run1km_s",
+];
+
+/**
+ * IDs de matériel qui représentent une charge "portable" utilisable pour un
+ * goblet squat ou un split squat chargé. Les machines (presse, poulies,
+ * smith machine, rack seul, banc...) ne comptent PAS : elles ne donnent pas
+ * directement une charge à tenir en main pour ces mouvements précis.
+ * Note (mai 2026) : le setup profil ne collecte plus gymEquipment/homeEquipment
+ * (docs/onboarding-design.md §4.6) — ces champs restent lus ici pour les
+ * profils déjà renseignés avant ce changement, sans jamais crasher s'ils
+ * sont vides (hasWeightsEquipment tolère [] / null).
+ */
+export const WEIGHT_EQUIPMENT_IDS = [
+  "barbell",
+  "dumbbells_light",
+  "dumbbells_medium",
+  "dumbbells_heavy",
+  "kettlebell",
+  "home_dumbbells",
+  "home_kettlebell",
+  "sandbag",
+] as const;
+
+/** true si le profil (gymEquipment/homeEquipment) indique au moins une charge portable. */
+export const hasWeightsEquipment = (
+  gymEquipment?: string[] | null,
+  homeEquipment?: string[] | null
+): boolean => {
+  const all = [...(gymEquipment ?? []), ...(homeEquipment ?? [])];
+  return all.some((id) => (WEIGHT_EQUIPMENT_IDS as readonly string[]).includes(id));
 };
+
+// Ajoutés SEULEMENT si le profil indique des charges disponibles (module salle
+// optionnel, à l'intérieur de la section "Aller plus loin").
+export const EQUIPMENT_OPTIONAL_FIELD_KEYS: FieldKey[] = [
+  "gobletKg",
+  "gobletReps",
+  "splitKg",
+  "splitReps",
+];
+
+// Ajoutés SEULEMENT si le profil indique des charges ET la catégorie Senior.
+// Jamais U13/U15/U18, quel que soit le matériel déclaré (le moteur plafonne déjà
+// la force jeune au poids du corps — cf. AGE_CATEGORY_CAPS backend) ; jamais non
+// plus si la catégorie d'âge est inconnue (comportement conservateur).
+export const SENIOR_EQUIPMENT_OPTIONAL_FIELD_KEYS: FieldKey[] = ["trapbar3rmKg"];
+
+export type OptionalFieldsOptions = {
+  hasWeightsEquipment: boolean;
+  ageCategory: AgeCategory | null;
+};
+
+/**
+ * Compose la section "Aller plus loin" selon le matériel déclaré et l'âge.
+ * Le socle (CORE_FIELD_KEYS) n'est JAMAIS affecté par ces options : il est
+ * constant, quel que soit le profil ou le cycle actif.
+ */
+export function getOptionalFields(opts: OptionalFieldsOptions): FieldKey[] {
+  const fields = [...OPTIONAL_FIELD_KEYS];
+  if (opts.hasWeightsEquipment) {
+    fields.push(...EQUIPMENT_OPTIONAL_FIELD_KEYS);
+    if (opts.ageCategory === "Senior") {
+      fields.push(...SENIOR_EQUIPMENT_OPTIONAL_FIELD_KEYS);
+    }
+  }
+  return fields;
+}
 
 export const isPlaylistId = (value: any): value is PlaylistId =>
   value === "fondation" ||

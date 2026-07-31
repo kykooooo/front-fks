@@ -422,25 +422,11 @@ export default function SettingsScreen() {
                 />
               }
             />
-            <SettingRow
-              title="Stratégie rappel"
-              subtitle="Quand prévenir avant la séance"
-              right={
-                <SegmentedControl
-                  value={settings.reminderStrategy}
-                  options={[
-                    { value: "prev_evening", label: "Veille 20h" },
-                    { value: "same_morning", label: "Jour 9h" },
-                    { value: "two_hours", label: "2h avant" },
-                  ]}
-                  onChange={(value) =>
-                    updateSettings({
-                      reminderStrategy: value as SettingsState["reminderStrategy"],
-                    })
-                  }
-                />
-              }
-            />
+            {/* "Stratégie rappel" masquée : reminderStrategy n'est câblé nulle part côté
+                notifications.ts (scheduleSessionReminder ne prend qu'une heure fixe), il ne
+                sert qu'à un libellé cosmétique dans RoutineScreen. Contrôle trompeur tant que
+                le É2 du planning hebdo (voir PLANNING_HEBDO_DESIGN.md §notifications) ne le
+                branche pas réellement. Ne pas réafficher sans le câbler. */}
             <SettingRow
               title="Sons"
               subtitle="Bips et signaux audio en séance"
@@ -627,6 +613,19 @@ export default function SettingsScreen() {
                   size="sm"
                   variant="secondary"
                   onPress={() => nav.navigate("PrivacyPolicy")}
+                />
+              }
+            />
+            <SettingRow
+              title="Supprimer mon compte"
+              subtitle="Effacer définitivement toutes tes données"
+              right={
+                <Button
+                  label="Supprimer"
+                  size="sm"
+                  variant="ghost"
+                  textStyle={{ color: palette.danger }}
+                  onPress={() => nav.navigate("DeleteAccount")}
                 />
               }
               showDivider={false}

@@ -1,22 +1,25 @@
 // screens/tests/components/BatteryCard.tsx
+// "Ta batterie" — le socle unique (3 tests, identiques pour tous, quel que
+// soit le cycle actif). Langage BlockCard : itemRows (nom + "pourquoi" en
+// note + statut en Badge), barre de progression sobre, CTA du design system.
 import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Animated } from "react-native";
+import { View, Text, StyleSheet, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
+import { Badge } from "../../../components/ui/Badge";
 import { Button } from "../../../components/ui/Button";
 import {
-  FIELD_BY_KEY, PLAYLISTS, getGroupConfig,
-  type FieldKey, type PlaylistId, type TestEntry,
+  FIELD_BY_KEY, CORE_FIELD_WHY, CORE_PLAN, getGroupConfig,
+  type FieldKey, type TestEntry,
 } from "../testConfig";
+import { formatEntryValue, shouldHideUnitSuffix } from "../testHelpers";
 
 const palette = theme.colors;
 
 type Props = {
-  activeKeys: FieldKey[];
+  coreKeys: readonly FieldKey[];
   form: Partial<TestEntry>;
-  selectedPlaylist: PlaylistId;
   completedCount: number;
   totalTests: number;
   progressRatio: number;
@@ -28,7 +31,7 @@ type Props = {
 };
 
 export function BatteryCard({
-  activeKeys, form, selectedPlaylist,
+  coreKeys, form,
   completedCount, totalTests, progressRatio, hasAnyInput,
   onStart, onReset, onHaptic, cardAnim,
 }: Props) {
@@ -51,29 +54,25 @@ export function BatteryCard({
           <View style={styles.batteryTitleRow}>
             <Ionicons name="list-outline" size={16} color={palette.accent} />
             <View>
-              <Text style={styles.sectionTitle}>Batterie active</Text>
+              <Text style={styles.sectionTitle}>Ta batterie</Text>
               <Text style={styles.sectionSub}>
                 {completedCount}/{totalTests} tests renseignés
               </Text>
             </View>
           </View>
-          <View style={styles.batteryBadge}>
-            <Text style={styles.batteryBadgeText}>
-              {PLAYLISTS[selectedPlaylist].label}
-            </Text>
-          </View>
+          <Badge label="~15 min" />
         </View>
         <View style={styles.batteryProgressTrack}>
-          <LinearGradient
-            colors={["#ff7a1a", "#ff9a4a"]}
-            style={[styles.batteryProgressFill, { width: `${progressRatio * 100}%` }]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
+          <View
+            style={[
+              styles.batteryProgressFill,
+              { width: `${progressRatio * 100}%`, backgroundColor: palette.accent },
+            ]}
           />
         </View>
 
         <View style={styles.batteryList}>
-          {activeKeys.map((key, idx) => {
+          {coreKeys.map((key, idx) => {
             const field = FIELD_BY_KEY[key];
             const val = (form as any)[key];
             const done =
@@ -82,50 +81,48 @@ export function BatteryCard({
               val !== "" &&
               Number.isFinite(Number(val));
             const cfg = getGroupConfig(field.group);
+            const statusLabel = done
+              ? `${formatEntryValue(key, val)}${
+                  field.unit && !shouldHideUnitSuffix(key) ? ` ${field.unit}` : ""
+                }`
+              : "À faire";
             return (
-              <View key={key} style={styles.batteryRow}>
+              <View key={key} style={styles.itemRow}>
                 <View
                   style={[
-                    styles.batteryIndex,
-                    done && { backgroundColor: cfg.tint, borderColor: cfg.tint },
+                    styles.itemIndex,
+                    done && { backgroundColor: cfg.tintSoft, borderColor: cfg.tint },
                   ]}
                 >
                   {done ? (
-                    <Ionicons name="checkmark" size={12} color="#fff" />
+                    <Ionicons name="checkmark" size={13} color={cfg.tint} />
                   ) : (
-                    <Text style={styles.batteryIndexText}>{idx + 1}</Text>
+                    <Text style={styles.itemIndexText}>{idx + 1}</Text>
                   )}
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.batteryLabel}>{field.label}</Text>
-                  <Text style={styles.batteryMeta}>{field.protocol}</Text>
+                  <Text style={styles.itemName}>{field.label}</Text>
+                  <Text style={styles.itemNote} numberOfLines={2}>
+                    {(CORE_FIELD_WHY as Record<string, string>)[key] ?? field.protocol}
+                  </Text>
                 </View>
-                <Text style={done ? [styles.batteryValue, { color: cfg.tint }] : styles.batteryPending}>
-                  {done ? `${val}${field.unit ? ` ${field.unit}` : ""}` : "À faire"}
-                </Text>
+                <Badge label={statusLabel} tone={done ? "ok" : "default"} />
               </View>
             );
           })}
         </View>
 
         <View style={styles.batteryActions}>
-          <TouchableOpacity
-            style={styles.batteryStartButton}
+          <Button
+            label={hasAnyInput ? "Reprendre" : "Lancer la batterie"}
             onPress={() => { onStart(); onHaptic(); }}
-            activeOpacity={0.9}
-          >
-            <LinearGradient
-              colors={["#ff7a1a", "#ff9a4a"]}
-              style={styles.batteryStartGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-            >
-              <Ionicons name={hasAnyInput ? "play" : "flash"} size={18} color="#fff" />
-              <Text style={styles.batteryStartText}>
-                {hasAnyInput ? "Reprendre" : "Lancer la batterie"}
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
+            size="lg"
+            variant="primary"
+            fullWidth
+            leftAccessory={
+              <Ionicons name={hasAnyInput ? "play" : "flash"} size={16} color="#fff" />
+            }
+          />
           {hasAnyInput ? (
             <Button
               label="Recommencer"
@@ -136,6 +133,23 @@ export function BatteryCard({
             />
           ) : null}
         </View>
+
+        {/* Déroulé conseillé — fixe désormais (plus de variante par cycle) :
+            reste utile pour l'échauffement et les temps de repos entre tests
+            (pas redondant avec le protocole détaillé affiché pendant la saisie). */}
+        <View style={styles.planBox}>
+          <View style={styles.planHeader}>
+            <Ionicons name="footsteps-outline" size={12} color={palette.accent} />
+            <Text style={styles.planKicker}>Déroulé conseillé</Text>
+          </View>
+          <View style={styles.planList}>
+            {CORE_PLAN.map((step) => (
+              <Text key={step} style={styles.planText}>
+                {'•'} {step}
+              </Text>
+            ))}
+          </View>
+        </View>
       </Card>
     </Animated.View>
   );
@@ -143,7 +157,7 @@ export function BatteryCard({
 
 const styles = StyleSheet.create({
   batteryCard: {
-    borderRadius: 16,
+    borderRadius: theme.radius.lg,
     padding: 14,
     gap: 12,
   },
@@ -168,39 +182,22 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap: 10,
   },
-  batteryBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    backgroundColor: palette.cardSoft,
-  },
-  batteryBadgeText: {
-    color: palette.sub,
-    fontSize: 10,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-  },
   batteryProgressTrack: {
     height: 6,
-    borderRadius: 999,
+    borderRadius: theme.radius.pill,
     backgroundColor: palette.borderSoft,
     overflow: "hidden",
   },
   batteryProgressFill: {
     height: "100%",
-    backgroundColor: palette.accent,
+    borderRadius: theme.radius.pill,
   },
   batteryList: {
     gap: 10,
   },
-  batteryRow: {
-    flexDirection: "row",
-    gap: 10,
-    alignItems: "flex-start",
-  },
-  batteryIndex: {
+  // itemRow — même motif que BlockCard (checkbox/index + nom + note + statut).
+  itemRow: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
+  itemIndex: {
     width: 24,
     height: 24,
     borderRadius: 12,
@@ -210,54 +207,35 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 2,
   },
-  batteryIndexText: {
+  itemIndexText: {
     color: palette.sub,
     fontSize: 11,
     fontWeight: "700",
   },
-  batteryLabel: {
-    color: palette.text,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  batteryMeta: {
-    color: palette.sub,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  batteryValue: {
-    color: palette.text,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  batteryPending: {
-    color: palette.sub,
-    fontSize: 12,
-  },
+  itemName: { color: palette.text, fontSize: 14, fontWeight: "600" },
+  itemNote: { color: palette.sub, fontSize: 12, marginTop: 2, lineHeight: 16 },
   batteryActions: {
     marginTop: 4,
     gap: 8,
   },
-  batteryStartButton: {
-    borderRadius: 14,
-    overflow: "hidden",
-    shadowColor: "#ff7a1a",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+  // Bandeau "Déroulé conseillé" — style coachTipBox (fond soft + barre gauche).
+  planBox: {
+    gap: 6,
+    padding: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: palette.accent,
+    backgroundColor: palette.accentSoft,
+    borderTopRightRadius: theme.radius.sm,
+    borderBottomRightRadius: theme.radius.sm,
   },
-  batteryStartGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-  },
-  batteryStartText: {
-    color: "#fff",
-    fontSize: 15,
+  planHeader: { flexDirection: "row", alignItems: "center", gap: 5 },
+  planKicker: {
+    fontSize: 11,
     fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+    color: palette.accent,
   },
+  planList: { gap: 3 },
+  planText: { fontSize: 12, lineHeight: 16, color: palette.text },
 });

@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ScrollView,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Screen } from "../components/ui/Screen";
 import { useNavigation, NavigationProp, useFocusEffect } from "@react-navigation/native";
 import { useLoadStore } from "../state/stores/useLoadStore";
@@ -36,10 +37,11 @@ import { GenerationActions } from "./newSession/ui/GenerationActions";
 import { CurrentSessionCard } from "./newSession/ui/CurrentSessionCard";
 import { useAiContextLoader, useEnvironmentEquipment } from "./newSession/hooks";
 import { palette } from "./newSession/theme";
-import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
+import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId, getRecommendedLocation } from "../domain/microcycles";
 import { getMicrocyclePhase } from "../utils/microcycleUtils";
 import { Button } from "../components/ui/Button";
 import { trackEvent } from "../services/analytics";
+import { STORAGE_KEYS } from "../constants/storage";
 import { buildResetExplain } from "./newSession/resetExplain";
 import { useContextualAdvice } from "../hooks/home/useContextualAdvice";
 import { toDateKey } from "../utils/dateHelpers";
@@ -103,6 +105,17 @@ type RootStackParamList = {
   CycleModal: { mode?: "select" | "manage"; origin?: "home" | "profile" | "newSession" | "feedback" } | undefined;
 };
 
+/** Funnel analytics : mesure Register → 1ère séance générée (fire once, timestamp consommé). */
+const trackFirstSessionGeneratedIfNeeded = async () => {
+  const startedAtRaw = await AsyncStorage.getItem(STORAGE_KEYS.ONBOARDING_START_TS);
+  if (!startedAtRaw) return;
+  await AsyncStorage.removeItem(STORAGE_KEYS.ONBOARDING_START_TS);
+  const startedAt = Number(startedAtRaw);
+  if (!Number.isFinite(startedAt)) return;
+  const minutesSinceRegister = Math.round(((Date.now() - startedAt) / 60000) * 10) / 10;
+  trackEvent("first_session_generated", { minutesSinceRegister });
+};
+
 /** =====================================================================
  *  ECRAN
  * ===================================================================== */
@@ -113,7 +126,6 @@ export default function NewSessionScreen() {
   const sessions = useSessionsStore((s) => s.sessions);
   const pushSession = useSessionsStore((s) => s.pushSession);
   const devNowISO = useDebugStore((s) => s.devNowISO);
-  const nextAllowedISO = useLoadStore((s) => s.nextAllowedDateISO);
   const persistPlanned = useSyncStore((s) => s.persistPlannedSession);
   const setLastAiSessionV2 = useSessionsStore(
     (s) => s.setLastAiSessionV2 ?? (() => {})
@@ -126,7 +138,6 @@ export default function NewSessionScreen() {
   const dailyApplied = useLoadStore((s) => s.dailyApplied);
   const lastAppliedDate = useLoadStore((s) => s.lastAppliedDate);
   const advanceDays = useLoadStore((s) => s.advanceDays);
-  const restUntil = useLoadStore((s) => s.restUntil);
   const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
 
   const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
@@ -152,6 +163,7 @@ export default function NewSessionScreen() {
   const [pitchSmallGearEnabled, setPitchSmallGearEnabled] = useState(false);
   const [setupDone, setSetupDone] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [wakingServer, setWakingServer] = useState(false);
   const [resetChoice, setResetChoice] = useState<ResetChoiceState>(null);
   const [cachePrompt, setCachePrompt] = useState<{
     cached: { v2: FKS_NextSessionV2; debug: Record<string, unknown> };
@@ -165,6 +177,15 @@ export default function NewSessionScreen() {
       const next = prev.filter((loc) => allowedLocations.includes(loc));
       if (next.length === 0 && allowedLocations.length === 1) {
         return [allowedLocations[0]] as EnvironmentSelection;
+      }
+      // Rien de sélectionné : on présélectionne le lieu conseillé pour le
+      // cycle actif (si le moteur en propose un), sans jamais écraser un
+      // choix déjà fait par le joueur. Non bloquant : reste modifiable.
+      if (next.length === 0 && cycleId) {
+        const reco = getRecommendedLocation(cycleId);
+        if (reco && allowedLocations.includes(reco.location)) {
+          return [reco.location] as EnvironmentSelection;
+        }
       }
       return next as EnvironmentSelection;
     });
@@ -186,9 +207,10 @@ export default function NewSessionScreen() {
   );
 
   const now = devNowISO ? new Date(devNowISO) : new Date();
-  const isBeforeNextAllowed = nextAllowedISO
-    ? now.getTime() < new Date(nextAllowedISO).getTime()
-    : false;
+  // NOTE (17/07) : le bouton "Repos 2 jours" et son verrou nextAllowedDateISO
+  // ont été retirés — le repos est géré par la jauge de forme + CTA intelligent.
+  // Les profils avec un verrou legacy persisté sont purgés à la réhydratation
+  // (migration v2 de useLoadStore).
   const allowSameDayInDev = DEV_FLAGS.ENABLED;
   const alreadyAppliedToday =
     !allowSameDayInDev &&
@@ -262,6 +284,7 @@ export default function NewSessionScreen() {
       location: resetChoice.location,
       resetVariantId: chosen.id,
     });
+    await trackFirstSessionGeneratedIfNeeded();
   };
 
   /** ------------------------------------------------------------------
@@ -300,6 +323,7 @@ export default function NewSessionScreen() {
   const cancelGeneration = useCallback(() => {
     generationIdRef.current += 1;
     setGenerating(false);
+    setWakingServer(false);
     setContextLoading(false);
     trackEvent("session_generate_cancelled", {});
     showToast({ type: "info", title: "Génération annulée", message: "Tu peux relancer quand tu veux." });
@@ -345,21 +369,6 @@ export default function NewSessionScreen() {
         return;
       }
 
-      if (isBeforeNextAllowed) {
-        const d = nextAllowedISO ? new Date(nextAllowedISO) : null;
-        const dateLabel = d
-          ? d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-          : null;
-        showToast({
-          type: "info",
-          title: "Repos programmé",
-          message: dateLabel
-            ? `Repos jusqu'au ${dateLabel} — reviens te reposer avant ta prochaine séance !`
-            : "Une période de repos est programmée. Reviens bientôt !",
-        });
-        return;
-      }
-
       if (environment.length === 0) {
         showToast({ type: "warn", title: "Lieu manquant", message: "Choisis au moins un lieu : salle, terrain ou chez toi." });
         return;
@@ -371,9 +380,11 @@ export default function NewSessionScreen() {
       if (!equipmentForGeneration.length && environment.includes("gym")) {
         equipmentForGeneration = ["gym_full", "bodyweight"];
       }
+      // Sans matériel ailleurs qu'en salle : choix assumé, pas un blocage.
+      // Le moteur gère nativement le poids du corps (aucune séance ne doit
+      // rester bloquée faute de coche matériel).
       if (!equipmentForGeneration.length) {
-        showToast({ type: "warn", title: "Matériel manquant", message: "Sélectionne au moins un matériel disponible." });
-        return;
+        equipmentForGeneration = ["bodyweight"];
       }
 
       if (!setupDone) {
@@ -387,6 +398,7 @@ export default function NewSessionScreen() {
       });
 
       setGenerating(true);
+      setWakingServer(false);
       const genId = ++generationIdRef.current;
 
       // On reconstruit le contexte à chaque génération pour refléter microcycle/index/goal à jour.
@@ -416,7 +428,11 @@ export default function NewSessionScreen() {
       }
 
       // 3) Appel backend → workflow → v2
-      const { v2, debug } = await fetchV2(preparedCtx);
+      const { v2, debug } = await fetchV2(preparedCtx, {
+        onRetry: () => {
+          if (generationIdRef.current === genId) setWakingServer(true);
+        },
+      });
       if (generationIdRef.current !== genId) return; // annulé pendant l'appel
       await setSessionCache(preparedCtx, { v2, debug });
       if (isResetPlan(v2)) {
@@ -463,6 +479,7 @@ export default function NewSessionScreen() {
         cycleId,
         location,
       });
+      await trackFirstSessionGeneratedIfNeeded();
     } catch (err: any) {
       if (err?.code === "AUTH_REQUIRED") {
         showToast({ type: "error", title: "Connexion requise", message: "Connecte-toi pour enregistrer la séance." });
@@ -511,6 +528,7 @@ export default function NewSessionScreen() {
       }
     } finally {
       setGenerating(false);
+      setWakingServer(false);
       // Toujours relâcher le flag contexte : s'il reste bloqué à true, le CTA
       // "Générer" est définitivement grisé (buildAIPromptContext peut throw).
       setContextLoading(false);
@@ -558,6 +576,7 @@ export default function NewSessionScreen() {
         },
       });
       trackEvent("session_generate_from_cache", { cycleId });
+      await trackFirstSessionGeneratedIfNeeded();
     } catch {
       showToast({ type: "error", title: "Erreur", message: "Impossible de charger la séance en cache." });
     } finally {
@@ -743,14 +762,12 @@ export default function NewSessionScreen() {
           {/* Étape 2 : CTA Génération (affiché après validation) */}
 	          {setupDone && !cachePrompt ? (
 	            <GenerationActions
-	              disabled={isBeforeNextAllowed || contextLoading || generating || !storeHydrated || !!current}
+	              disabled={contextLoading || generating || !storeHydrated || !!current}
 	              generating={generating}
 	              label={generateLabel}
 	              onGenerate={handleGenerate}
 	              onAdvanceDay={() => advanceDays(1)}
-	              onRestTwoDays={() => restUntil(2)}
 	              storeHydrated={storeHydrated}
-	              nextAllowedISO={nextAllowedISO}
 	              alreadyAppliedToday={alreadyAppliedToday}
 	              advice={advice}
 	            />
@@ -763,11 +780,9 @@ export default function NewSessionScreen() {
 	          current={current}
           phaseLabel={cyclePhase?.label ?? null}
           phaseMeaning={cyclePhase?.meaning ?? null}
-          nextAllowedISO={nextAllowedISO}
           alreadyAppliedToday={alreadyAppliedToday}
           onFeedback={goFeedback}
           onAdvanceDay={() => advanceDays(1)}
-          onRestTwoDays={() => restUntil(2)}
         />
       )}
 
@@ -801,6 +816,9 @@ export default function NewSessionScreen() {
           "Personnalisation selon tes contraintes...",
           "Vérification et finalisation...",
         ]}
+        overrideMessage={
+          wakingServer ? "Le serveur se réveille, encore quelques secondes..." : undefined
+        }
         estimatedDurationMs={25000}
         onCancel={cancelGeneration}
       />

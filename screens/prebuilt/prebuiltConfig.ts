@@ -16,7 +16,7 @@ export const CATEGORY_CONFIG: Record<string, CategoryConfig> = {
   RÉCUPÉRATION: {
     icon: "leaf",
     gradient: ["#10b981", "#34d399"],
-    tagline: "Récupère mieux, progresse plus vite",
+    tagline: "Récupère mieux entre deux séances",
   },
   "MOBILITÉ EXPRESS": {
     icon: "body",
@@ -46,7 +46,7 @@ export const CATEGORY_CONFIG: Record<string, CategoryConfig> = {
   CIRCUITS: {
     icon: "repeat",
     gradient: ["#e11d48", "#fb7185"],
-    tagline: "Enchaîne les tours, repousse tes limites",
+    tagline: "Circuits complets, en salle ou sur le terrain",
   },
 };
 

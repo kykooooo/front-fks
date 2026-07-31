@@ -1,37 +1,44 @@
-// screens/TestsScreen.tsx — orchestrator (refactored from 1879 → ~280 lines)
+// screens/TestsScreen.tsx — orchestrator (Phase C : batterie unique, plus de sélecteur de cycle)
 import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { View, StyleSheet, ScrollView, Animated, KeyboardAvoidingView, Platform } from "react-native";
 import { Screen } from "../components/ui/Screen";
-import { useRoute } from "@react-navigation/native";
 import { useHaptics } from "../hooks/useHaptics";
 import { theme } from "../constants/theme";
 import { showToast } from "../utils/toast";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
+import { useExternalStore } from "../state/stores/useExternalStore";
+import { isMicrocycleId, canonicalizeMicrocycleGoal } from "../domain/microcycles";
 
 import {
-  isPlaylistId,
   FIELD_BY_KEY,
-  PLAYLIST_FIELDS,
-  type PlaylistId,
+  GROUP_TITLES,
+  CORE_FIELD_KEYS,
+  getOptionalFields,
+  hasWeightsEquipment,
   type TestEntry,
   type FieldKey,
   type FieldConfig,
   type StepId,
 } from "./tests/testConfig";
 import { useTestsStorage } from "./tests/hooks/useTestsStorage";
+import { getTestTimingBanner } from "./tests/testTiming";
+import { fieldKeysWithData, pickFieldSamples } from "./tests/testHelpers";
 
 import { TestHeader } from "./tests/components/TestHeader";
-import { PlaylistSelector } from "./tests/components/PlaylistSelector";
 import { EntryFormCard } from "./tests/components/EntryFormCard";
 import { BatteryCard } from "./tests/components/BatteryCard";
+import { OptionalTestsSection } from "./tests/components/OptionalTestsSection";
 import { StatisticsCard, type SummaryStat } from "./tests/components/StatisticsCard";
-import { TestPlanCard } from "./tests/components/TestPlanCard";
 import { OverviewCard } from "./tests/components/OverviewCard";
 import { HistorySection } from "./tests/components/HistorySection";
+import { CycleTimingBanner } from "./tests/components/CycleTimingBanner";
 
 const palette = theme.colors;
 
 type Mode = "battery" | "entry";
+// Le flux d'entrée en cours : soit le socle (3 étapes + notes), soit un seul
+// test optionnel saisi individuellement depuis la section "Aller plus loin".
+type EntryFlow = "core" | FieldKey;
 
 const formatBoundsMessage = (field: FieldConfig) =>
   `${field.label} : entre ${field.min} et ${field.max}${field.unit ? ` ${field.unit}` : ""}.`;
@@ -43,22 +50,34 @@ const isOutOfBounds = (field: FieldConfig | undefined, num: number) => {
   return false;
 };
 
+const hasValidNumber = (form: Partial<TestEntry>, key: FieldKey): boolean => {
+  const val = (form as any)[key];
+  if (val === undefined || val === null || val === "") return false;
+  return Number.isFinite(Number(val));
+};
+
 export default function TestsScreen() {
-  const route = useRoute<any>();
   const haptics = useHaptics();
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
+  const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
+  const gymEquipment = useExternalStore((s) => s.gymEquipment);
+  const homeEquipment = useExternalStore((s) => s.homeEquipment);
+  const ageCategory = useExternalStore((s) => s.ageCategory);
 
-  // Storage
+  // Storage — historique unifié : plus de filtre par playlist nulle part en aval.
   const { entries, persistEntries } = useTestsStorage();
 
-  // Form state
-  const [form, setForm] = useState<Partial<TestEntry>>({});
+  // Deux formulaires distincts : le socle (persiste tant qu'on navigue
+  // battery <-> entry, pour "Reprendre") et les tests optionnels (éphémère,
+  // un tap dans la section = un champ = un enregistrement immédiat).
+  const [coreForm, setCoreForm] = useState<Partial<TestEntry>>({});
+  const [optionalForm, setOptionalForm] = useState<Partial<TestEntry>>({});
   const [mode, setMode] = useState<Mode>("battery");
-  const [selectedPlaylistOverride, setSelectedPlaylistOverride] =
-    useState<PlaylistId | null>(null);
+  const [activeFlow, setActiveFlow] = useState<EntryFlow>("core");
   const [stepIndex, setStepIndex] = useState(0);
+  const [optionalOpen, setOptionalOpen] = useState(false);
 
-  // Animations
+  // Animations (0: bandeau cycle, 1: batterie/entrée, 2: stats, 3: overview, 4: aller plus loin, 5: historique)
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
   const cardAnims = useRef([0, 1, 2, 3, 4, 5].map(() => new Animated.Value(0))).current;
@@ -89,43 +108,64 @@ export default function TestsScreen() {
     });
   }, [fadeAnim, slideAnim, cardAnims]);
 
-  // Playlist selection
-  const initialPlaylistFromRoute = route?.params?.initialPlaylist;
-  const selectedPlaylist: PlaylistId = useMemo(() => {
-    if (isPlaylistId(selectedPlaylistOverride)) return selectedPlaylistOverride;
-    if (isPlaylistId(initialPlaylistFromRoute)) return initialPlaylistFromRoute;
-    if (isPlaylistId(microcycleGoal)) return microcycleGoal;
-    return "fondation";
-  }, [selectedPlaylistOverride, microcycleGoal, initialPlaylistFromRoute]);
-
-  const activeKeys = PLAYLIST_FIELDS[selectedPlaylist] ?? [];
-  const steps = useMemo<StepId[]>(() => [...activeKeys, "notes"], [activeKeys]);
-
-  // Derived state
-  const totalTests = activeKeys.length;
-  const completedCount = activeKeys.filter((key) => {
-    const val = (form as any)[key];
-    if (val === undefined || val === null || val === "") return false;
-    return Number.isFinite(Number(val));
-  }).length;
-  const progressRatio = totalTests > 0 ? completedCount / totalTests : 0;
-  const hasAnyInput = completedCount > 0 || (form.notes ?? "").trim().length > 0;
-
-  const entriesForPlaylist = useMemo(
-    () => entries.filter(
-      (e) => (isPlaylistId(e.playlist) ? e.playlist : "fondation") === selectedPlaylist
-    ),
-    [entries, selectedPlaylist]
+  // Section "Aller plus loin" : le module salle (goblet/split) et le trap bar
+  // 3RM restent gated par matériel/âge, mais à l'intérieur de cette section
+  // (plus par playlist "force"/"explosivité" dédiée).
+  const optionalKeys = useMemo(
+    () =>
+      getOptionalFields({
+        hasWeightsEquipment: hasWeightsEquipment(gymEquipment, homeEquipment),
+        ageCategory,
+      }),
+    [gymEquipment, homeEquipment, ageCategory]
   );
-  const lastTwo = useMemo(() => entriesForPlaylist.slice(0, 2), [entriesForPlaylist]);
-  const lastEntry = lastTwo[0];
 
-  // Summary stats
+  // Bandeau "bon moment pour tester" selon la position dans le cycle actif — inchangé.
+  const timingBanner = useMemo(
+    () => getTestTimingBanner(microcycleSessionIndex, isMicrocycleId(microcycleGoal)),
+    [microcycleSessionIndex, microcycleGoal]
+  );
+
+  // Flux d'entrée en cours.
+  const isCoreFlow = activeFlow === "core";
+  const entrySteps = useMemo<StepId[]>(
+    () => (isCoreFlow ? [...CORE_FIELD_KEYS, "notes"] : [activeFlow as FieldKey]),
+    [isCoreFlow, activeFlow]
+  );
+  const entryForm = isCoreFlow ? coreForm : optionalForm;
+  const entryTitle = isCoreFlow ? "Batterie en cours" : "Test rapide";
+
+  // Progression du socle (BatteryCard + barre pendant la saisie du socle).
+  const totalTests = CORE_FIELD_KEYS.length;
+  const completedCount = CORE_FIELD_KEYS.filter((key) => hasValidNumber(coreForm, key)).length;
+  const coreProgressRatio = totalTests > 0 ? completedCount / totalTests : 0;
+  const hasAnyInput = completedCount > 0 || (coreForm.notes ?? "").trim().length > 0;
+  const entryProgressRatio = isCoreFlow
+    ? coreProgressRatio
+    : hasValidNumber(optionalForm, activeFlow as FieldKey)
+      ? 1
+      : 0;
+
+  // ─── Historique unifié : UNE timeline, toutes entrées confondues ───
+  // (avant : `entriesForPlaylist` filtrait par cycle actif, ce qui "cachait"
+  // les anciennes valeurs dès qu'on changeait de cycle — cf. chantier Phase C.)
+  const keysWithData = useMemo(() => fieldKeysWithData(entries), [entries]);
+  const fieldSamples = useMemo(
+    () => pickFieldSamples(entries, keysWithData, 2),
+    [entries, keysWithData]
+  );
+  const latestTs = entries[0]?.ts ?? 0;
+  const latestNotes = useMemo(() => {
+    const withNotes = entries.find((e) => (e.notes ?? "").trim().length > 0);
+    return withNotes?.notes?.trim() || null;
+  }, [entries]);
+
+  // Statistiques — sur TOUTES les entrées (plus filtrées par playlist).
   const summaryStats = useMemo<SummaryStat[]>(() => {
-    if (entriesForPlaylist.length === 0) return [];
-    return activeKeys
+    if (entries.length === 0) return [];
+    return keysWithData
       .map((key) => {
-        const values = entriesForPlaylist
+        const values = entries
           .map((e) => Number((e as any)[key]))
           .filter((v) => Number.isFinite(v));
         if (!values.length) return null;
@@ -142,61 +182,52 @@ export default function TestsScreen() {
         };
       })
       .filter(Boolean) as SummaryStat[];
-  }, [entriesForPlaylist, activeKeys]);
+  }, [entries, keysWithData]);
 
-  // Grouped fields for overview card
+  // Champs groupés pour OverviewCard — sur les champs qui ont au moins une valeur.
   const groupedFields = useMemo(() => {
-    const groupTitles: Record<FieldConfig["group"], string> = {
-      sauts: "Sauts / Explosivité",
-      vitesse: "Vitesse linéaire",
-      endurance: "Endurance aérobie",
-      force: "Force repère",
-      agilite: "Agilité / COD",
-      power: "Puissance",
-    };
     const groups: Record<string, { title: string; fields: FieldConfig[] }> = {};
-    for (const key of activeKeys) {
+    for (const key of keysWithData) {
       const field = FIELD_BY_KEY[key];
       if (!field) continue;
       const groupId = field.group;
       if (!groups[groupId]) {
-        groups[groupId] = { title: groupTitles[groupId], fields: [] };
+        groups[groupId] = { title: GROUP_TITLES[groupId], fields: [] };
       }
       groups[groupId].fields.push(field);
     }
     return Object.values(groups).filter((g) => g.fields.length > 0);
-  }, [activeKeys]);
+  }, [keysWithData]);
 
   // --- Callbacks ---
 
-  const selectPlaylist = useCallback((id: PlaylistId) => {
-    setSelectedPlaylistOverride(id);
-    setForm({});
-    setStepIndex(0);
-    setMode("battery");
-  }, []);
-
-  const goToStep = useCallback((idx: number) => {
-    setStepIndex(Math.max(0, Math.min(idx, steps.length - 1)));
-  }, [steps.length]);
+  const goToStep = useCallback(
+    (idx: number) => {
+      setStepIndex(Math.max(0, Math.min(idx, entrySteps.length - 1)));
+    },
+    [entrySteps.length]
+  );
 
   const save = useCallback(async () => {
+    const keysToSave: FieldKey[] = isCoreFlow ? [...CORE_FIELD_KEYS] : [activeFlow as FieldKey];
+    const formSnapshot = isCoreFlow ? coreForm : optionalForm;
+
     const hasAnyValue =
-      PLAYLIST_FIELDS[selectedPlaylist].some((k) => {
-        const val = (form as any)[k];
-        if (val === undefined || val === null || val === "") return false;
-        return Number.isFinite(Number(val));
-      }) || (form.notes ?? "").trim().length > 0;
+      keysToSave.some((k) => hasValidNumber(formSnapshot, k)) ||
+      (isCoreFlow && (formSnapshot.notes ?? "").trim().length > 0);
     if (!hasAnyValue) {
-      showToast({ type: "warn", title: "Batterie vide", message: "Renseigne au moins un test ou une note." });
+      showToast({
+        type: "warn",
+        title: isCoreFlow ? "Batterie vide" : "Test vide",
+        message: isCoreFlow
+          ? "Renseigne au moins un test ou une note."
+          : "Entre une valeur avant d'enregistrer.",
+      });
       return;
     }
-    const outOfBoundsKey = PLAYLIST_FIELDS[selectedPlaylist].find((k) => {
-      const val = (form as any)[k];
-      if (val === undefined || val === null || val === "") return false;
-      const num = Number(val);
-      if (!Number.isFinite(num)) return false;
-      return isOutOfBounds(FIELD_BY_KEY[k], num);
+    const outOfBoundsKey = keysToSave.find((k) => {
+      if (!hasValidNumber(formSnapshot, k)) return false;
+      return isOutOfBounds(FIELD_BY_KEY[k], Number((formSnapshot as any)[k]));
     });
     if (outOfBoundsKey) {
       showToast({
@@ -206,37 +237,41 @@ export default function TestsScreen() {
       });
       return;
     }
+
     const cleanEntry: TestEntry = { ts: Date.now() };
-    cleanEntry.playlist = selectedPlaylist;
-    PLAYLIST_FIELDS[selectedPlaylist].forEach((k) => {
-      const val = (form as any)[k];
-      if (val !== undefined && val !== null && val !== "") {
-        const num = Number(val);
-        if (Number.isFinite(num)) {
-          (cleanEntry as any)[k] = num;
-        }
+    // Tag informatif seul (quel cycle était actif) — plus un filtre en aval.
+    const cycleTag = canonicalizeMicrocycleGoal(microcycleGoal);
+    if (cycleTag) cleanEntry.playlist = cycleTag;
+    keysToSave.forEach((k) => {
+      if (hasValidNumber(formSnapshot, k)) {
+        (cleanEntry as any)[k] = Number((formSnapshot as any)[k]);
       }
     });
-    cleanEntry.notes = form.notes?.trim() || undefined;
+    if (isCoreFlow) cleanEntry.notes = formSnapshot.notes?.trim() || undefined;
 
     try {
       const next = [cleanEntry, ...entries].slice(0, 30);
       await persistEntries(next);
-      showToast({ type: "success", title: "Enregistré", message: "Tes valeurs de test sont sauvegardées." });
-      setForm({});
+      showToast({
+        type: "success",
+        title: "Enregistré",
+        message: isCoreFlow ? "Ta batterie est sauvegardée." : "Résultat enregistré.",
+      });
+      if (isCoreFlow) setCoreForm({});
+      else setOptionalForm({});
       setStepIndex(0);
       setMode("battery");
     } catch (e) {
       if (__DEV__) console.warn("save tests", e);
       showToast({ type: "error", title: "Erreur", message: "Impossible de sauvegarder les tests." });
     }
-  }, [selectedPlaylist, form, entries, persistEntries]);
+  }, [isCoreFlow, activeFlow, coreForm, optionalForm, entries, persistEntries, microcycleGoal]);
 
   const goNext = useCallback(() => {
-    const currentStep = steps[stepIndex] ?? steps[0];
+    const currentStep = entrySteps[stepIndex] ?? entrySteps[0];
     const isNotesStep = currentStep === "notes";
     if (!isNotesStep) {
-      const value = (form as any)[currentStep];
+      const value = (entryForm as any)[currentStep];
       if (value === undefined || value === null || value === "") {
         showToast({ type: "warn", title: "Valeur manquante", message: "Entre une valeur ou passe ce test." });
         return;
@@ -256,12 +291,12 @@ export default function TestsScreen() {
         return;
       }
     }
-    if (stepIndex >= steps.length - 1) {
+    if (stepIndex >= entrySteps.length - 1) {
       save();
       return;
     }
     goToStep(stepIndex + 1);
-  }, [stepIndex, steps, form, save, goToStep]);
+  }, [stepIndex, entrySteps, entryForm, save, goToStep]);
 
   const goPrev = useCallback(() => {
     if (stepIndex === 0) {
@@ -271,30 +306,44 @@ export default function TestsScreen() {
     goToStep(stepIndex - 1);
   }, [stepIndex, goToStep]);
 
-  const startBattery = useCallback(() => {
+  const startCoreBattery = useCallback(() => {
     const firstIncomplete = (() => {
-      for (let i = 0; i < activeKeys.length; i += 1) {
-        const key = activeKeys[i];
-        const val = (form as any)[key];
-        if (val === undefined || val === null || val === "") return i;
-        if (!Number.isFinite(Number(val))) return i;
+      for (let i = 0; i < CORE_FIELD_KEYS.length; i += 1) {
+        if (!hasValidNumber(coreForm, CORE_FIELD_KEYS[i])) return i;
       }
-      return activeKeys.length;
+      return CORE_FIELD_KEYS.length;
     })();
+    setActiveFlow("core");
     setMode("entry");
     setStepIndex(firstIncomplete);
-  }, [activeKeys, form]);
+  }, [coreForm]);
 
-  const resetBattery = useCallback(() => {
-    setForm({});
+  const resetCoreBattery = useCallback(() => {
+    setCoreForm({});
     setStepIndex(0);
     setMode("battery");
   }, []);
 
-  const onFormChange = useCallback((key: string, value: string) => {
-    const normalized = key === "notes" ? value : value.replace(",", ".");
-    setForm((prev) => ({ ...prev, [key]: normalized }));
+  const startOptionalEntry = useCallback((key: FieldKey) => {
+    setOptionalForm({});
+    setActiveFlow(key);
+    setStepIndex(0);
+    setMode("entry");
   }, []);
+
+  const toggleOptionalOpen = useCallback(() => setOptionalOpen((v) => !v), []);
+
+  const onFormChange = useCallback(
+    (key: string, value: string) => {
+      const normalized = key === "notes" ? value : value.replace(",", ".");
+      if (isCoreFlow) {
+        setCoreForm((prev) => ({ ...prev, [key]: normalized }));
+      } else {
+        setOptionalForm((prev) => ({ ...prev, [key]: normalized }));
+      }
+    },
+    [isCoreFlow]
+  );
 
   const onSkipStep = useCallback(() => {
     goToStep(stepIndex + 1);
@@ -316,25 +365,22 @@ export default function TestsScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <TestHeader
-          lastEntry={lastEntry}
+          lastEntry={entries[0]}
           fadeAnim={fadeAnim}
           slideAnim={slideAnim}
         />
 
-        <PlaylistSelector
-          selectedPlaylist={selectedPlaylist}
-          activeKeysCount={activeKeys.length}
-          onSelect={selectPlaylist}
-          onHaptic={impactLight}
-          cardAnim={cardAnims[0]}
-        />
+        {timingBanner && (
+          <CycleTimingBanner banner={timingBanner} cardAnim={cardAnims[0]} />
+        )}
 
         {mode === "entry" ? (
           <EntryFormCard
+            title={entryTitle}
             stepIndex={stepIndex}
-            steps={steps}
-            progressRatio={progressRatio}
-            form={form}
+            steps={entrySteps}
+            progressRatio={entryProgressRatio}
+            form={entryForm}
             onFormChange={onFormChange}
             onNext={goNext}
             onPrev={goPrev}
@@ -345,47 +391,47 @@ export default function TestsScreen() {
         ) : (
           <>
             <BatteryCard
-              activeKeys={activeKeys}
-              form={form}
-              selectedPlaylist={selectedPlaylist}
+              coreKeys={CORE_FIELD_KEYS}
+              form={coreForm}
               completedCount={completedCount}
               totalTests={totalTests}
-              progressRatio={progressRatio}
+              progressRatio={coreProgressRatio}
               hasAnyInput={hasAnyInput}
-              onStart={startBattery}
-              onReset={resetBattery}
+              onStart={startCoreBattery}
+              onReset={resetCoreBattery}
               onHaptic={impactLight}
               cardAnim={cardAnims[1]}
             />
 
             <StatisticsCard
               stats={summaryStats}
-              entriesCount={entriesForPlaylist.length}
+              entriesCount={entries.length}
               cardAnim={cardAnims[2]}
             />
 
-            <TestPlanCard
-              selectedPlaylist={selectedPlaylist}
-              cardAnim={cardAnims[3]}
-            />
-
-            {lastEntry && (
+            {groupedFields.length > 0 && (
               <OverviewCard
-                lastEntry={lastEntry}
-                lastTwo={lastTwo}
+                latestTs={latestTs}
+                latestNotes={latestNotes}
+                hasComparison={entries.length > 1}
+                fieldSamples={fieldSamples}
                 groupedFields={groupedFields}
-                cardAnim={cardAnims[4]}
+                cardAnim={cardAnims[3]}
               />
             )}
-          </>
-        )}
 
-        {mode === "battery" && entriesForPlaylist.length > 0 && (
-          <HistorySection
-            entriesForPlaylist={entriesForPlaylist}
-            selectedPlaylist={selectedPlaylist}
-            cardAnim={cardAnims[5]}
-          />
+            <OptionalTestsSection
+              optionalKeys={optionalKeys}
+              fieldSamples={fieldSamples}
+              open={optionalOpen}
+              onToggle={toggleOptionalOpen}
+              onSelectField={startOptionalEntry}
+              onHaptic={impactLight}
+              cardAnim={cardAnims[4]}
+            />
+
+            <HistorySection entries={entries} cardAnim={cardAnims[5]} />
+          </>
         )}
 
         <View style={{ height: 32 }} />

@@ -158,6 +158,10 @@ export type ExternalState = {
   clubTrainingDays: string[];
   matchDays: string[];
   matchDay: string | null;
+  /** Rythme hebdo déclaré au setup (users/{uid}) — null tant que non synchronisé/défini, jamais 0 par défaut. */
+  clubTrainingsPerWeek: number | null;
+  matchesPerWeek: number | null;
+  targetFksSessionsPerWeek: number | null;
   autoExternalEnabled: boolean;
   autoExternalConfig: {
     club?: { rpe: number; durationMin: number };
@@ -165,8 +169,14 @@ export type ExternalState = {
   };
   /** Catégorie d'âge du joueur (pont profil → calibre l'auto-charge jeune). null = adulte/inconnu. */
   ageCategory: AgeCategory | null;
-  /** Souhait 1-4 séances FKS/semaine (profil). Miroir local pour domain/weekPlanning.ts (É1). null = pas encore saisi. */
-  targetFksSessionsPerWeek: number | null;
+  /**
+   * Matériel déclaré au profil (pont profil → utilisé par ex. par la composition
+   * de batterie des Tests terrain, cf. screens/tests/testConfig.ts). Vide par défaut,
+   * jamais inventé : reflète strictement users/{uid}.gymEquipment / homeEquipment.
+   */
+  gymEquipment: string[];
+  homeEquipment: string[];
+  hasGymAccess: string | null;
 
   // actions
   addCompletedRoutine: (routine: Omit<CompletedRoutine, "id" | "dateISO">) => void;

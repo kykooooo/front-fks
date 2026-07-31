@@ -1,5 +1,5 @@
 import type { Exercise, Session } from "../../domain/types";
-import type { PlannedIntensity, ResetVariant } from "./types";
+import type { FKS_NextSessionV2, PlannedIntensity, ResetVariant } from "./types";
 
 export const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() &&
@@ -13,16 +13,35 @@ export function toPlannedIntensity(x: Session["intensity"] | string): PlannedInt
   return "easy";
 }
 
+/**
+ * Contrat front↔back : le backend émet `recovery_tips` à la RACINE de la
+ * réponse v2 (fks/src/fksSchema.ts) — son `post_session` ne contient que
+ * {cooldown_min, mobility}. On lit d'abord postSession.recoveryTips (compat
+ * si le backend les y remet un jour), puis la racine.
+ * Retourne undefined si aucun conseil (jamais un tableau vide).
+ */
+export function readRecoveryTips(
+  v2: Pick<FKS_NextSessionV2, "recoveryTips" | "postSession"> | null | undefined
+): string[] | undefined {
+  const fromPost = v2?.postSession?.recoveryTips;
+  if (Array.isArray(fromPost) && fromPost.length > 0) return fromPost;
+  const fromRoot = v2?.recoveryTips;
+  if (Array.isArray(fromRoot) && fromRoot.length > 0) return fromRoot;
+  return undefined;
+}
+
 export function prettifyName(name: string) {
   const trimmed = (name || "").trim();
   if (!trimmed) return "Exercice";
-  const noPrefix = trimmed.replace(/^(wu_|str_|run_|plyo_|cod_|core_)/i, "");
-  const spaced = noPrefix.replace(/_/g, " ");
-  return spaced
-    .split(" ")
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
+  // Slug brut (ex: "str_squat_bodyweight") : on retire le prefixe token et on
+  // remplace les underscores par des espaces avant la mise en forme. Un nom
+  // déjà rédigé par le backend (avec espaces) n'est pas retouché ici.
+  const isSlug = /^[a-z0-9_]+$/i.test(trimmed) && trimmed.includes("_");
+  const noPrefix = isSlug ? trimmed.replace(/^(wu_|str_|run_|plyo_|cod_|core_)/i, "") : trimmed;
+  const spaced = isSlug ? noPrefix.replace(/_/g, " ").toLowerCase() : noPrefix;
+  // Casse française : majuscule initiale seule (pas un mot-à-mot comme en
+  // anglais — "Squat Poids Du Corps" est faux, "Squat poids du corps" est juste).
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 export const RESET_VARIANT_FALLBACKS: ResetVariant[] = [

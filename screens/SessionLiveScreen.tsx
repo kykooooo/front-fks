@@ -27,6 +27,7 @@ import { withSessionErrorBoundary } from "../components/withErrorBoundary";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { SessionTimer, type SessionTimerHandle } from "../components/session/SessionTimer";
 import { getBlockLabel } from "../components/session/blockConfig";
+import { readRecoveryTips } from "./newSession/helpers";
 import { formatDayFR } from "../utils/dateHelpers";
 import { frIntensity, frFocus, frLocation } from "../utils/frLabels";
 import { useSettingsStore } from "../state/settingsStore";
@@ -107,13 +108,15 @@ const formatTime = (total: number) => {
 const prettifyName = (name: string) => {
   const trimmed = (name || "").trim();
   if (!trimmed) return "Exercice";
-  const noPrefix = trimmed.replace(/^(wu_|str_|run_|plyo_|cod_|core_)/i, "");
-  const spaced = noPrefix.replace(/_/g, " ");
-  return spaced
-    .split(" ")
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
+  // Slug brut (ex: "str_squat_bodyweight") : on retire le prefixe token et on
+  // remplace les underscores par des espaces avant la mise en forme. Un nom
+  // déjà rédigé par le backend (avec espaces) n'est pas retouché ici.
+  const isSlug = /^[a-z0-9_]+$/i.test(trimmed) && trimmed.includes("_");
+  const noPrefix = isSlug ? trimmed.replace(/^(wu_|str_|run_|plyo_|cod_|core_)/i, "") : trimmed;
+  const spaced = isSlug ? noPrefix.replace(/_/g, " ").toLowerCase() : noPrefix;
+  // Casse française : majuscule initiale seule (pas un mot-à-mot comme en
+  // anglais — "Squat Poids Du Corps" est faux, "Squat poids du corps" est juste).
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 };
 
 const cleanDisplayNote = (value?: string | null) => {
@@ -1006,10 +1009,8 @@ function SessionLiveScreen() {
     const focusRaw = v2.focusPrimary ?? v2.focusSecondary;
     const focus = typeof focusRaw === "string" ? focusRaw : undefined;
     const location = typeof v2.location === "string" ? v2.location : undefined;
-    const recoveryTips =
-      Array.isArray(v2?.postSession?.recoveryTips) && v2.postSession.recoveryTips.length > 0
-        ? v2.postSession.recoveryTips
-        : undefined;
+    // Racine v2.recoveryTips (contrat backend actuel) + compat postSession.
+    const recoveryTips = readRecoveryTips(v2);
     const summary = {
       title,
       subtitle,

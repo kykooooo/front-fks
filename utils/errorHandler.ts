@@ -56,9 +56,12 @@ function classifyErrorLike(error: ErrorLike): AppError {
   const code = error.code;
   const status = error.status ?? 0;
 
-  // Erreur réseau (pas de connexion)
+  // Erreur réseau (pas de connexion). "Failed to fetch" est le message natif
+  // du fetch web (Chrome/Safari) — sans ce libellé une coupure réseau web
+  // tombe en UNKNOWN au lieu de NETWORK (trouvé sur le chemin cold-start iOS).
   if (msg.includes('Network request failed') ||
       msg.includes('fetch failed') ||
+      msg.includes('Failed to fetch') ||
       code === 'NETWORK_ERROR') {
     return {
       type: ErrorType.NETWORK,

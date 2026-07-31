@@ -22,6 +22,7 @@ import type { DebugEvent } from "../stores/types";
 import { safeNum } from "../../engine/safeNum";
 import { retryWithBackoff } from "../../utils/errorHandler";
 import { showToast } from "../../utils/toast";
+import { markPlannedSessionCompleted } from "../../services/plannedSessionsRepo";
 
 import { useLoadStore } from "../stores/useLoadStore";
 import { useSessionsStore } from "../stores/useSessionsStore";
@@ -226,6 +227,22 @@ export function applyFeedback(
       title: "Synchronisation échouée",
       message: "Ton feedback est enregistré localement mais n'a pas pu être synchronisé. Il sera retenté automatiquement.",
     });
+  });
+
+  // 10bis. AUDIT P0-1b : marque le doc planifié correspondant `status: 'completed'`
+  // pour que le watcher plannedSessions ne redescende plus cette séance comme
+  // "à faire" (le delete est proscrit ici → marqueur de statut, merge).
+  // Fire-and-forget : ne bloque NI ne fait échouer le feedback local. Si
+  // l'écriture échoue malgré les retries, le filet reste côté watcher :
+  // une séance locale complétée n'est jamais écartée (mergePlannedIntoLocalSessions)
+  // et les filtres completedLocalIds/completedDayKeys neutralisent le doc fantôme.
+  retryWithBackoff(
+    () => markPlannedSessionCompleted(sessionId),
+    { maxRetries: 3, baseDelayMs: 500, context: "markPlannedSessionCompleted" }
+  ).catch((err) => {
+    if (__DEV__) {
+      console.warn("[applyFeedback] markPlannedSessionCompleted failed after retries:", err);
+    }
   });
 
   return { sessionId, dateISO: usedISO, rpe: feedback.rpe, atlDelta, ctlDelta };

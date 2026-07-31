@@ -7,7 +7,6 @@ import { useHaptics } from "../../../hooks/useHaptics";
 import { theme } from "../../../constants/theme";
 import {
   CATEGORY_CONFIG,
-  INTENSITY_COLOR, INTENSITY_ICON, INTENSITY_LABEL,
   LOCATION_ICON, LOCATION_LABEL,
   type Prebuilt,
 } from "../prebuiltConfig";
@@ -49,8 +48,6 @@ export function AnimatedRoutineCard({ routine, index, onPress }: Props) {
   };
 
   const config = CATEGORY_CONFIG[routine.category];
-  const intensityColor = INTENSITY_COLOR[routine.intensity] ?? palette.accent;
-  const intensityIcon = INTENSITY_ICON[routine.intensity] ?? "flash-outline";
   const locationIcon = LOCATION_ICON[routine.location ?? "home"] ?? "home-outline";
 
   return (
@@ -72,25 +69,15 @@ export function AnimatedRoutineCard({ routine, index, onPress }: Props) {
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <Ionicons name={config?.icon ?? "sparkles"} size={20} color="#fff" />
+            <Ionicons name={config?.icon ?? "sparkles"} size={18} color="#fff" />
           </LinearGradient>
 
           <View style={styles.routineCardBody}>
             <Text style={styles.routineCardTitle} numberOfLines={1}>
               {routine.title}
             </Text>
-            <Text style={styles.routineCardObjective} numberOfLines={2}>
-              {routine.objective}
-            </Text>
 
             <View style={styles.routineTagsRow}>
-              <View style={[styles.routineTag, { borderColor: intensityColor }]}>
-                <Ionicons name={intensityIcon} size={10} color={intensityColor} />
-                <Text style={[styles.routineTagText, { color: intensityColor }]}>
-                  {INTENSITY_LABEL[routine.intensity]}
-                </Text>
-              </View>
-
               <View style={styles.routineTag}>
                 <Ionicons name="time-outline" size={10} color={palette.sub} />
                 <Text style={styles.routineTagText}>{routine.duration}</Text>
@@ -120,7 +107,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.card,
-    padding: 14,
+    padding: 12,
   },
   routineCardContent: {
     flexDirection: "row",
@@ -128,9 +115,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   routineCardIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 11,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -139,19 +126,13 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   routineCardTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "700",
     color: palette.text,
-  },
-  routineCardObjective: {
-    fontSize: 12,
-    color: palette.sub,
-    lineHeight: 16,
   },
   routineTagsRow: {
     flexDirection: "row",
     gap: 6,
-    marginTop: 6,
     flexWrap: "wrap",
   },
   routineTag: {

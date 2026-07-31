@@ -30,6 +30,7 @@ import { Card } from "../components/ui/Card";
 import { TRAINING_DEFAULTS, getFootballLabel } from "../config/trainingDefaults";
 import { updateTrainingLoad } from "../engine/loadModel";
 import { readTestsRaw } from "./tests/hooks/useTestsStorage";
+import { formatMinSec } from "./tests/testHelpers";
 import { toDateKey } from "../utils/dateHelpers";
 
 const palette = theme.colors;
@@ -122,6 +123,7 @@ type TestEntry = {
   sprint30s?: number;
   endurance6min_m?: number;
   yoYoIR1_m?: number;
+  run1km_s?: number;
   gobletKg?: number;
   gobletReps?: number;
   [key: string]: any;
@@ -135,6 +137,8 @@ type TestComparison = {
   diff: number;
   improved: boolean;
   lowerIsBetter: boolean;
+  /** "minsec" : before/after affichés en mm:ss (ex: 1 km). Le diff reste en secondes brutes. */
+  special?: "minsec";
 };
 
 const TEST_FIELDS: {
@@ -142,6 +146,7 @@ const TEST_FIELDS: {
   label: string;
   unit: string;
   lowerIsBetter?: boolean;
+  special?: "minsec";
 }[] = [
   { key: "broadJumpCm", label: "Saut longueur", unit: "cm" },
   { key: "cmjCm", label: "CMJ", unit: "cm" },
@@ -150,24 +155,36 @@ const TEST_FIELDS: {
   { key: "sprint30s", label: "Sprint 30m", unit: "s", lowerIsBetter: true },
   { key: "endurance6min_m", label: "Endurance 6min", unit: "m" },
   { key: "yoYoIR1_m", label: "Yo-Yo IR1", unit: "m" },
+  { key: "run1km_s", label: "1 km", unit: "s", lowerIsBetter: true, special: "minsec" },
   { key: "gobletKg", label: "Goblet Squat", unit: "kg" },
 ];
 
+/**
+ * Historique unifié (Phase C) : plus de batteries par cycle, donc plus de
+ * filtre par playlist ici. Pour CHAQUE test, on prend ses 2 valeurs les plus
+ * récentes, tous cycles/entrées confondus (avant : la comparaison se limitait
+ * aux 2 dernières entrées PARTAGEANT la playlist de la plus récente — changer
+ * de cycle actif "cassait" la comparaison avant/après).
+ */
 function computeTestComparisons(tests: TestEntry[]): TestComparison[] {
   if (tests.length < 2) return [];
   const sorted = [...tests].sort((a, b) => b.ts - a.ts);
-  const latest = sorted[0];
-  const latestPlaylist = latest.playlist ?? "fondation";
-  const previous = sorted
-    .slice(1)
-    .find((e) => (e.playlist ?? "fondation") === latestPlaylist);
-  if (!previous) return [];
   const comparisons: TestComparison[] = [];
 
   for (const field of TEST_FIELDS) {
-    const before = previous[field.key];
-    const after = latest[field.key];
-    if (typeof before === "number" && typeof after === "number" && before > 0 && after > 0) {
+    let after: number | undefined;
+    let before: number | undefined;
+    for (const entry of sorted) {
+      const raw = entry[field.key];
+      if (typeof raw !== "number" || !(raw > 0)) continue;
+      if (after === undefined) {
+        after = raw;
+      } else {
+        before = raw;
+        break;
+      }
+    }
+    if (typeof before === "number" && typeof after === "number") {
       const diff = after - before;
       const improved = field.lowerIsBetter ? diff < 0 : diff > 0;
       comparisons.push({
@@ -178,6 +195,7 @@ function computeTestComparisons(tests: TestEntry[]): TestComparison[] {
         diff,
         improved,
         lowerIsBetter: !!field.lowerIsBetter,
+        special: field.special,
       });
     }
   }
@@ -588,9 +606,10 @@ export default function ProgressScreen() {
               <Text style={styles.sectionTitle}>Évolution tests</Text>
             </View>
             <Text style={styles.testsSub}>
-              Deux dernières batteries du même cycle
+              Dernières valeurs connues, tous tests confondus
             </Text>
             {testComparisons.map((tc) => {
+              const isMinSec = tc.special === "minsec";
               const diffStr = tc.lowerIsBetter
                 ? tc.diff < 0
                   ? `${tc.diff.toFixed(1)} ${tc.unit}`
@@ -598,22 +617,20 @@ export default function ProgressScreen() {
                 : tc.diff > 0
                   ? `+${tc.diff.toFixed(1)} ${tc.unit}`
                   : `${tc.diff.toFixed(1)} ${tc.unit}`;
+              const beforeStr = isMinSec ? formatMinSec(tc.before) : `${tc.before} ${tc.unit}`;
+              const afterStr = isMinSec ? formatMinSec(tc.after) : `${tc.after} ${tc.unit}`;
               return (
                 <View key={tc.label} style={styles.testRow}>
                   <View style={styles.testLabelWrap}>
                     <Text style={styles.testLabel}>{tc.label}</Text>
                   </View>
-                  <Text style={styles.testBefore}>
-                    {tc.before} {tc.unit}
-                  </Text>
+                  <Text style={styles.testBefore}>{beforeStr}</Text>
                   <Ionicons
                     name="arrow-forward"
                     size={14}
                     color={palette.muted}
                   />
-                  <Text style={styles.testAfter}>
-                    {tc.after} {tc.unit}
-                  </Text>
+                  <Text style={styles.testAfter}>{afterStr}</Text>
                   <View
                     style={[
                       styles.testDiffBadge,
