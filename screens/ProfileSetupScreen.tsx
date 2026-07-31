@@ -471,11 +471,16 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   };
 
   /* ─── Render helpers ─── */
+  // hitSlop (audit tactile 2026-07) : Choice frôle les 44pt (padding 14 +
+  // texte), Chip est en-dessous (~37pt, padding 10) — très sollicité (poste,
+  // catégorie, niveau, jours, objectif...). hitSlop agrandit la zone tactile
+  // sans toucher au visuel (mêmes couleurs/tailles).
   const Choice = ({ label: lbl, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) => (
     <TouchableOpacity
       style={[styles.choice, selected && styles.choiceSelected]}
       onPress={() => { hapticSelect(); onPress(); }}
       activeOpacity={0.7}
+      hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
     >
       <Text style={[styles.choiceText, selected && styles.choiceTextSelected]}>{lbl}</Text>
       {selected && (
@@ -489,6 +494,11 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       style={[styles.chip, selected && styles.chipSelected]}
       onPress={() => { hapticSelect(); onPress(); }}
       activeOpacity={0.7}
+      // hitSlop volontairement petit (4pt) : les chips sont dans une grille
+      // avec gap:10, un hitSlop plus large ferait se chevaucher les zones
+      // tactiles de deux chips voisins. Le gros de la correction vient du
+      // padding vertical du style `chip` (10 -> 14, cf. plus bas).
+      hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
     >
       <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{lbl}</Text>
     </TouchableOpacity>
@@ -581,6 +591,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
               style={styles.coachLink}
               onPress={() => { haptics.impactLight(); navigation.navigate("CoachOnboarding"); }}
               activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Ionicons name="people-outline" size={16} color={palette.accent} />
               <Text style={styles.coachLinkText}>Tu fais partie du staff ? Crée ton club coach</Text>
@@ -602,6 +613,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                 style={styles.cycleButton}
                 onPress={() => navigation.navigate("CycleModal", { mode: cycleLabel ? "manage" : "select", origin: "profile" })}
                 activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={styles.cycleButtonText}>{cycleLabel ? "Gérer" : "Choisir"}</Text>
               </TouchableOpacity>
@@ -717,7 +729,12 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
             {!isEditMode && (
               <View style={styles.topBar}>
                 <Text style={styles.brand}>FKS</Text>
-                <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
+                <TouchableOpacity
+                  style={styles.logoutBtn}
+                  onPress={handleLogout}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
                   <Ionicons name="log-out-outline" size={16} color={palette.sub} />
                   <Text style={styles.logoutText}>Changer de compte</Text>
                 </TouchableOpacity>
@@ -776,7 +793,12 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
               {/* ─── Footer ─── */}
               <View style={styles.footer}>
                 {step > 0 ? (
-                  <TouchableOpacity style={styles.backButton} onPress={goBack} activeOpacity={0.7}>
+                  <TouchableOpacity
+                    style={styles.backButton}
+                    onPress={goBack}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
+                  >
                     <Ionicons name="chevron-back" size={20} color={palette.sub} />
                     <Text style={styles.backText}>Retour</Text>
                   </TouchableOpacity>
@@ -929,7 +951,15 @@ const styles = StyleSheet.create({
   /* Scroll */
   scrollContent: {
     padding: 20,
-    paddingBottom: 24,
+    // paddingBottom 24 -> 160 (audit tactile 2026-07) : le footer Suivant/Retour
+    // est FIXE hors ScrollView, et RN ne scrolle pas automatiquement vers le
+    // champ actif au focus. Avec seulement 24, le scroll max ne laissait pas
+    // assez de marge pour faire remonter les derniers champs de l'étape "Club"
+    // (Entraînements/semaine, Matchs/semaine) au-dessus du clavier -> l'usager
+    // pouvait rester bloqué à moitié masqué sans pouvoir scroller davantage.
+    // Ce padding ne fait qu'agrandir la marge de scroll possible (jamais
+    // moins visible qu'avant) ; il ne déplace rien tout seul.
+    paddingBottom: 160,
     flexGrow: 1,
   },
 
@@ -1032,7 +1062,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   chip: {
-    paddingVertical: 10,
+    // paddingVertical 10 -> 14 (audit tactile 2026-07) : sous 44pt avant
+    // (visible surtout sur les jours de semaine / catégorie d'âge, très
+    // sollicités). Même couleur/police, juste une cible plus confortable.
+    paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: theme.radius.md,
     borderWidth: 1,

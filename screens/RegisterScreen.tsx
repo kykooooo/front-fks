@@ -160,7 +160,11 @@ export default function RegisterScreen({ navigation }: Props) {
             showsVerticalScrollIndicator={false}
           >
             {navigation.canGoBack() ? (
-              <Pressable onPress={() => navigation.goBack()} style={styles.back}>
+              <Pressable
+                onPress={() => navigation.goBack()}
+                style={({ pressed }) => [styles.back, pressed && styles.iconPressed]}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
                 <Ionicons name="chevron-back" size={24} color={palette.sub} />
               </Pressable>
             ) : null}
@@ -219,7 +223,11 @@ export default function RegisterScreen({ navigation }: Props) {
                   }}
                   style={styles.input}
                 />
-                <Pressable onPress={() => setShowPwd(!showPwd)} style={styles.eye}>
+                <Pressable
+                  onPress={() => setShowPwd(!showPwd)}
+                  style={({ pressed }) => [styles.eye, pressed && styles.iconPressed]}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
                   <Ionicons
                     name={showPwd ? "eye-off-outline" : "eye-outline"}
                     size={20}
@@ -250,7 +258,8 @@ export default function RegisterScreen({ navigation }: Props) {
               <View style={styles.consentRow}>
                 <Pressable
                   onPress={() => setConsentAccepted(!consentAccepted)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={({ pressed }) => pressed && styles.iconPressed}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: consentAccepted }}
                 >
@@ -292,7 +301,11 @@ export default function RegisterScreen({ navigation }: Props) {
 
             <View style={styles.footer}>
               <Text style={styles.footerText}>Déjà un compte ?</Text>
-              <Pressable onPress={() => navigation.navigate("Login")}>
+              <Pressable
+                onPress={() => navigation.navigate("Login")}
+                style={({ pressed }) => [styles.footerLinkHit, pressed && styles.linkPressed]}
+                hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
+              >
                 <Text style={styles.footerLink}>Connecte-toi</Text>
               </Pressable>
             </View>
@@ -307,6 +320,12 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: palette.bg },
   scroll: { flexGrow: 1, paddingHorizontal: 24, justifyContent: "center", gap: 8 },
   back: { alignSelf: "flex-start", padding: 8, marginBottom: 16 },
+  // Retour visuel au press (cibles tactiles auditées 2026-07) : les Pressable
+  // ci-dessus n'avaient aucun feedback pendant l'appui (le seul changement
+  // visible arrivait après relâchement, via le state) — cf. audit tactile.
+  iconPressed: { opacity: 0.5 },
+  linkPressed: { opacity: 0.6 },
+  footerLinkHit: { paddingVertical: 2 },
   title: { fontSize: 24, fontWeight: "800", color: palette.text, textAlign: "center" },
   subtitle: { fontSize: 14, color: palette.sub, textAlign: "center", marginBottom: 24 },
   form: { gap: 12 },

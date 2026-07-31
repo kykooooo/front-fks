@@ -1,6 +1,6 @@
 // src/navigation/RootNavigator.tsx
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { NavigatorScreenParams } from "@react-navigation/native";
@@ -314,13 +314,24 @@ function AuthNavigator({
   );
 }
 
-function Splash() {
+// AUDIT tactile/enchaînement (2026-07) : cet écran s'affiche pendant les
+// transitions post-auth (inscription/connexion, restauration de session au
+// boot) le temps que Firestore confirme l'état du profil. Sans texte, un
+// spinner nu se lit comme un écran figé — `label` rend l'attente explicite
+// (cf. CLAUDE.md "Un chargement doit être explicite").
+function Splash({ label }: { label?: string }) {
   return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.bg }}>
+    <View style={[splashStyles.container, { backgroundColor: theme.colors.bg }]}>
       <ActivityIndicator color={theme.colors.accent} />
+      {label ? <Text style={[splashStyles.label, { color: theme.colors.sub }]}>{label}</Text> : null}
     </View>
   );
 }
+
+const splashStyles = StyleSheet.create({
+  container: { flex: 1, alignItems: "center", justifyContent: "center", gap: 14 },
+  label: { fontSize: 13, fontWeight: "600" },
+});
 
 export default function RootNavigator() {
   const [user, setUser] = useState<User | null>(null);
@@ -424,13 +435,17 @@ export default function RootNavigator() {
   }, [storeHydrated, user, startFirestoreWatch]);
 
   // 4) Chargement des flags locaux
-  if (welcomeDone === null) return <Splash />;
+  if (welcomeDone === null) return <Splash label="Chargement…" />;
 
   // 5) Restauration de session Firebase en cours → Splash.
   //    IMPORTANT : ce check doit précéder `!user`, sinon un utilisateur déjà
   //    connecté voit flasher l'écran Login à chaque démarrage à froid
   //    (user reste null tant que onAuthStateChanged n'a pas résolu).
-  if (initializing) return <Splash />;
+  // Couvre aussi la fenêtre post-inscription/connexion (onAuthStateChanged
+  // a déjà un user, on attend la 1ère réponse Firestore sur profileCompleted) :
+  // même libellé rassurant plutôt qu'un spinner nu, sans distinguer les cas
+  // (pas de nouvel état à faire courir avec la logique auth).
+  if (initializing) return <Splash label="Préparation de ton compte…" />;
 
   // 5bis) Pas connecté → Auth stack (Welcome intégré dans le stack pour back navigation)
   if (!user) {

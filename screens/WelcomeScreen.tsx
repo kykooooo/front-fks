@@ -144,7 +144,11 @@ export default function WelcomeScreen({ onComplete }: Props) {
         >
           <Text style={styles.ctaPrimaryText}>Commencer</Text>
         </Pressable>
-        <Pressable onPress={handleLogin} style={styles.loginLink}>
+        <Pressable
+          onPress={handleLogin}
+          style={({ pressed }) => [styles.loginLink, pressed && styles.loginLinkPressed]}
+          hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
+        >
           <Text style={styles.loginLinkText}>J'ai déjà un compte</Text>
         </Pressable>
       </View>
@@ -236,6 +240,11 @@ const styles = StyleSheet.create({
   loginLink: {
     paddingVertical: 12,
     marginTop: 4,
+  },
+  // Retour visuel au press (audit tactile 2026-07) : ce lien n'avait aucun
+  // feedback pendant l'appui, contrairement au CTA principal juste au-dessus.
+  loginLinkPressed: {
+    opacity: 0.6,
   },
   loginLinkText: {
     fontSize: 14,
