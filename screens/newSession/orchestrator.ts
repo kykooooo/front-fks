@@ -5,21 +5,89 @@ import type { FKS_NextSessionV2, PlannedPhase } from "./types";
 import { v2ToLocalSession } from "./transform";
 import { toDateKey } from "../../utils/dateHelpers";
 import { computePlannedClientGuardrails } from "../../state/stores/persistHelpers";
+import {
+  EchecPostGeneration,
+  type EtapeEchecPostGeneration,
+  type SeancePayeeEnAttente,
+} from "./echecGeneration";
 
-export async function processV2(params: {
-  v2: FKS_NextSessionV2;
-  phase: Session["phase"];
-  now: Date;
-  clubTrainingDays: string[];
-  tsb: number;
-  alreadyAppliedToday: boolean;
-  location: string;
+type CallbacksPersistanceEtAffichage = {
   pushSession: (s: Session) => void;
   persistPlanned: (p: any) => Promise<void>;
   setLastAiSessionV2: (p: { v2: FKS_NextSessionV2; date: string; sessionId: string }) => void;
   navigate: (dest: { v2: FKS_NextSessionV2; plannedDateISO: string; sessionId: string }) => void;
   alertPlanified?: (dateISO: string) => void;
-}) {
+};
+
+/**
+ * Persistance ≠ génération : la génération est déjà payée quand cette
+ * fonction s'exécute. `etapeDepart` indique par où reprendre :
+ * - "persistance" : tente `persistPlanned(payload)` puis l'affichage (cas
+ *   normal, ou nouvel essai après un échec de persistance).
+ * - "affichage" : `persistPlanned` a déjà réussi (Firestore a la séance) —
+ *   on ne rejoue QUE store local + navigation, jamais une seconde écriture.
+ * En cas de nouvel échec, lève `EchecPostGeneration` avec l'étape réelle et
+ * la séance déjà générée, pour permettre un troisième essai sans regénérer.
+ */
+async function persisterEtAfficher(
+  seance: SeancePayeeEnAttente,
+  callbacks: CallbacksPersistanceEtAffichage & { etapeDepart: "persistance" | "affichage" }
+): Promise<void> {
+  const { payload, sessionWithAi, v2, plannedDateISO, deferredToTomorrow } = seance;
+  const { pushSession, persistPlanned, setLastAiSessionV2, navigate, alertPlanified, etapeDepart } =
+    callbacks;
+
+  if (etapeDepart === "persistance") {
+    try {
+      await persistPlanned(payload);
+    } catch (err) {
+      throw new EchecPostGeneration("persistance", err, seance);
+    }
+  }
+
+  try {
+    pushSession(sessionWithAi);
+    setLastAiSessionV2({
+      v2,
+      date: plannedDateISO,
+      sessionId: sessionWithAi.id,
+    });
+    navigate({ v2, plannedDateISO, sessionId: sessionWithAi.id });
+    if (deferredToTomorrow && alertPlanified) {
+      alertPlanified(plannedDateISO);
+    }
+  } catch (err) {
+    throw new EchecPostGeneration("affichage", err, seance);
+  }
+}
+
+/**
+ * Rejoue l'étape qui a échoué après une `EchecPostGeneration` (le
+ * `DecisionApresEchec.postGeneration` de `echecGeneration.ts`), à partir de
+ * la séance déjà générée qu'elle transporte. N'appelle JAMAIS le backend de
+ * génération — c'est tout l'intérêt : la génération est déjà payée.
+ */
+export async function rejouerApresEchecPostGeneration(
+  postGeneration: { etape: EtapeEchecPostGeneration; seance: SeancePayeeEnAttente },
+  callbacks: CallbacksPersistanceEtAffichage
+): Promise<void> {
+  await persisterEtAfficher(postGeneration.seance, {
+    ...callbacks,
+    etapeDepart: postGeneration.etape,
+  });
+}
+
+export async function processV2(
+  params: {
+    v2: FKS_NextSessionV2;
+    phase: Session["phase"];
+    now: Date;
+    clubTrainingDays: string[];
+    tsb: number;
+    alreadyAppliedToday: boolean;
+    location: string;
+  } & CallbacksPersistanceEtAffichage
+) {
   const {
     v2,
     phase,
@@ -157,21 +225,21 @@ export async function processV2(params: {
   };
 
   const payload = deepClean(rawPayload) as any;
-  await persistPlanned(payload);
-  pushSession(sessionWithAi);
-  setLastAiSessionV2({
-    v2,
-    date: plannedDateISO,
-    sessionId: sessionWithAi.id,
-  });
 
-  navigate({
+  const seance: SeancePayeeEnAttente = {
+    payload,
+    sessionWithAi,
     v2,
     plannedDateISO,
-    sessionId: sessionWithAi.id,
-  });
+    deferredToTomorrow,
+  };
 
-  if (deferredToTomorrow && alertPlanified) {
-    alertPlanified(plannedDateISO);
-  }
+  await persisterEtAfficher(seance, {
+    pushSession,
+    persistPlanned,
+    setLastAiSessionV2,
+    navigate,
+    alertPlanified,
+    etapeDepart: "persistance",
+  });
 }

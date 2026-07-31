@@ -16,6 +16,8 @@ type Props = {
   /** Une génération est en vol : toutes les actions sont neutralisées. */
   occupe: boolean;
   onReessayer: () => void;
+  /** Rejoue l'enregistrement/l'affichage d'une séance DÉJÀ GÉNÉRÉE — jamais un nouvel appel payant. */
+  onReessayerEnregistrement: () => void;
   onModifierContraintes: () => void;
   onChoisirCycle: () => void;
   onSeReconnecter: () => void;
@@ -25,6 +27,7 @@ type Props = {
 
 const LIBELLES: Record<ActionEchec, string> = {
   reessayer: "Réessayer",
+  reessayer_enregistrement: "Réessayer l'enregistrement",
   modifier_contraintes: "Modifier mon lieu ou mon matériel",
   choisir_cycle: "Choisir un cycle",
   se_reconnecter: "Me reconnecter",
@@ -37,6 +40,7 @@ export function CarteEchecGeneration({
   actions,
   occupe,
   onReessayer,
+  onReessayerEnregistrement,
   onModifierContraintes,
   onChoisirCycle,
   onSeReconnecter,
@@ -45,6 +49,7 @@ export function CarteEchecGeneration({
 }: Props) {
   const gestionnaires: Record<ActionEchec, () => void> = {
     reessayer: onReessayer,
+    reessayer_enregistrement: onReessayerEnregistrement,
     modifier_contraintes: onModifierContraintes,
     choisir_cycle: onChoisirCycle,
     se_reconnecter: onSeReconnecter,

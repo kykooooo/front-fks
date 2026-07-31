@@ -14,6 +14,7 @@
 import type { Session } from "../../domain/types";
 import { ErrorType, classifyError } from "../../utils/errorHandler";
 import { estSeanceArtificielle, selectPendingSession } from "../../utils/sessionHelpers";
+import type { FKS_NextSessionV2 } from "./types";
 
 /** Catégories du contrat backend (§2.1). Jamais affichées au joueur. */
 export type CategorieEchec = "transitoire" | "sportif" | "technique";
@@ -21,6 +22,7 @@ export type CategorieEchec = "transitoire" | "sportif" | "technique";
 /** Sorties proposées au joueur. La première du tableau est la principale. */
 export type ActionEchec =
   | "reessayer"
+  | "reessayer_enregistrement"
   | "modifier_contraintes"
   | "choisir_cycle"
   | "se_reconnecter"
@@ -43,6 +45,71 @@ export type EchecGeneration = {
   attendreS: number | null;
   actions: ActionEchec[];
 };
+
+/* ─── Panne APRÈS une génération payée (persistance / affichage) ──────────
+ * `orchestrator.ts` appelle `persistPlanned(payload)` PUIS `pushSession` /
+ * `navigate`. Une panne à ce stade n'est pas une panne de génération : le
+ * backend a déjà répondu (l'appel est payé), donc "aucune séance n'a été
+ * enregistrée" serait FAUX dès que `persistPlanned` a réussi. On distingue
+ * les deux étapes pour ne jamais mentir sur ce que Firestore contient déjà,
+ * et pour permettre un nouvel essai qui rejoue seulement l'étape ratée —
+ * jamais un nouvel appel de génération. */
+
+/** Étape où la panne est survenue, une fois la génération déjà obtenue. */
+export type EtapeEchecPostGeneration = "persistance" | "affichage";
+
+/**
+ * Tout ce qu'il faut pour rejouer l'étape ratée sans regénérer : le payload
+ * déjà construit (même id) et la séance locale déjà transformée. Traversée
+ * telle quelle par `decisionApresEchec`, jamais inspectée ni modifiée ici.
+ */
+export type SeancePayeeEnAttente = {
+  payload: Record<string, unknown>;
+  sessionWithAi: Session;
+  v2: FKS_NextSessionV2;
+  plannedDateISO: string;
+  deferredToTomorrow: boolean;
+};
+
+/**
+ * Levée par l'orchestrateur quand `persistPlanned` échoue (étape
+ * "persistance", rien en base) ou quand `persistPlanned` a RÉUSSI mais
+ * l'étape suivante — store local / navigation — échoue (étape "affichage",
+ * la séance existe déjà côté Firestore).
+ */
+export class EchecPostGeneration extends Error {
+  readonly etape: EtapeEchecPostGeneration;
+  readonly causeOriginale: unknown;
+  readonly seance: SeancePayeeEnAttente;
+
+  constructor(etape: EtapeEchecPostGeneration, causeOriginale: unknown, seance: SeancePayeeEnAttente) {
+    super(causeOriginale instanceof Error ? causeOriginale.message : String(causeOriginale));
+    this.name = "EchecPostGeneration";
+    this.etape = etape;
+    this.causeOriginale = causeOriginale;
+    this.seance = seance;
+  }
+}
+
+/** Messages honnêtes pour une panne post-génération : jamais "aucune séance
+ * n'a été enregistrée" quand `persistance` (donc Firestore) a réussi. */
+function lireEchecPostGeneration(erreur: EchecPostGeneration): EchecGeneration {
+  const messageJoueur =
+    erreur.etape === "persistance"
+      ? "Ta séance a bien été générée, mais elle n'a pas encore pu être enregistrée. Réessaie l'enregistrement : elle ne sera pas régénérée, seulement enregistrée."
+      : "Ta séance a été générée et déjà enregistrée. On n'a pas réussi à te l'afficher. Réessaie l'affichage : rien ne sera régénéré ni ré-enregistré.";
+
+  return {
+    source: "client",
+    code: null,
+    categorie: "transitoire",
+    retryable: true,
+    messageJoueur,
+    requestId: null,
+    attendreS: null,
+    actions: ["reessayer_enregistrement", "retour_accueil"],
+  };
+}
 
 /**
  * Budget de ré-essai AUTOMATIQUE côté écran : ZÉRO, sans exception.
@@ -217,6 +284,12 @@ function echecCote(erreur: unknown): EchecGeneration {
 
 /** Traduit n'importe quelle erreur de génération en état d'erreur affichable. */
 export function lireEchecGeneration(erreur: unknown): EchecGeneration {
+  // Panne survenue APRÈS une génération payée : ce n'est jamais "aucune
+  // séance n'a été enregistrée" tel quel, prioritaire sur toute autre lecture.
+  if (erreur instanceof EchecPostGeneration) {
+    return lireEchecPostGeneration(erreur);
+  }
+
   const brut = (erreur ?? {}) as {
     code?: string;
     status?: number;
@@ -345,6 +418,14 @@ export type DecisionApresEchec = {
   seanceCreee: null;
   reprise: Reprise;
   actions: ActionEchec[];
+  /**
+   * Séance déjà générée (payée) en attente d'enregistrement ou d'affichage —
+   * renseignée uniquement quand `erreur` est une `EchecPostGeneration`.
+   * Porte l'étape ratée ET la séance pour que l'appelant puisse rejouer
+   * exactement cette étape (voir `orchestrator.rejouerApresEchecPostGeneration`)
+   * sans relancer d'appel payant. `null` dans tous les autres cas.
+   */
+  postGeneration: { etape: EtapeEchecPostGeneration; seance: SeancePayeeEnAttente } | null;
 };
 
 /**
@@ -368,7 +449,12 @@ export function decisionApresEchec(params: {
     ? [...echec.actions.slice(0, 1), "reprendre_seance", ...echec.actions.slice(1)]
     : [...echec.actions];
 
-  return { echec, seanceCreee: null, reprise, actions };
+  const postGeneration =
+    params.erreur instanceof EchecPostGeneration
+      ? { etape: params.erreur.etape, seance: params.erreur.seance }
+      : null;
+
+  return { echec, seanceCreee: null, reprise, actions, postGeneration };
 }
 
 /* ─── Verrou anti double-clic ───────────────────────────────────────────────

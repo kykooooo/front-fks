@@ -26,7 +26,7 @@ import {
 } from "./newSession/types";
 import { isSameDay, RESET_VARIANT_FALLBACKS } from "./newSession/helpers";
 import { prepareBackendContext, fetchV2, getSessionCache, setSessionCache, clearSessionCache } from "./newSession/api";
-import { processV2 } from "./newSession/orchestrator";
+import { processV2, rejouerApresEchecPostGeneration } from "./newSession/orchestrator";
 import {
   creerVerrouGeneration,
   decisionApresEchec,
@@ -568,6 +568,49 @@ export default function NewSessionScreen() {
     });
   };
 
+  /**
+   * Rejoue l'enregistrement/l'affichage d'une séance DÉJÀ GÉNÉRÉE (payée) qui
+   * a échoué à l'étape de persistance ou d'affichage — jamais un nouvel appel
+   * de génération. Même verrou anti-double-clic que handleGenerate : un
+   * double-tap ne doit pas déclencher deux tentatives concurrentes.
+   */
+  const reessayerEnregistrement = async () => {
+    const postGeneration = echec?.postGeneration;
+    if (!postGeneration) return;
+    if (!verrouRef.current.prendre()) return;
+    setRequeteEnVol(true);
+    setEchec(null);
+    try {
+      await rejouerApresEchecPostGeneration(postGeneration, {
+        pushSession,
+        persistPlanned,
+        setLastAiSessionV2,
+        navigate: ({ v2, plannedDateISO, sessionId }) =>
+          nav.navigate("SessionPreview", { v2, plannedDateISO, sessionId }),
+        alertPlanified: (dateISO: string) => {
+          showToast({ type: "info", title: "Planifiée pour demain", message: `Séance planifiée pour le ${dateISO}.` });
+        },
+      });
+    } catch (err: any) {
+      const decision = decisionApresEchec({
+        erreur: err,
+        sessions,
+        todayKey: toDateKey(now),
+        uid: getAuth().currentUser?.uid ?? null,
+      });
+      if (__DEV__) {
+        console.error("Reessai enregistrement/affichage echoue", {
+          etape: postGeneration.etape,
+          message: err?.message,
+        });
+      }
+      setEchec(decision);
+    } finally {
+      verrouRef.current.rendre();
+      setRequeteEnVol(false);
+    }
+  };
+
   const useCachedSession = async () => {
     if (!cachePrompt) return;
     const { cached, location } = cachePrompt;
@@ -737,6 +780,7 @@ export default function NewSessionScreen() {
             actions={echec.actions}
             occupe={generating || requeteEnVol}
             onReessayer={handleGenerate}
+            onReessayerEnregistrement={reessayerEnregistrement}
             onModifierContraintes={() => {
               setEchec(null);
               setSetupDone(false);

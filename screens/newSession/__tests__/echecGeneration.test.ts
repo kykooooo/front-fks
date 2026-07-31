@@ -10,11 +10,13 @@
 import type { Session } from "../../../domain/types";
 import { BackendError } from "../../../utils/errorHandler";
 import {
+  EchecPostGeneration,
   REESSAIS_AUTOMATIQUES_ECRAN,
   chercherRepriseSeance,
   creerVerrouGeneration,
   decisionApresEchec,
   lireEchecGeneration,
+  type SeancePayeeEnAttente,
 } from "../echecGeneration";
 
 const AUJOURDHUI = "2026-07-27";
@@ -282,6 +284,85 @@ describe("lireEchecGeneration — codes types du contrat backend", () => {
     );
     expect(echec.requestId).toBe("5e9b0f31");
     expect(echec.messageJoueur).not.toContain("schema.validation");
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 1bis. Panne APRÈS une génération payée (persistance / affichage)
+ * — LOT 1 (P0) : une panne Firestore APRÈS une génération réussie ne doit
+ * jamais dire "aucune séance n'a été enregistrée", et une panne d'affichage
+ * (pushSession/navigate) après une persistance RÉUSSIE ne doit jamais
+ * relancer une génération payante.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+const seancePayeeEnAttente = (): SeancePayeeEnAttente => ({
+  payload: { id: "planned_2026-07-27_ab12", title: "Force bas du corps" },
+  sessionWithAi: vraieSeance(),
+  v2: {
+    version: "v2",
+    title: "Force bas du corps",
+    intensity: "moderate",
+    focusPrimary: "strength",
+    durationMin: 30,
+    rpeTarget: 6,
+    blocks: [],
+  } as any,
+  plannedDateISO: AUJOURDHUI,
+  deferredToTomorrow: false,
+});
+
+describe("lireEchecGeneration — panne APRES une generation payee", () => {
+  test("etape persistance : la seance N'EST PAS encore enregistree, jamais 'aucune seance'", () => {
+    const echec = lireEchecGeneration(
+      new EchecPostGeneration("persistance", new Error("firestore/unavailable"), seancePayeeEnAttente())
+    );
+    expect(echec.source).toBe("client");
+    expect(echec.messageJoueur).toContain("générée");
+    expect(echec.messageJoueur).not.toContain("Aucune séance n'a été enregistrée");
+    expect(echec.actions[0]).toBe("reessayer_enregistrement");
+  });
+
+  test("etape affichage : la seance EST DEJA enregistree (Firestore l'a) — le dire honnetement", () => {
+    const echec = lireEchecGeneration(
+      new EchecPostGeneration("affichage", new Error("navigation KO"), seancePayeeEnAttente())
+    );
+    expect(echec.messageJoueur).toContain("déjà enregistrée");
+    // L'INVARIANT du lot 1 : jamais ce mensonge quand Firestore a la séance.
+    expect(echec.messageJoueur).not.toContain("Aucune séance n'a été enregistrée");
+    expect(echec.actions[0]).toBe("reessayer_enregistrement");
+    expect(echec.retryable).toBe(true);
+  });
+
+  test("l'action 'reessayer_enregistrement' ne propose jamais de relancer une generation (pas de 'reessayer' seul en tete)", () => {
+    const echecPersistance = lireEchecGeneration(
+      new EchecPostGeneration("persistance", new Error("x"), seancePayeeEnAttente())
+    );
+    expect(echecPersistance.actions).not.toContain("reessayer");
+  });
+});
+
+describe("decisionApresEchec — postGeneration (lot 1)", () => {
+  test("erreur EchecPostGeneration : postGeneration porte l'etape ET la seance a rejouer", () => {
+    const seance = seancePayeeEnAttente();
+    const decision = decisionApresEchec({
+      erreur: new EchecPostGeneration("persistance", new Error("firestore down"), seance),
+      sessions: [],
+      todayKey: AUJOURDHUI,
+    });
+    expect(decision.postGeneration).not.toBeNull();
+    expect(decision.postGeneration?.etape).toBe("persistance");
+    expect(decision.postGeneration?.seance).toBe(seance);
+    // Toujours l'invariant : aucune séance "créée" par la décision elle-même.
+    expect(decision.seanceCreee).toBeNull();
+  });
+
+  test("erreur ordinaire (reseau, timeout, contrat) : postGeneration reste null", () => {
+    const decision = decisionApresEchec({
+      erreur: erreurReseau(),
+      sessions: [],
+      todayKey: AUJOURDHUI,
+    });
+    expect(decision.postGeneration).toBeNull();
   });
 });
 
