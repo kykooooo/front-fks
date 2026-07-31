@@ -268,8 +268,6 @@ export type TransferOwnershipResult = {
   mode: TransferMode;
   /** Mode administrateur : appartenance proprietaire ORPHELINE retrogradee, ou null. */
   demotedUid: string | null;
-  /** Mode administrateur : `users/{newOwnerUid}.role` bascule sur "coach". */
-  grantedCoachSpace: boolean;
 };
 
 type TransferTxOutcome =
@@ -286,8 +284,6 @@ type TransferParams = {
   newOwnerUid: unknown;
   /** Mode administrateur uniquement : appartenance proprietaire orpheline a retrograder. */
   demoteUid?: unknown;
-  /** Mode administrateur uniquement : basculer l'espace applicatif de la cible sur "coach". */
-  grantCoachSpace?: boolean;
 };
 
 /** Chaine non vide, ou `null`. Recopiee de clubAuthority (fonction privee la-bas). */
@@ -377,7 +373,6 @@ async function runOwnershipTransfer(
   const demoteUid = mode === "admin" && isPlausibleId(params.demoteUid)
     ? params.demoteUid.trim()
     : null;
-  const grantCoachSpace = mode === "admin" && params.grantCoachSpace === true;
 
   const now = deps.now();
 
@@ -436,7 +431,6 @@ async function runOwnershipTransfer(
                 alreadyTransferred: true,
                 mode,
                 demotedUid: null,
-                grantedCoachSpace: false,
               },
             };
           }
@@ -484,7 +478,6 @@ async function runOwnershipTransfer(
             alreadyTransferred: true,
             mode,
             demotedUid: null,
-            grantedCoachSpace: false,
           },
         };
       }
@@ -585,26 +578,12 @@ async function runOwnershipTransfer(
         );
       }
 
-      // 6. ESPACE APPLICATIF (mode administrateur, sur demande explicite).
-      //
-      //    ATTENTION : DEVENUE SANS EFFET (juillet 2026), laissee en place a dessein.
-      //    `users/{uid}.role` ne decide PLUS de l'espace affiche par l'app :
-      //    celui-ci est desormais DERIVE de l'appartenance ecrite juste au-dessus
-      //    (front : domain/appSpace.ts, hooks/useAppSpace.ts). Le successeur
-      //    obtient donc l'espace coach tout seul, immediatement, et cette
-      //    ecriture ne produit plus aucun effet visible.
-      //    On ne la retire pas ICI : ce serait toucher au comportement et aux
-      //    tests du transfert dans un lot qui n'a pas ce mandat. Un lot dedie
-      //    peut la solder (cf. docs/coach-pilote-2026-07/ESPACE_ET_ROLES.md).
-      //
-      //    CE QUI N'EST PLUS VRAI (et c'est ce lot qui l'a change) : « un compte
-      //    voit un seul espace ». Un joueur devenu proprietaire garde son
-      //    `playerStatus`, donc son suivi sportif ET son application
-      //    d'entrainement ; l'application lui propose un selecteur
-      //    Joueur / Coach et memorise localement son dernier choix.
-      if (grantCoachSpace) {
-        tx.set(memberPaths.user(newOwnerUid), { role: "coach", updatedAt: now }, { merge: true });
-      }
+      // L'ESPACE APPLICATIF n'est plus ecrit ici : il est DERIVE de
+      // l'appartenance ecrite juste au-dessus (front : domain/appSpace.ts,
+      // hooks/useAppSpace.ts). Le successeur obtient l'espace coach tout seul,
+      // immediatement, sans qu'aucune ecriture supplementaire soit necessaire.
+      // (Ancienne ecriture 6, `users/{uid}.role`, sans effet depuis ce
+      // changement — retiree, cf. docs/coach-pilote-2026-07/ESPACE_ET_ROLES.md §6.4.)
 
       return {
         ok: true,
@@ -618,7 +597,6 @@ async function runOwnershipTransfer(
           alreadyTransferred: false,
           mode,
           demotedUid,
-          grantedCoachSpace: grantCoachSpace,
         },
       };
     });
@@ -675,8 +653,6 @@ export async function adminTransferClubOwnership(
     newOwnerUid: unknown;
     /** Appartenance proprietaire orpheline a retrograder, si l'operateur en connait une. */
     demoteUid?: unknown;
-    /** Basculer `users/{newOwnerUid}.role` sur "coach". Voir la mise en garde ci-dessus. */
-    grantCoachSpace?: boolean;
   },
 ): Promise<TransferOwnershipResult> {
   return runOwnershipTransfer(deps, {
@@ -685,6 +661,5 @@ export async function adminTransferClubOwnership(
     clubId: params.clubId,
     newOwnerUid: params.newOwnerUid,
     demoteUid: params.demoteUid,
-    grantCoachSpace: params.grantCoachSpace,
   });
 }

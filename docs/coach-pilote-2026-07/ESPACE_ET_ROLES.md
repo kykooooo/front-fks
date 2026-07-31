@@ -268,11 +268,11 @@ apprend quoi faire.**
    lisait encore pour exclure les profils marqués « coach », **ne le lit plus** —
    il excluait à tort les entraîneurs-joueurs, et il ne protégeait rien puisque
    son titulaire l'écrit lui-même.
-4. **Une seule écriture administrateur touche encore ce champ** :
-   `adminTransferClubOwnership` avec l'option `grantCoachSpace`. Elle est sans
-   effet depuis que l'espace est dérivé de l'appartenance ; elle est conservée et
-   documentée dans `functions/src/clubOwnership.ts` (écriture 6), à solder par un
-   lot dédié.
+4. **Plus aucune écriture ne touche ce champ.** L'ancienne option
+   administrateur `grantCoachSpace` (`adminTransferClubOwnership`), sans effet
+   depuis que l'espace est dérivé de l'appartenance, a été retirée
+   (`functions/src/clubOwnership.ts`) : le lot dédié annoncé ci-dessus est celui
+   qui l'a soldée.
 5. **Un compte peut avoir les deux espaces, jamais deux clubs.**
    `resolveClubPointer` refuse explicitement un pointeur ambigu plutôt que de
    choisir le premier de la liste (`domain/coachAuthority.ts`). Le jour où

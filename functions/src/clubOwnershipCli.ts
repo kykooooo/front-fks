@@ -127,13 +127,11 @@ export async function executerTransfertCli(deps: TransfertCliDeps): Promise<numb
   }
 
   const demoteUid = argValue(deps.argv, "retrograde");
-  const grantCoachSpace = deps.argv.includes("--espace-coach");
   const cible = libelleCible(decision.projet, decision.clubId);
 
   deps.log(
     `${ETIQUETTE} mode=${decision.apply ? "APPLY" : "SIMULATION"} cible=${cible} ` +
-      `nouveauProprietaire=${newOwnerUid} retrograde=${demoteUid ?? "aucun"} ` +
-      `espaceCoach=${grantCoachSpace ? "OUI" : "non"} base=${
+      `nouveauProprietaire=${newOwnerUid} retrograde=${demoteUid ?? "aucun"} base=${
         decision.emulateur
           ? "emulateur"
           : decision.production
@@ -159,7 +157,6 @@ export async function executerTransfertCli(deps: TransfertCliDeps): Promise<numb
         clubId: decision.clubId,
         newOwnerUid,
         ...(demoteUid !== undefined ? { demoteUid } : {}),
-        grantCoachSpace,
       },
     );
 

@@ -280,7 +280,6 @@ describe("transfert — le proprietaire initie", () => {
       alreadyTransferred: false,
       mode: "owner",
       demotedUid: null,
-      grantedCoachSpace: false,
     });
 
     // La designation a bouge.
@@ -1200,7 +1199,6 @@ describe("transfert — audit sobre", () => {
         "alreadyTransferred",
         "clubId",
         "demotedUid",
-        "grantedCoachSpace",
         "mode",
         // Booleen, jamais une donnee : il dit « la cible garde son suivi », il
         // ne transporte ni seance, ni prenom, ni etat d'autorisation.
@@ -1299,23 +1297,19 @@ describe("transfert — mode administrateur", () => {
     expect(store.fingerprint()).toBe(apres);
   });
 
-  it("l'espace applicatif ne bascule QUE sur demande explicite, et jamais depuis la callable", async () => {
+  it("ne touche JAMAIS le document `users/{uid}` du nouveau proprietaire, meme en mode administrateur", async () => {
+    // Meme motif que le chemin nominal (cf. section 2) : l'espace affiche est
+    // derive de l'appartenance, jamais de `users/{uid}.role`. L'outil
+    // administrateur n'a plus aucune ecriture sur ce document (l'ancienne
+    // option `grantCoachSpace` est retiree, cf.
+    // docs/coach-pilote-2026-07/ESPACE_ET_ROLES.md §6.4).
     const store = baseStore();
+    const avant = store.read(memberPaths.user(PLAYER_A1));
     await adminTransferClubOwnership(deps(store), {
       clubId: CLUB_A,
       newOwnerUid: PLAYER_A1,
-      grantCoachSpace: true,
     });
-    expect(store.read(memberPaths.user(PLAYER_A1))?.role).toBe("coach");
-
-    // Le chemin nominal, lui, ne le fait jamais — meme sur le meme geste.
-    const autre = baseStore();
-    await transferClubOwnership(deps(autre), {
-      actorUid: OWNER_A,
-      clubId: CLUB_A,
-      newOwnerUid: PLAYER_A1,
-    });
-    expect(autre.read(memberPaths.user(PLAYER_A1))?.role).toBe("player");
+    expect(store.read(memberPaths.user(PLAYER_A1))).toEqual(avant);
   });
 });
 

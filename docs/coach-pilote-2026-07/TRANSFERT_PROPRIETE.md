@@ -176,14 +176,12 @@ Options supplémentaires :
 | Option | Ce qu'elle fait | Quand s'en servir |
 |---|---|---|
 | `--retrograde=UID` | rétrograde en `coach` une appartenance qui porte le rôle `owner` **sans être désignée** | réparation §6, cas 2 |
-| `--espace-coach` | met `users/{successeur}.role = "coach"` | **DEVENUE INUTILE** — voir ci-dessous |
 
-> **⚠️ `--espace-coach` ne sert plus à rien (juillet 2026).**
-> L'application ne lit plus `users/{uid}.role` : elle dérive l'espace affiché de
-> l'appartenance au club, que le transfert écrit déjà. Le successeur obtient donc
-> l'espace coach **tout seul**, et cette option n'a plus d'effet visible. Elle est
-> conservée le temps qu'un lot dédié la retire proprement (elle est branchée à des
-> tests serveur). N'y touche pas : elle ne fait ni bien ni mal.
+> **`--espace-coach` a été retirée (juillet 2026).** Elle mettait
+> `users/{successeur}.role = "coach"`, un champ que l'application ne lit plus :
+> elle dérive l'espace affiché de l'appartenance au club, que le transfert écrit
+> déjà. Le successeur obtient donc l'espace coach **tout seul**, sans option à
+> passer.
 >
 > **Ce qui reste vrai, et important :** dans FKS, un compte voit soit l'espace
 > joueur, soit l'espace coach — jamais les deux. Un successeur qui s'entraînait
@@ -260,10 +258,10 @@ Bénéfice au passage : ce champ était écrivable par son titulaire. N'importe 
 joueur pouvait s'y déclarer coach et ouvrir l'espace coach (vide, mais ouvert).
 Ce n'est plus possible.
 
-> **Conséquence sur l'option `--espace-coach` de l'outil administrateur :** elle
-> est devenue **inutile** pour un transfert normal — l'espace suit désormais le
-> rôle tout seul. Elle continue d'écrire `users/{uid}.role`, un champ que plus
-> rien ne lit : sur ce chemin, elle ne produit plus aucun effet visible.
+> **Conséquence sur l'ancienne option `--espace-coach` de l'outil
+> administrateur :** devenue inutile — l'espace suit désormais le rôle tout
+> seul — elle a été retirée (elle écrivait `users/{uid}.role`, un champ que
+> plus personne ne lit).
 
 **Ce qui reste à construire :** l'écran de choix du successeur (§5.2), et la
 décision produit sur le successeur qui est **aussi joueur** — il gagne l'espace
