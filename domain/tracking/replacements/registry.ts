@@ -20,7 +20,7 @@
 //   "chair" = chaise/banc pour appui.
 //   "gym_full" = materiel de salle standard (barres, machines, poulies).
 import { EXERCISE_BY_ID, type ExerciseTag } from "../../../engine/exerciseBank";
-import type { DeviationReason, ReplacementEntry } from "../types";
+import type { ReplacementEntry } from "../types";
 
 /**
  * Tags consideres comme un risque articulaire/zone a l'ExerciseBank. Tout le

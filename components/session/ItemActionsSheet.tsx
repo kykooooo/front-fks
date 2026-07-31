@@ -2,7 +2,7 @@
 // Feuille d'options par exercice (SessionLiveScreen, Lot 2 boucle de suivi) :
 // Adapte / Saute / Je ne peux pas faire cet exercice -> raison -> details.
 // Jamais de saisie serie par serie, tout est facultatif.
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ModalContainer } from "../modal/ModalContainer";
@@ -54,17 +54,23 @@ export function ItemActionsSheet({
   const [distanceM, setDistanceM] = useState("");
   const [durationS, setDurationS] = useState("");
 
-  useEffect(() => {
-    if (!visible) return;
-    setStep("menu");
-    setKind(null);
-    setReason(null);
-    setComment("");
-    setLoadKg("");
-    setReps("");
-    setDistanceM("");
-    setDurationS("");
-  }, [visible]);
+  // Reinitialise le contenu de la feuille a chaque ouverture (pas d'effet :
+  // on detecte la transition pendant le rendu, cf. React "Adjusting state
+  // based on a prop change" - https://react.dev/learn/you-might-not-need-an-effect).
+  const [prevVisible, setPrevVisible] = useState(visible);
+  if (visible !== prevVisible) {
+    setPrevVisible(visible);
+    if (visible) {
+      setStep("menu");
+      setKind(null);
+      setReason(null);
+      setComment("");
+      setLoadKg("");
+      setReps("");
+      setDistanceM("");
+      setDurationS("");
+    }
+  }
 
   const chooseKind = (next: ItemActionKind) => {
     haptics.impactLight();
