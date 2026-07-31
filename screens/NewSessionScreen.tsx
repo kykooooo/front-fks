@@ -24,7 +24,7 @@ import {
   ResetChoiceState,
   EnvironmentSelection,
 } from "./newSession/types";
-import { isSameDay, RESET_VARIANT_FALLBACKS } from "./newSession/helpers";
+import { isSameDay, resolveResetVariants } from "./newSession/helpers";
 import { prepareBackendContext, fetchV2, getSessionCache, setSessionCache, clearSessionCache } from "./newSession/api";
 import { processV2, rejouerApresEchecPostGeneration } from "./newSession/orchestrator";
 import {
@@ -239,20 +239,6 @@ export default function NewSessionScreen() {
     v2?.archetypeId === "foundation_X_reset" ||
     (v2?.selectionDebug?.reasons || []).includes("reset_selected");
 
-  const buildResetVariants = (v2: FKS_NextSessionV2) => {
-    if (Array.isArray(v2.resetVariants) && v2.resetVariants.length) {
-      return v2.resetVariants.map((rv) => ({
-        id: rv.id,
-        title: rv.title ?? rv.id,
-        subtitle: rv.subtitle ?? "RPE 3–4 · 12–16 min · zéro fatigue",
-        durationMin: rv.durationMin,
-        blocks: rv.blocks,
-        display: rv.display,
-      }));
-    }
-    return RESET_VARIANT_FALLBACKS;
-  };
-
   const handleSelectResetVariant = async (variantId: string) => {
     if (!resetChoice) return;
     setGenerating(true);
@@ -462,21 +448,20 @@ export default function NewSessionScreen() {
       if (generationIdRef.current !== genId) return; // annulé pendant l'appel
       await setSessionCache(preparedCtx, { v2, debug });
       if (isResetPlan(v2)) {
-        const variants = buildResetVariants(v2).map((rv) => ({
-          ...rv,
-          title: rv.title || "Prime reset",
-          subtitle:
-            rv.subtitle ??
-            "RPE 3–4 · 12–16 min · zéro fatigue",
-        }));
-        trackEvent("session_generate_reset", {
-          cycleId,
-          location,
-          variantCount: variants.length,
-        });
-        setResetChoice({ v2, debug, variants, location });
-        setGenerating(false);
-        return;
+        // Choix de variante affiché UNIQUEMENT si le backend en fournit de
+        // vraies — jamais de titres inventés. Un reset sans variante reste
+        // possible : il continue alors normalement, sans carte de choix.
+        const variants = resolveResetVariants(v2);
+        if (variants.length > 0) {
+          trackEvent("session_generate_reset", {
+            cycleId,
+            location,
+            variantCount: variants.length,
+          });
+          setResetChoice({ v2, debug, variants, location });
+          setGenerating(false);
+          return;
+        }
       }
 
       setDebugAgent(debug);
@@ -619,14 +604,14 @@ export default function NewSessionScreen() {
     try {
       const { v2, debug } = cached;
       if (isResetPlan(v2)) {
-        const variants = buildResetVariants(v2).map((rv) => ({
-          ...rv,
-          title: rv.title || "Prime reset",
-          subtitle: rv.subtitle ?? "RPE 3–4 · 12–16 min · zéro fatigue",
-        }));
-        setResetChoice({ v2, debug, variants, location });
-        setGenerating(false);
-        return;
+        // Même règle qu'à la génération : pas de titres inventés, pas de
+        // choix affiché sans vraies variantes backend.
+        const variants = resolveResetVariants(v2);
+        if (variants.length > 0) {
+          setResetChoice({ v2, debug, variants, location });
+          setGenerating(false);
+          return;
+        }
       }
       setDebugAgent(debug);
       await processV2({

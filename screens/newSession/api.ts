@@ -5,7 +5,7 @@ import { BACKEND_EXERCISE_IDS } from "../../engine/backendExerciseIds";
 import { EXERCISE_BY_ID } from "../../engine/exerciseBank";
 import type { FKS_NextSessionV2 } from "./types";
 import { safeFetch, BackendError } from "../../utils/errorHandler";
-import { sessionV2Schema } from "../../schemas/sessionSchema";
+import { detecterSentinellesReparation, estSeanceReparee, sessionV2Schema } from "../../schemas/sessionSchema";
 import { snakeToCamel } from "../../utils/caseTransform";
 
 // TODO: Backend optimization — envoyer uniquement les IDs d'exercices au lieu des objets
@@ -244,6 +244,36 @@ export async function fetchV2(
       'Validation Error',
       'La séance reçue est incomplète ou corrompue',
       'Le serveur a renvoyé une séance invalide. Réessaie dans quelques instants.'
+    );
+  }
+
+  // Un manque de données ne devient jamais une fausse séance : le schéma
+  // répare champ par champ (title/duration_min/blocks retombent sur une
+  // valeur plausible plutôt que de faire échouer tout le parse), ce qui rend
+  // la réparation invisible en aval. Au-delà du seuil (ou blocks vide, quel
+  // que soit le seuil), on refuse au lieu de laisser passer une coquille —
+  // même mécanique de corps typé que le reste (§2 de docs/CONTRAT_ERREUR_FRONT.md),
+  // lu automatiquement par lireEchecGeneration comme un code "SESSION_SCHEMA_INVALID".
+  if (estSeanceReparee(parsed.data)) {
+    if (__DEV__) {
+      console.warn(
+        "[FKS] Session V2 reparee au-dela du seuil, refusee :",
+        detecterSentinellesReparation(parsed.data)
+      );
+    }
+    throw new BackendError(
+      422,
+      'Unprocessable Entity',
+      JSON.stringify({
+        error: 'SESSION_SCHEMA_INVALID',
+        code: 'SESSION_SCHEMA_INVALID',
+        category: 'technique',
+        retryable: false,
+        message:
+          "Le serveur a renvoyé une séance incomplète. Rien n'a été ajouté à ton programme. Réessaie dans quelques instants.",
+        failedStep: 'schema.validation',
+        requestId: null,
+      })
     );
   }
 

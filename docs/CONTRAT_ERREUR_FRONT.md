@@ -286,7 +286,11 @@ requête entrante (test `dix appuis rapides = une seule requete`).
 - `screens/newSession/transform.ts` (mise en forme de la séance une fois
   générée avec succès) — décision produit en attente, non traité ici.
 - La navigation de `se_reconnecter` et l'idempotence de requête côté backend.
-- La réparation silencieuse d'un schéma Zod malformé côté `schemas/sessionSchema.ts`
-  (traitée séparément, comme un échec `SESSION_SCHEMA_INVALID` au-delà d'un
-  seuil — voir le module et ses tests pour le détail, hors du périmètre
-  « contrat d'erreur de transport » décrit ici).
+- **Où** est détectée une réparation silencieuse de schéma Zod (les
+  sentinelles, le seuil `SEUIL_SENTINELLES_REPARATION`) : ça vit dans
+  `schemas/sessionSchema.ts`, documenté par ses propres commentaires et tests
+  (`schemas/__tests__/sessionSchema.test.ts`), pas ici. **Une fois détectée**,
+  en revanche, `screens/newSession/api.ts` la fait entrer dans CE contrat en
+  levant un corps typé `code: "SESSION_SCHEMA_INVALID"` (forme §2.1) — donc
+  `lireEchecGeneration` (§2) la traite exactement comme n'importe quel autre
+  échec du contrat, sans code dédié dans `echecGeneration.ts`.

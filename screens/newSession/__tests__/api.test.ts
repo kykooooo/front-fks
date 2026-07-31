@@ -17,6 +17,25 @@ import {
 
 const originalFetch = global.fetch;
 
+// v2 minimal mais VALIDE (title/duration_min non-defaut, blocks non-vide) :
+// ces tests de retry testent le mecanisme reseau, pas la validation Zod —
+// un v2 vide ({}) declencherait desormais le refus "reparation detectee"
+// (lot 3) et masquerait ce que ces tests verifient reellement.
+const V2_MINIMAL_VALIDE = {
+  title: "Seance de test",
+  duration_min: 42,
+  blocks: [
+    {
+      id: "b1",
+      type: "run",
+      goal: "endurance",
+      intensity: "moderate",
+      duration_min: 10,
+      items: [{ name: "Footing continu" }],
+    },
+  ],
+};
+
 describe("fetchV2 — reveil serveur (cold start)", () => {
   afterEach(() => {
     global.fetch = originalFetch;
@@ -33,7 +52,7 @@ describe("fetchV2 — reveil serveur (cold start)", () => {
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: async () => ({ v2: {} }),
+        json: async () => ({ v2: V2_MINIMAL_VALIDE }),
       });
     }) as any;
 
@@ -56,7 +75,7 @@ describe("fetchV2 — reveil serveur (cold start)", () => {
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: async () => ({ v2: {} }),
+        json: async () => ({ v2: V2_MINIMAL_VALIDE }),
       });
     }) as any;
 
@@ -79,7 +98,7 @@ describe("fetchV2 — reveil serveur (cold start)", () => {
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: async () => ({ v2: {} }),
+        json: async () => ({ v2: V2_MINIMAL_VALIDE }),
       });
     }) as any;
 
@@ -224,6 +243,96 @@ describe("prepareBackendContext — gym_full toujours présent en salle", () => 
 // génération ni partir en payload vide (cf. EquipmentSelector, plus de
 // toast "Matériel requis"). "bodyweight" est le filet de sécurité minimal.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// LOT 3 (P1) — détection de réparation Zod au point de validation : une
+// réponse malformée réparée en séance plausible par les .catch() du schéma
+// (titre "Séance", 30 min, blocs vides) ne doit jamais être servie telle
+// quelle. Au-delà du seuil (screens/../schemas/sessionSchema.ts), fetchV2
+// refuse via le même corps d'erreur typé que le reste (docs/CONTRAT_ERREUR_FRONT.md §2).
+// ---------------------------------------------------------------------------
+
+describe("fetchV2 — reparation Zod detectee au-dela du seuil (lot 3)", () => {
+  afterEach(() => {
+    global.fetch = originalFetch;
+    jest.restoreAllMocks();
+  });
+
+  test("blocks vide : rejette avec un corps type SESSION_SCHEMA_INVALID, jamais servi tel quel", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ v2: { blocks: [] } }),
+    }) as any;
+
+    expect.assertions(4);
+    try {
+      await fetchV2({ some: "ctx" });
+    } catch (err: any) {
+      expect(err.status).toBe(422);
+      const corps = JSON.parse(err.message);
+      expect(corps.code).toBe("SESSION_SCHEMA_INVALID");
+      expect(corps.retryable).toBe(false);
+      expect(corps.category).toBe("technique");
+    }
+  });
+
+  test("titre ET duree par defaut simultanement (seuil atteint), meme avec des blocs : rejette aussi", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        v2: {
+          blocks: [
+            {
+              id: "b1",
+              type: "run",
+              goal: "endurance",
+              intensity: "moderate",
+              duration_min: 10,
+              items: [{ name: "Footing continu" }],
+            },
+          ],
+          // ni title ni duration_min : les deux tombent sur leur .catch()
+        },
+      }),
+    }) as any;
+
+    expect.assertions(2);
+    try {
+      await fetchV2({ some: "ctx" });
+    } catch (err: any) {
+      expect(err.status).toBe(422);
+      expect(JSON.parse(err.message).code).toBe("SESSION_SCHEMA_INVALID");
+    }
+  });
+
+  test("UN SEUL champ par defaut (sous le seuil) : n'est PAS rejete, la seance passe", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        v2: {
+          title: "Ma vraie séance du jour",
+          // duration_min absent : tombe sur 30 (une seule sentinelle)
+          blocks: [
+            {
+              id: "b1",
+              type: "run",
+              goal: "endurance",
+              intensity: "moderate",
+              duration_min: 10,
+              items: [{ name: "Footing continu" }],
+            },
+          ],
+        },
+      }),
+    }) as any;
+
+    const { v2 } = await fetchV2({ some: "ctx" });
+    expect(v2.title).toBe("Ma vraie séance du jour");
+  });
+});
 
 describe("prepareBackendContext — sans matériel = bodyweight, jamais vide", () => {
   const minimalCtx = {
