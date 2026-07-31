@@ -91,10 +91,17 @@ Les trois champs restants (`error`, `failedStep`, `traceId`) sont
 - `traceId` n'est actuellement lu nulle part côté front (seul `requestId`
   est utilisé pour la référence support affichée).
 
-**Limitation connue (au 27/07/2026)** : sur ce chemin (corps contrat présent),
-`attendreS` est toujours forcé à `null`, même si l'erreur source portait un
-`Retry-After` (cas d'un 429 qui porterait *aussi* un corps typé). Voir la
-mission de suivi pour le correctif.
+**Retry-After conservé même avec un corps contrat (depuis le 27/07/2026,
+LOT 4c)** : un 429 peut porter à la fois un corps typé (§2.1) et un en-tête
+`Retry-After` (posé par `safeFetch` sur `retryAfterS`). Le front ne les
+oppose pas : `attendreS` reprend `retryAfterS` dès qu'il est numérique et
+`> 0` ; sinon (absent, non numérique, ou `<= 0`) il reste `null`
+(`echecGeneration.ts:313-322`). Trois tests verrouillent ce comportement
+dans `echecGeneration.test.ts` : « 429 avec corps type ET Retry-After :
+attendreS preserve, pas ecrase a null » (lignes 300-316), « corps type SANS
+Retry-After (ex: 422 sportif) : attendreS reste null, comportement inchange »
+(lignes 318-328), et « Retry-After a 0 ou negatif : traite comme absent
+(jamais 'patiente 0 seconde') » (lignes 330-339).
 
 ### §2.2 — Quand la réponse NE porte PAS ce corps
 
