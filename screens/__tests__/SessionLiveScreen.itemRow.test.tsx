@@ -6,9 +6,9 @@
 // de pixels reels ici (pas de moteur de layout Yoga en JS pur dans ce
 // harnais) -- ce test documente donc le CONTRAT DE LAYOUT declaratif :
 //  - la colonne nom garde flex:1 (jamais de largeur figee) et numberOfLines,
-//  - la colonne actions (Fiche + pill "Adapter") garde une largeur
+//  - la colonne actions (Fiche + pill "Modifier") garde une largeur
 //    intrinseque au contenu (pas de largeur figee non plus),
-//  - le pill "Adapter" garde une cible tactile >=44pt sans largeur figee,
+//  - le pill "Modifier" garde une cible tactile >=44pt sans largeur figee,
 // meme avec un nom d'exercice long ET un item multi-series (le scenario le
 // plus a risque d'un ecran etroit).
 import React from "react";
@@ -148,7 +148,7 @@ describe("SessionLiveScreen — contrat de layout de la ligne d'item (nom long +
     expect((counter!.node.children as string[]).join("")).toContain("0/4");
   });
 
-  test("le pill 'Adapter' garde une cible tactile >=44pt sans largeur figee (pas de retour au bouton 32x32)", async () => {
+  test("le pill 'Modifier' garde une cible tactile >=44pt sans largeur figee (pas de retour au bouton 32x32)", async () => {
     const tree = await renderRow();
     const nodes = collectNodes(tree.toJSON());
 
@@ -170,8 +170,8 @@ describe("SessionLiveScreen — contrat de layout de la ligne d'item (nom long +
     expect(pillStyle.minHeight).toBe(44);
     expect(pillStyle.paddingHorizontal).toBe(12);
 
-    const adapterLabel = findTextContaining(nodes, "Adapter");
-    expect(adapterLabel).toBeTruthy();
+    const modifierLabel = findTextContaining(nodes, "Modifier");
+    expect(modifierLabel).toBeTruthy();
   });
 
   test("la colonne actions (Fiche + pill) garde une largeur intrinseque au contenu, jamais figee", async () => {

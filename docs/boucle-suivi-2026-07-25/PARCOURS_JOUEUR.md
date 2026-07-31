@@ -14,7 +14,7 @@ Au lancement, l'app **fige la photographie** de ce qui est prescrit (exercices, 
 Pendant la séance, **rien ne change pour le parcours du bonheur** : le joueur coche ses séries comme avant, les timers/circuits/repos automatiques sont intacts.
 
 ### Si un exercice pose problème
-Pill « Adapter » (icône + libellé) sur chaque exercice :
+Pill « Modifier » (icône + libellé) sur chaque exercice :
 - **Adapté** → raison (manque de temps, matériel, trop difficile, fatigue, douleur, technique, place, partenaire, autre) → valeurs réelles **facultatives**, adaptées au type d'exercice (kg+reps pour un exo chargé, reps pour du poids du corps, distance pour un sprint, durée pour un chrono). Jamais de saisie série par série.
 - **Sauté** → raison, c'est tout.
 - **« Je ne peux pas faire cet exercice »** → raison → l'app propose immédiatement un remplacement validé :
@@ -27,7 +27,7 @@ Pill « Adapter » (icône + libellé) sur chaque exercice :
 
 ### Fin de séance
 - Aucun écart marqué → question unique : **« Tout s'est passé comme prévu ? »** → 1 geste et c'est validé.
-- Options honnêtes : « Je précise d'abord » (toast qui guide vers le bouton Adapter) ou « Terminer sans préciser » (les items non marqués restent « inconnus », jamais gonflés).
+- Options honnêtes : « Je précise d'abord » (toast qui guide vers le bouton Modifier) ou « Terminer sans préciser » (les items non marqués restent « inconnus », jamais gonflés).
 
 ## 2. Résumé (SessionSummary)
 

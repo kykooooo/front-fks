@@ -636,7 +636,7 @@ export const BlockCard = React.memo(function BlockCard({
                         accessibilityLabel={`Options pour ${itemName} : adapter, sauter, ou signaler que tu ne peux pas le faire`}
                       >
                         <Ionicons name="options-outline" size={14} color={palette.text} />
-                        <Text style={styles.itemMoreButtonText}>Adapter</Text>
+                        <Text style={styles.itemMoreButtonText}>Modifier</Text>
                       </TouchableOpacity>
                     ) : null}
                   </View>
@@ -1524,7 +1524,7 @@ function SessionLiveScreen() {
     // 3 issues honnetes desormais, aucune impasse :
     // - "Tout s'est passe comme prevu" : marque tout unknown -> done, termine.
     // - "Je precise d'abord" : ferme l'alerte SANS terminer, invite (toast) a
-    //   utiliser le bouton Adapter sur les exercices concernes puis a re-taper
+    //   utiliser le bouton Modifier sur les exercices concernes puis a re-taper
     //   "Terminer" (qui, une fois un statut explicite pose, ne repose plus
     //   cette question -- cf. hasExplicit ci-dessus).
     // - "Terminer sans preciser" : termine tel quel (deja le comportement de
@@ -1542,7 +1542,7 @@ function SessionLiveScreen() {
             showToast({
               type: "info",
               title: "Précise chaque écart",
-              message: "Utilise le bouton Adapter sur les exercices concernés, puis termine la séance.",
+              message: "Utilise le bouton Modifier sur les exercices concernés, puis termine la séance.",
             });
           },
         },
