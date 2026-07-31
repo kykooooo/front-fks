@@ -107,7 +107,7 @@ describe("fetchV2 — reveil serveur (cold start)", () => {
     expect(callCount).toBe(1);
   });
 
-  test("si les 2 essais echouent en reseau, l'erreur reseau remonte (pour le fallback UI)", async () => {
+  test("si les 2 essais echouent en reseau, l'erreur reseau remonte telle quelle : l'appelant decide, aucune seance n'est fabriquee ici", async () => {
     global.fetch = jest.fn().mockImplementation(() => Promise.reject(new TypeError("Failed to fetch"))) as any;
 
     await expect(fetchV2({ some: "ctx" })).rejects.toMatchObject({ code: "NETWORK_ERROR" });

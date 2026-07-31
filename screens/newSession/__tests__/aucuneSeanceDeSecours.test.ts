@@ -34,16 +34,26 @@ const DOSSIERS_PRODUCTION = [
   "utils",
 ];
 
+// Un commentaire "ne pas utiliser" ne protège rien — un § de doc qui BÉNIT
+// (même en exemple positif) la fabrique de séance de secours ne protège pas
+// plus. `docs/` est scanné comme du code : si un jour une doc réintroduit
+// buildFallbackSession/fallback_safe/Footing Z2 comme une bonne pratique, la
+// CI casse. (Un rappel HISTORIQUE de la faute corrigée reste possible tant
+// qu'il ne cite pas les identifiants littéraux bannis ci-dessous — voir
+// docs/CONTRAT_ERREUR_FRONT.md et docs/AUDIT-FRONT-P0.0.md pour le style à suivre.)
+const DOSSIERS_DOC = ["docs"];
+
 const FICHIERS_RACINE = ["App.tsx"];
 
 const EXTENSIONS = [".ts", ".tsx"];
+const EXTENSIONS_DOC = [".md"];
 
 const DOSSIERS_IGNORES = new Set(["__tests__", "__mocks__", "node_modules"]);
 
 function listerFichiersProduction(): string[] {
   const resultat: string[] = [];
 
-  const parcourir = (dossier: string) => {
+  const parcourir = (dossier: string, extensions: string[]) => {
     let entrees: fs.Dirent[];
     try {
       entrees = fs.readdirSync(dossier, { withFileTypes: true });
@@ -54,16 +64,17 @@ function listerFichiersProduction(): string[] {
       const chemin = path.join(dossier, entree.name);
       if (entree.isDirectory()) {
         if (DOSSIERS_IGNORES.has(entree.name) || entree.name.startsWith(".")) continue;
-        parcourir(chemin);
+        parcourir(chemin, extensions);
         continue;
       }
-      if (!EXTENSIONS.includes(path.extname(entree.name))) continue;
+      if (!extensions.includes(path.extname(entree.name))) continue;
       if (entree.name.includes(".test.")) continue;
       resultat.push(chemin);
     }
   };
 
-  for (const dossier of DOSSIERS_PRODUCTION) parcourir(path.join(RACINE, dossier));
+  for (const dossier of DOSSIERS_PRODUCTION) parcourir(path.join(RACINE, dossier), EXTENSIONS);
+  for (const dossier of DOSSIERS_DOC) parcourir(path.join(RACINE, dossier), EXTENSIONS_DOC);
   for (const fichier of FICHIERS_RACINE) {
     const chemin = path.join(RACINE, fichier);
     if (fs.existsSync(chemin)) resultat.push(chemin);
