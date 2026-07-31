@@ -602,6 +602,11 @@ export default function NewSessionScreen() {
     if (!postGeneration) return;
     if (!verrouRef.current.prendre()) return;
     setRequeteEnVol(true);
+    // Retour visuel pendant tout le rejeu : sans ça, la carte d'échec
+    // disparaît (setEchec(null)) mais rien ne l'affiche en train de
+    // travailler — écran inerte, surtout gênant hors-ligne/persistance
+    // lente. Même overlay que handleGenerate.
+    setGenerating(true);
     setEchec(null);
     try {
       await rejouerApresEchecPostGeneration(postGeneration, {
@@ -629,6 +634,7 @@ export default function NewSessionScreen() {
       }
       setEchec(decision);
     } finally {
+      setGenerating(false);
       verrouRef.current.rendre();
       setRequeteEnVol(false);
     }
