@@ -158,6 +158,13 @@ export const completedSessionSchema = z.object({
   metrics: sessionMetricsSchema,
   title: z.string().nullable().optional().catch(null),
   completed: z.boolean().optional().catch(undefined),
+  // Boucle de suivi (Lot 4, docs/boucle-suivi-2026-07-25/) — execution
+  // realisee + decision d'ajustement shadow, embarquees par
+  // buildCompletedSessionFirestorePayload (state/stores/persistHelpers.ts).
+  // z.unknown() : deja couvert par .passthrough() ci-dessous, mais explicite
+  // pour documenter le contrat (anciens docs sans ces champs restent valides).
+  execution: z.unknown().optional().catch(undefined),
+  tracking: z.unknown().optional().catch(undefined),
 }).passthrough();
 
 export type CompletedSessionParsed = z.infer<typeof completedSessionSchema>;

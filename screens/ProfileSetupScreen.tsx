@@ -81,6 +81,20 @@ const objectives = [
 ] as const;
 const fksSessionsOptions = ["1", "2", "3", "4"] as const;
 
+// Question optionnelle "reprise" (boucle de suivi joueur, Lot 6) : jours estimes
+// depuis le dernier entrainement regulier, en jours ESTIMES pour rester simple
+// (l'utilisateur ne connait pas son gap au jour pres) -- lu ensuite par
+// detectTrainingGap (domain/tracking/resumption.ts) comme filet quand aucun
+// historique de seance FKS n'est encore connu (nouvel utilisateur). Skippable :
+// valeur null en base tant que non repondu, jamais de valeur inventee.
+const SELF_REPORTED_GAP_OPTIONS = [
+  { id: "lt2w", label: "Moins de 2 semaines", days: 0 },
+  { id: "2to4w", label: "2 à 4 semaines", days: 21 },
+  { id: "1to3m", label: "1 à 3 mois", days: 60 },
+  { id: "gt3m", label: "Plus de 3 mois", days: 120 },
+] as const;
+type SelfReportedGapOptionId = (typeof SELF_REPORTED_GAP_OPTIONS)[number]["id"];
+
 // ⚠️ Les valeurs de `positions`, `levels` et `objectives` sont PERSISTÉES en Firestore
 // et comparées à des allowlists SANS accents côté Cloud Functions (functions/src/coachLabels.ts)
 // + matching substring dans recommendMicrocycle. On ne les modifie donc JAMAIS :
@@ -144,6 +158,8 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   const [dominantFoot, setDominantFoot] = useState("");
   const [mainObjective, setMainObjective] = useState("");
   const [targetFksSessionsPerWeek, setTargetFksSessionsPerWeek] = useState("");
+  // Reprise (optionnel, skippable) -- cf. SELF_REPORTED_GAP_OPTIONS plus haut.
+  const [selfReportedGapOption, setSelfReportedGapOption] = useState<SelfReportedGapOptionId | "">("");
   const [clubTrainingsPerWeek, setClubTrainingsPerWeek] = useState("");
   const [matchesPerWeek, setMatchesPerWeek] = useState("");
   const [hasClubTrainings, setHasClubTrainings] = useState<"oui" | "non" | "">("");
@@ -203,6 +219,10 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       if (typeof d.dominantFoot === "string") setDominantFoot(d.dominantFoot);
       if (typeof d.mainObjective === "string") setMainObjective(d.mainObjective);
       if (d.targetFksSessionsPerWeek != null) setTargetFksSessionsPerWeek(String(d.targetFksSessionsPerWeek));
+      if (typeof d.selfReportedGapDays === "number") {
+        const found = SELF_REPORTED_GAP_OPTIONS.find((o) => o.days === d.selfReportedGapDays);
+        if (found) setSelfReportedGapOption(found.id);
+      }
       if (d.clubTrainingsPerWeek != null) setClubTrainingsPerWeek(String(d.clubTrainingsPerWeek));
       if (d.matchesPerWeek != null) setMatchesPerWeek(String(d.matchesPerWeek));
       if (typeof d.hasClubTrainings === "string") {
@@ -406,6 +426,10 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
         clubId: resolvedClubId,
         position, ageCategory, level, dominantFoot, mainObjective,
         targetFksSessionsPerWeek: targetFksSessions,
+        // Reprise (optionnel) -- null tant que non repondu, jamais de valeur inventee.
+        selfReportedGapDays: selfReportedGapOption
+          ? (SELF_REPORTED_GAP_OPTIONS.find((o) => o.id === selfReportedGapOption)?.days ?? null)
+          : null,
         clubTrainingsPerWeek: trainings,
         matchesPerWeek: matches,
         hasClubTrainings, clubTrainingDays,
@@ -616,6 +640,18 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
             <View style={styles.chipRow}>
               {fksSessionsOptions.map((o) => (
                 <Chip key={o} label={o} selected={targetFksSessionsPerWeek === o} onPress={() => setTargetFksSessionsPerWeek(o)} />
+              ))}
+            </View>
+
+            <Text style={styles.fieldLabel}>Depuis quand n'as-tu pas eu d'entraînement régulier ? (optionnel)</Text>
+            <View style={styles.chipRowWrap}>
+              {SELF_REPORTED_GAP_OPTIONS.map((o) => (
+                <Chip
+                  key={o.id}
+                  label={o.label}
+                  selected={selfReportedGapOption === o.id}
+                  onPress={() => setSelfReportedGapOption((cur) => (cur === o.id ? "" : o.id))}
+                />
               ))}
             </View>
           </>

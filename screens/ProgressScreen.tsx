@@ -32,6 +32,7 @@ import { updateTrainingLoad } from "../engine/loadModel";
 import { readTestsRaw } from "./tests/hooks/useTestsStorage";
 import { formatMinSec } from "./tests/testHelpers";
 import { toDateKey } from "../utils/dateHelpers";
+import { TonSuiviSection } from "../components/progress/TonSuiviSection";
 
 const palette = theme.colors;
 
@@ -548,6 +549,9 @@ export default function ProgressScreen() {
             Ta forme sur 30 jours
           </Text>
         </Card>
+
+        {/* ═══════════ TON SUIVI (boucle de suivi joueur) ═══════════ */}
+        <TonSuiviSection />
 
         {/* ═══════════ MILESTONES ═══════════ */}
         <Card variant="surface" style={styles.milestonesCard}>

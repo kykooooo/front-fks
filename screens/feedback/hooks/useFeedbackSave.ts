@@ -6,6 +6,7 @@ import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { useLoadStore } from '../../../state/stores/useLoadStore';
 import { useSessionsStore } from '../../../state/stores/useSessionsStore';
 import { useFeedbackStore } from '../../../state/stores/useFeedbackStore';
+import { useExecutionStore } from '../../../state/stores/useExecutionStore';
 import { applyFeedback } from '../../../state/orchestrators/applyFeedback';
 import type { InjuryRecord, Modality, SessionFeedback } from '../../../domain/types';
 import { DEFAULT_MODALITY_WEIGHTS } from '../../../domain/types';
@@ -13,7 +14,7 @@ import { FEEDBACK_LIMITS } from '../../../constants/feedback';
 import { updateTrainingLoad } from '../../../engine/loadModel';
 import { showErrorWithRetry, classifyError, ErrorType, retryWithBackoff } from '../../../utils/errorHandler';
 import { showToast } from '../../../utils/toast';
-import { enqueueAction } from '../../../utils/offlineQueue';
+import { enqueueAction, hasQueuedAction } from '../../../utils/offlineQueue';
 import { trackEvent } from '../../../services/analytics';
 import { MICROCYCLES, getPathwayById } from '../../../domain/microcycles';
 import { auth, db } from '../../../services/firebase';
@@ -61,6 +62,13 @@ export function useFeedbackSave(params: SaveParams) {
   const [isSaving, setIsSaving] = useState(false);
   const [cyclePromptVisible, setCyclePromptVisible] = useState(false);
   const autoContinueRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Idempotence dure (Lot 4) : verrou SYNCHRONE, pose avant tout `await` et
+  // libere en `finally`. `isSaving` (state React) reste pour l'UI (bouton
+  // desactive, libelle) mais ne suffit PAS a lui seul : deux appels onSave
+  // rapproches (double-tap) peuvent tous les deux lire `isSaving === false`
+  // avant que le premier `setIsSaving(true)` ne soit re-render. Une ref
+  // mutable, elle, est vue immediatement par le deuxieme appel synchrone.
+  const submittingRef = useRef(false);
 
   const clearAutoContinue = useCallback(() => {
     if (autoContinueRef.current) {
@@ -100,26 +108,37 @@ export function useFeedbackSave(params: SaveParams) {
     projectedTsb != null ? +(projectedTsb - tsb).toFixed(1) : null;
 
   const onSave = useCallback(async () => {
-    if (isSaving) return;
-    if (!targetSessionId || !targetSession) {
-      showToast({ type: 'error', title: 'Séance introuvable', message: "La séance n'est pas chargée ou aucun ID n'a été trouvé." });
-      return;
-    }
-    if (targetSession.completed) {
-      showToast({ type: 'warn', title: 'Déjà complétée', message: 'Tu as déjà donné ton retour pour cette séance.' });
-      return;
-    }
-    if (!canSaveToday) {
-      showToast({ type: 'warn', title: 'Séance trop ancienne', message: 'Cette séance date de plus de 2 jours. Génère une nouvelle séance depuis l’onglet Séance.' });
-      return;
-    }
-    if (durationInvalid) {
-      showToast({ type: 'warn', title: 'Durée invalide', message: 'Entre une durée entre 5 et 300 minutes, ou laisse le champ vide.' });
-      return;
-    }
-
-    setIsSaving(true);
+    // Idempotence dure (Lot 4) : verrou synchrone pose AVANT tout await,
+    // libere en finally (cf. commentaire sur submittingRef ci-dessus). Deux
+    // appels rapproches (double-tap) : le deuxieme retourne immediatement,
+    // sans toucher a applyFeedback/l'offline queue.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     try {
+      if (isSaving) return;
+      if (!targetSessionId || !targetSession) {
+        showToast({ type: 'error', title: 'Séance introuvable', message: "La séance n'est pas chargée ou aucun ID n'a été trouvé." });
+        return;
+      }
+      if (targetSession.completed) {
+        showToast({ type: 'warn', title: 'Déjà complétée', message: 'Tu as déjà donné ton retour pour cette séance.' });
+        return;
+      }
+      if (!canSaveToday) {
+        showToast({ type: 'warn', title: 'Séance trop ancienne', message: 'Cette séance date de plus de 2 jours. Génère une nouvelle séance depuis l’onglet Séance.' });
+        return;
+      }
+      if (durationInvalid) {
+        showToast({ type: 'warn', title: 'Durée invalide', message: 'Entre une durée entre 5 et 300 minutes, ou laisse le champ vide.' });
+        return;
+      }
+
+      // Execution finalisee de cette seance (Lot 1/2), si disponible — attachee
+      // au feedback (buildSessionFeedback) sur les deux chemins (succes/offline).
+      const execution = useExecutionStore.getState().getExecutionForSession(targetSessionId);
+
+      setIsSaving(true);
+      try {
       const atlBefore = atl;
       const ctlBefore = ctl;
       const tsbBefore = tsb;
@@ -160,7 +179,7 @@ export function useFeedbackSave(params: SaveParams) {
         );
       }
 
-      const fb: SessionFeedback = buildSessionFeedback({ rpe, fatigue, pain0to5, recovery, durationClamped });
+      const fb: SessionFeedback = buildSessionFeedback({ rpe, fatigue, pain0to5, recovery, durationClamped, execution });
 
       const res = await Promise.resolve(addFeedback(targetSessionId, fb));
       if (!res) {
@@ -268,16 +287,30 @@ export function useFeedbackSave(params: SaveParams) {
       haptics.warning();
 
       if (appError.type === ErrorType.NETWORK) {
-        const pain0to5 = clamp(pain, FEEDBACK_LIMITS.painMin ?? 0, FEEDBACK_LIMITS.painMax ?? 5);
-        const fb: SessionFeedback = buildSessionFeedback({ rpe, fatigue, pain0to5, recovery, durationClamped });
-        await enqueueAction('feedback', { sessionId: targetSessionId, feedback: fb });
-        showToast({ type: 'info', title: 'Enregistré hors-ligne', message: 'Ton feedback sera synchronisé dès que tu seras reconnecté.' });
+        // Dédup (Lot 4) : un feedback pour cette séance est peut-être déjà en
+        // file (ex: deuxième passage réseau instable) — ne pas empiler un
+        // doublon qui serait rejoué deux fois au retour de connexion.
+        const alreadyQueued = await hasQueuedAction(
+          'feedback',
+          (data) => data.sessionId === targetSessionId
+        );
+        if (!alreadyQueued) {
+          const pain0to5 = clamp(pain, FEEDBACK_LIMITS.painMin ?? 0, FEEDBACK_LIMITS.painMax ?? 5);
+          const fb: SessionFeedback = buildSessionFeedback({ rpe, fatigue, pain0to5, recovery, durationClamped, execution });
+          await enqueueAction('feedback', { sessionId: targetSessionId, feedback: fb });
+          showToast({ type: 'info', title: 'Enregistré hors-ligne', message: 'Ton feedback sera synchronisé dès que tu seras reconnecté.' });
+        } else {
+          showToast({ type: 'info', title: 'Déjà en attente', message: 'Ce feedback est déjà en file de synchronisation.' });
+        }
         navigation.goBack();
       } else {
         showErrorWithRetry(e, 'Enregistrement du feedback', onSave);
       }
     } finally {
       setIsSaving(false);
+    }
+    } finally {
+      submittingRef.current = false;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [

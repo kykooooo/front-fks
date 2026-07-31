@@ -28,11 +28,40 @@ import { SectionHeader } from "../components/ui/SectionHeader";
 import { SessionTimer, type SessionTimerHandle } from "../components/session/SessionTimer";
 import { getBlockLabel } from "../components/session/blockConfig";
 import { readRecoveryTips } from "./newSession/helpers";
-import { formatDayFR } from "../utils/dateHelpers";
+import { formatDayFR, toDateKey } from "../utils/dateHelpers";
 import { frIntensity, frFocus, frLocation } from "../utils/frLabels";
 import { useSettingsStore } from "../state/settingsStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
+import { useExternalStore } from "../state/stores/useExternalStore";
+import { useLoadStore } from "../state/stores/useLoadStore";
+import { useFeedbackStore } from "../state/stores/useFeedbackStore";
 import { getCycleTheme, type CycleTheme } from "../constants/cycleTheme";
+import { EXERCISE_BY_ID } from "../engine/exerciseBank";
+import { trackEvent } from "../services/analytics";
+import { collectActivePainConstraints } from "../services/aiContextHelpers";
+import { showToast } from "../utils/toast";
+// ---- Boucle de suivi joueur (Lot 2) ----
+import { useExecutionStore } from "../state/stores/useExecutionStore";
+import { resolveTrackingModes } from "../domain/tracking/modes";
+import { buildPrescribedSnapshot, type PrescribedSnapshotMeta } from "../domain/tracking/prescription";
+import {
+  applyReplacement,
+  initExecution,
+  markAllAsPlanned,
+  setItemActual,
+  setItemStatus,
+  syncSetsFromLive,
+} from "../domain/tracking/execution";
+import { buildReplacementChain, deriveActualFieldsConfig, deriveMatchContext, hasExplicitItemStatus } from "../components/session/liveTrackingHelpers";
+import { ItemActionsSheet } from "../components/session/ItemActionsSheet";
+import { ReplacementSheet } from "../components/session/ReplacementSheet";
+import type {
+  ActualValues,
+  DeviationReason,
+  ItemExecution,
+  ReplacementProposal,
+  ReplacementRequest,
+} from "../domain/tracking/types";
 
 type BlockItem = {
   id?: string | null;
@@ -200,13 +229,34 @@ const getSetState = (
   return Array.from({ length: total }, (_, idx) => !!current[idx]);
 };
 
+// Boucle de suivi (Lot 2, fix P1-1) : nombre de series AFFICHEES/COCHABLES
+// pour un item. Un item remplace (execItem.status === "replaced") suit la
+// prescription du REMPLACEMENT (execItem.replacement.prescription.sets) --
+// applyReplacement (domain/tracking/execution.ts) ne touche jamais
+// item.setsTotal/setsChecked de l'execution, donc c'est purement un ajustement
+// d'AFFICHAGE cote ecran. checkedSets (Record<string, boolean[]>) garde sa
+// structure existante : getSetState reindexe deja proprement un changement de
+// longueur (valeurs conservees par index, jamais d'exception). Sans
+// prescription.sets exploitable (ex. remplacement course, sets=null), on
+// retombe sur le nombre de series de l'item original (comportement inchange).
+const getEffectiveSetCount = (item: BlockItem, execItem?: ItemExecution | null) => {
+  if (execItem?.status === "replaced" && execItem.replacement) {
+    const replacementSets = execItem.replacement.prescription.sets;
+    if (typeof replacementSets === "number" && Number.isFinite(replacementSets) && replacementSets > 0) {
+      return Math.max(1, Math.round(replacementSets));
+    }
+  }
+  return getSetCount(item);
+};
+
 const getItemProgress = (
   state: Record<string, boolean[]>,
   blockIndex: number,
   itemIndex: number,
-  item: BlockItem
+  item: BlockItem,
+  execItem?: ItemExecution | null
 ) => {
-  const total = getSetCount(item);
+  const total = getEffectiveSetCount(item, execItem);
   const key = getItemKey(blockIndex, itemIndex);
   const sets = getSetState(state, key, total);
   const done = sets.filter(Boolean).length;
@@ -217,8 +267,9 @@ const isItemComplete = (
   state: Record<string, boolean[]>,
   blockIndex: number,
   itemIndex: number,
-  item: BlockItem
-) => getItemProgress(state, blockIndex, itemIndex, item).complete;
+  item: BlockItem,
+  execItem?: ItemExecution | null
+) => getItemProgress(state, blockIndex, itemIndex, item, execItem).complete;
 
 const parseRestFromText = (text?: string | null) => {
   if (!text) return null;
@@ -260,6 +311,22 @@ const formatItemMeta = (item: BlockItem) => {
   return parts.join(" · ");
 };
 
+// Boucle de suivi (Lot 2, fix P1-1) : meta affichee pour un item REMPLACE --
+// la prescription du remplacement (execItem.replacement.prescription), jamais
+// celle de l'original (qui ne correspond plus a ce qui est reellement fait).
+const formatReplacementMeta = (prescription: NonNullable<ItemExecution["replacement"]>["prescription"]) => {
+  const parts: string[] = [];
+  if (prescription.sets != null && prescription.sets > 0) parts.push(`${prescription.sets}x`);
+  if (typeof prescription.reps === "number" && prescription.reps > 0) {
+    parts.push(`${prescription.reps} reps`);
+  } else if (typeof prescription.reps === "string" && prescription.reps.trim().length > 0) {
+    parts.push(prescription.reps.trim());
+  }
+  if (prescription.durationS != null && prescription.durationS > 0) parts.push(`${prescription.durationS}s`);
+  if (prescription.restS != null && prescription.restS > 0) parts.push(`repos ${prescription.restS}s`);
+  return parts.join(" · ");
+};
+
 const getDisplayName = (item: BlockItem) => {
   const displayNameRaw = (item?.name || "").trim();
   const fallbackId =
@@ -287,6 +354,17 @@ const getExerciseId = (item: BlockItem) => {
   return null;
 };
 
+// ---- Boucle de suivi joueur (Lot 2) : badge discret par statut d'execution ----
+const STATUS_BADGE: Record<"adapted" | "skipped" | "replaced", { label: string; tone: "default" | "warn" }> = {
+  adapted: { label: "Adapté", tone: "warn" },
+  skipped: { label: "Sauté", tone: "default" },
+  replaced: { label: "Remplacé", tone: "default" },
+};
+
+/** Nom affiche pour un exercice de remplacement (banque -> nom lisible, sinon id prettifie). */
+const resolveReplacementName = (exerciseId: string) =>
+  EXERCISE_BY_ID[exerciseId]?.name ?? prettifyName(exerciseId);
+
 // Carte de bloc mémoïsée : ne se redessine que si SES props changent.
 // Couplé au chrono isolé, ça évite que le tick (1/s) redessine toutes les cartes.
 type BlockCardProps = {
@@ -307,9 +385,16 @@ type BlockCardProps = {
   getPulse: (key: string) => Animated.Value;
   /** Thème couleur du cycle — STATIQUE pour la séance (props stables → memo préservé). */
   cycleTheme: CycleTheme;
+  /** Boucle de suivi (Lot 2) : statut d'execution par cle d'item, null si tracking inactif pour cette seance. */
+  execItemsByKey: Record<string, ItemExecution> | null;
+  onOpenActions: (blockIndex: number, itemIndex: number, item: BlockItem) => void;
 };
 
-const BlockCard = React.memo(function BlockCard({
+// Exporte (nommee) uniquement pour permettre un test de rendu leger de la
+// ligne d'item (contrat de layout : numberOfLines, flex:1, pas de largeur
+// figee cote actions) -- cf. screens/__tests__/SessionLiveScreen.itemRow.test.tsx.
+// Comportement/props inchanges, toujours utilisee via l'export default du module.
+export const BlockCard = React.memo(function BlockCard({
   block,
   blockIndex,
   blockWidth,
@@ -320,13 +405,17 @@ const BlockCard = React.memo(function BlockCard({
   onOpenExercise,
   getPulse,
   cycleTheme,
+  execItemsByKey,
+  onOpenActions,
 }: BlockCardProps) {
   const items = block.items ?? [];
   const blockTitle =
     block.goal || block.name || block.type || block.focus || `Bloc ${blockIndex + 1}`;
   const isComplete =
     items.length > 0 &&
-    items.every((item, idx) => isItemComplete(checkedSets, blockIndex, idx, item));
+    items.every((item, idx) =>
+      isItemComplete(checkedSets, blockIndex, idx, item, execItemsByKey?.[getItemKey(blockIndex, idx)] ?? null)
+    );
   const inputRange = [
     (blockIndex - 1) * itemSize,
     blockIndex * itemSize,
@@ -377,20 +466,47 @@ const BlockCard = React.memo(function BlockCard({
           <View style={{ gap: 10 }}>
             {items.map((item, itemIndex) => {
               const key = getItemKey(blockIndex, itemIndex);
+              // Boucle de suivi (Lot 2) : statut reel de l'item + nom du remplacement
+              // affiche A LA PLACE de l'original (jamais les deux a la fois).
+              const execItem = execItemsByKey?.[key] ?? null;
+              const isReplaced = execItem?.status === "replaced" && !!execItem.replacement;
               const itemProgress = getItemProgress(
                 checkedSets,
                 blockIndex,
                 itemIndex,
-                item
+                item,
+                execItem
               );
               const checkedItem = itemProgress.complete;
               const itemName = getDisplayName(item);
-              const meta = formatItemMeta(item);
-              const exerciseId = getExerciseId(item);
+              // Fix P1-1 : un item REMPLACE affiche la prescription du
+              // remplacement (sets/reps/duree/repos), jamais celle de
+              // l'original -- qui ne correspond plus a ce qui est reellement
+              // fait sur le terrain.
+              const meta =
+                isReplaced && execItem?.replacement
+                  ? formatReplacementMeta(execItem.replacement.prescription)
+                  : formatItemMeta(item);
+              // Fix P1-1 : la fiche pointe vers le remplacement (uniquement si
+              // son id existe reellement dans la banque) plutot que l'original.
+              const exerciseId =
+                isReplaced && execItem?.replacement
+                  ? EXERCISE_BY_ID[execItem.replacement.replacementExerciseId]
+                    ? execItem.replacement.replacementExerciseId
+                    : null
+                  : getExerciseId(item);
               const pulse = getPulse(key);
               const setCount = itemProgress.total;
               const doneSets = itemProgress.done;
               const setState = itemProgress.sets;
+              const displayItemName =
+                isReplaced && execItem?.replacement
+                  ? resolveReplacementName(execItem.replacement.replacementExerciseId)
+                  : itemName;
+              const statusBadge =
+                execItem && (execItem.status === "adapted" || execItem.status === "skipped" || execItem.status === "replaced")
+                  ? STATUS_BADGE[execItem.status]
+                  : null;
               return (
                 <View key={key} style={styles.itemRow}>
                   <View style={styles.itemMain}>
@@ -465,28 +581,65 @@ const BlockCard = React.memo(function BlockCard({
                       </View>
                     )}
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.itemName} numberOfLines={2}>{itemName}</Text>
-                      {item.description ? (
-                        <Text style={styles.itemNote}>{item.description}</Text>
+                      <Text style={styles.itemName} numberOfLines={2}>{displayItemName}</Text>
+                      {statusBadge ? (
+                        <Badge label={statusBadge.label} tone={statusBadge.tone} style={styles.itemStatusBadge} />
                       ) : null}
-                      {meta ? <Text style={styles.itemMeta}>{meta}</Text> : null}
-                      {item.footballContext ? (
-                        <Text style={styles.itemContext}>{item.footballContext}</Text>
-                      ) : null}
-                      {cleanDisplayNote(item.notes) ? (
-                        <Text style={styles.itemNote}>{cleanDisplayNote(item.notes)}</Text>
-                      ) : null}
+                      {/* Fix P1-1 : un item REMPLACE masque description/contexte foot/
+                          consigne de l'ORIGINAL (la charge de l'original n'a plus lieu
+                          d'etre affichee) -- seule la note du remplacement (si fournie
+                          par le registre/fallback) est montree. */}
+                      {isReplaced && execItem?.replacement ? (
+                        <>
+                          {meta ? <Text style={styles.itemMeta}>{meta}</Text> : null}
+                          {execItem.replacement.prescription.note ? (
+                            <Text style={styles.itemNote}>{execItem.replacement.prescription.note}</Text>
+                          ) : null}
+                        </>
+                      ) : (
+                        <>
+                          {item.description ? (
+                            <Text style={styles.itemNote}>{item.description}</Text>
+                          ) : null}
+                          {meta ? <Text style={styles.itemMeta}>{meta}</Text> : null}
+                          {item.footballContext ? (
+                            <Text style={styles.itemContext}>{item.footballContext}</Text>
+                          ) : null}
+                          {cleanDisplayNote(item.notes) ? (
+                            <Text style={styles.itemNote}>{cleanDisplayNote(item.notes)}</Text>
+                          ) : null}
+                        </>
+                      )}
                     </View>
                   </View>
-                  {exerciseId ? (
-                    <TouchableOpacity
-                      onPress={() => onOpenExercise(exerciseId)}
-                      activeOpacity={0.85}
-                      style={styles.itemLink}
-                    >
-                      <Text style={styles.itemLinkText}>Fiche</Text>
-                    </TouchableOpacity>
-                  ) : null}
+                  <View style={styles.itemActionsCol}>
+                    {exerciseId ? (
+                      <TouchableOpacity
+                        onPress={() => onOpenExercise(exerciseId)}
+                        activeOpacity={0.85}
+                        style={styles.itemLink}
+                      >
+                        <Text style={styles.itemLinkText}>Fiche</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    {execItemsByKey ? (
+                      // Fix recette telephone : le declencheur "..." etait invisible
+                      // (personne ne savait que Remplacer/Adapter/Passer existait).
+                      // Affordance explicite mais discrete : pill icone + libelle
+                      // court, meme comportement (ouvre ItemActionsSheet).
+                      <TouchableOpacity
+                        onPress={() => onOpenActions(blockIndex, itemIndex, item)}
+                        activeOpacity={0.85}
+                        style={styles.itemMoreButton}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Options pour ${itemName} : adapter, sauter, ou signaler que tu ne peux pas le faire`}
+                      >
+                        <Ionicons name="options-outline" size={14} color={palette.text} />
+                        <Text style={styles.itemMoreButtonText}>Modifier</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
                 </View>
               );
             })}
@@ -508,6 +661,34 @@ function SessionLiveScreen() {
   // Identité stable (useMemo) → passé en prop à la BlockCard mémoïsée sans casser le memo,
   // et hors du tick chrono (aucun re-render à la seconde).
   const cycleTheme = useMemo(() => getCycleTheme(microcycleGoal), [microcycleGoal]);
+
+  // ---- Boucle de suivi joueur (Lot 2) ----
+  // Defauts ON (collect/shadow) sans lire de doc Firestore ici (voir modes.ts).
+  const trackingModes = useMemo(() => resolveTrackingModes(), []);
+  const trackingActive = trackingModes.collect && !!sessionId;
+  const execution = useExecutionStore((s) => s.current);
+  const execItemsByKey = useMemo(() => {
+    if (!trackingActive || !execution || execution.sessionId !== sessionId) return null;
+    const map: Record<string, ItemExecution> = {};
+    execution.items.forEach((it) => {
+      map[it.key] = it;
+    });
+    return map;
+  }, [trackingActive, execution, sessionId]);
+  const externalMatchDays = useExternalStore((s) => s.matchDays);
+  const externalMatchDay = useExternalStore((s) => s.matchDay);
+  const ageCategory = useExternalStore((s) => s.ageCategory);
+  const tsb = useLoadStore((s) => s.tsb);
+  const feedbackDayStates = useFeedbackStore((s) => s.dayStates);
+  const todayKeyRef = useRef(toDateKey(new Date().toISOString()));
+  const activePains = useMemo(
+    () => collectActivePainConstraints(feedbackDayStates, todayKeyRef.current).pains,
+    [feedbackDayStates]
+  );
+  const matchSoon = useMemo(() => {
+    const ctx = execution?.snapshot.matchContext;
+    return ctx === "match_today" || ctx === "match_tomorrow" || ctx === "match_in_two_days";
+  }, [execution]);
 
   const { width } = useWindowDimensions();
   const blocks: Block[] = useMemo(
@@ -593,6 +774,241 @@ function SessionLiveScreen() {
     return unsubscribe;
   }, [nav, hasStarted]);
 
+  // --- Boucle de suivi joueur (Lot 2) : snapshot + execution au lancement ---
+  const buildAndStartExecution = useCallback(
+    (launchedAtISO: string) => {
+      if (!sessionId) return;
+      const sessionsState = useSessionsStore.getState();
+      const generatedAtISO = sessionsState.getSessionById(sessionId)?.createdAt ?? null;
+      const matchDaysList = externalMatchDays.length > 0 ? externalMatchDays : externalMatchDay ? [externalMatchDay] : [];
+
+      const meta: PrescribedSnapshotMeta = {
+        sessionId,
+        launchedAtISO,
+        generatedAtISO,
+        cycleGoal: sessionsState.microcycleGoal ?? null,
+        sessionIndex: sessionsState.microcycleSessionIndex,
+        phase: null,
+        matchContext: deriveMatchContext(matchDaysList, launchedAtISO),
+      };
+
+      const snapshot = buildPrescribedSnapshot(v2, meta);
+      useExecutionStore.getState().startExecution(initExecution(snapshot, launchedAtISO));
+      trackEvent("live_session_started", { sessionId, itemCount: snapshot.items.length });
+    },
+    [sessionId, v2, externalMatchDays, externalMatchDay]
+  );
+
+  // Reprise apres crash : reutilise l'execution existante SEULEMENT si meme
+  // sessionId ET pas encore finalisee (finishedAtISO absent). Fix P1-2 : sans
+  // cette 2e condition, une execution deja cloturee (app tuee sur le Summary
+  // avant le feedback, puis relance de la MEME seance) etait reutilisee telle
+  // quelle -- badges perimes affiches d'entree, et finishCurrent devenait un
+  // no-op en fin de 2e passage (garde `finishedAtISO` deja pose dans le
+  // store), donc ce 2e passage n'etait JAMAIS capture. Ici, une execution
+  // finalisee ne bloque plus une nouvelle execution : elle reste dans history
+  // (finishCurrent l'y a deja poussee, dedupliquee par sessionId -- cf. P2-d),
+  // et le feedback la retrouve via getExecutionForSession (qui priorise
+  // history sur current, cf. useExecutionStore.ts). forceRestart=true (choix
+  // "Recommencer" du prompt de reprise) reinitialise dans tous les cas.
+  const ensureExecution = useCallback(
+    (forceRestart: boolean) => {
+      if (!trackingActive) return;
+      const existing = useExecutionStore.getState().current;
+      if (!forceRestart && existing && existing.sessionId === sessionId && !existing.finishedAtISO) return;
+      buildAndStartExecution(new Date().toISOString());
+    },
+    [trackingActive, sessionId, buildAndStartExecution]
+  );
+
+  const execInitRef = useRef(false);
+  useEffect(() => {
+    if (execInitRef.current) return;
+    execInitRef.current = true;
+    ensureExecution(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Report des series cochees dans l'execution — memes moments que la
+  // persistance live (fingerprint + interval 30s), jamais a chaque toggle.
+  const syncExecutionFromLive = useCallback(() => {
+    if (!trackingActive) return;
+    useExecutionStore.getState().updateCurrent((exec) => syncSetsFromLive(exec, checkedSets));
+  }, [trackingActive, checkedSets]);
+
+  // Actions par exercice (feuille "..." -> Adapte/Saute/Remplacement)
+  const [sheetTarget, setSheetTarget] = useState<{
+    blockIndex: number;
+    itemIndex: number;
+    key: string;
+    item: BlockItem;
+  } | null>(null);
+  const [replacementFlow, setReplacementFlow] = useState<{
+    key: string;
+    exerciseId: string;
+    originalName: string;
+    reason: DeviationReason;
+    proposals: ReplacementProposal[];
+    shownIndex: number;
+  } | null>(null);
+  // Fix P2-b : propositions deja vues/refusees pendant CETTE session (par cle
+  // d'item), pour ne jamais re-proposer la meme alternative si le joueur
+  // rouvre "Je ne peux pas faire cet exercice" sur le meme item plus tard.
+  // Etat local volontairement -- pas besoin de persister au-dela de la seance.
+  const [refusedReplacementsByKey, setRefusedReplacementsByKey] = useState<Record<string, string[]>>({});
+
+  const openItemActions = useCallback((blockIndex: number, itemIndex: number, item: BlockItem) => {
+    const key = getItemKey(blockIndex, itemIndex);
+    setSheetTarget({ blockIndex, itemIndex, key, item });
+  }, []);
+  const closeItemActions = useCallback(() => setSheetTarget(null), []);
+
+  // Fix P2-b : la feuille d'options titre le nom REELLEMENT affiche a l'ecran
+  // (le remplacement si l'item est deja remplace), jamais l'original masque.
+  const sheetItemName = useMemo(() => {
+    if (!sheetTarget) return "";
+    const execItem = execItemsByKey?.[sheetTarget.key] ?? null;
+    if (execItem?.status === "replaced" && execItem.replacement) {
+      return resolveReplacementName(execItem.replacement.replacementExerciseId);
+    }
+    return getDisplayName(sheetTarget.item);
+  }, [sheetTarget, execItemsByKey]);
+
+  const sheetFields = useMemo(() => {
+    if (!sheetTarget) return { loadKg: false, reps: true, distanceM: false, durationS: false };
+    return deriveActualFieldsConfig({
+      notes: sheetTarget.item.notes,
+      name: sheetTarget.item.name,
+      modality: sheetTarget.item.modality,
+      workS: sheetTarget.item.workS,
+      durationMin: sheetTarget.item.durationMin,
+      reps: sheetTarget.item.reps,
+    });
+  }, [sheetTarget]);
+
+  const handleAdapt = useCallback(
+    (reason: DeviationReason, actual: ActualValues | null, comment: string | null) => {
+      if (!sheetTarget) return;
+      const { key } = sheetTarget;
+      useExecutionStore.getState().updateCurrent((exec) => {
+        let next = setItemStatus(exec, key, "adapted", reason, comment);
+        if (actual) next = setItemActual(next, key, actual);
+        return next;
+      });
+      trackEvent("live_exercise_marked", { status: "adapted", reason });
+      setSheetTarget(null);
+    },
+    [sheetTarget]
+  );
+
+  const handleSkip = useCallback(
+    (reason: DeviationReason, comment: string | null) => {
+      if (!sheetTarget) return;
+      const { key } = sheetTarget;
+      useExecutionStore.getState().updateCurrent((exec) => setItemStatus(exec, key, "skipped", reason, comment));
+      trackEvent("live_exercise_marked", { status: "skipped", reason });
+      setSheetTarget(null);
+    },
+    [sheetTarget]
+  );
+
+  const handleCannotDo = useCallback(
+    (reason: DeviationReason) => {
+      if (!sheetTarget) return;
+      const { key, item } = sheetTarget;
+      const currentExec = useExecutionStore.getState().current;
+      const snapshotItem = currentExec?.snapshot.items.find((p) => p.key === key);
+      const exerciseId = snapshotItem?.exerciseId ?? getExerciseId(item) ?? key;
+      const originalName = snapshotItem?.name ?? getDisplayName(item);
+
+      // Fix P2-b : si l'item est DEJA remplace, le remplacement courant ne
+      // doit jamais etre re-propose -- et les propositions deja refusees
+      // pendant cette session (memorisees a la fermeture sans acceptation,
+      // cf. handleSkipReplacement) non plus. Le lookup par exerciseId reste
+      // l'ORIGINAL (registre/fallback sont keyed sur l'id prescrit), seul
+      // excludeIds change.
+      const currentReplacementId =
+        currentExec?.items.find((it) => it.key === key)?.replacement?.replacementExerciseId ?? null;
+      const priorExcludes = refusedReplacementsByKey[key] ?? [];
+      const excludeIds = Array.from(
+        new Set([...(currentReplacementId ? [currentReplacementId] : []), ...priorExcludes])
+      );
+
+      const request: ReplacementRequest = {
+        exerciseId,
+        reason,
+        context: {
+          equipmentAvailable: v2.equipmentAvailable ?? v2.equipmentUsed ?? [],
+          ageCategory: ageCategory ?? null,
+          activePains,
+          matchSoon,
+          highFatigue: tsb < -10,
+          solo: true,
+          excludeIds,
+        },
+        prescribed: snapshotItem
+          ? { sets: snapshotItem.sets, reps: snapshotItem.reps, durationS: snapshotItem.workS, restS: snapshotItem.restS }
+          : undefined,
+      };
+
+      const proposals = buildReplacementChain(request);
+      trackEvent(proposals.length > 0 ? "live_replacement_proposed" : "live_replacement_none_available", {
+        originalId: exerciseId,
+        altId: proposals[0]?.exerciseId,
+      });
+
+      setSheetTarget(null);
+      setReplacementFlow({ key, exerciseId, originalName, reason, proposals, shownIndex: 0 });
+    },
+    [sheetTarget, v2.equipmentAvailable, v2.equipmentUsed, ageCategory, activePains, matchSoon, tsb, refusedReplacementsByKey]
+  );
+
+  const closeReplacementFlow = useCallback(() => setReplacementFlow(null), []);
+
+  const handleAcceptReplacement = useCallback(() => {
+    if (!replacementFlow) return;
+    const proposal = replacementFlow.proposals[replacementFlow.shownIndex];
+    if (!proposal) return;
+    const { key, exerciseId, reason } = replacementFlow;
+    useExecutionStore.getState().updateCurrent((exec) =>
+      applyReplacement(exec, key, {
+        originalExerciseId: exerciseId,
+        replacementExerciseId: proposal.exerciseId,
+        reason,
+        equivalent: proposal.equivalent,
+        prescription: proposal.prescription,
+      })
+    );
+    useExecutionStore.getState().recordReplacementPreference(exerciseId, proposal.exerciseId, reason);
+    trackEvent("live_replacement_accepted", { originalId: exerciseId, altId: proposal.exerciseId });
+    setReplacementFlow(null);
+  }, [replacementFlow]);
+
+  const handleSeeAnotherReplacement = useCallback(() => {
+    setReplacementFlow((prev) => (prev ? { ...prev, shownIndex: prev.shownIndex + 1 } : prev));
+  }, []);
+
+  const handleSkipReplacement = useCallback(() => {
+    if (!replacementFlow) return;
+    const { key, reason, proposals, shownIndex, exerciseId } = replacementFlow;
+    const proposal = proposals[shownIndex];
+    useExecutionStore.getState().updateCurrent((exec) => setItemStatus(exec, key, "skipped", reason, null));
+    if (proposal) {
+      trackEvent("live_replacement_refused", { originalId: exerciseId, altId: proposal.exerciseId });
+    }
+    // Fix P2-b : memorise les propositions vues jusqu'a l'index affiche (donc
+    // reellement montrees au joueur) pour ne plus les re-proposer si "Je ne
+    // peux pas faire cet exercice" est rouvert plus tard sur ce meme item.
+    const seenIds = proposals.slice(0, shownIndex + 1).map((p) => p.exerciseId);
+    if (seenIds.length > 0) {
+      setRefusedReplacementsByKey((prev) => ({
+        ...prev,
+        [key]: Array.from(new Set([...(prev[key] ?? []), ...seenIds])),
+      }));
+    }
+    setReplacementFlow(null);
+  }, [replacementFlow]);
+
   // --- Fix 2: Persist progress to AsyncStorage ---
   // Ne JAMAIS écrire avant la fin du check de récupération : sinon l'état vide
   // du mount écrase la sauvegarde d'une séance tuée (AsyncStorage sérialise
@@ -620,14 +1036,18 @@ function SessionLiveScreen() {
     if (fingerprint === lastPersistRef.current) return;
     lastPersistRef.current = fingerprint;
     persistState();
-  }, [checkedSets, activeBlock, persistState]);
+    syncExecutionFromLive();
+  }, [checkedSets, activeBlock, persistState, syncExecutionFromLive]);
 
   // Also save chrono every 30s while running
   useEffect(() => {
     if (!sessionRunning) return;
-    const id = setInterval(persistState, 30_000);
+    const id = setInterval(() => {
+      persistState();
+      syncExecutionFromLive();
+    }, 30_000);
     return () => clearInterval(id);
-  }, [sessionRunning, persistState]);
+  }, [sessionRunning, persistState, syncExecutionFromLive]);
 
   // Restore on mount if matching session exists
   const [showRecovery, setShowRecovery] = useState(false);
@@ -663,9 +1083,12 @@ function SessionLiveScreen() {
             {
               text: "Recommencer",
               style: "destructive",
-              onPress: () => AsyncStorage.removeItem(LIVE_SESSION_KEY).catch((err) => {
-                if (__DEV__) console.error("[SessionLive] Failed to clear live session on restart:", err);
-              }),
+              onPress: () => {
+                ensureExecution(true);
+                AsyncStorage.removeItem(LIVE_SESSION_KEY).catch((err) => {
+                  if (__DEV__) console.error("[SessionLive] Failed to clear live session on restart:", err);
+                });
+              },
             },
             {
               text: "Reprendre",
@@ -684,6 +1107,12 @@ function SessionLiveScreen() {
         recoveryDoneRef.current = true;
       }
     })();
+    // ensureExecution est reference dans le onPress "Recommencer" ci-dessus
+    // (fix P1-2) : cet effet reste volontairement "une fois par mount" (garde
+    // recoveredRef), meme pattern que l'effet execInitRef plus haut -- ajouter
+    // ensureExecution aux deps ne changerait rien (la garde bloque toute
+    // re-entree) mais laisserait croire a un re-declenchement voulu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   // Clear persistence when finishing the session
@@ -899,24 +1328,33 @@ function SessionLiveScreen() {
     }).start();
   }, [enter]);
 
+  // Fix P1-1 : les compteurs globaux suivent aussi la prescription du
+  // remplacement (getEffectiveSetCount) pour un item remplace -- sinon le
+  // header afficherait un total de series qui ne correspond plus a ce qui est
+  // reellement cochable a l'ecran.
   const totalItems = useMemo(() => {
-    return blocks.reduce((acc, block) => {
+    return blocks.reduce((acc, block, blockIndex) => {
       return (
         acc +
-        (block.items ?? []).reduce((sum, item) => sum + getSetCount(item), 0)
+        (block.items ?? []).reduce(
+          (sum, item, itemIndex) =>
+            sum + getEffectiveSetCount(item, execItemsByKey?.[getItemKey(blockIndex, itemIndex)] ?? null),
+          0
+        )
       );
     }, 0);
-  }, [blocks]);
+  }, [blocks, execItemsByKey]);
 
   const completedItems = useMemo(() => {
     return blocks.reduce((acc, block, blockIndex) => {
       const items = block.items ?? [];
       const done = items.reduce((sum, item, itemIndex) => {
-        return sum + getItemProgress(checkedSets, blockIndex, itemIndex, item).done;
+        const execItem = execItemsByKey?.[getItemKey(blockIndex, itemIndex)] ?? null;
+        return sum + getItemProgress(checkedSets, blockIndex, itemIndex, item, execItem).done;
       }, 0);
       return acc + done;
     }, 0);
-  }, [blocks, checkedSets]);
+  }, [blocks, checkedSets, execItemsByKey]);
 
   const progress = totalItems > 0 ? completedItems / totalItems : 0;
 
@@ -940,7 +1378,10 @@ function SessionLiveScreen() {
       items: BlockItem[]
     ) => {
       const key = getItemKey(blockIndex, itemIndex);
-      const total = getSetCount(item);
+      // Fix P1-1 : le nombre de series cochables suit la prescription du
+      // remplacement quand l'item est remplace (cf. getEffectiveSetCount).
+      const execItem = execItemsByKey?.[key] ?? null;
+      const total = getEffectiveSetCount(item, execItem);
       setCheckedSets((prev) => {
         const current = getSetState(prev, key, total);
         const nextValue = !current[setIndex];
@@ -955,7 +1396,9 @@ function SessionLiveScreen() {
           if (restAuto) startRest(restAuto, "auto");
           const isComplete =
             items.length > 0 &&
-            items.every((it, idx) => isItemComplete(next, blockIndex, idx, it));
+            items.every((it, idx) =>
+              isItemComplete(next, blockIndex, idx, it, execItemsByKey?.[getItemKey(blockIndex, idx)] ?? null)
+            );
           if (isComplete && blockIndex < blocks.length - 1) {
             const nextIndex = blockIndex + 1;
             requestAnimationFrame(() => {
@@ -967,13 +1410,13 @@ function SessionLiveScreen() {
         return next;
       });
     },
-    [blocks, hapticsEnabled, triggerPulse, startRest]
+    [blocks, hapticsEnabled, triggerPulse, startRest, execItemsByKey]
   );
 
   const isBlockComplete = (blockIndex: number, items: BlockItem[] = []) => {
     if (items.length === 0) return false;
     return items.every((item, idx) =>
-      isItemComplete(checkedSets, blockIndex, idx, item)
+      isItemComplete(checkedSets, blockIndex, idx, item, execItemsByKey?.[getItemKey(blockIndex, idx)] ?? null)
     );
   };
 
@@ -987,8 +1430,6 @@ function SessionLiveScreen() {
     : "Terminer la séance";
 
   const finishAction = () => {
-    finishedRef.current = true;
-    clearPersistedSession();
     const elapsedSec = timerRef.current?.getSeconds() ?? 0;
     const estimatedRpe = (() => {
       if (typeof v2.rpeTarget === "number" && Number.isFinite(v2.rpeTarget)) {
@@ -1028,10 +1469,86 @@ function SessionLiveScreen() {
           : undefined,
       recoveryTips,
     };
-    nav.navigate("SessionSummary", {
-      sessionId,
-      summary,
-    });
+
+    // Boucle de suivi (Lot 2) : cloture l'execution AVANT de naviguer.
+    const proceedToSummary = (allAsPlanned: boolean) => {
+      finishedRef.current = true;
+      clearPersistedSession();
+
+      if (trackingActive) {
+        const execStore = useExecutionStore.getState();
+        // Dernier report des series cochees avant de compter (unknown+complet -> done).
+        execStore.updateCurrent((exec) => syncSetsFromLive(exec, checkedSets));
+        if (allAsPlanned) {
+          execStore.updateCurrent((exec) => markAllAsPlanned(exec));
+        }
+        const actualDurationMin = elapsedSec >= 60 ? Math.max(1, Math.round(elapsedSec / 60)) : null;
+        execStore.finishCurrent(new Date().toISOString(), actualDurationMin);
+
+        const finished = sessionId ? execStore.getExecutionForSession(sessionId) : undefined;
+        if (finished) {
+          trackEvent("live_session_finished", {
+            sessionId,
+            completionPct: finished.completion.pct,
+            done: finished.completion.done,
+            adapted: finished.completion.adapted,
+            skipped: finished.completion.skipped,
+            replaced: finished.completion.replacedEquivalent + finished.completion.replacedPartial,
+            allAsPlanned: finished.allAsPlanned,
+          });
+        }
+      }
+
+      nav.navigate("SessionSummary", {
+        sessionId,
+        summary,
+      });
+    };
+
+    if (!trackingActive) {
+      proceedToSummary(false);
+      return;
+    }
+
+    const currentExec = useExecutionStore.getState().current;
+    const hasExplicit = currentExec ? hasExplicitItemStatus(currentExec.items) : false;
+
+    if (hasExplicit) {
+      proceedToSummary(false);
+      return;
+    }
+
+    // Fix P2-a : l'ancienne 2e option ("J'ai fait des ajustements") fermait
+    // l'alerte sans RIEN faire -- re-taper "Terminer" reposait la meme
+    // question, seule issue visible = "Tout comme prevu" (donnees faussees).
+    // 3 issues honnetes desormais, aucune impasse :
+    // - "Tout s'est passe comme prevu" : marque tout unknown -> done, termine.
+    // - "Je precise d'abord" : ferme l'alerte SANS terminer, invite (toast) a
+    //   utiliser le bouton Modifier sur les exercices concernes puis a re-taper
+    //   "Terminer" (qui, une fois un statut explicite pose, ne repose plus
+    //   cette question -- cf. hasExplicit ci-dessus).
+    // - "Terminer sans preciser" : termine tel quel (deja le comportement de
+    //   proceedToSummary(false) -- items toutes-series-cochees -> done via
+    //   finalize, le reste unknown, honnete).
+    Alert.alert(
+      "Comment s'est passée la séance ?",
+      "Dis-nous rapidement si tout s'est déroulé comme prévu.",
+      [
+        { text: "Tout s'est passé comme prévu", onPress: () => proceedToSummary(true) },
+        {
+          text: "Je précise d'abord",
+          style: "cancel",
+          onPress: () => {
+            showToast({
+              type: "info",
+              title: "Précise chaque écart",
+              message: "Utilise le bouton Modifier sur les exercices concernés, puis termine la séance.",
+            });
+          },
+        },
+        { text: "Terminer sans préciser", onPress: () => proceedToSummary(false) },
+      ]
+    );
   };
 
   const goToExercise = useCallback((exerciseId: string | null) => {
@@ -1052,9 +1569,11 @@ function SessionLiveScreen() {
         onOpenExercise={goToExercise}
         getPulse={getPulse}
         cycleTheme={cycleTheme}
+        execItemsByKey={execItemsByKey}
+        onOpenActions={openItemActions}
       />
     ),
-    [blockWidth, itemSize, scrollX, checkedSets, toggleSet, goToExercise, getPulse, cycleTheme]
+    [blockWidth, itemSize, scrollX, checkedSets, toggleSet, goToExercise, getPulse, cycleTheme, execItemsByKey, openItemActions]
   );
 
   return (
@@ -1364,6 +1883,27 @@ function SessionLiveScreen() {
             )}
           </View>
         </Animated.View>
+
+        <ItemActionsSheet
+          visible={!!sheetTarget}
+          itemName={sheetItemName}
+          fields={sheetFields}
+          onClose={closeItemActions}
+          onAdapt={handleAdapt}
+          onSkip={handleSkip}
+          onCannotDo={handleCannotDo}
+        />
+
+        <ReplacementSheet
+          visible={!!replacementFlow}
+          originalName={replacementFlow?.originalName ?? ""}
+          proposal={replacementFlow ? replacementFlow.proposals[replacementFlow.shownIndex] ?? null : null}
+          canSeeAnother={!!replacementFlow && replacementFlow.shownIndex + 1 < replacementFlow.proposals.length}
+          onAccept={handleAcceptReplacement}
+          onSeeAnother={handleSeeAnotherReplacement}
+          onSkip={handleSkipReplacement}
+          onClose={closeReplacementFlow}
+        />
       </View>
     </Screen>
   );
@@ -1518,8 +2058,9 @@ const styles = StyleSheet.create({
   itemMeta: { color: palette.sub, fontSize: 12, marginTop: 2 },
   itemContext: { color: palette.text, fontSize: 11, marginTop: 2 },
   itemNote: { color: palette.sub, fontSize: 12, marginTop: 2 },
+  itemActionsCol: { alignItems: "flex-end", gap: 8 },
   itemLink: {
-    alignSelf: "flex-start",
+    alignSelf: "flex-end",
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: theme.radius.pill,
@@ -1530,6 +2071,22 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   itemLinkText: { color: palette.accent, fontSize: 11, fontWeight: "700" },
+  itemMoreButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    alignSelf: "flex-end",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+    backgroundColor: palette.cardSoft,
+    minHeight: 44,
+  },
+  itemMoreButtonText: { color: palette.text, fontSize: 11, fontWeight: "700" },
+  itemStatusBadge: { alignSelf: "flex-start", marginTop: 4 },
   dotsRow: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: -6 },
   dot: {
     width: 6,
