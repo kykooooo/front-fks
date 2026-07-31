@@ -619,15 +619,20 @@ const BlockCard = React.memo(function BlockCard({
                       </TouchableOpacity>
                     ) : null}
                     {execItemsByKey ? (
+                      // Fix recette telephone : le declencheur "..." etait invisible
+                      // (personne ne savait que Remplacer/Adapter/Passer existait).
+                      // Affordance explicite mais discrete : pill icone + libelle
+                      // court, meme comportement (ouvre ItemActionsSheet).
                       <TouchableOpacity
                         onPress={() => onOpenActions(blockIndex, itemIndex, item)}
                         activeOpacity={0.85}
                         style={styles.itemMoreButton}
                         hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                         accessibilityRole="button"
-                        accessibilityLabel={`Options pour ${itemName}`}
+                        accessibilityLabel={`Adapter ${itemName} : remplacer, adapter ou passer cet exercice`}
                       >
-                        <Ionicons name="ellipsis-horizontal" size={16} color={palette.sub} />
+                        <Ionicons name="options-outline" size={14} color={palette.text} />
+                        <Text style={styles.itemMoreButtonText}>Adapter</Text>
                       </TouchableOpacity>
                     ) : null}
                   </View>
@@ -1515,7 +1520,7 @@ function SessionLiveScreen() {
     // 3 issues honnetes desormais, aucune impasse :
     // - "Tout s'est passe comme prevu" : marque tout unknown -> done, termine.
     // - "Je precise d'abord" : ferme l'alerte SANS terminer, invite (toast) a
-    //   utiliser le bouton ... sur les exercices concernes puis a re-taper
+    //   utiliser le bouton Adapter sur les exercices concernes puis a re-taper
     //   "Terminer" (qui, une fois un statut explicite pose, ne repose plus
     //   cette question -- cf. hasExplicit ci-dessus).
     // - "Terminer sans preciser" : termine tel quel (deja le comportement de
@@ -1533,7 +1538,7 @@ function SessionLiveScreen() {
             showToast({
               type: "info",
               title: "Précise chaque écart",
-              message: "Utilise le bouton ⋯ sur les exercices concernés, puis termine la séance.",
+              message: "Utilise le bouton Adapter sur les exercices concernés, puis termine la séance.",
             });
           },
         },
@@ -2063,15 +2068,20 @@ const styles = StyleSheet.create({
   },
   itemLinkText: { color: palette.accent, fontSize: 11, fontWeight: "700" },
   itemMoreButton: {
-    width: 32,
-    height: 32,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    alignSelf: "flex-end",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: theme.radius.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.cardSoft,
-    alignItems: "center",
-    justifyContent: "center",
+    minHeight: 44,
   },
+  itemMoreButtonText: { color: palette.text, fontSize: 11, fontWeight: "700" },
   itemStatusBadge: { alignSelf: "flex-start", marginTop: 4 },
   dotsRow: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: -6 },
   dot: {
