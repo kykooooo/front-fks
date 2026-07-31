@@ -9,7 +9,12 @@
 // 3) la chaîne complète parse → snakeToCamel → readRecoveryTips (ce que
 //    voient réellement Preview/Live/Summary).
 
-import { sessionV2Schema } from "../sessionSchema";
+import {
+  SEUIL_SENTINELLES_REPARATION,
+  detecterSentinellesReparation,
+  estSeanceReparee,
+  sessionV2Schema,
+} from "../sessionSchema";
 import { snakeToCamel } from "../../utils/caseTransform";
 import { readRecoveryTips } from "../../screens/newSession/helpers";
 import type { FKS_NextSessionV2 } from "../../screens/newSession/types";
@@ -91,5 +96,104 @@ describe("readRecoveryTips — priorité et fallback", () => {
     expect(readRecoveryTips({ recoveryTips: [] })).toBeUndefined();
     expect(readRecoveryTips(null)).toBeUndefined();
     expect(readRecoveryTips(undefined)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LOT 3 (P1) — détection de réparation silencieuse : un manque de données ne
+// devient jamais une fausse séance. Chaque .catch() du schéma répare un champ
+// isolé en valeur plausible ; ces tests prouvent qu'au-delà d'un seuil (ou
+// toujours quand blocks est vide) la réparation redevient détectable.
+// ---------------------------------------------------------------------------
+
+const seanceComplete = {
+  version: "fks.next_session.v2",
+  title: "Séance renfo bas du corps",
+  intensity: "moderate",
+  focus_primary: "strength",
+  duration_min: 45,
+  rpe_target: 7,
+  blocks: [
+    {
+      id: "main",
+      type: "strength",
+      goal: "renfo",
+      intensity: "moderate",
+      duration_min: 20,
+      items: [{ name: "Squat barre", sets: 4, reps: 8 }],
+    },
+  ],
+};
+
+/** Copie de `seanceComplete` sans les champs listés (déclenche leur `.catch()`). */
+function sansChamps(champs: (keyof typeof seanceComplete)[]): Record<string, unknown> {
+  const copie: Record<string, unknown> = { ...seanceComplete };
+  for (const champ of champs) delete copie[champ];
+  return copie;
+}
+
+describe("SEUIL_SENTINELLES_REPARATION — constante nommée, pas un chiffre magique", () => {
+  test("vaut 2 : un seul champ par défaut reste plausible, deux à la fois ne le sont plus", () => {
+    expect(SEUIL_SENTINELLES_REPARATION).toBe(2);
+  });
+});
+
+describe("detecterSentinellesReparation", () => {
+  test("séance complète, rien de réparé : aucune sentinelle", () => {
+    const parsed = sessionV2Schema.parse(seanceComplete);
+    expect(detecterSentinellesReparation(parsed)).toEqual([]);
+  });
+
+  test("blocks vide : sentinelle blocks_vides", () => {
+    const parsed = sessionV2Schema.parse({ ...seanceComplete, blocks: [] });
+    expect(detecterSentinellesReparation(parsed)).toContain("blocks_vides");
+  });
+
+  test("blocks absent (declenche le .catch([]) du schema) : sentinelle blocks_vides aussi", () => {
+    const parsed = sessionV2Schema.parse(sansChamps(["blocks"]));
+    expect(detecterSentinellesReparation(parsed)).toContain("blocks_vides");
+  });
+
+  test("titre absent (repare en 'Séance') : sentinelle titre_defaut", () => {
+    const parsed = sessionV2Schema.parse(sansChamps(["title"]));
+    expect(detecterSentinellesReparation(parsed)).toEqual(["titre_defaut"]);
+  });
+
+  test("duration_min absente (reparee en 30) : sentinelle duree_defaut", () => {
+    const parsed = sessionV2Schema.parse(sansChamps(["duration_min"]));
+    expect(detecterSentinellesReparation(parsed)).toEqual(["duree_defaut"]);
+  });
+
+  test("une VRAIE seance de 30 minutes n'est pas confondue avec une reparation (duree seule)", () => {
+    const parsed = sessionV2Schema.parse({ ...seanceComplete, duration_min: 30 });
+    expect(detecterSentinellesReparation(parsed)).toEqual(["duree_defaut"]);
+    expect(estSeanceReparee(parsed)).toBe(false);
+  });
+});
+
+describe("estSeanceReparee — le verdict qui declenche l'echec type", () => {
+  test("blocks vide SEUL : reparee, meme sans aucune autre sentinelle (TOUJOURS disqualifiant)", () => {
+    const parsed = sessionV2Schema.parse({ ...seanceComplete, blocks: [] });
+    expect(detecterSentinellesReparation(parsed)).toHaveLength(1);
+    expect(estSeanceReparee(parsed)).toBe(true);
+  });
+
+  test("une seule sentinelle non-blocks (sous le seuil) : PAS reparee, la seance passe", () => {
+    const parsed = sessionV2Schema.parse(sansChamps(["title"]));
+    expect(detecterSentinellesReparation(parsed)).toHaveLength(1);
+    expect(estSeanceReparee(parsed)).toBe(false);
+  });
+
+  test("deux sentinelles non-blocks simultanees (titre ET duree) : atteint le seuil, reparee", () => {
+    const parsed = sessionV2Schema.parse(sansChamps(["title", "duration_min"]));
+    expect(detecterSentinellesReparation(parsed)).toEqual(
+      expect.arrayContaining(["titre_defaut", "duree_defaut"])
+    );
+    expect(estSeanceReparee(parsed)).toBe(true);
+  });
+
+  test("séance complète : jamais reparee", () => {
+    const parsed = sessionV2Schema.parse(seanceComplete);
+    expect(estSeanceReparee(parsed)).toBe(false);
   });
 });

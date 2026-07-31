@@ -103,40 +103,45 @@ export function buildResetExplain(
   const position = profile?.position?.trim() || "joueur";
   const objective = (profile?.main_objective ?? "").toString().toLowerCase();
   const place = locationLabel(location || v2.location);
-  const duration = v2.durationMin != null ? `${v2.durationMin} min` : "12–16 min";
+  // Doctrine : jamais de duree inventee au joueur. Si le backend ne fournit
+  // pas durationMin, on decrit la seance sans chiffre plutot que d'afficher
+  // une fourchette fabriquee cote front.
+  const duration = v2.durationMin != null ? `${v2.durationMin} min` : null;
+  const seanceStandard = duration ? `${duration} (${place})` : `format reset (${place})`;
+  const seanceLight = duration ? `${duration}, légère` : `format léger`;
   const seed = hashString(
-    `${v2.archetypeId ?? ""}|${selection?.cap ?? ""}|${position}|${objective}|${duration}`
+    `${v2.archetypeId ?? ""}|${selection?.cap ?? ""}|${position}|${objective}|${duration ?? "na"}`
   );
 
   const pool: string[] = [];
   if (match) {
     pool.push(
-      `Exemple : ${position} avec match demain → reset pour garder du jus.\nSéance : ${duration} (${place}).\nBut : arriver frais au match.`
+      `Exemple : ${position} avec match demain → reset pour garder du jus.\nSéance : ${seanceStandard}.\nBut : arriver frais au match.`
     );
   }
   if (capEasy || fatigueTrend) {
     pool.push(
-      `Exemple : ${position} qui enchaîne 3 grosses séances → on allège.\nSéance : ${duration}, légère.\nBut : recharger sans perdre le rythme.`
+      `Exemple : ${position} qui enchaîne 3 grosses séances → on allège.\nSéance : ${seanceLight}.\nBut : recharger sans perdre le rythme.`
     );
   }
   if (feedbackCap) {
     pool.push(
-      `Exemple : ${position} qui a mis RPE 9-10 deux fois → reset.\nSéance : ${duration} (${place}).\nBut : éviter le surmenage.`
+      `Exemple : ${position} qui a mis RPE 9-10 deux fois → reset.\nSéance : ${seanceStandard}.\nBut : éviter le surmenage.`
     );
   }
   if (poolIssue || timeLow) {
     pool.push(
-      `Exemple : ${position} avec peu de matériel ou 15 min dispo → reset court.\nSéance : ${duration} (${place}).\nBut : rester actif sans risque.`
+      `Exemple : ${position} avec peu de matériel ou 15 min dispo → reset court.\nSéance : ${seanceStandard}.\nBut : rester actif sans risque.`
     );
   }
   if (objective.includes("blessure") || objective.includes("reprise")) {
     pool.push(
-      `Exemple : ${position} en reprise → reset pour éviter le surmenage.\nSéance : ${duration}, légère.\nBut : reprendre proprement.`
+      `Exemple : ${position} en reprise → reset pour éviter le surmenage.\nSéance : ${seanceLight}.\nBut : reprendre proprement.`
     );
   }
   if (!pool.length) {
     pool.push(
-      `Exemple : ${position} en semaine chargée → reset contrôlé.\nSéance : ${duration} (${place}).\nBut : garder la récup.`
+      `Exemple : ${position} en semaine chargée → reset contrôlé.\nSéance : ${seanceStandard}.\nBut : garder la récup.`
     );
   }
 

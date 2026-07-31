@@ -97,4 +97,43 @@ describe("selectPendingSession — logique pendingSession de usePrimaryCta", () 
     const sessions = [makeSession({ id: "nodate", completed: false })];
     expect(selectPendingSession(sessions, TODAY)).toBeUndefined();
   });
+
+  // ── Gap trouvé par analyse d'écart : filtre séances artificielles, cas
+  // vide, cas normal — pas couverts par les cas ci-dessus. ─────────────────
+
+  it("cas vide : aucune séance → undefined", () => {
+    expect(selectPendingSession([], TODAY)).toBeUndefined();
+  });
+
+  it("cas normal : une seule séance réelle, dans la fenêtre, non complétée → elle-même", () => {
+    const sessions = [makeSession({ id: "normale", dateISO: "2026-07-10", completed: false })];
+    expect(selectPendingSession(sessions, TODAY)?.id).toBe("normale");
+  });
+
+  it("filtre une séance artificielle (id fallback_*) même dans la fenêtre : jamais reprise", () => {
+    const sessions = [
+      makeSession({ id: "fallback_2026-07-10_ab12", dateISO: "2026-07-10", completed: false }),
+    ];
+    expect(selectPendingSession(sessions, TODAY)).toBeUndefined();
+  });
+
+  it("filtre une séance artificielle marquée par guardrailsApplied (sans préfixe fallback_ dans l'id)", () => {
+    const sessions = [
+      makeSession({
+        id: "sess_camouflee",
+        dateISO: "2026-07-10",
+        completed: false,
+        aiV2: { guardrailsApplied: ["fallback_safe"] },
+      }),
+    ];
+    expect(selectPendingSession(sessions, TODAY)).toBeUndefined();
+  });
+
+  it("une séance artificielle n'occulte jamais une vraie séance en attente le même jour", () => {
+    const sessions = [
+      makeSession({ id: "fallback_2026-07-10_ab12", dateISO: "2026-07-10", completed: false }),
+      makeSession({ id: "vraie", dateISO: "2026-07-10", completed: false }),
+    ];
+    expect(selectPendingSession(sessions, TODAY)?.id).toBe("vraie");
+  });
 });

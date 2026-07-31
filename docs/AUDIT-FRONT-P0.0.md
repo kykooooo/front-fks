@@ -150,11 +150,11 @@ Les 4 modaux (`Feedback`, `ExternalLoad`, `SessionPreview`, `CycleModal`, `RootN
 ### 3. `goBack()` sur stack vide
 - ✓ **Pas de risque** : `canGoBack()` n'est utilisé qu'à `LoginScreen.tsx:142`, mais les modaux sont **toujours** poussés sur Tabs (route racine `RootNavigator.tsx:168`) → `goBack()` a toujours une cible. Pas de no-op/crash reproductible. (Ajouter `canGoBack()` sur les "close" = par prudence, pas un bug.)
 
-### 4. États chargement / erreur de génération (Render cold start ~50 s) — **ROBUSTE**
+### 4. États chargement / erreur de génération (Render cold start ~50 s)
 - ✓ **Loading** : `LoadingOverlay` plein écran (`visible={generating}`, `NewSessionScreen.tsx:778-788`) + retour bloqué (`beforeRemove`) + header back masqué. **Pas d'écran blanc.**
 - ✓ **Timeout** : `fetchV2` timeout 90 000 ms (`api.ts:188`, couvre les 50 s) + **retry auto 1×** sur `ETIMEDOUT` (`:189-196`).
-- ✓ **Erreur réseau/serveur/timeout** : `classifyError` → **fallback auto** (`buildFallbackSession`, cardio+mobilité) + toast + navigation Preview (`NewSessionScreen.tsx:482-496`). **Pas de cul-de-sac.**
-- Nuance : pas de `showErrorWithRetry` ici (choix cohérent : fallback auto). _Option : CTA "Réessayer" explicite après échec de validation._ — BASSE.
+- ⚠️ **CORRECTION (27/07/2026) — cette ligne se trompait de diagnostic.** À la date de cet audit, `classifyError` déclenchait un repli automatique **silencieux** : une fabrique locale composait une séance générique (cardio + mobilité, sans matériel, sans douleurs, sans cycle du joueur), la persistait et l'affichait comme une VRAIE prescription FKS. Ce texte qualifiait ça de **"pas de cul-de-sac"** — c'est l'inverse : une panne technique se transformait en fausse prescription sportive, sans que le joueur ni l'équipe ne le sachent. C'est la faute que corrige `claude/mission-r3-fallback-payants-623f40` : la génération échouée affiche désormais un état d'échec honnête et typé (`screens/newSession/echecGeneration.ts`, testé par `screens/newSession/__tests__/aucuneSeanceDeSecours.test.ts`) — jamais de séance fabriquée. Détail du contrat d'erreur : `docs/CONTRAT_ERREUR_FRONT.md`.
+- Nuance historique (obsolète) : ~~pas de `showErrorWithRetry` ici (choix cohérent : fallback auto)~~ — ce n'était pas un choix cohérent, c'était l'absence de tout état d'échec affichable. Résolu par `CarteEchecGeneration` (actions "Réessayer" / "Modifier mes contraintes" / "Reprendre ma séance" / "Revenir à l'accueil", selon le cas).
 
 ### 5. SafeArea / clavier
 
@@ -179,7 +179,8 @@ Les 4 modaux (`Feedback`, `ExternalLoad`, `SessionPreview`, `CycleModal`, `RootN
 4. **Clavier sur TestsScreen** → bouton submit masqué sur petit écran. **MOYENNE.**
 
 ### Points SAINS
-transparentModal (aucun `navigate`-vers-Tabs restant, bug CycleModal non réintroduit) ; loading/timeout/erreur de génération (overlay + retry 90 s + fallback auto, pas d'écran blanc) ; `goBack()` (modaux jamais en racine) ; SafeArea/clavier de Feedback & SessionLive ; ErrorBoundary global.
+transparentModal (aucun `navigate`-vers-Tabs restant, bug CycleModal non réintroduit) ; loading/timeout (overlay + retry auto 1× sur cold start, pas d'écran blanc) ; `goBack()` (modaux jamais en racine) ; SafeArea/clavier de Feedback & SessionLive ; ErrorBoundary global.
+_Erreur de génération : plus un point sain à la date de cet audit (repli automatique silencieux, cf. correction ci-dessus) — corrigé depuis, voir `docs/CONTRAT_ERREUR_FRONT.md`._
 
 ---
 

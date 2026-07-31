@@ -125,3 +125,56 @@ export const sessionV2Schema = z.object({
 }).passthrough();
 
 export type SessionV2Parsed = z.infer<typeof sessionV2Schema>;
+
+// ---------------------------------------------------------------------------
+// Détection de réparation silencieuse (au-delà du parse)
+// ---------------------------------------------------------------------------
+// Chaque `.catch()` ci-dessus répare un champ malformé en valeur plausible
+// (titre "Séance", 30 min, blocs vides) plutôt que de faire échouer le parse
+// — c'est voulu pour ne pas jeter toute la séance à cause d'un seul champ
+// mineur. Le problème : si PLUSIEURS champs structurants retombent sur leur
+// valeur de repli EN MÊME TEMPS, ce n'est plus une séance appauvrie, c'est
+// une coquille — et rien ne le signalait avant `transform.ts`, qui pose
+// lui-même un placeholder dessus sans jamais prévenir personne. Cette
+// détection n'inspecte le résultat qu'APRÈS le parse ; elle ne modifie aucun
+// `.catch()` existant.
+
+/** Signal individuel de champ structurant retombé sur sa valeur de repli. */
+export type SentinelleReparation = "blocks_vides" | "titre_defaut" | "duree_defaut";
+
+/**
+ * Nombre de sentinelles à partir duquel la réponse est traitée comme un
+ * échec plutôt que comme une séance utilisable. Volontairement bas (2) :
+ * UN SEUL champ par défaut (ex: une vraie séance qui dure justement 30 min)
+ * est un hasard plausible ; titre ET durée par défaut EN MÊME TEMPS ne le
+ * sont plus. `blocks` vide est disqualifiant à lui seul, indépendamment de
+ * ce seuil — voir `estSeanceReparee`.
+ */
+export const SEUIL_SENTINELLES_REPARATION = 2;
+
+/** Recense, sans juger, les sentinelles de repli présentes dans une réponse parsée. */
+export function detecterSentinellesReparation(parsed: SessionV2Parsed): SentinelleReparation[] {
+  const sentinelles: SentinelleReparation[] = [];
+  if (!Array.isArray(parsed.blocks) || parsed.blocks.length === 0) {
+    sentinelles.push("blocks_vides");
+  }
+  if (parsed.title === "Séance") {
+    sentinelles.push("titre_defaut");
+  }
+  if (parsed.duration_min === 30) {
+    sentinelles.push("duree_defaut");
+  }
+  return sentinelles;
+}
+
+/**
+ * `true` quand la réponse a été réparée au point de ne plus pouvoir passer
+ * pour une vraie séance : `blocks` vide (TOUJOURS disqualifiant, une séance
+ * sans aucun bloc n'a rien à faire jouer), ou au moins
+ * `SEUIL_SENTINELLES_REPARATION` sentinelles réunies.
+ */
+export function estSeanceReparee(parsed: SessionV2Parsed): boolean {
+  const sentinelles = detecterSentinellesReparation(parsed);
+  if (sentinelles.includes("blocks_vides")) return true;
+  return sentinelles.length >= SEUIL_SENTINELLES_REPARATION;
+}

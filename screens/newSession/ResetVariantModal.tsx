@@ -28,7 +28,7 @@ export function ResetVariantModal({ variants, onSelect, onCancel, explain }: Pro
         >
           <Text style={styles.resetTitle}>Séance Prime (reset)</Text>
           <Text style={styles.resetSubtitle}>
-            Choisis la variante légère du jour (RPE 3–4 · 12–16 min · zéro fatigue)
+            Choisis la variante légère du jour
           </Text>
 
           {explain ? (
@@ -62,7 +62,9 @@ export function ResetVariantModal({ variants, onSelect, onCancel, explain }: Pro
               onPress={() => selectOnce(v.id)}
             >
               <Text style={styles.resetCardTitle}>{v.title}</Text>
-              <Text style={styles.resetCardSubtitle}>{v.subtitle}</Text>
+              {v.subtitle ? (
+                <Text style={styles.resetCardSubtitle}>{v.subtitle}</Text>
+              ) : null}
             </TouchableOpacity>
           ))}
           <TouchableOpacity style={styles.resetCancel} onPress={onCancel}>

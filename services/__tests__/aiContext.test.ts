@@ -244,6 +244,29 @@ describe("buildRecentFksSessionsPayload (limite + integration)", () => {
     ).toEqual([]);
   });
 
+  // Doctrine : aucune seance fictive ne remonte au moteur. Les anciennes
+  // "seances de secours" fabriquees par l'app (supprimees le 27/07/2026)
+  // portent un id `fallback_*` et le garde-fou `fallback_safe`.
+  test("aucun recent_fks_session fictif : les anciennes seances de secours sont ecartees", () => {
+    const secours = makeSession({
+      id: "fallback_2026-04-20_ab12",
+      dateISO: "2026-04-20T00:00:00.000Z",
+    });
+    const vraie = makeSession({ id: "sess_reelle", dateISO: "2026-04-19T00:00:00.000Z" });
+
+    const payload = buildRecentFksSessionsPayload([secours, vraie], "playlist");
+
+    expect(payload).toHaveLength(1);
+    expect(JSON.stringify(payload)).not.toContain("fallback_");
+  });
+
+  test("garde-fou fallback_safe sans prefixe d'id : ecarte aussi", () => {
+    const camouflee = makeSession({ id: "sess_camouflee" }) as any;
+    camouflee.guardrailsApplied = ["fallback_safe"];
+
+    expect(buildRecentFksSessionsPayload([camouflee], "playlist")).toEqual([]);
+  });
+
   test("payload integre 8 sessions avec feedback.pain + metrics.tsb + rpe_target", () => {
     const sessions = Array.from({ length: 8 }, (_, i) =>
       makeSession({

@@ -1,11 +1,37 @@
-import { EXERCISE_BANK } from "../../engine/exerciseBank";
 import type { Exercise, Session } from "../../domain/types";
+import { BackendError } from "../../utils/errorHandler";
 import { modalityFromBlockType, normalizeFocus, prettifyName, toPlannedIntensity } from "./helpers";
-import type { FKS_Block, FKS_NextSessionV2 } from "./types";
+import type { FKS_NextSessionV2 } from "./types";
 
 /** Guard: retourne fallback si la valeur n'est pas un nombre fini > 0 */
 const safeDur = (v: unknown, fallback: number): number =>
   typeof v === "number" && Number.isFinite(v) && v > 0 ? v : fallback;
+
+/**
+ * Refus typé (docs/CONTRAT_ERREUR_FRONT.md §2.1) — la mise en forme locale a
+ * détecté une séance qu'elle ne peut pas servir telle quelle. DOCTRINE
+ * (Option C) : on ne répare plus jamais ça en silence. Réutilise le code
+ * SESSION_SCHEMA_INVALID déjà catégorisé par `lireEchecGeneration`
+ * (screens/newSession/echecGeneration.ts) — même mécanique que
+ * `screens/newSession/api.ts` — plutôt que d'inventer une seconde table de
+ * codes. La transformation échoue, rien n'est persisté : `processV2` propage,
+ * l'écran affiche `CarteEchecGeneration`.
+ */
+function refusTypeTransform(message: string, failedStep: string): BackendError {
+  return new BackendError(
+    422,
+    "Unprocessable Entity",
+    JSON.stringify({
+      error: "SESSION_SCHEMA_INVALID",
+      code: "SESSION_SCHEMA_INVALID",
+      category: "technique",
+      retryable: false,
+      message,
+      failedStep,
+      requestId: null,
+    })
+  );
+}
 
 export function v2ToLocalSession(
   v2: FKS_NextSessionV2,
@@ -13,35 +39,6 @@ export function v2ToLocalSession(
   plannedDateISO: string
 ): Session {
   const seenExerciseIds = new Set<string>();
-  const pickFallbackExercise = (modality: string) =>
-    EXERCISE_BANK.find((ex) => ex.modality === modality && !seenExerciseIds.has(ex.id)) ??
-    EXERCISE_BANK.find((ex) => !seenExerciseIds.has(ex.id));
-  const ensureMinItems = (
-    items: Exercise[],
-    modality: Exercise["modality"],
-    blockDurationMin: number,
-    blockIdx: number
-  ) => {
-    const minItems = blockDurationMin < 6 ? 1 : 2;
-    const safe = items.filter(Boolean);
-    while (safe.length < minItems) {
-      const fb = pickFallbackExercise(modality);
-      if (!fb) break;
-      const idx = safe.length;
-      const id = `${fb.id}_extra_${blockIdx}_${idx}`;
-      seenExerciseIds.add(fb.id);
-      safe.push({
-        id,
-        name: fb.name,
-        modality,
-        intensity: (v2.intensity ?? "moderate") as Exercise["intensity"],
-        sets: 3,
-        reps: 8,
-        restSec: 60,
-      });
-    }
-    return safe;
-  };
 
   const blocks: Exercise[] = Array.isArray(v2.blocks)
     ? v2.blocks.flatMap((block, blockIdx) => {
@@ -56,7 +53,7 @@ export function v2ToLocalSession(
         );
 
         if (!Array.isArray(block.items) || block.items.length === 0) {
-          const solo = [
+          return [
             {
               id: `${block.id || blockType || "block"}_${blockIdx}`,
               name: block.goal || blockType || "Bloc",
@@ -69,11 +66,14 @@ export function v2ToLocalSession(
               notes: block.notes || undefined,
             } as Exercise,
           ];
-          return ensureMinItems(solo, modality, safeDur(block.durationMin, 10), blockIdx);
         }
 
-        const mapped = block.items.map((item, i) => {
-          let friendlyName = prettifyName(
+        // Un bloc avec 1 item légitime SERT 1 item : plus de complétion
+        // artificielle à 2 (ensureMinItems, supprimé — mesure sur 620 séances
+        // réelles, docs/CONTRAT_ERREUR_FRONT.md : un protocole VMA 6x800m est
+        // légitimement UN item).
+        return block.items.map((item, i) => {
+          const friendlyName = prettifyName(
             item.name ||
               item.exerciseId ||
               item.id ||
@@ -108,13 +108,26 @@ export function v2ToLocalSession(
             ? Math.round((item.durationMin as number) * 60)
             : undefined;
 
+          // `effectiveWork` NE DOIT PAS être subordonné à `setsVal` : le dosage
+          // par défaut backend run/mobility (sets:null + work_s:240) n'a pas de
+          // sets numérique, mais work_s EST une charge à lui seul (un effort
+          // continu, implicitement 1x). Seul `reps` reste couplé à `setsVal`
+          // ("sets x reps" — un nombre de répétitions seul, sans savoir combien
+          // de séries, n'est pas une charge exploitable).
           const hasAnyLoad =
-            (setsVal && (typeof item.reps === "number" || typeof effectiveWork === "number")) ||
+            (setsVal && typeof item.reps === "number") ||
+            typeof effectiveWork === "number" ||
             hasDurationMin ||
-            parsedWork ||
-            parsedRest;
+            typeof parsedWork === "number" ||
+            typeof parsedRest === "number";
           if (!hasAnyLoad) {
-            return null;
+            // Un item prescrit sans AUCUNE donnée de charge (ni sets+reps, ni
+            // travail, ni durée, ni work/rest parsé) ne disparaît plus en
+            // silence.
+            throw refusTypeTransform(
+              "Le serveur a renvoyé un exercice sans aucune charge (séries, répétitions ou durée). Rien n'a été ajouté à ton programme. Réessaie dans quelques instants.",
+              "transform.item_sans_charge"
+            );
           }
 
           const rawExerciseId: string | null =
@@ -122,13 +135,15 @@ export function v2ToLocalSession(
             item.id ??
             null;
 
-          let exerciseId = rawExerciseId ? String(rawExerciseId) : null;
+          const exerciseId = rawExerciseId ? String(rawExerciseId) : null;
           if (exerciseId && seenExerciseIds.has(exerciseId)) {
-            const fallback = pickFallbackExercise(modality);
-            if (fallback) {
-              exerciseId = fallback.id;
-              friendlyName = fallback.name;
-            }
+            // Un exercise_id dupliqué dans la même séance n'est plus remplacé
+            // en silence par un exercice de secours (le backend corrige déjà
+            // le doublon à la source, invariant #40 — ce refus reste un filet).
+            throw refusTypeTransform(
+              "Le serveur a renvoyé deux fois le même exercice dans la séance. Rien n'a été ajouté à ton programme. Réessaie dans quelques instants.",
+              "transform.exercise_id_duplique"
+            );
           }
 
           if (exerciseId) {
@@ -152,28 +167,26 @@ export function v2ToLocalSession(
                 : parsedRest,
             notes: item.notes ?? undefined,
           } as Exercise;
-        }).filter(Boolean) as Exercise[];
-
-        return ensureMinItems(mapped, modality, safeDur(block.durationMin, 10), blockIdx);
+        });
       })
     : [];
 
+  if (blocks.length === 0) {
+    // Plus de placeholder « Séance à confirmer » fabriqué ici. Chemin
+    // atteignable : `api.ts` refuse déjà `blocks` vide au niveau racine
+    // (`estSeanceReparee`), mais un variant de reset peut arriver ici avec
+    // `blocks: []` — NewSessionScreen.tsx construit `chosen.blocks ??
+    // resetChoice.v2.blocks`, et `??` ne retombe PAS sur le v2 validé quand
+    // `chosen.blocks` vaut `[]` (tableau vide, pas null/undefined). Même refus
+    // typé que les autres cas : rien n'est fabriqué à la place.
+    throw refusTypeTransform(
+      "Le serveur a renvoyé une séance sans aucun bloc. Rien n'a été ajouté à ton programme. Réessaie dans quelques instants.",
+      "transform.blocks_vides"
+    );
+  }
+
   const baseModality = normalizeFocus(v2.focusPrimary || "run");
   const baseIntensity = toPlannedIntensity(v2.intensity) as Exercise["intensity"];
-  const placeholder: Exercise = {
-    id: "placeholder_1",
-    name: v2.title?.trim() || "Séance à confirmer",
-    modality: baseModality,
-    intensity: baseIntensity,
-    sets: 1,
-    reps: 1,
-    durationSec: Math.max(
-      300,
-      Math.round(safeDur(v2.durationMin, 30) * 60 * 0.3)
-    ),
-  };
-
-  const exos = blocks.length > 0 ? blocks : [placeholder];
 
   const id = `planned_${plannedDateISO}_${Math.random()
     .toString(36)
@@ -194,6 +207,6 @@ export function v2ToLocalSession(
     dateISO: `${plannedDateISO}T12:00:00`, // midi local : évite le recul d'un jour via toDateKey dans les fuseaux UTC-
     completed: false,
     volumeScore,
-    exercises: exos,
+    exercises: blocks,
   } as Session;
 }

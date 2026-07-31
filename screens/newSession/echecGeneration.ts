@@ -1,0 +1,492 @@
+// screens/newSession/echecGeneration.ts
+//
+// DOCTRINE : une erreur technique ne devient JAMAIS une prescription sportive.
+// Quand la génération échoue, il ne s'est rien passé — aucune séance créée,
+// aucune ligne d'historique, aucune progression avancée. Ce module traduit un
+// échec en un état d'erreur affichable, et rien d'autre.
+//
+// TAXONOMIE : celle du backend (docs/CONTRAT_ERREUR_FRONT.md §2 et §3). Aucun
+// code n'est inventé ici. Quand la réponse ne porte pas le contrat (coupure
+// réseau, 401 ou 429 des intergiciels d'entrée — §2.2), on retombe sur la
+// classification client déjà en place (utils/errorHandler.ts), pas sur une
+// seconde liste de codes concurrente.
+
+import type { Session } from "../../domain/types";
+import { ErrorType, classifyError } from "../../utils/errorHandler";
+import { estSeanceArtificielle, selectPendingSession } from "../../utils/sessionHelpers";
+import type { FKS_NextSessionV2 } from "./types";
+
+/** Catégories du contrat backend (§2.1). Jamais affichées au joueur. */
+export type CategorieEchec = "transitoire" | "sportif" | "technique";
+
+/** Sorties proposées au joueur. La première du tableau est la principale. */
+export type ActionEchec =
+  | "reessayer"
+  | "reessayer_enregistrement"
+  | "modifier_contraintes"
+  | "choisir_cycle"
+  | "se_reconnecter"
+  | "reprendre_seance"
+  | "retour_accueil";
+
+export type EchecGeneration = {
+  /** "contrat" = corps typé du backend ; "client" = panne avant/hors contrat. */
+  source: "contrat" | "client";
+  /** Code du contrat backend, ou null quand la réponse n'en portait pas. */
+  code: string | null;
+  categorie: CategorieEchec;
+  /** Indication machine du backend : un ré-essai identique a une chance. */
+  retryable: boolean;
+  /** Le seul texte montré au joueur. Aucun détail technique. */
+  messageJoueur: string;
+  /** Identifiant support, affiché discrètement. Jamais un message d'erreur. */
+  requestId: string | null;
+  /** Secondes à patienter (429 avec en-tête retry-after). */
+  attendreS: number | null;
+  actions: ActionEchec[];
+};
+
+/* ─── Panne APRÈS une génération payée (persistance / affichage) ──────────
+ * `orchestrator.ts` appelle `persistPlanned(payload)` PUIS `pushSession` /
+ * `navigate`. Une panne à ce stade n'est pas une panne de génération : le
+ * backend a déjà répondu (l'appel est payé), donc "aucune séance n'a été
+ * enregistrée" serait FAUX dès que `persistPlanned` a réussi. On distingue
+ * les deux étapes pour ne jamais mentir sur ce que Firestore contient déjà,
+ * et pour permettre un nouvel essai qui rejoue seulement l'étape ratée —
+ * jamais un nouvel appel de génération. */
+
+/** Étape où la panne est survenue, une fois la génération déjà obtenue. */
+export type EtapeEchecPostGeneration = "persistance" | "affichage";
+
+/**
+ * Tout ce qu'il faut pour rejouer l'étape ratée sans regénérer : le payload
+ * déjà construit (même id) et la séance locale déjà transformée. Traversée
+ * telle quelle par `decisionApresEchec`, jamais inspectée ni modifiée ici.
+ */
+export type SeancePayeeEnAttente = {
+  payload: Record<string, unknown>;
+  sessionWithAi: Session;
+  v2: FKS_NextSessionV2;
+  plannedDateISO: string;
+  deferredToTomorrow: boolean;
+};
+
+/**
+ * Levée par l'orchestrateur quand `persistPlanned` échoue (étape
+ * "persistance", rien en base) ou quand `persistPlanned` a RÉUSSI mais
+ * l'étape suivante — store local / navigation — échoue (étape "affichage",
+ * la séance existe déjà côté Firestore).
+ */
+export class EchecPostGeneration extends Error {
+  readonly etape: EtapeEchecPostGeneration;
+  readonly causeOriginale: unknown;
+  readonly seance: SeancePayeeEnAttente;
+
+  constructor(etape: EtapeEchecPostGeneration, causeOriginale: unknown, seance: SeancePayeeEnAttente) {
+    super(causeOriginale instanceof Error ? causeOriginale.message : String(causeOriginale));
+    this.name = "EchecPostGeneration";
+    this.etape = etape;
+    this.causeOriginale = causeOriginale;
+    this.seance = seance;
+  }
+}
+
+/** Messages honnêtes pour une panne post-génération : jamais "aucune séance
+ * n'a été enregistrée" quand `persistance` (donc Firestore) a réussi. */
+function lireEchecPostGeneration(erreur: EchecPostGeneration): EchecGeneration {
+  const messageJoueur =
+    erreur.etape === "persistance"
+      ? "Ta séance a bien été générée, mais elle n'a pas encore pu être enregistrée. Réessaie l'enregistrement : elle ne sera pas régénérée, seulement enregistrée."
+      : "Ta séance a été générée et déjà enregistrée. On n'a pas réussi à te l'afficher. Réessaie l'affichage : rien ne sera régénéré ni ré-enregistré.";
+
+  return {
+    source: "client",
+    code: null,
+    categorie: "transitoire",
+    retryable: true,
+    messageJoueur,
+    requestId: null,
+    attendreS: null,
+    actions: ["reessayer_enregistrement", "retour_accueil"],
+  };
+}
+
+/**
+ * Budget de ré-essai AUTOMATIQUE côté écran : ZÉRO, sans exception.
+ *
+ * Le contrat (§5.2) autorise au plus UN ré-essai automatique, et il est déjà
+ * dépensé dans `fetchV2` (réveil du serveur Render). Après lui, seul le joueur
+ * relance : chaque relance peut coûter jusqu'à quatre appels payants. Pas de
+ * boucle, pas de backoff, pas de rejeu au retour du réseau, rien en file
+ * d'attente hors-ligne.
+ */
+export const REESSAIS_AUTOMATIQUES_ECRAN = 0;
+
+/* ─── Messages joueur pour les pannes SANS contrat backend ─────────────────
+ * Le contrat impose d'afficher `message` tel quel quand il existe (§6). Ces
+ * textes ne servent donc que quand le backend n'a rien pu dire : ils gardent
+ * la même promesse — rien n'a été enregistré. */
+const MESSAGES = {
+  reseau:
+    "Impossible de préparer ta séance : tu n'es pas connecté à internet. Aucune séance n'a été enregistrée. Réessaie une fois la connexion revenue.",
+  indisponible:
+    "Le service est momentanément indisponible. Aucune séance n'a été enregistrée. Tu peux réessayer dans quelques instants.",
+  authentification:
+    "Reconnecte-toi pour préparer ta séance. Aucune séance n'a été enregistrée.",
+  tropVite:
+    "Tu as lancé plusieurs générations coup sur coup. Aucune séance n'a été enregistrée. Laisse passer quelques secondes et réessaie.",
+  reglages:
+    "Nous n'avons pas réussi à préparer ta séance avec ces réglages. Aucune séance n'a été enregistrée. Modifie ton lieu ou ton matériel, puis réessaie.",
+  inconnu:
+    "Impossible de préparer ta séance pour le moment. Aucune séance n'a été enregistrée. Tu peux réessayer.",
+} as const;
+
+const CATEGORIES: readonly string[] = ["transitoire", "sportif", "technique"];
+
+type CorpsContrat = {
+  code: string;
+  categorie: CategorieEchec;
+  retryable: boolean;
+  message: string;
+  requestId: string | null;
+};
+
+/**
+ * Lit le corps d'erreur typé du backend (§2.1 : huit champs, jamais un
+ * neuvième). Retourne null si la réponse n'obéit pas au contrat — c'est le cas
+ * des 401 et 429 d'entrée (§2.2), dont le `message` est un jeton technique
+ * qu'il ne faut surtout pas montrer au joueur.
+ */
+function lireCorpsContrat(brut: unknown): CorpsContrat | null {
+  if (typeof brut !== "string") return null;
+  const texte = brut.trim();
+  if (!texte.startsWith("{")) return null;
+
+  let analyse: Record<string, unknown>;
+  try {
+    analyse = JSON.parse(texte) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  if (!analyse || typeof analyse !== "object") return null;
+
+  const code = typeof analyse.code === "string" ? analyse.code.trim() : "";
+  const message = typeof analyse.message === "string" ? analyse.message.trim() : "";
+  if (!code || !message) return null;
+
+  const retryable = analyse.retryable === true;
+  const categorie: CategorieEchec =
+    typeof analyse.category === "string" && CATEGORIES.includes(analyse.category)
+      ? (analyse.category as CategorieEchec)
+      : retryable
+      ? "transitoire"
+      : "technique";
+
+  const requestId =
+    typeof analyse.requestId === "string" && analyse.requestId.trim()
+      ? analyse.requestId.trim()
+      : null;
+
+  return { code, categorie, retryable, message, requestId };
+}
+
+/**
+ * Sorties proposées selon le contrat (§4.3 et §5.3) : « Réessayer », plus
+ * « Modifier mes contraintes » quand la catégorie est sportive — relancer à
+ * l'identique une demande impossible ne la rendra pas possible.
+ */
+function actionsDuContrat(corps: CorpsContrat): ActionEchec[] {
+  if (corps.code === "missing_goal") {
+    return ["choisir_cycle", "reessayer", "retour_accueil"];
+  }
+  if (corps.categorie === "sportif") {
+    return ["modifier_contraintes", "reessayer", "retour_accueil"];
+  }
+  return ["reessayer", "retour_accueil"];
+}
+
+function echecAuthentification(): EchecGeneration {
+  return {
+    source: "client",
+    code: null,
+    categorie: "technique",
+    retryable: false,
+    messageJoueur: MESSAGES.authentification,
+    requestId: null,
+    attendreS: null,
+    actions: ["se_reconnecter", "retour_accueil"],
+  };
+}
+
+/** Panne survenue avant (ou en dehors de) la frontière d'erreur du backend. */
+function echecCote(erreur: unknown): EchecGeneration {
+  const classee = classifyError(erreur);
+  const attendreS =
+    typeof (erreur as { retryAfterS?: number })?.retryAfterS === "number" &&
+    (erreur as { retryAfterS: number }).retryAfterS > 0
+      ? (erreur as { retryAfterS: number }).retryAfterS
+      : null;
+
+  const base = {
+    source: "client" as const,
+    code: null,
+    requestId: null,
+    attendreS: null as number | null,
+  };
+
+  switch (classee.type) {
+    case ErrorType.NETWORK:
+      return {
+        ...base,
+        categorie: "transitoire",
+        retryable: true,
+        messageJoueur: MESSAGES.reseau,
+        actions: ["reessayer", "retour_accueil"],
+      };
+    case ErrorType.TIMEOUT:
+    case ErrorType.SERVER:
+      return {
+        ...base,
+        categorie: "transitoire",
+        retryable: true,
+        messageJoueur: MESSAGES.indisponible,
+        actions: ["reessayer", "retour_accueil"],
+      };
+    case ErrorType.RATE_LIMIT:
+      return {
+        ...base,
+        categorie: "transitoire",
+        retryable: true,
+        messageJoueur: MESSAGES.tropVite,
+        attendreS,
+        actions: ["reessayer", "retour_accueil"],
+      };
+    case ErrorType.AUTH:
+      return echecAuthentification();
+    case ErrorType.VALIDATION:
+      return {
+        ...base,
+        categorie: "sportif",
+        retryable: false,
+        messageJoueur: MESSAGES.reglages,
+        actions: ["modifier_contraintes", "reessayer", "retour_accueil"],
+      };
+    default:
+      return {
+        ...base,
+        categorie: "technique",
+        retryable: false,
+        messageJoueur: MESSAGES.inconnu,
+        actions: ["reessayer", "retour_accueil"],
+      };
+  }
+}
+
+/** Traduit n'importe quelle erreur de génération en état d'erreur affichable. */
+export function lireEchecGeneration(erreur: unknown): EchecGeneration {
+  // Panne survenue APRÈS une génération payée : ce n'est jamais "aucune
+  // séance n'a été enregistrée" tel quel, prioritaire sur toute autre lecture.
+  if (erreur instanceof EchecPostGeneration) {
+    return lireEchecPostGeneration(erreur);
+  }
+
+  const brut = (erreur ?? {}) as {
+    code?: string;
+    status?: number;
+    message?: string;
+    retryAfterS?: number;
+  };
+
+  // Authentification : le front écrit son propre texte (§2.2), le `message`
+  // du backend valant ici un jeton technique (missing_auth, invalid_id_token…).
+  if (brut.code === "AUTH_REQUIRED" || brut.status === 401) {
+    return echecAuthentification();
+  }
+
+  // Le contrat backend, quand il est là, fait foi.
+  const corps = lireCorpsContrat(brut.message);
+  if (corps) {
+    // Un 429 peut porter À LA FOIS un corps typé (§2.1) ET un en-tête
+    // Retry-After (posé par safeFetch sur `retryAfterS`) : le corps typé ne
+    // doit pas écraser cette information à `null`, sinon le joueur perd le
+    // délai à respecter alors que le backend l'a bien communiqué.
+    const attendreS =
+      typeof brut.retryAfterS === "number" && brut.retryAfterS > 0 ? brut.retryAfterS : null;
+    return {
+      source: "contrat",
+      code: corps.code,
+      categorie: corps.categorie,
+      retryable: corps.retryable,
+      messageJoueur: corps.message,
+      requestId: corps.requestId,
+      attendreS,
+      actions: actionsDuContrat(corps),
+    };
+  }
+
+  return echecCote(erreur);
+}
+
+/* ─── Réouverture d'une VRAIE séance ───────────────────────────────────────
+ * Rouvrir une séance déjà prescrite, validée et persistée n'est PAS un repli :
+ * rien de neuf n'est fabriqué. Mais il faut prouver que c'en est bien une. */
+
+/** Motifs de refus, utiles aux tests et à la relecture. Jamais affichés. */
+export type MotifRefusReprise =
+  | "aucune_seance"
+  | "seance_artificielle"
+  | "autre_joueur"
+  | "snapshot_invalide"
+  | "seance_remplacee";
+
+export type Reprise =
+  | { reouvrable: true; seance: Session }
+  | { reouvrable: false; seance: null; motif: MotifRefusReprise };
+
+function estRemplacee(seance: Session | any): boolean {
+  return Boolean(seance?.replacedBy || seance?.invalidatedAt || seance?.invalidated);
+}
+
+/**
+ * Le snapshot doit contenir la prescription réellement servie (`aiV2`) et au
+ * moins un exercice : sans ça, l'écran de séance n'aurait rien à ouvrir.
+ */
+function snapshotValide(seance: Session | any): boolean {
+  const v2 = seance?.aiV2;
+  if (!v2 || typeof v2 !== "object") return false;
+  const blocs = (v2 as { blocks?: unknown }).blocks;
+  const aDesBlocs = Array.isArray(blocs) && blocs.length > 0;
+  const aDesExercices = Array.isArray(seance?.exercises) && seance.exercises.length > 0;
+  return aDesBlocs || aDesExercices;
+}
+
+/**
+ * Cherche une vraie séance rouvrable pour ce joueur, à cette date.
+ * `uid` est facultatif : le store est déjà cloisonné par joueur, ce contrôle
+ * est un garde-fou de plus quand la séance porte son propriétaire.
+ */
+export function chercherRepriseSeance(params: {
+  sessions: Session[];
+  todayKey: string;
+  uid?: string | null;
+}): Reprise {
+  const { sessions, todayKey, uid = null } = params;
+
+  // selectPendingSession écarte déjà : séances terminées, hors fenêtre du jour,
+  // et séances artificielles (ancienne séance de secours).
+  const candidate = selectPendingSession(Array.isArray(sessions) ? sessions : [], todayKey);
+  if (!candidate) {
+    // On distingue « rien du tout » de « quelque chose, mais artificiel » pour
+    // que le refus d'une ancienne séance de secours reste explicite.
+    const artificielleDansLeLot = (Array.isArray(sessions) ? sessions : []).some(
+      (s) => !s?.completed && estSeanceArtificielle(s)
+    );
+    return {
+      reouvrable: false,
+      seance: null,
+      motif: artificielleDansLeLot ? "seance_artificielle" : "aucune_seance",
+    };
+  }
+
+  if (estSeanceArtificielle(candidate)) {
+    return { reouvrable: false, seance: null, motif: "seance_artificielle" };
+  }
+
+  const proprietaire =
+    typeof (candidate as any).userId === "string"
+      ? (candidate as any).userId
+      : typeof (candidate as any).uid === "string"
+      ? (candidate as any).uid
+      : null;
+  if (uid && proprietaire && proprietaire !== uid) {
+    return { reouvrable: false, seance: null, motif: "autre_joueur" };
+  }
+
+  if (estRemplacee(candidate)) {
+    return { reouvrable: false, seance: null, motif: "seance_remplacee" };
+  }
+
+  if (!snapshotValide(candidate)) {
+    return { reouvrable: false, seance: null, motif: "snapshot_invalide" };
+  }
+
+  return { reouvrable: true, seance: candidate };
+}
+
+/* ─── Décision complète ─────────────────────────────────────────────────── */
+
+export type DecisionApresEchec = {
+  echec: EchecGeneration;
+  /**
+   * INVARIANT : une panne ne crée jamais de séance. Ce champ vaut toujours
+   * `null`, et son type l'impose — il n'existe aucune branche capable de le
+   * remplir.
+   */
+  seanceCreee: null;
+  reprise: Reprise;
+  actions: ActionEchec[];
+  /**
+   * Séance déjà générée (payée) en attente d'enregistrement ou d'affichage —
+   * renseignée uniquement quand `erreur` est une `EchecPostGeneration`.
+   * Porte l'étape ratée ET la séance pour que l'appelant puisse rejouer
+   * exactement cette étape (voir `orchestrator.rejouerApresEchecPostGeneration`)
+   * sans relancer d'appel payant. `null` dans tous les autres cas.
+   */
+  postGeneration: { etape: EtapeEchecPostGeneration; seance: SeancePayeeEnAttente } | null;
+};
+
+/**
+ * Seule porte de sortie du `catch` de génération : elle rend un état d'erreur
+ * et, éventuellement, une vraie séance à rouvrir. Elle n'écrit rien.
+ */
+export function decisionApresEchec(params: {
+  erreur: unknown;
+  sessions: Session[];
+  todayKey: string;
+  uid?: string | null;
+}): DecisionApresEchec {
+  const echec = lireEchecGeneration(params.erreur);
+  const reprise = chercherRepriseSeance({
+    sessions: params.sessions,
+    todayKey: params.todayKey,
+    uid: params.uid ?? null,
+  });
+
+  const actions: ActionEchec[] = reprise.reouvrable
+    ? [...echec.actions.slice(0, 1), "reprendre_seance", ...echec.actions.slice(1)]
+    : [...echec.actions];
+
+  const postGeneration =
+    params.erreur instanceof EchecPostGeneration
+      ? { etape: params.erreur.etape, seance: params.erreur.seance }
+      : null;
+
+  return { echec, seanceCreee: null, reprise, actions, postGeneration };
+}
+
+/* ─── Verrou anti double-clic ───────────────────────────────────────────────
+ * Une génération coûte de l'argent : deux appuis ne doivent jamais produire
+ * deux requêtes concurrentes. Le verrou est synchrone (pas un état React, qui
+ * serait périmé dans le même tick). */
+
+export type VerrouGeneration = {
+  /** true si le verrou vient d'être pris ; false s'il était déjà tenu. */
+  prendre: () => boolean;
+  rendre: () => void;
+  estPris: () => boolean;
+};
+
+export function creerVerrouGeneration(): VerrouGeneration {
+  let pris = false;
+  return {
+    prendre: () => {
+      if (pris) return false;
+      pris = true;
+      return true;
+    },
+    rendre: () => {
+      pris = false;
+    },
+    estPris: () => pris,
+  };
+}

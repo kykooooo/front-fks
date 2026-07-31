@@ -241,7 +241,9 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
   const ctl = typeof loadState.ctl === "number" ? loadState.ctl : 0;
   const tsb = typeof loadState.tsb === "number" ? loadState.tsb : 0;
 
-  // 3) Séances récentes FKS (on prend les plus récentes du store)
+  // 3) Séances récentes FKS (on prend les plus récentes du store).
+  // Le tri des séances artificielles est fait à la frontière du payload,
+  // dans aiContextHelpers (buildRecentFksSessionsPayload / buildRecentByFocus).
   const sessions: Session[] = Array.isArray(sessionsState.sessions)
     ? [...sessionsState.sessions]
     : [];

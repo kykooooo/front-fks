@@ -44,28 +44,41 @@ export function prettifyName(name: string) {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-export const RESET_VARIANT_FALLBACKS: ResetVariant[] = [
-  {
-    id: "prime_appuis",
-    title: "Prime — Appuis nets",
-    subtitle: "Appuis plus nets · RPE 3–4 · 12–16 min · zéro fatigue",
-  },
-  {
-    id: "prime_hanches",
-    title: "Prime — Hanches libres",
-    subtitle: "Hanches libres · RPE 3–4 · 12–16 min · zéro fatigue",
-  },
-  {
-    id: "prime_core",
-    title: "Prime — Core duel",
-    subtitle: "Gainage duel · RPE 3–4 · 12–16 min · zéro fatigue",
-  },
-  {
-    id: "prime_posture",
-    title: "Prime — Épaules stables",
-    subtitle: "Épaules solides · RPE 3–4 · 12–16 min · zéro fatigue",
-  },
-];
+/**
+ * Variantes de reset RÉELLEMENT fournies par le backend (`v2.resetVariants`),
+ * prêtes pour `ResetVariantModal`. Ne fabrique JAMAIS de variante ni de
+ * titre : quand le backend n'envoie rien d'exploitable, retourne un tableau
+ * vide plutôt qu'une liste de quatre choix inventés (ancien
+ * `RESET_VARIANT_FALLBACKS`, supprimé le 31/07/2026 — un manque de données
+ * ne devient jamais une fausse séance, ici pas plus qu'ailleurs). L'appelant
+ * doit alors dégrader proprement : pas de carte de choix affichée, la
+ * séance de reset continue normalement, sans variante à choisir.
+ */
+export function resolveResetVariants(v2: Pick<FKS_NextSessionV2, "resetVariants">): ResetVariant[] {
+  if (!Array.isArray(v2.resetVariants) || v2.resetVariants.length === 0) return [];
+  return v2.resetVariants
+    .filter((rv): rv is NonNullable<typeof rv> => Boolean(rv?.id))
+    .map((rv) => {
+      // Sous-titre construit UNIQUEMENT depuis des champs réels de la
+      // variante : jamais de RPE ni de "zéro fatigue" inventés (le backend
+      // ne les envoie pas ici). Sans donnée réelle exploitable, pas de
+      // sous-titre du tout plutôt qu'un chiffre halluciné.
+      const subtitle =
+        rv.subtitle ??
+        (typeof rv.durationMin === "number" && rv.durationMin > 0
+          ? `~${rv.durationMin} min`
+          : undefined);
+      return {
+        id: rv.id,
+        // Dernier recours : l'identifiant réel du backend, jamais un titre inventé.
+        title: rv.title ?? rv.id,
+        subtitle,
+        durationMin: rv.durationMin,
+        blocks: rv.blocks,
+        display: rv.display,
+      };
+    });
+}
 
 export function modalityFromBlockType(type: string): Exercise["modality"] {
   const t = String(type).toLowerCase();

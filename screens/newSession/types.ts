@@ -112,7 +112,10 @@ export type PlannedPhase = "Playlist" | "Construction" | "Progression" | "Perfor
 export type ResetVariant = {
   id: string;
   title: string;
-  subtitle: string;
+  // Construit uniquement depuis des champs réels de la variante (voir
+  // resolveResetVariants, helpers.ts) — absent quand le backend n'envoie
+  // aucune donnée exploitable, jamais un texte inventé (RPE, fatigue…).
+  subtitle?: string;
   durationMin?: number;
   blocks?: FKS_Block[];
   display?: FKS_NextSessionV2["display"];
