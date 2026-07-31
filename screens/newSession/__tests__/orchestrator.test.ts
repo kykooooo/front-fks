@@ -187,3 +187,42 @@ describe("rejouerApresEchecPostGeneration — nouvel essai sans nouvel appel pay
     expect(navigateRetry).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("processV2 — v2ToLocalSession refuse (DOCTRINE Option C) : rien n'est persisté ni affiché", () => {
+  test("exercise_id duplique dans le v2 : processV2 rejette AVANT persistPlanned, aucune ecriture", async () => {
+    const params = creerParamsBase();
+    const v2Duplique: FKS_NextSessionV2 = {
+      ...v2,
+      blocks: [
+        {
+          id: "block_1",
+          type: "strength",
+          goal: "Force bas du corps",
+          intensity: "moderate",
+          durationMin: 20,
+          items: [
+            { exerciseId: "ex_squat", name: "Squat", sets: 3, reps: 8 },
+            { exerciseId: "ex_squat", name: "Squat bis", sets: 3, reps: 8 },
+          ],
+        },
+      ],
+    };
+
+    let capturee: unknown;
+    try {
+      await processV2({ ...params, v2: v2Duplique });
+    } catch (err) {
+      capturee = err;
+    }
+
+    // Ce n'est PAS un EchecPostGeneration (persistance/affichage) : la
+    // génération elle-même n'a jamais été considérée exploitable, l'appel
+    // payant n'a servi à rien mais rien n'a non plus été écrit à sa place.
+    expect(capturee).toBeDefined();
+    expect(capturee).not.toBeInstanceOf(EchecPostGeneration);
+    expect(params.persistPlanned).not.toHaveBeenCalled();
+    expect(params.pushSession).not.toHaveBeenCalled();
+    expect(params.setLastAiSessionV2).not.toHaveBeenCalled();
+    expect(params.navigate).not.toHaveBeenCalled();
+  });
+});

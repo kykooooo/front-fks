@@ -1,5 +1,5 @@
-import { EXERCISE_BANK } from "../../engine/exerciseBank";
 import type { Exercise, Session } from "../../domain/types";
+import { BackendError } from "../../utils/errorHandler";
 import { modalityFromBlockType, normalizeFocus, prettifyName, toPlannedIntensity } from "./helpers";
 import type { FKS_NextSessionV2 } from "./types";
 
@@ -7,15 +7,38 @@ import type { FKS_NextSessionV2 } from "./types";
 const safeDur = (v: unknown, fallback: number): number =>
   typeof v === "number" && Number.isFinite(v) && v > 0 ? v : fallback;
 
+/**
+ * Refus typé (docs/CONTRAT_ERREUR_FRONT.md §2.1) — la mise en forme locale a
+ * détecté une séance qu'elle ne peut pas servir telle quelle. DOCTRINE
+ * (Option C) : on ne répare plus jamais ça en silence. Réutilise le code
+ * SESSION_SCHEMA_INVALID déjà catégorisé par `lireEchecGeneration`
+ * (screens/newSession/echecGeneration.ts) — même mécanique que
+ * `screens/newSession/api.ts` — plutôt que d'inventer une seconde table de
+ * codes. La transformation échoue, rien n'est persisté : `processV2` propage,
+ * l'écran affiche `CarteEchecGeneration`.
+ */
+function refusTypeTransform(message: string, failedStep: string): BackendError {
+  return new BackendError(
+    422,
+    "Unprocessable Entity",
+    JSON.stringify({
+      error: "SESSION_SCHEMA_INVALID",
+      code: "SESSION_SCHEMA_INVALID",
+      category: "technique",
+      retryable: false,
+      message,
+      failedStep,
+      requestId: null,
+    })
+  );
+}
+
 export function v2ToLocalSession(
   v2: FKS_NextSessionV2,
   phase: Session["phase"],
   plannedDateISO: string
 ): Session {
   const seenExerciseIds = new Set<string>();
-  const pickFallbackExercise = (modality: string) =>
-    EXERCISE_BANK.find((ex) => ex.modality === modality && !seenExerciseIds.has(ex.id)) ??
-    EXERCISE_BANK.find((ex) => !seenExerciseIds.has(ex.id));
 
   const blocks: Exercise[] = Array.isArray(v2.blocks)
     ? v2.blocks.flatMap((block, blockIdx) => {
@@ -50,7 +73,7 @@ export function v2ToLocalSession(
         // réelles, docs/CONTRAT_ERREUR_FRONT.md : un protocole VMA 6x800m est
         // légitimement UN item).
         return block.items.map((item, i) => {
-          let friendlyName = prettifyName(
+          const friendlyName = prettifyName(
             item.name ||
               item.exerciseId ||
               item.id ||
@@ -99,13 +122,15 @@ export function v2ToLocalSession(
             item.id ??
             null;
 
-          let exerciseId = rawExerciseId ? String(rawExerciseId) : null;
+          const exerciseId = rawExerciseId ? String(rawExerciseId) : null;
           if (exerciseId && seenExerciseIds.has(exerciseId)) {
-            const fallback = pickFallbackExercise(modality);
-            if (fallback) {
-              exerciseId = fallback.id;
-              friendlyName = fallback.name;
-            }
+            // Un exercise_id dupliqué dans la même séance n'est plus remplacé
+            // en silence par un exercice de secours (le backend corrige déjà
+            // le doublon à la source, invariant #40 — ce refus reste un filet).
+            throw refusTypeTransform(
+              "Le serveur a renvoyé deux fois le même exercice dans la séance. Rien n'a été ajouté à ton programme. Réessaie dans quelques instants.",
+              "transform.exercise_id_duplique"
+            );
           }
 
           if (exerciseId) {
