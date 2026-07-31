@@ -356,10 +356,17 @@ export default function NewSessionScreen() {
     const unsubscribe = nav.addListener("beforeRemove", (e: any) => {
       if (!generating) return;
       e.preventDefault();
-      showToast({ type: "info", title: "Génération en cours", message: "Utilise Annuler pour interrompre." });
+      // Pendant le rejeu d'enregistrement (rejeuEnCours), le bouton "Annuler"
+      // n'existe plus (voir rejeuEnCours plus haut) : ne pas y renvoyer le
+      // joueur, ce serait un message qui pointe vers une action absente.
+      showToast(
+        rejeuEnCours
+          ? { type: "info", title: "Enregistrement en cours", message: "Un instant..." }
+          : { type: "info", title: "Génération en cours", message: "Utilise Annuler pour interrompre." }
+      );
     });
     return unsubscribe;
-  }, [nav, generating]);
+  }, [nav, generating, rejeuEnCours]);
 
   // Annulation : le fetch continue en arrière-plan mais son résultat est ignoré
   // (jeton de génération) — l'utilisateur reprend la main immédiatement.
