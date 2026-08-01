@@ -720,7 +720,8 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
   return (
     <Screen style={styles.safeArea}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+      {/* Android : behavior undefined (défaut système) — "height" est notoirement bugué sur la new arch. */}
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <View style={{ flex: 1 }}>
 
