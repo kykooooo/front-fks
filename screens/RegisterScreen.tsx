@@ -9,8 +9,6 @@ import {
   Pressable,
   StyleSheet,
   Animated,
-  TouchableWithoutFeedback,
-  Keyboard,
   ScrollView,
   ActivityIndicator,
 } from "react-native";
@@ -149,13 +147,13 @@ export default function RegisterScreen({ navigation }: Props) {
 
   return (
     <Screen keyboardAvoiding style={styles.safe}>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Gabarit d'en-tête identique à Login (DA Polish) : zone de hauteur
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Gabarit d'en-tête identique à Login (DA Polish) : zone de hauteur
               fixe même quand canGoBack() est faux (arrivée par navigation.reset
               depuis Welcome) — avant, la flèche ET son espace disparaissaient,
               ce qui décalait titre/CTA par rapport à Login. */}
@@ -308,8 +306,7 @@ export default function RegisterScreen({ navigation }: Props) {
               <Text style={styles.footerLink}>Connecte-toi</Text>
             </Pressable>
           </View>
-        </ScrollView>
-      </TouchableWithoutFeedback>
+      </ScrollView>
     </Screen>
   );
 }

@@ -9,8 +9,6 @@ import {
   Pressable,
   StyleSheet,
   Animated,
-  TouchableWithoutFeedback,
-  Keyboard,
   ScrollView,
   ActivityIndicator,
 } from "react-native";
@@ -129,13 +127,13 @@ export default function LoginScreen({ navigation }: Props) {
 
   return (
     <Screen keyboardAvoiding style={styles.safe}>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Gabarit d'en-tête identique à Register (DA Polish) : même zone de
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Gabarit d'en-tête identique à Register (DA Polish) : même zone de
               hauteur fixe pour la flèche retour. */}
           <View style={styles.headerRow}>
             {navigation.canGoBack() ? (
@@ -247,8 +245,7 @@ export default function LoginScreen({ navigation }: Props) {
               <Text style={styles.footerLink}>Inscris-toi</Text>
             </Pressable>
           </View>
-        </ScrollView>
-      </TouchableWithoutFeedback>
+      </ScrollView>
     </Screen>
   );
 }
