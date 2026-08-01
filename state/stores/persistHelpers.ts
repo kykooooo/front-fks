@@ -200,5 +200,12 @@ export function buildCompletedSessionFirestorePayload(s: Session): Record<string
   if (s.aiV2 != null) completedPayload.aiV2 = s.aiV2;
   if (s.title) completedPayload.title = s.title;
 
+  // Boucle de suivi (Lot 4) — passe tel quel, deja serialise par l'appelant
+  // (state/orchestrators/applyFeedback.ts). Champs optionnels : les anciennes
+  // seances n'en ont jamais eu, les schemas de lecture restent tolerants
+  // (repositories/sessionsRepo.ts, schemas/firestoreSchemas.ts .passthrough()).
+  if (s.execution != null) completedPayload.execution = s.execution;
+  if (s.tracking != null) completedPayload.tracking = s.tracking;
+
   return completedPayload;
 }

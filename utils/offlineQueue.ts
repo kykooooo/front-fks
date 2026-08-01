@@ -130,6 +130,20 @@ export async function getQueueCount(): Promise<number> {
 }
 
 /**
+ * Indique si une action du type donné, satisfaisant le prédicat, est déjà en
+ * file d'attente. Utilisé pour éviter les doublons (ex: feedback hors-ligne
+ * ré-enqueued après un deuxième appel onSave rapproché — cf. Lot 4 boucle de
+ * suivi, useFeedbackSave.ts).
+ */
+export async function hasQueuedAction(
+  type: QueuedAction['type'],
+  predicate: (data: Record<string, unknown>) => boolean
+): Promise<boolean> {
+  const queue = await getQueue();
+  return queue.some((action) => action.type === type && predicate(action.data));
+}
+
+/**
  * Traiter la queue : essayer d'envoyer toutes les actions en attente
  * Retourne le nombre d'actions traitées avec succès
  */

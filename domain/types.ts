@@ -125,6 +125,22 @@ export interface SessionFeedback {
   createdAt: string;   // ISO
   recoveryPerceived?: number;   // ← AJOUT
 
+  // Boucle de suivi (Lot 4, docs/boucle-suivi-2026-07-25/) — resume auto de
+  // l'execution en seance (domain/tracking/execution.ts summarizeExecution),
+  // attache au feedback quand une execution finalisee existe pour la seance.
+  // `mainReasons` en string[] (pas DeviationReason[]) : evite de coupler
+  // domain/types.ts au module domain/tracking (types stables, valeurs
+  // compatibles — DeviationReason est un sous-ensemble de string).
+  executionSummary?: {
+    completionPct: number;
+    completionStatus: "full" | "partial" | "abandoned";
+    done: number;
+    adapted: number;
+    skipped: number;
+    replaced: number;
+    mainReasons: string[];
+    fingerprint: string;
+  };
 }
 
 export type ModalityLoadWeights = Record<Modality, number>;
@@ -179,6 +195,13 @@ export type Session = {
   targetLoadBefore?: number;
   targetLoadAfter?: number;
   adaptive?: AdaptiveFactors;
+
+  // ---- Boucle de suivi (Lot 1-5, docs/boucle-suivi-2026-07-25/) ----
+  // `unknown` volontaire : evite de coupler domain/types.ts au module
+  // domain/tracking (SessionExecution / TrackingDecision). Les frontieres qui
+  // en ont besoin castent explicitement (cf. state/orchestrators/trackingShadow.ts).
+  execution?: unknown; // SessionExecution serialisee (embed Firestore, cf. persistHelpers.ts)
+  tracking?: unknown;  // TrackingDecision shadow serialisee (idem)
 };
 
 export type WeeklyIndicators = {

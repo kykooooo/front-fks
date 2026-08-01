@@ -24,6 +24,7 @@ import { useLoadStore } from '../state/stores/useLoadStore';
 import { useSessionsStore } from '../state/stores/useSessionsStore';
 import { useFeedbackStore } from '../state/stores/useFeedbackStore';
 import { useDebugStore } from '../state/stores/useDebugStore';
+import { useExecutionStore } from '../state/stores/useExecutionStore';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useHaptics } from '../hooks/useHaptics';
 import { toDateKey, isWithinFeedbackWindow } from '../utils/dateHelpers';
@@ -34,6 +35,7 @@ import { LoadingOverlay } from '../components/ui/LoadingOverlay';
 import { ModalContainer } from '../components/modal/ModalContainer';
 import { withSessionErrorBoundary } from '../components/withErrorBoundary';
 import { clamp } from './feedback/feedbackScales';
+import { summarizeExecution } from '../domain/tracking/execution';
 
 // Hooks extraits
 import { useSessionResolution } from './feedback/hooks/useSessionResolution';
@@ -49,6 +51,7 @@ import { MetricsRow } from './feedback/components/MetricsRow';
 import { FatigueRecoveryRow } from './feedback/components/FatigueRecoveryRow';
 import { PainInjuryRow } from './feedback/components/PainInjuryRow';
 import { CyclePrompt } from './feedback/components/CyclePrompt';
+import { ExecutionSummaryCard } from './feedback/components/ExecutionSummaryCard';
 
 const COLORS = theme.colors;
 
@@ -101,6 +104,17 @@ function FeedbackScreen() {
     sessionIdFromRoute, sessions, todayKey, getSessionById,
   );
 
+  // Execution finalisee de la séance cible (Lot 1/2, useExecutionStore).
+  // Sans exécution -> écran strictement identique à avant ce lot.
+  const rawExecution = useExecutionStore((s) =>
+    targetSessionId ? s.getExecutionForSession(targetSessionId) : undefined
+  );
+  const finalizedExecution = rawExecution && rawExecution.finishedAtISO ? rawExecution : undefined;
+  const executionSummary = useMemo(
+    () => (finalizedExecution ? summarizeExecution(finalizedExecution) : null),
+    [finalizedExecution]
+  );
+
   // Prefills
   const prefillRpe =
     typeof prefill?.rpe === 'number' && Number.isFinite(prefill.rpe)
@@ -108,6 +122,13 @@ function FeedbackScreen() {
       : undefined;
 
   const durationPrefill = useMemo(() => {
+    // Priorité à la durée réelle de l'exécution live (chrono), avant les
+    // autres prefills (cf. brief Lot 4 §4.2).
+    if (
+      typeof finalizedExecution?.actualDurationMin === 'number' &&
+      Number.isFinite(finalizedExecution.actualDurationMin)
+    )
+      return Math.max(1, Math.round(finalizedExecution.actualDurationMin));
     if (typeof prefill?.durationMin === 'number' && Number.isFinite(prefill.durationMin))
       return Math.max(1, Math.round(prefill.durationMin));
     if (typeof targetSession?.durationMin === 'number' && Number.isFinite(targetSession.durationMin))
@@ -116,7 +137,7 @@ function FeedbackScreen() {
     if (typeof aiDuration === 'number' && Number.isFinite(aiDuration))
       return Math.max(1, Math.round(aiDuration));
     return undefined;
-  }, [prefill?.durationMin, targetSession]);
+  }, [finalizedExecution, prefill?.durationMin, targetSession]);
 
   // Form state
   const day = dayStates[todayKey];
@@ -281,6 +302,18 @@ function FeedbackScreen() {
                         : 'Hors-ligne : ton feedback sera synchronisé automatiquement'}
                     </Text>
                   </View>
+                )}
+
+                {executionSummary && (
+                  <ExecutionSummaryCard
+                    completionPct={executionSummary.completionPct}
+                    adapted={executionSummary.adapted}
+                    skipped={executionSummary.skipped}
+                    replaced={executionSummary.replaced}
+                    mainReasons={executionSummary.mainReasons}
+                    rpeTarget={finalizedExecution?.snapshot.rpeTarget ?? null}
+                    rpeFelt={rpe}
+                  />
                 )}
 
                 <HeroReadinessCard

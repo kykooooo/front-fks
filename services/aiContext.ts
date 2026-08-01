@@ -13,6 +13,17 @@ import { canonicalizeMicrocycleGoal } from "../domain/microcycles";
 import { userProfileSchema, logValidationIssues } from "../schemas/firestoreSchemas";
 import { weekKeyOf } from "../utils/dateHelpers";
 import { readTestsRaw } from "../screens/tests/hooks/useTestsStorage";
+import { resolveTrackingModes } from "../domain/tracking/modes";
+import { applyDecisionToContext } from "../domain/tracking/apply";
+import { TRACKING_CONFIG } from "../domain/tracking/config";
+import { useExecutionStore } from "../state/stores/useExecutionStore";
+// trackEvent est importé dynamiquement plus bas (jamais en top-level ici) :
+// services/analytics.ts entraîne @amplitude/analytics-react-native, qui
+// embarque sa PROPRE copie imbriquée de @react-native-async-storage/async-storage
+// -- jest.setup.js ne mocke que la copie racine, pas cette copie imbriquée.
+// Un import statique planterait tout test import buildAIPromptContext, même
+// quand le mode Application est OFF (défaut). Le require différé ne s'exécute
+// que si applied.length > 0, donc jamais tant que apply=false (défaut pilote).
 import {
   RECENT_FKS_COPY_LIMIT,
   RECENT_FKS_SESSION_LIMIT,
@@ -295,7 +306,7 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
           .join(" | ")
       : undefined;
 
-  const context: FKS_AiContext = {
+  let context: FKS_AiContext = {
     version: "fks_context_v1",
     profile: {
       first_name: firstName,
@@ -340,7 +351,39 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
     ...(field_tests.length > 0 ? { field_tests } : {}),
   };
 
-  // debug: stocke le contexte pour inspection
+  // ---- Boucle de suivi joueur : mode Application (OFF par défaut, cf. Lot 6) ----
+  // POINT D'INTÉGRATION UNIQUE (voir docs/boucle-suivi-2026-07-25/COHABITATION_AGENT_85.md
+  // section "Points d'intégration"). rawProfile est le doc BRUT (pré-Zod, avant
+  // la ligne 138 plus haut) : seul canal portant users/{uid}.trackingConfig.
+  // Choix documenté : `previousDecisions: []` plutôt que `[lastDecision]`.
+  // useExecutionStore ne persiste qu'UNE seule décision (`lastDecision`), pas un
+  // historique de décisions successives ; passer lastDecision comme sa propre
+  // "décision précédente" ferait déclencher à tort la branche "persistant sur
+  // >= 2 fenêtres" de reduce_intensity_light dès le tout premier calcul (cf.
+  // REGLES_AJUSTEMENT.md section "Mode Application"). Sans historique réel de
+  // décisions, le passage prudent (branche 1er déclenchement, no-op tracé) est
+  // le seul honnête.
+  const trackingModes = resolveTrackingModes(rawProfile as Record<string, unknown>);
+  const lastTrackingDecision = trackingModes.apply ? useExecutionStore.getState().lastDecision : null;
+  if (lastTrackingDecision) {
+    const { context: adjustedContext, applied } = applyDecisionToContext(
+      context,
+      lastTrackingDecision,
+      TRACKING_CONFIG,
+      undefined,
+      { previousDecisions: [] }
+    );
+    if (applied.length > 0) {
+      // require() différé (même pattern que state/migration/migrateFromLegacy.ts
+      // pour @sentry/react-native) : voir la note plus haut -- jamais de coût
+      // @amplitude quand le mode Application est OFF, càd quasi toujours au pilote.
+      const { trackEvent } = require("./analytics");
+      trackEvent("tracking_apply_adjustments", { applied });
+    }
+    context = adjustedContext;
+  }
+
+  // debug: stocke le contexte pour inspection (post-ajustement : reflète ce qui part réellement)
   useSessionsStore.getState().setLastAiContext?.(context);
 
   return context;
