@@ -89,6 +89,7 @@ export type AppStackParamList = {
   PrebuiltSessions: undefined;
   PrebuiltSessionDetail: { session: FKS_NextSessionV2 };
   ProfileSetup: undefined;
+  ProfileSetupGate: undefined;
   CoachOnboarding: undefined;
   Tests: { initialPlaylist?: string } | undefined;
   ExerciseDetail: { highlightId: string };
@@ -172,6 +173,7 @@ function MainTabs() {
 function AppNavigator() {
   return (
     <AppStack.Navigator
+      key="nav-app"
       initialRouteName="Tabs"
       screenOptions={{
         headerShown: false,
@@ -238,6 +240,7 @@ function AppNavigator() {
 function CoachNavigator() {
   return (
     <CoachStack.Navigator
+      key="nav-coach"
       screenOptions={{
         headerShown: false,
         headerStyle: { backgroundColor: theme.colors.background },
@@ -266,6 +269,7 @@ function AuthNavigator({
 }) {
   return (
     <AuthStack.Navigator
+      key="nav-auth"
       initialRouteName={initialRouteName}
       screenOptions={{
         headerShown: false,
@@ -467,9 +471,15 @@ export default function RootNavigator() {
   // 6) Connecté mais profil non complété → écran profil (joueur)
   //    Le stack inclut CoachOnboarding pour qu'un staff puisse créer son club.
   if (profileCompleted === false) {
+    // Nom de route volontairement distinct du "ProfileSetup" de AppNavigator :
+    // ces deux arbres sont échangés conditionnellement, mais le
+    // NavigationContainer n'y voit qu'un seul navigateur qui change de contenu et
+    // restaurait son état sur la route homonyme — il réaffichait le setup au lieu
+    // du Home après la complétion. Nom distinct + key par arbre = plus de
+    // rapprochement possible.
     return (
-      <AppStack.Navigator screenOptions={{ headerShown: false }}>
-          <AppStack.Screen name="ProfileSetup" options={{ headerShown: false }}>
+      <AppStack.Navigator key="nav-gate" screenOptions={{ headerShown: false }}>
+          <AppStack.Screen name="ProfileSetupGate" options={{ headerShown: false }}>
             {() => (
               <ProfileSetupScreen onProfileCompleted={() => setProfileCompleted(true)} />
             )}
