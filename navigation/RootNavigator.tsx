@@ -125,6 +125,7 @@ const WELCOME_KEY = STORAGE_KEYS.WELCOME_DONE;
 const PLAYER_TAB_ORDER: Array<keyof TabParamList> = ["Home", "NewSession", "Profile"];
 
 function MainTabs() {
+  if (__DEV__) console.log("[T] MainTabs() body " + Date.now());
   const tabOrder = PLAYER_TAB_ORDER;
 
   return (
@@ -171,6 +172,7 @@ function MainTabs() {
 }
 
 function AppNavigator() {
+  if (__DEV__) console.log("[T] AppNavigator() body " + Date.now());
   return (
     <AppStack.Navigator
       key="nav-app"
@@ -339,7 +341,6 @@ const splashStyles = StyleSheet.create({
 
 export default function RootNavigator() {
   const [user, setUser] = useState<User | null>(null);
-  if (__DEV__) console.log("[RECETTE] RootNavigator v4-keys — nav-gate/nav-app actifs");
   const [initializing, setInitializing] = useState(true);
   // AUDIT P0-2 : true dès que onAuthStateChanged a répondu UNE première fois.
   // Distinct de `initializing` (qui repasse à true pendant l'attente du profil).
@@ -347,6 +348,7 @@ export default function RootNavigator() {
   const [profileCompleted, setProfileCompleted] = useState<boolean | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [welcomeDone, setWelcomeDone] = useState<boolean | null>(null);
+  if (__DEV__) console.log("[T] RootNav render " + Date.now() + " init=" + initializing + " pc=" + profileCompleted + " role=" + role);
   const startFirestoreWatch = useSyncStore((s) => s.startFirestoreWatch);
   const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
   const resetTrainingStore = useSyncStore((s) => s.resetForUser);
@@ -419,7 +421,7 @@ export default function RootNavigator() {
         if (__DEV__) {
           console.log(
             "[RECETTE] snapshot profileCompleted=" + String(!!data?.profileCompleted) +
-            " pendingWrites=" + String(snap?.metadata?.hasPendingWrites ?? "?")
+            " pendingWrites=" + String(snap?.metadata?.hasPendingWrites ?? "?") + " " + Date.now()
           );
         }
         setProfileCompleted(!!data?.profileCompleted);
@@ -429,7 +431,7 @@ export default function RootNavigator() {
       (err) => {
         if (__DEV__) {
           console.warn("Erreur lors du check profil:", err);
-          console.log("[RECETTE] snapshot → false (branche doc absent/erreur)");
+          console.log("[RECETTE] snapshot → false (branche doc absent/erreur) " + Date.now());
         }
         setProfileCompleted(false);
         setRole(null);
@@ -479,14 +481,14 @@ export default function RootNavigator() {
   // 6) Connecté mais profil non complété → écran profil (joueur)
   //    Le stack inclut CoachOnboarding pour qu'un staff puisse créer son club.
   if (profileCompleted === false) {
-    if (__DEV__) console.log("[RECETTE] rendu: ProfileSetup (profileCompleted===false)");
+    if (__DEV__) console.log("[RECETTE] rendu: ProfileSetup (profileCompleted===false) " + Date.now());
     return (
       <AppStack.Navigator key="nav-gate" screenOptions={{ headerShown: false }}>
           <AppStack.Screen name="ProfileSetupGate" options={{ headerShown: false }}>
             {() => (
               <ProfileSetupScreen
                 onProfileCompleted={() => {
-                  if (__DEV__) console.log("[RECETTE] onProfileCompleted → setProfileCompleted(true)");
+                  if (__DEV__) console.log("[RECETTE] onProfileCompleted → setProfileCompleted(true) " + Date.now());
                   setProfileCompleted(true);
                 }}
               />
@@ -513,6 +515,6 @@ export default function RootNavigator() {
   }
 
   // 6) Profil complet → app joueur (mode déjà choisi dans le questionnaire profil)
-  if (__DEV__) console.log("[RECETTE] rendu: AppNavigator");
+  if (__DEV__) console.log("[T] branche AppNavigator " + Date.now());
   return <AppNavigator />;
 }

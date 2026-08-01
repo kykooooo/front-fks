@@ -197,6 +197,8 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   const cycleLabel = cycleId ? MICROCYCLES[cycleId].label : null;
   const cycleProgress = Math.min(MICROCYCLE_TOTAL_SESSIONS_DEFAULT, Math.max(0, Math.trunc(microcycleSessionIndex ?? 0)));
 
+  useEffect(() => () => { if (__DEV__) console.log("[T] ProfileSetup UNMOUNT " + Date.now()); }, []);
+
   /* ─── Prefill ─── */
   useEffect(() => {
     const auth = getAuth();

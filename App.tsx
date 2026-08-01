@@ -25,6 +25,7 @@ import type { AppStackParamList } from "./navigation/RootNavigator";
 // Configurer les gestionnaires d'erreurs globales une seule fois
 setupGlobalErrorHandlers();
 initSentry();
+if (__DEV__) setInterval(() => console.log("[T] beat " + Date.now()), 250);
 
 const linking: LinkingOptions<AppStackParamList> = {
   prefixes: ["fks://"],

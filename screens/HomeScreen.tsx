@@ -50,7 +50,7 @@ const EMPTY_EXTERNALS: { source?: string; dateISO?: string }[] = [];
 
 
 export default function HomeScreen() {
-  if (__DEV__) console.log("[RENDER] HomeScreen");
+  if (__DEV__) console.log("[T] HomeScreen render " + Date.now());
 
   // ─── Carrousel hero ───
 

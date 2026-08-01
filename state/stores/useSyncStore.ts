@@ -265,6 +265,7 @@ export const useSyncStore = create<SyncState>()(
           );
 
           const unsub = watchSessionsRepo(user.uid, (list) => {
+            if (__DEV__) console.log("[T] snap sessions " + Date.now() + " n=" + list.length);
             if (!_active) return;
             const normalized = normalizeSessionsFromFirestore(list);
             const normalizedIds = new Set(normalized.map((s) => s.id));
