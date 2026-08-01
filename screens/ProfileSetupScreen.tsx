@@ -153,8 +153,10 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   const [dominantFoot, setDominantFoot] = useState("");
   const [mainObjective, setMainObjective] = useState("");
   const [targetFksSessionsPerWeek, setTargetFksSessionsPerWeek] = useState("");
-  const [clubTrainingsPerWeek, setClubTrainingsPerWeek] = useState("");
-  const [matchesPerWeek, setMatchesPerWeek] = useState("");
+  // clubTrainingsPerWeek/matchesPerWeek : plus de saisie manuelle numérique
+  // (double emploi avec les chips jours, corrigé sur ordre du fondateur) —
+  // dérivées de clubTrainingDays.length / matchDays.length au moment du
+  // handleSave. Mêmes noms/types en base, aucun changement de contrat.
   const [hasClubTrainings, setHasClubTrainings] = useState<"oui" | "non" | "">("");
   const [clubTrainingDays, setClubTrainingDays] = useState<string[]>([]);
   const [matchDays, setMatchDays] = useState<string[]>([]);
@@ -212,8 +214,9 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       if (typeof d.dominantFoot === "string") setDominantFoot(d.dominantFoot);
       if (typeof d.mainObjective === "string") setMainObjective(d.mainObjective);
       if (d.targetFksSessionsPerWeek != null) setTargetFksSessionsPerWeek(String(d.targetFksSessionsPerWeek));
-      if (d.clubTrainingsPerWeek != null) setClubTrainingsPerWeek(String(d.clubTrainingsPerWeek));
-      if (d.matchesPerWeek != null) setMatchesPerWeek(String(d.matchesPerWeek));
+      // clubTrainingsPerWeek/matchesPerWeek ne sont plus prefillés depuis leur
+      // valeur en base : ils sont redérivés de clubTrainingDays/matchDays
+      // (prefillés juste après) à chaque save.
       if (typeof d.hasClubTrainings === "string") {
         setHasClubTrainings(d.hasClubTrainings === "oui" ? "oui" : d.hasClubTrainings === "non" ? "non" : "");
       }
@@ -233,18 +236,12 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   }, []);
 
   useEffect(() => {
+    // Non → jours club masqués et vidés ; clubTrainingsPerWeek dérivé
+    // (clubTrainingDays.length) retombe naturellement à 0 au save.
     if (hasClubTrainings !== "oui") {
       setClubTrainingDays([]);
-      if (hasClubTrainings === "non") setClubTrainingsPerWeek("0");
     }
   }, [hasClubTrainings]);
-
-  useEffect(() => {
-    const matches = Number(matchesPerWeek);
-    if (!Number.isFinite(matches) || matches <= 0) {
-      setMatchDays([]);
-    }
-  }, [matchesPerWeek]);
 
   useEffect(() => {
     if (hasGymAccess === "non") setGymEquipment([]);
@@ -312,14 +309,11 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
         if (!fksSessionsOptions.includes(targetFksSessionsPerWeek as any)) { fail("Champs manquants", "Indique tes séances FKS / semaine."); return false; }
         return true;
       case 2: {
-        const trainings = Number(clubTrainingsPerWeek);
-        const matches = Number(matchesPerWeek);
-        if (!Number.isFinite(trainings) || trainings < 0) { fail("Valeur invalide", "Entraînements/semaine doit être positif."); return false; }
-        if (!Number.isFinite(matches) || matches < 0) { fail("Valeur invalide", "Matchs/semaine doit être positif."); return false; }
+        // clubTrainingsPerWeek/matchesPerWeek n'existent plus en saisie : ils
+        // sont dérivés des jours cochés (clubTrainingDays/matchDays), donc
+        // plus rien à valider côté nombre ici.
         if (!hasClubTrainings) { fail("Champs manquants", "Indique si tu as des entraînements club."); return false; }
-        if (hasClubTrainings === "oui" && (!clubTrainingsPerWeek.trim() || trainings < 1)) { fail("Champs manquants", "Indique combien d'entraînements club par semaine."); return false; }
-        if (hasClubTrainings === "oui" && clubTrainingDays.length === 0) { fail("Champs manquants", "Précise les jours club."); return false; }
-        if (matches > 0 && matchDays.length === 0) { fail("Champs manquants", "Précise les jours de match."); return false; }
+        if (hasClubTrainings === "oui" && clubTrainingDays.length === 0) { fail("Champs manquants", "Précise les jours d'entraînement club."); return false; }
         return true;
       }
       case 3:
@@ -377,8 +371,11 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       trackEvent("profile_step_completed", { step: step + 1, stepLabel: STEPS[step].label, totalSteps: TOTAL_STEPS });
     }
     const targetFksSessions = Number(targetFksSessionsPerWeek);
-    const trainings = Number(clubTrainingsPerWeek);
-    const matches = Number(matchesPerWeek);
+    // Dérivé des jours cochés (plus de saisie numérique séparée — double
+    // emploi corrigé sur ordre du fondateur) : mêmes noms/types en base,
+    // aucun changement de contrat côté backend.
+    const trainings = clubTrainingDays.length;
+    const matches = matchDays.length;
     const normalizedInvite = normalizeInviteCode(clubInviteCode);
 
     // Auto-assign : si aucun cycle actif, on applique la reco basée sur l'objectif
@@ -658,43 +655,29 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
               <Chip label="Non" selected={hasClubTrainings === "non"} onPress={() => setHasClubTrainings("non")} />
             </View>
 
-            {hasClubTrainings === "oui" && (
+            {hasClubTrainings === "oui" ? (
               <>
-                <Text style={styles.fieldLabel}>Quels jours ?</Text>
+                <Text style={styles.fieldLabel}>Quels jours t'entraînes-tu avec ton club ?</Text>
                 <View style={styles.chipRowWrap}>
                   {daysOfWeek.map((d) => (
                     <Chip key={d.id} label={d.label} selected={clubTrainingDays.includes(d.id)}
                       onPress={() => toggleInList(d.id, clubTrainingDays, setClubTrainingDays)} />
                   ))}
                 </View>
-              </>
-            )}
-
-            {hasClubTrainings === "oui" ? (
-              <>
-                <Text style={styles.fieldLabel}>Entraînements club / semaine</Text>
-                <TextInput style={styles.input} keyboardType="number-pad" placeholder="ex: 3"
-                  placeholderTextColor={palette.muted} value={clubTrainingsPerWeek} onChangeText={setClubTrainingsPerWeek} />
+                <Text style={styles.hintText}>On calcule ta charge club à partir de tes jours.</Text>
               </>
             ) : hasClubTrainings === "non" ? (
               <Text style={styles.hintText}>Aucun entraînement club pris en compte.</Text>
             ) : null}
 
-            <Text style={styles.fieldLabel}>Matchs / semaine</Text>
-            <TextInput style={styles.input} keyboardType="number-pad" placeholder="ex: 1"
-              placeholderTextColor={palette.muted} value={matchesPerWeek} onChangeText={setMatchesPerWeek} />
-
-            {Number(matchesPerWeek) > 0 ? (
-              <>
-                <Text style={styles.fieldLabel}>Jours de match</Text>
-                <View style={styles.chipRowWrap}>
-                  {daysOfWeek.map((d) => (
-                    <Chip key={`m${d.id}`} label={d.label} selected={matchDays.includes(d.id)}
-                      onPress={() => toggleInList(d.id, matchDays, setMatchDays)} />
-                  ))}
-                </View>
-              </>
-            ) : (
+            <Text style={styles.fieldLabel}>Quel(s) jour(s) as-tu match habituellement ?</Text>
+            <View style={styles.chipRowWrap}>
+              {daysOfWeek.map((d) => (
+                <Chip key={`m${d.id}`} label={d.label} selected={matchDays.includes(d.id)}
+                  onPress={() => toggleInList(d.id, matchDays, setMatchDays)} />
+              ))}
+            </View>
+            {matchDays.length === 0 && (
               <Text style={styles.hintText}>Aucun match sélectionné.</Text>
             )}
 
