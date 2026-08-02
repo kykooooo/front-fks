@@ -21,7 +21,7 @@
 
 ### 0.2 Pour Kyllian, en trois phrases
 
-Ce document est le plan de match de l'intégration du nouveau Home : qui joue où, dans quel ordre, où sont les pièges. On n'a touché à rien — c'est une préparation, pas un changement. **Trois questions t'attendent en §6** ; tout le reste est déjà décidé ou purement technique.
+Ce document est le plan de match de l'intégration du nouveau Home : qui joue où, dans quel ordre, où sont les pièges. On n'a touché à rien — c'est une préparation, pas un changement. **Les trois questions du §6 sont tranchées (02/08)** ; plus aucune décision ouverte, tout le reste est déjà décidé ou purement technique.
 
 ### 0.3 Décisions DÉJÀ prises par le fondateur — liste fermée, personne ne les re-débat
 
@@ -360,31 +360,36 @@ Preset `jest-expo`, `setupFiles: <rootDir>/jest.setup.js`, `testMatch **/__tests
 
 ---
 
-## 6. Ce qui reste ouvert pour Kyllian
+## 6. Décisions — TRANCHÉES (Kyllian, 02/08/2026, consignées par le copilote)
 
-Les enquêtes n'ont fait émerger que **trois vraies décisions nouvelles** — tout le reste est soit déjà décidé (§0.3), soit purement technique, soit des validations déjà documentées avec leur échéance (rappels ci-dessous).
+> Section mise à jour le 02/08 : les trois questions posées le 01/08 sont fermées. Plus
+> **aucune décision ouverte** dans ce dossier — les seuls points restants sont les rappels
+> d'échéances ci-dessous, déjà documentés ailleurs.
 
-### Q1 (nouvelle) — Sort de « Ton suivi » dans la Progression refondue — à trancher au plus tard à la maquette du L5
+### Q1 — TRANCHÉE : « Ton suivi » reste, EMPILÉ sous le résumé canonique, libellés distincts
 
-Après la refonte, l'écran Progression portera deux blocs qui disent des choses vraies mais de périmètres différents : la **carte canonique** (cumul depuis tes débuts, courbe, tests) et **« Ton suivi »** (fenêtre 28 jours / 5 séances du tracking live : décisions, effort ressenti, évolutions par exercice). Question fermée :
+Option (a) retenue. Dans la Progression refondue (L5) : **résumé canonique → Ton suivi →
+blocs refondus**, avec les libellés distincts « séances suivies » (fenêtre 28 j / 5 séances,
+tracking live) vs « séances terminées » (cumul). Aucune fusion de calculs : deux blocs, deux
+périmètres, deux vérités qui ne se contredisent pas parce qu'elles ne prétendent pas mesurer
+la même chose. Le bandeau reprise de « Ton suivi » reste visible en haut de page.
 
-> **On garde les deux, empilés, avec des libellés distincts (« séances suivies » vs « séances terminées »), dans l'ordre : résumé canonique → Ton suivi → blocs refondus — OK ?**
-> Sinon : (b) fusionner en une seule section (plus gros travail de maquette, à re-chiffrer), ou (c) déplacer « Ton suivi » ailleurs.
-> Recommandation du dossier : (a) — du général (bilan) vers le fin (séance par séance), et le bandeau reprise de « Ton suivi » reste visible en haut de page (c'est la seule surface qui parle de reprise côté joueur).
+### Q2 — TRANCHÉE : la ligne « X/Y séances cette semaine » SORT de « Ton suivi »
 
-### Q2 (nouvelle) — La ligne « X/Y séances cette semaine » de « Ton suivi », une fois le Home v2 en place — à trancher au L5
+Une fois le Home v2 en place (donc au L5, après L3), le compteur hebdomadaire vit **au Home,
+seul et unique**. La ligne de « Ton suivi » est retirée ; le test d'égalité perpétuel entre
+deux calculs à deux cibles n'a plus lieu d'exister. Conséquence pour le L2 : l'unification du
+calcul hebdo reste nécessaire (le Home doit porter la bonne cible), mais elle n'a plus qu'un
+seul consommateur d'écran.
 
-Le même chiffre vivra à un tap sur le Home (bloc « Ma semaine »). Aujourd'hui les deux sont calculés différemment avec **deux cibles différentes** (objectif du profil vs objectif des réglages) ; le L2 unifie le calcul, mais la redondance reste. Question fermée :
+### Q3 — REQUALIFIÉE : jour LOCAL — ce n'était pas une question ouverte
 
-> **Une fois le Home v2 en place, on retire cette ligne de « Ton suivi » (le chiffre vit déjà sur le Home, zéro risque d'écart) — OK ?**
-> Sinon : on la garde, et le test d'égalité des deux calculs (L2) devient obligatoire à vie.
-
-### Q3 (nouvelle) — Le « jour » d'un test terrain : jour local ou jour UTC — à trancher avant le branchement L4
-
-La règle « 2 jours distincts » (deux essais du même après-midi ≠ une progression) a besoin de dater chaque test. Tout converge vers le jour **local** : un test fait à 23 h reste sur son jour vécu, et c'est la convention de toute l'app (`toDateKey`, origin/main `utils/dateHelpers.ts:15-32`). L'UTC du prototype n'est qu'un artefact de reproductibilité des captures (5752f54 `progressionViewModel.ts:663-668`), remplacé au branchement quoi qu'il arrive ; le prototype écrit lui-même que ce point « devra être tranché avec le fondateur » (:655-661, :1155-1159). Question fermée :
-
-> **Au branchement L4, le jour d'un test = jour local via `toDateKey(new Date(ts))` — OK ?**
-> Recommandation du dossier : oui — c'est la position convergente des deux enquêtes et du code ; l'alternative UTC ferait basculer un test de fin de soirée au lendemain.
+Le jour local était **déjà acté le 31/07** dans les restes d'intégration (« date LOCALE pour
+les tests », doctrine `toDateKey` du dépôt — origin/main `utils/dateHelpers.ts:15-32`). La
+relecture adversariale avait eu raison de refuser de trancher à la place du fondateur, mais
+la décision existait déjà : ce dossier la remet à sa place de **décision prise**, pas de
+question. Au branchement L4 : jour d'un test = `toDateKey(new Date(ts))`. L'UTC du prototype
+reste un artefact de reproductibilité des captures, remplacé au branchement.
 
 ### Rappels d'échéances (décisions DÉJÀ documentées, pas nouvelles — listées pour ne pas les rater)
 
@@ -395,4 +400,4 @@ La règle « 2 jours distincts » (deux essais du même après-midi ≠ une prog
 
 ---
 
-*Fin du dossier. Fichiers compagnons dans ce même dossier : `MIGRATION_PROGRESSSCREEN.md` (étapes e1→e4, lignes à décaler selon §1.1), `LIMITES_PROTOTYPE.md`, `VIEWMODEL_PROGRESSION.md`. Rien n'a été commité ; aucun fichier hors de `outputs/home-vnext-prototype-2026-07-27/` n'a été touché.*
+*Fin du dossier. Fichiers compagnons dans ce même dossier : `MIGRATION_PROGRESSSCREEN.md` (étapes e1→e4, lignes à décaler selon §1.1), `LIMITES_PROTOTYPE.md`, `VIEWMODEL_PROGRESSION.md`. Ce dossier est versionné sur `feat/home-vnext-prototype` (commit initial `28ed105`, décisions du 02/08 dans le commit suivant) ; aucun fichier hors de `outputs/home-vnext-prototype-2026-07-27/` n'a été touché.*
