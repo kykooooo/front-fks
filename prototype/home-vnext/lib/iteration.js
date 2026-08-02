@@ -126,6 +126,29 @@ const CHANGEMENTS = [
       "Bascule PRESENTATION : « Allegee » puis « Allegee + anim. reduites ». La page est la meme ; " +
       "c'est le compteur du panneau qui change.",
   },
+  {
+    id: "premier-ecran",
+    titre: "L'ecran du nouveau joueur recoit deux propositions (03/08)",
+    rejouable: "oui",
+    quoi:
+      "L'ecran d'un compte tout neuf mesurait 401 px sur 729 visibles : un en-tete, un bouton, une " +
+      "carte qui dit qu'il n'y a rien a mesurer. Decision du fondateur : « sobre ne doit pas dire " +
+      "timide ». Deux traitements sont proposes, V-A « Premiere mission » (615 px) et V-B " +
+      "« Anticipation honnete » (598 px). Dans les deux, le bouton du jour passe en traitement hero " +
+      "— meme mot, meme couleur, palier typographique du rang 1, 24 px de respiration, plancher " +
+      "104 pt.",
+    aSavoir:
+      "AUCUNE donnee nouvelle. Les trois premiers pas de V-A sont coches depuis l'objectif declare " +
+      "au setup, le nombre de tests terrain enregistres et le nombre de seances terminees — trois " +
+      "champs que l'app possede deja et lit deja ailleurs. La ligne « pourquoi ce cycle » sort de la " +
+      "fonction qui pre-selectionne deja le cycle en fin de setup. Chaque promesse de V-B porte la " +
+      "constante exportee qui la declenchera. Un test ET le verificateur echouent si le ViewModel du " +
+      "nouveau joueur gagne le moindre champ.",
+    ouLeVoir:
+      "Selecteur de VARIANTE, sur l'etat « Nouveau joueur » : « Proposition vNext » (aujourd'hui), " +
+      "« V-A », « V-B ». En cote a cote : les paires « Actuelle / V-A » et « V-A / V-B ». Le detail " +
+      "ligne par ligne, avec la source de chacune, est dans l'onglet « Cet etat ».",
+  },
 ];
 
 /** Ce qui n'a PAS bouge, et qu'il ne faut donc pas chercher dans la comparaison. */
@@ -137,6 +160,17 @@ const INCHANGE = [
     "pas, elle prend leur place.",
   "Les seuils d'affichage n'ont pas bouge : quatre seances avant une tendance, cinq points de " +
     "courbe, cinq jours reellement enregistres, deux JOURS differents pour comparer deux tests.",
+  "LES 616 PAGES DEJA VALIDEES N'ONT PAS BOUGE D'UN OCTET. Mesure, pas affirmee : deux generations " +
+    "completes, l'une sur le code d'avant les variantes de demarrage, l'autre apres, empreintes " +
+    "SHA-1 comparees fichier par fichier (la marque de fraicheur ?v=, derivee des dates de " +
+    "modification, est neutralisee). Resultat : 420 pages « Proposition vNext » et 196 pages " +
+    "« Progression integree » RIGOUREUSEMENT identiques. La feuille de style a gagne 6 regles " +
+    "(le padding et la hauteur du traitement hero, le cercle vide d'un premier pas, le filet de la " +
+    "ligne « pourquoi ce cycle ») et n'en a perdu ni modifie AUCUNE.",
+  "Les 158 pages du Home de production qui different entre les deux generations ne sont PAS une " +
+    "regression : exactement les 158 memes different entre deux generations du MEME code. C'est la " +
+    "pulsation infinie de components/home/HomePrimaryCTA.tsx, qui ne consulte jamais « reduire les " +
+    "animations » — deja mesuree et publiee a l'iteration precedente.",
 ];
 
 module.exports = { CHANGEMENTS, INCHANGE };
