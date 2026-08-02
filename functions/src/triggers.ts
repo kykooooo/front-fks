@@ -7,6 +7,10 @@
 
 import { onDocumentWritten, type FirestoreEvent, type Change, type DocumentSnapshot } from "firebase-functions/v2/firestore";
 import { getDb } from "./admin";
+import { PLAYER_STATUS_FIELD } from "./clubAuthority";
+import { COACH_ACCESS_FIELD, type CoachAccessState } from "./coachAccess";
+import { JOIN_ACCESS_POLICY_FIELD } from "./joinAccessPolicy";
+import { ensureCoachAccessState, type MemberAccessStore } from "./coachAccessSync";
 import { MIN_INSTANCES, paths, REGION } from "./config";
 import { rebuildPlayerSummary } from "./rebuild";
 import { watermarkFromEvent } from "./watermark";
@@ -16,6 +20,39 @@ const triggerOpts = { region: REGION, minInstances: MIN_INSTANCES } as const;
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
 
 type WrittenEvent = FirestoreEvent<Change<DocumentSnapshot> | undefined, Record<string, string>>;
+
+/**
+ * Branchement Admin SDK du port `MemberAccessStore` (coachAccessSync.ts).
+ *
+ * Il vit ICI et pas dans coachAccessSync.ts pour que ce dernier reste sans
+ * dependance firebase-admin : c'est ce qui permet de tester la decision d'accès
+ * en unitaire, sans emulateur (cf. functions/tests/coachAccess.test.ts).
+ *
+ * L'Admin SDK contourne les regles Firestore — c'est exactement le point : ce
+ * champ n'est ecrivable QUE par le serveur, et voici le seul chemin d'ecriture
+ * hors rattachement (`joinClubWithInviteCode`).
+ */
+function memberAccessStore(): MemberAccessStore {
+  const db = getDb();
+  return {
+    async readMember(clubId: string, playerUid: string) {
+      const snap = await db.doc(paths.member(clubId, playerUid)).get();
+      if (!snap.exists) return null;
+      const data = (snap.data() ?? {}) as Record<string, unknown>;
+      return { playerStatus: data[PLAYER_STATUS_FIELD], coachAccess: data[COACH_ACCESS_FIELD] };
+    },
+    async readClubPolicy(clubId: string) {
+      const snap = await db.doc(paths.club(clubId)).get();
+      if (!snap.exists) return undefined;
+      return ((snap.data() ?? {}) as Record<string, unknown>)[JOIN_ACCESS_POLICY_FIELD];
+    },
+    async writeCoachAccess(clubId: string, playerUid: string, state: CoachAccessState) {
+      await db
+        .doc(paths.member(clubId, playerUid))
+        .set({ [COACH_ACCESS_FIELD]: state }, { merge: true });
+    },
+  };
+}
 
 /** clubId courant d'un joueur, lu depuis users/{uid}.clubId. */
 async function clubIdOfUser(playerUid: string): Promise<string | null> {
@@ -49,6 +86,32 @@ export const onUserWritten = onDocumentWritten(
     if (beforeClub) clubIds.add(beforeClub);
     if (afterClub) clubIds.add(afterClub);
     const watermark = watermarkFromEvent(event);
+
+    // AVANT de reprojeter : RÉPARER l'état d'autorisation s'il manque.
+    //
+    // Ce n'est plus un recalcul lié au profil — la catégorie d'âge n'entre plus
+    // dans la décision (cf. coachAccess.ts). Ce qui reste ici est un filet :
+    // un membership écrit avant l'existence du champ, ou porteur d'une valeur
+    // illisible, se voit poser l'état initial de la politique de son club. Un
+    // état déjà valide n'est JAMAIS retouché, donc changer la politique d'un
+    // club ne redistribue rien en silence au prochain enregistrement de profil.
+    //
+    // Coût : dans le cas courant (état déjà posé), AUCUNE lecture du club n'est
+    // faite. Une écriture effective redéclenche `onMemberWritten`, donc une
+    // seconde reconstruction avec un watermark plus récent : c'est voulu, et
+    // borné (le second passage ne réécrit rien, la valeur est alors stable).
+    const accessStore = memberAccessStore();
+    await Promise.all(
+      [...clubIds].map(async (clubId) => {
+        try {
+          await ensureCoachAccessState(accessStore, clubId, playerUid);
+        } catch {
+          // Échec du recalcul : on NE bloque pas la reconstruction. L'état déjà
+          // en base reste en vigueur — et il est fail-closed par construction.
+        }
+      }),
+    );
+
     await Promise.all(
       [...clubIds].map((clubId) => rebuildPlayerSummary({ clubId, playerUid, watermark })),
     );
