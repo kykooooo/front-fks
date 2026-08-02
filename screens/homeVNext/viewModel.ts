@@ -30,6 +30,7 @@ import {
   MICROCYCLE_TOTAL_SESSIONS_DEFAULT,
   type MicrocycleId,
 } from "../../domain/microcycles";
+import { recommendMicrocycle } from "../../domain/recommendMicrocycle";
 import { getMicrocyclePhase } from "../../utils/microcycleUtils";
 import { formatDayFR, toDateKey } from "../../utils/dateHelpers";
 
@@ -129,6 +130,28 @@ export const JOURS_MATCH_PROCHE = 2;
  */
 export const NOTE_RECOUPEMENT_MAX = 0.5;
 
+/**
+ * Nombre de seances FKS terminees a partir duquel l'ecran N'EST PLUS un ecran
+ * de demarrage.
+ *
+ * - En dessous (donc a zero, et a zero seulement) : le compte n'a encore rien
+ *   produit. Aucune semaine, aucune tendance, aucune sortie — l'ecran se resume
+ *   a son en-tete, son action et une carte qui dit que la tendance n'existe pas.
+ *   C'est l'ecran mesure a 399 px sur 729 visibles, et c'est lui que les
+ *   variantes de demarrage (V-A / V-B) reprennent.
+ * - A partir de 1 : le cours normal de l'ecran reprend, et le bloc de demarrage
+ *   disparait — sans transition speciale, sans "bravo", sans compteur.
+ *
+ * Pourquoi 1 et pas 2 ou 3 : parce que c'est la premiere seance terminee qui
+ * fait passer `week` de `null` a un compteur (§5.8) et qui alimente le premier
+ * point de charge reel. Le seuil n'est donc pas un choix de ton : c'est
+ * l'instant ou l'ecran a enfin quelque chose de vrai a montrer.
+ *
+ * SEUIL D'AFFICHAGE DU PROTOTYPE — A VALIDER PAR LE FONDATEUR.
+ * Ce seuil ne declenche AUCUNE adaptation de seance.
+ */
+export const SEANCES_POUR_SORTIR_DU_DEMARRAGE = 1;
+
 /** Toutes les constantes ci-dessus, pour affichage par le visualiseur. */
 export const HOME_VNEXT_SEUILS = [
   {
@@ -155,6 +178,11 @@ export const HOME_VNEXT_SEUILS = [
     nom: "NOTE_RECOUPEMENT_MAX",
     valeur: NOTE_RECOUPEMENT_MAX,
     role: "Part de mots deja dits ailleurs au-dela de laquelle le conseil disparait.",
+  },
+  {
+    nom: "SEANCES_POUR_SORTIR_DU_DEMARRAGE",
+    valeur: SEANCES_POUR_SORTIR_DU_DEMARRAGE,
+    role: "Seances terminees a partir desquelles l'ecran n'est plus un ecran de demarrage (V-A / V-B).",
   },
 ] as const;
 
@@ -324,6 +352,63 @@ export type HomeVNextClubDirective = {
   appliedToPrescription: boolean;
 };
 
+/**
+ * CE QUE L'APP SAIT DEJA D'UN COMPTE QUI N'A ENCORE RIEN FAIT.
+ * =============================================================================
+ *
+ * Ces trois champs existent TOUS les trois dans l'app d'aujourd'hui, ils sont
+ * TOUS les trois deja lus par au moins un ecran, et aucun n'a besoin d'etre
+ * cree cote backend. C'est la condition posee pour les variantes de demarrage :
+ * donner plus de presence a l'ecran du nouveau joueur SANS inventer une donnee.
+ *
+ * Ce groupe est OPTIONNEL, et c'est un choix de prudence, pas de confort :
+ *   - absent (`undefined`) ou `null` -> le bloc de demarrage ne peut pas etre
+ *     construit. Le selecteur ne devine RIEN, n'affiche RIEN, et pose un
+ *     `protoWarning` qui dit precisement ce qui manque ;
+ *   - les 14 autres etats du prototype le laissent a `null` : ils ne servent
+ *     pas les variantes de demarrage, et leur ViewModel ne bouge donc pas d'un
+ *     champ.
+ */
+export type HomeVNextDemarrageInput = {
+  /**
+   * Objectif principal DECLARE par le joueur a l'etape 1 du setup profil.
+   *
+   * SOURCE : `users/{uid}.mainObjective` (Firestore), ecrit par
+   * `screens/ProfileSetupScreen.tsx` (§save) et deja relu par
+   * `screens/ProfileScreen.tsx` et `screens/CycleModalScreen.tsx`.
+   *
+   * VALEUR BRUTE, SANS ACCENT : les 4 valeurs possibles sont persistees telles
+   * quelles et comparees a des allowlists sans accent cote Cloud Functions
+   * (`functions/src/coachLabels.ts`). Ce selecteur ne les affiche JAMAIS
+   * directement — il les passe a `recommendMicrocycle`, qui rend un LIBELLE DE
+   * CYCLE deja propre. Aucune table d'accents n'est donc recopiee ici.
+   *
+   * `null` = objectif pas encore choisi (profil incomplet ou compte legacy).
+   */
+  mainObjective: string | null;
+  /**
+   * Nombre d'entrees de tests terrain enregistrees pour ce joueur.
+   *
+   * SOURCE : `readTestsRaw()` (`screens/tests/hooks/useTestsStorage.ts`), parse
+   * en `TestEntry[]`. C'est exactement la lecture que font deja
+   * `screens/ProfileScreen.tsx` et `screens/CycleModalScreen.tsx`.
+   *
+   * 0 = aucun test passe. Ce compte ne sert QU'A repondre par oui ou par non :
+   * il n'est jamais affiche comme un chiffre.
+   */
+  testEntryCount: number;
+  /**
+   * Cycle de l'entree de tests la plus recente, deja canonicalise.
+   *
+   * SOURCE : `TestEntry.playlist` de l'entree la plus recente, normalisee par
+   * `canonicalizeMicrocycleGoal` — c'est ce que `CycleModalScreen` appelle
+   * `lastTestPlaylist` et passe a `recommendMicrocycle`.
+   *
+   * `null` = aucun test, ou test sans cycle attache.
+   */
+  lastTestPlaylist: MicrocycleId | null;
+};
+
 /** Echec de la derniere tentative de generation. */
 export type HomeVNextGenerationError = {
   /** Cause classee — pilote le texte affiche, jamais un message brut technique. */
@@ -449,6 +534,14 @@ export type HomeVNextInput = {
    * reessayer. Champ a creer (store sessions ou store sync).
    */
   generationError: HomeVNextGenerationError | null;
+
+  /**
+   * Ce que l'app sait deja d'un compte qui n'a encore rien fait.
+   *
+   * OPTIONNEL a dessein : sans lui, les variantes de demarrage ne construisent
+   * RIEN plutot que de deviner. Voir `HomeVNextDemarrageInput`.
+   */
+  demarrage?: HomeVNextDemarrageInput | null;
 };
 
 // =============================================================================
@@ -614,6 +707,142 @@ export type Note = {
   tone: "info" | "prudence";
 } | null;
 
+// =============================================================================
+// 3 bis. LE BLOC DE DEMARRAGE — LES DEUX VARIANTES DE L'ECRAN NOUVEAU JOUEUR
+// =============================================================================
+//
+// LE PROBLEME MESURE
+// -----------------------------------------------------------------------------
+// L'ecran du compte neuf fait 399 px sur 729 visibles a 375 px. Il est juste,
+// il est honnete, et il est TIMIDE : un en-tete, un bouton, une carte qui dit
+// qu'il n'y a rien a mesurer. Decision du fondateur (03/08) : « sobre ne doit
+// pas dire timide » — plus de presence, sans rien inventer.
+//
+// LA REGLE QUI NE BOUGE PAS
+// -----------------------------------------------------------------------------
+// Chaque element de ces deux variantes sort d'une donnee que l'app POSSEDE
+// DEJA. Aucun champ n'est fabrique, aucun chiffre n'est place en attendant,
+// aucune courbe n'est dessinee. Le contrat l'impose par ses types :
+//
+//   - `PremierPas.fait` est DERIVE (booleen calcule), et `PremierPas.source`
+//     nomme le champ d'entree qui l'a decide. Un pas dont l'etat n'est pas
+//     derivable N'ENTRE PAS dans la liste ;
+//   - `PourquoiCeCycle` n'a pas de champ libre : sa phrase est composee autour
+//     d'un LIBELLE DE CYCLE rendu par `recommendMicrocycle`, la fonction que
+//     `ProfileSetupScreen` et `CycleModalScreen` utilisent deja ;
+//   - `ApercuSection` porte un `seuil` qui est une CONSTANTE EXPORTEE de ce
+//     fichier : la promesse « tu verras ca ici » est adossee au chiffre qui la
+//     declenchera vraiment, et le visualiseur affiche les deux.
+//
+// AUCUNE des deux variantes n'ajoute une seconde action : il n'y a toujours
+// qu'un `action`, et ni les pas ni les apercus ne portent de destination. C'est
+// volontaire — voir `PremierPas` ci-dessous.
+// =============================================================================
+
+/**
+ * Les trois premiers pas d'un compte neuf. Union FERMEE : rien d'autre ne peut
+ * devenir un « premier pas », donc la liste ne peut pas se transformer en menu.
+ */
+export type PremierPasId =
+  /** Le profil est renseigne (poste, niveau, objectif, charge club). */
+  | "profil"
+  /** Les premiers tests terrain sont passes. */
+  | "test_terrain"
+  /** La premiere seance FKS est terminee. */
+  | "premiere_seance";
+
+/**
+ * Un pas, et l'etat verifiable qui decide s'il est fait.
+ *
+ * IL N'Y A AUCUN CHAMP D'ACTION, ET C'EST LE POINT LE PLUS IMPORTANT DU TYPE.
+ * Une checklist dont chaque ligne est tapable, c'est trois boutons de plus a
+ * cote du seul qui compte — exactement la faute que tout ce prototype corrige
+ * (doctrine 1 : une seule action par ecran). Ces lignes DISENT le chemin, elles
+ * ne le proposent pas. Le seul point d'entree reste l'action du jour.
+ */
+export type PremierPas = {
+  id: PremierPasId;
+  /** Le pas, formule pareil qu'il soit fait ou non. */
+  label: string;
+  /**
+   * Precision courte. Change selon `fait`, jamais un reproche, jamais une
+   * promesse que le produit ne tient pas.
+   */
+  detail: string;
+  /**
+   * DERIVE d'une donnee d'entree. Le rendu ne le decide jamais, et aucune
+   * valeur par defaut ne l'invente : un pas dont l'etat n'est pas derivable est
+   * absent de la liste.
+   */
+  fait: boolean;
+  /**
+   * Le champ d'entree qui a decide de `fait`, ecrit tel qu'il se lit dans le
+   * code. Sert au visualiseur (onglet « Cet etat »), jamais a l'ecran.
+   */
+  source: string;
+};
+
+/**
+ * Pourquoi ce cycle-la est propose a ce joueur-la.
+ *
+ * PRODUIT PAR `recommendMicrocycle` (`domain/recommendMicrocycle.ts`) — la
+ * meme fonction que celle qui pre-selectionne deja le cycle a la fin du setup
+ * profil et dans la modale de choix de cycle. L'ecran ne recalcule rien et ne
+ * propose rien de different de ce que le joueur trouvera en tapant sur l'action.
+ */
+export type PourquoiCeCycle = {
+  /** La phrase telle qu'elle sera lue. */
+  text: string;
+  /** Le libelle du cycle recommande (`MICROCYCLES[id].label`). */
+  cycleLabel: string;
+  /** Quelles donnees ont pese. Union fermee -> pas de source inventable. */
+  source: "objectif_declare" | "objectif_declare_et_tests";
+};
+
+/**
+ * Une section que l'ecran n'affiche PAS ENCORE, et la condition exacte de son
+ * apparition.
+ *
+ * C'est la seule facon honnete d'occuper une place vide : dire ce qui viendra,
+ * et a partir de quand. Aucun chiffre d'attente, aucune courbe grisee, aucun
+ * « — » a la place d'une valeur.
+ */
+export type ApercuSection = {
+  /** Le titre EXACT que la section portera quand elle existera. */
+  titre: string;
+  /** Ce qui apparaitra la, et a partir de quand. */
+  message: string;
+  /**
+   * Le seuil qui declenchera l'apparition, en seances terminees. C'est une
+   * CONSTANTE EXPORTEE de ce fichier, jamais un nombre ecrit dans une phrase.
+   */
+  seuil: number;
+  /** Le nom de cette constante, pour que le visualiseur puisse la retrouver. */
+  seuilNom: string;
+};
+
+/**
+ * Le bloc de demarrage. `null` partout ailleurs que sur un compte neuf, et
+ * `null` aussi quand la variante n'est pas demandee : la variante 1 validee par
+ * le fondateur ne gagne donc pas un seul champ.
+ */
+export type DemarrageBlock =
+  | {
+      /** V-A « Premiere mission » : les premiers pas, et pourquoi ce cycle. */
+      kind: "premiere_mission";
+      titre: string;
+      premiersPas: readonly PremierPas[];
+      /** `null` quand aucun objectif n'est declare, ou qu'un cycle est deja actif. */
+      pourquoiCeCycle: PourquoiCeCycle | null;
+    }
+  | {
+      /** V-B « Anticipation honnete » : ce qui viendra, et quand. */
+      kind: "anticipation";
+      titre: string;
+      apercus: readonly ApercuSection[];
+    }
+  | null;
+
 /** Ligne de sortie discrete. `null` quand la destination n'a rien a montrer. */
 export type ExitLink = {
   label: string;
@@ -698,7 +927,52 @@ export type HomeVNextOptions = {
    * pouvoir revenir en variante 2 par un drapeau.
    */
   variante?: HomeVNextVarianteVm;
+
+  /**
+   * Variante de l'ecran de DEMARRAGE (compte sans aucune seance terminee).
+   *
+   * Defaut : absente — le ViewModel se comporte alors exactement comme avant
+   * l'ajout de ce parametre, `demarrage` vaut `null`, et les 14 autres etats ne
+   * peuvent pas etre touches meme par accident (le bloc exige zero seance
+   * terminee, ce qu'aucun d'eux ne remplit).
+   *
+   * Cette option est ORTHOGONALE a `variante` : elle ne decrit pas le meme axe.
+   * `variante` dit quelle proposition d'ecran on rend ; `demarrage` dit comment
+   * on traite le seul etat ou l'ecran n'a presque rien a dire.
+   */
+  demarrage?: DemarrageVarianteId;
 };
+
+/**
+ * Les deux traitements proposes pour l'ecran du nouveau joueur.
+ * Union FERMEE : le visualiseur ne peut pas demander un traitement qui
+ * n'existe pas, et le selecteur ne peut pas en inventer un troisieme.
+ */
+export type DemarrageVarianteId =
+  /** V-A « Premiere mission ». */
+  | "A"
+  /** V-B « Anticipation honnete ». */
+  | "B";
+
+/** Libelles lisibles par un non-developpeur, pour la bascule du visualiseur. */
+export const DEMARRAGE_VARIANTES: readonly {
+  id: DemarrageVarianteId;
+  titre: string;
+  resume: string;
+}[] = [
+  {
+    id: "A",
+    titre: "V-A — Première mission",
+    resume:
+      "L'action passe en traitement hero, et l'écran dit les trois premiers pas — chaque pas coché depuis un état réel du compte.",
+  },
+  {
+    id: "B",
+    titre: "V-B — Anticipation honnête",
+    resume:
+      "L'action passe en traitement hero, et l'écran annonce ce qui apparaîtra ici — avec le seuil exact qui le déclenchera.",
+  },
+];
 
 /** Ce que l'ecran affiche. */
 export type HomeVNextViewModel = {
@@ -711,6 +985,11 @@ export type HomeVNextViewModel = {
   cycle: CycleBlock;
   week: WeekBlock;
   form: FormBlock;
+  /**
+   * Le bloc de demarrage (V-A / V-B). `null` sans l'option `demarrage`, `null`
+   * des la premiere seance terminee, `null` si l'entree de demarrage manque.
+   */
+  demarrage: DemarrageBlock;
   note: Note;
   exit: ExitLink;
   /**
@@ -1368,6 +1647,77 @@ export function buildHomeVNextViewModel(
   }
 
   // ---------------------------------------------------------------------------
+  // 5.8 bis LE DEMARRAGE — plus de presence, zero donnee inventee
+  // ---------------------------------------------------------------------------
+  // TROIS CONDITIONS, TOUTES OBLIGATOIRES, ET AUCUNE N'EST UN GOUT :
+  //
+  //   1. `options.demarrage` est demande. Sans option, ce bloc n'existe pas :
+  //      la variante 1 validee par le fondateur ne gagne pas un champ.
+  //   2. ZERO seance terminee (`SEANCES_POUR_SORTIR_DU_DEMARRAGE`). Des la
+  //      premiere seance faite, l'ecran a de vraies choses a dire et le bloc
+  //      disparait tout seul — sans "bravo", sans transition.
+  //   3. `input.demarrage` est fourni. Sinon on ne devine pas : le bloc reste
+  //      `null` et un `protoWarning` nomme le champ manquant.
+  //
+  // CE QUE LE BLOC ABSORBE, ET POURQUOI
+  // -----------------------------------------------------------------------------
+  // Quand il existe, il REMPLACE la carte "MA FORME" (§5.6, cas
+  // `pas_assez_de_seances` a zero seance). Les deux parlent de la meme chose —
+  // "il n'y a pas encore de tendance, voila ce qui la declenchera" — et les
+  // garder toutes les deux ecrirait deux fois la meme phrase sur un ecran qui
+  // en compte cinq. C'est exactement la regle anti-redite deja appliquee au
+  // conseil (`NOTE_RECOUPEMENT_MAX`), appliquee ici a un bloc entier.
+  //
+  // Ce retrait est fait A LA SOURCE, ici, et pas dans l'ecran : c'est le
+  // ViewModel qui decide de ce qui a le droit d'etre affiche.
+  // ---------------------------------------------------------------------------
+  let demarrage: DemarrageBlock = null;
+  const varianteDemarrage = options.demarrage ?? null;
+  const compteAuDemarrage = nbSeancesTerminees < SEANCES_POUR_SORTIR_DU_DEMARRAGE;
+
+  if (varianteDemarrage !== null && compteAuDemarrage) {
+    const entree = input.demarrage ?? null;
+    if (entree === null) {
+      protoWarnings.push(
+        "Variante de demarrage demandee, mais `input.demarrage` est absent : ni l'objectif declare (users/{uid}.mainObjective) ni le nombre de tests terrain (readTestsRaw) ne sont fournis. Le bloc n'est PAS construit — le selecteur ne devine aucun de ces etats."
+      );
+    } else if (varianteDemarrage === "A") {
+      demarrage = {
+        kind: "premiere_mission",
+        titre: "TES PREMIERS PAS",
+        premiersPas: construirePremiersPas(entree, nbSeancesTerminees),
+        pourquoiCeCycle: construirePourquoiCeCycle(entree, input.microcycleGoal),
+      };
+      if (input.microcycleGoal !== null) {
+        protoWarnings.push(
+          "V-A : un cycle est deja actif sur ce compte, donc la ligne « pourquoi ce cycle » est retiree. Recommander un cycle a cote de celui qui tourne deja ferait s'affronter deux verites dans le meme ecran."
+        );
+      } else if (entree.mainObjective === null) {
+        protoWarnings.push(
+          "V-A : aucun objectif declare (users/{uid}.mainObjective est vide), donc la ligne « pourquoi ce cycle » est retiree. `recommendMicrocycle` rendrait bien « Reprise & bases », mais par DEFAUT — le presenter comme un choix fonde sur le joueur serait une raison inventee."
+        );
+      }
+    } else {
+      demarrage = {
+        kind: "anticipation",
+        titre: "CE QUI VA APPARAÎTRE ICI",
+        apercus: construireApercus(input.weeklyGoalDeclared),
+      };
+    }
+  }
+
+  if (demarrage !== null) {
+    // Le bloc absorbe "MA FORME" : voir l'explication ci-dessus.
+    form = null;
+  }
+
+  if (varianteDemarrage !== null && !compteAuDemarrage) {
+    protoWarnings.push(
+      `Variante de demarrage « ${varianteDemarrage} » demandee sur un compte qui a deja ${nbSeancesTerminees} seance(s) terminee(s). Le bloc n'est pas construit : le seuil SEANCES_POUR_SORTIR_DU_DEMARRAGE vaut ${SEANCES_POUR_SORTIR_DU_DEMARRAGE}. L'ecran rendu est donc rigoureusement celui de la variante 1.`
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // 5.9 LE CONSEIL — supprime des qu'il recoupe le reste de l'ecran
   // ---------------------------------------------------------------------------
   // Source unique : `coachingTips` de la prescription (donnee reelle, deja
@@ -1385,6 +1735,18 @@ export function buildHomeVNextViewModel(
     form && form.kind === "available" ? form.scope : "",
     cycle ? cycle.cycleLabel : "",
     cycle && cycle.kind === "en_cours" ? cycle.phaseLabel : "",
+    // Le bloc de demarrage entre dans le corpus au meme titre que les autres :
+    // un conseil qui redirait ce que les premiers pas viennent de dire serait
+    // supprime par la meme regle, sans exception pour le nouveau venu.
+    ...(demarrage !== null && demarrage.kind === "premiere_mission"
+      ? demarrage.premiersPas.map((p) => `${p.label} ${p.detail}`)
+      : []),
+    ...(demarrage !== null && demarrage.kind === "premiere_mission" && demarrage.pourquoiCeCycle
+      ? [demarrage.pourquoiCeCycle.text]
+      : []),
+    ...(demarrage !== null && demarrage.kind === "anticipation"
+      ? demarrage.apercus.map((a) => a.message)
+      : []),
   ].filter((s) => s.length > 0);
 
   let note: Note = null;
@@ -1431,8 +1793,147 @@ export function buildHomeVNextViewModel(
     cycle,
     week,
     form,
+    demarrage,
     note,
     exit,
     protoWarnings,
   };
+}
+
+// =============================================================================
+// 6. LES TROIS DERIVATIONS DU DEMARRAGE
+// =============================================================================
+// Fonctions PURES, sorties du selecteur pour une raison : chacune est le seul
+// endroit ou une phrase de demarrage peut naitre. Les lire, c'est lire la
+// totalite de ce que ces deux variantes ont le droit d'afficher.
+// =============================================================================
+
+/**
+ * Les trois premiers pas, et l'etat verifiable de chacun.
+ *
+ * AUCUN pas n'est ajoute "pour faire trois". Chacun sort d'un champ d'entree
+ * que l'app remplit deja, et son etat `fait` est le resultat d'une comparaison,
+ * jamais une valeur ecrite a la main.
+ */
+function construirePremiersPas(
+  entree: HomeVNextDemarrageInput,
+  nbSeancesTerminees: number
+): readonly PremierPas[] {
+  const profilFait = texteOuNull(entree.mainObjective) !== null;
+  const testsFaits = Math.max(0, Math.trunc(entree.testEntryCount)) > 0;
+  const seanceFaite = nbSeancesTerminees > 0;
+
+  return [
+    {
+      id: "profil",
+      label: "Ton profil",
+      // Fait : on ne repete pas ce que le joueur vient de saisir (poste,
+      // niveau, objectif) — il le sait, il sort de l'ecran ou il l'a tape.
+      detail: profilFait
+        ? "Poste, niveau, objectif : c'est enregistré."
+        : "Il manque ton objectif principal : c'est lui qui oriente tes séances.",
+      fait: profilFait,
+      source: "users/{uid}.mainObjective (Firestore, ecrit par ProfileSetupScreen)",
+    },
+    {
+      id: "test_terrain",
+      label: "Tes tests terrain",
+      // Formulation reprise MOT POUR MOT de screens/CycleModalScreen.tsx : c'est
+      // deja la promesse faite au joueur ailleurs dans l'app, et deux promesses
+      // differentes pour la meme chose, c'est une de trop.
+      detail: testsFaits
+        ? "Tes repères sont enregistrés."
+        : "Ils affinent tes séances, mais tu peux commencer sans.",
+      fait: testsFaits,
+      source: "readTestsRaw() -> TestEntry[] (screens/tests/hooks/useTestsStorage.ts)",
+    },
+    {
+      id: "premiere_seance",
+      label: "Ta première séance",
+      // Le seuil est la CONSTANTE, pas un chiffre choisi pour la phrase.
+      detail: seanceFaite
+        ? "C'est fait."
+        : `C'est elle qui lance tout : ta tendance de forme démarre à ${SEANCES_MIN_POUR_TENDANCE} séances.`,
+      fait: seanceFaite,
+      source: "useSessionsStore.sessions filtre par isSessionCompleted",
+    },
+  ];
+}
+
+/**
+ * Pourquoi ce cycle-la.
+ *
+ * DEUX VERROUS, tous deux dans le sens de la prudence :
+ *   - un cycle deja actif -> `null`. Recommander a cote de ce qui tourne deja
+ *     mettrait deux verites dans le meme ecran (defaut E12/E13 de l'audit) ;
+ *   - aucun objectif declare -> `null`. `recommendMicrocycle` rendrait bien
+ *     « Reprise & bases », mais avec `confidence: "low"` et la raison
+ *     « Recommandation par defaut » : le presenter comme un choix fonde sur le
+ *     joueur serait precisement la raison inventee que la doctrine 4 interdit.
+ */
+function construirePourquoiCeCycle(
+  entree: HomeVNextDemarrageInput,
+  cycleActif: MicrocycleId | null
+): PourquoiCeCycle | null {
+  if (cycleActif !== null) return null;
+  const objectif = texteOuNull(entree.mainObjective);
+  if (objectif === null) return null;
+
+  // La MEME fonction que celle qui pre-selectionne deja le cycle a la fin du
+  // setup profil (`ProfileSetupScreen`, auto-assign) et dans la modale de choix
+  // de cycle. L'ecran ne peut donc pas proposer autre chose que ce que le
+  // joueur trouvera en tapant sur l'action.
+  const reco = recommendMicrocycle({
+    mainObjective: objectif,
+    lastTestPlaylist: entree.lastTestPlaylist,
+  });
+  const cycleLabel = MICROCYCLES[reco.id].label;
+  const testsOntPese = entree.lastTestPlaylist !== null;
+
+  return {
+    text: testsOntPese
+      ? `D'après l'objectif que tu as choisi et tes derniers tests, c'est « ${cycleLabel} » qui te correspond.`
+      : `D'après l'objectif que tu as choisi, c'est « ${cycleLabel} » qui te correspond.`,
+    cycleLabel,
+    source: testsOntPese ? "objectif_declare_et_tests" : "objectif_declare",
+  };
+}
+
+/**
+ * Ce que l'ecran affichera plus tard, et a partir de quand.
+ *
+ * Chaque apercu porte le TITRE EXACT de la section qu'il annonce et le SEUIL
+ * qui la declenchera vraiment. Un apercu dont la section ne pourra jamais
+ * apparaitre est ecarte : promettre « Ma semaine » a un joueur qui n'a declare
+ * aucun objectif hebdo serait une promesse que le produit ne tient pas (§5.8
+ * exige `weeklyGoalDeclared !== null`).
+ */
+function construireApercus(weeklyGoalDeclared: number | null): readonly ApercuSection[] {
+  const apercus: ApercuSection[] = [];
+
+  const objectif = weeklyGoalDeclared;
+  if (objectif !== null && objectif > 0) {
+    apercus.push({
+      titre: "MA SEMAINE",
+      message: `Après ta première séance, tu verras ici où tu en es de tes ${objectif} séance${objectif > 1 ? "s" : ""} par semaine.`,
+      seuil: SEANCES_POUR_SORTIR_DU_DEMARRAGE,
+      seuilNom: "SEANCES_POUR_SORTIR_DU_DEMARRAGE",
+    });
+  }
+
+  apercus.push({
+    titre: "MA FORME",
+    message: `Ta tendance se dessinera ici à partir de ${SEANCES_MIN_POUR_TENDANCE} séances enregistrées — pas avant, parce qu'avant elle ne dirait rien de toi.`,
+    seuil: SEANCES_MIN_POUR_TENDANCE,
+    seuilNom: "SEANCES_MIN_POUR_TENDANCE",
+  });
+
+  apercus.push({
+    titre: "MA PROGRESSION",
+    message: `Le lien vers ton suivi détaillé s'ouvrira au même moment : ${SEANCES_MIN_POUR_TENDANCE} séances, et il y aura vraiment quelque chose à regarder.`,
+    seuil: SEANCES_MIN_POUR_TENDANCE,
+    seuilNom: "SEANCES_MIN_POUR_TENDANCE",
+  });
+
+  return apercus;
 }

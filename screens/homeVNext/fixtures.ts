@@ -15,6 +15,13 @@
 //   - les points de tendance sont toujours posterieurs a la premiere seance
 //     reellement terminee : aucun point d'amorcage ATL0/CTL0.
 //
+// UNE SEULE EXCEPTION A « AUCUN CHAMP OMIS » : `demarrage`.
+// C'est le seul champ optionnel du contrat, et il n'est porte que par l'etat
+// « Nouveau joueur » — le seul qui serve les variantes de demarrage (V-A / V-B),
+// puisqu'elles exigent zero seance terminee. Le recopier a `null` dans les 14
+// autres n'aurait rien prouve : le selecteur traite `undefined` et `null` a
+// l'identique, et dans les deux cas il refuse de construire le bloc.
+//
 // Reference temporelle commune : jeudi 30 juillet 2026, 9h15 (heure locale).
 // L'ISO est volontairement ECRIT SANS FUSEAU pour que `toDateKey` renvoie
 // "2026-07-30" sur n'importe quelle machine — les captures du prototype doivent
@@ -68,6 +75,25 @@ const nouveauJoueur: HomeVNextFixture = {
     clubDirective: null,
     connectivity: "online",
     generationError: null,
+    // -------------------------------------------------------------------------
+    // CE QUE L'APP SAIT DEJA DE CE COMPTE — au format REEL, pas au format
+    // pratique. C'est ce groupe qui alimente les variantes de demarrage
+    // (V-A « Premiere mission » / V-B « Anticipation honnete »).
+    // -------------------------------------------------------------------------
+    demarrage: {
+      // VALEUR BRUTE, SANS ACCENT, telle qu'elle est persistee dans Firestore.
+      // C'est l'une des 4 chaines de `objectives` (screens/ProfileSetupScreen.tsx),
+      // comparee sans accent par les Cloud Functions et par le matching
+      // substring de `recommendMicrocycle`. L'ecrire ici avec un accent
+      // ("explosivité") produirait un scenario que la production ne peut PAS
+      // rencontrer.
+      mainObjective: "Gagner en vitesse / explosivite",
+      // Compte neuf : le joueur n'a pas encore passe les tests terrain. C'est le
+      // cas nominal — `CycleModalScreen` dit deja "tu peux commencer sans".
+      testEntryCount: 0,
+      // Sans test, aucun cycle de test a rattacher.
+      lastTestPlaylist: null,
+    },
   },
 };
 

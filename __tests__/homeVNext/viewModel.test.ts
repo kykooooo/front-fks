@@ -22,6 +22,7 @@ import {
   JOURS_SANS_SEANCE_POUR_REPRISE,
   JOURS_MATCH_PROCHE,
   NOTE_RECOUPEMENT_MAX,
+  SEANCES_POUR_SORTIR_DU_DEMARRAGE,
   type ActionKind,
   type ActionTarget,
   type HomeVNextInput,
@@ -676,14 +677,15 @@ describe("Home vNext — honnetete des donnees", () => {
 // -----------------------------------------------------------------------------
 
 describe("Home vNext — seuils d'affichage", () => {
-  it("les cinq seuils sont exportes avec leur valeur et leur role", () => {
-    expect(HOME_VNEXT_SEUILS).toHaveLength(5);
+  it("les six seuils sont exportes avec leur valeur et leur role", () => {
+    expect(HOME_VNEXT_SEUILS).toHaveLength(6);
     const parNom = Object.fromEntries(HOME_VNEXT_SEUILS.map((s) => [s.nom, s.valeur]));
     expect(parNom.SEANCES_MIN_POUR_TENDANCE).toBe(SEANCES_MIN_POUR_TENDANCE);
     expect(parNom.POINTS_MIN_POUR_COURBE).toBe(POINTS_MIN_POUR_COURBE);
     expect(parNom.JOURS_SANS_SEANCE_POUR_REPRISE).toBe(JOURS_SANS_SEANCE_POUR_REPRISE);
     expect(parNom.JOURS_MATCH_PROCHE).toBe(JOURS_MATCH_PROCHE);
     expect(parNom.NOTE_RECOUPEMENT_MAX).toBe(NOTE_RECOUPEMENT_MAX);
+    expect(parNom.SEANCES_POUR_SORTIR_DU_DEMARRAGE).toBe(SEANCES_POUR_SORTIR_DU_DEMARRAGE);
     for (const s of HOME_VNEXT_SEUILS) {
       expect(s.role.trim().length).toBeGreaterThan(0);
     }
