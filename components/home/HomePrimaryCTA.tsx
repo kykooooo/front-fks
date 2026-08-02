@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Animated } from "react-native
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../constants/theme";
 import { useHaptics } from "../../hooks/useHaptics";
+import { useReduceMotion } from "../../hooks/useReduceMotion";
 
 const palette = theme.colors;
 
@@ -24,6 +25,7 @@ function HomePrimaryCTAInner({
   if (__DEV__) console.log("[RENDER] HomePrimaryCTA");
   const isDisabled = disabled || tone === "disabled";
   const haptics = useHaptics();
+  const reduceMotion = useReduceMotion();
   const pulse = useRef(new Animated.Value(0)).current;
   const press = useRef(new Animated.Value(0)).current;
 
@@ -37,7 +39,11 @@ function HomePrimaryCTAInner({
   const pressScale = press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.96] });
 
   useEffect(() => {
-    if (isDisabled) return;
+    // Réduire les animations (OS) : pas de pulsation en boucle, bouton figé à l'échelle 1.
+    if (isDisabled || reduceMotion) {
+      pulse.setValue(0);
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
@@ -45,8 +51,11 @@ function HomePrimaryCTAInner({
       ])
     );
     loop.start();
-    return () => loop.stop();
-  }, [isDisabled, pulse]);
+    return () => {
+      loop.stop();
+      pulse.setValue(0);
+    };
+  }, [isDisabled, reduceMotion, pulse]);
 
   const scale = pulse.interpolate({
     inputRange: [0, 1],

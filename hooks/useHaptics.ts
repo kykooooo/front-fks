@@ -1,25 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import * as Haptics from "expo-haptics";
-import { AccessibilityInfo, Platform } from "react-native";
+import { Platform } from "react-native";
 import { useSettingsStore } from "../state/settingsStore";
+import { useReduceMotion } from "./useReduceMotion";
 
 export function useHaptics() {
   const enabled = useSettingsStore((s) => s.hapticsEnabled);
-  const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    AccessibilityInfo.isReduceMotionEnabled().then((value) => {
-      if (mounted) setReduceMotionEnabled(value);
-    });
-    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", (value) => {
-      setReduceMotionEnabled(value);
-    });
-    return () => {
-      mounted = false;
-      sub.remove();
-    };
-  }, []);
+  const reduceMotionEnabled = useReduceMotion();
 
   const canHaptics = useMemo(
     () => enabled && Platform.OS !== "web" && !reduceMotionEnabled,
