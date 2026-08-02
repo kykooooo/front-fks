@@ -10,22 +10,40 @@ import { theme } from "../../constants/theme";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
-import {
-  findClubByInviteCode,
-  normalizeInviteCode,
-  setClubMembership,
-  removeClubMembership,
-} from "../../repositories/clubsRepo";
+import { removeClubMembership } from "../../repositories/clubsRepo";
+import { clubMembershipCopy } from "../../domain/clubRoles";
+import { joinClubWithInviteCode } from "../../services/clubInvites";
 import { showToast } from "../../utils/toast";
+import { ClubDataDisclosure } from "../club/ClubDataDisclosure";
 
 const palette = theme.colors;
+
+/**
+ * Les DEUX axes de l'appartenance, lus dans le MÊME instantané : permissions
+ * d'encadrement (`accessRole`) et statut de joueur (`playerStatus`). Les lire
+ * séparément laisserait afficher un état mi-ancien mi-nouveau — et c'est
+ * précisément la combinaison des deux qui décrit un entraîneur-joueur.
+ */
+function lireAppartenance(snap: { exists: () => boolean; data: () => unknown }): {
+  accessRole: unknown;
+  playerStatus: unknown;
+} {
+  if (!snap.exists()) return { accessRole: null, playerStatus: null };
+  const data = (snap.data() ?? {}) as { accessRole?: unknown; playerStatus?: unknown };
+  return { accessRole: data.accessRole ?? null, playerStatus: data.playerStatus ?? null };
+}
 
 export function ClubManagementCard() {
   const uid = auth.currentUser?.uid ?? null;
 
   const [clubId, setClubId] = useState<string | null>(null);
   const [clubName, setClubName] = useState<string | null>(null);
-  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  // Son PROPRE rôle dans le club. Lu pour DIRE la vérité, jamais pour accorder
+  // un droit : l'autorité se décide côté serveur et côté règles, jamais ici.
+  const [monAppartenance, setMonAppartenance] = useState<{ accessRole: unknown; playerStatus: unknown }>({
+    accessRole: null,
+    playerStatus: null,
+  });
   const [loading, setLoading] = useState(true);
 
   const [inputCode, setInputCode] = useState("");
@@ -51,11 +69,20 @@ export function ClubManagementCard() {
     );
   }, [uid]);
 
-  // Récupérer les infos du club (une seule fois, pas de listener)
+  // Récupérer les infos du club (une seule fois, pas de listener).
+  // Le code d'invitation n'est PLUS lisible ici : il n'existe plus dans le
+  // document club (seule son empreinte vit côté serveur). Un joueur n'a donc
+  // plus aucun moyen de rediffuser le code de son club — c'était une porte
+  // ouverte, ce n'est plus une fonctionnalité.
+  //
+  // Le RÔLE est lu dans le même mouvement (document toujours lisible par son
+  // propriétaire : `allow read: isOwner(memberId)`). Il ne change rien à ce qui
+  // est permis — il change ce qui est DIT, et il retire un bouton qui ne pourrait
+  // pas marcher pour un propriétaire (cf. domain/clubRoles.clubMembershipCopy).
   useEffect(() => {
-    if (!clubId) {
+    if (!clubId || !uid) {
       setClubName(null);
-      setInviteCode(null);
+      setMonAppartenance({ accessRole: null, playerStatus: null });
       return;
     }
 
@@ -70,17 +97,23 @@ export function ClubManagementCard() {
         if (snap.exists()) {
           const data = snap.data() as any;
           setClubName(typeof data?.name === "string" ? data.name : null);
-          setInviteCode(typeof data?.inviteCode === "string" ? data.inviteCode : null);
         } else {
           setClubName(null);
-          setInviteCode(null);
         }
       } catch {
         // Permissions error - on affiche quand même le clubId
-        if (!cancelled) {
-          setClubName(null);
-          setInviteCode(null);
-        }
+        if (!cancelled) setClubName(null);
+      }
+
+      try {
+        const memberSnap = await getDoc(doc(db, "clubs", clubId, "members", uid));
+        if (cancelled) return;
+        setMonAppartenance(lireAppartenance(memberSnap));
+      } catch {
+        // Lecture ratée : on ne DÉDUIT rien. Sans rôle lu, la carte reste sur son
+        // affichage neutre de membre — accuser la base sur un incident réseau
+        // serait un mensonge de plus.
+        if (!cancelled) setMonAppartenance({ accessRole: null, playerStatus: null });
       }
     };
 
@@ -89,40 +122,37 @@ export function ClubManagementCard() {
     return () => {
       cancelled = true;
     };
-  }, [clubId]);
+  }, [clubId, uid]);
 
+  // Le front ne juge PLUS un code : il le transmet et affiche la réponse du
+  // serveur. Plus de contrôle de longueur (qui refusait localement des codes
+  // parfaitement valides), plus de "Club introuvable" décidé ici, et surtout
+  // plus de `e?.message` brut — un joueur français ne doit jamais lire
+  // "Missing or insufficient permissions".
   const handleJoinClub = async () => {
     if (!uid) return;
+    if (!inputCode.trim()) return;
 
-    const code = normalizeInviteCode(inputCode);
-    if (!code || code.length < 4) {
-      showToast({ type: "warn", title: "Code invalide", message: "Entre un code d'invitation valide." });
+    setJoining(true);
+    const outcome = await joinClubWithInviteCode(inputCode);
+    setJoining(false);
+
+    if (!outcome.ok) {
+      showToast({ type: "warn", title: "Club non rejoint", message: outcome.message });
       return;
     }
 
-    setJoining(true);
-    try {
-      const club = await findClubByInviteCode(code);
-      if (!club) {
-        showToast({ type: "warn", title: "Club introuvable", message: "Aucun club ne correspond à ce code." });
-        setJoining(false);
-        return;
-      }
-
-      // Ajouter le joueur au club (inviteCode = preuve d'invitation exigée par les rules)
-      await setClubMembership({ clubId: club.id, uid, role: "player", inviteCode: club.inviteCode });
-
-      // Mettre à jour le profil utilisateur
-      const userRef = doc(db, "users", uid);
-      await updateDoc(userRef, { clubId: club.id });
-
-      showToast({ type: "success", title: "Bienvenue !", message: `Tu as rejoint le club "${club.name}".` });
-      setInputCode("");
-    } catch (e: any) {
-      showToast({ type: "error", title: "Erreur", message: e?.message ?? "Impossible de rejoindre le club." });
-    } finally {
-      setJoining(false);
-    }
+    // Le clubId du profil est écrit par le serveur ; le listener onSnapshot
+    // ci-dessus le reflète. On ne le réécrit pas ici : ce serait une seconde
+    // source de vérité, et elle pourrait mentir.
+    showToast({
+      type: "success",
+      title: "Bienvenue !",
+      message: outcome.clubName
+        ? `Tu as rejoint le club "${outcome.clubName}".`
+        : "Tu as rejoint ton club.",
+    });
+    setInputCode("");
   };
 
   const handleLeaveClub = async () => {
@@ -147,8 +177,18 @@ export function ClubManagementCard() {
               await updateDoc(userRef, { clubId: null });
 
               showToast({ type: "success", title: "C'est fait", message: "Tu as quitté le club." });
-            } catch (e: any) {
-              showToast({ type: "error", title: "Erreur", message: e?.message ?? "Impossible de quitter le club." });
+            } catch {
+              // Message FR maîtrisé : le message brut de Firebase est en anglais.
+              showToast({ type: "error", title: "Erreur", message: "Impossible de quitter le club. Réessaie." });
+              // Le rôle a pu changer pendant que l'écran était ouvert (un
+              // transfert de propriété, par exemple) : on le relit, pour que la
+              // carte cesse de proposer un geste devenu impossible.
+              try {
+                const memberSnap = await getDoc(doc(db, "clubs", clubId, "members", uid));
+                setMonAppartenance(lireAppartenance(memberSnap));
+              } catch {
+                // Rien à conclure d'un second échec : on laisse l'affichage tel quel.
+              }
             } finally {
               setLeaving(false);
             }
@@ -168,6 +208,7 @@ export function ClubManagementCard() {
 
   // Si le joueur est dans un club
   if (clubId) {
+    const appartenance = clubMembershipCopy(monAppartenance);
     return (
       <Card variant="soft" style={styles.card}>
         <View style={styles.clubHeader}>
@@ -176,21 +217,31 @@ export function ClubManagementCard() {
           </View>
           <View style={styles.clubInfo}>
             <Text style={styles.clubName}>{clubName ?? "Club"}</Text>
-            <Text style={styles.clubCode}>Code: {inviteCode ?? "—"}</Text>
+            <Text style={styles.clubCode}>{appartenance.statut}</Text>
           </View>
-          <Badge label="Membre" tone="ok" />
+          <Badge label={appartenance.badge} tone="ok" />
         </View>
         <Text style={styles.clubDescription}>
           Ton coach peut suivre ta progression et régler le cadre de vos séances (intensité, objectif
           de la semaine).
         </Text>
-        <Button
-          label={leaving ? "Départ..." : "Quitter le club"}
-          variant="ghost"
-          size="sm"
-          onPress={handleLeaveClub}
-          disabled={leaving}
-        />
+        {/* Le joueur DÉJÀ dans un club doit pouvoir relire ce que son
+            encadrement voit — pas seulement au moment où il tape son code. */}
+        <ClubDataDisclosure />
+        {appartenance.peutQuitter ? (
+          <Button
+            label={leaving ? "Départ..." : "Quitter le club"}
+            variant="ghost"
+            size="sm"
+            onPress={handleLeaveClub}
+            disabled={leaving}
+          />
+        ) : (
+          // Pas de bouton grisé, pas de bouton qui échoue : la raison, et le
+          // geste. Un refus prononcé par la base ne doit pas arriver au joueur
+          // sous la forme d'un « Réessaie » qui ne marchera jamais.
+          <Text style={styles.empechement}>{appartenance.empechement}</Text>
+        )}
       </Card>
     );
   }
@@ -205,15 +256,21 @@ export function ClubManagementCard() {
       <Text style={styles.noClubDescription}>
         Entre le code d'invitation de ton coach pour rejoindre ton club et bénéficier d'un suivi personnalisé.
       </Text>
+      {/* Divulgation AVANT la saisie : le joueur sait ce qu'il partage avant de
+          taper son code. Elle n'exige rien et ne désactive pas le bouton. */}
+      <ClubDataDisclosure />
       <View style={styles.inputRow}>
         <TextInput
           value={inputCode}
           onChangeText={setInputCode}
-          placeholder="Ex: FKSF1234"
+          placeholder="Ex: ABCDE-FGHJK"
           placeholderTextColor={palette.sub}
           style={styles.input}
           autoCapitalize="characters"
-          maxLength={10}
+          autoCorrect={false}
+          // Pas de maxLength serré : le format du code appartient au serveur.
+          // L'ancien plafond de 10 caractères aurait tronqué le code actuel.
+          maxLength={24}
         />
         <Button
           label={joining ? "..." : "Rejoindre"}
@@ -260,6 +317,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: palette.sub,
     lineHeight: 16,
+  },
+  // `minHeight` et jamais `height` (règle d'or du socle visuel) : ce texte est
+  // long, et il ne doit pas être coupé au milieu d'une explication.
+  empechement: {
+    fontSize: 12,
+    color: palette.sub,
+    lineHeight: 17,
+    minHeight: 17,
   },
   noClubHeader: {
     flexDirection: "row",

@@ -9,31 +9,671 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    // ── PRÉDICAT D'AUTORITÉ DU CLUB ─────────────────────────────────────────
+    //
+    // L'invariant, mot pour mot : « un propriétaire est autorisé uniquement si
+    // ownerUid le désigne ET s'il possède encore une appartenance active avec le
+    // rôle propriétaire ». DEUX sources, jamais une seule. Quand elles se
+    // contredisent, la règle REFUSE — elle ne choisit pas laquelle des deux ment.
+    //
+    // DUPLICATION ASSUMÉE. Ces fonctions sont la recopie MANUELLE de
+    // functions/src/clubAuthority.ts (les règles ne peuvent pas importer de
+    // TypeScript), exactement comme la liste des états d'accès l'est de
+    // coachAccess.COACH_ACCESS_GRANTING_STATES. Aucun verrou automatique ne les
+    // maintient égales : ce qui les tient, ce sont deux suites qui exercent les
+    // MÊMES cas — functions/tests/clubAuthority.test.ts et
+    // firestore-tests/rules.clubAuthority.test.ts. Toucher les deux, toujours.
+    //
+    // ── DEUX AXES INDÉPENDANTS ──────────────────────────────────────────────
+    // Une appartenance `clubs/{clubId}/members/{uid}` porte DEUX champs qui ne
+    // parlent pas de la même chose :
+    //   . `accessRole`   : permissions d'encadrement — "owner" | "coach".
+    //                      Absent = aucune permission ;
+    //   . `playerStatus` : statut de joueur — "active" | "inactive".
+    //                      Absent = aucun suivi sportif dans ce club.
+    // LES DEUX PEUVENT COEXISTER : un entraîneur-joueur porte `accessRole:
+    // "coach"` ET `playerStatus: "active"`. L'ancien champ unique `role` (qui
+    // valait owner/coach/player/removed) a DISPARU : c'est sa fusion des deux
+    // axes qui faisait qu'obtenir l'encadrement effaçait le fait d'être joueur.
+    //
+    // LA PIERRE TOMBALE n'est plus une valeur, c'est l'absence des deux :
+    // `accessRole: null` + `playerStatus: "inactive"`, écrits ensemble par le
+    // retrait serveur (functions/src/clubMembers.ts). Elle n'ouvre RIEN, nulle
+    // part — sans dépendre d'une suppression de document ni d'un ordre
+    // d'événements.
+    //
+    // COÛT DE LECTURE : `myAccessRole` et `myPlayerStatus` visent le MÊME
+    // document ; les get()/exists() sur un même chemin sont mutualisés dans une
+    // évaluation de règle, donc `isActiveMember` ne coûte pas deux accès.
+
+    /** Permission d'encadrement du membre courant, "" si absente (fail-closed). */
+    function myAccessRole(clubId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid))
+            .data.get("accessRole", "")
+        : "";
+    }
+
+    /** Statut de joueur du membre courant, "" si absent (fail-closed). */
+    function myPlayerStatus(clubId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid))
+            .data.get("playerStatus", "")
+        : "";
+    }
+
+    /** ownerUid DÉSIGNÉ par le document club. Référence rapide, jamais un droit seul. */
+    function clubOwnerUid(clubId) {
+      return exists(/databases/$(database)/documents/clubs/$(clubId))
+        ? get(/databases/$(database)/documents/clubs/$(clubId)).data.get("ownerUid", "")
+        : "";
+    }
+
+    // LE prédicat propriétaire : désignation ET appartenance, les deux.
+    // Un état incohérent (l'une sans l'autre) n'accorde donc AUCUN droit
+    // d'écriture — il est signalé côté serveur (functions/src/clubMembersApi.ts)
+    // et reste lisible côté coach (cf. `allow get` sur clubs, plus bas), pour ne
+    // pas transformer une anomalie en disparition muette du club.
     function isClubOwner(clubId) {
       return isSignedIn() &&
-        get(/databases/$(database)/documents/clubs/$(clubId)).data.ownerUid == request.auth.uid;
+        clubOwnerUid(clubId) == request.auth.uid &&
+        myAccessRole(clubId) == "owner";
     }
 
-    function isCoach(clubId) {
-      return isSignedIn() &&
-        get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data.role == "coach";
+    // Permissions d'encadrement reconnues — liste recopiée de
+    // functions/src/clubAuthority.CLUB_ACCESS_ROLES (les règles ne peuvent pas
+    // importer de TypeScript ; un test verrouille l'accord :
+    // firestore-tests/rules.clubAuthority.test.ts). Isolée dans sa propre
+    // fonction pour que ce test puisse en extraire les littéraux par leur nom.
+    function clubAccessRoles() {
+      return ["owner", "coach"];
     }
 
-    // Membre du club = possède un doc members/{uid} (joueur OU coach).
-    // Tout joueur ayant rejoint via code en a un (setClubMembership).
-    function isClubMember(clubId) {
-      return isSignedIn() &&
-        exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+    // Le SEUL statut de joueur qui ouvre un droit — recopié de
+    // functions/src/clubAuthority.PLAYER_STATUS_ACTIVE. `PLAYER_STATUS_INACTIVE`
+    // n'a pas d'équivalent ici : aucune règle ne teste jamais son égalité, une
+    // pierre tombale ouvre un droit en étant DIFFÉRENTE de "active", pas en
+    // valant "inactive" (cf. `isPlayerMember` plus bas). Même verrou que
+    // `clubAccessRoles` : firestore-tests/rules.clubAuthority.test.ts.
+    function activePlayerStatus() {
+      return "active";
     }
 
-    // La JOUEUSE ciblée est-elle un membre ACTIF du club, avec le rôle player ?
-    // Sert à invalider une projection playerSummaries STALE : si la joueuse a
-    // quitté le club (member doc supprimé) ou n'a pas le rôle player (coach/rôle
-    // invalide), le summary — même encore présent — n'est plus lisible.
+    // ENCADREMENT. Le propriétaire EST encadrant : sans cette ligne, poser le
+    // rôle propriétaire lui retirerait l'écriture du cadre de semaine et de la
+    // directive — un trou ouvert en en fermant un autre.
+    // Ne dépend QUE de `accessRole` : ni de `ownerUid` (aucune incohérence
+    // possible entre deux sources), ni du statut de joueur — un entraîneur-joueur
+    // est encadrant à part entière, et le rester ne doit rien à son suivi.
+    function isClubStaff(clubId) {
+      return myAccessRole(clubId) in clubAccessRoles();
+    }
+
+    // Appartenance ACTIVE au club : encadrement OU suivi sportif actif.
+    // Remplace l'ancien « le document members/{uid} existe » : une pierre
+    // tombale existe aussi, et elle ne doit plus rien ouvrir. C'est ce qui rend
+    // le retrait RÉEL — il ferme les deux axes d'une seule écriture, donc cette
+    // fonction devient fausse quoi qu'il arrive ensuite.
+    function isActiveMember(clubId) {
+      return isClubStaff(clubId) || myPlayerStatus(clubId) == activePlayerStatus();
+    }
+
+    // La personne ciblée a-t-elle un SUIVI SPORTIF ACTIF dans ce club ?
+    // Sert à invalider une projection playerSummaries STALE : si elle a quitté
+    // le club (member doc supprimé) ou n'a plus de suivi actif, le summary —
+    // même encore présent — n'est plus lisible.
     // exists() protège le get() (court-circuit) contre un doc absent.
+    //
+    // ELLE NE REGARDE PAS L'ENCADREMENT, ET C'EST LE POINT : un entraîneur-joueur
+    // (`accessRole: "coach"` + `playerStatus: "active"`) a une fiche dans
+    // l'effectif suivi, exactement comme les autres joueurs — et soumise aux
+    // mêmes deux autres conditions (`isClubStaff` du lecteur, `coachAccess` du
+    // sujet). Ça n'ouvre donc aucune surface nouvelle : ça remplit une case qui
+    // était vide à tort.
+    //
+    // C'EST AUSSI LE PREMIER DES TROIS VERROUS DU RETRAIT : une pierre tombale
+    // porte `playerStatus: "inactive"`, donc cette fonction est fausse, donc une
+    // projection résiduelle est illisible — même si un trigger en vol venait à
+    // la réécrire une fraction de seconde après le retrait.
     function isPlayerMember(clubId, playerUid) {
       return exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid)) &&
-        get(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid)).data.role == "player";
+        get(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid))
+          .data.get("playerStatus", "") == activePlayerStatus();
+    }
+
+    // ── AUTORISATION D'ACCÈS AUX DONNÉES DE SUIVI (default-deny) ─────────────
+    // Le rattachement au club (le doc members existe) et l'autorisation de
+    // consultation (ce champ) sont DEUX choses différentes. Un joueur peut être
+    // membre du club sans que son suivi soit lisible : c'est le cas nominal d'un
+    // club configuré en "approval_required" (cf. POLITIQUE, plus bas), ou d'un
+    // accès retiré. L'ÂGE n'entre plus dans cette décision (juillet 2026).
+    //
+    // Valeurs : "pending" | "approved" | "revoked" | "not_required".
+    // SEULES "approved" et "not_required" ouvrent la lecture — liste recopiée de
+    // functions/src/coachAccess.COACH_ACCESS_GRANTING_STATES (les règles ne
+    // peuvent pas importer de TypeScript ; un test verrouille l'accord :
+    // firestore-tests/rules.coachAccess.test.ts).
+    //
+    // Isolée dans sa propre fonction (et non inline dans `isCoachAccessGranted`)
+    // pour que le test d'accord puisse en extraire les littéraux par leur nom.
+    function coachAccessGrantingStates() {
+      return ["approved", "not_required"];
+    }
+
+    // FAIL-CLOSED SUR CHAMP ABSENT : `.get(champ, "")` renvoie "" quand le champ
+    // n'existe pas, et "" n'est pas dans la liste → REFUS. C'est ce qui protège
+    // les membership ANCIENS, écrits avant l'existence de ce champ : ils
+    // n'ouvrent rien. `exists()` garde le `get()` (court-circuit) contre un doc
+    // absent. Le coût reste d'un seul accès document : les appels get()/exists()
+    // sur le MÊME chemin sont mutualisés dans une évaluation de règle.
+    function isCoachAccessGranted(clubId, playerUid) {
+      return exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid)) &&
+        get(/databases/$(database)/documents/clubs/$(clubId)/members/$(playerUid))
+          .data.get("coachAccess", "") in coachAccessGrantingStates();
+    }
+
+    // ── POLITIQUE DE RATTACHEMENT DU CLUB ───────────────────────────────────
+    // Portée : clubs/{clubId}.joinAccessPolicy
+    // Valeurs : "automatic_safe_projection" (défaut) | "approval_required".
+    //
+    // LE NOM DIT LA PORTÉE. Ce champ décide de l'état `coachAccess` posé sur un
+    // joueur AU MOMENT DE SON RATTACHEMENT (Cloud Function
+    // `joinClubWithInviteCode`), et de rien d'autre : il ne s'applique qu'aux
+    // PROCHAINS joueurs qui rejoignent le club. Il s'appelait
+    // `coachAccessPolicy` — un nom qui laissait croire qu'il gouvernait l'accès
+    // du coach en général, membres déjà rattachés compris. C'était faux.
+    //
+    // Le changer ne rouvre ni ne ferme AUCUN accès existant : les états déjà
+    // posés sont conservés tels quels côté serveur
+    // (functions/src/coachAccess.resolveCoachAccess), et la fermeture d'un accès
+    // existant reste un geste explicite, joueur par joueur ("revoked").
+    //
+    // Il ne change RIEN aux règles de lecture ci-dessous : `isCoachAccessGranted`
+    // continue de ne lire QUE le membership, sans get() supplémentaire sur le
+    // club. C'est volontaire — faire dépendre chaque lecture de summary d'un
+    // second document doublerait le coût de lecture du roster, pour une
+    // information qui est déjà matérialisée dans `coachAccess`.
+    //
+    // ÉCRITURE : coach ou owner du club, et PERSONNE D'AUTRE. Un joueur ne peut
+    // pas la poser, la changer, ni l'effacer — ni sur un club où il est membre,
+    // ni ailleurs (il n'a aucun droit d'update sur un document club).
+    //
+    // Le coach non-owner obtient ici un droit d'écriture EXACTEMENT borné à ce
+    // champ (`hasOnly`) : il ne gagne aucun autre pouvoir sur le document club
+    // (ni renommage, ni changement d'ownerUid). Sans ce chemin, seul le
+    // propriétaire pourrait configurer la politique, ce qui n'est pas ce que la
+    // décision produit demande.
+    //
+    // VALEUR VALIDÉE : une politique inconnue est refusée à l'écriture. Le
+    // serveur, lui, retombe de toute façon sur le défaut si elle est illisible
+    // (functions/src/joinAccessPolicy.ts) — les deux protections se doublent
+    // volontairement, et la base est la plus stricte des deux.
+    function validJoinAccessPolicy() {
+      return request.resource.data.get("joinAccessPolicy", "automatic_safe_projection")
+        in ["automatic_safe_projection", "approval_required"];
+    }
+
+    // ── LA DÉSIGNATION N'EST PLUS ÉCRIVABLE PAR UN CLIENT ───────────────────
+    //
+    // C'était le trou laissé par le lot précédent : `allow update` autorisait le
+    // propriétaire à modifier le document club, `ownerUid` COMPRIS. Il pouvait
+    // donc, d'une seule écriture cliente, désigner quelqu'un d'autre — sans
+    // toucher aux rôles. Résultat : un club dont la désignation nomme un compte
+    // sans appartenance propriétaire, et un ancien propriétaire qui garde le
+    // rôle sans la désignation. Exactement les DEUX incohérences que l'invariant
+    // refuse, fabriquées à la main, en une requête.
+    //
+    // Le transfert n'est donc pas « une écriture Firestore côté client » : c'est
+    // la Cloud Function `transferClubOwnership`, seule capable de changer la
+    // désignation ET les deux rôles dans UNE transaction.
+    //
+    // La condition porte sur le RÉSULTAT, pas sur les clés touchées (même choix
+    // que le bannissement du champ `note`) : une écriture en merge qui laisse
+    // `ownerUid` inchangé passe, une qui le change ou l'efface est refusée —
+    // `.get(champ, "")` renvoie "" pour un champ absent, donc une suppression
+    // devient "" ≠ ancien uid, donc REFUS.
+    function changesOwnerUid() {
+      return request.resource.data.get("ownerUid", "") != resource.data.get("ownerUid", "");
+    }
+
+    // ══ DOCUMENT UTILISATEUR : LISTE BLANCHE, INTERDICTION PAR DÉFAUT ═══════
+    //
+    // CE QUI ÉTAIT ÉCRIT ICI AVANT, ET QUI EST LE DÉFAUT FERMÉ PAR CE LOT :
+    // `allow create, update: if isOwner(userId)`. Chacun pouvait donc écrire
+    // N'IMPORTE QUEL champ de son propre document utilisateur. Plus aucun champ
+    // d'autorité n'y est lu depuis la refonte de l'espace applicatif (cf.
+    // domain/appSpace.ts) — mais la surface, elle, restait grande ouverte. Le
+    // prochain lot qui y poserait un champ sensible (un abonnement, un drapeau
+    // d'administration, un pilotage à distance des modes de suivi) l'aurait
+    // laissé écrivable par son titulaire sans même s'en apercevoir. On inverse
+    // donc la logique : ce n'est plus une liste noire de champs sensibles, c'est
+    // une LISTE BLANCHE, et tout ce qui n'y figure pas est REFUSÉ — y compris un
+    // champ que personne n'a encore inventé.
+    //
+    // ── LES DEUX MÉCANISMES, ET POURQUOI ILS NE SONT PAS LE MÊME ────────────
+    //
+    // 1. CRÉATION → `request.resource.data.keys().hasOnly(...)`. À la création,
+    //    le document N'A PAS de passé : toutes ses clés sont posées par cette
+    //    écriture, donc on les juge toutes. Un `create` qui pose un champ
+    //    interdit est refusé, même si sa valeur est nulle.
+    //
+    // 2. MISE À JOUR → `diff(resource.data).affectedKeys().hasOnly(...)`. On
+    //    juge les clés RÉELLEMENT TOUCHÉES : ajoutées, modifiées OU SUPPRIMÉES
+    //    (c'est la définition de `affectedKeys`, et c'est ce qui ferme la
+    //    suppression par merge partiel — un `deleteField()` sur un champ gelé
+    //    fait apparaître ce champ dans les clés affectées, donc REFUS).
+    //
+    //    POURQUOI PAS `keys()` SUR LE RÉSULTAT ICI. Parce que ça casserait en
+    //    PRODUCTION et pas en test : un document ANCIEN porte des champs qui ne
+    //    sont plus dans la liste blanche (`available_time_min`, `clubTypicalRPE`,
+    //    `explosivite_playlist_len`, `role`, `accessRole`… — vérifié : plus
+    //    aucun chemin ne les écrit, ils sont seulement LUS). Juger le résultat
+    //    rendrait ces documents INÉCRIVABLES, et le joueur ne pourrait plus
+    //    modifier son profil du tout. En jugeant les clés touchées, un champ
+    //    hérité qu'on ne touche pas reste tranquille, et un champ inconnu qu'on
+    //    tente d'ÉCRIRE est refusé. C'est exactement l'arbitrage voulu.
+    //
+    //    Le motif « condition sur le RÉSULTAT » reste employé là où il est le
+    //    bon outil (cf. `changesOwnerUid` et le bannissement de `note`) : ici,
+    //    pour `uid` et pour `clubId`, dont ce sont les VALEURS qui comptent.
+    //
+    // ── INVENTAIRE DES ÉCRITURES LÉGITIMES (source de la liste blanche) ─────
+    // CLIENT, création :
+    //   . screens/RegisterScreen.tsx        → email, displayName, firstName,
+    //                                          profileCompleted, createdAt, updatedAt
+    // CLIENT, mise à jour :
+    //   . screens/ProfileSetupScreen.tsx    → identité, profil sportif, rythme
+    //                                          club/match, matériel, consentement
+    //                                          parental, cycle auto-assigné
+    //   . screens/CycleModalScreen.tsx      → cycle (démarrage / abandon)
+    //   . screens/feedback/hooks/useFeedbackSave.ts → cycle suivant, parcours
+    //   . state/stores/useSyncStore.ts      → lastSessionDate/At, cycle, parcours
+    //   . repositories/clubsRepo.ts         → uid, clubId, firstName, profileCompleted
+    //   . components/settings/ClubManagementCard.tsx → clubId: null (départ)
+    // CLIENT, branche « boucle de suivi joueur » (claude/player-tracking-loop-559906),
+    // À MERGER AVANT NOUS — pré-autorisée ici pour que le merge ne casse pas :
+    //   . screens/ProfileSetupScreen.tsx           → selfReportedGapDays
+    //   . state/orchestrators/applyFeedback.ts     → lastTrackingDecision
+    //   Ces deux écritures sont « best-effort » : leur refus serait SILENCIEUX
+    //   côté joueur. Les oublier ici aurait cassé la boucle sans un message.
+    // SERVEUR (Admin SDK — contourne ces règles, vérifié : aucune de ces
+    // écritures ne passe par les rules) :
+    //   . functions/src/inviteCodes.ts      → uid, clubId (rattachement)
+    //   . functions/src/clubMembers.ts      → clubId: null (retrait complet)
+    //   . functions/src/clubOwnership.ts    → role: "coach" (mode administrateur)
+    //   . functions/src/deleteAccount.ts    → recursiveDelete (suppression compte)
+
+    /**
+     * Champs posables À LA CRÉATION SEULEMENT. Identité de compte : posée une
+     * fois par l'inscription, jamais retouchée ensuite. Ne pas les remettre
+     * dans la liste mutable les GÈLE automatiquement après création — un seul
+     * mécanisme, pas deux.
+     */
+    function userCreateOnlyFields() {
+      return ["createdAt", "email", "displayName"];
+    }
+
+    /**
+     * Champs que le titulaire peut écrire ET modifier. TOUT LE RESTE EST REFUSÉ.
+     * Un test (firestore-tests/rules.userDocument.test.ts) échoue si cette liste
+     * et l'inventaire ci-dessus divergent.
+     */
+    function userMutableFields() {
+      return [
+        // Identité applicative
+        "uid", "firstName", "profileCompleted", "updatedAt",
+        // Profil sportif
+        "position", "ageCategory", "level", "dominantFoot", "mainObjective",
+        "parentalConsent",
+        // Rythme club et match
+        "targetFksSessionsPerWeek", "clubTrainingsPerWeek", "matchesPerWeek",
+        "hasClubTrainings", "clubTrainingDays", "matchDay", "matchDays",
+        // Lieu et matériel
+        "hasGymAccess", "gymEquipment", "hasHomeEquipment", "homeEquipment",
+        // Cycle en cours
+        "microcycleGoal", "goal", "programGoal", "microcycleStatus",
+        "microcycleTotalSessions", "microcycleSessionIndex", "microcycleStartedAt",
+        "microcycleAbandonedAt", "microcycleAbandonReason",
+        // Parcours (enchaînement de cycles)
+        "activePathwayId", "activePathwayIndex",
+        // Trace d'activité
+        "lastSessionDate", "lastSessionAt",
+        // Rattachement au club — présent ici pour que l'écriture franchisse la
+        // liste blanche ; sa VALEUR est gouvernée par `userClubIdIsLegitimate`.
+        "clubId",
+        // Boucle de suivi joueur (branche à merger avant nous, cf. inventaire)
+        "selfReportedGapDays", "lastTrackingDecision"
+      ];
+    }
+
+    /**
+     * Champs D'AUTORITÉ, D'ACCÈS, DE PILOTAGE, DE FACTURATION ET
+     * D'ADMINISTRATION. Absents de la liste blanche, ils seraient DÉJÀ refusés ;
+     * on les NOMME quand même, pour trois raisons :
+     *  - le refus devient explicite et testé, au lieu d'être un effet de bord ;
+     *  - à la création, `hasOnly` juge les clés posées, mais nommer ces champs
+     *    rend l'intention lisible pour qui relit la règle ;
+     *  - certains EXISTENT déjà sur des documents anciens (`role`, `accessRole`,
+     *    `playerStatus`) : les nommer dit qu'ils sont GELÉS, pas bannis — un
+     *    document qui les porte reste modifiable par ailleurs.
+     *
+     * `trackingConfig` mérite d'être lu deux fois : c'est l'interrupteur distant
+     * des modes de la boucle de suivi (domain/tracking/modes.resolveTrackingModes,
+     * lu par services/aiContext.ts). Écrivable par son titulaire, un joueur
+     * activerait lui-même le mode Application sur ses propres séances. Il n'est
+     * écrit par AUCUN chemin applicatif : c'est un geste d'exploitation.
+     *
+     * Les noms de facturation et d'administration ne correspondent à AUCUN champ
+     * existant aujourd'hui. Ils sont RÉSERVÉS d'avance, pour qu'un futur lot les
+     * trouve déjà fermés au lieu de les poser en douce.
+     */
+    function userServerOnlyFields() {
+      return [
+        // Autorité et espace applicatif
+        "role", "accessRole", "playerStatus", "coachAccess",
+        "roles", "claims", "permissions", "isAdmin", "admin",
+        // Pilotage à distance
+        "trackingConfig", "featureFlags",
+        // Facturation (réservés)
+        "subscription", "subscriptionStatus", "plan", "entitlements",
+        "premium", "billing", "stripeCustomerId", "trialEndsAt"
+      ];
+    }
+
+    /**
+     * `uid`, quand il est écrit, DOIT désigner le titulaire du document.
+     * Condition sur le RÉSULTAT (comme `changesOwnerUid`) : un `uid` menteur ne
+     * peut ni être posé à la création, ni apparaître par mise à jour. Absent, il
+     * est accepté — l'inscription ne l'écrit pas, et des milliers de documents
+     * anciens n'en portent pas.
+     */
+    function userUidIsSelf(userId) {
+      return !("uid" in request.resource.data) ||
+        request.resource.data.uid == userId;
+    }
+
+    /** clubId AVANT l'écriture, "" si document absent, champ absent ou nul. */
+    function priorUserClubId() {
+      return resource != null && "clubId" in resource.data && resource.data.clubId is string
+        ? resource.data.clubId : "";
+    }
+
+    /**
+     * `clubId` : LE SEUL CHAMP DE CETTE LISTE QUI SOIT ASYMÉTRIQUE.
+     *
+     * Il dit OÙ regarder, jamais QUI on est (cf. navigation/RootNavigator.tsx) —
+     * aucune règle n'en dérive un droit. Mais il décide OÙ le serveur projette
+     * le suivi du joueur (functions/src/triggers.clubIdOfUser), donc le laisser
+     * pointer n'importe où reste une écriture qu'on ne veut pas.
+     *
+     * Trois cas, et trois seulement :
+     *  - EFFACEMENT (null) : toujours permis. C'est le départ volontaire depuis
+     *    les réglages (components/settings/ClubManagementCard.tsx), et un
+     *    détachement ne peut RIEN ouvrir.
+     *  - VALEUR INCHANGÉE : toujours permise. C'est l'écho du setup profil, qui
+     *    repasse le club existant tel quel à chaque enregistrement. Sans ce cas,
+     *    un joueur dont le suivi a été désactivé (`playerStatus: "inactive"`,
+     *    `clubId` conservé) ne pourrait PLUS JAMAIS modifier son profil.
+     *  - NOUVELLE VALEUR : seulement vers un club où l'appartenance est RÉELLE
+     *    et ACTIVE. C'est le cas du fondateur qui vient de créer son club
+     *    (repositories/clubsRepo.createClubAsCoach écrit l'appartenance
+     *    propriétaire JUSTE AVANT ce champ). Le rattachement d'un joueur, lui,
+     *    est écrit par la Cloud Function `joinClubWithInviteCode`, qui contourne
+     *    ces règles.
+     *
+     * COÛT : le `get()` d'appartenance n'est payé QUE si la valeur change
+     * réellement vers un club — jamais sur un enregistrement de profil ordinaire.
+     */
+    function userClubIdIsLegitimate() {
+      return !("clubId" in request.resource.data) ||
+        request.resource.data.clubId == null ||
+        (request.resource.data.clubId is string &&
+          (request.resource.data.clubId == priorUserClubId() ||
+            isActiveMember(request.resource.data.clubId)));
+    }
+
+    // ══ INVENTORIER UN CHAMP N'EST PAS AUTORISER N'IMPORTE QUELLE VALEUR ════
+    //
+    // La liste blanche ci-dessus dit QUELS champs le titulaire peut écrire. Elle
+    // ne dit RIEN de ce qu'il peut y mettre. Deux champs de la boucle de suivi
+    // joueur (branche claude/player-tracking-loop-559906, à merger AVANT nous)
+    // ne peuvent pas rester à ce niveau-là, et pas pour la même raison :
+    //
+    //  . `selfReportedGapDays` est un SIGNAL DÉCLARÉ PAR LE JOUEUR — « depuis
+    //    quand n'as-tu pas eu d'entraînement régulier ? ». Le joueur a le droit
+    //    de le déclarer ; on valide donc le TYPE, les BORNES et la SUPPRESSION,
+    //    pas la véracité.
+    //  . `lastTrackingDecision` est une DÉCISION DÉRIVÉE, produite par le moteur
+    //    de règles du téléphone, et destinée à influencer la suite. Contrat
+    //    FERMÉ : structure versionnée, énumérations closes, aucun objet
+    //    arbitraire.
+    //
+    // ── LE CONTRAT EST RECOPIÉ DE LA STRUCTURE RÉELLE, PAS INVENTÉ ──────────
+    // Ces deux écritures sont « best-effort » côté application : un refus de
+    // règle est avalé par un `catch` et ne produit AUCUN message pour le joueur
+    // (`state/orchestrators/applyFeedback.ts`). Un contrat trop strict ne casse
+    // donc pas bruyamment — il fait disparaître la donnée en silence. Chaque
+    // ligne ci-dessous vient d'une lecture champ par champ de la branche :
+    //   domain/tracking/types.ts        → TrackingDecision, TrackingDecisionKind
+    //   domain/tracking/rulesEngine.ts  → l'objet réellement construit
+    //   domain/tracking/explain.ts      → l'explication FR ajoutée ensuite
+    //   domain/tracking/config.ts       → rulesVersion "tracking-rules/1.0.0"
+    //   screens/ProfileSetupScreen.tsx  → les valeurs réellement déclarables
+    // Et un test REJOUE ces écritures à l'identique contre l'émulateur
+    // (firestore-tests/rules.userDocument.test.ts, section J) : si le contrat
+    // dérivait de la réalité, il tomberait ICI et pas en production.
+    //
+    // ── CE QUI EST VALIDÉ QUAND, ET POURQUOI PAS SUR LE RÉSULTAT ────────────
+    // À la CRÉATION : si le champ est posé, il doit être conforme.
+    // En MISE À JOUR : la conformité n'est exigée que si le champ est TOUCHÉ
+    // (`userTouches`). Juger le RÉSULTAT — comme pour `note` ou `ownerUid` —
+    // serait plus fort, mais rendrait INÉCRIVABLE tout document portant déjà une
+    // valeur non conforme : le titulaire ne pourrait plus jamais modifier son
+    // profil, et ça ne casserait qu'en production. Ces deux champs n'existent
+    // encore chez PERSONNE (la branche n'est pas mergée), donc le risque est nul
+    // aujourd'hui — mais l'Admin SDK contourne ces règles et pourrait en écrire
+    // une demain. On garde donc le mécanisme qui ne peut pas bricker un compte.
+    // Conséquence assumée, écrite noir sur blanc : une valeur non conforme
+    // déposée par le serveur RESTERAIT en base ; ce qui est fermé ici, c'est
+    // qu'un CLIENT en introduise une.
+    //
+    // ── LA SUPPRESSION EST PERMISE POUR LES DEUX, ET C'EST UNE DÉCISION ─────
+    // `selfReportedGapDays` : le joueur écrit déjà `null` quand il ne répond pas
+    // (ProfileSetupScreen), et le lecteur traite « absent » et « null » de la
+    // même façon (`hooks/useSelfReportedGapDays.ts` : tout ce qui n'est pas un
+    // nombre ≥ 0 devient `null`). Refuser `deleteField()` tout en acceptant
+    // `null` serait une distinction sans différence — zéro protection gagnée, et
+    // un futur chemin de réinitialisation cassé en silence. Retirer une
+    // déclaration qu'on a faite soi-même est par ailleurs légitime.
+    // `lastTrackingDecision` : c'est un MIROIR multi-appareil, pas la source —
+    // la vérité vit dans les séances et l'exécution locale. L'effacer ne retire
+    // aucun droit à personne et n'en donne aucun.
+    // Les deux suppressions sont testées.
+
+    /** Le champ nommé fait-il partie des clés RÉELLEMENT touchées par l'écriture ? */
+    function userTouches(champ) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([champ]);
+    }
+
+    /**
+     * `selfReportedGapDays` — coupure d'entraînement AUTO-DÉCLARÉE.
+     *
+     * TYPE : entier, ou `null` (« pas répondu » — valeur réellement écrite par
+     * le setup profil quand la question est passée). Un flottant, une chaîne, un
+     * booléen ou une map sont refusés.
+     * BORNES : 0 à 3650 jours (dix ans). L'écran ne propose aujourd'hui que
+     * quatre valeurs (0, 21, 60, 120 — SELF_REPORTED_GAP_OPTIONS), mais la règle
+     * borne un INTERVALLE plutôt que de recopier cette liste : elle appartient à
+     * l'UI et changera. Une liste close ici ferait disparaître la réponse en
+     * silence le jour où une cinquième option apparaît — exactement la panne
+     * qu'on cherche à empêcher. Au-delà de 28 jours le moteur se comporte déjà
+     * de façon identique (`resumption.gapDaysHard`) : la borne haute ne sert
+     * qu'à refuser l'absurde, pas à discriminer du plausible.
+     */
+    function validSelfReportedGapDays() {
+      return !("selfReportedGapDays" in request.resource.data) ||
+        request.resource.data.selfReportedGapDays == null ||
+        (request.resource.data.selfReportedGapDays is int &&
+          request.resource.data.selfReportedGapDays >= 0 &&
+          request.resource.data.selfReportedGapDays <= 3650);
+    }
+
+    /**
+     * Les DIX décisions possibles — recopie EXACTE de `TrackingDecisionKind`
+     * (domain/tracking/types.ts). Aucune autre valeur n'entre en base.
+     */
+    function trackingDecisionKinds() {
+      return [
+        "continue_planned", "hold_dose", "reduce_volume_light",
+        "reduce_intensity_light", "suggest_variant", "prefer_replacement",
+        "resume_mode", "keep_despite_time", "block_increase_pain",
+        "standard_insufficient_data"
+      ];
+    }
+
+    /** Les TROIS qualités de données possibles (`TrackingSignals.dataQuality`). */
+    function trackingDataQualities() {
+      return ["ok", "insufficient", "inconsistent"];
+    }
+
+    /**
+     * Clés EXIGÉES de la décision : les huit champs du type `TrackingDecision`.
+     * Une décision amputée est refusée — un contrat fermé l'est dans les deux
+     * sens, sinon `{}` passerait.
+     */
+    function trackingDecisionRequiredKeys() {
+      return [
+        "version", "rulesVersion", "decidedAtISO", "kind",
+        "targets", "explanation", "signalsDigest", "mode"
+      ];
+    }
+
+    /**
+     * Clés TOLÉRÉES : les huit exigées, plus `ruleIndex`.
+     *
+     * `ruleIndex` N'EST PAS dans le type `TrackingDecision` — et il arrive
+     * pourtant en base. `decideAdjustment` construit un
+     * `TrackingDecisionWithRule` (numéro de la règle qui a matché, 1 à 11) et le
+     * retourne derrière une signature annotée `TrackingDecision` : l'annotation
+     * efface le champ pour le compilateur, pas à l'exécution. `decorateDecision`
+     * fait ensuite `{ ...decision, explanation }`, et l'objet part tel quel dans
+     * `setDoc`. Une liste close sur les seuls huit champs du type aurait donc
+     * refusé CHAQUE décision réelle, sans un message.
+     */
+    function trackingDecisionAllowedKeys() {
+      return trackingDecisionRequiredKeys().concat(["ruleIndex"]);
+    }
+
+    /**
+     * `signalsDigest` — la trace compacte des signaux qui ont produit la
+     * décision. Cinq clés, ni plus ni moins.
+     *
+     * DEUX MOYENNES NON BORNÉES, ET C'EST DÉLIBÉRÉ. `completionRateAvg` et
+     * `rpeDeltaAvg` sont recopiées SANS écrêtage par la boucle : quand une
+     * valeur source sort de son échelle, elle est signalée
+     * (`dataQuality: "inconsistent"`) et non corrigée
+     * (domain/tracking/signals.ts). Les borner à 0-100 et -10/+10 ici
+     * refuserait précisément les décisions qui portent l'anomalie — donc
+     * effacerait la trace de l'anomalie. On valide le TYPE, on nomme la borne
+     * manquante comme un reste (docs/coach-pilote-2026-07/INTEGRATION_BOUCLE.md).
+     */
+    function validTrackingDigest(digest) {
+      return digest is map &&
+        digest.keys().hasAll(["completionRateAvg", "rpeDeltaAvg", "painActive", "gapDays", "dataQuality"]) &&
+        digest.keys().hasOnly(["completionRateAvg", "rpeDeltaAvg", "painActive", "gapDays", "dataQuality"]) &&
+        (digest.completionRateAvg == null || digest.completionRateAvg is number) &&
+        (digest.rpeDeltaAvg == null || digest.rpeDeltaAvg is number) &&
+        digest.painActive is bool &&
+        (digest.gapDays == null ||
+          (digest.gapDays is int && digest.gapDays >= 0 && digest.gapDays <= 36500)) &&
+        digest.dataQuality in trackingDataQualities();
+    }
+
+    /**
+     * LE CONTRAT FERMÉ de `lastTrackingDecision`, champ par champ.
+     *
+     *  . `version`      : littéralement 1 (versionnée, donc évolutive par
+     *                     décision explicite — pas par dérive) ;
+     *  . `rulesVersion` : « tracking-rules/X.Y.Z ». Le moteur BUMPE cette valeur
+     *                     à chaque changement de seuil (config.ts) : la règle
+     *                     valide la FORME, jamais un numéro figé, sinon le
+     *                     prochain bump ferait disparaître les décisions ;
+     *  . `decidedAtISO` : date VALIDE au sens de la forme ISO 8601. La partie
+     *                     heure est optionnelle : la valeur vient de
+     *                     `feedback.createdAt` (`new Date().toISOString()`) avec
+     *                     repli sur l'horloge, et accepter aussi « AAAA-MM-JJ »
+     *                     coûte zéro sécurité alors que le refuser coûterait une
+     *                     décision perdue en silence. Une règle Firestore ne sait
+     *                     PAS vérifier qu'une date existe (le 31 février passe),
+     *                     ni qu'elle est récente : reste nommé ;
+     *  . `kind`         : LISTE FERMÉE de dix valeurs ;
+     *  . `targets`      : liste d'identifiants d'exercices, taille bornée. Une
+     *                     règle ne sait pas typer les ÉLÉMENTS d'une liste (pas
+     *                     de boucle) : reste nommé ;
+     *  . `explanation`  : voir l'encadré ci-dessous ;
+     *  . `signalsDigest`: contrat imbriqué, cinq clés closes ;
+     *  . `mode`         : « shadow » ou « applied » — les DEUX valeurs du type,
+     *                     pas seulement celle que le pilote produit aujourd'hui.
+     *                     Fermer sur « shadow » seul ferait disparaître les
+     *                     décisions le jour où le mode Application s'active, et
+     *                     ce champ ne DONNE aucun droit : le véritable
+     *                     interrupteur est `trackingConfig`, gelé côté serveur.
+     *
+     * ── « AUCUN TEXTE LIBRE » : LE POINT EN CONFLIT, ARBITRAGE À RENDRE ─────
+     * L'exigence produit est « aucun texte libre ». Or la structure réelle
+     * PORTE un texte libre : `explanation`, une phrase en français construite
+     * par `domain/tracking/explain.ts` à partir de gabarits dans lesquels sont
+     * interpolés des nombres et des identifiants d'exercices. Une règle
+     * Firestore ne peut pas vérifier qu'une phrase sort bien d'un gabarit.
+     *
+     * Interdire le sous-champ ferait tomber CHAQUE décision réelle, en silence.
+     * La règle le BORNE donc (chaîne, 1000 caractères au plus) au lieu de
+     * l'interdire : la porte n'est plus un espace de stockage libre, mais elle
+     * n'est pas fermée. LA DÉCISION DÉFINITIVE APPARTIENT À KYLLIAN — les trois
+     * options et leur coût sont posés dans
+     * docs/coach-pilote-2026-07/INTEGRATION_BOUCLE.md. La seule qui honore
+     * l'exigence à la lettre demande que la boucle CESSE d'écrire ce
+     * sous-champ ; elle touche `state/orchestrators/applyFeedback.ts`, fichier
+     * réservé à la branche boucle, donc un lot POST-MERGE.
+     */
+    function validTrackingDecisionMap(d) {
+      return d is map &&
+        d.keys().hasAll(trackingDecisionRequiredKeys()) &&
+        d.keys().hasOnly(trackingDecisionAllowedKeys()) &&
+        d.version == 1 &&
+        d.rulesVersion is string &&
+        d.rulesVersion.matches("tracking-rules/[0-9]+[.][0-9]+[.][0-9]+") &&
+        d.decidedAtISO is string &&
+        d.decidedAtISO.matches(
+          "[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})?)?"
+        ) &&
+        d.kind in trackingDecisionKinds() &&
+        d.targets is list &&
+        d.targets.size() <= 50 &&
+        d.explanation is string &&
+        d.explanation.size() <= 1000 &&
+        d.mode in ["shadow", "applied"] &&
+        validTrackingDigest(d.signalsDigest) &&
+        (!("ruleIndex" in d) ||
+          (d.ruleIndex is int && d.ruleIndex >= 1 && d.ruleIndex <= 99));
+    }
+
+    /** Absence tolérée (suppression, écriture qui ne le concerne pas) ; sinon contrat. */
+    function validLastTrackingDecision() {
+      return !("lastTrackingDecision" in request.resource.data) ||
+        validTrackingDecisionMap(request.resource.data.lastTrackingDecision);
+    }
+
+    function touchesJoinAccessPolicy() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(["joinAccessPolicy"]);
+    }
+
+    function onlyTouchesJoinAccessPolicy() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(["joinAccessPolicy"]);
     }
 
     // Frontière coach-safe (PR-4) : les docs BRUTS de la joueuse (profil, séances
@@ -46,7 +686,47 @@ service cloud.firestore {
     // membership réel du coach dans le club (isCoach), via le clubId du CHEMIN.
     match /users/{userId} {
       allow read: if isOwner(userId);
-      allow create, update: if isOwner(userId);
+
+      // CRÉATION — inscription (screens/RegisterScreen.tsx), ou rattrapage par
+      // le setup profil quand l'écriture de l'inscription a échoué (le compte
+      // Firebase EST créé, seul le document manque : cf. le chemin « Compte créé
+      // — petit souci réseau » de RegisterScreen). On juge TOUTES les clés
+      // posées : rien d'inconnu, rien de serveur, rien d'autre que soi.
+      allow create: if isOwner(userId) &&
+        request.resource.data.keys()
+          .hasOnly(userMutableFields().concat(userCreateOnlyFields())) &&
+        !request.resource.data.keys().hasAny(userServerOnlyFields()) &&
+        userUidIsSelf(userId) &&
+        userClubIdIsLegitimate() &&
+        // Les deux champs de la boucle de suivi : si posés, ils doivent être
+        // conformes. Absents, ils ne gênent rien (les deux fonctions le tolèrent).
+        validSelfReportedGapDays() &&
+        validLastTrackingDecision();
+
+      // MISE À JOUR — setup et édition de profil, réglages, cycle, parcours,
+      // trace d'activité, départ de club. On juge les clés RÉELLEMENT TOUCHÉES
+      // (ajoutées, modifiées ou SUPPRIMÉES), ce qui ferme la suppression par
+      // merge partiel sans rendre inécrivables les documents anciens porteurs de
+      // champs hérités. Voir le long commentaire au-dessus de `userMutableFields`.
+      allow update: if isOwner(userId) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(userMutableFields()) &&
+        // Redondant avec `hasOnly` tant que les deux listes sont disjointes —
+        // et c'est précisément l'intérêt : si un futur lot glissait un nom
+        // d'autorité dans la liste mutable, cette ligne le rattraperait.
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(userServerOnlyFields()) &&
+        userUidIsSelf(userId) &&
+        userClubIdIsLegitimate() &&
+        // VALEURS des deux champs de la boucle de suivi — exigées seulement si
+        // l'écriture les TOUCHE (cf. le long commentaire au-dessus de
+        // `userTouches`) : une écriture de profil ordinaire ne paie rien, et un
+        // document portant déjà une valeur non conforme reste modifiable.
+        (!userTouches("selfReportedGapDays") || validSelfReportedGapDays()) &&
+        (!userTouches("lastTrackingDecision") || validLastTrackingDecision());
+
+      // Suppression : Cloud Function `deleteAccount` uniquement (Admin SDK,
+      // recursiveDelete du document ET de ses sous-collections).
       allow delete: if false;
 
       match /sessions/{sessionId} {
@@ -60,58 +740,235 @@ service cloud.firestore {
       }
     }
 
-    // Preuve d'invitation (anti self-join) : le doc member écrit par le client
-    // doit porter `inviteCode`, comparé au code RÉEL du club (get() serveur,
-    // qui ignore les permissions de lecture du client). Le code = capability :
-    // sans lui, impossible de se créer un membership player.
-    function providesClubInviteCode(clubId) {
-      return ("inviteCode" in request.resource.data) &&
-        request.resource.data.inviteCode is string &&
-        request.resource.data.inviteCode ==
-          get(/databases/$(database)/documents/clubs/$(clubId)).data.inviteCode;
-    }
-
     match /clubs/{clubId} {
       // Énumération FERMÉE : plus AUCUNE lecture de collection (list). Un
       // getDocs(clubs) — même paginé doc par doc — est refusé pour tout client.
-      // La découverte d'un club se fait par /inviteCodes/{code} (get par code
-      // exact, plus bas) : il faut CONNAÎTRE le code, on ne peut plus le récolter.
+      // Un club ne se découvre plus du tout côté client : le rattachement passe
+      // par la Cloud Function `joinClubWithInviteCode`, qui ne révèle le nom du
+      // club qu'APRÈS un rattachement réussi.
+      // NB : le champ `inviteCode` en clair a disparu du document club — il y
+      // était lisible par n'importe quel membre, donc partageable par n'importe
+      // quel joueur. Plus rien de secret ne vit ici.
       allow list: if false;
-      // get par ID : réservé aux membres du club (joueur OU coach) et à l'owner.
-      // `resource.data.ownerUid` (doc déjà chargé) évite un get() redondant.
-      allow get: if isClubMember(clubId) ||
+      // get par ID : réservé aux membres ACTIFS du club et à celui que `ownerUid`
+      // désigne. `resource.data.ownerUid` (doc déjà chargé) évite un get() redondant.
+      //
+      // POURQUOI LA DÉSIGNATION SUFFIT ICI, ET NULLE PART AILLEURS. C'est une
+      // LECTURE, pas un droit : elle n'écrit rien, ne révèle rien d'un joueur, et
+      // c'est elle qui rend l'incohérence VISIBLE. Sans elle, un propriétaire dont
+      // l'appartenance a disparu verrait son club s'évaporer de l'espace coach
+      // sans un mot — exactement la « disparition muette » qu'on refuse. Avec
+      // elle, l'application lit le document, constate l'écart (ownerUid le
+      // désigne, son membership ne le dit pas) et l'affiche comme un état à
+      // réparer. Le serveur, lui, journalise (functions/src/clubMembersApi.ts).
+      // Toute ÉCRITURE reste gouvernée par le prédicat complet.
+      allow get: if isActiveMember(clubId) ||
         (isSignedIn() && resource.data.ownerUid == request.auth.uid);
-      allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
-      allow update: if isClubOwner(clubId);
+      // Création : le créateur est forcément l'owner. Il peut poser la politique
+      // dès la création, mais seulement avec une valeur reconnue. Son
+      // appartenance propriétaire est écrite juste après (cf. members, plus bas) :
+      // à cet instant précis, le prédicat complet ne peut pas encore être vrai.
+      allow create: if isSignedIn() &&
+        request.resource.data.ownerUid == request.auth.uid &&
+        validJoinAccessPolicy();
+      // Mise à jour : le propriétaire au sens du PRÉDICAT COMPLET ; le coach
+      // UNIQUEMENT pour la politique d'accès et rien d'autre. Dans les deux cas,
+      // si la politique est touchée elle doit être valide. Si elle ne l'est pas,
+      // on ne la valide pas — sans quoi une valeur héritée illisible bloquerait
+      // toute autre mise à jour légitime du club.
+      //
+      // ET, dans TOUS les cas : `ownerUid` ne bouge pas. Le transfert de
+      // propriété passe par la Cloud Function `transferClubOwnership`, qui change
+      // la désignation et les deux rôles ensemble (cf. `changesOwnerUid`).
+      allow update: if (
+          isClubOwner(clubId) ||
+          (isClubStaff(clubId) && onlyTouchesJoinAccessPolicy())
+        ) &&
+        (!touchesJoinAccessPolicy() || validJoinAccessPolicy()) &&
+        !changesOwnerUid();
       allow delete: if false;
 
       match /members/{memberId} {
-        // Lecture : le membre lui-même, un coach du club, OU l'owner du club.
-        // `isClubOwner` est aligné EXPLICITEMENT sur la lecture de playerSummaries
-        // (même couple coach/owner) : le lecteur du roster (members → summaries)
+        // Lecture : le membre lui-même, ou l'ENCADREMENT du club (coach ou
+        // propriétaire — `isClubStaff` couvre les deux). Aligné EXACTEMENT sur la
+        // lecture de playerSummaries : le lecteur du roster (members → summaries)
         // doit pouvoir lister les members avant de lire chaque projection.
-        allow read: if isOwner(memberId) || isCoach(clubId) || isClubOwner(clubId);
-        // Écriture de SON membership uniquement, et :
-        //  - player : exige la PREUVE de l'invitation (inviteCode exact du club
-        //    dans le doc) — ferme le self-join d'un inconnu dans l'effectif ;
-        //  - coach : réservé à l'owner du club (inchangé).
-        // update soumis à la même preuve : un membre existant ne peut pas
-        // réécrire son doc sans re-fournir le code (seul flux d'écriture légitime
-        // = rejoindre via code ; il porte toujours le code).
-        allow create, update: if isOwner(memberId) && (
-          (request.resource.data.role == "player" && providesClubInviteCode(clubId)) ||
-          (request.resource.data.role == "coach" && isClubOwner(clubId))
-        );
-        // Un membre peut se retirer lui-même, ou le owner du club peut retirer n'importe qui
-        allow delete: if isOwner(memberId) || isClubOwner(clubId);
+        //
+        // Le propriétaire INCOHÉRENT (désigné par ownerUid mais sans appartenance
+        // propriétaire) ne lit PAS l'effectif : c'est le refus voulu par
+        // l'invariant. Il n'est pas laissé dans le noir pour autant — le document
+        // club, lui, reste lisible, et c'est là que l'application constate l'écart.
+        allow read: if isOwner(memberId) || isClubStaff(clubId);
+        // ÉCRITURE CLIENTE : la permission "owner" du créateur du club à
+        // l'AMORÇAGE, et RIEN D'AUTRE.
+        //
+        // ── L'AMORÇAGE EST CIRCULAIRE, ET C'EST LA SEULE EXCEPTION ───────────
+        // À la création du club, le document de membre propriétaire n'existe pas
+        // encore : le prédicat complet (`isClubOwner`) est donc FAUX, et une règle
+        // qui s'appuierait dessus refuserait l'écriture qui le rendrait vrai.
+        // Cette règle-ci se base donc sur `clubOwnerUid(clubId)` — la DÉSIGNATION
+        // lue dans le document club — et sur elle seule.
+        //
+        // L'exception est rendue AUSSI ÉTROITE QUE POSSIBLE :
+        //  - on n'écrit que SON PROPRE document (`isOwner(memberId)`) ;
+        //  - la permission écrite est exactement "owner", aucune autre ;
+        //  - et il faut être celui que le club désigne déjà comme ownerUid.
+        // Quelqu'un qui tente de s'écrire propriétaire dans un club dont il n'est
+        // pas le ownerUid est donc refusé — c'est testé explicitement, y compris
+        // depuis un membre existant du club (rules.clubAuthority.test.ts).
+        //
+        // Un SECOND coach ne peut être créé par AUCUN client : il n'existe
+        // aujourd'hui aucun chemin produit pour cela (limite connue, assumée, et
+        // écrite ici pour qu'on ne la découvre pas en la cherchant).
+        //
+        // ── LES DEUX CHAMPS SERVEUR : `playerStatus` ET `coachAccess` ────────
+        // Aucun client ne les pose, ne les change, ni ne les efface — ni le
+        // joueur, ni le coach, ni l'owner du club :
+        //  - à la création : les champs doivent être ABSENTS de la requête ;
+        //  - à la mise à jour : ils ne doivent pas figurer dans les clés
+        //    affectées. `diff().affectedKeys()` compare l'AVANT et l'APRÈS, donc
+        //    une mise à jour PARTIELLE qui ne les touche pas passe, et une qui
+        //    les touche (même pour y remettre la même valeur explicitement, même
+        //    pour les supprimer) est refusée.
+        //
+        // `playerStatus` rejoint `coachAccess` sous le même verrou, et pour la
+        // même raison : c'est lui qui décide désormais qu'une fiche de suivi
+        // existe et qu'elle est lisible (`isPlayerMember`, plus haut). Laisser un
+        // client le poser reviendrait à laisser n'importe qui s'inscrire dans
+        // l'effectif suivi d'un club — c'est-à-dire contourner le code
+        // d'invitation, son expiration, sa révocation, son quota d'usages ET la
+        // limitation de tentatives. Il est écrit UNIQUEMENT par les Cloud
+        // Functions `joinClubWithInviteCode` (entrée), `enrollSelfAsClubPlayer`
+        // (activation volontaire de SON PROPRE suivi, réservée aux membres déjà
+        // actifs du club) et `removeClubMember` / `deactivateClubPlayer`
+        // (sortie), qui utilisent l'Admin SDK et contournent donc ces règles.
+        allow create: if isOwner(memberId) &&
+          request.resource.data.accessRole == "owner" &&
+          clubOwnerUid(clubId) == request.auth.uid &&
+          !("coachAccess" in request.resource.data) &&
+          !("playerStatus" in request.resource.data);
+        allow update: if isOwner(memberId) &&
+          request.resource.data.accessRole == "owner" &&
+          clubOwnerUid(clubId) == request.auth.uid &&
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(["coachAccess", "playerStatus"]);
+
+        // ── SUPPRESSION ─────────────────────────────────────────────────────
+        // Un membre peut se retirer lui-même (le joueur qui quitte son club
+        // depuis ses réglages). SAUF le propriétaire : sa disparition
+        // fabriquerait exactement l'état incohérent que l'invariant refuse — un
+        // club dont le ownerUid désigne quelqu'un qui n'est plus membre. Le geste
+        // à faire est de transférer la propriété d'abord ; la Cloud Function le
+        // dit avec l'échec typé OWNER_TRANSFER_REQUIRED, et la règle le rend
+        // impossible même en passant à côté de l'écran.
+        //
+        // Le retrait d'un AUTRE membre par l'encadrement ne passe plus par ici :
+        // il passe par la Cloud Function `removeClubMember`, seule capable de
+        // désactiver l'appartenance, de révoquer l'accès coach, de supprimer la
+        // projection déjà produite et de nettoyer users/{uid}.clubId dans UNE
+        // transaction. Une suppression cliente ne faisait que le premier quart du
+        // travail — et laissait la projection derrière elle.
+        allow delete: if isOwner(memberId) && clubOwnerUid(clubId) != request.auth.uid;
       }
 
-      // Contexte de semaine : lecture réservée aux MEMBRES du club (joueur ou
-      // coach) + owner. Un utilisateur connecté hors du club ne peut pas lire.
+      // Contexte de semaine (« cadre » posé par le coach : intensité, objectif,
+      // match). LA NOTE LIBRE N'Y VIT PLUS — voir le bloc `coachNotes` plus bas.
+      //
+      // POURQUOI `get` ET `list` SONT SÉPARÉS ICI (2026-07) — c'était une fuite.
+      // Un seul `allow read` couvre les DEUX opérations. Or cette règle ne dépend
+      // ni du contenu du document ni de la weekKey : la lecture de COLLECTION
+      // était donc autorisée, et n'importe quel membre pouvait aspirer d'un seul
+      // getDocs TOUTES les notes hebdomadaires du coach, semaines passées
+      // comprises. Un besoin d'UN document devenait un accès à l'historique
+      // entier.
+      //
+      // Ce dont l'application a RÉELLEMENT besoin (vérifié : aucun getDocs sur
+      // cette collection nulle part dans le code) :
+      //  - le joueur lit UN document, celui de la semaine courante, par sa clé
+      //    exacte, pour que la génération de séance tienne compte du cadre du
+      //    coach (services/aiContext.ts) ;
+      //  - le coach lit et écrit UN document, celui de la semaine affichée
+      //    (repositories/clubsRepo.ts).
+      // On borne donc au geste réel : `get` autorisé, `list` FERMÉE À TOUS —
+      // coach et owner compris, puisque personne n'énumère cette collection.
+      //
+      // LIMITE ASSUMÉE, à ne pas maquiller : une weekKey est une date de lundi,
+      // donc devinable. Un membre peut encore relire une semaine passée document
+      // par document. Ce qui est fermé ici, c'est la récolte en masse ; ce qui
+      // reste ouvert, c'est la lecture unitaire d'un cadre par un membre du club.
+      //
+      // ── LE CHAMP `note` EST BANNI DE CE DOCUMENT (2026-07) ─────────────────
+      // Il y vivait, et il était lu par TOUT membre du club — une règle autorise
+      // un DOCUMENT, elle ne masque pas un CHAMP. La note du coach arrivait donc
+      // sur le téléphone de chaque joueur, et repartait dans le contexte envoyé
+      // au backend de génération. Masquer le champ dans l'écran ne protégeait
+      // rien : la donnée était bien là.
+      //
+      // La condition porte sur le RÉSULTAT de l'écriture (`request.resource.data`),
+      // pas sur les clés touchées. C'est ce qui la rend infranchissable : une
+      // écriture partielle en merge qui LAISSERAIT une note ancienne en place est
+      // refusée elle aussi. Le client doit donc supprimer explicitement le champ
+      // (`deleteField()`, cf. repositories/clubsRepo.saveClubWeekContext), et
+      // l'écran coach déplace d'abord la note historique vers la note privée :
+      // rien n'est perdu, rien ne reste exposé.
+      //
+      // RÉSIDU CONNU, écrit noir sur blanc : un document ancien JAMAIS réenregistré
+      // depuis ce changement porte encore sa note et reste lisible par les membres.
+      // Cette règle empêche toute NOUVELLE exposition ; solder l'historique demande
+      // une reprise administrateur, hors de portée d'une règle Firestore.
+      //
       // Écriture réservée au coach (le joueur n'écrit jamais). Delete = owner.
       match /weekContexts/{weekKey} {
-        allow read: if isClubMember(clubId) || isClubOwner(clubId);
-        allow create, update: if isCoach(clubId);
+        // `isActiveMember` (et non plus « le document existe ») : un membre retiré
+        // ne lit plus le cadre de semaine de son ancien club. C'était l'un des
+        // trois accès que révoquer un code ne fermait pas.
+        allow get: if isActiveMember(clubId);
+        allow list: if false;
+        allow create, update: if isClubStaff(clubId) &&
+          !("note" in request.resource.data);
+        allow delete: if isClubOwner(clubId);
+      }
+
+      // ── NOTE PRIVÉE DU COACH ────────────────────────────────────────────────
+      // Le pense-bête d'encadrement, déplacé hors du cadre de semaine. C'est LA
+      // séparation demandée, et elle est prononcée ICI, par la base : aucun
+      // joueur ne peut lire ce document, ni par `get` ni par `list`. Un écran qui
+      // s'abstient d'afficher n'aurait rien protégé ; un refus serveur, si.
+      //
+      // Lecture : coach du club ou owner — « l'encadrement autorisé », exactement
+      // ce que le libellé affiché au coach promet. Écriture : coach seul.
+      // `list` fermée à tous, comme pour les cadres : personne n'énumère cette
+      // collection, et une porte que nul n'emprunte est une porte qu'on ferme.
+      //
+      // Ce document n'est lu par AUCUN chemin de génération de séance : une note
+      // privée ne modifie pas un entraînement (cf. services/aiContext.ts).
+      match /coachNotes/{weekKey} {
+        // « L'encadrement autorisé » = `isClubStaff` : coach ou propriétaire, une
+        // seule fonction pour les deux. C'est exactement ce que le libellé affiché
+        // au coach promet.
+        allow get: if isClubStaff(clubId);
+        allow list: if false;
+        allow create, update: if isClubStaff(clubId);
+        allow delete: if isClubStaff(clubId);
+      }
+
+      // ── DIRECTIVE D'ENTRAÎNEMENT ────────────────────────────────────────────
+      // L'objet DISTINCT, explicitement destiné à influencer la préparation —
+      // et par conséquent VISIBLE PAR LE JOUEUR. C'est le pendant assumé de la
+      // note privée : ce qui pèse sur l'entraînement de quelqu'un doit pouvoir
+      // être lu par lui.
+      //
+      // Lecture : tout membre du club (le joueur en fait partie) + owner.
+      // Écriture : coach seul — un joueur ne se prescrit pas une directive.
+      // `list` fermée : la directive en cours vit à une clé connue d'avance
+      // (`current`, cf. domain/clubDirective.CLUB_DIRECTIVE_CURRENT_ID), donc un
+      // `get` direct suffit et l'historique ne s'aspire pas.
+      match /directives/{directiveId} {
+        // Même durcissement que le cadre de semaine : un membre RETIRÉ ne lit plus
+        // la directive de son ancien club.
+        allow get: if isActiveMember(clubId);
+        allow list: if false;
+        allow create, update: if isClubStaff(clubId);
         allow delete: if isClubOwner(clubId);
       }
 
@@ -129,35 +986,54 @@ service cloud.firestore {
       // évaluable en list. Seules les lectures DIRECTES par playerUid d'une joueuse
       // ENCORE membre player sont autorisées (le lecteur front liste members, puis
       // lit chaque summary par son ID).
+      // TROISIÈME condition (2026-07) : l'AUTORISATION D'ACCÈS du joueur ciblé
+      // doit être "approved" ou "not_required". Un verrou visuel côté écran ne
+      // suffisait pas — un profil ancien ou incohérent passait au travers. Ici le
+      // refus est prononcé par la base elle-même, avant qu'aucun octet ne sorte.
+      // TROIS conditions, et le RETRAIT d'un membre en fait tomber DEUX d'un coup
+      // (`playerStatus: "inactive"` ⇒ `isPlayerMember` faux ; coachAccess "revoked" ⇒
+      // `isCoachAccessGranted` faux). C'est ce qui rend la fermeture insensible
+      // aux courses : même si une reprojection en vol réécrivait la projection
+      // juste après le retrait, plus personne ne pourrait la lire.
       match /playerSummaries/{playerUid} {
-        allow read: if (isCoach(clubId) || isClubOwner(clubId)) &&
-          isPlayerMember(clubId, playerUid);
+        allow read: if isClubStaff(clubId) &&
+          isPlayerMember(clubId, playerUid) &&
+          isCoachAccessGranted(clubId, playerUid);
         allow write: if false;
       }
     }
 
-    // Annuaire code→club : l'ID du doc EST le code d'invitation (normalisé).
-    // Remplace l'ancienne query `clubs where inviteCode ==` (impossible à
-    // sécuriser : les rules ne voient pas les clauses where d'une list, donc
-    // toute list sur clubs restait énumérable par pagination).
-    //  - get par code exact : autorisé à tout connecté — il faut CONNAÎTRE le
-    //    code (capability), on ne peut pas le découvrir ;
-    //  - list : interdite → énumération impossible ;
-    //  - contenu volontairement minimal et non sensible : clubId + name
-    //    (affichage "Tu as rejoint {name}"), PAS d'ownerUid ;
-    //  - create : uniquement par l'owner du club référencé, et seulement si le
-    //    code est COHÉRENT (clubs/{clubId}.inviteCode == code) — personne ne
-    //    peut planter un faux annuaire vers un club qui n'est pas le sien ;
-    //  - update/delete : interdits (pas de rotation de code aujourd'hui ; un
-    //    setDoc sur un code existant est un update → refusé = anti-écrasement).
-    match /inviteCodes/{code} {
-      allow get: if isSignedIn();
-      allow list: if false;
-      allow create: if isSignedIn() &&
-        request.resource.data.clubId is string &&
-        get(/databases/$(database)/documents/clubs/$(request.resource.data.clubId)).data.ownerUid == request.auth.uid &&
-        get(/databases/$(database)/documents/clubs/$(request.resource.data.clubId)).data.inviteCode == code;
-      allow update, delete: if false;
+    // ── Contrat d'invitation : 100 % SERVEUR ────────────────────────────────
+    //
+    // Les trois collections ci-dessous sont écrites et lues EXCLUSIVEMENT par
+    // les Cloud Functions `issueClubInviteCode` / `joinClubWithInviteCode`
+    // (Admin SDK, qui contourne ces règles). Aucun client n'y touche, jamais.
+    //
+    // inviteCodes/{hash} : l'ID du document est le SHA-256 du code normalisé —
+    //   le code en clair n'est stocké NULLE PART. `read: if false` supprime
+    //   l'ORACLE de l'ancien contrat : un `get` sur un code deviné répondait
+    //   exists()=true/false à tout compte connecté, et livrait clubId + nom du
+    //   club sans rien écrire ni laisser de trace. Une lecture cliente n'est
+    //   d'ailleurs plus d'aucune utilité : sans code en clair en base, il n'y a
+    //   plus rien à résoudre côté front.
+    //
+    // clubInviteMeta/{clubId} : pointeur vers l'empreinte du code ACTIF (sert à
+    //   révoquer le précédent lors d'une nouvelle émission). Fermé aussi : une
+    //   empreinte lisible par un membre offrirait une cible d'attaque hors ligne.
+    //
+    // inviteAttempts/{scope} : compteurs de la limitation de tentatives (portée
+    //   utilisateur et portée origine, l'origine étant hachée). Lisibles par un
+    //   client, ils diraient à un attaquant où il en est de son quota.
+    match /inviteCodes/{codeHash} {
+      allow read, write: if false;
+    }
+
+    match /clubInviteMeta/{clubId} {
+      allow read, write: if false;
+    }
+
+    match /inviteAttempts/{scopeKey} {
+      allow read, write: if false;
     }
   }
 }

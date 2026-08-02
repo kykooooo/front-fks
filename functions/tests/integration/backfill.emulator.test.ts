@@ -16,9 +16,10 @@ beforeEach(async () => {
   await seedClubA(db);
   // Deuxième club pour vérifier le ciblage --clubId.
   await db.doc("clubs/clubB").set({ name: "Club B", ownerUid: "coachB" });
-  await db.doc("clubs/clubB/members/coachB").set({ uid: "coachB", role: "coach" });
-  await db.doc("clubs/clubB/members/playerB").set({ uid: "playerB", role: "player" });
-  await db.doc("users/playerB").set({ uid: "playerB", clubId: "clubB", role: "player", firstName: "Clea", profileCompleted: true });
+  await db.doc("clubs/clubB/members/coachB").set({ uid: "coachB", accessRole: "owner" });
+  // "not_required" : joueur adulte, aucune étape supplémentaire (cf. coachAccess.ts).
+  await db.doc("clubs/clubB/members/playerB").set({ uid: "playerB", playerStatus: "active", coachAccess: "not_required" });
+  await db.doc("users/playerB").set({ uid: "playerB", clubId: "clubB", playerStatus: "active", firstName: "Clea", profileCompleted: true });
 });
 
 describe("runBackfill — émulateur", () => {

@@ -163,17 +163,19 @@ describe("Mini-hardening PR-4 — playerSummaries exige un membership player ACT
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Séquence RÉELLE du lecteur front (repositories/clubsRepo.ts fetchClubPlayerSummaries) :
-// getDocs(members) → filtre role player → getDoc(playerSummaries/{id}) un par un.
+// getDocs(members) → filtre playerStatus actif → getDoc(playerSummaries/{id}) un par un.
 // Prouve, contre les VRAIES rules émulateur (pas un mock), que ce chemin d'accès
 // est autorisé — et fail-closed quand la joueuse part entre les deux étapes.
 describe("Séquence réelle members → summaries (chemin du lecteur coach)", () => {
-  test("7) coach liste members (role player) puis get chaque summary : lisible, pending permis", async () => {
+  test("7) coach liste members (statut de joueur actif) puis get chaque summary : lisible, pending permis", async () => {
     const db = asUser(COACH_A);
 
-    // 1. Effectif : coach lit members ; on ne garde que role player (coach exclu).
+    // 1. Effectif : coach lit members ; on ne garde que les statuts de joueur
+    //    ACTIFS. Un encadrant sans suivi est exclu ; un entraineur-joueur, lui,
+    //    serait garde — c'est exactement ce que le modele a deux axes permet.
     const membersSnap = await assertSucceeds(getDocs(collection(db, "clubs", CLUB_A, "members")));
     const playerIds = (membersSnap as any).docs
-      .filter((d: any) => d.data().role === "player")
+      .filter((d: any) => d.data().playerStatus === "active")
       .map((d: any) => d.id)
       .sort();
     expect(playerIds).toEqual([PLAYER_A1, PLAYER_A2].sort());
@@ -201,24 +203,56 @@ describe("Séquence réelle members → summaries (chemin du lecteur coach)", ()
     await assertFails(getDoc(doc(db, "clubs", CLUB_A, "playerSummaries", PLAYER_A1)));
   });
 
-  test("9) owner SANS membership coach : liste members + lit le summary d'une joueuse player", async () => {
-    // Cas limite (req 8) : un club dont l'OWNER n'a AUCUN doc members (ni coach ni
-    // player). L'alignement `isClubOwner` sur members + playerSummaries doit lui
-    // permettre le même chemin de lecture roster (members → get summary).
+  // ── 9) LE CAS RETOURNÉ PAR LE PRÉDICAT D'AUTORITÉ (juillet 2026) ───────────
+  //
+  // Ce test affirmait exactement le CONTRAIRE jusqu'ici : « owner SANS membership
+  // coach : liste members + lit le summary ». C'était la traduction fidèle de
+  // l'ancienne règle, où `clubs/{id}.ownerUid` accordait à lui seul le chemin de
+  // lecture complet — une source unique, falsifiable par un état historique
+  // abîmé, qui ouvrait le suivi de joueuses.
+  //
+  // L'invariant l'interdit désormais : « un propriétaire est autorisé uniquement
+  // si ownerUid le désigne ET s'il possède encore une appartenance active avec
+  // le rôle propriétaire ». On garde donc le même club de test, et on vérifie les
+  // DEUX faces : la désignation seule ne suffit plus, la paire cohérente marche.
+  test("9) désignation SEULE (aucune appartenance) : lecture roster REFUSÉE", async () => {
     const OWNER = "ownerNoCoach";
     const CLUB = "clubOwnerOnly";
     const PLAYER = "playerC1";
     await admin(async (ctx) => {
       const fdb = ctx.firestore();
-      await setDoc(doc(fdb, "clubs", CLUB), { name: "Club C", ownerUid: OWNER, inviteCode: "CLBC-0001" });
-      await setDoc(doc(fdb, "clubs", CLUB, "members", PLAYER), { uid: PLAYER, role: "player" });
+      await setDoc(doc(fdb, "clubs", CLUB), { name: "Club C", ownerUid: OWNER });
+      // `coachAccess` autorisant : ce test porte sur l'AUTORITÉ, pas sur
+      // l'autorisation d'accès (couverte par rules.coachAccess.test.ts).
+      await setDoc(doc(fdb, "clubs", CLUB, "members", PLAYER), {
+        uid: PLAYER, playerStatus: "active", coachAccess: "not_required",
+      });
       await setDoc(doc(fdb, "clubs", CLUB, "playerSummaries", PLAYER), { ...SUMMARY, playerUid: PLAYER });
     });
     const db = asUser(OWNER);
-    // isClubOwner autorise la lecture members même sans être membre coach…
+    await assertFails(getDocs(collection(db, "clubs", CLUB, "members")));
+    await assertFails(getDoc(doc(db, "clubs", CLUB, "playerSummaries", PLAYER)));
+    // MAIS le club reste LISIBLE : c'est ce qui évite la disparition muette et
+    // permet à l'application de nommer l'incohérence au lieu d'afficher un vide.
+    await assertSucceeds(getDoc(doc(db, "clubs", CLUB)));
+  });
+
+  test("9 bis) désignation ET appartenance propriétaire : le chemin roster complet marche", async () => {
+    const OWNER = "ownerCoherent";
+    const CLUB = "clubOwnerCoherent";
+    const PLAYER = "playerD1";
+    await admin(async (ctx) => {
+      const fdb = ctx.firestore();
+      await setDoc(doc(fdb, "clubs", CLUB), { name: "Club D", ownerUid: OWNER });
+      await setDoc(doc(fdb, "clubs", CLUB, "members", OWNER), { uid: OWNER, accessRole: "owner" });
+      await setDoc(doc(fdb, "clubs", CLUB, "members", PLAYER), {
+        uid: PLAYER, playerStatus: "active", coachAccess: "not_required",
+      });
+      await setDoc(doc(fdb, "clubs", CLUB, "playerSummaries", PLAYER), { ...SUMMARY, playerUid: PLAYER });
+    });
+    const db = asUser(OWNER);
     const membersSnap = await assertSucceeds(getDocs(collection(db, "clubs", CLUB, "members")));
-    expect((membersSnap as any).docs.map((d: any) => d.id)).toEqual([PLAYER]);
-    // …et la lecture du summary d'une joueuse membre player (isClubOwner && isPlayerMember).
+    expect((membersSnap as any).docs.map((d: any) => d.id).sort()).toEqual([OWNER, PLAYER].sort());
     const snap = await assertSucceeds(getDoc(doc(db, "clubs", CLUB, "playerSummaries", PLAYER)));
     expect((snap as any).exists()).toBe(true);
   });

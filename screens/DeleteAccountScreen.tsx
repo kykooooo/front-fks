@@ -22,6 +22,8 @@ import { doc, getDoc } from "firebase/firestore";
 
 import { Screen } from "../components/ui/Screen";
 import { Card } from "../components/ui/Card";
+import { resolveAppSpace, type AppSpace } from "../domain/appSpace";
+import { resolveClubOwnerAuthority } from "../domain/clubRoles";
 import { theme } from "../constants/theme";
 import { auth, db } from "../services/firebase";
 import {
@@ -63,10 +65,18 @@ export default function DeleteAccountScreen() {
   // second tap pendant l'attente ne doit jamais relancer le flux.
   const runningRef = useRef(false);
 
-  // Écran partagé joueur/coach (monté dans AppStack ET CoachStack) : on lit le
-  // rôle pour adapter les conséquences affichées. Best-effort — en cas d'échec
-  // on retombe sur les conséquences joueur (comportement historique inchangé).
-  const [role, setRole] = useState<"coach" | "player">("player");
+  // Écran partagé joueur/coach (monté dans AppStack ET CoachStack) : on adapte
+  // les conséquences affichées à l'espace RÉEL du compte.
+  //
+  // La source a changé (juillet 2026) : on lisait `users/{uid}.role`, un champ
+  // que l'utilisateur écrit lui-même et que le transfert de propriété ne touche
+  // jamais. Un joueur devenu propriétaire du club lisait donc les conséquences
+  // « joueur » alors qu'il perdait un espace coach — et n'importe qui pouvait
+  // s'afficher les conséquences coach en modifiant son propre document. On
+  // dérive maintenant de l'appartenance (cf. domain/appSpace.ts), exactement
+  // comme la navigation. Best-effort : en cas d'échec de lecture, conséquences
+  // joueur (comportement historique inchangé).
+  const [space, setSpace] = useState<AppSpace>("player");
   // Un coach qui a créé son club (ownerUid) et supprime son compte laisse le
   // club orphelin : la purge serveur ne touche jamais clubs/{clubId} (voir
   // functions/src/deleteAccount.ts). On le signale honnêtement à l'écran.
@@ -79,17 +89,38 @@ export default function DeleteAccountScreen() {
     (async () => {
       try {
         const userSnap = await getDoc(doc(db, "users", uid));
-        const data = userSnap.data() as { role?: unknown; clubId?: unknown } | undefined;
-        const resolvedRole = data?.role === "coach" ? "coach" : "player";
-        const clubId = typeof data?.clubId === "string" ? data.clubId : null;
+        const data = userSnap.data() as { clubId?: unknown } | undefined;
+        const clubId = typeof data?.clubId === "string" && data.clubId.trim() ? data.clubId.trim() : null;
         if (cancelled) return;
-        setRole(resolvedRole);
-        if (resolvedRole === "coach" && clubId) {
-          const clubSnap = await getDoc(doc(db, "clubs", clubId));
-          if (cancelled) return;
-          const ownerUid = clubSnap.exists() ? (clubSnap.data() as { ownerUid?: unknown })?.ownerUid : null;
-          setIsCoachOwner(ownerUid === uid);
-        }
+        if (!clubId) return;
+
+        // L'appartenance : la seule source que le serveur contrôle, et celle
+        // dont la navigation dérive déjà l'espace affiché.
+        const memberSnap = await getDoc(doc(db, "clubs", clubId, "members", uid));
+        if (cancelled) return;
+        // LES DEUX AXES, lus ensemble. L'espace coach dépend des permissions
+        // d'encadrement seules — le statut de joueur ne l'ouvre ni ne le ferme.
+        const membre = memberSnap.exists()
+          ? (memberSnap.data() as { accessRole?: unknown; playerStatus?: unknown })
+          : null;
+        const myAccessRole = membre?.accessRole ?? null;
+        const resolvedSpace = resolveAppSpace({
+          statut: "lu",
+          accessRole: myAccessRole,
+          playerStatus: membre?.playerStatus ?? null,
+        });
+        if (resolvedSpace !== "coach") return;
+        setSpace("coach");
+
+        // Propriétaire au sens du prédicat COMPLET (désignation ET appartenance) :
+        // lui seul laisserait un club orphelin derrière lui. Un encadrant qui
+        // porte le rôle sans la désignation — ou l'inverse — n'est pas
+        // propriétaire, et on ne lui annonce pas une conséquence qui n'est pas
+        // la sienne.
+        const clubSnap = await getDoc(doc(db, "clubs", clubId));
+        if (cancelled) return;
+        const ownerUid = clubSnap.exists() ? (clubSnap.data() as { ownerUid?: unknown })?.ownerUid : null;
+        setIsCoachOwner(resolveClubOwnerAuthority({ ownerUid, myAccessRole, uid }) === "authorized");
       } catch {
         // Best-effort : conséquences joueur par défaut déjà en place.
       }
@@ -99,7 +130,7 @@ export default function DeleteAccountScreen() {
     };
   }, []);
 
-  const consequences = role === "coach" ? COACH_CONSEQUENCES : PLAYER_CONSEQUENCES;
+  const consequences = space === "coach" ? COACH_CONSEQUENCES : PLAYER_CONSEQUENCES;
   const canSubmit = password.length > 0 && !busy;
 
   const performDeletion = async () => {

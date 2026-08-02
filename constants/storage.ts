@@ -16,4 +16,15 @@ export const STORAGE_KEYS = {
 
   // Training store per-user snapshots
   TRAINING_SNAPSHOT: (uid: string) => `training-store-snapshot-${uid}`,
+
+  // Dernier espace utilisé (Joueur / Coach) pour les comptes qui ont RÉELLEMENT
+  // les deux — un entraîneur-joueur. PAR COMPTE : une préférence globale
+  // ferait hériter le choix d'un compte au suivant sur un téléphone partagé.
+  //
+  // Cette clé ne DONNE aucun accès. Elle ne fait que choisir entre deux espaces
+  // déjà autorisés par le serveur (cf. domain/appSpace.resolveAppSpace) : la
+  // falsifier ne peut ouvrir aucun écran, seulement changer lequel des deux
+  // s'ouvre en premier. Elle est effacée avec le compte
+  // (services/accountDeletionHelpers.localAccountKeysToPurge).
+  APP_SPACE_PREFERENCE: (uid: string) => `fks_app_space_${uid}`,
 } as const;
