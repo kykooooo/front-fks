@@ -1,6 +1,6 @@
 // src/navigation/RootNavigator.tsx
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { NavigatorScreenParams } from "@react-navigation/native";
@@ -89,6 +89,7 @@ export type AppStackParamList = {
   PrebuiltSessions: undefined;
   PrebuiltSessionDetail: { session: FKS_NextSessionV2 };
   ProfileSetup: undefined;
+  ProfileSetupGate: undefined;
   CoachOnboarding: undefined;
   Tests: { initialPlaylist?: string } | undefined;
   ExerciseDetail: { highlightId: string };
@@ -172,6 +173,7 @@ function MainTabs() {
 function AppNavigator() {
   return (
     <AppStack.Navigator
+      key="nav-app"
       initialRouteName="Tabs"
       screenOptions={{
         headerShown: false,
@@ -238,6 +240,7 @@ function AppNavigator() {
 function CoachNavigator() {
   return (
     <CoachStack.Navigator
+      key="nav-coach"
       screenOptions={{
         headerShown: false,
         headerStyle: { backgroundColor: theme.colors.background },
@@ -266,6 +269,7 @@ function AuthNavigator({
 }) {
   return (
     <AuthStack.Navigator
+      key="nav-auth"
       initialRouteName={initialRouteName}
       screenOptions={{
         headerShown: false,
@@ -314,13 +318,24 @@ function AuthNavigator({
   );
 }
 
-function Splash() {
+// AUDIT tactile/enchaînement (2026-07) : cet écran s'affiche pendant les
+// transitions post-auth (inscription/connexion, restauration de session au
+// boot) le temps que Firestore confirme l'état du profil. Sans texte, un
+// spinner nu se lit comme un écran figé — `label` rend l'attente explicite
+// (cf. CLAUDE.md "Un chargement doit être explicite").
+function Splash({ label }: { label?: string }) {
   return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.bg }}>
+    <View style={[splashStyles.container, { backgroundColor: theme.colors.bg }]}>
       <ActivityIndicator color={theme.colors.accent} />
+      {label ? <Text style={[splashStyles.label, { color: theme.colors.sub }]}>{label}</Text> : null}
     </View>
   );
 }
+
+const splashStyles = StyleSheet.create({
+  container: { flex: 1, alignItems: "center", justifyContent: "center", gap: 14 },
+  label: { fontSize: 13, fontWeight: "600" },
+});
 
 export default function RootNavigator() {
   const [user, setUser] = useState<User | null>(null);
@@ -424,13 +439,19 @@ export default function RootNavigator() {
   }, [storeHydrated, user, startFirestoreWatch]);
 
   // 4) Chargement des flags locaux
-  if (welcomeDone === null) return <Splash />;
+  if (welcomeDone === null) return <Splash label="Chargement…" />;
 
   // 5) Restauration de session Firebase en cours → Splash.
   //    IMPORTANT : ce check doit précéder `!user`, sinon un utilisateur déjà
   //    connecté voit flasher l'écran Login à chaque démarrage à froid
   //    (user reste null tant que onAuthStateChanged n'a pas résolu).
-  if (initializing) return <Splash />;
+  // Couvre aussi la fenêtre post-inscription/connexion (onAuthStateChanged
+  // a déjà un user, on attend la 1ère réponse Firestore sur profileCompleted).
+  // Cette branche se déclenche à CHAQUE démarrage à froid pour un utilisateur
+  // déjà inscrit (pas seulement à l'inscription) : libellé neutre, vrai pour
+  // tous les cas de cette branche (pas de nouvel état à faire courir avec la
+  // logique auth pour distinguer inscription/login/restauration).
+  if (initializing) return <Splash label="Chargement de ton profil…" />;
 
   // 5bis) Pas connecté → Auth stack (Welcome intégré dans le stack pour back navigation)
   if (!user) {
@@ -450,9 +471,15 @@ export default function RootNavigator() {
   // 6) Connecté mais profil non complété → écran profil (joueur)
   //    Le stack inclut CoachOnboarding pour qu'un staff puisse créer son club.
   if (profileCompleted === false) {
+    // Nom de route volontairement distinct du "ProfileSetup" de AppNavigator :
+    // ces deux arbres sont échangés conditionnellement, mais le
+    // NavigationContainer n'y voit qu'un seul navigateur qui change de contenu et
+    // restaurait son état sur la route homonyme — il réaffichait le setup au lieu
+    // du Home après la complétion. Nom distinct + key par arbre = plus de
+    // rapprochement possible.
     return (
-      <AppStack.Navigator screenOptions={{ headerShown: false }}>
-          <AppStack.Screen name="ProfileSetup" options={{ headerShown: false }}>
+      <AppStack.Navigator key="nav-gate" screenOptions={{ headerShown: false }}>
+          <AppStack.Screen name="ProfileSetupGate" options={{ headerShown: false }}>
             {() => (
               <ProfileSetupScreen onProfileCompleted={() => setProfileCompleted(true)} />
             )}

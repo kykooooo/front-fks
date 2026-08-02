@@ -9,14 +9,9 @@ import {
   Pressable,
   StyleSheet,
   Animated,
-  Platform,
-  KeyboardAvoidingView,
-  TouchableWithoutFeedback,
-  Keyboard,
   ScrollView,
   ActivityIndicator,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { AuthStackParamList } from "../navigation/RootNavigator";
 import { Ionicons } from "@expo/vector-icons";
@@ -30,6 +25,9 @@ import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
 import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
+import { Screen } from "../components/ui/Screen";
+import { Button } from "../components/ui/Button";
+import { BrandMark } from "../components/ui/BrandMark";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
 const palette = theme.colors;
@@ -128,153 +126,172 @@ export default function LoginScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+    <Screen keyboardAvoiding style={styles.safe}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <ScrollView
-            contentContainerStyle={styles.scroll}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Back */}
+        {/* Gabarit d'en-tête identique à Register (DA Polish) : même zone de
+              hauteur fixe pour la flèche retour. */}
+          <View style={styles.headerRow}>
             {navigation.canGoBack() ? (
-              <Pressable onPress={() => navigation.goBack()} style={styles.back}>
-                <Ionicons name="chevron-back" size={24} color={palette.sub} />
+              <Pressable
+                onPress={() => navigation.goBack()}
+                style={({ pressed }) => [styles.back, pressed && styles.iconPressed]}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="chevron-back" size={20} color={palette.sub} />
               </Pressable>
             ) : null}
+          </View>
 
-            {/* Logo */}
-            <Text style={styles.logo}>FKS</Text>
+          <BrandMark size="sm" style={styles.brandMark} />
 
-            {/* Header */}
-            <Text style={styles.title}>Content de te revoir</Text>
-            <Text style={styles.subtitle}>Connecte-toi pour reprendre ta progression.</Text>
+          {/* Header */}
+          <Text style={styles.title}>Content de te revoir</Text>
+          <Text style={styles.subtitle}>Connecte-toi pour reprendre ta progression.</Text>
 
-            {/* Form */}
-            <Animated.View style={[styles.form, { transform: [{ translateX: shake }] }]}>
-              <View style={styles.inputWrap}>
-                <Ionicons name="mail-outline" size={18} color={palette.muted} style={styles.inputIcon} />
-                <TextInput
-                  placeholder="Email"
-                  placeholderTextColor={palette.muted}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  autoComplete="email"
-                  value={email}
-                  onChangeText={setEmail}
-                  returnKeyType="next"
-                  onSubmitEditing={() => pwdInputRef.current?.focus()}
-                  style={styles.input}
-                />
-              </View>
-              {email.length > 0 && !emailLooksValid ? (
-                <Text style={styles.error}>Format email invalide</Text>
-              ) : null}
+          {/* Form */}
+          <Animated.View style={[styles.form, { transform: [{ translateX: shake }] }]}>
+            <View style={styles.inputWrap}>
+              <Ionicons name="mail-outline" size={16} color={palette.muted} style={styles.inputIcon} />
+              <TextInput
+                placeholder="Email"
+                placeholderTextColor={palette.muted}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoComplete="email"
+                value={email}
+                onChangeText={setEmail}
+                returnKeyType="next"
+                onSubmitEditing={() => pwdInputRef.current?.focus()}
+                style={styles.input}
+              />
+            </View>
+            {email.length > 0 && !emailLooksValid ? (
+              <Text style={styles.error}>Format email invalide</Text>
+            ) : null}
 
-              <View style={styles.inputWrap}>
-                <Ionicons name="lock-closed-outline" size={18} color={palette.muted} style={styles.inputIcon} />
-                <TextInput
-                  ref={pwdInputRef}
-                  placeholder="Mot de passe"
-                  placeholderTextColor={palette.muted}
-                  secureTextEntry={!showPwd}
-                  autoComplete="password"
-                  value={pwd}
-                  onChangeText={setPwd}
-                  returnKeyType="go"
-                  onSubmitEditing={() => {
-                    if (!loading && canSubmit) void onLogin();
-                  }}
-                  style={styles.input}
-                />
-                <Pressable onPress={() => setShowPwd(!showPwd)} style={styles.eye}>
-                  <Ionicons
-                    name={showPwd ? "eye-off-outline" : "eye-outline"}
-                    size={20}
-                    color={palette.muted}
-                  />
-                </Pressable>
-              </View>
-
+            <View style={styles.inputWrap}>
+              <Ionicons name="lock-closed-outline" size={16} color={palette.muted} style={styles.inputIcon} />
+              <TextInput
+                ref={pwdInputRef}
+                placeholder="Mot de passe"
+                placeholderTextColor={palette.muted}
+                secureTextEntry={!showPwd}
+                autoComplete="password"
+                value={pwd}
+                onChangeText={setPwd}
+                returnKeyType="go"
+                onSubmitEditing={() => {
+                  if (!loading && canSubmit) void onLogin();
+                }}
+                style={styles.input}
+              />
               <Pressable
-                onPress={onForgot}
-                disabled={loading || sendingReset}
-                style={[styles.forgot, (loading || sendingReset) && { opacity: 0.5 }]}
+                onPress={() => setShowPwd(!showPwd)}
+                style={({ pressed }) => [styles.eye, pressed && styles.iconPressed]}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
-                <Text style={styles.forgotText}>
-                  {sendingReset ? "Envoi en cours…" : "Mot de passe oublié ?"}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={onLogin}
-                disabled={loading || !canSubmit}
-                style={({ pressed }) => [
-                  styles.cta,
-                  pressed && styles.ctaPressed,
-                  (loading || !canSubmit) && styles.ctaDisabled,
-                ]}
-              >
-                {loading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.ctaText}>Se connecter</Text>
-                )}
-              </Pressable>
-            </Animated.View>
-
-            {/* Footer */}
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>Pas de compte ?</Text>
-              <Pressable onPress={() => navigation.navigate("Register")}>
-                <Text style={styles.footerLink}>Inscris-toi</Text>
+                <Ionicons
+                  name={showPwd ? "eye-off-outline" : "eye-outline"}
+                  size={20}
+                  color={palette.muted}
+                />
               </Pressable>
             </View>
-          </ScrollView>
-        </TouchableWithoutFeedback>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+
+            <Button
+              label={loading ? "" : "Se connecter"}
+              onPress={onLogin}
+              disabled={loading || !canSubmit}
+              variant="primary"
+              size="lg"
+              fullWidth
+              style={[styles.ctaShadowOff, styles.ctaSpacing]}
+              leftAccessory={loading ? <ActivityIndicator size="small" color="#fff" /> : undefined}
+              accessibilityLabel="Se connecter"
+            />
+
+            {/* "Mot de passe oublié" descend sous le CTA en caption (DA Polish
+                §1.5) : ce n'était pas un second CTA, il n'a plus besoin de
+                rivaliser visuellement avec le bouton principal. */}
+            <Pressable
+              onPress={onForgot}
+              disabled={loading || sendingReset}
+              style={({ pressed }) => [
+                styles.forgot,
+                pressed && styles.linkPressed,
+                (loading || sendingReset) && styles.forgotDisabled,
+              ]}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.forgotText}>
+                {sendingReset ? "Envoi en cours…" : "Mot de passe oublié ?"}
+              </Text>
+            </Pressable>
+          </Animated.View>
+
+          {/* Footer */}
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Pas de compte ?</Text>
+            <Pressable
+              onPress={() => navigation.navigate("Register")}
+              style={({ pressed }) => pressed && styles.linkPressed}
+              hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
+            >
+              <Text style={styles.footerLink}>Inscris-toi</Text>
+            </Pressable>
+          </View>
+      </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: palette.bg },
-  scroll: { flexGrow: 1, paddingHorizontal: 24, justifyContent: "center", gap: 8 },
-  back: { alignSelf: "flex-start", padding: 8, marginBottom: 16 },
-  logo: { fontSize: 28, fontWeight: "900", color: palette.text, letterSpacing: 3, textAlign: "center" },
-  title: { fontSize: 24, fontWeight: "800", color: palette.text, textAlign: "center", marginTop: 24 },
-  subtitle: { fontSize: 14, color: palette.sub, textAlign: "center", marginBottom: 24 },
-  form: { gap: 12 },
+  safe: { backgroundColor: palette.bg },
+  scroll: { flexGrow: 1, paddingHorizontal: theme.spacing.xl2, justifyContent: "center", gap: 8 },
+  // Zone de hauteur fixe (DA Polish) : identique à Register, même quand
+  // canGoBack() est faux.
+  headerRow: { height: 40, justifyContent: "center" },
+  back: { alignSelf: "flex-start", padding: 8 },
+  // DA Polish : opacité de press unifiée à 0.7 (lot0 §1.3, supprime 0.5/0.6).
+  iconPressed: { opacity: 0.7 },
+  linkPressed: { opacity: 0.7 },
+  brandMark: { marginBottom: theme.spacing.lg },
+  title: { ...theme.typography.title, color: palette.text, textAlign: "center" },
+  subtitle: { ...theme.typography.body, color: palette.sub, textAlign: "center", marginBottom: theme.spacing.xl },
+  form: { gap: theme.spacing.md },
   inputWrap: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: palette.cardSoft,
     borderWidth: 1,
-    borderColor: palette.borderSoft,
+    borderColor: palette.borderStrong,
     borderRadius: theme.radius.md,
     paddingHorizontal: 14,
+    minHeight: 52,
   },
   inputIcon: { marginRight: 10 },
   input: { flex: 1, paddingVertical: 14, color: palette.text, fontSize: 15 },
   eye: { padding: 4 },
-  error: { color: palette.danger, fontSize: 12, fontWeight: "600", marginLeft: 4 },
-  forgot: { alignSelf: "flex-end" },
-  forgotText: { color: palette.sub, fontSize: 13, fontWeight: "600" },
-  cta: {
-    backgroundColor: palette.cta,
-    borderRadius: theme.radius.pill,
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 8,
-    ...theme.shadow.accent,
+  error: { ...theme.typography.caption, color: palette.danger, marginLeft: 4 },
+  forgot: { alignSelf: "center", paddingVertical: 12, marginTop: 4 },
+  forgotDisabled: { opacity: 0.4 },
+  forgotText: { ...theme.typography.caption, color: palette.sub },
+  // Neutralise le halo orange de Button.primary (theme.shadow.accent porte
+  // l'orange du dark, `#ff7a1a` — DA Polish lot0 §1.4). Local à cet écran :
+  // Button.tsx garde son ombre par défaut pour ses 17 autres appelants.
+  ctaShadowOff: {
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0,
   },
-  ctaPressed: { transform: [{ scale: 0.96 }] },
-  ctaDisabled: { opacity: 0.6 },
-  ctaText: { fontSize: 16, fontWeight: "700", color: "#fff" },
-  footer: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: 32, paddingVertical: 16 },
-  footerText: { color: palette.sub, fontSize: 14 },
-  footerLink: { color: palette.accent, fontSize: 14, fontWeight: "700" },
+  ctaSpacing: { marginTop: 8 },
+  footer: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: theme.spacing.xxl, paddingVertical: theme.spacing.lg },
+  footerText: { ...theme.typography.body, color: palette.sub },
+  footerLink: { color: palette.accent, fontSize: 15, fontWeight: "700" },
 });

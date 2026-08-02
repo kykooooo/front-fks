@@ -20,6 +20,13 @@ interface LoadingOverlayProps {
   onCancel?: () => void;
   /** Libellé du bouton d'annulation (défaut: "Annuler") */
   cancelLabel?: string;
+  /**
+   * DA Polish : ce composant est partagé avec NewSessionScreen/FeedbackScreen/
+   * CoachOnboardingScreen (dark, hors périmètre) — défaut "dark" = zéro diff
+   * ailleurs. ProfileSetupScreen (seul écran clair du parcours) passe "light"
+   * explicitement pour ne plus être une île noire dans une app blanche.
+   */
+  variant?: "dark" | "light";
 }
 
 // ─── Bouncing Dots ───
@@ -116,6 +123,7 @@ export function LoadingOverlay({
   estimatedDurationMs = 25000,
   onCancel,
   cancelLabel = 'Annuler',
+  variant = 'dark',
 }: LoadingOverlayProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const stepFade = useRef(new Animated.Value(1)).current;
@@ -173,14 +181,16 @@ export function LoadingOverlay({
   const hasSteps = steps && steps.length > 0;
   const displayMessage = overrideMessage ?? (hasSteps ? steps[currentStep] : message);
 
+  const v = variantStyles[variant];
+
   return (
     <Modal transparent visible={rendered} animationType="none" statusBarTranslucent>
-      <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
+      <Animated.View style={[styles.overlay, v.overlay, { opacity: fadeAnim }]}>
         {/* Glow circles */}
-        <View style={styles.glowTop} />
-        <View style={styles.glowBottom} />
+        <View style={[styles.glowTop, v.glowTop]} />
+        <View style={[styles.glowBottom, v.glowBottom]} />
 
-        <View style={styles.container}>
+        <View style={[styles.container, v.container]}>
           {/* Icon + Ring */}
           <View style={styles.iconArea}>
             <GlowRing />
@@ -191,14 +201,14 @@ export function LoadingOverlay({
 
           {/* Message */}
           {displayMessage && (
-            <Animated.Text style={[styles.message, hasSteps && { opacity: stepFade }]}>
+            <Animated.Text style={[styles.message, v.message, hasSteps && { opacity: stepFade }]}>
               {displayMessage}
             </Animated.Text>
           )}
 
           {/* Submessage (mode simple) */}
           {!hasSteps && submessage && (
-            <Text style={styles.submessage}>{submessage}</Text>
+            <Text style={[styles.submessage, v.submessage]}>{submessage}</Text>
           )}
 
           {/* Step dots (mode steps) */}
@@ -220,12 +230,12 @@ export function LoadingOverlay({
               activeOpacity={0.7}
               hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
             >
-              <Text style={styles.cancelText}>{cancelLabel}</Text>
+              <Text style={[styles.cancelText, v.cancelText]}>{cancelLabel}</Text>
             </TouchableOpacity>
           ) : null}
 
           {/* Progress bar */}
-          <View style={styles.progressTrack}>
+          <View style={[styles.progressTrack, v.progressTrack]}>
             <Animated.View
               style={[
                 styles.progressFill,
@@ -348,3 +358,53 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.accent,
   },
 });
+
+// DA Polish : variante "light" pour ProfileSetupScreen (seul appelant clair
+// du parcours). Le variant "dark" ci-dessous est un NO-OP volontaire — un
+// objet vide par clé ne change rien au style de base (`styles` ci-dessus),
+// donc les 3 autres écrans (NewSession/Feedback/CoachOnboarding) gardent un
+// rendu strictement identique à avant ce changement.
+const variantStyles = {
+  dark: {
+    overlay: {},
+    glowTop: {},
+    glowBottom: {},
+    container: {},
+    message: {},
+    submessage: {},
+    cancelText: {},
+    progressTrack: {},
+  },
+  light: StyleSheet.create({
+    overlay: {
+      backgroundColor: 'rgba(20,26,36,0.5)',
+    },
+    glowTop: {
+      backgroundColor: 'rgba(42,77,143,0.10)',
+    },
+    glowBottom: {
+      backgroundColor: 'rgba(200,80,20,0.08)',
+    },
+    container: {
+      backgroundColor: theme.colors.card,
+      borderColor: theme.colors.borderSoft,
+      shadowColor: '#000000',
+      shadowOpacity: 0.12,
+      shadowOffset: { width: 0, height: 4 },
+      shadowRadius: 10,
+      elevation: 2,
+    },
+    message: {
+      color: theme.colors.text,
+    },
+    submessage: {
+      color: theme.colors.sub,
+    },
+    cancelText: {
+      color: theme.colors.sub,
+    },
+    progressTrack: {
+      backgroundColor: theme.colors.borderSoft,
+    },
+  }),
+} as const;
