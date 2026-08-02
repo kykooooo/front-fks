@@ -5,6 +5,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated, Modal, Easing, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../constants/theme';
+import { useReduceMotion } from '../../hooks/useReduceMotion';
 
 interface LoadingOverlayProps {
   visible: boolean;
@@ -27,8 +28,16 @@ function BouncingDots() {
   const dot1 = useRef(new Animated.Value(0)).current;
   const dot2 = useRef(new Animated.Value(0)).current;
   const dot3 = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReduceMotion();
 
   useEffect(() => {
+    // Réduire les animations (OS) : dots statiques, pas de rebond en boucle.
+    if (reduceMotion) {
+      dot1.setValue(0);
+      dot2.setValue(0);
+      dot3.setValue(0);
+      return;
+    }
     const bounce = (anim: Animated.Value, delay: number) =>
       Animated.loop(
         Animated.sequence([
@@ -38,10 +47,15 @@ function BouncingDots() {
           Animated.delay(600),
         ])
       );
-    bounce(dot1, 0).start();
-    bounce(dot2, 150).start();
-    bounce(dot3, 300).start();
-  }, [dot1, dot2, dot3]);
+    const loops = [bounce(dot1, 0), bounce(dot2, 150), bounce(dot3, 300)];
+    loops.forEach((loop) => loop.start());
+    return () => {
+      loops.forEach((loop) => loop.stop());
+      dot1.setValue(0);
+      dot2.setValue(0);
+      dot3.setValue(0);
+    };
+  }, [dot1, dot2, dot3, reduceMotion]);
 
   return (
     <View style={dotStyles.row}>
@@ -60,17 +74,28 @@ const dotStyles = StyleSheet.create({
 // ─── Rotating Glow Ring ───
 function GlowRing() {
   const rotation = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReduceMotion();
 
   useEffect(() => {
-    Animated.loop(
+    // Réduire les animations (OS) : anneau fixe, pas de rotation en boucle.
+    if (reduceMotion) {
+      rotation.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
       Animated.timing(rotation, {
         toValue: 1,
         duration: 3000,
         easing: Easing.linear,
         useNativeDriver: true,
       })
-    ).start();
-  }, [rotation]);
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      rotation.setValue(0);
+    };
+  }, [rotation, reduceMotion]);
 
   const spin = rotation.interpolate({
     inputRange: [0, 1],
@@ -124,6 +149,7 @@ export function LoadingOverlay({
   const [currentStep, setCurrentStep] = useState(0);
   // Reste monté le temps du fade-out (sinon le unmount court-circuite l'anim)
   const [rendered, setRendered] = useState(visible);
+  const reduceMotion = useReduceMotion();
 
   // Fade in/out overlay
   useEffect(() => {
@@ -141,19 +167,23 @@ export function LoadingOverlay({
         useNativeDriver: false,
       }).start();
 
-      // Icon pulse
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(iconPulse, { toValue: 1.08, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-          Animated.timing(iconPulse, { toValue: 1, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        ])
-      ).start();
+      // Icon pulse — réduire les animations (OS) : icône figée, pas de pulsation en boucle.
+      if (reduceMotion) {
+        iconPulse.setValue(1);
+      } else {
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(iconPulse, { toValue: 1.08, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+            Animated.timing(iconPulse, { toValue: 1, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          ])
+        ).start();
+      }
     } else {
       Animated.timing(fadeAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start(({ finished }) => {
         if (finished) setRendered(false);
       });
     }
-  }, [visible, fadeAnim, progressWidth, iconPulse, estimatedDurationMs]);
+  }, [visible, fadeAnim, progressWidth, iconPulse, estimatedDurationMs, reduceMotion]);
 
   // Auto-rotate steps
   useEffect(() => {
