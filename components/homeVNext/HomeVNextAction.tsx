@@ -111,6 +111,26 @@ export type HomeVNextActionProps = {
   cycle: CycleBlock;
   onAction?: (target: ActionTarget) => void;
   onSecondaryAction?: (target: ActionTarget) => void;
+  /**
+   * TRAITEMENT HERO — variantes de demarrage (V-A / V-B) uniquement.
+   *
+   * CE QUE CA CHANGE, ET RIEN D'AUTRE :
+   *   - le libelle monte du palier `titreAction` au palier `salutation`, celui
+   *     du rang 1 de l'ecran. Sur un compte neuf, l'action EST le rang 1 : il
+   *     n'y a rien d'autre a lire. Aucun palier n'est cree pour l'occasion, et
+   *     l'echelle allegee reste sans graisse 800 (`salutation` y vaut 20/700) ;
+   *   - le padding passe de 16 a 24 (`espacement.carteHero`) et la hauteur
+   *     plancher de 76 a 104 pt ;
+   *   - le chevron grandit dans le meme rapport que le texte.
+   *
+   * CE QUE CA NE CHANGE PAS : pas un mot de plus, pas une donnee de plus, pas
+   * une couleur de plus. Le meme aplat — le seul de l'ecran — avec le meme
+   * libelle et le meme sous-titre, venus du meme ViewModel.
+   *
+   * Defaut `false` : l'ecran deja valide par le fondateur repasse par le meme
+   * chemin qu'avant, pas par un chemin equivalent.
+   */
+  hero?: boolean;
 };
 
 export function HomeVNextActionBlock({
@@ -119,6 +139,7 @@ export function HomeVNextActionBlock({
   cycle,
   onAction,
   onSecondaryAction,
+  hero = false,
 }: HomeVNextActionProps) {
   const styles = useStylesEchelle(STYLES);
   const secondaire = action.secondary;
@@ -127,7 +148,7 @@ export function HomeVNextActionBlock({
   return (
     <View style={styles.groupe}>
       {action.emphasis === "aplat" ? (
-        <Aplat action={action} onPress={() => onAction?.(action.target)} />
+        <Aplat action={action} onPress={() => onAction?.(action.target)} hero={hero} />
       ) : (
         <AccuseReception action={action} />
       )}
@@ -158,7 +179,15 @@ export function HomeVNextActionBlock({
 // L'aplat — le seul de l'ecran
 // -----------------------------------------------------------------------------
 
-function Aplat({ action, onPress }: { action: ActionData; onPress: () => void }) {
+function Aplat({
+  action,
+  onPress,
+  hero,
+}: {
+  action: ActionData;
+  onPress: () => void;
+  hero: boolean;
+}) {
   const styles = useStylesEchelle(STYLES);
   const reduceMotion = useReduceMotion();
   // Animation partagee. Elle ne demarre qu'au contact du doigt : il n'y a AUCUN
@@ -195,20 +224,31 @@ function Aplat({ action, onPress }: { action: ActionData; onPress: () => void })
         //   `nativeID` -> "combien d'aplats colores ?" (1 au plus)
         testID={MARQUEURS.actionPrincipale}
         nativeID={MARQUEURS.aplat}
-        style={styles.aplat}
+        style={[styles.aplat, hero ? styles.aplatHero : null]}
       >
         <Animated.View style={[styles.voilePression, { opacity: voileOpacite }]} />
-        <View style={styles.aplatContenu} importantForAccessibility="no-hide-descendants">
+        <View
+          style={styles.aplatContenu}
+          importantForAccessibility="no-hide-descendants"
+          // Marqueur pose UNIQUEMENT en traitement hero : il prouve que la
+          // bascule du visualiseur a reellement change quelque chose, et il ne
+          // porte aucun style (le retirer ne deplacerait pas un pixel).
+          testID={hero ? MARQUEURS.actionHero : undefined}
+        >
           <View style={styles.aplatTextes}>
             {/*
-              Texte d'AFFICHAGE : plafonne a x1,2. « C'est parti » n'a pas besoin
-              de grandir davantage — et la zone tactile ne bouge pas d'un pouce,
-              elle tient a `minHeight: 76`, pose par le conteneur.
+              Texte d'AFFICHAGE : plafonne a x1,2 dans les deux traitements.
+              « C'est parti » n'a pas besoin de grandir davantage — et la zone
+              tactile ne bouge pas d'un pouce, elle tient au `minHeight` pose
+              par le conteneur (76 pt en normal, 104 pt en hero).
+
+              En hero, le palier passe a `salutation` : le rang 1 de l'ecran.
+              C'est le meme palier, donc le meme plafond d'agrandissement (1,2).
             */}
             <Text
-              style={styles.aplatLabel}
+              style={hero ? styles.aplatLabelHero : styles.aplatLabel}
               numberOfLines={2}
-              {...plafondDuRole("titreAction")}
+              {...plafondDuRole(hero ? "salutation" : "titreAction")}
             >
               {action.label}
             </Text>
@@ -222,7 +262,13 @@ function Aplat({ action, onPress }: { action: ActionData; onPress: () => void })
               </Text>
             ) : null}
           </View>
-          <Chevron color={couleurs.texteSurAction} size={10} thickness={2.5} />
+          <Chevron
+            color={couleurs.texteSurAction}
+            // Le chevron suit le texte : meme rapport que 20/16 en echelle
+            // allegee. Il ne devient pas un ornement, il reste proportionne.
+            size={hero ? 12 : 10}
+            thickness={hero ? 3 : 2.5}
+          />
         </View>
       </Pressable>
     </Animated.View>
@@ -366,9 +412,25 @@ const creerStyles = (t: EchelleTypo) =>
       flex: 1,
       minWidth: 0,
     },
+    aplatHero: {
+      // La respiration du traitement hero, et la seule marge qu'il ajoute.
+      padding: espacement.carteHero,
+      // 104 pt : le plancher tactile de 44 pt est depasse trois fois, et le
+      // bloc reste un `minHeight` — un texte agrandi le fait grandir, jamais
+      // couper.
+      minHeight: 104,
+    },
     aplatLabel: {
       ...t.titreAction,
       // Blanc PLEIN. Sur #B4530C, du blanc a 90 % retombe a 4.39:1.
+      color: couleurs.texteSurAction,
+    },
+    aplatLabelHero: {
+      // Le palier du rang 1 de l'ecran, pas un palier neuf : 20/26/700 en
+      // echelle allegee, 22/28/800 en echelle actuelle. Le contraste est
+      // identique (meme blanc plein sur le meme aplat), donc les mesures de
+      // l'iteration precedente restent valables telles quelles.
+      ...t.salutation,
       color: couleurs.texteSurAction,
     },
     aplatSousTitre: {

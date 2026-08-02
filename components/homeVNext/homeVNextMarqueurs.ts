@@ -84,6 +84,46 @@ export const MARQUEURS = {
   progressionTest: "home-vnext-progression-test",
   /** La ligne de portee de la courbe (R3). Doit exister des qu'une courbe existe. */
   progressionPortee: "home-vnext-progression-portee",
+
+  // ---------------------------------------------------------------------------
+  // VARIANTES DE DEMARRAGE — l'ecran du nouveau joueur (V-A / V-B)
+  // ---------------------------------------------------------------------------
+  // Ajouts PUREMENT additifs, comme ceux de la variante 2 : aucun composant
+  // deja valide ne les porte, donc aucun rendu existant ne bouge.
+
+  /**
+   * Le bloc de demarrage, quelle que soit sa variante. Present une seule fois
+   * en V-A et en V-B, JAMAIS sur l'ecran actuel : c'est ce qui permet de
+   * prouver que la bascule du visualiseur montre bien autre chose, au lieu de
+   * reservir l'ecran d'origine sous une nouvelle etiquette.
+   */
+  demarrage: "home-vnext-demarrage",
+  /**
+   * Une ligne de premier pas (V-A). Il doit y en avoir EXACTEMENT autant que
+   * `demarrage.premiersPas` en contient : une ligne de plus serait un pas que
+   * le ViewModel n'a pas autorise.
+   */
+  demarragePas: "home-vnext-demarrage-pas",
+  /**
+   * La marque « fait » d'un premier pas. Son compte doit egaler le nombre de
+   * pas dont `fait === true` — c'est ce qui interdit a la vue de cocher toute
+   * seule une case que la donnee ne coche pas.
+   */
+  demarragePasFait: "home-vnext-demarrage-pas-fait",
+  /** La ligne « pourquoi ce cycle » (V-A). Absente quand le ViewModel la met a `null`. */
+  demarragePourquoiCycle: "home-vnext-demarrage-pourquoi-cycle",
+  /**
+   * Une ligne d'apercu (V-B). Meme regle de comptage que les premiers pas, et
+   * meme raison : une section annoncee de plus serait une promesse inventee.
+   */
+  demarrageApercu: "home-vnext-demarrage-apercu",
+  /**
+   * L'action du jour EN TRAITEMENT HERO. N'existe que dans les variantes de
+   * demarrage. Sans lui, un harnais qui rendrait l'ecran d'origine sous
+   * l'etiquette « V-A » ne serait demasque que par la carte : ici, le
+   * traitement typographique lui-meme est prouve.
+   */
+  actionHero: "home-vnext-action-hero",
 } as const;
 
 export type MarqueurNom = keyof typeof MARQUEURS;

@@ -80,6 +80,16 @@ export const espacement = {
   entreSections: theme.spacing.lg, // 16
   /** Padding interieur d'une carte. */
   carte: theme.spacing.lg, // 16
+  /**
+   * Padding interieur de l'action EN TRAITEMENT HERO (variantes de demarrage).
+   *
+   * `theme.spacing.xl` = 24, deja utilise par le projet : ce n'est pas une
+   * valeur inventee pour l'occasion, c'est le palier suivant du meme rythme.
+   * C'est la SEULE marge ajoutee par le traitement hero — le reste de la
+   * presence vient de la typographie et de la hierarchie, pas d'un empilement
+   * de respirations.
+   */
+  carteHero: theme.spacing.xl, // 24
   /** Entre deux lignes d'une meme carte. */
   interne: theme.spacing.md, // 12
   /** Collage serre (libelle + valeur, pastille + texte). */

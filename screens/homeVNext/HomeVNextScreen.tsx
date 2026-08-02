@@ -50,6 +50,7 @@ import { StyleSheet, View } from "react-native";
 import { Screen } from "../../components/ui/Screen";
 import { HomeVNextActionBlock } from "../../components/homeVNext/HomeVNextAction";
 import { HomeVNextDataNotice } from "../../components/homeVNext/HomeVNextDataNotice";
+import { HomeVNextDemarrage } from "../../components/homeVNext/HomeVNextDemarrage";
 import { HomeVNextExit } from "../../components/homeVNext/HomeVNextExit";
 import { HomeVNextForm } from "../../components/homeVNext/HomeVNextForm";
 import { HomeVNextHeader } from "../../components/homeVNext/HomeVNextHeader";
@@ -111,6 +112,44 @@ export const HOME_VNEXT_SECTION_ORDER_V2 = [
   "week",
   "progression", // absorbe "form" ET "exit"
   "note",
+] as const;
+
+// =============================================================================
+// LES VARIANTES DE DEMARRAGE — L'ECRAN DU NOUVEAU JOUEUR
+// =============================================================================
+//
+// L'ecran d'un compte neuf fait 399 px sur 729 visibles : en-tete, aplat,
+// carte « Ta tendance se construit ». Rien d'autre, parce qu'il n'y a rien
+// d'autre de vrai a dire. Decision du fondateur (03/08) : plus de presence,
+// sans rien inventer.
+//
+// CE QUI CHANGE PAR RAPPORT A L'ECRAN ACTUEL
+// -----------------------------------------------------------------------------
+//   1. L'action passe en TRAITEMENT HERO (prop `hero` de `HomeVNextActionBlock`).
+//      Elle ne gagne aucun mot : elle gagne un palier typographique, de l'air et
+//      une hauteur plancher. Sur un compte neuf, elle EST le rang 1 de l'ecran.
+//   2. Une carte de demarrage remplace « MA FORME ». Ce n'est pas un choix de
+//      rendu : le ViewModel a deja mis `form` a `null` (§5.8 bis), parce que les
+//      deux blocs disaient la meme chose.
+//
+// L'ORDRE, ET CE QU'IL A DE PARTICULIER
+// -----------------------------------------------------------------------------
+// Il est RIGOUREUSEMENT celui de la variante 1, a une substitution pres : la
+// carte de demarrage prend la place exacte de « MA FORME ». Le joueur qui
+// reviendra demain, sa premiere seance faite, retrouvera une section au meme
+// endroit — pas un ecran qui s'est reorganise dans son dos.
+//
+// `week`, `note` et `exit` restent dans l'ordre et restent `null` : sur un
+// compte a zero seance, le ViewModel les refuse deja tous les trois.
+// =============================================================================
+
+export const HOME_VNEXT_SECTION_ORDER_DEMARRAGE = [
+  "header",
+  "action", // en traitement hero
+  "week", // toujours null a zero seance (§5.8)
+  "demarrage", // prend la place de "form", que le ViewModel a mis a null
+  "note", // toujours null a zero seance
+  "exit", // toujours null a zero seance (§5.10)
 ] as const;
 
 type HomeVNextScreenPropsCommunes = {
@@ -235,6 +274,12 @@ export function HomeVNextScreen(props: HomeVNextScreenProps) {
                 cycle={vm.cycle}
                 onAction={onAction}
                 onSecondaryAction={onSecondaryAction}
+                // Le traitement hero est commande PAR LA DONNEE, pas par une
+                // prop de l'appelant : il n'apparait que quand le ViewModel a
+                // reellement construit un bloc de demarrage. Impossible, donc,
+                // de rendre un aplat hero sur un ecran qui a par ailleurs une
+                // semaine, une tendance et un lien de sortie a montrer.
+                hero={vm.demarrage !== null}
               />
             </Section>
 
@@ -245,9 +290,19 @@ export function HomeVNextScreen(props: HomeVNextScreenProps) {
             ) : null}
 
             {/*
-              LE SEUL ENDROIT OU LES DEUX VARIANTES DIVERGENT.
-              v2 : la carte progression, qui absorbe "MA FORME" et le lien de sortie.
-              v1 : "MA FORME", inchangee.
+              LE SEUL ENDROIT OU LES VARIANTES DIVERGENT — TROIS CAS, UN SEUL
+              EMPLACEMENT.
+
+              v2       : la carte progression, qui absorbe "MA FORME" et le lien
+                         de sortie.
+              demarrage: la carte de demarrage (V-A ou V-B), qui absorbe
+                         "MA FORME" — decision prise A LA SOURCE, dans le
+                         ViewModel (§5.8 bis), qui a deja mis `vm.form` a `null`.
+              v1       : "MA FORME", inchangee.
+
+              L'ecran n'arbitre donc rien : les trois branches sont mutuellement
+              exclusives PAR LES DONNEES qu'il recoit, jamais par une condition
+              qu'il inventerait.
             */}
             {progression !== null ? (
               <Section>
@@ -256,6 +311,10 @@ export function HomeVNextScreen(props: HomeVNextScreenProps) {
                   onDetail={onExit}
                   largeurCourbe={largeurCourbe}
                 />
+              </Section>
+            ) : vm.demarrage !== null ? (
+              <Section>
+                <HomeVNextDemarrage demarrage={vm.demarrage} />
               </Section>
             ) : vm.form ? (
               <Section>
