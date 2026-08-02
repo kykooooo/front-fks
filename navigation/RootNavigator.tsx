@@ -30,9 +30,11 @@ import PrivacyPolicyScreen from "../screens/PrivacyPolicyScreen";
 import RoutineScreen from "../screens/RoutineScreen";
 import CycleModalScreen from "../screens/CycleModalScreen";
 import ProgressScreen from "../screens/ProgressScreen";
-import CoachHomeScreen from "../screens/CoachHomeScreen";
 import CoachOnboardingScreen from "../screens/CoachOnboardingScreen";
-import CoachPlayerDetailScreen from "../screens/CoachPlayerDetailScreen";
+import CoachTabs, { type CoachTabsParamList } from "./CoachTabs";
+import CoachPlayerScreen from "../screens/coach/CoachPlayerScreen";
+import CoachAccessUnconfirmedScreen from "../screens/coach/CoachAccessUnconfirmedScreen";
+import { coachColors } from "../components/coach/coachTheme";
 import { theme } from "../constants/theme";
 import { STORAGE_KEYS } from "../constants/storage";
 import { DEV_FLAGS } from "../config/devFlags";
@@ -42,6 +44,9 @@ import { SwipeTabsWrapper } from "../components/SwipeTabsWrapper";
 import { setAnalyticsUserId } from "../services/analytics";
 import { setSentryUser } from "../services/monitoring";
 import { onWelcomeReset } from "../services/accountDeletion";
+import { useAppSpace } from "../hooks/useAppSpace";
+import { resolveClubPointer } from "../domain/coachAuthority";
+import { publishAppSpaceSwitch } from "../state/appSpaceGate";
 
 // Firebase
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -107,7 +112,8 @@ export type AuthStackParamList = {
 };
 
 export type CoachStackParamList = {
-  CoachHome: undefined;
+  /** Les 3 onglets coach (Aujourd'hui / Effectif / Semaine). */
+  CoachHome: NavigatorScreenParams<CoachTabsParamList> | undefined;
   // Coach-safe : on ne transmet plus de profil brut, seulement les clés de lecture
   // de la projection (clubs/{clubId}/playerSummaries/{playerUid}).
   CoachPlayerDetail: { clubId: string; playerUid: string };
@@ -240,16 +246,33 @@ function CoachNavigator() {
     <CoachStack.Navigator
       screenOptions={{
         headerShown: false,
-        headerStyle: { backgroundColor: theme.colors.background },
-        headerTintColor: theme.colors.text,
+        // RUPTURE VISUELLE CORRIGÉE. Ce stack posait la palette JOUEUR
+        // (`theme.colors.background`, sombre et dépendante du themeMode) sur ses
+        // en-têtes : « Mentions légales », « Confidentialité » et « Supprimer mon
+        // compte » s'ouvraient avec une barre de titre sombre au milieu d'un
+        // espace coach clair — et devenaient carrément noires en thème sombre.
+        // Les couleurs coach sont désormais posées ICI, une seule fois, pour
+        // tous les écrans du stack (y compris les écrans partagés avec le joueur,
+        // dont seul le CORPS reste en thème joueur — hors périmètre de ce lot).
+        headerStyle: { backgroundColor: coachColors.card },
+        headerTintColor: coachColors.text,
+        headerTitleStyle: { color: coachColors.text },
+        headerShadowVisible: false,
         animation: "slide_from_right",
         gestureEnabled: true,
         gestureDirection: "horizontal",
         headerBackTitle: "Retour",
       }}
     >
-      <CoachStack.Screen name="CoachHome" component={CoachHomeScreen} />
-      <CoachStack.Screen name="CoachPlayerDetail" component={CoachPlayerDetailScreen} options={{ headerShown: true, title: "Joueur" }} />
+      {/* Écran d'atterrissage = la tab bar coach (Aujourd'hui / Effectif / Semaine). */}
+      <CoachStack.Screen name="CoachHome" component={CoachTabs} options={{ gestureEnabled: false }} />
+      {/* Titre par défaut neutre : la fiche le remplace par le prénom dès qu'elle
+          l'a lu (useLayoutEffect), et n'a plus à repeindre l'en-tête elle-même. */}
+      <CoachStack.Screen
+        name="CoachPlayerDetail"
+        component={CoachPlayerScreen}
+        options={{ headerShown: true, title: "Fiche joueur" }}
+      />
       <CoachStack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ headerShown: true, title: "Supprimer mon compte" }} />
       <CoachStack.Screen name="LegalNotice" component={LegalNoticeScreen} options={{ headerShown: true, title: "Mentions légales" }} />
       <CoachStack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={{ headerShown: true, title: "Confidentialité" }} />
@@ -329,11 +352,53 @@ export default function RootNavigator() {
   // Distinct de `initializing` (qui repasse à true pendant l'attente du profil).
   const [authResolved, setAuthResolved] = useState(false);
   const [profileCompleted, setProfileCompleted] = useState<boolean | null>(null);
-  const [role, setRole] = useState<string | null>(null);
+  // `users/{uid}.clubId` : OÙ regarder, jamais QUI on est. L'espace affiché est
+  // dérivé de l'appartenance elle-même (cf. hooks/useAppSpace).
+  const [clubId, setClubId] = useState<string | null>(null);
   const [welcomeDone, setWelcomeDone] = useState<boolean | null>(null);
   const startFirestoreWatch = useSyncStore((s) => s.startFirestoreWatch);
   const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
   const resetTrainingStore = useSyncStore((s) => s.resetForUser);
+
+  // ── QUEL ESPACE AFFICHER (coach ou joueur) ────────────────────────────────
+  // DÉRIVÉ de l'appartenance au club — `clubs/{clubId}/members/{uid}.role` —,
+  // c'est-à-dire de l'autorité que le serveur contrôle seul et que les règles
+  // Firestore interdisent à tout client d'écrire.
+  //
+  // AVANT, on lisait `users/{uid}.role === "coach"`. Deux défauts, tous deux
+  // corrigés ici : ce champ est écrivable par l'utilisateur lui-même (les règles
+  // l'autorisent à écrire tout son document `users/{uid}`), et le transfert de
+  // propriété ne le touche jamais — un joueur devenu propriétaire restait donc
+  // enfermé dans l'espace joueur. Voir domain/appSpace.ts pour le raisonnement
+  // complet, et docs/coach-pilote-2026-07/ESPACE_ET_ROLES.md pour ce que ça
+  // change côté produit.
+  const appSpace = useAppSpace({ uid: user?.uid ?? null, clubId });
+
+  // ── LE SÉLECTEUR JOUEUR / COACH, DIFFUSÉ DEPUIS LA RACINE ─────────────────
+  // Le droit aux deux espaces est dérivé ICI, une seule fois. Les deux écrans
+  // qui affichent le sélecteur (réglages joueur, écran Semaine du coach) vivent
+  // loin en dessous : ils s'abonnent au relais plutôt que de redériver l'état,
+  // ce qui aurait ouvert un second abonnement Firestore et une seconde lecture
+  // de la préférence — donc deux états qui se croient tous les deux vrais.
+  // Voir state/appSpaceGate.ts pour le raisonnement complet.
+  //
+  // Le SUIVI SPORTIF (`suiviJoueur`) emprunte le même relais, et c'est délibéré :
+  // il vient du même instantané d'appartenance que `peutChoisirEspace`. Le
+  // diffuser par un second portillon aurait rouvert un second abonnement — ou,
+  // pire, deux lectures du même document à deux instants différents.
+  const peutChoisirEspace = appSpace.peutChoisirEspace;
+  const espaceAffiche = appSpace.space;
+  const choisirEspace = appSpace.choisirEspace;
+  const suiviJoueur = appSpace.suiviJoueur;
+  useEffect(() => {
+    publishAppSpaceSwitch({
+      peutChoisir: peutChoisirEspace,
+      espace: espaceAffiche,
+      suiviJoueur,
+      choisir: choisirEspace,
+    });
+  }, [peutChoisirEspace, espaceAffiche, suiviJoueur, choisirEspace]);
+
   // 0) DEV: force welcome screen (déconnecte + reset flag)
   useEffect(() => {
     if (!DEV_FLAGS.FORCE_WELCOME) return;
@@ -350,7 +415,10 @@ export default function RootNavigator() {
       setAuthResolved(true);
       if (!u) {
         setProfileCompleted(null);
-        setRole(null);
+        // Déconnexion : le pointeur de club tombe AVEC le compte. C'est ce qui
+        // démonte l'abonnement à l'appartenance (cf. useAppSpace), sans quoi
+        // l'espace du compte précédent survivrait à sa propre session.
+        setClubId(null);
         setInitializing(false);
       } else {
         // Nouveau user (login/register) → attendre le profile listener Firestore
@@ -401,7 +469,12 @@ export default function RootNavigator() {
       (snap) => {
         const data = snap.data();
         setProfileCompleted(!!data?.profileCompleted);
-        setRole(typeof data?.role === "string" ? data.role : null);
+        // OÙ regarder, jamais QUI on est. Le jour où plusieurs clubs deviendront
+        // possibles, `resolveClubPointer` REFUSE explicitement plutôt que de
+        // prendre le premier de la liste : un choix implicite ouvrirait l'espace
+        // d'un club que personne n'a demandé, et personne ne saurait lequel.
+        const pointeur = resolveClubPointer(data?.clubId);
+        setClubId(pointeur.statut === "unique" ? pointeur.clubId : null);
         setInitializing(false);
       },
       (err) => {
@@ -409,7 +482,7 @@ export default function RootNavigator() {
           console.warn("Erreur lors du check profil:", err);
         }
         setProfileCompleted(false);
-        setRole(null);
+        setClubId(null);
         setInitializing(false);
       }
     );
@@ -442,8 +515,34 @@ export default function RootNavigator() {
     );
   }
 
-  // 6bis) Coach → espace coach (pas de questionnaire joueur, pas de tab bar joueur)
-  if (role === "coach") {
+  // 5ter) Appartenance au club pas encore lue → Splash.
+  //    Même raison que le check `initializing` juste au-dessus : tant qu'on ne
+  //    SAIT pas, on n'affiche pas. Parier sur l'espace joueur ferait clignoter
+  //    l'app joueur devant un coach à chaque démarrage à froid.
+  //    Ce temps d'attente ne concerne QUE les comptes rattachés à un club : sans
+  //    `clubId`, il n'y a rien à lire et la décision est immédiate.
+  if (appSpace.decision === "en-attente") return <Splash />;
+
+  // 5quater) Autorité coach INVÉRIFIABLE alors qu'elle avait été confirmée →
+  //    écran d'accès non vérifié.
+  //    Les quatre états de l'autorité (domain/coachAuthority) : seul `autorise`
+  //    ouvre l'espace coach ; `chargement`, `refuse` et `indetermine` le ferment
+  //    ET purgent. Ici on traite le seul des trois qui mérite une explication :
+  //    un coach dont on n'a pas pu vérifier les accès. Le renvoyer sans un mot
+  //    dans l'application joueur lui ferait croire à une panne — ou, si son
+  //    profil joueur n'est pas rempli, lui ouvrirait le questionnaire de profil
+  //    parce qu'un document n'a pas pu être lu.
+  //    Un joueur, lui, ne voit jamais cet écran : sans autorité coach confirmée,
+  //    une lecture en échec le laisse dans son application, qui sait vivre hors
+  //    ligne. La mémoire « déjà confirmée » n'ouvre rien — elle choisit entre
+  //    deux états déjà fermés.
+  if (appSpace.autorite === "indetermine" && appSpace.autoriteDejaConfirmee) {
+    return <CoachAccessUnconfirmedScreen onRetry={appSpace.revalider} />;
+  }
+
+  // 6bis) Encadrant (propriétaire ou coach du club) → espace coach.
+  //    Pas de questionnaire joueur, pas de tab bar joueur.
+  if (appSpace.space === "coach") {
     return <CoachNavigator />;
   }
 

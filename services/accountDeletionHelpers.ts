@@ -32,6 +32,7 @@ export function localAccountKeysToPurge(uid: string | null | undefined): string[
     keys.add(`${SNAPSHOT_PREFIX}${cleanUid}`); // snapshot cross-stores du compte supprimé
     keys.add(STORAGE_KEYS.TRAINING_SNAPSHOT(cleanUid)); // ancien format de snapshot
     keys.add(`${STORAGE_KEYS.TESTS_V1}_${cleanUid}`); // tests terrain par uid
+    keys.add(STORAGE_KEYS.APP_SPACE_PREFERENCE(cleanUid)); // dernier espace Joueur/Coach
   }
   return [...keys];
 }
