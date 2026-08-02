@@ -46,8 +46,17 @@
  */
 const LARGEURS_COMPARAISON = [320, 375];
 
-/** Variantes concernees par l'axe. Le Home de production n'en fait pas partie. */
-const VARIANTES_AVEC_PRESENTATION = ["vnext", "vnext2"];
+/**
+ * Variantes concernees par l'axe. Le Home de production n'en fait pas partie.
+ *
+ * `vnextA` / `vnextB` sont les deux variantes de DEMARRAGE (l'ecran du nouveau
+ * joueur). Elles y figurent pour une raison precise : leur traitement hero pose
+ * le libelle de l'action au palier `salutation`, qui vaut 20/700 en echelle
+ * allegee et 22/800 en echelle actuelle. C'est exactement l'ecart que la
+ * bascule typographique existe pour montrer — les exclure reviendrait a ne
+ * jamais regarder le seul palier que le traitement hero deplace.
+ */
+const VARIANTES_AVEC_PRESENTATION = ["vnext", "vnext2", "vnextA", "vnextB"];
 
 /**
  * Suffixe de nom de fichier par combinaison.

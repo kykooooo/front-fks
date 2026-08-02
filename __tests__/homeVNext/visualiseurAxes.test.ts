@@ -25,6 +25,7 @@
 
 import { HOME_VNEXT_FIXTURES_RENDU, PROGRESSION_FIXTURES_RENDU } from "../../screens/homeVNext/fixtures";
 import { PRESENTATIONS_A_COMPARER } from "../../components/homeVNext/homeVNextPresentation";
+import { DEMARRAGE_VARIANTES } from "../../screens/homeVNext/viewModel";
 
 // Les modules du harnais sont du JavaScript sans type : `require` est ici le bon
 // outil, et le seul qui n'oblige pas a leur inventer des declarations.
@@ -52,6 +53,29 @@ const ETATS_CONNUS = new Set<string>([
 ]);
 
 const LARGEURS_GENEREES = [320, 375, 390, 768];
+
+/**
+ * Les identifiants de variante qu'une cible a le droit de nommer.
+ *
+ * Les variantes de DEMARRAGE sont derivees de `DEMARRAGE_VARIANTES` (le
+ * ViewModel), jamais recopiees : une variante renommee cote produit ferait
+ * echouer ce test au lieu d'afficher un bouton mort dans le visualiseur.
+ */
+const VARIANTES_VALIDES = new Set<string>([
+  "vnext",
+  "vnext2",
+  "actuel",
+  "duo",
+  ...DEMARRAGE_VARIANTES.map((v) => `vnext${v.id}`),
+]);
+
+/** Les paires que le visualiseur fabrique pour les variantes de demarrage. */
+const PAIRES_DEMARRAGE = new Set<string>([
+  ...DEMARRAGE_VARIANTES.map((v) => `v1v${v.id}`),
+  ...(DEMARRAGE_VARIANTES.length === 2
+    ? [`v${DEMARRAGE_VARIANTES[0].id}v${DEMARRAGE_VARIANTES[1].id}`]
+    : []),
+]);
 const LARGEUR_TEXTE_AGRANDI = 375;
 
 const toutesLesCibles = (): { axe: string; cible: Cible }[] =>
@@ -59,8 +83,8 @@ const toutesLesCibles = (): { axe: string; cible: Cible }[] =>
     a.cibles.map((c) => ({ axe: a.id, cible: c }))
   );
 
-describe("visualiseur — les sept axes", () => {
-  it("couvre exactement les sept axes demandes, sans doublon", () => {
+describe("visualiseur — les huit axes", () => {
+  it("couvre exactement les huit axes demandes, sans doublon", () => {
     expect((AXES as { id: string }[]).map((a) => a.id)).toEqual([
       "hierarchie-typo",
       "densite",
@@ -69,6 +93,10 @@ describe("visualiseur — les sept axes", () => {
       "carte-progression",
       "pied-secondaire",
       "pastille-absente",
+      // Ajoute le 03/08 : la decision « sobre ne doit pas dire timide » sur
+      // l'ecran du nouveau joueur. Il se juge en basculant de variante, pas en
+      // changeant d'etat — d'ou sa place dans cette liste et pas dans une autre.
+      "premier-ecran",
     ]);
   });
 
@@ -105,7 +133,7 @@ describe("visualiseur — les sept axes", () => {
       if (cible.vue != null && !["visible", "entiere"].includes(cible.vue)) {
         fautes.push(`${axe} : vue ${cible.vue}`);
       }
-      if (cible.variante != null && !["vnext", "vnext2", "actuel", "duo"].includes(cible.variante)) {
+      if (cible.variante != null && !VARIANTES_VALIDES.has(cible.variante)) {
         fautes.push(`${axe} : variante ${cible.variante}`);
       }
       if (cible.presentation != null && !idsPresentation.has(cible.presentation)) {
@@ -134,7 +162,9 @@ describe("visualiseur — les sept axes", () => {
       .filter(({ cible }) => {
         const variante = cible.variante ?? (etatsAvecCarte.has(cible.etat) ? "vnext2" : "vnext");
         if (variante === "vnext2") return !etatsAvecCarte.has(cible.etat);
-        if (variante === "duo" && cible.paire && cible.paire.includes("2")) {
+        // Une paire de DEMARRAGE ne parle pas de la carte progression : la
+        // tester contre les etats de carte ferait echouer une cible juste.
+        if (variante === "duo" && cible.paire && !PAIRES_DEMARRAGE.has(cible.paire) && cible.paire.includes("2")) {
           return !etatsAvecCarte.has(cible.etat);
         }
         return false;
@@ -144,9 +174,11 @@ describe("visualiseur — les sept axes", () => {
   });
 });
 
-describe("visualiseur — les huit situations a couvrir", () => {
+describe("visualiseur — les situations a couvrir", () => {
   it("les couvre toutes, et chacune pointe sur un etat reellement genere", () => {
-    expect(COUVERTURE).toHaveLength(8);
+    // 8 situations d'origine + celle ajoutee le 03/08 (les deux propositions
+    // pour l'ecran du nouveau joueur).
+    expect(COUVERTURE).toHaveLength(9);
     const fautes = (COUVERTURE as { situation: string; cible: Cible }[])
       .filter((c) => !ETATS_CONNUS.has(c.cible.etat))
       .map((c) => `${c.situation} -> ${c.cible.etat}`);

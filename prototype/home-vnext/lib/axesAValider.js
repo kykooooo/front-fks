@@ -1,6 +1,6 @@
 // prototype/home-vnext/lib/axesAValider.js
 // =============================================================================
-// LES SEPT AXES SUR LESQUELS LE FONDATEUR SE PRONONCE, SEPAREMENT
+// LES HUIT AXES SUR LESQUELS LE FONDATEUR SE PRONONCE, SEPAREMENT
 // =============================================================================
 //
 // POURQUOI PAR AXE ET PLUS PAR ECRAN
@@ -271,6 +271,44 @@ const AXES = [
       { libelle: "L'ecran seul, avec pastille", etat: "tendance-disponible", variante: "vnext" },
     ],
   },
+
+  // ---------------------------------------------------------------------------
+  {
+    id: "premier-ecran",
+    titre: "Le tout premier ecran",
+    question:
+      "L'ecran d'un compte tout neuf a-t-il assez de presence, sans qu'on lui ait invente une " +
+      "seule donnee ?",
+    bascule:
+      "Le selecteur de VARIANTE, en haut : « Proposition vNext » (l'ecran d'aujourd'hui), puis " +
+      "« V-A », puis « V-B ». L'etat ne change pas, les donnees ne changent pas, la largeur ne " +
+      "change pas. Les trois ecrans sont construits par le meme selecteur sur le meme compte : " +
+      "seule une option change.",
+    regarder:
+      "D'abord la hauteur : l'ecran d'aujourd'hui s'arrete a mi-hauteur et laisse un grand vide " +
+      "en dessous. Ensuite le bouton du jour, qui passe en traitement hero — meme mot, meme " +
+      "couleur, plus de taille et plus d'air. Ensuite le contenu : V-A dit les trois premiers pas " +
+      "et pourquoi ce cycle-la ; V-B annonce ce qui apparaitra ici, et a partir de quand. Ouvre " +
+      "enfin l'onglet « Cet etat » : chaque ligne y est reliee a la donnee qui l'a produite.",
+    oui:
+      "L'ecran occupe sa place et donne envie de commencer, et tu peux pointer, pour CHAQUE ligne, " +
+      "ou l'app est allee chercher l'information. Aucune coche n'est cochee d'avance, aucun chiffre " +
+      "n'attend qu'on le remplisse, et il n'y a toujours qu'un seul bouton.",
+    non:
+      "Une ligne te parait flatteuse ou fabriquee ; ou la liste des premiers pas ressemble a une " +
+      "liste de courses au lieu d'un depart ; ou l'une des deux propositions rallonge l'ecran sans " +
+      "rien apporter. Dis LAQUELLE des deux, et sur QUELLE ligne — chacune se retire separement.",
+    cibles: [
+      { libelle: "Aujourd'hui", etat: "nouveau-joueur", variante: "vnext" },
+      { libelle: "V-A — premiere mission", etat: "nouveau-joueur", variante: "vnextA" },
+      { libelle: "V-B — anticipation", etat: "nouveau-joueur", variante: "vnextB" },
+      { libelle: "Cote a cote — aujourd'hui / V-A", etat: "nouveau-joueur", variante: "duo", paire: "v1vA" },
+      { libelle: "Cote a cote — V-A / V-B", etat: "nouveau-joueur", variante: "duo", paire: "vAvB" },
+      { libelle: "V-A en 320 px", etat: "nouveau-joueur", variante: "vnextA", largeur: 320 },
+      { libelle: "V-A, texte x1,3", etat: "nouveau-joueur", variante: "vnextA", x13: true, vue: "entiere" },
+      { libelle: "V-B, texte x1,3", etat: "nouveau-joueur", variante: "vnextB", x13: true, vue: "entiere" },
+    ],
+  },
 ];
 
 // =============================================================================
@@ -291,6 +329,16 @@ const COUVERTURE = [
     ceQuOnVoit:
       "Aucune seance, aucun test : trois reperes numerotes qui annoncent ce qui apparaitra, une " +
       "mention « 0 seance terminee », et aucun bouton vers la page Progression.",
+  },
+  {
+    situation: "Nouveau joueur — les deux propositions du 03/08",
+    cible: { etat: "nouveau-joueur", variante: "duo", paire: "vAvB" },
+    ceQuOnVoit:
+      "A gauche V-A : le bouton du jour en traitement hero, les trois premiers pas — profil, tests " +
+      "terrain, premiere seance — chacun coche ou non depuis un etat REEL du compte, et la ligne " +
+      "qui dit pourquoi ce cycle-la. A droite V-B : le meme bouton hero, et les trois sections a " +
+      "venir avec le seuil exact qui les declenchera. Aucune des deux n'ajoute une donnee : le " +
+      "detail ligne par ligne, avec sa source, est dans l'onglet « Cet etat ».",
   },
   {
     situation: "Deux seances, sans tendance",

@@ -120,6 +120,45 @@ const PRESENTATIONS = presentations.construirePresentations(
 );
 const PRESENTATION_DEFAUT = PRESENTATIONS[0];
 
+// ---------------------------------------------------------------------------
+// LES DEUX VARIANTES DE DEMARRAGE — l'ecran du nouveau joueur
+// ---------------------------------------------------------------------------
+// La liste des variantes vient du PRODUIT (`DEMARRAGE_VARIANTES`, exporte par
+// le ViewModel), jamais d'une liste recopiee ici : si le produit en ajoute une
+// troisieme, elle apparait dans le visualiseur sans qu'on touche a ce fichier.
+// Seul le nom du dossier de pages est une decision de harnais.
+// ---------------------------------------------------------------------------
+const VARIANTES_DEMARRAGE = (vmMod.ok && vmMod.mod.DEMARRAGE_VARIANTES
+  ? vmMod.mod.DEMARRAGE_VARIANTES
+  : []
+).map((v) => ({
+  id: v.id,
+  cle: `vnext${v.id}`,
+  titre: v.titre,
+  resume: v.resume,
+}));
+
+/**
+ * Cet etat a-t-il DROIT aux variantes de demarrage ?
+ *
+ * La reponse n'est pas devinee ici : on la DEMANDE au selecteur. S'il construit
+ * un bloc, l'etat y a droit ; s'il refuse, l'etat n'y a pas droit. Une liste
+ * d'identifiants ecrite dans le harnais aurait fini par diverger du contrat, et
+ * c'est exactement le genre d'ecart qui fait valider un ecran inexistant.
+ */
+function aDroitAuDemarrage(fixture) {
+  if (!vmMod.ok || VARIANTES_DEMARRAGE.length === 0) return false;
+  try {
+    return (
+      vmMod.mod.buildHomeVNextViewModel(fixture.input, {
+        demarrage: VARIANTES_DEMARRAGE[0].id,
+      }).demarrage !== null
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
 /** Les presentations reellement generees pour une variante et une largeur. */
 function presentationsPour(variante, width) {
   return PRESENTATIONS.filter(
@@ -349,6 +388,50 @@ function resumerViewModel(vm) {
     raisonSansCourbe: vm.form && vm.form.kind === "insufficient" ? vm.form.title : null,
     conseil: vm.note ? `${vm.note.title} — ${vm.note.message}` : null,
     sortie: vm.exit ? vm.exit.label : null,
+    // Le bloc de demarrage — `null` partout sauf sur l'ecran du nouveau joueur
+    // rendu en V-A ou V-B. Chaque element vient avec SA SOURCE : c'est tout
+    // l'objet de l'onglet « Cet etat » pour ces deux variantes.
+    demarrage: resumerDemarrage(vm.demarrage),
+  };
+}
+
+/**
+ * Resume du bloc de demarrage, avec la SOURCE de chaque element.
+ *
+ * Le panneau doit pouvoir repondre a une seule question, element par element :
+ * « d'ou sort ce que je lis ? ». On ne reformule donc rien — on recopie le
+ * champ `source` que le contrat impose, et le seuil que chaque promesse porte.
+ */
+function resumerDemarrage(bloc) {
+  if (!bloc) return null;
+  if (bloc.kind === "premiere_mission") {
+    return {
+      nature: bloc.kind,
+      titre: bloc.titre,
+      premiersPas: bloc.premiersPas.map((p) => ({
+        libelle: p.label,
+        detail: p.detail,
+        fait: p.fait,
+        source: p.source,
+      })),
+      pourquoiCeCycle: bloc.pourquoiCeCycle
+        ? {
+            texte: bloc.pourquoiCeCycle.text,
+            cycle: bloc.pourquoiCeCycle.cycleLabel,
+            source: bloc.pourquoiCeCycle.source,
+          }
+        : null,
+    };
+  }
+  return {
+    nature: bloc.kind,
+    titre: bloc.titre,
+    apercus: bloc.apercus.map((a) => ({
+      titre: a.titre,
+      message: a.message,
+      seuil: a.seuil,
+      seuilNom: a.seuilNom,
+    })),
   };
 }
 
@@ -633,6 +716,14 @@ async function main() {
       groupe: groupeDe(fixture.id),
       fictif: true,
       vnext: { disponible: vnextDispo, pages: {} },
+      // Les deux variantes de demarrage, presentes UNIQUEMENT sur les etats qui
+      // y ont droit. `null` ailleurs : le visualiseur desactive alors la bascule
+      // et dit pourquoi, au lieu de proposer un bouton qui ne montre rien.
+      demarrage: aDroitAuDemarrage(fixture)
+        ? Object.fromEntries(
+            VARIANTES_DEMARRAGE.map((v) => [v.cle, { disponible: vnextDispo, pages: {} }])
+          )
+        : {},
       actuel: {
         scenarioId: corr ? corr.scenario : null,
         scenarioTitre: scenario ? scenario.titre : null,
@@ -700,6 +791,83 @@ async function main() {
         process.stdout.write(presentation.parDefaut ? "." : "+");
       }
 
+      // --- variantes de demarrage (V-A / V-B) -------------------------------
+      // UNIQUEMENT sur les etats qui remplissent la condition du bloc : zero
+      // seance terminee. Le harnais ne le decide pas — il le DEMANDE au
+      // selecteur (voir `etatDeDemarrage`, plus haut). Un etat qui n'y a pas
+      // droit n'est pas genere du tout : une page vide sous l'etiquette « V-A »
+      // ne prouverait rien, et une page identique a l'actuelle serait un piege.
+      for (const varianteDem of VARIANTES_DEMARRAGE) {
+        if (!entree.demarrage[varianteDem.cle]) continue;
+        for (const presentation of presentationsPour(varianteDem.cle, device.width)) {
+          const rd = await render.renderDemarrage(
+            fixture,
+            device,
+            presentation,
+            varianteDem.id,
+            htmlVariante1.get(cleHtml(fixture.id, device.width, presentation.id)) || null
+          );
+          const bloc = entree.demarrage[varianteDem.cle];
+          if (!bloc.viewModel && rd.viewModel) {
+            bloc.viewModel = resumerViewModel(rd.viewModel);
+            bloc.protoWarnings = rd.viewModel.protoWarnings || [];
+          }
+          if (rd.indisponible) {
+            rangerPages(
+              bloc,
+              presentation,
+              ecrirePagesErreur({
+                variante: varianteDem.cle,
+                etatId: fixture.id,
+                etatTitre: `${fixture.titre} — ${varianteDem.titre}`,
+                device,
+                indisponible: rd.indisponible,
+                viewModel: rd.viewModel,
+                titreVm: "Ce que l'ecran AURAIT affiche",
+                noteVm:
+                  "Le selecteur a tourne : voici son resultat pour cette variante. Il ne manque " +
+                  "que l'ecran qui le dessine.",
+                presentation,
+              })
+            );
+            bloc.disponible = false;
+            bloc.indisponible = rd.indisponible.titre;
+          } else {
+            rangerPages(
+              bloc,
+              presentation,
+              ecrirePages({
+                variante: varianteDem.cle,
+                etatId: fixture.id,
+                etatTitre: `${fixture.titre} — ${varianteDem.titre}`,
+                etatResume: varianteDem.resume,
+                device,
+                html: rd.html,
+                ecart: null,
+                presentation,
+              })
+            );
+            if (device.width === SCALE_WIDTH && presentation.parDefaut) bloc.sonde = rd.sonde;
+            if (device.width === SCALE_WIDTH && rd.mouvement) {
+              bloc.mouvement = bloc.mouvement || {};
+              bloc.mouvement[presentation.id] = presentations.controleMouvement(
+                rd.mouvement,
+                presentation.reduceMotion
+              );
+            }
+          }
+          // Les controles sont des COMPTES DE STRUCTURE : releves a CHAQUE
+          // largeur, pas seulement a 375. Une ligne de pas qui disparaitrait en
+          // 320 px passerait sinon inapercue.
+          if (rd.mesures && presentation.parDefaut) {
+            bloc.controlesParLargeur = bloc.controlesParLargeur || {};
+            bloc.controlesParLargeur[device.width] = rd.mesures.clesEnEchec;
+            if (!bloc.controles) bloc.controles = rd.mesures.controles;
+          }
+          process.stdout.write(presentation.parDefaut ? "*" : "+");
+        }
+      }
+
       // --- home actuel ---
       if (scenario) {
         const ra = await render.renderActuel(scenario, device);
@@ -760,7 +928,28 @@ async function main() {
       blocsActuel: entree.actuel.sonde ? entree.actuel.sonde.blocs.length : 0,
       chaineActuel: entree.actuel.sonde ? entree.actuel.sonde.chainLength : null,
       protoWarnings: entree.vnext.protoWarnings ? entree.vnext.protoWarnings.length : 0,
+      demarrage: Object.keys(entree.demarrage).length
+        ? Object.fromEntries(
+            Object.entries(entree.demarrage).map(([cle, b]) => [cle, b.indisponible || "rendu"])
+          )
+        : "sans objet",
     });
+
+    // Un controle en echec, a n'importe quelle largeur, doit remonter jusqu'au
+    // bandeau du visualiseur — et pas seulement dans l'onglet qu'on penserait a
+    // ouvrir.
+    for (const [cle, bloc] of Object.entries(entree.demarrage)) {
+      const parLargeur = bloc.controlesParLargeur || {};
+      const enEchec = Object.keys(parLargeur).filter((w) => parLargeur[w].length > 0);
+      if (enEchec.length) {
+        rapport.alertes.push(
+          `${fixture.id} / ${cle} : controle(s) en echec — ` +
+            enEchec.map((w) => `${w} px : ${parLargeur[w].join(", ")}`).join(" · ") +
+            ". Detail dans l'onglet « Cet etat »."
+        );
+      }
+    }
+
     process.stdout.write(` ${fixture.id}\n`);
   }
 
@@ -1100,6 +1289,14 @@ async function main() {
     // de test n'y entre.
     ordreDepartageProgression: ordreDepartageLisible(),
     pointsProgression: POINTS_PROGRESSION,
+
+    // --- les variantes de demarrage (l'ecran du nouveau joueur) -------------
+    // La liste vient du ViewModel (`DEMARRAGE_VARIANTES`), pas du harnais : le
+    // visualiseur affiche ce que le produit propose, jamais ce que le harnais
+    // croit savoir. Les etats concernes sont ceux pour lesquels le SELECTEUR a
+    // reellement construit un bloc.
+    variantesDemarrage: VARIANTES_DEMARRAGE,
+    etatsAvecDemarrage: FIXTURES.filter((f) => aDroitAuDemarrage(f)).map((f) => f.id),
 
     // --- l'axe presentation : typographie x mouvement -----------------------
     presentations: PRESENTATIONS,

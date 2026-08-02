@@ -532,6 +532,248 @@ async function renderVNext2({ fixtureHote, fixtureProgression, device, htmlVaria
 }
 
 // ---------------------------------------------------------------------------
+// Variantes de DEMARRAGE — l'ecran du nouveau joueur (V-A / V-B)
+// ---------------------------------------------------------------------------
+// MEME pipeline, MEME ecran, MEMES stubs, MEME ViewModel que la variante 1. La
+// SEULE difference est une option passee au selecteur : `{ demarrage: "A" }` ou
+// `{ demarrage: "B" }`. L'ecran, lui, ne recoit AUCUNE prop supplementaire — il
+// lit `vm.demarrage` et en deduit tout, traitement hero compris.
+//
+// C'est ce qui rend la comparaison honnete : entre V-actuelle, V-A et V-B, la
+// seule chose qui bouge est cette option. Pas un stub, pas une prop de harnais,
+// pas un montage different.
+//
+// LE MEME PIEGE QU'EN VARIANTE 2, ET LA MEME PARADE
+// -----------------------------------------------------------------------------
+// Si le contrat changeait — option renommee, bloc retire, composant absent —
+// l'ecran rendrait la variante actuelle SANS RIEN DIRE. Servir ce rendu sous
+// l'etiquette « V-A » ferait valider un ecran qui n'existe pas. On se protege
+// par une MESURE : on cherche le marqueur du bloc dans le HTML produit, et s'il
+// n'y est pas, on refuse de servir la page.
+// ---------------------------------------------------------------------------
+
+/** Ce que le harnais cherche dans le rendu pour prouver qu'il regarde bien V-A / V-B. */
+const MARQUEURS_DEMARRAGE = {
+  bloc: "home-vnext-demarrage",
+  pas: "home-vnext-demarrage-pas",
+  pasFait: "home-vnext-demarrage-pas-fait",
+  pourquoiCycle: "home-vnext-demarrage-pourquoi-cycle",
+  apercu: "home-vnext-demarrage-apercu",
+  hero: "home-vnext-action-hero",
+  actionPrincipale: "home-vnext-action-principale",
+  formeInsuffisante: "home-vnext-forme-insuffisante",
+};
+
+/** Compte les occurrences d'un `data-testid` dans un fragment de HTML. */
+function compterMarqueur(html, marqueur) {
+  const re = new RegExp('data-testid="' + marqueur + '"', "g");
+  return (String(html || "").match(re) || []).length;
+}
+
+/**
+ * Les controles chiffres d'une page de demarrage.
+ *
+ * Chaque attendu est DEDUIT DU VIEWMODEL, jamais ecrit a la main : c'est la
+ * seule facon qu'un controle continue de mesurer quelque chose le jour ou le
+ * contenu bouge. Un attendu recopie deviendrait faux en silence.
+ */
+function mesurerDemarrage(html, vm) {
+  const bloc = vm && vm.demarrage ? vm.demarrage : null;
+  const pasAttendus = bloc && bloc.kind === "premiere_mission" ? bloc.premiersPas.length : 0;
+  const pasFaitsAttendus =
+    bloc && bloc.kind === "premiere_mission"
+      ? bloc.premiersPas.filter((p) => p.fait).length
+      : 0;
+  const pourquoiAttendu =
+    bloc && bloc.kind === "premiere_mission" && bloc.pourquoiCeCycle ? 1 : 0;
+  const apercusAttendus = bloc && bloc.kind === "anticipation" ? bloc.apercus.length : 0;
+
+  const controles = [
+    {
+      cle: "bloc",
+      quoi: "le bloc de demarrage",
+      valeur: compterMarqueur(html, MARQUEURS_DEMARRAGE.bloc),
+      attendu: 1,
+    },
+    {
+      cle: "hero",
+      quoi: "l'action en traitement hero",
+      valeur: compterMarqueur(html, MARQUEURS_DEMARRAGE.hero),
+      attendu: 1,
+    },
+    {
+      cle: "action_unique",
+      quoi: "une seule action principale",
+      valeur: compterMarqueur(html, MARQUEURS_DEMARRAGE.actionPrincipale),
+      attendu: 1,
+    },
+    {
+      cle: "pas",
+      quoi: "les lignes de premier pas",
+      valeur: compterMarqueur(html, MARQUEURS_DEMARRAGE.pas),
+      attendu: pasAttendus,
+    },
+    {
+      cle: "pas_faits",
+      quoi: "les pas COCHES (doivent egaler ceux dont fait=true)",
+      valeur: compterMarqueur(html, MARQUEURS_DEMARRAGE.pasFait),
+      attendu: pasFaitsAttendus,
+    },
+    {
+      cle: "pourquoi_cycle",
+      quoi: "la ligne « pourquoi ce cycle »",
+      valeur: compterMarqueur(html, MARQUEURS_DEMARRAGE.pourquoiCycle),
+      attendu: pourquoiAttendu,
+    },
+    {
+      cle: "apercus",
+      quoi: "les lignes d'apercu",
+      valeur: compterMarqueur(html, MARQUEURS_DEMARRAGE.apercu),
+      attendu: apercusAttendus,
+    },
+    {
+      cle: "forme_absorbee",
+      quoi: "la carte MA FORME, absorbee par le bloc",
+      valeur: compterMarqueur(html, MARQUEURS_DEMARRAGE.formeInsuffisante),
+      attendu: 0,
+    },
+  ];
+
+  return {
+    blocDetecte: controles[0].valeur === 1,
+    controles,
+    clesEnEchec: controles.filter((c) => c.valeur !== c.attendu).map((c) => c.cle),
+  };
+}
+
+/**
+ * Rend l'ecran du nouveau joueur dans l'une des deux variantes de demarrage.
+ *
+ * @param {object} fixture             la fixture Home (« nouveau-joueur »)
+ * @param {object} device              le format
+ * @param {object} presentation        la combinaison typo x mouvement
+ * @param {"A"|"B"} varianteDemarrage  laquelle des deux
+ * @param {?string} htmlActuel         le rendu de la variante ACTUELLE du meme
+ *   etat, a la meme largeur et dans la meme presentation. Sert a UNE chose :
+ *   quand le bloc n'est pas detecte, savoir dire si l'ecran a reagi ou non.
+ */
+async function renderDemarrage(fixture, device, presentation, varianteDemarrage, htmlActuel) {
+  const mod = getVNext();
+  const vmMod = getViewModelModule();
+  const presentations = require("./presentations");
+
+  let viewModel = null;
+  const erreurs = [];
+  if (vmMod.ok) {
+    try {
+      viewModel = vmMod.mod.buildHomeVNextViewModel(fixture.input, {
+        demarrage: varianteDemarrage,
+      });
+    } catch (err) {
+      erreurs.push((err && err.stack) || String(err));
+    }
+  } else {
+    erreurs.push(vmMod.detail);
+  }
+
+  if (!mod.ok) {
+    return {
+      indisponible: {
+        titre: "L'ecran de la proposition n'a pas pu etre charge",
+        message:
+          "Les variantes de demarrage se rendent avec le MEME ecran que la variante actuelle : " +
+          "seule une option du selecteur change. Cet ecran n'a pas pu etre charge.",
+        detail: mod.detail,
+      },
+      viewModel,
+      sonde: { erreurs },
+    };
+  }
+
+  const nav = require("./stubs/navigation-native").__nav;
+  const props = {
+    viewModel,
+    vm: viewModel,
+    input: fixture.input,
+    fixture,
+    fixtureId: fixture.id,
+    navigation: nav,
+    onAction: () => {},
+    route: { key: "harnais", name: "HomeVNext", params: { fixtureId: fixture.id } },
+    ...presentations.propsDePresentation(presentation),
+  };
+
+  const suffixeCle = presentation && !presentation.parDefaut ? `_${presentation.id}` : "";
+
+  let rendu;
+  try {
+    rendu = await monter({
+      cle: `vnext${varianteDemarrage}_${fixture.id}_${device.width}${suffixeCle}`,
+      element: React.createElement(mod.Comp, props),
+      device,
+    });
+  } catch (err) {
+    return {
+      indisponible: {
+        titre: `L'ecran a plante en variante V-${varianteDemarrage}`,
+        message:
+          "Le composant existe mais leve une exception quand le ViewModel porte un bloc de " +
+          "demarrage. Le harnais ne masque pas : voici la trace.",
+        detail: (err && err.stack) || String(err),
+      },
+      viewModel,
+      sonde: { erreurs: [...erreurs, (err && err.stack) || String(err)] },
+    };
+  }
+
+  const mesures = mesurerDemarrage(rendu.html, viewModel);
+  const mouvement = presentations.mesurerMouvement(rendu.html);
+
+  if (!mesures.blocDetecte) {
+    const identique = htmlActuel != null && htmlActuel === rendu.html;
+    return {
+      indisponible: {
+        titre: `Le bloc de demarrage n'apparait pas dans l'ecran rendu (V-${varianteDemarrage})`,
+        message:
+          (identique
+            ? "Le rendu est RIGOUREUSEMENT IDENTIQUE a celui de la variante actuelle : l'option " +
+              "du selecteur n'a eu aucun effet. Le ViewModel ne connait pas (ou plus) la valeur " +
+              "que le harnais lui passe.\n\n"
+            : "Le selecteur a bien reagi (le rendu differe de la variante actuelle) mais le " +
+              "marqueur du bloc n'y est pas.\n\n") +
+          "Le harnais REFUSE de servir cette page. Afficher l'ecran actuel sous l'etiquette " +
+          `« V-${varianteDemarrage} » ferait valider un ecran qui n'existe pas.\n\n` +
+          "Rien a corriger cote harnais : relance `node prototype/home-vnext/build.js` quand " +
+          "le selecteur saura construire le bloc.",
+        detail:
+          `Marqueur cherche : data-testid="${MARQUEURS_DEMARRAGE.bloc}" ` +
+          `(pose par components/homeVNext/HomeVNextDemarrage.tsx via homeVNextMarqueurs.ts).\n` +
+          `Trouve : ${mesures.controles[0].valeur} fois, attendu 1.\n\n` +
+          `Option passee au selecteur : ` +
+          `buildHomeVNextViewModel(input, { demarrage: "${varianteDemarrage}" }).\n` +
+          `Bloc produit : ` +
+          (viewModel && viewModel.demarrage
+            ? `kind = "${viewModel.demarrage.kind}"`
+            : "AUCUN (vm.demarrage === null)") +
+          `\n\nAvertissements du selecteur :\n  ` +
+          (((viewModel && viewModel.protoWarnings) || []).join("\n  ") || "(aucun)"),
+      },
+      viewModel,
+      mesures,
+      sonde: { ...rendu.sonde, erreurs: [...rendu.sonde.erreurs, ...erreurs] },
+    };
+  }
+
+  return {
+    html: rendu.html,
+    viewModel,
+    mesures,
+    mouvement,
+    sonde: { ...rendu.sonde, erreurs: [...rendu.sonde.erreurs, ...erreurs] },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Variante B — le Home de production
 // ---------------------------------------------------------------------------
 async function renderActuel(scenario, device) {
@@ -632,6 +874,8 @@ function scaleCss(css, factor) {
 module.exports = {
   renderVNext,
   renderVNext2,
+  renderDemarrage,
+  MARQUEURS_DEMARRAGE,
   renderActuel,
   extractCss,
   scaleCss,

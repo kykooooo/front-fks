@@ -112,6 +112,51 @@ mesurés que dans un moteur de rendu réel. Le vérificateur lance Chrome (ou Ed
 interface, lui sert les pages depuis un serveur éphémère, et récupère le JSON par
 `--dump-dom`. Aucun pilote à installer.
 
+### Les variantes de démarrage ont leur propre vérificateur
+
+```
+node prototype/home-vnext/verifier-demarrage.js
+```
+
+**V-A « Première mission »** et **V-B « Anticipation honnête »** sont deux traitements de
+l'**écran du nouveau joueur** — le seul écran du prototype qui n'a presque rien à dire, et qui
+faisait 401 px sur 729 visibles. Décision du fondateur (03/08) : plus de présence, sans rien
+inventer.
+
+Elles s'obtiennent en passant **une option au même sélecteur**, sur les mêmes données :
+`buildHomeVNextViewModel(input, { demarrage: "A" })`. L'écran ne reçoit aucune prop
+supplémentaire — il lit `vm.demarrage` et en déduit tout, traitement hero compris. Entre
+V-actuelle, V-A et V-B, **rien d'autre ne change**.
+
+Elles n'existent que sur un compte **sans aucune séance terminée**
+(`SEANCES_POUR_SORTIR_DU_DEMARRAGE`). Sur tout autre état, le bouton du visualiseur est
+désactivé **et dit pourquoi**. Le harnais ne devine pas quels états y ont droit : il le
+**demande au sélecteur**.
+
+| # | Vérification | Méthode |
+|---|---|---|
+| 0 | Les pages existent, et aucune n'est une page d'explication | présence + absence du gabarit « le bloc n'apparaît pas » |
+| a | Une seule action, un seul aplat, hero présent **uniquement** en V-A / V-B | comptage sur les 20 pages de démarrage **et** sur les 10 pages de l'écran actuel : 0 hero attendu là-bas, écrit en clair |
+| b | **Aucune donnée inventée** | 47 chemins autorisés écrits à la main, comparés aux chemins réellement présents dans le ViewModel. Un champ ajouté fait échouer et se nomme |
+| c | Chaque pas coché l'est parce que la donnée le dit | état recalculé depuis l'entrée, comparé au ViewModel **et** au nombre de coches réellement rendues |
+| d | Chaque promesse de V-B porte le seuil qui la tiendra | le `seuilNom` doit exister dans `HOME_VNEXT_SEUILS`, sa valeur correspondre, et le chiffre lu dans la phrase être celui-là |
+| e | Aucune ligne du bloc n'est tapable | recherche de `button` / `a` / `role` / `tabindex` **dans le bloc** |
+| f | Aucune donnée fabriquée dans le texte rendu | 5 motifs interdits (« série », « 0 / 4 », tiret seul, jargon ATL/CTL/TSB, badge) + absence de courbe |
+| g | **Hauteurs mesurées**, variante par variante | vrai moteur de rendu, 4 largeurs, ×1 et ×1,3 |
+| h | Zones tactiles ≥ 44 pt | hauteur rendue de chaque élément focusable |
+| i | Contraste WCAG | ratio sur les couleurs réellement rendues, fond effectif reconstitué |
+| j | 320 px et ×1,3 | débordement, chevauchement, et **troncature réelle dans le bloc** (échec ; ailleurs, observation) |
+| k | **Non-régression** | les 14 autres états : ViewModel identique champ pour champ, option activée ou non |
+
+Il écrit `outputs/home-vnext-prototype-2026-07-27/mesures-hauteurs-demarrage.md` : la hauteur
+de l'écran **aujourd'hui contre V-A contre V-B**, largeur par largeur, texte normal et ×1,3.
+
+**Pourquoi la liste de champs autorisés est écrite deux fois** — ici et dans
+`__tests__/homeVNext/demarrage.test.tsx`. Les deux répondent à des questions différentes : le
+test verrouille le contrat au moment où on code, le vérificateur verrouille ce qui est
+réellement **publié**. Et surtout : elle est écrite **à la main**, jamais dérivée de la sortie.
+Un instantané généré validerait n'importe quel ajout futur, soit exactement l'inverse du but.
+
 ### La variante 2 a son propre vérificateur
 
 ```
@@ -166,8 +211,9 @@ carte coûte en hauteur par rapport au lien qu'elle remplace.
 - choisir l'un des **7 cas de la variante 2** (groupes `Variante 2 —` en bas de la liste) :
   les 6 cas de démonstration de la carte progression, plus `v2-donnee-manquante`, qui n'est
   pas un état produit mais la preuve visuelle de R1 (un fait sans donnée disparaît) ;
-- basculer entre **Proposition vNext** / **Progression intégrée** / **Home actuel** /
-  **Côte à côte** ;
+- basculer entre **Proposition vNext** / **Progression intégrée** / **V-A** / **V-B** /
+  **Home actuel** / **Côte à côte** — **V-A** et **V-B** ne sont actives que sur l'écran du
+  nouveau joueur, ailleurs le bouton est désactivé et dit pourquoi ;
 - en côte à côte, choisir la **paire** : `vNext / Progression` (variante 1 contre variante 2,
   la question du fondateur), `Actuel / vNext`, `Actuel / Progression` ;
 - changer de largeur : **320 / 375 / 390 / 768** ;

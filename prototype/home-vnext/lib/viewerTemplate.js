@@ -421,28 +421,74 @@ function viewerJs() {
     return;
   }
 
+  // ------------------------------------------------------------------------
+  // LES VARIANTES DE DEMARRAGE — l'ecran du nouveau joueur
+  // ------------------------------------------------------------------------
+  // Elles viennent du MANIFESTE, donc du ViewModel (« DEMARRAGE_VARIANTES ») :
+  // le visualiseur affiche ce que le produit propose, jamais ce qu'un tableau
+  // recopie ici pretendrait. Une troisieme variante apparaitrait toute seule ;
+  // une variante retiree disparaitrait de meme.
+  // ------------------------------------------------------------------------
+  var VARIANTES_DEMARRAGE = M.variantesDemarrage || [];
+  var IDS_DEMARRAGE = VARIANTES_DEMARRAGE.map(function (v) { return v.cle; });
+  function estVarianteDemarrage(v) { return IDS_DEMARRAGE.indexOf(v) !== -1; }
+  function varianteDemarragePar(cleVariante) {
+    for (var i = 0; i < VARIANTES_DEMARRAGE.length; i++) {
+      if (VARIANTES_DEMARRAGE[i].cle === cleVariante) return VARIANTES_DEMARRAGE[i];
+    }
+    return null;
+  }
+
   var VARIANTES = [
     { id: "vnext", libelle: "Proposition vNext" },
-    { id: "vnext2", libelle: "Progression integree" },
+    { id: "vnext2", libelle: "Progression integree" }
+  ].concat(
+    VARIANTES_DEMARRAGE.map(function (v) {
+      return { id: v.cle, libelle: "V-" + v.id };
+    })
+  ).concat([
     { id: "actuel", libelle: "Home actuel" },
     { id: "duo", libelle: "Cote a cote" }
-  ];
+  ]);
   var VUES = [
     { id: "visible", libelle: "Zone visible sans defilement" },
     { id: "entiere", libelle: "Page entiere" }
   ];
   // Les paires du mode cote a cote. La premiere est celle que le fondateur a
   // demandee : variante 1 contre variante 2, a 375 px.
+  //
+  // Les paires de DEMARRAGE viennent ensuite, et dans cet ordre precis : la
+  // question du 03/08 est « l'ecran actuel du nouveau joueur contre chacune des
+  // deux propositions », puis « les deux propositions l'une contre l'autre ».
   var PAIRES = [
     { id: "v1v2", libelle: "vNext / Progression", gauche: "vnext", droite: "vnext2" },
     { id: "av1", libelle: "Actuel / vNext", gauche: "actuel", droite: "vnext" },
     { id: "av2", libelle: "Actuel / Progression", gauche: "actuel", droite: "vnext2" }
-  ];
+  ].concat(
+    VARIANTES_DEMARRAGE.map(function (v) {
+      return {
+        id: "v1v" + v.id,
+        libelle: "Actuelle / V-" + v.id,
+        gauche: "vnext",
+        droite: v.cle
+      };
+    })
+  ).concat(
+    VARIANTES_DEMARRAGE.length === 2
+      ? [{
+          id: "v" + VARIANTES_DEMARRAGE[0].id + "v" + VARIANTES_DEMARRAGE[1].id,
+          libelle: "V-" + VARIANTES_DEMARRAGE[0].id + " / V-" + VARIANTES_DEMARRAGE[1].id,
+          gauche: VARIANTES_DEMARRAGE[0].cle,
+          droite: VARIANTES_DEMARRAGE[1].cle
+        }]
+      : []
+  );
   var NOMS_VARIANTE = {
     vnext: "Proposition vNext",
     vnext2: "Progression integree (v2)",
     actuel: "Home actuel (production)"
   };
+  VARIANTES_DEMARRAGE.forEach(function (v) { NOMS_VARIANTE[v.cle] = v.titre; });
 
   // ------------------------------------------------------------------------
   // L'AXE PRESENTATION, EN DEUX BOUTONS AU LIEU D'UN
@@ -510,7 +556,7 @@ function viewerJs() {
       var k = decodeURIComponent(kv[0]);
       var v = decodeURIComponent(kv[1] || "");
       if (k === "etat" && (M.etats[v] || etatsV2()[v] || trouverExtra(v))) etat.etatId = v;
-      if (k === "var" && ["vnext", "vnext2", "actuel", "duo"].indexOf(v) !== -1) etat.variante = v;
+      if (k === "var" && (["vnext", "vnext2", "actuel", "duo"].indexOf(v) !== -1 || estVarianteDemarrage(v))) etat.variante = v;
       if (k === "paire" && trouverPaire(v)) etat.paire = v;
       if (k === "w") { var w = Number(v); if (M.largeurs.indexOf(w) !== -1) etat.largeur = w; }
       if (k === "vue" && ["visible", "entiere"].indexOf(v) !== -1) etat.vue = v;
@@ -558,8 +604,17 @@ function viewerJs() {
     if (v === "vnext2") return Boolean(e.vnext2 && Object.keys(e.vnext2.pages || {}).length);
     if (v === "vnext") return Boolean(e.vnext && Object.keys(e.vnext.pages || {}).length);
     if (v === "actuel") return Boolean(e.actuel && Object.keys(e.actuel.pages || {}).length);
+    if (estVarianteDemarrage(v)) {
+      var d = e.demarrage && e.demarrage[v];
+      return Boolean(d && Object.keys(d.pages || {}).length);
+    }
     if (v === "duo") return true;
     return false;
+  }
+  /** Le bloc de demarrage de l'etat courant pour une variante, ou null. */
+  function blocDemarrage(v) {
+    var e = courant();
+    return (e && e.demarrage && e.demarrage[v]) || null;
   }
   function device(w) {
     for (var i = 0; i < M.devices.length; i++) if (M.devices[i].width === w) return M.devices[i];
@@ -571,6 +626,7 @@ function viewerJs() {
     if (!e) return null;
     if (variante === "vnext") return e.vnext;
     if (variante === "vnext2") return e.vnext2;
+    if (estVarianteDemarrage(variante)) return (e.demarrage && e.demarrage[variante]) || null;
     return e.actuel;
   }
 
@@ -678,6 +734,18 @@ function viewerJs() {
         return "Cet etat n'a pas de cas de carte progression. Les sept cas sont regroupes en bas " +
           "de la liste, sous « Variante 2 ».";
       }
+      // Les variantes de demarrage n'existent QUE sur un compte sans aucune
+      // seance terminee. Le bouton dit pourquoi, il ne disparait pas : le
+      // fondateur doit voir que ces deux propositions existent, et sur quel
+      // ecran elles s'appliquent.
+      if (estVarianteDemarrage(o.id) && !varianteDispo(o.id)) {
+        var dem = varianteDemarragePar(o.id);
+        var eligibles = (M.etatsAvecDemarrage || []);
+        if (!eligibles.length) return "Aucune variante de demarrage n'a ete generee (voir les alertes).";
+        return (dem ? dem.titre + " — " : "") +
+          "cette variante ne concerne QUE l'ecran d'un compte sans aucune seance terminee. " +
+          "Etat(s) concerne(s) : " + eligibles.join(", ") + ".";
+      }
       return null;
     });
 
@@ -693,6 +761,13 @@ function viewerJs() {
       }
       if ((o.gauche === "actuel" || o.droite === "actuel") && !varianteDispo("actuel")) {
         return "Cet etat n'a pas de correspondance cote Home actuel.";
+      }
+      var cotes = [o.gauche, o.droite].filter(estVarianteDemarrage);
+      for (var i = 0; i < cotes.length; i++) {
+        if (!varianteDispo(cotes[i])) {
+          return "Cet etat n'a pas de variante de demarrage : elles ne concernent qu'un compte " +
+            "sans aucune seance terminee.";
+        }
       }
       return null;
     });
@@ -2192,6 +2267,125 @@ function viewerJs() {
     return s;
   }
 
+  /**
+   * L'ONGLET « CET ETAT » POUR UNE VARIANTE DE DEMARRAGE.
+   *
+   * Il repond a UNE question, element par element : d'ou sort ce que je lis ?
+   *
+   * Rien n'est reformule ici. Le champ « source » de chaque premier pas est
+   * recopie tel que le contrat l'impose, et le seuil de chaque promesse est le
+   * nom de la constante exportee, pas un chiffre reecrit. Un panneau qui
+   * paraphraserait finirait par raconter autre chose que l'ecran.
+   */
+  function htmlCetEtatDemarrage(e, cleVariante) {
+    var bloc = (e.demarrage && e.demarrage[cleVariante]) || null;
+    var dem = varianteDemarragePar(cleVariante);
+    if (!bloc) return "";
+    var vm = bloc.viewModel && bloc.viewModel.demarrage;
+
+    var s = '<div class="bloc-panneau"><h3>' + esc(dem ? dem.titre : cleVariante) + "</h3>" +
+      "<p>" + esc(dem ? dem.resume : "") + "</p>" +
+      '<p class="fin">Cette variante ne concerne QUE l\\'ecran d\\'un compte sans aucune seance ' +
+      "terminee. Elle s\\'obtient en passant une option au meme selecteur, sur les memes donnees : " +
+      "entre l\\'ecran actuel, V-A et V-B, rien d\\'autre ne change.</p></div>";
+
+    if (!vm) {
+      return s + '<div class="bloc-panneau"><p class="vide">Le selecteur n\\'a construit aucun ' +
+        "bloc de demarrage pour cet etat.</p></div>";
+    }
+
+    // --- V-A : chaque pas, son etat, et la donnee qui l'a decide -----------
+    if (vm.nature === "premiere_mission") {
+      s += '<div class="bloc-panneau"><h3>Les premiers pas — chacun, et sa source</h3>' +
+        '<p class="fin">La colonne « etat » n\\'est jamais ecrite a la main : c\\'est un booleen ' +
+        "CALCULE a partir de la donnee citee a droite. Un pas dont l\\'etat ne serait pas " +
+        "derivable n\\'apparaitrait pas du tout.</p>" +
+        '<table class="tbl"><tr><th>Pas</th><th>Etat</th><th>D\\'ou vient cet etat</th></tr>';
+      vm.premiersPas.forEach(function (p) {
+        s += "<tr><td><b>" + esc(p.libelle) + "</b><br>" +
+          '<span style="color:#8DA0BC">' + esc(p.detail) + "</span></td><td>" +
+          (p.fait
+            ? '<span class="badge badge-ok">fait</span>'
+            : '<span class="badge badge-neutre">a faire</span>') +
+          '</td><td><code>' + esc(p.source) + "</code></td></tr>";
+      });
+      s += "</table>" +
+        '<p class="fin">AUCUNE de ces lignes n\\'est tapable : ni bouton, ni lien, ni chevron. ' +
+        "Le contrat le rend impossible — un premier pas n\\'a aucun champ de destination. Elles " +
+        "DISENT le chemin, elles ne le proposent pas : le seul point d\\'entree reste l\\'action du " +
+        "jour, en haut.</p></div>";
+
+      s += '<div class="bloc-panneau"><h3>« Pourquoi ce cycle » — d\\'ou sort la phrase</h3>';
+      if (vm.pourquoiCeCycle) {
+        s += '<div class="encadre-portee"><div class="phrase">« ' +
+          esc(vm.pourquoiCeCycle.texte) + " »</div></div>" +
+          '<dl class="kv"><dt>cycle recommande</dt><dd>' + esc(vm.pourquoiCeCycle.cycle) + "</dd>" +
+          "<dt>ce qui a pese</dt><dd>" +
+          (vm.pourquoiCeCycle.source === "objectif_declare_et_tests"
+            ? "l\\'objectif declare au setup ET le cycle des derniers tests terrain"
+            : "l\\'objectif declare au setup profil, seul") + "</dd>" +
+          "<dt>qui la produit</dt><dd><code>recommendMicrocycle(domain/recommendMicrocycle.ts)</code>" +
+          "</dd></dl>" +
+          '<p class="fin">C\\'est la MEME fonction qui pre-selectionne deja le cycle a la fin du ' +
+          "setup profil et dans la modale de choix de cycle. L\\'ecran ne recalcule rien : il ne " +
+          "peut donc pas proposer autre chose que ce que le joueur trouvera en tapant sur " +
+          "l\\'action.</p>";
+      } else {
+        s += '<p class="vide">Aucune ligne « pourquoi ce cycle » sur cet etat.</p>' +
+          '<p class="fin">Deux cas la retirent, tous deux par prudence : un cycle deja actif ' +
+          "(recommander a cote de ce qui tourne deja mettrait deux verites dans le meme ecran), " +
+          "ou aucun objectif declare (la fonction rendrait bien un cycle, mais PAR DEFAUT — le " +
+          "presenter comme un choix fonde sur le joueur serait une raison inventee). Le detail " +
+          "est dans les avertissements ci-dessous.</p>";
+      }
+      s += "</div>";
+    }
+
+    // --- V-B : chaque promesse, et le seuil qui la tiendra ------------------
+    if (vm.nature === "anticipation") {
+      s += '<div class="bloc-panneau"><h3>Ce qui est annonce, et quand ca arrivera</h3>' +
+        '<p class="fin">Chaque ligne porte le titre EXACT de la section qu\\'elle annonce et la ' +
+        "CONSTANTE EXPORTEE qui la declenchera. Le chiffre lu dans la phrase est celui-la, pas un " +
+        "nombre choisi pour la phrase : le jour ou le seuil change, la phrase change avec lui.</p>" +
+        '<table class="tbl"><tr><th>Section a venir</th><th>Ce qui est promis</th>' +
+        "<th>Seuil</th></tr>";
+      vm.apercus.forEach(function (a) {
+        s += "<tr><td><b>" + esc(a.titre) + "</b></td><td>" + esc(a.message) + "</td>" +
+          '<td class="num">' + esc(a.seuil) + " seance(s)<br>" +
+          '<code style="font-size:10px">' + esc(a.seuilNom) + "</code></td></tr>";
+      });
+      s += "</table>" +
+        '<p class="fin">Aucune courbe grisee, aucun chiffre en attente, aucun « — » a la place ' +
+        "d\\'une valeur : l\\'ecran assume qu\\'il est en construction au lieu de faire semblant " +
+        "d\\'etre plein.</p></div>";
+    }
+
+    // --- les controles chiffres de la page regardee ------------------------
+    if (bloc.controles) {
+      var enEchec = (bloc.controlesParLargeur || {});
+      var largeursKo = Object.keys(enEchec).filter(function (k) { return enEchec[k].length > 0; });
+      s += '<div class="bloc-panneau"><h3>Ce qui a ete compte dans la page rendue</h3>' +
+        '<p class="fin">Chaque attendu est DEDUIT du ViewModel, jamais recopie : c\\'est la seule ' +
+        "facon qu\\'un controle continue de mesurer quelque chose le jour ou le contenu bouge.</p>" +
+        '<table class="tbl"><tr><th>Ce qui est compte</th><th>Trouve</th><th>Attendu</th></tr>';
+      bloc.controles.forEach(function (c) {
+        var ok = c.valeur === c.attendu;
+        s += "<tr><td>" + esc(c.quoi) + '</td><td class="num">' + esc(c.valeur) + " " +
+          (ok ? '<span class="badge badge-ok">ok</span>' : '<span class="badge badge-ko">non</span>') +
+          '</td><td class="num">' + esc(c.attendu) + "</td></tr>";
+      });
+      s += "</table>";
+      s += largeursKo.length
+        ? '<p class="fin">Controle(s) en echec : ' +
+          largeursKo.map(function (k) { return k + " px : " + enEchec[k].join(", "); }).join(" · ") +
+          "</p>"
+        : '<p class="fin">Aucun controle en echec, a aucune des largeurs generees.</p>';
+      s += "</div>";
+    }
+
+    return s;
+  }
+
   function htmlEtat() {
     var e = courant();
     if (!e) return '<p class="vide">Aucun etat selectionne.</p>';
@@ -2203,10 +2397,18 @@ function viewerJs() {
     var s = '<div class="bloc-panneau"><h3>Donnees fictives</h3><p class="fin">' + esc(e.resume) +
       "</p></div>";
 
+    // --- la variante de demarrage, si c'est elle qu'on regarde --------------
+    // Placee AVANT tout le reste : quand le fondateur bascule sur V-A ou V-B,
+    // la premiere question est « d'ou sort chaque ligne que je lis ? », et la
+    // reponse doit etre en haut du panneau, pas au fond.
+    if (estVarianteDemarrage(etat.variante)) s += htmlCetEtatDemarrage(e, etat.variante);
+
     // --- avertissements du prototype, pour CET etat -------------------------
     // Ils vivent ICI, jamais dans l'ecran produit : le joueur ne doit pas lire
     // les notes de chantier.
-    var w = v2courant
+    var w = estVarianteDemarrage(etat.variante)
+      ? (blocDemarrage(etat.variante) || {}).protoWarnings || []
+      : v2courant
       ? (e.vnext2 && e.vnext2.protoWarnings) || []
       : (e.vnext && e.vnext.protoWarnings) || [];
     if (w.length) {
@@ -2219,7 +2421,11 @@ function viewerJs() {
     }
 
     // --- le mouvement : ce qu'une capture ne peut pas montrer ---------------
-    var mv = v2courant ? (e.vnext2 && e.vnext2.mouvement) : (e.vnext && e.vnext.mouvement);
+    var mv = estVarianteDemarrage(etat.variante)
+      ? (blocDemarrage(etat.variante) || {}).mouvement
+      : v2courant
+      ? (e.vnext2 && e.vnext2.mouvement)
+      : (e.vnext && e.vnext.mouvement);
     var presId = presentationCourante() ? presentationCourante().id : null;
     if (mv && presId && mv[presId]) {
       var c = mv[presId];
@@ -2251,10 +2457,18 @@ function viewerJs() {
 
     if (v2courant) s += htmlEtatVariante2(e);
 
-    var vm = e.vnext && e.vnext.viewModel;
+    // Sur une variante de demarrage, c'est SON ViewModel qu'il faut lire : celui
+    // de la variante actuelle affiche encore « ma forme », que le bloc a
+    // absorbee. Montrer le mauvais ferait lire au fondateur un contrat qui n'est
+    // pas celui de l'ecran qu'il a sous les yeux.
+    var vm = estVarianteDemarrage(etat.variante)
+      ? (blocDemarrage(etat.variante) || {}).viewModel || (e.vnext && e.vnext.viewModel)
+      : e.vnext && e.vnext.viewModel;
     s += '<div class="bloc-panneau"><h3>' +
       (estVariante2(etat.etatId)
         ? "Le haut de l\\'ecran — decide par le contrat du Home"
+        : estVarianteDemarrage(etat.variante)
+        ? "Ce que le contrat decide pour cet ecran, dans cette variante"
         : "Ce que le contrat decide pour cet etat") + "</h3>";
     if (!vm) {
       s += '<p class="vide">Selecteur indisponible.</p>';
@@ -2332,6 +2546,11 @@ function viewerJs() {
     // vNext » reste choisissable — c'est l'ecran d'accueil utilise, une vraie
     // page, et pouvoir la regarder seule a un sens.
     if (etat.variante === "vnext2" && !varianteDispo("vnext2")) etat.variante = "vnext";
+    // Meme regle pour les variantes de demarrage : un etat qui n'y a pas droit
+    // (parce que le compte a deja une seance terminee) revient a la variante
+    // actuelle. Rester sur un bouton qui ne montre rien ferait croire que la
+    // proposition est vide, alors qu'elle ne s'applique simplement pas ici.
+    if (estVarianteDemarrage(etat.variante) && !varianteDispo(etat.variante)) etat.variante = "vnext";
     if (etat.variante === "duo") {
       etat.largeur = 375;
       var p = paireCourante();
@@ -2390,7 +2609,7 @@ function viewerJs() {
     // et on finirait par juger autre chose que ce qui est demande.
     var c = combinaison || null;
     if (c) {
-      if (c.variante && ["vnext", "vnext2", "actuel", "duo"].indexOf(c.variante) !== -1) {
+      if (c.variante && (["vnext", "vnext2", "actuel", "duo"].indexOf(c.variante) !== -1 || estVarianteDemarrage(c.variante))) {
         etat.variante = c.variante;
       }
       if (c.paire && trouverPaire(c.paire)) etat.paire = c.paire;
@@ -2412,7 +2631,7 @@ function viewerJs() {
     else if (ev.key === "v") {
       // On saute les variantes indisponibles sur l'etat courant : sinon la
       // touche semblerait ne rien faire une fois sur deux.
-      var ordre = ["vnext", "vnext2", "actuel", "duo"];
+      var ordre = ["vnext", "vnext2"].concat(IDS_DEMARRAGE).concat(["actuel", "duo"]);
       var j = ordre.indexOf(etat.variante);
       for (var n = 1; n <= ordre.length; n++) {
         var cand = ordre[(j + n) % ordre.length];
