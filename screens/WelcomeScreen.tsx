@@ -88,7 +88,8 @@ export default function WelcomeScreen({ onComplete }: Props) {
   const flatListRef = useRef<FlatList<SlideData>>(null);
 
   // Espace réservé en bas de chaque slide pour ne pas passer sous le bloc CTA.
-  const bottomBlock = Math.max(insets.bottom, 20) + 180;
+  // 216 (et non 180) : le bloc CTA a gagné ~36px avec la ligne « Je suis coach ».
+  const bottomBlock = Math.max(insets.bottom, 20) + 216;
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
