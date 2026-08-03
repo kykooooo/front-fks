@@ -37,7 +37,7 @@ import { SafeAreaProvider, type Metrics } from "react-native-safe-area-context";
 
 import WelcomeScreen from "../../screens/WelcomeScreen";
 import CoachOnboardingScreen from "../../screens/CoachOnboardingScreen";
-import { resolveAppSpace } from "../../domain/appSpace";
+import { resolveAppSpace, type ClubMembershipReading } from "../../domain/appSpace";
 
 // L'écran de création de club lit sa navigation par le hook. On la remplace par
 // une navigation qu'on pilote : c'est exactement la variable qui décide du geste
@@ -50,6 +50,19 @@ jest.mock("@react-navigation/native", () => ({
 const racine = resolve(__dirname, "..", "..");
 const lire = (rel: string) => readFileSync(resolve(racine, rel), "utf8");
 const navigateur = lire("navigation/RootNavigator.tsx");
+
+/**
+ * Retire les commentaires (lignes doubles-slash et blocs) avant une recherche
+ * de motif anti-régression. SANS ce retrait, un motif large se déclenche sur
+ * sa PROPRE documentation : ce fichier explique en prose l'ancien champ qu'il
+ * vient de retirer (« AVANT, on lisait users/{uid}.role === "coach" »), et
+ * cette phrase contient elle-même `.role` et `role ===`. Naïf (ne gère pas un
+ * commentaire ouvert à l'intérieur d'une chaîne), mais suffisant ici : ce
+ * fichier n'en contient aucun (vérifié).
+ */
+function sansCommentaires(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+}
 
 // Métriques figées : sans elles, SafeAreaProvider attend une mesure native qui
 // n'arrive jamais en test et ne rend aucun enfant.
@@ -187,7 +200,27 @@ describe("navigation — l'intention choisit un ÉCRAN, jamais un droit", () => 
 
   test("elle n'est écrite NULLE PART en base — ni dans `users/{uid}.role`, ni ailleurs", () => {
     // Le champ client falsifiable ne revient pas par la fenêtre.
-    expect(navigateur).not.toMatch(/data\?\.role/);
+    //
+    // Motif élargi (revue du 03/08) : `/data\?\.role/` seul ne voyait qu'UNE
+    // façon d'y accéder — `data?.role` avec chaînage optionnel. `data.role`
+    // sans le `?`, `snap.data().role`, une réaffectation `role = ...`, une clé
+    // d'objet `role: ...`, ou une déstructuration `const { role } = ...`
+    // seraient tous passés au travers du motif d'origine. On cherche donc le
+    // même fait par trois motifs, chacun couvrant une syntaxe différente pour
+    // LIRE ce champ :
+    //  - tout ACCÈS PROPRIÉTÉ, quel que soit l'objet devant (`\.role\b`) ;
+    //  - toute CLÉ D'OBJET ou (RÉ)AFFECTATION (`\brole\s*[:=]`) ;
+    //  - toute DÉSTRUCTURATION, `role` en première position ou non
+    //    (`[{,]\s*role\s*[,}]`).
+    // On retire d'abord les commentaires (cf. `sansCommentaires`) : ce fichier
+    // EXPLIQUE l'ancien champ en prose (« AVANT, on lisait
+    // `users/{uid}.role === "coach"` », dans le commentaire qui dit pourquoi
+    // il a disparu) — sans ce retrait, le motif élargi se déclencherait sur sa
+    // propre documentation.
+    const code = sansCommentaires(navigateur);
+    expect(code).not.toMatch(/\.role\b/);
+    expect(code).not.toMatch(/\brole\s*[:=]/);
+    expect(code).not.toMatch(/[{,]\s*role\s*[,}]/);
     for (const chemin of [
       "navigation/RootNavigator.tsx",
       "screens/WelcomeScreen.tsx",
@@ -206,12 +239,60 @@ describe("navigation — l'intention choisit un ÉCRAN, jamais un droit", () => 
     // intention ; et une intention ne peut pas ouvrir cet espace, puisque la
     // branche qui le décide est évaluée AVANT le portillon d'onboarding.
     const indexEspaceCoach = navigateur.indexOf('appSpace.space === "coach"');
-    const indexPortillon = navigateur.indexOf("profileCompleted === false");
+    // Ancre précise : `"profileCompleted === false"` seul, sans le `if (...)`
+    // qui l'entoure, correspondrait AUSSI à la condition de l'effet de
+    // consommation de l'intention (plus haut dans le fichier, cf. test
+    // "le chemin coach → « Je m'entraîne aussi »") — décalant `indexPortillon`
+    // avant `indexEspaceCoach` et faisant échouer ce test pour une mauvaise
+    // raison. Le `)` immédiatement après `false` cible la seule occurrence qui
+    // est un retour conditionnel du portillon lui-même : l'effet, lui, enchaîne
+    // sur `&& appSpace.space`, jamais sur `)`.
+    const indexPortillon = navigateur.indexOf("if (profileCompleted === false)");
     expect(indexEspaceCoach).toBeGreaterThan(-1);
+    expect(indexPortillon).toBeGreaterThan(-1);
     expect(indexEspaceCoach).toBeLessThan(indexPortillon);
-    // Preuve la plus courte que le rôle applicatif n'entre pas dans la
-    // dérivation : il n'en est même pas un paramètre (cf. domain/appSpace.ts).
-    expect(resolveAppSpace).toHaveLength(1);
+
+    // Preuve que le rôle applicatif n'entre pas dans la dérivation : il n'en
+    // est même pas un paramètre (cf. domain/appSpace.ts).
+    //
+    // `resolveAppSpace).toHaveLength(1)` (motif d'origine) est un piège :
+    // `Function.length` ignore tout paramètre porteur d'une valeur par défaut
+    // — exactement le cas de `preference = null` ici. Un TROISIÈME paramètre
+    // `role = null` passerait donc inaperçu de `toHaveLength(1)`, qui resterait
+    // à 1, alors qu'il rouvrirait exactement la faille que ce lot ferme. Deux
+    // preuves qui ne partagent pas cet angle mort :
+    //
+    //  1. la SIGNATURE RÉELLE déclarée dans la source (pas celle, appauvrie,
+    //     que `Function.length` expose) — exactement deux paramètres, et aucun
+    //     ne s'appelle (ni ne contient) "role" ;
+    const domaine = lire("domain/appSpace.ts");
+    const signature = domaine.match(/export function resolveAppSpace\(([\s\S]*?)\)\s*:\s*AppSpaceDecision/);
+    expect(signature).not.toBeNull();
+    const parametres = (signature as RegExpMatchArray)[1]
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
+    expect(parametres).toHaveLength(2);
+    expect(parametres.some((p) => /role/i.test(p))).toBe(false);
+
+    //  2. l'EFFET : un troisième argument piège, porteur d'un rôle, ne change
+    //     RIEN à la décision — la fonction ne le lit même pas. Scénario où la
+    //     préférence pèse réellement (les deux espaces ouverts), pour que
+    //     l'assertion soit sensible à un vrai changement de comportement, pas
+    //     seulement à une signature TypeScript.
+    const lectureEntraineurJoueur: ClubMembershipReading = {
+      statut: "lu",
+      accessRole: "coach",
+      playerStatus: "active",
+    };
+    const sansPiege = resolveAppSpace(lectureEntraineurJoueur, "player");
+    const avecPiege = (resolveAppSpace as (...args: unknown[]) => ReturnType<typeof resolveAppSpace>)(
+      lectureEntraineurJoueur,
+      "player",
+      "coach",
+    );
+    expect(sansPiege).toBe("player");
+    expect(avecPiege).toBe(sansPiege);
   });
 
   test("elle meurt avec la session : la déconnexion l'oublie", () => {
@@ -219,6 +300,59 @@ describe("navigation — l'intention choisit un ÉCRAN, jamais un droit", () => 
     // personne l'ait demandé.
     const brancheDeconnexion = navigateur.slice(navigateur.indexOf("if (!u) {"));
     expect(brancheDeconnexion.slice(0, 900)).toContain("setIntentionCoach(false)");
+  });
+
+  test("le chemin coach → « Je m'entraîne aussi » : l'intention consommée ne re-route plus", () => {
+    // Chemin réel qui exposait le bug (revue du 03/08) : un coach déclare son
+    // intention sur l'accueil, s'inscrit, crée son club — l'appartenance fait
+    // basculer `appSpace.space` sur "coach" (branche 6bis), ce portillon
+    // d'onboarding se démonte, plus personne ne le regarde. Puis il tape
+    // « Je m'entraîne aussi » (hooks/useAppSpace) : l'espace revient à
+    // "player" alors que son profil joueur n'est toujours pas rempli. Ce
+    // portillon se REMONTE — pour la première fois depuis la création du
+    // club. Sans remise à zéro de l'intention à CE moment précis (pas
+    // seulement à la déconnexion, déjà couverte par le test précédent, ni au
+    // renoncement explicite « Je suis joueur finalement », couvert plus bas),
+    // il relirait une intention vieille de l'inscription et reposerait ce
+    // coach déjà membre d'un club sur la création de club au lieu du
+    // questionnaire joueur qu'il vient précisément de demander.
+    // Ancre sur une SEULE ligne physique (pas de `\n` littéral dans le motif
+    // recherché) : ce fichier est en fins de ligne CRLF, et un motif qui
+    // suppose `\n` tout court ne trouverait jamais rien.
+    const ancreEffet = 'if (profileCompleted === false && appSpace.space !== "coach" && intentionCoach)';
+    const indexEffet = navigateur.indexOf(ancreEffet);
+    expect(indexEffet).toBeGreaterThan(-1);
+    const effet = navigateur.slice(Math.max(0, indexEffet - 60), indexEffet + 300);
+
+    // Câblé sur exactement ce qui fait atteindre le portillon — profil non
+    // complété, ET un espace qui n'est PAS "coach" (seul cas où la branche
+    // 6bis n'a pas déjà renvoyé `<CoachNavigator />` avant que ce portillon ne
+    // soit atteint) — pas sur un geste utilisateur séparé qu'un coach
+    // pourrait ne jamais déclencher.
+    expect(effet).toContain("useEffect(() => {");
+    expect(effet).toContain("setIntentionCoach(false)");
+    expect(effet).toMatch(/\[profileCompleted, appSpace\.space, intentionCoach\]/);
+
+    // Déclaré AVANT le premier retour conditionnel du composant : les hooks
+    // de React s'exécutent à CHAQUE rendu, quelle que soit la branche JSX
+    // retournée ensuite — donc y compris lors du rendu où l'espace vient tout
+    // juste de basculer de "coach" à "player", avant même que ce portillon ne
+    // soit remonté. Un `useEffect` placé APRÈS un retour conditionnel violerait
+    // les règles des hooks (appel conditionnel) ; le trouver avant le premier
+    // `if (...) return` est donc aussi la preuve qu'il s'exécute à chaque rendu.
+    const indexPremierRetour = navigateur.indexOf("if (welcomeDone === null)");
+    expect(indexPremierRetour).toBeGreaterThan(-1);
+    expect(indexEffet).toBeLessThan(indexPremierRetour);
+
+    // Trois remises à zéro, pas une de plus ni de moins : déconnexion (testée
+    // plus haut), consommation au portillon (celle-ci), et renoncement
+    // explicite « Je suis joueur finalement » (testé plus bas, création de
+    // club). Aucune des deux autres ne suffirait seule au chemin coach-joueur :
+    // ni la déconnexion (aucune session ne se termine ici), ni le renoncement
+    // explicite (aucun tap sur « Je suis joueur finalement » dans ce chemin —
+    // l'espace bascule via le sélecteur joueur/coach, pas via cet écran).
+    const occurrences = navigateur.split("setIntentionCoach(false)").length - 1;
+    expect(occurrences).toBe(3);
   });
 });
 
