@@ -18,34 +18,31 @@
 // modifier les 15 fixtures, qui sont des donnees de JOUEUR — un reglage
 // d'accessibilite du telephone n'est pas une donnee de joueur.
 //
-// COMMENT `reduceMotion` SERA ALIMENTE EN VRAI
+// D'OU VIENT `reduceMotion` — BRANCHE POUR DE VRAI (integration L1)
 // -----------------------------------------------------------------------------
-// Le prototype n'a pas d'API systeme : c'est la fixture (ou le visualiseur) qui
-// pilote le drapeau. A l'integration, le branchement est celui que
-// `screens/HomeScreen.tsx` (lignes 72-73) fait deja pour son fondu d'entree :
+// Le prototype n'avait pas d'API systeme : la fixture ou le visualiseur pilotait
+// le drapeau, et ce commentaire decrivait a la main le pattern
+// `AccessibilityInfo.isReduceMotionEnabled()` + abonnement `reduceMotionChanged`
+// a recopier. IL NE FAUT PLUS LE RECOPIER : le depot a desormais UN hook
+// canonique, `hooks/useReduceMotion.ts` (merge accessibilite), qui fait
+// exactement ca — lecture au montage, abonnement au changement en cours de
+// session, garde anti-setState-apres-unmount, meme forme que `useHaptics`.
 //
-//     const [reduceMotion, setReduceMotion] = React.useState(false);
-//     React.useEffect(() => {
-//       let vivant = true;
-//       AccessibilityInfo.isReduceMotionEnabled().then((v) => {
-//         if (vivant) setReduceMotion(v);
-//       });
-//       const abo = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
-//       return () => { vivant = false; abo.remove(); };
-//     }, []);
+// `HomeVNextPresentation` le consomme comme DEFAUT : quand l'appelant ne passe
+// pas la prop `reduceMotion`, c'est le reglage reel du telephone qui gagne. La
+// prop reste une SURCHARGE, reservee aux tests et au visualiseur, qui doivent
+// pouvoir rendre les deux etats sans toucher aux reglages de l'appareil.
 //
-// L'ecoute de `reduceMotionChanged` est en plus : le Home de production ne lit
-// la preference qu'une fois, au montage. Un joueur qui active le reglage pendant
-// que l'app tourne n'est donc pas servi tant qu'il ne quitte pas l'ecran.
+// Ne pas dupliquer le hook ici, ne pas reecrire le pattern a la main dans un
+// nouvel ecran : un seul endroit lit `AccessibilityInfo` pour cette preference.
 //
 // CE QUE CE FICHIER INTERDIT, ET C'EST LE POINT
 // -----------------------------------------------------------------------------
-// `components/home/HomePrimaryCTA.tsx` (lignes 39-49) lance un `Animated.loop`
-// INFINI — une pulsation d'echelle 1 -> 1,015, 900 ms dans chaque sens — SANS
-// jamais consulter `reduceMotion`, alors que l'ecran qui l'accueille le consulte
-// pour son fondue d'entree. Un joueur qui a demande « reduire les animations »
-// voit donc son bouton principal pulser en permanence. C'est un vrai defaut de
-// production, hors du perimetre de ce prototype : il n'est pas corrige ici.
+// Aucune boucle d'animation. Le defaut historique vise ici — la pulsation
+// infinie de `components/home/HomePrimaryCTA.tsx`, lancee au montage sans jamais
+// consulter `reduceMotion` — a ete corrige en production depuis (commit
+// 75b5f19). La regle, elle, ne depend pas de ce correctif : le prototype n'a
+// aucune boucle et ne doit jamais en gagner une, meme gardee.
 //
 // LE PROTOTYPE, LUI, N'A AUCUNE BOUCLE — ni pulsation d'attention, ni respiration,
 // ni clignotement — et ne doit jamais en gagner une. Ses seules animations sont
@@ -55,6 +52,8 @@
 
 import React from "react";
 import { Animated } from "react-native";
+
+import { useReduceMotion as useReduceMotionSysteme } from "../../hooks/useReduceMotion";
 
 import { ECHELLE_PAR_DEFAUT, ECHELLES, type EchelleTypo, type EchelleTypoId } from "./homeVNextTypo";
 
@@ -73,11 +72,11 @@ export type PreferencesPresentation = {
 };
 
 /**
- * Ce que rend le prototype quand personne ne precise rien.
+ * Ce que voit un composant monte SANS provider (un test unitaire isole).
  *
- * `reduceMotion: false` est le defaut du SYSTEME, pas un souhait : la grande
- * majorite des telephones n'a pas le reglage actif. Le prototype se comporte
- * donc comme un telephone ordinaire tant qu'on ne lui dit pas le contraire.
+ * `reduceMotion: false` n'est pas un souhait : c'est l'etat d'un telephone
+ * ordinaire. Sous provider, cette valeur est remplacee par le reglage reel du
+ * telephone (`hooks/useReduceMotion`) — voir `HomeVNextPresentation`.
  */
 export const PRESENTATION_PAR_DEFAUT: PreferencesPresentation = {
   echelle: ECHELLE_PAR_DEFAUT,
@@ -139,7 +138,12 @@ export const PRESENTATIONS_A_COMPARER: readonly {
 export type HomeVNextPresentationProps = {
   /** Defaut : `ECHELLE_PAR_DEFAUT` (« allegee »). */
   echelle?: EchelleTypoId;
-  /** Defaut : `false`. */
+  /**
+   * SURCHARGE du reglage systeme, pour les tests et le visualiseur uniquement.
+   *
+   * Laisse a `undefined` (le cas de la production), c'est le reglage reel du
+   * telephone qui est lu, via `hooks/useReduceMotion`.
+   */
   reduceMotion?: boolean;
   children: React.ReactNode;
 };
@@ -148,18 +152,23 @@ export type HomeVNextPresentationProps = {
  * Pose les preferences pour tout le sous-arbre. L'ecran l'installe lui-meme a
  * partir de ses props : un composant monte seul (dans un test, dans le
  * visualiseur) recoit les valeurs par defaut sans rien avoir a declarer.
+ *
+ * Le hook systeme est appele INCONDITIONNELLEMENT (regle des hooks) ; c'est le
+ * `??` qui decide lequel des deux gagne. Un appel de hook n'a pas de cout
+ * observable ici : il lit un booleen deja resolu.
  */
 export function HomeVNextPresentation({
   echelle,
   reduceMotion,
   children,
 }: HomeVNextPresentationProps) {
+  const reduceMotionSysteme = useReduceMotionSysteme();
   const valeur = React.useMemo<PreferencesPresentation>(
     () => ({
       echelle: echelle ?? PRESENTATION_PAR_DEFAUT.echelle,
-      reduceMotion: reduceMotion ?? PRESENTATION_PAR_DEFAUT.reduceMotion,
+      reduceMotion: reduceMotion ?? reduceMotionSysteme,
     }),
-    [echelle, reduceMotion]
+    [echelle, reduceMotion, reduceMotionSysteme]
   );
   return (
     <ContextePresentation.Provider value={valeur}>{children}</ContextePresentation.Provider>
@@ -183,8 +192,13 @@ export function useEchelle(): EchelleTypo {
 /**
  * `true` quand le joueur a demande moins d'animations.
  *
- * Utilise a UN seul endroit dans le prototype : decider si l'enfoncement de
- * l'action du jour se traduit par un mouvement d'echelle ou non.
+ * Lit le CONTEXTE, pas le systeme : la resolution « surcharge de l'appelant, ou
+ * a defaut `hooks/useReduceMotion` » a deja eu lieu dans le provider. Les
+ * composants de l'ecran appellent celui-ci et jamais le hook systeme, sinon un
+ * test ne pourrait plus rendre l'etat « animations reduites » a volonte.
+ *
+ * Utilise a UN seul endroit : decider si l'enfoncement de l'action du jour se
+ * traduit par un mouvement d'echelle ou non.
  */
 export function useReduceMotion(): boolean {
   return usePresentation().reduceMotion;

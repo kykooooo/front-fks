@@ -191,13 +191,13 @@ type HomeVNextScreenPropsCommunes = {
   echelle?: EchelleTypoId;
 
   /**
-   * `true` quand le joueur a active « reduire les animations » sur son telephone.
+   * SURCHARGE du reglage « reduire les animations », pour les tests et le
+   * visualiseur uniquement.
    *
-   * Le prototype n'a pas d'API systeme : c'est l'appelant (fixture, visualiseur,
-   * test) qui pilote ce drapeau. Le branchement reel a l'integration est ecrit
-   * en toutes lettres dans `components/homeVNext/homeVNextPresentation.tsx`.
+   * En production on ne passe RIEN : `HomeVNextPresentation` lit alors le
+   * reglage reel du telephone via `hooks/useReduceMotion`.
    *
-   * Consequence a l'ecran : plus AUCUN mouvement. L'action du jour reste
+   * Consequence a l'ecran quand il vaut `true` : plus AUCUN mouvement. L'action du jour reste
    * parfaitement identifiable — c'est le seul aplat colore de l'ecran — et son
    * enfoncement reste signale par un assombrissement.
    */
