@@ -21,7 +21,11 @@
 
 import { useMemo } from "react";
 
-import { buildHomeVNextViewModel, type HomeVNextViewModel } from "../../screens/homeVNext/viewModel";
+import {
+  buildHomeVNextViewModel,
+  type HomeVNextInput,
+  type HomeVNextViewModel,
+} from "../../screens/homeVNext/viewModel";
 import {
   buildProgressionViewModel,
   type ProgressionViewModel,
@@ -55,6 +59,18 @@ export type HomeVNextViewModels = {
   progression: ProgressionViewModel;
   /** L'entree exacte qui a produit les deux — utile au visualiseur et au debug. */
   etat: EtatStoresHome;
+  /**
+   * L'entree normalisee du selecteur d'ecran.
+   *
+   * Exposee pour UNE raison precise : le conteneur doit savoir SUR QUELLE
+   * SEANCE le ViewModel a fonde son action, pour naviguer vers celle-la et pas
+   * une autre. `HomeVNextViewModel` ne porte deliberement aucun identifiant —
+   * une couche de presentation n'a pas a transporter de cle technique — et
+   * re-selectionner la seance dans le conteneur ouvrirait l'ecart : entre le
+   * calcul et le tap, un watcher Firestore peut changer la selection, et le
+   * joueur partirait sur une seance qu'il n'a jamais vue a l'ecran.
+   */
+  entree: HomeVNextInput;
 };
 
 export function useHomeVNextViewModel(): HomeVNextViewModels {
@@ -147,6 +163,6 @@ export function useHomeVNextViewModel(): HomeVNextViewModels {
       construireEntreeProgression(etat, construireSemaineCouranteDepuisLeHome(vm))
     );
 
-    return { vm, progression, etat };
+    return { vm, progression, etat, entree: entreeHome };
   }, [etat]);
 }
