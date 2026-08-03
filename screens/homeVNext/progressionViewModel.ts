@@ -146,6 +146,7 @@ import {
   formatStatValueForField,
   shouldHideUnitSuffix,
 } from "../tests/testHelpers";
+import { toDateKey } from "../../utils/dateHelpers";
 import { POINTS_MIN_POUR_COURBE, SEANCES_MIN_POUR_TENDANCE } from "./viewModel";
 
 // =============================================================================
@@ -473,9 +474,9 @@ export type ProgressionComparaisonTest = {
   apres: number;
   /** `apres - avant`, brut. Le SIGNE ne dit pas le sens : c'est `sens` qui le dit. */
   ecart: number;
-  /** Jour "YYYY-MM-DD" (UTC) de la valeur `avant`. */
+  /** Jour LOCAL "YYYY-MM-DD" (`toDateKey`) de la valeur `avant`. */
   avantJour: string;
-  /** Jour "YYYY-MM-DD" (UTC) de la valeur `apres`. */
+  /** Jour LOCAL "YYYY-MM-DD" (`toDateKey`) de la valeur `apres`. */
   apresJour: string;
   /** Horodatage de la valeur `apres` — sert a ordonner les comparaisons. */
   apresTs: number;
@@ -652,19 +653,25 @@ function diffJours(a: string, b: string): number {
 }
 
 /**
- * Jour "YYYY-MM-DD" d'un horodatage de test.
+ * Jour "YYYY-MM-DD" d'un horodatage de test — JOUR LOCAL (integration L2).
  *
- * UTC volontairement, et non `toDateKey` (qui est LOCAL) : les captures du
- * prototype doivent etre identiques sur n'importe quelle machine. Au branchement
- * reel, la question "jour local ou jour UTC pour un test terrain" devra etre
- * tranchee avec le fondateur — un test fait a 23 h ne doit pas basculer au
- * lendemain. C'est signale dans `protoWarnings`.
+ * Le prototype calculait en UTC (`toISOString().slice(0, 10)`) pour que ses
+ * captures soient reproductibles machine par machine, et ecrivait lui-meme que
+ * la question devrait etre tranchee. Elle l'est : jour LOCAL, via `toDateKey` —
+ * le helper partage du depot (regle n9 du CLAUDE.md), local par construction, et
+ * dont le commentaire prend justement l'exemple de 23 h 30.
+ *
+ * Ce que ca change pour un joueur : un test passe a 23 h reste sur le jour ou il
+ * l'a vecu. En UTC (fuseau France, +1/+2), il basculait au lendemain — deux
+ * essais du meme soir pouvaient compter comme "2 jours distincts" et fabriquer
+ * une progression qui n'a jamais eu lieu, c'est-a-dire exactement le defaut n5
+ * que cette carte existe pour corriger.
  */
 function jourDeTest(ts: number): string {
   if (!Number.isFinite(ts) || ts <= 0) return "";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toISOString().slice(0, 10);
+  return toDateKey(d);
 }
 
 /** "1 seance" / "2 seances" — accord fait ici, pas dans le composant. */
@@ -1152,11 +1159,9 @@ export function buildProgressionViewModel(input: ProgressionInput): ProgressionV
     );
   }
 
-  if (input.testsTerrain.length > 0) {
-    protoWarnings.push(
-      "Prototype : le jour d'un test est calcule en UTC pour que les captures soient reproductibles. Au branchement reel, trancher avec le fondateur (un test fait a 23 h ne doit pas basculer au lendemain) — l'app utilise partout ailleurs `toDateKey`, qui est LOCAL."
-    );
-  }
+  // (Le jour d'un test etait calcule en UTC dans le prototype et faisait l'objet
+  // d'un avertissement ici. La question est tranchee : jour LOCAL via
+  // `toDateKey`, voir `jourDeTest`. L'avertissement n'a plus d'objet.)
   if (comparaisonsTests.possible) {
     // Champs que `screens/ProgressScreen.tsx` ne compare pas : sa liste locale
     // `TEST_FIELDS` (:144-160) est amputee de 8 champs de FIELD_DEFS.

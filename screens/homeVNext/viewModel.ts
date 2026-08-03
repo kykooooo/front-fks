@@ -31,6 +31,7 @@ import {
   type MicrocycleId,
 } from "../../domain/microcycles";
 import { recommendMicrocycle } from "../../domain/recommendMicrocycle";
+import { TRACKING_CONFIG } from "../../domain/tracking/config";
 import { getMicrocyclePhase } from "../../utils/microcycleUtils";
 import { formatDayFR, toDateKey } from "../../utils/dateHelpers";
 
@@ -99,11 +100,21 @@ export const POINTS_MIN_POUR_COURBE = 3;
  * plus honnetement ou en est le joueur, et le dire est plus utile que de faire
  * comme si de rien n'etait (defaut P1.24 / etat E6 de l'audit).
  *
- * SEUIL D'AFFICHAGE DU PROTOTYPE — A VALIDER PAR LE FONDATEUR.
- * Ce seuil ne declenche AUCUNE adaptation de seance : le moteur de reprise
- * progressive n'est pas branche (cf. `protoWarnings`).
+ * SOURCE UNIQUE (integration L2) — la valeur n'est plus ecrite ici : elle DERIVE
+ * de `TRACKING_CONFIG.resumption.gapDaysSoft` (`domain/tracking/config.ts`), le
+ * seuil que la boucle de suivi joueur utilise deja pour `detectTrainingGap`. Les
+ * deux valaient 14 par coincidence documentaire, pas par construction : un
+ * reglage moteur les aurait fait diverger, et l'app aurait dit « reprise » sur un
+ * ecran et « tout va bien » sur l'autre, a un tap d'intervalle.
+ *
+ * Elle reste EXPORTEE, et c'est volontaire : le visualiseur l'affiche dans son
+ * bloc SEUILS, et un lecteur du viewModel doit pouvoir lire le nombre sans
+ * ouvrir `domain/tracking/`. On derive, on ne supprime pas.
+ *
+ * Ce seuil ne declenche AUCUNE adaptation de seance : le mode Application de la
+ * boucle est OFF par defaut au pilote (cf. `protoWarnings`).
  */
-export const JOURS_SANS_SEANCE_POUR_REPRISE = 14;
+export const JOURS_SANS_SEANCE_POUR_REPRISE: number = TRACKING_CONFIG.resumption.gapDaysSoft;
 
 /**
  * Fenetre (en jours) dans laquelle un match declare est considere comme "proche"
@@ -389,9 +400,16 @@ export type HomeVNextDemarrageInput = {
   /**
    * Nombre d'entrees de tests terrain enregistrees pour ce joueur.
    *
-   * SOURCE : `readTestsRaw()` (`screens/tests/hooks/useTestsStorage.ts`), parse
-   * en `TestEntry[]`. C'est exactement la lecture que font deja
-   * `screens/ProfileScreen.tsx` et `screens/CycleModalScreen.tsx`.
+   * SOURCE : `useTestsStorage().entries` (`screens/tests/hooks/useTestsStorage.ts`),
+   * c'est-a-dire les entrees VALIDEES (`ts` fini et positif), recanonicalisees
+   * (playlist), triees et bornees a 30.
+   *
+   * PAS `readTestsRaw()`, que citait le prototype : c'est la lecture BRUTE, et
+   * la parser soi-meme est exactement ce que font `ProfileScreen.tsx:129`,
+   * `CycleModalScreen.tsx:146` et `ProgressScreen.tsx:228` — un contournement de
+   * toute la normalisation, qui laisse passer des entrees sans horodatage
+   * valide. `ProgressionInput.testsTerrain` (`./progressionViewModel`) pose deja
+   * la meme exigence ; les deux entrees lisent donc la meme source.
    *
    * 0 = aucun test passe. Ce compte ne sert QU'A repondre par oui ou par non :
    * il n'est jamais affiche comme un chiffre.
@@ -1679,7 +1697,7 @@ export function buildHomeVNextViewModel(
     const entree = input.demarrage ?? null;
     if (entree === null) {
       protoWarnings.push(
-        "Variante de demarrage demandee, mais `input.demarrage` est absent : ni l'objectif declare (users/{uid}.mainObjective) ni le nombre de tests terrain (readTestsRaw) ne sont fournis. Le bloc n'est PAS construit — le selecteur ne devine aucun de ces etats."
+        "Variante de demarrage demandee, mais `input.demarrage` est absent : ni l'objectif declare (users/{uid}.mainObjective) ni le nombre de tests terrain (useTestsStorage) ne sont fournis. Le bloc n'est PAS construit — le selecteur ne devine aucun de ces etats."
       );
     } else if (varianteDemarrage === "A") {
       demarrage = {
@@ -1826,11 +1844,23 @@ function construirePremiersPas(
   return [
     {
       id: "profil",
-      label: "Ton profil",
-      // Fait : on ne repete pas ce que le joueur vient de saisir (poste,
-      // niveau, objectif) — il le sait, il sort de l'ecran ou il l'a tape.
+      label: "Ton objectif",
+      // LIBELLE RESTREINT A CE QUI EST VERIFIE (integration L2).
+      //
+      // Le prototype cochait ce pas sur `mainObjective` SEUL, mais l'annoncait
+      // au joueur comme « Poste, niveau, objectif : c'est enregistré ». Un
+      // compte legacy portant un objectif sans poste ni niveau lisait donc une
+      // coche verte pour deux champs que personne n'avait verifies — la faute
+      // exacte que le contrat interdit partout ailleurs (« pas de valeur
+      // affirmee sans source »).
+      //
+      // Deux sorties etaient possibles : faire deriver la coche des trois
+      // champs, ou restreindre ce qu'elle dit. C'est la seconde qui est prise :
+      // elle ne fabrique aucun champ d'entree, et le poste et le niveau ne
+      // manquent jamais a l'arrivee du setup profil (les trois sont ecrits d'un
+      // seul `saveProfile`) — ils ne meritent donc pas une coche a eux.
       detail: profilFait
-        ? "Poste, niveau, objectif : c'est enregistré."
+        ? "Ton objectif principal est enregistré."
         : "Il manque ton objectif principal : c'est lui qui oriente tes séances.",
       fait: profilFait,
       source: "users/{uid}.mainObjective (Firestore, ecrit par ProfileSetupScreen)",
@@ -1845,7 +1875,12 @@ function construirePremiersPas(
         ? "Tes repères sont enregistrés."
         : "Ils affinent tes séances, mais tu peux commencer sans.",
       fait: testsFaits,
-      source: "readTestsRaw() -> TestEntry[] (screens/tests/hooks/useTestsStorage.ts)",
+      // SOURCE VALIDEE, jamais le brut : `useTestsStorage()` valide le `ts`,
+      // recanonicalise la playlist, trie desc et borne a 30 entrees. Le
+      // `readTestsRaw()` que citait le prototype est la lecture NON normalisee
+      // que fait `ProgressScreen.tsx:228` — precisement le defaut que la
+      // refonte doit corriger, pas recopier.
+      source: "useTestsStorage().entries (screens/tests/hooks/useTestsStorage.ts)",
     },
     {
       id: "premiere_seance",
