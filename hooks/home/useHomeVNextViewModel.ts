@@ -1,22 +1,20 @@
 // hooks/home/useHomeVNextViewModel.ts
 // =============================================================================
-// LE BRANCHEMENT — LES VRAIS STORES DERRIERE LE HOME VNEXT
+// LES DEUX VIEWMODELS DE L'ACCUEIL
 // =============================================================================
 //
-// Ce hook fait UNE chose : lire les stores et l'horloge, puis passer le tout a
-// l'adaptateur PUR (`./homeVNextAdapter`) et aux deux selecteurs PURS
-// (`screens/homeVNext/viewModel.ts`, `progressionViewModel.ts`). Aucune regle
-// d'affichage ne vit ici — s'il fallait en ecrire une, sa place serait dans le
-// selecteur, ou elle est testable sans monter React.
+// Ce hook prend l'etat rendu par `useEtatStoresHome()` (la seule lecture de
+// stores du chantier) et le passe a l'adaptateur PUR (`./homeVNextAdapter`) puis
+// aux deux selecteurs PURS (`screens/homeVNext/viewModel.ts`,
+// `progressionViewModel.ts`). Aucune regle d'affichage ne vit ici — s'il fallait
+// en ecrire une, sa place serait dans le selecteur, ou elle est testable sans
+// monter React.
 //
-// PERSONNE NE LE CONSOMME ENCORE, ET C'EST VOLONTAIRE. Ce lot livre la chaine
-// de donnees complete, verifiable, sans toucher un seul ecran de production :
-// le Home actuel continue de tourner sur son propre code, a l'identique. Le
-// branchement de l'ecran est le lot suivant.
-//
-// L'HORLOGE : `useDebugStore.devNowISO ?? todayISO()` — la meme convention que
-// `usePrimaryCta` et `useTrackingProgress`. Les selecteurs ne lisent jamais
-// `new Date()` eux-memes, ce qui les rend reproductibles.
+// LA DIFFERENCE AVEC `useProgressionViewModel` (hooks/useProgressionViewModel.ts,
+// que consomme la page Progression) tient en un seul champ : `semaineCourante`.
+// L'accueil affiche un bloc « Ma semaine », la page non. C'est ce champ qui
+// empeche la carte de redire, 300 px plus bas, le chiffre que le bloc vient
+// d'annoncer.
 // =============================================================================
 
 import { useMemo } from "react";
@@ -36,21 +34,7 @@ import {
   construireSemaineCouranteDepuisLeHome,
   type EtatStoresHome,
 } from "./homeVNextAdapter";
-
-import { auth } from "../../services/firebase";
-import { todayISO } from "../../utils/virtualClock";
-import { useDebugStore } from "../../state/stores/useDebugStore";
-import { useExternalStore } from "../../state/stores/useExternalStore";
-import { useLoadStore } from "../../state/stores/useLoadStore";
-import { useSessionsStore } from "../../state/stores/useSessionsStore";
-import { useSyncStore } from "../../state/stores/useSyncStore";
-import { useSettingsStore } from "../../state/settingsStore";
-import { useNetworkStatus } from "../useNetworkStatus";
-import { useMainObjective } from "../useMainObjective";
-import { useTestsStorage } from "../../screens/tests/hooks/useTestsStorage";
-
-/** Reference stable : un tableau litteral dans le corps du hook relancerait les memos a chaque rendu. */
-const VIDE_STRING: string[] = [];
+import { useEtatStoresHome } from "./useEtatStoresHome";
 
 export type HomeVNextViewModels = {
   /** Le ViewModel de l'ecran. */
@@ -74,79 +58,7 @@ export type HomeVNextViewModels = {
 };
 
 export function useHomeVNextViewModel(): HomeVNextViewModels {
-  // ── Horloge ──
-  const devNowISO = useDebugStore((s) => s.devNowISO);
-
-  // ── Seances & cycle ──
-  const sessions = useSessionsStore((s) => s.sessions);
-  const lastAiSessionV2 = useSessionsStore((s) => s.lastAiSessionV2);
-  const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
-  const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
-
-  // ── Charges ──
-  const dailyApplied = useLoadStore((s) => s.dailyApplied);
-  const lastAppliedDate = useLoadStore((s) => s.lastAppliedDate);
-  const chargesExternes = useExternalStore((s) => s.externalLoads);
-  const matchDays = useExternalStore((s) => s.matchDays);
-  const targetFksSessionsPerWeek = useExternalStore((s) => s.targetFksSessionsPerWeek);
-
-  // ── Reglages & synchro ──
-  const storeHydrated = useSyncStore((s) => s.storeHydrated);
-  const debutDeSemaine = useSettingsStore((s) => s.weekStart);
-  // LU BRUT, sans `?? 2` : le repli par defaut est resolu une seule fois, dans
-  // `resoudreObjectifHebdo` (domain/resumeCanonique.ts), qui rend `null` quand
-  // personne n'a rien declare. Ecrire un 2 ici le rendrait indiscernable d'un
-  // objectif choisi par le joueur.
-  const weeklyGoalReglage = useSettingsStore((s) => s.weeklyGoal);
-
-  // ── Sources hors stores ──
-  const { isOnline } = useNetworkStatus();
-  const mainObjective = useMainObjective();
-  const { entries: testsTerrain } = useTestsStorage();
-
-  const nowISO = devNowISO ?? todayISO();
-  const displayName = auth.currentUser?.displayName ?? null;
-
-  const etat = useMemo<EtatStoresHome>(
-    () => ({
-      displayName,
-      nowISO,
-      storeHydrated: storeHydrated ?? true,
-      sessions: sessions ?? [],
-      chargesExternes: chargesExternes ?? [],
-      dailyApplied,
-      lastAppliedDate,
-      lastAiSessionV2: (lastAiSessionV2 ?? null) as Record<string, unknown> | null,
-      microcycleGoal: microcycleGoal ?? null,
-      microcycleSessionIndex: microcycleSessionIndex ?? 0,
-      targetFksSessionsPerWeek: targetFksSessionsPerWeek ?? null,
-      weeklyGoalReglage: typeof weeklyGoalReglage === "number" ? weeklyGoalReglage : null,
-      debutDeSemaine: debutDeSemaine === "sun" ? "sun" : "mon",
-      matchDays: matchDays ?? VIDE_STRING,
-      enLigne: isOnline,
-      testsTerrain,
-      mainObjective,
-    }),
-    [
-      displayName,
-      nowISO,
-      storeHydrated,
-      sessions,
-      chargesExternes,
-      dailyApplied,
-      lastAppliedDate,
-      lastAiSessionV2,
-      microcycleGoal,
-      microcycleSessionIndex,
-      targetFksSessionsPerWeek,
-      weeklyGoalReglage,
-      debutDeSemaine,
-      matchDays,
-      isOnline,
-      testsTerrain,
-      mainObjective,
-    ]
-  );
+  const etat = useEtatStoresHome();
 
   return useMemo(() => {
     const entreeHome = construireEntreeHome(etat);
