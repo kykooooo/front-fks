@@ -462,8 +462,10 @@ export type HomeVNextInput = {
 
   /**
    * Seances FKS **reellement terminees**, du plus ancien au plus recent.
-   * SOURCE : `useSessionsStore.sessions` filtre par `isSessionCompleted`
-   * (`utils/sessionHelpers.ts`). Ni les seances planifiees, ni les charges
+   * SOURCE : `useSessionsStore.sessions` filtre par `estSeanceFksTerminee`
+   * (`domain/resumeCanonique.ts`) — LE MEME predicat que `compterSeancesFksSurJours`
+   * et `compterJoursObserves`, pour que le cumul, le compteur hebdo et la courbe
+   * parlent des memes seances. Ni les seances planifiees, ni les charges
    * club/match auto-injectees n'entrent ici.
    */
   completedSessions: readonly HomeVNextCompletedSession[];
@@ -504,8 +506,10 @@ export type HomeVNextInput = {
 
   /**
    * Seances FKS terminees dans la semaine courante.
-   * SOURCE : `useWeekSummary.fksCount` (`hooks/home/useWeekSummary.ts`), qui ne
-   * compte que `s.completed` — les charges club auto n'y entrent pas.
+   * SOURCE : `compterSeancesFksSurJours(sessions, joursDeLaSemaine(...))`
+   * (`domain/resumeCanonique.ts`) — l'unique implementation de ce comptage dans
+   * l'app, celle que `useWeekSummary`, `buildTrackingProgress` et `RoutineScreen`
+   * appellent aussi. Les charges club auto n'y entrent pas.
    */
   fksSessionsCompletedThisWeek: number;
 

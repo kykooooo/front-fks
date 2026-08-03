@@ -278,6 +278,57 @@ describe("le compteur hebdo et sa cible viennent du resume canonique", () => {
 // 6. Les autres derivations
 // -----------------------------------------------------------------------------
 
+// -----------------------------------------------------------------------------
+// 5 bis. Un seul predicat « seance terminee » dans tout l'objet d'entree
+// -----------------------------------------------------------------------------
+
+describe("l'entree ne porte qu'UNE definition de « seance FKS terminee »", () => {
+  // Donnee legacy : un `feedback` sans `completed`. Le chemin normal
+  // (`state/orchestrators/applyFeedback.ts`) ecrit toujours les deux ensemble ;
+  // seule une vieille donnee Firestore peut produire cette forme.
+  const legacy = seance({
+    id: "legacy",
+    completed: false,
+    dateISO: "2026-08-10T10:00:00",
+    feedback: { rpe: 7 } as never,
+  });
+
+  it("le cumul et le compteur hebdo comptent les MEMES seances", () => {
+    const entree = construireEntreeHome({ ...ETAT_VIDE, sessions: [legacy] });
+    // Avant : `completedSessions` (predicat large) disait 1, le compteur hebdo
+    // (predicat strict) disait 0 — deux chiffres a une ligne d'intervalle.
+    expect(entree.completedSessions).toHaveLength(0);
+    expect(entree.fksSessionsCompletedThisWeek).toBe(0);
+  });
+
+  it("et cette seance n'est pas dite « faite » alors qu'elle reste EN ATTENTE", () => {
+    // `selectPendingSession` filtre `!s.completed` : pour l'app, elle est a faire.
+    const entree = construireEntreeHome({ ...ETAT_VIDE, sessions: [legacy] });
+    expect(entree.pendingSession?.id).toBe("legacy");
+    expect(entree.completedSessions).toHaveLength(0);
+  });
+
+  it("la serie de forme et le compte de jours observes s'accordent aussi", () => {
+    const serie = construireSerieForme({
+      nowISO: NOW,
+      dailyApplied: { "2026-08-10": 120 },
+      seances: [legacy],
+      chargesExternes: [],
+    });
+    // Avant : `premierIndex` demarrait sur le predicat large (donc des points)
+    // alors que `observedDayCount` comptait sur le strict (donc zero jour).
+    expect(serie).toBeNull();
+  });
+
+  it("la carte progression tranche comme le Home", () => {
+    const entree = construireEntreeProgression(
+      { ...ETAT_VIDE, sessions: [legacy] },
+      { blocAffiche: false, seancesAffichees: 0 }
+    );
+    expect(entree.seancesTerminees).toHaveLength(0);
+  });
+});
+
 describe("le prochain match est projete, jamais devine", () => {
   it("sans jour coche au profil, il n'y a pas de match", () => {
     expect(construireProchainMatch([], NOW)).toBeNull();

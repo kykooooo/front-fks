@@ -46,6 +46,7 @@ import {
   compterJoursObserves,
   compterSeancesFksSurJours,
   estChargeExterneManuelle,
+  estSeanceFksTerminee,
   FENETRES_RESUME,
   joursDeLaSemaine,
   resoudreObjectifHebdo,
@@ -57,11 +58,7 @@ import { updateTrainingLoad } from "../../engine/loadModel";
 import { getFootballLabel } from "../../config/trainingDefaults";
 import { frIntensity, frFocus } from "../../utils/frLabels";
 import { toDateKey } from "../../utils/dateHelpers";
-import {
-  getSessionDuration,
-  isSessionCompleted,
-  selectPendingSession,
-} from "../../utils/sessionHelpers";
+import { getSessionDuration, selectPendingSession } from "../../utils/sessionHelpers";
 import type { TestEntry } from "../../screens/tests/testConfig";
 import type {
   HomeVNextCompletedSession,
@@ -199,7 +196,7 @@ export function construireSerieForme(entree: {
   // Jours ou l'app a VU quelque chose de reel (seance terminee ou charge saisie).
   const joursObservesSet = new Set<string>();
   for (const s of entree.seances) {
-    if (!isSessionCompleted(s)) continue;
+    if (!estSeanceFksTerminee(s)) continue;
     const cle = toDateKey(s.dateISO ?? s.date);
     if (cle) joursObservesSet.add(cle);
   }
@@ -382,7 +379,7 @@ export function construireEntreeDemarrage(etat: {
 /** L'entree du selecteur Home, remplie a partir des stores. */
 export function construireEntreeHome(etat: EtatStoresHome): HomeVNextInput {
   const seancesTerminees = etat.sessions
-    .filter((s) => isSessionCompleted(s))
+    .filter(estSeanceFksTerminee)
     .map(projeterSeanceTerminee)
     .filter((s) => s.dateKey !== "")
     .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
@@ -433,14 +430,14 @@ export function construireEntreeProgression(
   semaineCourante: ProgressionSemaineCourante
 ): ProgressionInput {
   const seancesTerminees: ProgressionSeanceTerminee[] = etat.sessions
-    .filter((s) => isSessionCompleted(s))
+    .filter(estSeanceFksTerminee)
     .map((s) => ({
       id: s.id,
       dateKey: toDateKey(s.dateISO ?? s.date),
       dureeMin: nombreOuNull(getSessionDuration(s)),
-      // `isSessionCompleted` accepte `completed || feedback` ; ici on ne veut QUE
-      // la seconde moitie, sinon une seance simplement marquee terminee
-      // compterait comme un ressenti que le joueur n'a jamais donne.
+      // « Terminee » et « le joueur a donne son ressenti » sont deux faits
+      // distincts : une seance peut etre cochee terminee sans qu'aucun retour
+      // n'ait ete saisi. Ce champ ne parle QUE du second.
       ressentiEnregistre: Boolean(s.feedback),
     }))
     .filter((s) => s.dateKey !== "")

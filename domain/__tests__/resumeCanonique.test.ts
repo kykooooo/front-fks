@@ -25,6 +25,7 @@ import {
   compterSeancesFksSurJours,
   construireResumeHebdo,
   estChargeExterneManuelle,
+  estSeanceFksTerminee,
   FENETRES_RESUME,
   joursDeLaSemaine,
   resoudreObjectifHebdo,
@@ -101,6 +102,33 @@ describe("compterSeancesFksSurJours", () => {
       return v ? weekKeyOf(v) === weekKeyOf(nowISO) : false;
     }).length;
     expect(compterSeancesFksSurJours(seances, joursDeLaSemaine(nowISO, "mon"))).toBe(ancien);
+  });
+});
+
+describe("estSeanceFksTerminee : UNE seule definition pour toute la couche de calcul", () => {
+  // Le cas qui a motive le predicat unique : une seance legacy portant un
+  // `feedback` sans `completed`. `selectPendingSession` la considere EN ATTENTE
+  // (il filtre `!s.completed`) ; si le comptage la disait terminee, le meme objet
+  // d'entree affirmerait qu'elle est faite ET qu'elle reste a faire.
+  const legacy = { dateISO: "2026-08-05T10:00:00", feedback: { rpe: 7 } } as unknown as SeanceDatee;
+
+  it("une seance sans `completed` n'est pas terminee, meme si elle porte un ressenti", () => {
+    expect(estSeanceFksTerminee(legacy)).toBe(false);
+    expect(estSeanceFksTerminee({ completed: true, dateISO: "2026-08-05" })).toBe(true);
+    expect(estSeanceFksTerminee(null)).toBe(false);
+    expect(estSeanceFksTerminee(undefined)).toBe(false);
+  });
+
+  it("le comptage hebdo et le comptage de jours observes tranchent PAREIL", () => {
+    const jours = joursDeLaSemaine("2026-08-05T12:00:00", "mon");
+    expect(compterSeancesFksSurJours([legacy], jours)).toBe(0);
+    expect(
+      compterJoursObserves({
+        nowISO: "2026-08-05T12:00:00",
+        seances: [legacy],
+        chargesExternes: [],
+      })
+    ).toBe(0);
   });
 });
 

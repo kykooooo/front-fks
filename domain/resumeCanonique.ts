@@ -114,6 +114,35 @@ export type ChargeExterneDatee = {
 };
 
 /**
+ * UNE SEULE DEFINITION DE « SEANCE FKS TERMINEE » POUR TOUTE LA COUCHE DE CALCUL.
+ *
+ * POURQUOI ELLE EST STRICTE (`completed`, et pas `completed || feedback`)
+ * ---------------------------------------------------------------------------
+ * `utils/sessionHelpers.ts` expose `isSessionCompleted` = `completed || feedback`.
+ * C'est un predicat plus large, utile la ou l'on veut « une seance sur laquelle
+ * le joueur a fait quelque chose ». Il ne peut PAS servir ici, pour deux raisons
+ * mesurables dans le depot :
+ *
+ *   1. `selectPendingSession` (`utils/sessionHelpers.ts`) filtre `!s.completed`.
+ *      Une seance portant un `feedback` sans `completed` reste donc EN ATTENTE
+ *      pour l'app. La compter comme terminee la rendrait simultanement « faite »
+ *      et « a faire » dans le meme objet d'entree — deux verites contradictoires
+ *      a une ligne d'intervalle, exactement le defaut que ce lot ferme.
+ *   2. Le moteur de charge (`sumDailyWeightedLoad`, `engine/dailyAggregation.ts`)
+ *      ignore lui aussi tout ce qui n'est pas `completed`. Compter large ici
+ *      donnerait un nombre de seances que la courbe de charge ne refleterait
+ *      pas : un compteur qui monte au-dessus d'une trajectoire qui ne bouge pas.
+ *
+ * Le chemin normal (`state/orchestrators/applyFeedback.ts`) ecrit `completed` et
+ * `feedback` ENSEMBLE : sur les donnees produites par l'app, les deux predicats
+ * rendent le meme resultat. L'ecart n'existe que sur de la donnee legacy, et sur
+ * celle-la le choix strict est le seul qui reste coherent avec le reste du code.
+ */
+export function estSeanceFksTerminee(seance: SeanceDatee | null | undefined): boolean {
+  return Boolean(seance?.completed);
+}
+
+/**
  * Les 7 cles de jour ("YYYY-MM-DD") de la semaine qui contient `nowISO`.
  *
  * Arithmetique de date LOCALE, comme `weekKeyOf` et comme `toDateKey` : un
@@ -167,7 +196,7 @@ export function compterSeancesFksSurJours(
   if (ensemble.size === 0) return 0;
   let total = 0;
   for (const s of seances) {
-    if (!s?.completed) continue;
+    if (!estSeanceFksTerminee(s)) continue;
     const cle = toDateKey(s.dateISO ?? s.date);
     if (cle && ensemble.has(cle)) total += 1;
   }
@@ -266,7 +295,7 @@ export function compterJoursObserves(entree: {
 
   const observes = new Set<string>();
   for (const s of entree.seances) {
-    if (!s?.completed) continue;
+    if (!estSeanceFksTerminee(s)) continue;
     const cle = toDateKey(s.dateISO ?? s.date);
     if (cle && joursAutorises.has(cle)) observes.add(cle);
   }
