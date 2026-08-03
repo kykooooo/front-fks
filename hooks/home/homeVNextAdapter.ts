@@ -161,6 +161,13 @@ export type EtatStoresHome = {
  * rien a faire ici : c'est un garde-fou de PRESCRIPTION (« ne charge pas la
  * veille d'un match »), pas une mesure de ce qui a ete fait.
  *
+ * SUR LES REPLIS DU MOTEUR. `sumDailyWeightedLoad` retombe sur RPE 5 / 30 min
+ * quand une seance n'a ni ressenti ni duree. Ce n'est pas une valeur inventee de
+ * PLUS : c'est exactement la formule qui a rempli `dailyApplied` au moment du
+ * feedback, donc le meme chiffre qu'avant, obtenu proprement. En pratique le
+ * repli ne sert quasiment jamais : une seance terminee est passee par
+ * `applyFeedback`, qui ecrit `rpe` et `durationMin`.
+ *
  * CE QUI N'ENTRE PAS, ET C'EST LE POINT : les charges club/match auto-injectees
  * (`applyAutoExternalLoads`, id `auto_*`). Elles sont deduites de cases cochees
  * au setup profil, pas d'un fait constate — une charge supposee ne doit pas etre
