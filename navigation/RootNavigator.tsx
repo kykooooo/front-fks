@@ -430,6 +430,48 @@ export default function RootNavigator() {
     });
   }, [peutChoisirEspace, espaceAffiche, suiviJoueur, choisirEspace]);
 
+  // ── L'INTENTION COACH, CONSOMMÉE UNE SEULE FOIS ───────────────────────────
+  // `initialRouteName` (portillon plus bas, `key="nav-gate"`) n'est lu qu'AU
+  // MONTAGE de ce navigateur — jamais après. Sans remise à zéro ici, l'intention
+  // survivrait à cette première lecture pour TOUTE LA SESSION, prête à ressortir
+  // bien plus tard.
+  //
+  // Chemin réel qui l'exposait (recette 03/08) : un coach déclare son intention
+  // sur l'accueil, s'inscrit, crée son club — l'appartenance fait basculer
+  // `appSpace.space` sur "coach" (branche 6bis), ce portillon se démonte, plus
+  // personne ne le regarde. Puis il tape « Je m'entraîne aussi »
+  // (hooks/useAppSpace) : l'espace revient à "player" alors que son profil
+  // joueur n'est toujours pas rempli. Ce portillon se REMONTE — pour la
+  // première fois depuis la création du club — et relirait une intention
+  // vieille de l'inscription, reposant un coach déjà membre d'un club sur la
+  // création de club au lieu du questionnaire joueur qu'il vient précisément
+  // de demander.
+  //
+  // La condition ci-dessous est exactement celle qui fait atteindre ce
+  // portillon (`profileCompleted === false` et `appSpace.space !== "coach"`,
+  // seul cas où la branche 6bis n'a pas déjà retourné `<CoachNavigator />`) :
+  // dès qu'on l'atteint avec une intention encore vraie, elle vient de servir.
+  //
+  // POURQUOI UN `useEffect`, ET PAS LE PATTERN « ajuster l'état pendant le
+  // rendu » (cf. ItemActionsSheet, commit 9b93400) : ce pattern-là recalcule
+  // ET COMMIT dans le MÊME passage de rendu — React relance le composant
+  // avant que quoi que ce soit ne soit monté. Ici, ce serait fatal : la remise
+  // à zéro écraserait `intentionCoach` AVANT que `initialRouteName` (plus bas)
+  // n'ait eu l'occasion de lire sa valeur encore vraie, et le portillon
+  // n'atterrirait plus JAMAIS sur `CoachOnboarding` — pas même au premier
+  // passage, le chemin nominal. Un effet, lui, s'exécute APRÈS le commit :
+  // `initialRouteName` a donc déjà capturé la valeur vraie pour CE montage
+  // avant que cette remise à zéro n'ait lieu.
+  // La synchronisation post-commit est ici DÉLIBÉRÉE, pas un oubli du pattern
+  // « pendant le rendu » — même exception assumée que
+  // `hooks/useClubDirective.ts` (remise à zéro sur un événement externe).
+  useEffect(() => {
+    if (profileCompleted === false && appSpace.space !== "coach" && intentionCoach) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setIntentionCoach(false);
+    }
+  }, [profileCompleted, appSpace.space, intentionCoach]);
+
   // 0) DEV: force welcome screen (déconnecte + reset flag)
   useEffect(() => {
     if (!DEV_FLAGS.FORCE_WELCOME) return;
