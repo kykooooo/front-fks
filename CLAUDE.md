@@ -158,6 +158,8 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
     microcycles.ts           # Definition des cycles (id, label, icon, locations, highlights)
     recommendMicrocycle.ts   # Algorithme de recommandation de cycle
     types.ts                 # Types metier (SessionFeedback, InjuryRecord, Modality, etc.)
+    resumeCanonique.ts       # LE comptage hebdo des seances FKS — une seule implementation
+    /tracking                # Boucle de suivi joueur (signals, resumption, apply ; apply OFF au pilote)
 
   /engine
     loadModel.ts             # Calcul ATL/CTL/TSB (updateTrainingLoad)
@@ -257,9 +259,6 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
       # --- Ancien accueil : consommes par le seul HomeScreen.tsx ---
       useLoadSeries.ts · useMatchSoon.ts · useWeekDays.ts
       useWeekSummary.ts · useActivityStreak.ts · usePrimaryCta.ts
-
-  /domain
-    resumeCanonique.ts        # LE comptage hebdo des seances FKS — une seule implementation
 
   /utils
     dateHelpers.ts            # Helpers partages (toDateKey, isSameDay, frToKey)
