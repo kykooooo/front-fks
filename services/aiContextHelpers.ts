@@ -8,6 +8,7 @@
 // Le fichier `aiContext.ts` reexporte tout ce dont les autres ecrans ont besoin.
 
 import { toDateKey, lastNDates } from "../utils/dateHelpers";
+import { estSeanceArtificielle } from "../utils/sessionHelpers";
 import type { Session, Exercise, ClubTrainingIntensity, ClubWeekGoal, ClubTeamGender, DailyFeedback, InjuryRecord } from "../domain/types";
 import { normalizeClubTrainingIntensity, normalizeClubWeekGoal } from "../domain/types";
 import { isClubDirectiveApplicable, parseClubDirective } from "../domain/clubDirective";
@@ -544,6 +545,11 @@ export function buildRecentFksSessionSummary(
 /**
  * Construit le tableau `recent_fks_sessions` pour le payload backend.
  * Limite par defaut alignee sur ce que le backend exploite (slice(0, 8)).
+ *
+ * Les séances artificielles (ancienne "séance de secours" fabriquée par l'app)
+ * ne partent JAMAIS au moteur : ce serait lui présenter comme du vécu une
+ * séance que personne n'a prescrite, et polluer sa mémoire anti-répétition
+ * avec un footing qui n'a jamais été programmé.
  */
 export function buildRecentFksSessionsPayload(
   sessions: Session[],
@@ -552,6 +558,7 @@ export function buildRecentFksSessionsPayload(
 ): FKS_RecentSessionSummary[] {
   if (!Array.isArray(sessions) || sessions.length === 0) return [];
   return sessions
+    .filter((s) => !estSeanceArtificielle(s))
     .slice(0, Math.max(0, limit))
     .map((s) => buildRecentFksSessionSummary(s, fallbackPhase));
 }
@@ -561,11 +568,14 @@ export function buildRecentByFocus(
   limit = 3
 ): Record<string, string[]> {
   const res: Record<string, string[]> = {};
-  const sorted = [...sessions].sort(
-    (a, b) =>
-      new Date(b?.dateISO ?? b?.date ?? 0).getTime() -
-      new Date(a?.dateISO ?? a?.date ?? 0).getTime()
-  );
+  // Même règle que buildRecentFksSessionsPayload : rien d'artificiel ne sort.
+  const sorted = [...sessions]
+    .filter((s) => !estSeanceArtificielle(s))
+    .sort(
+      (a, b) =>
+        new Date(b?.dateISO ?? b?.date ?? 0).getTime() -
+        new Date(a?.dateISO ?? a?.date ?? 0).getTime()
+    );
   sorted.forEach((s) => {
     const exos: Exercise[] = Array.isArray(s?.exercises) ? s.exercises : [];
     const focus = toFksFocus(s?.focus ?? s?.modality);
