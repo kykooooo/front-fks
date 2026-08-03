@@ -8,8 +8,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
-  Keyboard,
   StyleSheet,
   ScrollView,
   Platform,
@@ -644,7 +642,10 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                   </Pressable>
                   <Text style={styles.consentText}>
                     Je confirme que mon parent ou responsable légal a lu et accepté la{" "}
-                    <Text style={styles.consentLink} onPress={() => setPrivacyVisible(true)}>
+                    <Text
+                      style={styles.consentLink}
+                      onPress={() => { hapticSelect(); setPrivacyVisible(true); }}
+                    >
                       politique de confidentialité
                     </Text>{" "}
                     de FKS.
@@ -690,9 +691,17 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                   "Suivant" au milieu de l'étape. */}
               <TouchableOpacity
                 style={styles.cycleLink}
-                onPress={() => navigation.navigate("CycleModal", { mode: cycleLabel ? "manage" : "select", origin: "profile" })}
+                onPress={() => {
+                  // Couverture haptique (recette 03/08, « du tactile partout ») :
+                  // ce lien ouvre une modale plein écran sans le moindre retour
+                  // au doigt, alors que tous les chips de l'étape en ont un.
+                  hapticSelect();
+                  navigation.navigate("CycleModal", { mode: cycleLabel ? "manage" : "select", origin: "profile" });
+                }}
                 activeOpacity={0.7}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel={cycleLabel ? "Gérer mon cycle" : "Choisir un cycle"}
               >
                 <Text style={styles.cycleButtonText}>{cycleLabel ? "Gérer" : "Choisir"}</Text>
               </TouchableOpacity>
@@ -800,110 +809,118 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
     <Screen style={styles.safeArea}>
       {/* Android : behavior undefined (défaut système) — "height" est notoirement bugué sur la new arch. */}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <View style={{ flex: 1 }}>
+        {/* AUDIT TACTILE (recette 03/08, même défaut que b708fe9 sur
+            Register/Login) : un TouchableWithoutFeedback enveloppait tout cet
+            arbre pour fermer le clavier au tap. Il pose un responder sur TOUS ses
+            descendants — les deux champs de saisie, les ~40 chips et choix, les
+            cases de consentement, le pied de page — et avale les taps au lieu de
+            les laisser passer. Supprimé : le clavier se ferme par glissement
+            (`keyboardDismissMode="on-drag"` sur le ScrollView ci-dessous), et
+            `keyboardShouldPersistTaps="handled"` garde un tap sur un autre champ
+            fonctionnel. */}
+        <View style={{ flex: 1 }}>
 
-            {/* ─── Top bar : marque + changer de compte (onboarding uniquement,
-                 masquée en mode édition où le header natif "Profil" fait doublon) ─── */}
-            {!isEditMode && (
-              <View style={styles.topBar}>
-                <BrandMark size="sm" style={styles.brandMark} />
-                <TouchableOpacity
-                  style={styles.logoutBtn}
-                  onPress={handleLogout}
-                  activeOpacity={0.7}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="log-out-outline" size={16} color={palette.sub} />
-                  <Text style={styles.logoutText}>Changer de compte</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-              {/* ─── Progress section ─── */}
-              <View style={styles.progressSection}>
-                <View style={styles.progressLabelRow}>
-                  <Text style={styles.progressStep}>Étape {step + 1}/{TOTAL_STEPS}</Text>
-                  <Text style={styles.progressName}>{STEPS[step].label}</Text>
-                </View>
-                <View style={styles.progressBarBg}>
-                  {/* Aplat accent (DA Polish lot0 §1.4) : le dégradé bleu->orange
-                      violait "orange réservé aux CTA" (theme.ts) sur un élément
-                      qui n'est pas un CTA. */}
-                  <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
-                </View>
-              </View>
-
-              {/* ─── Content ─── */}
-              <ScrollView
-                ref={scrollRef}
-                contentContainerStyle={styles.scrollContent}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
+          {/* ─── Top bar : marque + changer de compte (onboarding uniquement,
+               masquée en mode édition où le header natif "Profil" fait doublon) ─── */}
+          {!isEditMode && (
+            <View style={styles.topBar}>
+              <BrandMark size="sm" style={styles.brandMark} />
+              <TouchableOpacity
+                style={styles.logoutBtn}
+                onPress={handleLogout}
+                activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Animated.View style={{ opacity: stepFade, transform: [{ translateX: shake }] }}>
-
-                  {/* Step header */}
-                  <View style={styles.stepHeader}>
-                    {/* Aplat accentSoft + icône accent (DA Polish lot0 §1.4),
-                        cohérent avec le Home qui n'a aucun dégradé. */}
-                    <View style={styles.stepIconCircle}>
-                      <Ionicons name={STEPS[step].icon} size={24} color={palette.accent} />
-                    </View>
-                    <View>
-                      <Text style={styles.stepTitle}>{STEPS[step].label}</Text>
-                      <Text style={styles.stepSubtitle}>{STEPS[step].subtitle}</Text>
-                    </View>
-                  </View>
-
-                  {/* Card container */}
-                  <View style={styles.card}>
-                    {renderStep()}
-                  </View>
-
-                </Animated.View>
-              </ScrollView>
-
-              {/* ─── Footer ─── */}
-              <View style={styles.footer}>
-                {step > 0 ? (
-                  <TouchableOpacity
-                    style={styles.backButton}
-                    onPress={goBack}
-                    activeOpacity={0.7}
-                    hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
-                  >
-                    <Ionicons name="chevron-back" size={20} color={palette.sub} />
-                    <Text style={styles.backText}>Retour</Text>
-                  </TouchableOpacity>
-                ) : null}
-
-                {/* Étape 1 (DA Polish) : pleine largeur — avant, un `<View
-                    flex:1/>` vide à gauche laissait "Suivant" occuper les 2/3
-                    droits, un CTA seul et décentré qui lisait "pas fini". */}
-                <View style={step > 0 ? styles.nextButtonWrap : styles.nextButtonWrapFull}>
-                  <Button
-                    label={isLastStep ? "Terminer" : "Suivant"}
-                    onPress={isLastStep ? handleSave : goNext}
-                    disabled={loading || consentBlocksNext}
-                    variant="primary"
-                    size="lg"
-                    fullWidth
-                    style={styles.ctaShadowOff}
-                    rightAccessory={
-                      <Ionicons
-                        name={isLastStep ? "checkmark-circle" : "arrow-forward"}
-                        size={20}
-                        color="#fff"
-                      />
-                    }
-                    accessibilityLabel={isLastStep ? "Terminer la configuration du profil" : "Étape suivante"}
-                  />
-                </View>
-              </View>
-
+                <Ionicons name="log-out-outline" size={16} color={palette.sub} />
+                <Text style={styles.logoutText}>Changer de compte</Text>
+              </TouchableOpacity>
             </View>
-          </TouchableWithoutFeedback>
+          )}
+
+            {/* ─── Progress section ─── */}
+            <View style={styles.progressSection}>
+              <View style={styles.progressLabelRow}>
+                <Text style={styles.progressStep}>Étape {step + 1}/{TOTAL_STEPS}</Text>
+                <Text style={styles.progressName}>{STEPS[step].label}</Text>
+              </View>
+              <View style={styles.progressBarBg}>
+                {/* Aplat accent (DA Polish lot0 §1.4) : le dégradé bleu->orange
+                    violait "orange réservé aux CTA" (theme.ts) sur un élément
+                    qui n'est pas un CTA. */}
+                <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
+              </View>
+            </View>
+
+            {/* ─── Content ─── */}
+            <ScrollView
+              ref={scrollRef}
+              contentContainerStyle={styles.scrollContent}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}
+            >
+              <Animated.View style={{ opacity: stepFade, transform: [{ translateX: shake }] }}>
+
+                {/* Step header */}
+                <View style={styles.stepHeader}>
+                  {/* Aplat accentSoft + icône accent (DA Polish lot0 §1.4),
+                      cohérent avec le Home qui n'a aucun dégradé. */}
+                  <View style={styles.stepIconCircle}>
+                    <Ionicons name={STEPS[step].icon} size={24} color={palette.accent} />
+                  </View>
+                  <View>
+                    <Text style={styles.stepTitle}>{STEPS[step].label}</Text>
+                    <Text style={styles.stepSubtitle}>{STEPS[step].subtitle}</Text>
+                  </View>
+                </View>
+
+                {/* Card container */}
+                <View style={styles.card}>
+                  {renderStep()}
+                </View>
+
+              </Animated.View>
+            </ScrollView>
+
+            {/* ─── Footer ─── */}
+            <View style={styles.footer}>
+              {step > 0 ? (
+                <TouchableOpacity
+                  style={styles.backButton}
+                  onPress={goBack}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
+                >
+                  <Ionicons name="chevron-back" size={20} color={palette.sub} />
+                  <Text style={styles.backText}>Retour</Text>
+                </TouchableOpacity>
+              ) : null}
+
+              {/* Étape 1 (DA Polish) : pleine largeur — avant, un `<View
+                  flex:1/>` vide à gauche laissait "Suivant" occuper les 2/3
+                  droits, un CTA seul et décentré qui lisait "pas fini". */}
+              <View style={step > 0 ? styles.nextButtonWrap : styles.nextButtonWrapFull}>
+                <Button
+                  label={isLastStep ? "Terminer" : "Suivant"}
+                  onPress={isLastStep ? handleSave : goNext}
+                  disabled={loading || consentBlocksNext}
+                  variant="primary"
+                  size="lg"
+                  fullWidth
+                  style={styles.ctaShadowOff}
+                  rightAccessory={
+                    <Ionicons
+                      name={isLastStep ? "checkmark-circle" : "arrow-forward"}
+                      size={20}
+                      color="#fff"
+                    />
+                  }
+                  accessibilityLabel={isLastStep ? "Terminer la configuration du profil" : "Étape suivante"}
+                />
+              </View>
+            </View>
+
+        </View>
         </KeyboardAvoidingView>
 
         {/* Politique de confidentialité en modal locale : la route "PrivacyPolicy"
@@ -918,7 +935,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
             <View style={styles.privacyModalHeader}>
               <Text style={styles.privacyModalTitle}>Confidentialité</Text>
               <TouchableOpacity
-                onPress={() => setPrivacyVisible(false)}
+                onPress={() => { hapticSelect(); setPrivacyVisible(false); }}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 activeOpacity={0.7}
                 accessibilityRole="button"
