@@ -28,7 +28,12 @@ import { useHaptics } from "../hooks/useHaptics";
 import { auth as firebaseAuth, db } from "../services/firebase";
 import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { LoadingOverlay } from "../components/ui/LoadingOverlay";
-import { findClubByInviteCode, normalizeInviteCode, setClubMembership } from "../repositories/clubsRepo";
+import {
+  joinClubWithInviteCode,
+  normalizeInviteCodeInput,
+} from "../services/clubInvites";
+import { saveProfileThenAttachClub } from "./profileSetup/attachClub";
+import { ClubDataDisclosure } from "../components/club/ClubDataDisclosure";
 import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
 // Catégories proposées au sélecteur : U13 retirée (décision produit 2026-07, cf.
 // domain/types.ts). Un profil déjà en 'U13' n'apparaît sélectionné dans aucun
@@ -390,7 +395,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
     const targetFksSessions = Number(targetFksSessionsPerWeek);
     const trainings = Number(clubTrainingsPerWeek);
     const matches = Number(matchesPerWeek);
-    const normalizedInvite = normalizeInviteCode(clubInviteCode);
+    const normalizedInvite = normalizeInviteCodeInput(clubInviteCode);
 
     // Auto-assign : si aucun cycle actif, on applique la reco basée sur l'objectif
     // pour que le joueur atterrisse sur l'accueil avec un cycle prêt (zéro étape morte).
@@ -404,63 +409,66 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       const user = auth.currentUser;
       if (!user) { fail("Connexion requise", "Connecte-toi pour enregistrer ton profil."); return; }
 
-      let resolvedClubId: string | null = clubId?.trim() ? clubId.trim() : null;
-      if (normalizedInvite) {
-        const club = await findClubByInviteCode(normalizedInvite);
-        trackEvent("club_code_checked", { valid: Boolean(club) });
-        if (!club) {
-          fail("Code club invalide", "Aucun club ne correspond à ce code.");
-          // Retour automatique à l'étape du code club (avec scroll top via animateTransition)
-          // pour ne pas laisser l'utilisateur bloqué à la dernière étape.
-          if (step !== 0) animateTransition(0);
-          return;
-        }
-        resolvedClubId = club.id;
-        // inviteCode = preuve d'invitation exigée par les rules (anti self-join).
-        await setClubMembership({ clubId: club.id, uid: user.uid, role: "player", inviteCode: club.inviteCode });
-      }
+      // Club DÉJÀ rattaché (édition de profil) : on le repasse tel quel. Un
+      // nouveau rattachement, lui, est écrit par le serveur (Cloud Function),
+      // APRÈS l'enregistrement du profil — voir screens/profileSetup/attachClub.
+      const existingClubId: string | null = clubId?.trim() ? clubId.trim() : null;
 
-      await setDoc(doc(db, "users", user.uid), {
-        uid: user.uid,
-        firstName: firstName.trim(),
-        clubId: resolvedClubId,
-        position, ageCategory, level, dominantFoot, mainObjective,
-        targetFksSessionsPerWeek: targetFksSessions,
-        // Reprise (optionnel) -- null tant que non repondu, jamais de valeur inventee.
-        selfReportedGapDays: selfReportedGapOption
-          ? (SELF_REPORTED_GAP_OPTIONS.find((o) => o.id === selfReportedGapOption)?.days ?? null)
-          : null,
-        clubTrainingsPerWeek: trainings,
-        matchesPerWeek: matches,
-        hasClubTrainings, clubTrainingDays,
-        matchDay: matchDays[0] ?? null, matchDays,
-        hasGymAccess: hasGymAccess === "oui" ? "regular" : hasGymAccess === "occasionnel" ? "occasional" : "none",
-        // Repasse tel quel (pas d'UI ici pour les modifier) : [] / false pour
-        // un nouveau profil, valeur prefillée inchangée pour un profil édité
-        // — jamais undefined, jamais de perte silencieuse de données existantes.
-        gymEquipment,
-        hasHomeEquipment: hasHomeEquipment === "oui",
-        homeEquipment,
-        // Preuve de consentement parental (RGPD < 15 ans). Hors catégories
-        // mineures, le champ n'est pas touché : une preuve historique éventuelle
-        // reste en base (accountability), merge:true ne l'efface pas.
-        ...(requiresParentalConsent(ageCategory)
-          ? { parentalConsent: buildParentalConsent(ageCategory, storedParentalConsentRef.current) }
-          : {}),
-        profileCompleted: true,
-        ...(autoCycleId
-          ? {
-              microcycleGoal: autoCycleId,
-              goal: autoCycleId,
-              programGoal: autoCycleId,
-              microcycleStatus: "active",
-              microcycleTotalSessions: MICROCYCLE_TOTAL_SESSIONS_DEFAULT,
-              microcycleSessionIndex: 0,
-              microcycleStartedAt: serverTimestamp(),
-            }
-          : {}),
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
+      const attach = await saveProfileThenAttachClub(
+        {
+          saveProfile: () =>
+            setDoc(doc(db, "users", user.uid), {
+              uid: user.uid,
+              firstName: firstName.trim(),
+              clubId: existingClubId,
+              position, ageCategory, level, dominantFoot, mainObjective,
+              targetFksSessionsPerWeek: targetFksSessions,
+              // Reprise (optionnel) -- null tant que non repondu, jamais de valeur inventee.
+              selfReportedGapDays: selfReportedGapOption
+                ? (SELF_REPORTED_GAP_OPTIONS.find((o) => o.id === selfReportedGapOption)?.days ?? null)
+                : null,
+              clubTrainingsPerWeek: trainings,
+              matchesPerWeek: matches,
+              hasClubTrainings, clubTrainingDays,
+              matchDay: matchDays[0] ?? null, matchDays,
+              hasGymAccess: hasGymAccess === "oui" ? "regular" : hasGymAccess === "occasionnel" ? "occasional" : "none",
+              // Repasse tel quel (pas d'UI ici pour les modifier) : [] / false pour
+              // un nouveau profil, valeur prefillée inchangée pour un profil édité
+              // — jamais undefined, jamais de perte silencieuse de données existantes.
+              gymEquipment,
+              hasHomeEquipment: hasHomeEquipment === "oui",
+              homeEquipment,
+              // Preuve de consentement parental (RGPD < 15 ans). Hors catégories
+              // mineures, le champ n'est pas touché : une preuve historique éventuelle
+              // reste en base (accountability), merge:true ne l'efface pas.
+              ...(requiresParentalConsent(ageCategory)
+                ? { parentalConsent: buildParentalConsent(ageCategory, storedParentalConsentRef.current) }
+                : {}),
+              profileCompleted: true,
+              ...(autoCycleId
+                ? {
+                    microcycleGoal: autoCycleId,
+                    goal: autoCycleId,
+                    programGoal: autoCycleId,
+                    microcycleStatus: "active",
+                    microcycleTotalSessions: MICROCYCLE_TOTAL_SESSIONS_DEFAULT,
+                    microcycleSessionIndex: 0,
+                    microcycleStartedAt: serverTimestamp(),
+                  }
+                : {}),
+              updatedAt: serverTimestamp(),
+            }, { merge: true }).then(() => undefined),
+          joinClub: joinClubWithInviteCode,
+        },
+        normalizedInvite,
+      );
+
+      if (attach.status !== "skipped") {
+        // Mesure du taux d'échec du code club. On ne sait plus POURQUOI un code
+        // est refusé (le serveur ne le dit pas, par conception) : l'événement ne
+        // porte donc qu'un booléen, jamais une cause inventée.
+        trackEvent("club_code_checked", { valid: attach.status === "joined" });
+      }
 
       if (autoCycleId) {
         setMicrocycleGoal(autoCycleId);
@@ -474,7 +482,26 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       }
 
       haptics.success();
-      showToast({ type: "success", title: "Profil enregistré", message: "Configuration terminée !" });
+      if (attach.status === "failed") {
+        // Le profil EST enregistré : on le dit d'abord, on explique le club
+        // ensuite, et on laisse entrer. Aucune saisie n'est perdue, le joueur
+        // pourra réessayer depuis Profil → Mon club.
+        showToast({
+          type: "warn",
+          title: "Profil enregistré, club non rejoint",
+          message: attach.message ?? "",
+        });
+      } else if (attach.status === "joined") {
+        showToast({
+          type: "success",
+          title: "Profil enregistré",
+          message: attach.clubName
+            ? `Tu as rejoint ${attach.clubName}.`
+            : "Tu as rejoint ton club.",
+        });
+      } else {
+        showToast({ type: "success", title: "Profil enregistré", message: "Configuration terminée !" });
+      }
 
       // Pont local : bascule immédiate vers l'app sans attendre le onSnapshot Firestore
       // (le listener RootNavigator reste la source durable).
@@ -537,12 +564,23 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
             <Text style={styles.fieldLabel}>Code club (optionnel)</Text>
             <TextInput
               style={styles.input}
-              placeholder="Ex: FKSFC-2026"
+              placeholder="Ex: ABCDE-FGHJK"
               placeholderTextColor={palette.muted}
               value={clubInviteCode}
               onChangeText={setClubInviteCode}
               autoCapitalize="characters"
+              autoCorrect={false}
             />
+            {/* Le code n'est vérifié que par le serveur, APRÈS l'enregistrement
+                du profil : rien de ce qui est saisi ici ne peut être perdu à
+                cause d'un code refusé. */}
+            <Text style={styles.fieldHelp}>
+              Ton coach te le donne. Tu peux aussi le renseigner plus tard depuis ton profil.
+            </Text>
+            {/* Divulgation : quelles catégories d'infos le club verra. Elle
+                INFORME, elle ne demande rien et ne bloque rien — ni le champ
+                ci-dessus, ni le bouton « Continuer ». */}
+            <ClubDataDisclosure style={styles.disclosure} />
 
             <Text style={styles.fieldLabel}>Poste</Text>
             {positions.map((p) => (
@@ -1026,6 +1064,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: palette.text,
     backgroundColor: palette.cardSoft,
+  },
+  fieldHelp: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: palette.muted,
+    marginTop: 6,
+  },
+  disclosure: {
+    marginTop: 10,
   },
 
   /* Choice */

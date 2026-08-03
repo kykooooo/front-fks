@@ -118,13 +118,13 @@ describe("Anciennes vulnérabilités HORS périmètre PR-4 — désormais FERMÉ
   // les assertions sont INVERSÉES. La suite adversariale complète vit dans
   // rules.clubsInvitation.test.ts.
 
-  test("FERMÉ: un connecté hors club NE lit PLUS clubs/{id} (inviteCode inclus)", async () => {
+  test("FERMÉ: un connecté hors club NE lit PLUS clubs/{id}", async () => {
     await assertFails(getDoc(doc(asUser(STRANGER), "clubs", CLUB_A)));
   });
 
-  test("FERMÉ: un connecté NE crée PLUS son membership 'player' sans code d'invitation", async () => {
+  test("FERMÉ: un connecté NE crée PLUS son membership 'player' (écriture serveur uniquement)", async () => {
     await assertFails(
-      setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), { uid: STRANGER, role: "player" }),
+      setDoc(doc(asUser(STRANGER), "clubs", CLUB_A, "members", STRANGER), { uid: STRANGER, playerStatus: "active" }),
     );
   });
 });

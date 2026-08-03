@@ -31,6 +31,7 @@ import { useDebugStore } from "../state/stores/useDebugStore";
 import { useSettingsStore, type SettingsState } from "../state/settingsStore";
 import { DEV_FLAGS } from "../config/devFlags";
 import { ClubManagementCard } from "../components/settings/ClubManagementCard";
+import { AppSpaceSwitch } from "../components/AppSpaceSwitch";
 import { showToast } from "../utils/toast";
 import {
   saveNotifPrefs,
@@ -376,6 +377,10 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <SectionHeader title="Club" />
           <ClubManagementCard />
+          {/* Sélecteur Joueur / Coach. Ne s'affiche QUE pour un entraîneur-joueur
+              (droit serveur aux deux espaces) — il rend `null` pour tous les
+              autres, donc aucune section vide ici. */}
+          <AppSpaceSwitch variant="joueur" testID="app-space-switch-settings" />
         </View>
 
         <View style={styles.section}>
