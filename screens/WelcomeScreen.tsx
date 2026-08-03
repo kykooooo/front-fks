@@ -12,12 +12,14 @@ import {
   type ViewToken,
   type ListRenderItemInfo,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useHaptics } from "../hooks/useHaptics";
 import { theme } from "../constants/theme";
 import { STORAGE_KEYS } from "../constants/storage";
+import { Screen } from "../components/ui/Screen";
+import { Button } from "../components/ui/Button";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const palette = theme.colors;
 
@@ -54,7 +56,7 @@ function Slide({ item, width, bottomInset }: { item: SlideData; width: number; b
   return (
     <View style={[styles.slide, { width, paddingBottom: bottomInset }]}>
       <View style={styles.iconCircle}>
-        <Ionicons name={item.icon} size={72} color={palette.accent} />
+        <Ionicons name={item.icon} size={40} color={palette.accent} />
       </View>
       <Text style={styles.title}>{item.title}</Text>
       <Text style={styles.subtitle}>{item.subtitle}</Text>
@@ -95,6 +97,17 @@ export default function WelcomeScreen({ onComplete }: Props) {
     onComplete("login");
   }, [haptics, onComplete]);
 
+  // Dots rendus tappables (DA Polish) : `flatListRef` était déclaré mais
+  // jamais câblé — le swipe était le seul moyen d'avancer.
+  const goToSlide = useCallback(
+    (index: number) => {
+      haptics.impactLight();
+      flatListRef.current?.scrollToIndex({ index, animated: true });
+      setActiveIndex(index);
+    },
+    [haptics]
+  );
+
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<SlideData>) => (
       <Slide item={item} width={SCREEN_W} bottomInset={bottomBlock} />
@@ -103,7 +116,19 @@ export default function WelcomeScreen({ onComplete }: Props) {
   );
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <Screen bottomInset={false} style={styles.container}>
+      {/* Lien "Passer" (DA Polish) : le carrousel n'avait aucun moyen d'accès
+          direct au compte hors swipe complet des 3 slides. */}
+      <Pressable
+        onPress={handleStart}
+        style={({ pressed }) => [styles.skip, pressed && styles.skipPressed]}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        accessibilityRole="button"
+        accessibilityLabel="Passer l'introduction"
+      >
+        <Text style={styles.skipText}>Passer</Text>
+      </Pressable>
+
       {/* Slides */}
       <FlatList
         ref={flatListRef}
@@ -127,66 +152,91 @@ export default function WelcomeScreen({ onComplete }: Props) {
 
       {/* Bottom — dots + CTA */}
       <View style={[styles.bottomOverlay, { paddingBottom: Math.max(insets.bottom, 20) + 12 }]}>
-        {/* Dots */}
+        {/* Dots — tappables, contour visible (DA Polish : #E2E7EE 1,16:1 -> borderStrong 3,04:1) */}
         <View style={styles.dots}>
           {SLIDES.map((_, i) => (
-            <View
+            <Pressable
               key={i}
-              style={[styles.dot, i === activeIndex ? styles.dotActive : styles.dotInactive]}
-            />
+              onPress={() => goToSlide(i)}
+              hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+              accessibilityRole="button"
+              accessibilityLabel={`Aller à la slide ${i + 1}`}
+            >
+              <View style={[styles.dot, i === activeIndex ? styles.dotActive : styles.dotInactive]} />
+            </Pressable>
           ))}
         </View>
 
-        {/* CTA */}
-        <Pressable
+        {/* CTA — composant Button unique du parcours (DA Polish §1.5) */}
+        <Button
+          label="Commencer"
           onPress={handleStart}
-          style={({ pressed }) => [styles.ctaPrimary, pressed && styles.ctaPressed]}
+          variant="primary"
+          size="lg"
+          fullWidth
+          style={styles.ctaShadowOff}
+          accessibilityLabel="Commencer l'inscription"
+        />
+        <Pressable
+          onPress={handleLogin}
+          style={({ pressed }) => [styles.loginLink, pressed && styles.loginLinkPressed]}
+          hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
         >
-          <Text style={styles.ctaPrimaryText}>Commencer</Text>
-        </Pressable>
-        <Pressable onPress={handleLogin} style={styles.loginLink}>
           <Text style={styles.loginLinkText}>J'ai déjà un compte</Text>
         </Pressable>
       </View>
-    </View>
+    </Screen>
   );
 }
 
 /* ─── Styles ─── */
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
     backgroundColor: palette.bg,
+  },
+  skip: {
+    position: "absolute",
+    top: theme.spacing.sm,
+    right: theme.spacing.xl2,
+    zIndex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  skipPressed: {
+    opacity: 0.7,
+  },
+  skipText: {
+    ...theme.typography.caption,
+    color: palette.sub,
   },
   slide: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 32,
+    paddingHorizontal: theme.spacing.xl2,
     gap: 4,
   },
   iconCircle: {
-    width: 132,
-    height: 132,
-    borderRadius: 66,
+    width: 96,
+    height: 96,
+    borderRadius: theme.radius.pill,
     backgroundColor: palette.accentSoft,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 36,
+    marginBottom: theme.spacing.xl,
   },
   title: {
-    fontSize: 30,
-    fontWeight: "900",
+    ...theme.typography.display,
     color: palette.text,
     textAlign: "center",
-    lineHeight: 38,
+    maxWidth: 320,
   },
   subtitle: {
-    fontSize: 16,
+    ...theme.typography.body,
     color: palette.sub,
     textAlign: "center",
-    marginTop: 14,
-    lineHeight: 22,
+    marginTop: theme.spacing.md,
+    maxWidth: 320,
   },
 
   // ─── Bottom ───
@@ -195,47 +245,43 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: 24,
+    paddingHorizontal: theme.spacing.xl2,
     alignItems: "center",
   },
   dots: {
     flexDirection: "row",
     gap: 10,
-    marginBottom: 24,
+    marginBottom: theme.spacing.xl,
   },
   dot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
+    borderRadius: theme.radius.pill,
   },
   dotActive: {
     backgroundColor: palette.accent,
     width: 24,
   },
   dotInactive: {
-    backgroundColor: palette.border,
+    backgroundColor: palette.borderStrong,
   },
-  ctaPrimary: {
-    width: "100%",
-    backgroundColor: palette.cta,
-    borderRadius: theme.radius.pill,
-    paddingVertical: 17,
-    alignItems: "center",
-    ...theme.shadow.accent,
-  },
-  ctaPressed: {
-    transform: [{ scale: 0.96 }],
-    opacity: 0.9,
-  },
-  ctaPrimaryText: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#fff",
-    letterSpacing: 0.3,
+  // Neutralise le halo orange de Button.primary (theme.shadow.accent porte
+  // l'orange du dark, `#ff7a1a` — DA Polish lot0 §1.4). Local à cet écran :
+  // Button.tsx garde son ombre par défaut pour ses 17 autres appelants.
+  ctaShadowOff: {
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0,
   },
   loginLink: {
     paddingVertical: 12,
     marginTop: 4,
+  },
+  // Retour visuel au press (audit tactile 2026-07) : ce lien n'avait aucun
+  // feedback pendant l'appui, contrairement au CTA principal juste au-dessus.
+  loginLinkPressed: {
+    opacity: 0.7,
   },
   loginLinkText: {
     fontSize: 14,
