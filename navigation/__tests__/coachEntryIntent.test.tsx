@@ -68,6 +68,11 @@ afterEach(() => {
   mockNavigation.navigate.mockClear();
 });
 
+/** Déclenche le `onPress` d'une commande trouvée dans l'arbre rendu. */
+function presser(cible: TestRenderer.ReactTestInstance): unknown {
+  return (cible.props.onPress as () => unknown)();
+}
+
 /** Rend l'écran d'accueil et renvoie de quoi appuyer sur ses commandes. */
 async function rendreAccueil() {
   const onComplete = jest.fn();
@@ -95,7 +100,7 @@ async function rendreAccueil() {
     const cible = commande(label);
     expect(cible).toBeDefined();
     await act(async () => {
-      await cible.props.onPress();
+      await presser(cible);
     });
   };
 
@@ -251,7 +256,7 @@ describe("création de club — jamais un cul-de-sac", () => {
     const renoncer = sortie("Je suis joueur finalement");
     expect(renoncer).toBeDefined();
     await act(async () => {
-      await renoncer.props.onPress();
+      await presser(renoncer);
     });
     expect(onRetourJoueur).toHaveBeenCalledTimes(1);
     expect(mockNavigation.goBack).not.toHaveBeenCalled();
@@ -264,7 +269,7 @@ describe("création de club — jamais un cul-de-sac", () => {
     const retour = sortie("Retour");
     expect(retour).toBeDefined();
     await act(async () => {
-      await retour.props.onPress();
+      await presser(retour);
     });
     expect(mockNavigation.goBack).toHaveBeenCalledTimes(1);
     expect(onRetourJoueur).not.toHaveBeenCalled();
