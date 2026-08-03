@@ -3,15 +3,7 @@
 // Le coach pilote le contexte du club ; il ne génère pas les séances (c'est FKS le prépa).
 
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  TouchableOpacity,
-  Keyboard,
-  TouchableWithoutFeedback,
-} from "react-native";
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, Keyboard } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { getAuth, signOut } from "firebase/auth";
@@ -27,7 +19,23 @@ import { useHaptics } from "../hooks/useHaptics";
 
 const palette = coachColors;
 
-export default function CoachOnboardingScreen() {
+type CoachOnboardingScreenProps = {
+  /**
+   * SORTIE DE SECOURS QUAND CET ÉCRAN EST LE POINT D'ARRIVÉE.
+   *
+   * Fournie par le gate d'onboarding lorsque l'intention coach a été déclarée sur
+   * l'écran d'accueil : la création de club est alors la PREMIÈRE route de la
+   * pile, donc `goBack()` ne mène nulle part et « Retour » serait un bouton qui
+   * ment. Le geste devient « Je suis joueur finalement », et c'est le navigateur
+   * qui décide où il repose la personne (questionnaire joueur).
+   *
+   * Absente quand l'écran est ouvert depuis le profil : il y a un écran derrière,
+   * « Retour » suffit et reste le comportement d'origine.
+   */
+  onRetourJoueur?: () => void;
+};
+
+export default function CoachOnboardingScreen({ onRetourJoueur }: CoachOnboardingScreenProps = {}) {
   const navigation = useNavigation<any>();
   const haptics = useHaptics();
 
@@ -36,6 +44,20 @@ export default function CoachOnboardingScreen() {
   const [loading, setLoading] = useState(false);
 
   const canSubmit = clubName.trim().length >= 2 && !loading;
+
+  // Un seul geste de sortie affiché, celui qui est VRAI ici : revenir en arrière
+  // s'il y a un arrière, renoncer à l'espace coach sinon.
+  const peutRevenir = navigation.canGoBack?.() ?? false;
+  const sortie = peutRevenir
+    ? { label: "Retour", icon: "chevron-back" as const, onPress: () => navigation.goBack() }
+    : onRetourJoueur
+      ? { label: "Je suis joueur finalement", icon: "person-outline" as const, onPress: onRetourJoueur }
+      : null;
+
+  const handleSortie = () => {
+    haptics.impactLight();
+    sortie?.onPress();
+  };
 
   const handleLogout = async () => {
     haptics.impactLight();
@@ -89,69 +111,99 @@ export default function CoachOnboardingScreen() {
   };
 
   return (
-    <ScreenContainer keyboardAvoiding safeAreaStyle={styles.screenBg} contentContainerStyle={styles.screenBg}>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-        <View style={styles.wrap}>
-          <View style={styles.headerRow}>
-            <TouchableOpacity style={styles.backRow} onPress={() => navigation.goBack()} activeOpacity={0.7}>
-              <Ionicons name="chevron-back" size={20} color={palette.sub} />
-              <Text style={styles.backText}>Retour</Text>
+    // AUDIT TACTILE (recette 03/08, même défaut que b708fe9 sur Register/Login) :
+    // un TouchableWithoutFeedback enveloppait TOUT ce sous-arbre pour fermer le
+    // clavier. Il pose un responder sur l'ensemble des descendants — les deux
+    // champs de saisie et les trois boutons de cet écran compris — et avale les
+    // taps au lieu de les laisser passer. Il est supprimé ; le clavier se ferme
+    // par glissement (`keyboardDismissMode: "on-drag"`), et `handleCreate` fait
+    // toujours son `Keyboard.dismiss()` explicite à la validation.
+    <ScreenContainer
+      keyboardAvoiding
+      safeAreaStyle={styles.screenBg}
+      contentContainerStyle={styles.screenBg}
+      scrollProps={{ keyboardDismissMode: "on-drag" }}
+    >
+      <View style={styles.wrap}>
+        <View style={styles.headerRow}>
+          {sortie ? (
+            <TouchableOpacity
+              style={styles.backRow}
+              onPress={handleSortie}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={sortie.label}
+            >
+              <Ionicons name={sortie.icon} size={20} color={palette.sub} />
+              <Text style={styles.backText}>{sortie.label}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.backRow} onPress={handleLogout} activeOpacity={0.7}>
-              <Ionicons name="log-out-outline" size={18} color={palette.sub} />
-              <Text style={styles.backText}>Se déconnecter</Text>
-            </TouchableOpacity>
+          ) : (
+            // Aucun geste de sortie honnête ici : on garde la place pour que
+            // « Se déconnecter » reste à droite, sans afficher de faux bouton.
+            <View />
+          )}
+          <TouchableOpacity
+            style={styles.backRow}
+            onPress={handleLogout}
+            activeOpacity={0.7}
+            hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Se déconnecter"
+          >
+            <Ionicons name="log-out-outline" size={18} color={palette.sub} />
+            <Text style={styles.backText}>Se déconnecter</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.header}>
+          <View style={styles.iconCircle}>
+            <Ionicons name="people" size={26} color={palette.accent} />
           </View>
-
-          <View style={styles.header}>
-            <View style={styles.iconCircle}>
-              <Ionicons name="people" size={26} color={palette.accent} />
-            </View>
-            <Text style={styles.title}>Espace coach</Text>
-            <Text style={styles.subtitle}>
-              Crée ton club, partage le code à tes joueurs, suis leur préparation. FKS construit la prépa, toi tu donnes
-              le terrain.
-            </Text>
-          </View>
-
-          <Card variant="soft" style={styles.card}>
-            <Text style={styles.label}>Nom du club</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ex: FC Exemple U17"
-              placeholderTextColor={palette.muted}
-              value={clubName}
-              onChangeText={setClubName}
-              autoCapitalize="words"
-              maxLength={60}
-            />
-
-            <Text style={styles.label}>Ton nom (optionnel)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ex: Coach Marvin"
-              placeholderTextColor={palette.muted}
-              value={coachName}
-              onChangeText={setCoachName}
-              autoCapitalize="words"
-              maxLength={40}
-            />
-
-            <Button
-              label={loading ? "Création..." : "Créer mon club"}
-              onPress={handleCreate}
-              disabled={!canSubmit}
-              fullWidth
-              style={styles.primaryBtn}
-            />
-          </Card>
-
-          <Text style={styles.note}>
-            Tu généreras ensuite un code d'invitation, valable 14 jours. Tes joueurs le saisissent à
-            l'inscription pour rejoindre le club.
+          <Text style={styles.title}>Espace coach</Text>
+          <Text style={styles.subtitle}>
+            Crée ton club, partage le code à tes joueurs, suis leur préparation. FKS construit la prépa, toi tu donnes
+            le terrain.
           </Text>
         </View>
-      </TouchableWithoutFeedback>
+
+        <Card variant="soft" style={styles.card}>
+          <Text style={styles.label}>Nom du club</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Ex: FC Exemple U17"
+            placeholderTextColor={palette.muted}
+            value={clubName}
+            onChangeText={setClubName}
+            autoCapitalize="words"
+            maxLength={60}
+          />
+
+          <Text style={styles.label}>Ton nom (optionnel)</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Ex: Coach Marvin"
+            placeholderTextColor={palette.muted}
+            value={coachName}
+            onChangeText={setCoachName}
+            autoCapitalize="words"
+            maxLength={40}
+          />
+
+          <Button
+            label={loading ? "Création..." : "Créer mon club"}
+            onPress={handleCreate}
+            disabled={!canSubmit}
+            fullWidth
+            style={styles.primaryBtn}
+          />
+        </Card>
+
+        <Text style={styles.note}>
+          Tu généreras ensuite un code d'invitation, valable 14 jours. Tes joueurs le saisissent à
+          l'inscription pour rejoindre le club.
+        </Text>
+      </View>
 
       <LoadingOverlay visible={loading} message="Création de ton club..." />
     </ScreenContainer>

@@ -47,8 +47,23 @@ const SLIDES = [
 
 /* ─── Types ─── */
 type SlideData = (typeof SLIDES)[number];
+
+/**
+ * CE QUE LE CARROUSEL REND À LA NAVIGATION, EN DEUX AXES SÉPARÉS.
+ *
+ *  . `entry`   : PAR OÙ on entre (créer un compte, ou se connecter) ;
+ *  . `options.intentionCoach` : POUR QUI on entre.
+ *
+ * Les deux sont distincts parce qu'un coach s'inscrit avec le MÊME écran qu'un
+ * joueur : ce n'est pas une porte séparée, c'est une intention qu'on retient le
+ * temps de traverser l'inscription. Elle ne vaut RIEN comme droit — l'espace
+ * coach reste dérivé de l'appartenance au club (domain/appSpace.ts), et cette
+ * intention ne fait que choisir l'écran par lequel on commence.
+ */
+export type WelcomeCompleteOptions = { intentionCoach?: boolean };
+
 type Props = {
-  onComplete: (entry?: "login" | "register") => void;
+  onComplete: (entry?: "login" | "register", options?: WelcomeCompleteOptions) => void;
 };
 
 /* ─── Slide component ─── */
@@ -73,7 +88,8 @@ export default function WelcomeScreen({ onComplete }: Props) {
   const flatListRef = useRef<FlatList<SlideData>>(null);
 
   // Espace réservé en bas de chaque slide pour ne pas passer sous le bloc CTA.
-  const bottomBlock = Math.max(insets.bottom, 20) + 180;
+  // 216 (et non 180) : le bloc CTA a gagné ~36px avec la ligne « Je suis coach ».
+  const bottomBlock = Math.max(insets.bottom, 20) + 216;
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
@@ -95,6 +111,21 @@ export default function WelcomeScreen({ onComplete }: Props) {
     haptics.impactLight();
     await AsyncStorage.setItem(STORAGE_KEYS.WELCOME_DONE, "true");
     onComplete("login");
+  }, [haptics, onComplete]);
+
+  // ENTRÉE COACH (recette 03/08 : « comment un coach est obligé de faire
+  // l'inscription ?! »). Un coach passait par le questionnaire JOUEUR entier
+  // (poste, pied fort, jours de match…) avant de trouver, en pied d'étape 1, le
+  // lien « Tu fais partie du staff ? ». Il crée maintenant son compte par le même
+  // écran que tout le monde — c'est l'ARRIVÉE qui change, pas l'inscription.
+  //
+  // DISCRET, mais TROUVABLE : lien texte sous les deux CTA joueur, jamais un
+  // second bouton. Le joueur reste le chemin principal (un seul CTA primaire par
+  // écran, règle d'or) ; le coach, lui, sait qu'il est coach et cherche sa porte.
+  const handleCoach = useCallback(async () => {
+    haptics.impactLight();
+    await AsyncStorage.setItem(STORAGE_KEYS.WELCOME_DONE, "true");
+    onComplete("register", { intentionCoach: true });
   }, [haptics, onComplete]);
 
   // Dots rendus tappables (DA Polish) : `flatListRef` était déclaré mais
@@ -181,8 +212,23 @@ export default function WelcomeScreen({ onComplete }: Props) {
           onPress={handleLogin}
           style={({ pressed }) => [styles.loginLink, pressed && styles.loginLinkPressed]}
           hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
+          accessibilityRole="button"
+          accessibilityLabel="J'ai déjà un compte, me connecter"
         >
           <Text style={styles.loginLinkText}>J'ai déjà un compte</Text>
+        </Pressable>
+
+        {/* Entrée coach — voir handleCoach. Caption + icône, sous les deux CTA
+            joueur : elle se lit sans se disputer la hiérarchie avec eux. */}
+        <Pressable
+          onPress={handleCoach}
+          style={({ pressed }) => [styles.coachLink, pressed && styles.loginLinkPressed]}
+          hitSlop={{ top: 10, bottom: 10, left: 12, right: 12 }}
+          accessibilityRole="button"
+          accessibilityLabel="Je suis coach, créer mon club"
+        >
+          <Ionicons name="people-outline" size={14} color={palette.sub} />
+          <Text style={styles.coachLinkText}>Je suis coach</Text>
         </Pressable>
       </View>
     </Screen>
@@ -287,5 +333,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: palette.sub,
+  },
+  // Entrée coach : un cran SOUS "J'ai déjà un compte" (caption vs 14/600), avec
+  // la même couleur lisible `sub` — discret ne veut pas dire illisible (les 6
+  // échecs de contraste de l'audit DA venaient précisément de `muted` sur fond
+  // sombre). La zone tactile, elle, reste pleine (paddingVertical + hitSlop).
+  coachLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 10,
+  },
+  coachLinkText: {
+    ...theme.typography.caption,
+    color: palette.sub,
+    fontWeight: "600",
   },
 });

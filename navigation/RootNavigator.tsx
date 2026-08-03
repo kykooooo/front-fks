@@ -20,7 +20,7 @@ import PrebuiltSessionsScreen from "../screens/PrebuiltSessionsScreen";
 import PrebuiltSessionDetailScreen from "../screens/PrebuiltSessionDetailScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import TestsScreen from "../screens/TestsScreen";
-import WelcomeScreen from "../screens/WelcomeScreen";
+import WelcomeScreen, { type WelcomeCompleteOptions } from "../screens/WelcomeScreen";
 import SessionLiveScreen from "../screens/SessionLiveScreen";
 import SessionSummaryScreen from "../screens/SessionSummaryScreen";
 import SettingsScreen from "../screens/SettingsScreen";
@@ -288,7 +288,7 @@ function AuthNavigator({
   onWelcomeComplete,
 }: {
   initialRouteName?: keyof AuthStackParamList;
-  onWelcomeComplete?: () => void;
+  onWelcomeComplete?: (options?: WelcomeCompleteOptions) => void;
 }) {
   return (
     <AuthStack.Navigator
@@ -304,12 +304,14 @@ function AuthNavigator({
       <AuthStack.Screen name="Welcome">
         {(props) => (
           <WelcomeScreen
-            onComplete={(entry) => {
+            onComplete={(entry, options) => {
               props.navigation.reset({
                 index: 0,
                 routes: [{ name: entry === "register" ? "Register" : "Login" }],
               });
-              onWelcomeComplete?.();
+              // L'intention remonte AVEC l'entrée : coach ou joueur, on passe par
+              // les mêmes écrans d'inscription (cf. WelcomeCompleteOptions).
+              onWelcomeComplete?.(options);
             }}
           />
         )}
@@ -371,6 +373,20 @@ export default function RootNavigator() {
   // dérivé de l'appartenance elle-même (cf. hooks/useAppSpace).
   const [clubId, setClubId] = useState<string | null>(null);
   const [welcomeDone, setWelcomeDone] = useState<boolean | null>(null);
+  // ── L'INTENTION COACH, ET CE QU'ELLE N'EST PAS ────────────────────────────
+  // Déclarée sur l'écran d'accueil (« Je suis coach »), elle sert à UNE chose :
+  // choisir par quel écran on atterrit quand le profil n'est pas encore rempli —
+  // création de club plutôt que questionnaire joueur. Elle n'accorde AUCUN droit
+  // et n'ouvre AUCUN espace : l'espace coach reste dérivé de l'appartenance
+  // `clubs/{clubId}/members/{uid}` (cf. domain/appSpace.ts), et cette dérivation
+  // est évaluée AVANT ce portillon (branche 6bis plus bas).
+  //
+  // POURQUOI EN MÉMOIRE, ET PAS DANS `users/{uid}.role` : ce champ est écrivable
+  // par le client, il ne décide plus de rien depuis le lot « un compte, un
+  // espace », et l'y remettre rouvrirait exactement la faille refermée là-bas.
+  // Une intention n'est pas une autorité : elle vit le temps de la traversée
+  // Welcome → inscription → premier écran, et disparaît avec la session.
+  const [intentionCoach, setIntentionCoach] = useState(false);
   const startFirestoreWatch = useSyncStore((s) => s.startFirestoreWatch);
   const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
   const resetTrainingStore = useSyncStore((s) => s.resetForUser);
@@ -414,6 +430,48 @@ export default function RootNavigator() {
     });
   }, [peutChoisirEspace, espaceAffiche, suiviJoueur, choisirEspace]);
 
+  // ── L'INTENTION COACH, CONSOMMÉE UNE SEULE FOIS ───────────────────────────
+  // `initialRouteName` (portillon plus bas, `key="nav-gate"`) n'est lu qu'AU
+  // MONTAGE de ce navigateur — jamais après. Sans remise à zéro ici, l'intention
+  // survivrait à cette première lecture pour TOUTE LA SESSION, prête à ressortir
+  // bien plus tard.
+  //
+  // Chemin réel qui l'exposait (recette 03/08) : un coach déclare son intention
+  // sur l'accueil, s'inscrit, crée son club — l'appartenance fait basculer
+  // `appSpace.space` sur "coach" (branche 6bis), ce portillon se démonte, plus
+  // personne ne le regarde. Puis il tape « Je m'entraîne aussi »
+  // (hooks/useAppSpace) : l'espace revient à "player" alors que son profil
+  // joueur n'est toujours pas rempli. Ce portillon se REMONTE — pour la
+  // première fois depuis la création du club — et relirait une intention
+  // vieille de l'inscription, reposant un coach déjà membre d'un club sur la
+  // création de club au lieu du questionnaire joueur qu'il vient précisément
+  // de demander.
+  //
+  // La condition ci-dessous est exactement celle qui fait atteindre ce
+  // portillon (`profileCompleted === false` et `appSpace.space !== "coach"`,
+  // seul cas où la branche 6bis n'a pas déjà retourné `<CoachNavigator />`) :
+  // dès qu'on l'atteint avec une intention encore vraie, elle vient de servir.
+  //
+  // POURQUOI UN `useEffect`, ET PAS LE PATTERN « ajuster l'état pendant le
+  // rendu » (cf. ItemActionsSheet, commit 9b93400) : ce pattern-là recalcule
+  // ET COMMIT dans le MÊME passage de rendu — React relance le composant
+  // avant que quoi que ce soit ne soit monté. Ici, ce serait fatal : la remise
+  // à zéro écraserait `intentionCoach` AVANT que `initialRouteName` (plus bas)
+  // n'ait eu l'occasion de lire sa valeur encore vraie, et le portillon
+  // n'atterrirait plus JAMAIS sur `CoachOnboarding` — pas même au premier
+  // passage, le chemin nominal. Un effet, lui, s'exécute APRÈS le commit :
+  // `initialRouteName` a donc déjà capturé la valeur vraie pour CE montage
+  // avant que cette remise à zéro n'ait lieu.
+  // La synchronisation post-commit est ici DÉLIBÉRÉE, pas un oubli du pattern
+  // « pendant le rendu » — même exception assumée que
+  // `hooks/useClubDirective.ts` (remise à zéro sur un événement externe).
+  useEffect(() => {
+    if (profileCompleted === false && appSpace.space !== "coach" && intentionCoach) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setIntentionCoach(false);
+    }
+  }, [profileCompleted, appSpace.space, intentionCoach]);
+
   // 0) DEV: force welcome screen (déconnecte + reset flag)
   useEffect(() => {
     if (!DEV_FLAGS.FORCE_WELCOME) return;
@@ -434,6 +492,10 @@ export default function RootNavigator() {
         // démonte l'abonnement à l'appartenance (cf. useAppSpace), sans quoi
         // l'espace du compte précédent survivrait à sa propre session.
         setClubId(null);
+        // L'intention coach aussi : elle appartenait à la traversée qui vient de
+        // se terminer. La garder ferait atterrir le compte SUIVANT sur la
+        // création de club sans que personne l'ait demandé.
+        setIntentionCoach(false);
         setInitializing(false);
       } else {
         // Nouveau user (login/register) → attendre le profile listener Firestore
@@ -531,7 +593,10 @@ export default function RootNavigator() {
     return (
       <AuthNavigator
         initialRouteName={welcomeDone ? "Login" : "Welcome"}
-        onWelcomeComplete={() => setWelcomeDone(true)}
+        onWelcomeComplete={(options) => {
+          setWelcomeDone(true);
+          setIntentionCoach(!!options?.intentionCoach);
+        }}
       />
     );
   }
@@ -582,7 +647,17 @@ export default function RootNavigator() {
     // du Home après la complétion. Nom distinct + key par arbre = plus de
     // rapprochement possible.
     return (
-      <AppStack.Navigator key="nav-gate" screenOptions={{ headerShown: false }}>
+      // ROUTE D'ARRIVÉE DÉCIDÉE PAR L'INTENTION, PAS PAR UN RÔLE EN BASE.
+      // Un coach qui a dit « Je suis coach » sur l'accueil atterrit sur la
+      // création de club ; tout le monde d'autre sur le questionnaire joueur.
+      // `initialRouteName` n'est lu qu'au montage de ce navigateur — c'est-à-dire
+      // au moment précis où l'inscription vient de se terminer, l'intention étant
+      // posée bien avant (écran d'accueil).
+      <AppStack.Navigator
+        key="nav-gate"
+        initialRouteName={intentionCoach ? "CoachOnboarding" : "ProfileSetupGate"}
+        screenOptions={{ headerShown: false }}
+      >
           <AppStack.Screen name="ProfileSetupGate" options={{ headerShown: false }}>
             {() => (
               <ProfileSetupScreen onProfileCompleted={() => setProfileCompleted(true)} />
@@ -590,9 +665,25 @@ export default function RootNavigator() {
           </AppStack.Screen>
           <AppStack.Screen
             name="CoachOnboarding"
-            component={CoachOnboardingScreen}
             options={{ headerShown: false, animation: "slide_from_right" }}
-          />
+          >
+            {(props) => (
+              // PAS DE CUL-DE-SAC. Quand cet écran est le point d'ARRIVÉE, il n'y
+              // a rien derrière : `goBack()` ne ferait rien et « Retour » serait
+              // un bouton menteur. On fournit donc la sortie explicite — « Je suis
+              // joueur finalement » — qui oublie l'intention et repose le
+              // questionnaire joueur comme unique écran de la pile (`reset`, pour
+              // ne pas laisser la création de club derrière le setup).
+              // L'écran choisit lui-même lequel des deux afficher, selon qu'il
+              // peut revenir en arrière ou non (cf. CoachOnboardingScreen).
+              <CoachOnboardingScreen
+                onRetourJoueur={() => {
+                  setIntentionCoach(false);
+                  props.navigation.reset({ index: 0, routes: [{ name: "ProfileSetupGate" }] });
+                }}
+              />
+            )}
+          </AppStack.Screen>
           <AppStack.Screen
             name="CycleModal"
             component={CycleModalScreen}
