@@ -512,12 +512,28 @@ describe("Home vNext — reprise apres interruption", () => {
     expect(vm.week).toBeNull();
   });
 
-  it("la reprise annonce au FUTUR ce que le moteur ne sait pas encore faire", () => {
+  it("la reprise annonce au FUTUR, et dit pourquoi : l'interrupteur est ferme", () => {
+    // POURQUOI CE TEST A ETE REFORMULE.
+    //
+    // Il verifiait que l'avertissement disait « branchement du moteur de reprise
+    // progressive requis avant mise en production ». C'etait faux : le moteur
+    // SAIT alleger (`domain/tracking/apply.ts`, branche dans
+    // `services/aiContext.ts`), mais le mode Application est OFF par defaut au
+    // pilote (`DEFAULT_TRACKING_MODES.apply = false`).
+    //
+    // La difference n'est pas cosmetique. « Piece manquante » est un travail a
+    // faire ; « interrupteur ferme » est une DECISION, qui se change a distance
+    // par joueur (`users/{uid}.trackingConfig.apply`) sans redeploiement. Le
+    // sous-titre au futur reste exact dans les deux cas — mais seule la seconde
+    // formulation dit a qui relire ce code ce qu'il faut faire pour que le
+    // futur devienne un present.
     const vm = buildHomeVNextViewModel(reprise().input);
     expect(vm.action.sublabel ?? "").toContain("préparera");
-    expect(
-      vm.protoWarnings.some((w) => w.toLowerCase().includes("reprise progressive"))
-    ).toBe(true);
+    const avertissement = vm.protoWarnings.find((w) => w.includes("apply"));
+    expect(avertissement).toBeDefined();
+    expect(avertissement).toContain("OFF par defaut");
+    // Et il ne doit plus reclamer un branchement qui existe.
+    expect(vm.protoWarnings.some((w) => w.includes("branchement du moteur"))).toBe(false);
   });
 
   it("une seance deja prevue pour aujourd'hui prime sur la reprise", () => {

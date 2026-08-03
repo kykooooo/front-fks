@@ -18,8 +18,8 @@
 // Il est LU par plusieurs suites (le ViewModel du Home, la carte, l'ecran
 // entier). Si la liste vivait dans l'une d'elles et que les autres l'importaient,
 // les `describe` de la premiere seraient rejoues dans chacune des autres. Le nom
-// de ce fichier ne contient donc pas `.test.` : `testRegex` de
-// `prototype/home-vnext/jest.proto.config.js` ne le ramasse pas.
+// de ce fichier ne contient donc pas `.test.` : le `testMatch` de
+// `jest.worktree.config.js` (`**/__tests__/**/*.test.ts(x)`) ne le ramasse pas.
 //
 // POURQUOI LA LISTE EST LUE, ET NON RECOPIEE
 // -----------------------------------------------------------------------------

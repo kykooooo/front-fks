@@ -129,8 +129,16 @@
 //         ("amelioration" / "regression" / "identique") au lieu d'un booleen.
 //
 // -----------------------------------------------------------------------------
-// Statut : PROTOTYPE destine a etre regarde et valide.
-// `screens/ProgressScreen.tsx` et `screens/HomeScreen.tsx` ne sont pas touches.
+// STATUT — CES NEUF DEFAUTS NE SONT PLUS « AILLEURS », ILS SONT CORRIGES.
+//
+// L'entete disait « PROTOTYPE destine a etre regarde et valide ;
+// `screens/ProgressScreen.tsx` et `screens/HomeScreen.tsx` ne sont pas touches ».
+// Les deux ecrans cites l'ont ete depuis : la page Progression a ete refondue
+// AUTOUR de ce ViewModel (`useProgressionViewModel()`), et l'accueil monte la
+// carte qu'il alimente. Les neuf defauts ci-dessus ne decrivent donc plus du
+// code vivant a cote — ils decrivent ce qui a ete retire, et pourquoi la forme
+// choisie ici l'a remplace. On les garde a ce titre : sans eux, le prochain
+// lecteur ne comprend pas pourquoi ce fichier est aussi contraignant.
 // =============================================================================
 
 import { MICROCYCLES, type MicrocycleId } from "../../domain/microcycles";
@@ -1163,29 +1171,21 @@ export function buildProgressionViewModel(input: ProgressionInput): ProgressionV
   // (Le jour d'un test etait calcule en UTC dans le prototype et faisait l'objet
   // d'un avertissement ici. La question est tranchee : jour LOCAL via
   // `toDateKey`, voir `jourDeTest`. L'avertissement n'a plus d'objet.)
-  if (comparaisonsTests.possible) {
-    // Champs que `screens/ProgressScreen.tsx` ne compare pas : sa liste locale
-    // `TEST_FIELDS` (:144-160) est amputee de 8 champs de FIELD_DEFS.
-    const CHAMPS_VUS_PAR_PROGRESS_SCREEN: readonly FieldKey[] = [
-      "broadJumpCm",
-      "cmjCm",
-      "sprint10s",
-      "sprint20s",
-      "sprint30s",
-      "endurance6min_m",
-      "yoYoIR1_m",
-      "run1km_s",
-      "gobletKg",
-    ];
-    const invisibles = comparaisonsTests.comparaisons
-      .filter((c) => !CHAMPS_VUS_PAR_PROGRESS_SCREEN.includes(c.champ))
-      .map((c) => c.label);
-    if (invisibles.length > 0) {
-      protoWarnings.push(
-        `Prototype : ${invisibles.join(", ")} — ces comparaisons n'existent PAS sur screens/ProgressScreen.tsx (liste locale TEST_FIELDS, l.144-160, amputee de 8 champs de FIELD_DEFS). Le joueur ne les verrait pas en allant sur la page Progression.`
-      );
-    }
-  }
+  // (Un second avertissement vivait ici : il listait les comparaisons que la
+  // page Progression ne savait pas afficher, en comparant la sortie de ce
+  // ViewModel a une COPIE FIGEE de la liste locale `TEST_FIELDS` de
+  // `screens/ProgressScreen.tsx` — amputee de 8 champs de FIELD_DEFS.
+  //
+  // Il est parti au lot de nettoyage, pour la raison qui le rendait utile
+  // retournee : la page Progression a ete refondue et lit maintenant CE
+  // ViewModel (`screens/ProgressScreen.tsx` -> `useProgressionViewModel()` ->
+  // `comparaisonsTests`). Elle affiche donc la liste COMPLETE, et il n'existe
+  // plus de champ invisible a signaler. Garder le garde-fou aurait laisse dans
+  // le depot une copie d'une liste supprimee, qui aurait accuse la page
+  // Progression d'un manque qu'elle n'a plus — un diagnostic faux, et le seul
+  // endroit du fichier ou une regression de la page aurait ete masquee par du
+  // bruit. L'unicite de la source est verifiee ailleurs, sur la source elle-meme :
+  // `screens/__tests__/progressScreenRefonte.test.ts`.)
 
   // ---------------------------------------------------------------------------
   // 6.4 R7 — le garde-fou anti-doublon avec "Ma semaine"
@@ -1337,7 +1337,7 @@ export function buildProgressionViewModel(input: ProgressionInput): ProgressionV
 
   if (tendance !== null && !tendanceAffichable && assezDeSeances) {
     protoWarnings.push(
-      `Prototype : une trajectoire est fournie (${points.length} ${accord(points.length, "point", "points")}, ${joursObserves} ${accord(joursObserves, "jour observe", "jours observes")}) mais elle n'est PAS tracee — seuils ${PROGRESSION_POINTS_MIN_POUR_COURBE} points ET ${PROGRESSION_JOURS_OBSERVES_MIN_POUR_COURBE} jours observes. Une courbe adossee a trop peu de jours reels dessine une constante d'amorcage, pas un joueur (R5).`
+      `Masque volontairement : une trajectoire est fournie (${points.length} ${accord(points.length, "point", "points")}, ${joursObserves} ${accord(joursObserves, "jour observe", "jours observes")}) mais elle n'est PAS tracee — seuils ${PROGRESSION_POINTS_MIN_POUR_COURBE} points ET ${PROGRESSION_JOURS_OBSERVES_MIN_POUR_COURBE} jours observes. Une courbe adossee a trop peu de jours reels dessine une constante d'amorcage, pas un joueur (R5).`
     );
   }
 
@@ -1354,7 +1354,7 @@ export function buildProgressionViewModel(input: ProgressionInput): ProgressionV
   if (nbSeances === 0) {
     if (input.testsTerrain.length > 0) {
       protoWarnings.push(
-        `Prototype : ${input.testsTerrain.length} ${accord(input.testsTerrain.length, "entree de test existe", "entrees de tests existent")} alors qu'aucune seance n'est terminee. L'etat "empty" n'expose volontairement AUCUNE comparaison (son contenu a ete fige par le fondateur : titre + 3 reperes + mention). A rediscuter si le cas se presente reellement.`
+        `Cas limite : ${input.testsTerrain.length} ${accord(input.testsTerrain.length, "entree de test existe", "entrees de tests existent")} alors qu'aucune seance n'est terminee. L'etat "empty" n'expose volontairement AUCUNE comparaison (son contenu a ete fige par le fondateur : titre + 3 reperes + mention). A rediscuter si le cas se presente reellement.`
       );
     }
     return {

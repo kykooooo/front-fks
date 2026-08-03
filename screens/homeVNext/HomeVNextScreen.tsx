@@ -1,23 +1,28 @@
 // screens/homeVNext/HomeVNextScreen.tsx
 // =============================================================================
-// PROTOTYPE Home vNext — L'ECRAN
+// Home vNext — L'ECRAN
 // =============================================================================
 //
-// PROTOTYPE destine a etre REGARDE et valide. Ce n'est pas le Home de
-// production : `screens/HomeScreen.tsx` n'est pas touche, et cet ecran n'entre
-// pas dans `navigation/RootNavigator.tsx`.
+// C'EST L'ONGLET ACCUEIL DU JOUEUR. L'entete disait le contraire (« ce n'est pas
+// le Home de production, cet ecran n'entre pas dans RootNavigator ») : c'etait
+// vrai du prototype, ca ne l'est plus depuis le lot de cablage. Le chemin reel
+// est `navigation/RootNavigator.tsx` -> `HomeVNextContainer` -> cet ecran, et
+// l'ancien `screens/HomeScreen.tsx` ne survit que comme repli d'interrupteur
+// (`config/homeFeatures.ts`).
 //
 // -----------------------------------------------------------------------------
-// CE QUE CET ECRAN NE FAIT PAS
+// CE QUE CET ECRAN NE FAIT TOUJOURS PAS — ET C'EST VOLONTAIRE
 // -----------------------------------------------------------------------------
 // Il ne lit AUCUN store, n'appelle AUCUN hook metier, ne fait AUCUN fetch, ne
 // declenche AUCUNE generation. Il recoit un `HomeVNextViewModel` en prop et le
-// rend. C'est ce qui le rend affichable dans un visualiseur et testable sans
-// monter la moitie de l'app — et c'est aussi ce qui garantit qu'il ne peut rien
-// affirmer que le ViewModel n'ait pas deja autorise.
+// rend. Les stores sont lus un cran au-dessus (`HomeVNextContainer` ->
+// `useHomeVNextViewModel`), et c'est ce qui garantit que cet ecran ne peut rien
+// affirmer que le ViewModel n'ait pas deja autorise — la propriete qui a survecu
+// au branchement, et celle qu'il ne faut pas perdre en ajoutant « juste un
+// useStore » ici.
 //
-// Les actions sont des callbacks optionnels. Sans callback, appuyer ne fait
-// rien : un prototype ne navigue pas.
+// Les actions restent des callbacks optionnels : le conteneur les fournit en
+// production, les tests et les fixtures s'en passent.
 //
 // -----------------------------------------------------------------------------
 // L'ORDRE, ET POURQUOI IL FINIT TOT

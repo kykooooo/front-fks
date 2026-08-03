@@ -41,7 +41,7 @@
 // NOTE D'EXECUTION : la config jest du depot ignore `.claude/worktrees/`. Depuis
 // ce worktree, `npx jest` liste 0 test et sort en SUCCES. Ce fichier s'execute
 // avec la config dediee :
-//   npx jest --config prototype/home-vnext/jest.proto.config.js
+//   npx jest --config jest.worktree.config.js __tests__/homeVNext
 // =============================================================================
 
 import React from "react";

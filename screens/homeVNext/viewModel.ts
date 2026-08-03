@@ -1,12 +1,12 @@
 // screens/homeVNext/viewModel.ts
 // =============================================================================
-// PROTOTYPE Home vNext — COUCHE CONTRAT (aucun composant, aucun rendu)
+// Home vNext — COUCHE CONTRAT (aucun composant, aucun rendu)
 // =============================================================================
 //
 // Ce fichier definit ce que l'ecran a le DROIT d'afficher. Il encode la doctrine
 // produit issue de l'audit `docs/home-audit-2026-07/` sous forme de TYPES, pour
-// que les fautes constatees sur le Home de production deviennent impossibles a
-// ecrire dans le prototype :
+// que les fautes constatees sur l'ancien Home deviennent impossibles a ecrire
+// ici :
 //
 //   - `action` est UN objet (jamais un tableau)          -> deux CTA impossibles
 //   - `why` est `WhyLine | null` (avec sa `source`)      -> raison inventee impossible
@@ -21,8 +21,17 @@
 // Le selecteur `buildHomeVNextViewModel` est PUR : pas de store, pas de `new Date()`
 // implicite (il lit `input.nowISO`), pas d'I/O, pas d'appel reseau, pas d'IA.
 //
-// Statut : PROTOTYPE destine a etre regarde et valide. Ce n'est pas le Home de
-// production ; `screens/HomeScreen.tsx` n'est pas touche.
+// STATUT — LU PAR LE JOUEUR, PLUS PAR UN VISUALISEUR.
+// Ce fichier a ete ecrit comme un prototype et l'entete disait « ce n'est pas le
+// Home de production ; `screens/HomeScreen.tsx` n'est pas touche ». Les deux
+// phrases sont fausses depuis le lot de cablage : ce ViewModel alimente l'onglet
+// Accueil (`navigation/RootNavigator.tsx`, via `HomeVNextContainer`), avec de
+// vrais stores derriere (`hooks/home/homeVNextAdapter.ts`). L'ancien Home ne
+// survit que comme repli d'un interrupteur (`config/homeFeatures.ts`).
+//
+// Ce que ca change pour qui edite ici : plus aucune approximation « on verra au
+// branchement ». Un champ qu'on ne sait pas encore alimenter se declare `null`
+// et se signale dans `protoWarnings` — jamais une valeur de remplissage.
 // =============================================================================
 
 import {
@@ -1025,9 +1034,21 @@ export type HomeVNextViewModel = {
   note: Note;
   exit: ExitLink;
   /**
-   * Messages destines AU VISUALISEUR DU PROTOTYPE, jamais a l'ecran produit.
-   * Ils disent ce qui n'est pas branche, ce qui a ete masque, et ce qui doit
-   * etre fait avant toute mise en production.
+   * Messages de diagnostic, JAMAIS affiches au joueur — aucun composant ne lit
+   * ce champ, seuls les tests l'inspectent.
+   *
+   * Le nom vient du prototype ; ce qu'ils disent a change de nature depuis le
+   * branchement. Ils ne racontent plus « ce que le prototype ne sait pas faire »
+   * mais **ce que l'ecran ne peut pas encore savoir** : les entrees qu'aucun
+   * store n'alimente aujourd'hui (`generationError`, statut « commencee »,
+   * directive club) et les situations ou le ViewModel a volontairement tu une
+   * information plutot que de l'inventer.
+   *
+   * REGLE D'ENTRETIEN : un avertissement qui a cesse d'etre vrai se supprime, il
+   * ne se laisse pas trainer. Deux l'ont ete au lot de nettoyage — `connectivity`
+   * (branche depuis `hooks/home/useEtatStoresHome.ts`) et la liste de champs que
+   * l'ancienne page Progression ne savait pas comparer (elle lit desormais ce
+   * meme ViewModel). Un diagnostic faux est pire que pas de diagnostic.
    */
   protoWarnings: string[];
 };
@@ -1254,31 +1275,32 @@ export function buildHomeVNextViewModel(
 
   if (dataState === "hydrating") {
     protoWarnings.push(
-      "Prototype : storeHydrated=false. Le rendu doit squeletter TOUS les blocs, action comprise — aucun texte de ce ViewModel ne doit etre lu a l'ecran tant que l'hydratation n'est pas finie (defaut P0.4 de l'audit)."
+      "storeHydrated=false. Le rendu doit squeletter TOUS les blocs, action comprise — aucun texte de ce ViewModel ne doit etre lu a l'ecran tant que l'hydratation n'est pas finie (defaut P0.4 de l'audit)."
     );
   }
-  if (input.connectivity === "offline") {
-    protoWarnings.push(
-      "Prototype : le Home ne lit jamais le reseau aujourd'hui (hooks/useNetworkStatus.ts n'est pas appele par screens/HomeScreen.tsx) — champ connectivity a brancher."
-    );
-  }
+  // `connectivity` AVAIT son avertissement ici — « le Home ne lit jamais le
+  // reseau, champ a brancher ». Il est parti au lot de nettoyage parce qu'il
+  // etait devenu faux : `hooks/home/useEtatStoresHome.ts` appelle bien
+  // `useNetworkStatus()` et l'adaptateur remplit le champ. Le laisser aurait
+  // fait crier « pas branche » a chaque passage hors ligne d'un joueur reel,
+  // c'est-a-dire exactement quand le champ FAIT son travail.
   if (input.generationError) {
     protoWarnings.push(
-      "Prototype : aucun store ne conserve aujourd'hui l'echec d'une generation (screens/newSession/ affiche un toast puis oublie) — champ generationError a creer avant mise en production."
+      "Non branche : aucun store ne conserve aujourd'hui l'echec d'une generation (screens/newSession/ affiche un toast puis oublie) — champ generationError a creer."
     );
   }
   if (input.pendingSession?.status === "commencee") {
     protoWarnings.push(
-      "Prototype : l'app ne trace pas une seance ouverte en live puis abandonnee (Session.completed est binaire) — statut 'commencee' a brancher dans SessionLiveScreen."
+      "Non branche : l'app ne trace pas une seance ouverte en live puis abandonnee (Session.completed est binaire) — statut 'commencee' a brancher dans SessionLiveScreen."
     );
   }
   if (input.clubDirective) {
     protoWarnings.push(
-      `Prototype : la directive club (semaine ${input.clubDirective.weekKey}) n'a aucune source cote Home — clubs/{clubId}/weekContexts n'est lu qu'au moment de la generation (services/aiContext.ts) et n'est stocke dans aucun store.`
+      `Non branche : la directive club (semaine ${input.clubDirective.weekKey}) n'a aucune source cote Home — clubs/{clubId}/weekContexts n'est lu qu'au moment de la generation (services/aiContext.ts) et n'est stocke dans aucun store.`
     );
     if (!input.clubDirective.appliedToPrescription) {
       protoWarnings.push(
-        "Prototype : cette directive club n'a PAS ete consommee par la prescription du jour. Elle est volontairement absente de l'ecran produit (voir la decision documentee dans viewModel.ts) — l'ecran n'affirme donc nulle part que la seance en tient compte."
+        "Cette directive club n'a PAS ete consommee par la prescription du jour. Elle est volontairement absente de l'ecran produit (voir la decision documentee dans viewModel.ts) — l'ecran n'affirme donc nulle part que la seance en tient compte."
       );
     }
   }
@@ -1438,12 +1460,13 @@ export function buildHomeVNextViewModel(
       target: "generation",
       emphasis: "aplat",
       label: "Reprendre mon programme",
-      // FUTUR assume : le moteur de reprise progressive n'est pas branche.
+      // FUTUR assume, et pour une raison qui a change de nature — voir
+      // l'avertissement juste en dessous.
       sublabel: "On te préparera une remise en route progressive.",
       secondary: null,
     };
     protoWarnings.push(
-      "Prototype : branchement du moteur de reprise progressive requis avant mise en production. Aujourd'hui la generation ne sait pas qu'elle doit alleger apres une interruption — d'ou le futur dans le sous-titre ('on te preparera'), qui annonce une intention, pas un fait."
+      "Le moteur SAIT alleger apres une interruption (domain/tracking/apply.ts, branche dans services/aiContext.ts), mais le mode Application est OFF par defaut au pilote (domain/tracking/modes.ts, DEFAULT_TRACKING_MODES.apply=false ; pilotable par joueur via users/{uid}.trackingConfig.apply). Le futur du sous-titre ('on te preparera') reste donc exact tant que l'interrupteur est ferme : c'est une decision, pas une piece manquante."
     );
   } else if (pendingDemain && pending) {
     // 7 — seance de demain : datee, jamais annoncee "prete".
@@ -1532,7 +1555,7 @@ export function buildHomeVNextViewModel(
       // Avertissement emis SEULEMENT quand la phrase est reellement affichee :
       // il explique la formulation choisie, il n'a pas de sens sinon.
       protoWarnings.push(
-        "Prototype : ce match vient d'un jour de semaine coche au profil (useExternalStore.matchDays), pas d'un match reel date. Le texte dit donc 'tu as note un match', jamais 'ton match' (defaut P1.27)."
+        "Approximation assumee : ce match vient d'un jour de semaine coche au profil (useExternalStore.matchDays), pas d'un match reel date. Le texte dit donc 'tu as note un match', jamais 'ton match' (defaut P1.27)."
       );
     }
   }

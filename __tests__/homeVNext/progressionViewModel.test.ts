@@ -14,7 +14,7 @@
 // NOTE D'EXECUTION : la config jest du depot ignore `.claude/worktrees/`
 // (`testPathIgnorePatterns`) — depuis ce worktree, `npx jest` liste 0 test et
 // sort en SUCCES. Lancer avec la config dediee :
-//   npx jest --config prototype/home-vnext/jest.proto.config.js
+//   npx jest --config jest.worktree.config.js __tests__/homeVNext
 // =============================================================================
 
 import {
@@ -677,11 +677,26 @@ describe("Progression — comparaison de tests", () => {
     expect(vm.repereTest?.comparaison.sens).toBe("regression");
   });
 
-  it("signale les comparaisons que la page Progression ne saurait pas afficher", () => {
+  it("ne signale plus aucune comparaison invisible : la page Progression les affiche toutes", () => {
+    // CE TEST A CHANGE DE SENS, ET C'EST LE POINT.
+    //
+    // Il verifiait l'inverse : que le ViewModel AVERTISSAIT quand il produisait
+    // une comparaison que `screens/ProgressScreen.tsx` ne savait pas afficher —
+    // sa liste locale `TEST_FIELDS` etait amputee de 8 champs de `FIELD_DEFS`,
+    // et le joueur qui suivait le lien depuis l'accueil ne retrouvait pas ce
+    // qu'on venait de lui montrer.
+    //
+    // La refonte de la page a supprime cette liste locale : elle lit maintenant
+    // CE ViewModel (`useProgressionViewModel()` -> `comparaisonsTests`). Il n'y
+    // a donc plus de champ invisible, et l'avertissement a ete retire avec le
+    // defaut qu'il decrivait. Ce qui reste a verrouiller, c'est qu'aucun
+    // avertissement de ce genre ne REVIENNE : il ne pourrait le faire que si
+    // quelqu'un re-figeait une liste de champs quelque part.
     const vm = vmDe("test-physique-ameliore");
-    expect(
-      vm.protoWarnings.some((w) => w.includes("TEST_FIELDS") && w.includes("Test 505"))
-    ).toBe(true);
+    if (vm.state !== "ready") throw new Error("etat attendu : ready");
+    expect(vm.comparaisonsTests.possible).toBe(true);
+    expect(vm.protoWarnings.some((w) => w.includes("TEST_FIELDS"))).toBe(false);
+    expect(vm.protoWarnings.some((w) => w.includes("ne les verrait pas"))).toBe(false);
   });
 
   // ---------------------------------------------------------------------------
