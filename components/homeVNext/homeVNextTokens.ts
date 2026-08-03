@@ -23,33 +23,26 @@
 // =============================================================================
 
 import { theme } from "../../constants/theme";
-import { ECHELLE_ACTUELLE } from "./homeVNextTypo";
 
 // -----------------------------------------------------------------------------
-// 1. TYPOGRAPHIE — DEMENAGEE
+// 1. TYPOGRAPHIE — DEMENAGEE, ET PLUS AUCUN ALIAS
 // -----------------------------------------------------------------------------
 // Les paliers ne vivent plus ici : ils vivent dans `./homeVNextTypo`, qui en
-// porte DEUX jeux complets (l'echelle actuelle et l'echelle allegee demandee par
+// porte DEUX jeux complets (l'echelle actuelle et l'echelle allegee retenue par
 // le fondateur) plus la politique d'agrandissement systeme.
 //
 // Les composants lisent leur echelle via `useStylesEchelle` (`./homeVNextPresentation`) :
 // c'est ce qui permet a la bascule du visualiseur de changer d'echelle sans
 // remonter l'ecran.
 //
-// L'alias ci-dessous ne sert qu'a la compatibilite le temps de la bascule, avec
-// les anciens noms de paliers. Plus aucun composant du prototype ne l'utilise :
-// il est a retirer au moment de l'integration.
+// CE QUI A ETE RETIRE ICI, ET POURQUOI. Un alias `typo` survivait, cale en dur
+// sur `ECHELLE_ACTUELLE` — donc sur les graisses 800 que le fondateur a
+// ECARTEES. Son propre commentaire disait « a retirer au moment de
+// l'integration » : c'est fait. Il n'avait aucun consommateur, il ne changeait
+// donc rien a l'ecran ; mais c'etait une porte ouverte vers l'echelle refusee,
+// a portee de copier-coller, dans du code livre.
+// Pour lire un palier : `ECHELLES` / `useStylesEchelle`, jamais un raccourci.
 // -----------------------------------------------------------------------------
-
-/** @deprecated Utiliser `ECHELLES` / `useStylesEchelle` (`./homeVNextTypo`). */
-export const typo = {
-  screenTitle: ECHELLE_ACTUELLE.salutation,
-  actionLabel: ECHELLE_ACTUELLE.titreAction,
-  metricValue: ECHELLE_ACTUELLE.valeur,
-  body: ECHELLE_ACTUELLE.corps,
-  caption: ECHELLE_ACTUELLE.meta,
-  overline: ECHELLE_ACTUELLE.overline,
-} as const;
 
 // -----------------------------------------------------------------------------
 // 2. RAYONS — 2 valeurs, pas 7
@@ -138,7 +131,7 @@ const ACTION_ORANGE = "#B4530C";
  * Sur `#B4530C`, du blanc a 90 % d'opacite ne donne que **4.39:1** — encore
  * sous le seuil. Donc : **tout le texte pose sur l'aplat est du blanc plein**.
  * La hierarchie entre le libelle et son sous-titre se fait par la taille et la
- * graisse (`typo.actionLabel` vs `typo.body`), jamais par la transparence.
+ * graisse (palier `titreAction` vs palier `corps`), jamais par la transparence.
  * C'est la regle qui remplace le blanc a 82 % du Home actuel.
  */
 export const TEXTE_SUR_ACTION = "#FFFFFF";
