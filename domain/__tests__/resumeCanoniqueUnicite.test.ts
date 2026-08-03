@@ -32,10 +32,20 @@ function lire(relatif: string): string {
   return fs.readFileSync(path.join(RACINE, relatif), "utf8");
 }
 
-/** Les consommateurs connus du comptage hebdomadaire. */
+/**
+ * Les consommateurs connus du comptage hebdomadaire.
+ *
+ * `hooks/trackingProgress/buildTrackingProgress.ts` en faisait partie et n'y est
+ * plus : il ne compte plus de semaine du tout. Son bloc « regularite hebdo »
+ * (numerateur a lundi fixe, cible `targetFksSessionsPerWeek`) etait le
+ * TROISIEME compteur hebdomadaire de l'app ; il a ete supprime, pas
+ * re-delegue — le compteur vit desormais au Home, seul. Son absence de cette
+ * liste est donc le comportement attendu, et le test « aucun ecran ni hook ne
+ * refait le filtre a la main » ci-dessous continue de le surveiller comme
+ * n'importe quel autre fichier.
+ */
 const CONSOMMATEURS = [
   "hooks/home/useWeekSummary.ts",
-  "hooks/trackingProgress/buildTrackingProgress.ts",
   "hooks/home/homeVNextAdapter.ts",
   "screens/RoutineScreen.tsx",
 ];
