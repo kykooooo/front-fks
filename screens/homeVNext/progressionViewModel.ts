@@ -353,7 +353,8 @@ export type ProgressionSemaineCourante = {
 // CE QUI RESTE, ET QUI N'EST PAS UN JUGEMENT : `chargesClubCapturees` reste un
 // champ d'entree ORDINAIRE (un booleen, sans libelle associe). Il ne sert plus
 // qu'a UNE chose : ecrire la PORTEE exacte de la courbe (R3) — « Calcule sur tes
-// seances FKS uniquement — tes entrainements club n'y sont pas comptes. ». Dire
+// seances FKS et les charges que tu as saisies — tes entrainements club n'y sont
+// pas comptes. ». Dire
 // ce qu'une mesure contient n'est pas porter un jugement sur un joueur ; c'est
 // meme l'inverse, et c'est la condition posee par le fondateur pour qu'une
 // mesure ait le droit d'etre affichee.
@@ -1419,9 +1420,13 @@ export function buildProgressionViewModel(input: ProgressionInput): ProgressionV
     premier && dernier ? Math.max(1, diffJours(premier, dernier) + 1) : points.length;
 
   // R3 : la portee dit exactement ce qui est dedans, et ce qui n'y est pas.
+  // « ce que tu as enregistré » = les deux seules sources qui alimentent la
+  // courbe (`construireChargesEnregistreesParJour`, hooks/home/homeVNextAdapter) :
+  // les seances FKS terminees et les charges saisies a la main. Les charges
+  // club/match deduites des cases du setup profil n'y sont pas.
   const portee = input.chargesClubCapturees
     ? "Calculé sur tes séances FKS et tes charges club enregistrées."
-    : "Calculé sur tes séances FKS uniquement — tes entraînements club n'y sont pas comptés.";
+    : "Calculé sur tes séances FKS et les charges que tu as saisies — tes entraînements club n'y sont pas comptés.";
 
   // R7 : on descend la liste jusqu'au premier fait qui ne double pas "Ma semaine".
   const candidatsResume = retirerLesDoublons([

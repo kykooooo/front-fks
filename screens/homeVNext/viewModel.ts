@@ -317,15 +317,25 @@ export type HomeVNextFormTrendInput = {
   stateLabel: string | null;
   /**
    * Nombre de jours distincts ou une charge REELLE a ete enregistree.
-   * SOURCE : cles de `useLoadStore.dailyApplied` alimentees par un feedback de
-   * seance ou une charge externe saisie a la main.
+   * SOURCE : `compterJoursObserves` (`domain/resumeCanonique.ts`) — seances FKS
+   * terminees + charges externes SAISIES a la main. Ce sont exactement les deux
+   * sources qui alimentent `points` : un jour observe est un jour qui apporte
+   * une charge a la trajectoire, jamais un jour qu'on aurait devine.
+   * PAS les cles de `useLoadStore.dailyApplied` : ce total melange les charges
+   * club auto-injectees a celles du joueur.
    */
   observedDayCount: number;
   /**
-   * Jours ecartes de la serie parce que leur charge venait d'une injection
-   * automatique club/match (cases du setup profil), jamais confirmee par le
-   * joueur. SOURCE : `applyAutoExternalLoads`. Defaut P0.3 de l'audit :
-   * une charge supposee ne doit pas etre presentee comme realisee.
+   * Jours de la periode tracee qui portaient une charge club/match
+   * AUTO-INJECTEE (`applyAutoExternalLoads`, id `auto_*`), deduite de cases
+   * cochees au setup profil et jamais confirmee par le joueur. Ces charges-la
+   * n'entrent pas dans `points` : une charge supposee ne doit pas etre
+   * presentee comme realisee (defaut P0.3 de l'audit).
+   *
+   * ATTENTION AU SENS : ce compteur ne RETIRE rien du jour. La seance FKS que le
+   * joueur a faite le soir d'un entrainement club reste dans la courbe — c'est
+   * la charge club qui n'y est pas. Ce champ sert uniquement a declencher la
+   * mention « tes entrainements club n'y sont pas comptes ».
    */
   autoClubDaysExcluded: number;
 };
@@ -1563,10 +1573,15 @@ export function buildHomeVNextViewModel(
     const premier = trend.points[0]?.dateKey ?? todayKey;
     const dernier = trend.points[trend.points.length - 1]?.dateKey ?? todayKey;
     const etendue = Math.max(1, diffJours(premier, dernier) + 1);
+    // La phrase doit decrire EXACTEMENT ce qui a ete calcule. La courbe est
+    // construite sur les deux seules choses que le joueur a enregistrees : ses
+    // seances FKS terminees et les charges qu'il a saisies a la main
+    // (`construireChargesEnregistreesParJour`). Les entrainements club deduits
+    // des cases du setup profil n'y sont pas — on ne le dit que quand il y en a.
     const portee =
       trend.autoClubDaysExcluded > 0
-        ? "Calculé sur tes séances FKS uniquement — tes entraînements club n'y sont pas comptés."
-        : "Calculé sur tes séances FKS uniquement.";
+        ? "Calculé sur tes séances FKS et les charges que tu as saisies — tes entraînements club notés au profil n'y sont pas comptés."
+        : "Calculé sur tes séances FKS et les charges que tu as saisies.";
     form = {
       kind: "available",
       points,

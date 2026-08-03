@@ -54,8 +54,9 @@
 // libelles internes sont ignores au profit du libelle du conteneur. Consequences
 // mesurables sur cette carte :
 //
-//   - la ligne de PORTEE ("Calcule sur tes seances FKS uniquement — tes
-//     entrainements club n'y sont pas comptes") cesse d'etre un element a part.
+//   - la ligne de PORTEE ("Calcule sur tes seances FKS et les charges que tu as
+//     saisies — tes entrainements club n'y sont pas comptes") cesse d'etre un
+//     element a part.
 //     Soit on la noie dans un libelle unique de ~50 mots, soit on la perd. La
 //     perdre viole R3 pour les utilisateurs de lecteur d'ecran ; la noyer rend
 //     l'annonce inecoutable. R3 n'est pas negociable, donc l'option tombe.

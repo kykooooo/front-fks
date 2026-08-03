@@ -55,7 +55,9 @@ import {
 import type { Session } from "../../domain/types";
 import type { ExternalLoad } from "../../state/stores/types";
 import { updateTrainingLoad } from "../../engine/loadModel";
-import { getFootballLabel } from "../../config/trainingDefaults";
+import { clampDailyLoad, sumDailyWeightedLoad } from "../../engine/dailyAggregation";
+import { externalLoadForDay, type ExternalLoadLike } from "../../state/computeDailyApplied";
+import { getFootballLabel, LOAD_CAPS } from "../../config/trainingDefaults";
 import { frIntensity, frFocus } from "../../utils/frLabels";
 import { toDateKey } from "../../utils/dateHelpers";
 import { getSessionDuration, selectPendingSession } from "../../utils/sessionHelpers";
@@ -93,7 +95,13 @@ export type EtatStoresHome = {
   sessions: readonly Session[];
   /** `useExternalStore.externalLoads`. */
   chargesExternes: readonly ExternalLoad[];
-  /** `useLoadStore.dailyApplied`. */
+  /**
+   * `useLoadStore.dailyApplied`. Sert UNIQUEMENT a repondre « une charge a-t-elle
+   * ete appliquee aujourd'hui ? ». La courbe de forme, elle, ne le lit pas : ce
+   * total melange seances FKS, charges saisies et charges club auto-injectees
+   * avant d'etre cape et multiplie par un facteur de garde — il est
+   * indecomposable. Voir `construireChargesEnregistreesParJour`.
+   */
   dailyApplied: Record<string, number> | null | undefined;
   /** `useLoadStore.lastAppliedDate`. */
   lastAppliedDate: string | null | undefined;
@@ -124,6 +132,76 @@ export type EtatStoresHome = {
 // =============================================================================
 
 /**
+ * La charge de chaque jour, RECONSTRUITE depuis les enregistrements eux-memes.
+ *
+ * POURQUOI PAS `useLoadStore.dailyApplied`
+ * ---------------------------------------------------------------------------
+ * `dailyApplied[jour]` est un TOTAL deja melange et deja transforme :
+ * `clamp((seances + externes) * facteur_de_garde, cap_total)`
+ * (`state/computeDailyApplied.ts`). Les seances FKS, les charges saisies a la
+ * main et les charges club/match AUTO-injectees y sont additionnees avant le
+ * cap, puis multipliees par un facteur de garde. Un jour portant une charge auto
+ * est donc indecomposable : on ne peut ni en retirer la part club, ni savoir ce
+ * qui reste.
+ *
+ * La version precedente en tirait la conclusion inverse et mettait le jour
+ * ENTIER a zero des qu'une charge auto y existait. L'exclusion portait sur le
+ * JOUR, pas sur la SOURCE : la seance FKS reellement faite le soir d'un
+ * entrainement club disparaissait de la courbe. Mesure : trois seances FKS
+ * terminees les jours coches « club » au profil produisaient une trajectoire
+ * plate a zero, sous une phrase promettant qu'elle etait calculee sur les
+ * seances FKS — alors qu'elle n'en contenait aucune. Une courbe fabriquee, dans
+ * la couche meme qui existe pour les interdire.
+ *
+ * Ici, la charge est RECONSTRUITE source par source, a partir des seuls faits
+ * enregistres, avec la formule de charge du depot :
+ *   - seances FKS terminees   -> `sumDailyWeightedLoad` (engine/dailyAggregation)
+ *   - charges externes SAISIES -> `externalLoadForDay` (state/computeDailyApplied)
+ * Les memes caps que le moteur sont appliques. Le facteur de garde, lui, n'a
+ * rien a faire ici : c'est un garde-fou de PRESCRIPTION (« ne charge pas la
+ * veille d'un match »), pas une mesure de ce qui a ete fait.
+ *
+ * CE QUI N'ENTRE PAS, ET C'EST LE POINT : les charges club/match auto-injectees
+ * (`applyAutoExternalLoads`, id `auto_*`). Elles sont deduites de cases cochees
+ * au setup profil, pas d'un fait constate — une charge supposee ne doit pas etre
+ * presentee comme realisee (P0.3). Elles sont exclues PAR LA SOURCE, ce qui
+ * laisse intacte la charge que le joueur a, elle, reellement enregistree le
+ * meme jour.
+ */
+export function construireChargesEnregistreesParJour(entree: {
+  seances: readonly Session[];
+  chargesExternes: readonly ExternalLoad[];
+}): Record<string, number> {
+  // `sumDailyWeightedLoad` lit `s.dateISO` seul ; l'app accepte aussi `s.date`.
+  // On normalise AVANT, sinon la charge d'une seance datee par `date` tomberait
+  // dans une cle vide et serait silencieusement perdue.
+  const seancesNormalisees = entree.seances
+    .filter(estSeanceFksTerminee)
+    .map((s) => ({ ...s, dateISO: s.dateISO ?? s.date ?? "" })) as Session[];
+  const brutFks = sumDailyWeightedLoad(seancesNormalisees);
+
+  const externesManuelles: ExternalLoadLike[] =
+    entree.chargesExternes.filter(estChargeExterneManuelle);
+
+  const jours = new Set<string>(Object.keys(brutFks).filter((j) => j !== ""));
+  for (const c of externesManuelles) {
+    const cle = toDateKey(c.dateISO);
+    if (cle) jours.add(cle);
+  }
+
+  const parJour: Record<string, number> = {};
+  for (const jour of jours) {
+    const fks = clampDailyLoad(brutFks[jour] ?? 0, LOAD_CAPS.sessionsDay);
+    const externe = clampDailyLoad(
+      externalLoadForDay(externesManuelles, jour),
+      LOAD_CAPS.externDay
+    );
+    parJour[jour] = clampDailyLoad(fks + externe, LOAD_CAPS.totalDay);
+  }
+  return parJour;
+}
+
+/**
  * La trajectoire de forme, construite SANS constante d'amorcage.
  *
  * CE QUI CHANGE PAR RAPPORT A `hooks/home/useLoadSeries.ts`
@@ -139,18 +217,18 @@ export type EtatStoresHome = {
  * reellement observe de la fenetre. Avant ce jour-la, il n'y a rien a dire, donc
  * on ne dit rien — pas un point, pas un zero.
  *
- * CE QUI EST EXCLU, ET COMMENT
+ * D'OU VIENT LA CHARGE DE CHAQUE JOUR
  * ---------------------------------------------------------------------------
- * Les jours dont la charge vient d'une injection automatique club/match ne sont
- * PAS traces comme de l'entrainement : `dailyApplied` est un
- * `Record<jour, number>` sans distinction de source, donc un jour portant une
- * charge auto est indecomposable — on ne peut pas savoir quelle part vient du
- * joueur. Ces jours sont donc comptes comme des jours SANS charge FKS, et
- * signales par `autoClubDaysExcluded`.
+ * De `construireChargesEnregistreesParJour` (ci-dessus), jamais de
+ * `dailyApplied`. Les memes DEUX sources alimentent la courbe et le compte de
+ * jours observes : les seances FKS terminees et les charges externes saisies a
+ * la main. Un jour compte donc dans `observedDayCount` si et seulement s'il
+ * apporte une charge a la trajectoire — sans quoi le seuil qui autorise la
+ * courbe garderait la porte ouverte a une serie plate.
  *
- * C'est exactement ce que la phrase de portee promet au joueur : « calculé sur
- * tes séances FKS uniquement — tes entraînements club n'y sont pas comptés ».
- * Une charge supposee ne doit pas etre presentee comme realisee (P0.3).
+ * `autoClubDaysExcluded` ne retire plus rien : il COMPTE les jours de la periode
+ * tracee qui portaient une charge club/match auto-injectee, et sert uniquement a
+ * dire au joueur que ces entrainements-la ne sont pas dans la courbe.
  *
  * D'OU VIENT LE LIBELLE D'ETAT, ET POURQUOI PAS DU STORE
  * ---------------------------------------------------------------------------
@@ -166,7 +244,6 @@ export type EtatStoresHome = {
  */
 export function construireSerieForme(entree: {
   nowISO: string;
-  dailyApplied: Record<string, number> | null | undefined;
   seances: readonly Session[];
   chargesExternes: readonly ExternalLoad[];
   fenetreJours?: number;
@@ -213,6 +290,11 @@ export function construireSerieForme(entree: {
     return null;
   }
 
+  const chargesParJour = construireChargesEnregistreesParJour({
+    seances: entree.seances,
+    chargesExternes: entree.chargesExternes,
+  });
+
   let atl = 0;
   let ctl = 0;
   const points: { dateKey: string; value: number }[] = [];
@@ -220,9 +302,10 @@ export function construireSerieForme(entree: {
 
   for (let i = premierIndex; i < jours.length; i++) {
     const jour = jours[i];
-    const porteUneChargeAuto = joursAuto.has(jour);
-    if (porteUneChargeAuto) autoClubDaysExcluded += 1;
-    const charge = porteUneChargeAuto ? 0 : Number(entree.dailyApplied?.[jour] ?? 0) || 0;
+    // Le jour porte peut-etre une charge club auto ; ca ne retire RIEN a ce que
+    // le joueur a enregistre le meme jour. On le signale, on ne l'efface pas.
+    if (joursAuto.has(jour)) autoClubDaysExcluded += 1;
+    const charge = chargesParJour[jour] ?? 0;
     const suivant = updateTrainingLoad(atl, ctl, charge, { dtDays: 1 });
     atl = suivant.atl;
     ctl = suivant.ctl;
@@ -411,7 +494,6 @@ export function construireEntreeHome(etat: EtatStoresHome): HomeVNextInput {
     daysSinceLastSession: derniere ? ecartEnJours(derniere.dateKey, todayKey) : null,
     formTrend: construireSerieForme({
       nowISO: etat.nowISO,
-      dailyApplied: etat.dailyApplied,
       seances: etat.sessions,
       chargesExternes: etat.chargesExternes,
     }),
@@ -445,7 +527,6 @@ export function construireEntreeProgression(
 
   const forme = construireSerieForme({
     nowISO: etat.nowISO,
-    dailyApplied: etat.dailyApplied,
     seances: etat.sessions,
     chargesExternes: etat.chargesExternes,
   });

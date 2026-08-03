@@ -420,7 +420,7 @@ export const POLITIQUE_AGRANDISSEMENT: readonly {
     texteConcerne: "Portée de la mesure, période, date, ligne de cycle",
     plafond: null,
     raison:
-      "La portée (« calculé sur tes séances FKS uniquement ») est une information, et pas la moins importante. Aucune borne.",
+      "La portée (« calculé sur tes séances FKS et les charges que tu as saisies ») est une information, et pas la moins importante. Aucune borne.",
   },
   {
     role: "lien",

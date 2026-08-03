@@ -25,8 +25,10 @@
 import type { Session } from "../../../domain/types";
 import type { ExternalLoad } from "../../../state/stores/types";
 import { TRAINING_DEFAULTS } from "../../../config/trainingDefaults";
+import { updateTrainingLoad } from "../../../engine/loadModel";
 import { buildHomeVNextViewModel } from "../../../screens/homeVNext/viewModel";
 import {
+  construireChargesEnregistreesParJour,
   construireEntreeDemarrage,
   construireEntreeHome,
   construireEntreeProgression,
@@ -130,7 +132,6 @@ describe("la serie de forme ne part d'aucune constante d'amorcage", () => {
     expect(
       construireSerieForme({
         nowISO: NOW,
-        dailyApplied: { "2026-08-05": 120 }, // une charge sans source reelle connue
         seances: [],
         chargesExternes: [],
       })
@@ -140,7 +141,6 @@ describe("la serie de forme ne part d'aucune constante d'amorcage", () => {
   it("la serie commence au premier jour REELLEMENT observe, jamais avant", () => {
     const serie = construireSerieForme({
       nowISO: NOW,
-      dailyApplied: { "2026-08-08": 100 },
       seances: [seance({ id: "a", completed: true, dateISO: "2026-08-08T10:00:00" })],
       chargesExternes: [],
     });
@@ -151,24 +151,38 @@ describe("la serie de forme ne part d'aucune constante d'amorcage", () => {
   });
 
   it("le premier point derive de zero, pas de ATL0/CTL0 — donc pas du « TSB initial = +3 »", () => {
+    const seuleSeance = seance({ id: "a", completed: true, dateISO: "2026-08-10T10:00:00" });
     const serie = construireSerieForme({
       nowISO: NOW,
-      dailyApplied: {}, // aucune charge chiffree : que la seance elle-meme
-      seances: [seance({ id: "a", completed: true, dateISO: "2026-08-10T10:00:00" })],
+      seances: [seuleSeance],
       chargesExternes: [],
     });
     expect(serie).not.toBeNull();
     expect(serie!.points).toHaveLength(1);
-    // Depuis (0, 0) avec une charge de 0, le TSB reste 0. L'amorce du depot
-    // vaudrait CTL0 - ATL0 = +3 : c'est exactement ce qu'on refuse d'afficher.
-    expect(serie!.points[0].value).toBe(0);
-    expect(TRAINING_DEFAULTS.CTL0 - TRAINING_DEFAULTS.ATL0).not.toBe(0);
+
+    // La charge du jour vient de la seance elle-meme. Le point doit etre celui
+    // qu'on obtient en partant de (0, 0) — et surtout PAS celui qu'on obtient en
+    // partant de l'amorce ATL0/CTL0 du depot.
+    const chargeDuJour = construireChargesEnregistreesParJour({
+      seances: [seuleSeance],
+      chargesExternes: [],
+    })["2026-08-10"];
+    expect(chargeDuJour).toBeGreaterThan(0);
+
+    const depuisZero = updateTrainingLoad(0, 0, chargeDuJour, { dtDays: 1 });
+    const depuisAmorce = updateTrainingLoad(
+      TRAINING_DEFAULTS.ATL0,
+      TRAINING_DEFAULTS.CTL0,
+      chargeDuJour,
+      { dtDays: 1 }
+    );
+    expect(serie!.points[0].value).toBe(Number(depuisZero.tsb.toFixed(1)));
+    expect(serie!.points[0].value).not.toBe(Number(depuisAmorce.tsb.toFixed(1)));
   });
 
   it("aucun jour n'est bouche a zero AVANT le premier fait observe", () => {
     const serie = construireSerieForme({
       nowISO: NOW,
-      dailyApplied: { "2026-08-09": 80 },
       seances: [seance({ id: "a", completed: true, dateISO: "2026-08-09T10:00:00" })],
       chargesExternes: [],
     });
@@ -184,7 +198,6 @@ describe("les jours observes ne comptent que des faits constates", () => {
   it("une seance terminee et une charge saisie a la main comptent", () => {
     const serie = construireSerieForme({
       nowISO: NOW,
-      dailyApplied: { "2026-08-08": 90, "2026-08-09": 70 },
       seances: [seance({ id: "a", completed: true, dateISO: "2026-08-08T10:00:00" })],
       chargesExternes: [charge({ id: "k9x", dateISO: "2026-08-09T12:00:00.000Z" })],
     });
@@ -192,10 +205,9 @@ describe("les jours observes ne comptent que des faits constates", () => {
     expect(serie!.autoClubDaysExcluded).toBe(0);
   });
 
-  it("une charge club auto-injectee ne compte pas, et sort de la trajectoire", () => {
+  it("une charge club auto-injectee ne compte pas comme un jour observe", () => {
     const serie = construireSerieForme({
       nowISO: NOW,
-      dailyApplied: { "2026-08-08": 90, "2026-08-09": 400 },
       seances: [seance({ id: "a", completed: true, dateISO: "2026-08-08T10:00:00" })],
       chargesExternes: [
         charge({ id: "auto_club_2026-08-09", source: "club", dateISO: "2026-08-09T12:00:00.000Z" }),
@@ -205,10 +217,23 @@ describe("les jours observes ne comptent que des faits constates", () => {
     expect(serie!.autoClubDaysExcluded).toBe(1);
   });
 
+  it("et elle n'apporte AUCUNE charge a la trajectoire", () => {
+    const seances = [seance({ id: "a", completed: true, dateISO: "2026-08-08T10:00:00" })];
+    const sans = construireSerieForme({ nowISO: NOW, seances, chargesExternes: [] });
+    const avec = construireSerieForme({
+      nowISO: NOW,
+      seances,
+      chargesExternes: [
+        charge({ id: "auto_club_2026-08-09", source: "club", dateISO: "2026-08-09T12:00:00.000Z" }),
+      ],
+    });
+    // Meme courbe : la charge club deduite des cases du profil n'y entre pas.
+    expect(avec!.points).toEqual(sans!.points);
+  });
+
   it("une charge auto SEULE ne suffit pas a faire naitre une courbe", () => {
     const serie = construireSerieForme({
       nowISO: NOW,
-      dailyApplied: { "2026-08-09": 400 },
       seances: [],
       chargesExternes: [charge({ id: "auto_match_2026-08-09", source: "match" })],
     });
@@ -218,11 +243,75 @@ describe("les jours observes ne comptent que des faits constates", () => {
   it("une seance PLANIFIEE non faite n'observe rien", () => {
     const serie = construireSerieForme({
       nowISO: NOW,
-      dailyApplied: {},
       seances: [seance({ id: "a", completed: false, dateISO: "2026-08-09T10:00:00" })],
       chargesExternes: [],
     });
     expect(serie).toBeNull();
+  });
+});
+
+// -----------------------------------------------------------------------------
+// 3 bis. Le jour de club n'efface pas la seance FKS qu'on y a faite
+// -----------------------------------------------------------------------------
+
+describe("un jour de club ne fait pas disparaitre la seance FKS du meme jour", () => {
+  // LE CAS QUI A CASSE : le joueur coche « club » les mardis/jeudis au setup ;
+  // `applyAutoExternalLoads` pose une charge auto ces jours-la ; le joueur fait
+  // quand meme sa seance FKS le soir. L'exclusion portait sur le JOUR, pas sur
+  // la SOURCE : toute la charge du jour etait remise a zero, seance comprise.
+  // Resultat mesure : une courbe plate a zero, sous une phrase affirmant qu'elle
+  // etait calculee sur les seances FKS.
+  const joursFks = ["2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09"];
+  const seancesFks = joursFks.map((jour, i) =>
+    seance({ id: `s${i}`, completed: true, dateISO: `${jour}T19:00:00` })
+  );
+  const chargesAutoMemesJours = joursFks.map((jour) =>
+    charge({ id: `auto_club_${jour}`, source: "club", dateISO: `${jour}T12:00:00.000Z` })
+  );
+
+  it("la trajectoire n'est pas plate : les seances FKS y sont", () => {
+    const serie = construireSerieForme({
+      nowISO: NOW,
+      seances: seancesFks,
+      chargesExternes: chargesAutoMemesJours,
+    });
+    expect(serie).not.toBeNull();
+    expect(serie!.points.length).toBeGreaterThan(0);
+    expect(serie!.points.every((p) => p.value === 0)).toBe(false);
+    expect(serie!.observedDayCount).toBe(4);
+    expect(serie!.autoClubDaysExcluded).toBe(4);
+  });
+
+  it("elle est meme IDENTIQUE a celle qu'on aurait sans les charges club", () => {
+    const avecClub = construireSerieForme({
+      nowISO: NOW,
+      seances: seancesFks,
+      chargesExternes: chargesAutoMemesJours,
+    });
+    const sansClub = construireSerieForme({
+      nowISO: NOW,
+      seances: seancesFks,
+      chargesExternes: [],
+    });
+    expect(avecClub!.points).toEqual(sansClub!.points);
+  });
+
+  it("et le selecteur affiche bien une courbe, pas une ligne a zero", () => {
+    const etat: EtatStoresHome = {
+      ...ETAT_VIDE,
+      sessions: seancesFks,
+      chargesExternes: chargesAutoMemesJours,
+    };
+    const vm = buildHomeVNextViewModel(construireEntreeHome(etat), {
+      variante: "v2",
+      demarrage: "A",
+    });
+    expect(vm.form?.kind).toBe("available");
+    if (vm.form?.kind === "available") {
+      expect(vm.form.points.every((v) => v === 0)).toBe(false);
+      // La phrase de portee decrit ce qui a REELLEMENT ete calcule.
+      expect(vm.form.scope).toContain("tes entraînements club notés au profil n'y sont pas comptés");
+    }
   });
 });
 
@@ -238,7 +327,6 @@ describe("le libelle d'etat suit la serie purgee, pas le TSB du store", () => {
   it("avec une serie, il est calcule sur le dernier point de CETTE serie", () => {
     const serie = construireSerieForme({
       nowISO: NOW,
-      dailyApplied: { "2026-08-08": 100 },
       seances: [seance({ id: "a", completed: true, dateISO: "2026-08-08T10:00:00" })],
       chargesExternes: [],
     });
@@ -311,7 +399,6 @@ describe("l'entree ne porte qu'UNE definition de « seance FKS terminee »", () 
   it("la serie de forme et le compte de jours observes s'accordent aussi", () => {
     const serie = construireSerieForme({
       nowISO: NOW,
-      dailyApplied: { "2026-08-10": 120 },
       seances: [legacy],
       chargesExternes: [],
     });
