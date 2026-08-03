@@ -597,6 +597,23 @@ export default function ProgressScreen() {
 // =============================================================================
 // STYLES
 // =============================================================================
+//
+// GRAISSE MAXIMALE DE CET ECRAN : 700. Ce n'est pas un gout, c'est une couture.
+//
+// Cette page est a UN TAP de l'accueil (« Voir ma progression »), et l'accueil
+// rend l'echelle allegee retenue par le fondateur : zero role en 800, graisse
+// maximale 700, la hierarchie portee par la taille et la couleur plutot que par
+// l'epaisseur (`components/homeVNext/homeVNextTypo.ts`, jeu « allegee »).
+//
+// La refonte de cette page a repris sa couche de donnees (resume canonique) sans
+// toucher a sa typographie : elle a donc reconduit sept roles en 800 et un en
+// 900. Deux ecrans du meme parcours, deux epaisseurs de titre — ca ne se voit
+// sur aucune capture prise separement, ca se voit au premier aller-retour.
+//
+// Les tailles, les couleurs et l'espacement ne bougent pas : seule l'epaisseur
+// est ramenee dans l'echelle. Verrouille par
+// `__tests__/homeVNext/echelleProgression.test.ts`.
+// =============================================================================
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: 16,
@@ -632,7 +649,7 @@ const styles = StyleSheet.create({
   // ─── Titres ───
   titreSection: {
     fontSize: 15,
-    fontWeight: "800",
+    fontWeight: "700",
     color: palette.text,
     minHeight: 20,
   },
@@ -655,7 +672,7 @@ const styles = StyleSheet.create({
   },
   numeroRepere: {
     fontSize: 13,
-    fontWeight: "800",
+    fontWeight: "700",
     color: palette.accent,
     minWidth: 16,
   },
@@ -683,7 +700,8 @@ const styles = StyleSheet.create({
   },
   valeurFait: {
     fontSize: 16,
-    fontWeight: "800",
+    // 16 / 700 : exactement le palier `valeur` de l'echelle allegee.
+    fontWeight: "700",
     color: palette.text,
   },
 
@@ -740,7 +758,7 @@ const styles = StyleSheet.create({
   },
   valeurApres: {
     fontSize: 13,
-    fontWeight: "800",
+    fontWeight: "700",
     color: palette.text,
   },
   pastilleEcart: {
@@ -799,7 +817,7 @@ const styles = StyleSheet.create({
   },
   texteJourActif: {
     color: "#0b0b0c",
-    fontWeight: "800",
+    fontWeight: "700",
   },
   legendeCalendrier: {
     flexDirection: "row",
@@ -839,8 +857,10 @@ const styles = StyleSheet.create({
     minHeight: 15,
   },
   valeurStat: {
+    // Le seul 900 de l'ecran. Sa taille (18, la plus grosse de la page) suffit
+    // deja a le detacher : l'epaisseur n'ajoutait que du bruit.
     fontSize: 18,
-    fontWeight: "900",
+    fontWeight: "700",
     color: palette.text,
   },
   ligneComparaison: {
@@ -889,7 +909,8 @@ const styles = StyleSheet.create({
   },
   valeurAccomplissement: {
     fontSize: 12,
-    fontWeight: "800",
+    // 12 / 700 : le palier `metaAppuyee` de l'echelle allegee.
+    fontWeight: "700",
     color: palette.sub,
   },
 });
