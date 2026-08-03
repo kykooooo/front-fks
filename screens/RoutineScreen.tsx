@@ -21,6 +21,7 @@ import { useExternalStore } from "../state/stores/useExternalStore";
 import { useSyncStore } from "../state/stores/useSyncStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
 import { useSettingsStore } from "../state/settingsStore";
+import { compterSeancesFksSurJours } from "../domain/resumeCanonique";
 import { toDateKey } from "../utils/dateHelpers";
 
 const palette = theme.colors;
@@ -52,6 +53,13 @@ export default function RoutineScreen() {
   const devNowISO = useDebugStore((s) => s.devNowISO);
 
   const weekStart = useSettingsStore((s) => s.weekStart);
+  // TODO (lot d'ecran) : ce `?? 2` est le defaut P1.10 de l'audit — une cible
+  // inventee, indiscernable d'un objectif choisi par le joueur, et qui ecrase le
+  // rythme declare au setup (`useExternalStore.targetFksSessionsPerWeek`).
+  // `resoudreObjectifHebdo` (domain/resumeCanonique.ts) existe pour le remplacer
+  // et rend `null` quand personne n'a rien declare. Le remplacer ici CHANGE
+  // l'affichage du badge « Plan hebdo » : c'est une decision d'ecran, elle
+  // n'appartient pas au lot « couche de calcul ».
   const weeklyGoal = useSettingsStore((s) => s.weeklyGoal ?? 2);
   const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
   const sessionReminders = useSettingsStore((s) => s.sessionReminders);
@@ -131,10 +139,14 @@ export default function RoutineScreen() {
   );
 
   const weekSummary = useMemo(() => {
-    const fksCount = sessions.filter((s: any) => {
-      const key = toDateKey(s?.dateISO ?? s?.date);
-      return s.completed && weekKeySet.has(key);
-    }).length;
+    // Le comptage des seances FKS de la semaine est DELEGUE au resume canonique
+    // (domain/resumeCanonique.ts). C'etait la TROISIEME copie de ce filtre dans
+    // le depot, apres `useWeekSummary` et `buildTrackingProgress` : trois ecrans
+    // a un tap les uns des autres pouvaient afficher trois chiffres pour la meme
+    // semaine. Resultat rigoureusement identique a l'ancienne ligne (meme
+    // predicat strict `completed`, meme fenetre `weekKeySet`) — seule
+    // l'implementation est mise en commun.
+    const fksCount = compterSeancesFksSurJours(sessions, weekKeySet);
     const extCount = (externalLoads ?? []).filter((e: any) => {
       const key = toDateKey(e?.dateISO ?? e?.date);
       return weekKeySet.has(key);

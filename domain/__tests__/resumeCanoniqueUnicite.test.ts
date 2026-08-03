@@ -1,0 +1,78 @@
+// domain/__tests__/resumeCanoniqueUnicite.test.ts
+// =============================================================================
+// UNE SEULE IMPLEMENTATION PAR METRIQUE — VERIFIE SUR LA SOURCE, PAS SUR LA FOI
+// =============================================================================
+//
+// POURQUOI CE TEST EXISTE
+// -----------------------------------------------------------------------------
+// `domain/resumeCanonique.ts` n'a de valeur que si elle est la SEULE a compter
+// les seances FKS d'une semaine. Or la mise en commun a d'abord ete faite en
+// enumerant « les deux consommateurs existants » — il y en avait trois. Le
+// troisieme (`screens/RoutineScreen.tsx`, ecran ROUTE dans `RootNavigator`)
+// recalculait le filtre en local et pouvait donc afficher un chiffre different
+// de celui du Home, sur la meme semaine, a un tap d'intervalle.
+//
+// Un commentaire ne protege pas de ca : la prochaine copie sera ecrite par
+// quelqu'un qui n'aura pas lu le commentaire. Ce test lit donc la SOURCE.
+//
+// CE QU'IL VERIFIE, EXACTEMENT
+// -----------------------------------------------------------------------------
+//   1. Chaque consommateur connu delegue bien a `compterSeancesFksSurJours`.
+//   2. Aucun fichier de `screens/`, `hooks/` ou `components/` ne refait le
+//      filtre a la main — la forme exacte qui existait en triple : un test de
+//      completude combine a une appartenance a la fenetre de semaine.
+// =============================================================================
+
+import fs from "fs";
+import path from "path";
+
+const RACINE = path.resolve(__dirname, "..", "..");
+
+function lire(relatif: string): string {
+  return fs.readFileSync(path.join(RACINE, relatif), "utf8");
+}
+
+/** Les consommateurs connus du comptage hebdomadaire. */
+const CONSOMMATEURS = [
+  "hooks/home/useWeekSummary.ts",
+  "hooks/trackingProgress/buildTrackingProgress.ts",
+  "hooks/home/homeVNextAdapter.ts",
+  "screens/RoutineScreen.tsx",
+];
+
+describe("le comptage hebdo des seances FKS n'a qu'une implementation", () => {
+  it.each(CONSOMMATEURS)("%s delegue au resume canonique", (relatif) => {
+    expect(lire(relatif)).toContain("compterSeancesFksSurJours");
+  });
+
+  it("aucun ecran ni hook ne refait le filtre a la main", () => {
+    const dossiers = ["screens", "hooks", "components"];
+    const fautifs: string[] = [];
+
+    const parcourir = (dossier: string) => {
+      for (const entree of fs.readdirSync(dossier, { withFileTypes: true })) {
+        const complet = path.join(dossier, entree.name);
+        if (entree.isDirectory()) {
+          if (entree.name === "__tests__" || entree.name === "node_modules") continue;
+          parcourir(complet);
+          continue;
+        }
+        if (!/\.tsx?$/.test(entree.name)) continue;
+
+        const contenu = fs.readFileSync(complet, "utf8");
+        // La forme exacte du filtre duplique : « la seance est terminee » ET
+        // « son jour est dans la fenetre de semaine », dans le meme fichier,
+        // sans passer par la fonction canonique.
+        const testeLaCompletude = /\bs(?:ession)?\??\.completed\b/.test(contenu);
+        const testeLaFenetre = /week(?:Key)?Set\.has\(/.test(contenu);
+        if (testeLaCompletude && testeLaFenetre && !contenu.includes("compterSeancesFksSurJours")) {
+          fautifs.push(path.relative(RACINE, complet).replace(/\\/g, "/"));
+        }
+      }
+    };
+
+    for (const d of dossiers) parcourir(path.join(RACINE, d));
+
+    expect(fautifs).toEqual([]);
+  });
+});
