@@ -18,11 +18,18 @@
 //     `HomeVNextLink` ci-dessous, qui pose `accessibilityRole="link"` et le
 //     plancher tactile de 44 pt.
 //
-//  3. AUCUN HAPTIC ICI. La convention du projet est `useHaptics()` et rien
-//     d'autre ; or ce hook importe `expo-haptics` et `state/settingsStore`
-//     (donc AsyncStorage). Un prototype qui doit se rendre hors de l'app ne
-//     peut pas embarquer ca. Le retour haptique se rebranchera au moment de la
-//     reprise en production, dans les callbacks passes en props.
+//  3. AUCUN HAPTIC ICI — MAIS L'ECRAN VIBRE. La convention du projet est
+//     `useHaptics()` et rien d'autre ; or ce hook importe `expo-haptics` et
+//     `state/settingsStore` (donc AsyncStorage). Un composant qui doit aussi se
+//     rendre hors de l'app ne peut pas embarquer ca.
+//     Le rebranchement annonce ici A EU LIEU, a l'endroit prevu : dans les
+//     callbacks passes en props, c'est-a-dire
+//     `screens/homeVNext/HomeVNextContainer.tsx` — impulsion legere quand
+//     l'action emmene quelque part, avertissement quand elle est indisponible,
+//     silence quand elle ne fait rien. Verrouille par
+//     `__tests__/homeVNext/haptiqueConteneur.test.tsx`.
+//     DONC : ne pas ajouter d'appel haptique dans ce fichier, il en resulterait
+//     une double vibration sur chaque tap.
 //
 //  4. LE TITRE DE SECTION EST DESSINE ICI, PLUS PAR `components/ui/SectionHeader`.
 //     Ce composant du socle code sa typographie en dur (13 / 800 / tracking 1,2)
