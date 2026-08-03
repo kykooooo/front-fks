@@ -15,7 +15,7 @@ import type { Session, SessionFocus } from "../../domain/types";
 import { getCycleTheme, type CycleTheme } from "../../constants/cycleTheme";
 import { getMicrocyclePhase } from "../../utils/microcycleUtils";
 import { canonicalizeMicrocycleGoal, MICROCYCLE_TOTAL_SESSIONS_DEFAULT } from "../../domain/microcycles";
-import { weekKeyOf } from "../../utils/dateHelpers";
+import { compterSeancesFksSurJours, joursDeLaSemaine } from "../../domain/resumeCanonique";
 import { prettifyName } from "../../screens/sessionPreview/sessionPreviewConfig";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -184,13 +184,21 @@ function buildSessionsHistoryForGap(sessions: Session[]): TrackingHistoryEntry[]
     }));
 }
 
+/**
+ * Seances FKS terminees dans la semaine courante.
+ *
+ * DELEGUE au resume canonique (`domain/resumeCanonique.ts`) : une seule
+ * implementation de ce comptage dans l'app, partagee avec le Home. La semaine
+ * est demandee a LUNDI FIXE, exactement comme le faisait `weekKeyOf` ici — et
+ * pour la meme raison : `weekKeyOf` est l'identifiant de
+ * `clubs/{clubId}/weekContexts/{weekKey}`, partage coach/joueur, il ne suit pas
+ * le reglage `weekStart` du joueur. Le Home, lui, passe le reglage du joueur.
+ *
+ * Resultat rigoureusement identique a l'ancienne version : c'est le meme
+ * ensemble de sept jours, verifie par test contre `weekKeyOf`.
+ */
 function countCompletedThisWeek(sessions: Session[], nowISO: string): number {
-  const currentWeekKey = weekKeyOf(nowISO);
-  return sessions.filter((s) => {
-    if (!s.completed) return false;
-    const dateVal = s.dateISO ?? s.date;
-    return dateVal ? weekKeyOf(dateVal) === currentWeekKey : false;
-  }).length;
+  return compterSeancesFksSurJours(sessions, joursDeLaSemaine(nowISO, "mon"));
 }
 
 function computeFocusBadges(sessions: Session[], nowISO: string): FocusBadge[] {
