@@ -1472,45 +1472,49 @@ export function buildProgressionViewModel(input: ProgressionInput): ProgressionV
 // =============================================================================
 //
 // Regle du fondateur : ce lien n'existe QUE si `screens/ProgressScreen.tsx` peut
-// afficher un contenu honnete pour cet etat. Verdict pris etat par etat, en
-// lisant le fichier :
+// afficher un contenu honnete pour cet etat.
+//
+// CETTE SECTION A ETE REECRITE AU LOT L5, ET IL FAUT DIRE POURQUOI.
+// -----------------------------------------------------------------------------
+// Les trois verdicts ci-dessous ont d'abord ete pris en lisant l'ANCIENNE page,
+// et ils s'appuyaient sur ce qu'elle avait de faux : un libelle d'etat et une
+// courbe integralement produits par les amorces ATL0/CTL0, six accomplissements
+// dont trois deduits, des stats melangeant les charges club auto-injectees aux
+// faits reels. Rien de tout cela n'existe plus : la page consomme desormais CE
+// selecteur, par `hooks/useProgressionViewModel.ts`.
+//
+// Laisser ces justifications en place aurait ete pire que les effacer : un
+// commentaire qui decrit un fichier qui n'existe plus se lit comme un fait, et
+// c'est ce que la `reserve` faisait — elle citait des numeros de ligne d'un
+// ecran reecrit. Elle est donc levee.
+//
+// LES VERDICTS EUX-MEMES N'ONT PAS BOUGE, et c'est deliberé : changer le moment
+// ou un bouton apparait est une decision produit, pas une consequence mecanique
+// d'un lot technique. Elle appartient au fondateur (point ouvert du compte
+// rendu L5, cas "collecting").
 //
 // -- "empty" ----------------------------------------------------------------
-//   Ce que le joueur y trouverait, dans l'ordre de la page :
-//     1. un libelle d'etat physique + une courbe de 30 jours integralement
-//        produits par les amorces ATL0/CTL0 (:243-273, :467-479) ;
-//     2. SIX accomplissements, TOUS verrouilles (:56-112 rendus :553-599) :
-//        "0 / 1", "0 / 10", "0 / 50", "0 / 7", "0 / 1", "0 / 30" ;
-//     3. un calendrier du mois sans un seul jour actif (:665-710) ;
-//     4. des stats du mois a "0", "—", "—", "0 j" (:713-740).
-//   La carte "Evolution tests" (:602) ne s'affiche meme pas.
-//   -> Pas une seule ligne vraie sur ce joueur. VERDICT : PAS DE BOUTON.
+//   La page ouvre maintenant sur EXACTEMENT ce que cette carte vient d'afficher
+//   — meme selecteur, meme etat, mêmes trois reperes. Ce qu'elle ajoute a ce
+//   stade : un calendrier sans un seul jour actif, des stats du mois a
+//   "0 / — / —", trois accomplissements tous verrouilles.
+//   -> Le voyage n'apprend rien au joueur. VERDICT : PAS DE BOUTON.
 //
 // -- "collecting" -----------------------------------------------------------
-//   Le haut de la page reste le hero adosse aux amorces : c'est precisement la
-//   raison d'etre du seuil de 4 seances. Le mur d'accomplissements est encore
-//   verrouille a 5 sur 6 au mieux. Et les "Stats du mois" reaffichent le nombre
-//   de seances et la duree moyenne, c'est-a-dire les faits que cette carte vient
-//   deja d'enoncer (R7).
-//   Le seul bloc honnete de la page est "Evolution tests" — mais ce ViewModel
-//   calcule lui-meme la comparaison (`comparaisonsTests`), et en mieux : 17
-//   champs contre 9, et deux jours distincts exiges. La carte peut donc la
-//   montrer sur place. Le voyage n'apporte rien et coute deux blocs faux.
-//   -> VERDICT : PAS DE BOUTON.
+//   Meme chose : le haut de la page est le meme bloc que cette carte, aux memes
+//   chiffres. La page ajoute la liste COMPLETE des comparaisons de tests la ou
+//   la carte n'en montre qu'une — c'est reel, et c'est le seul apport.
+//   -> VERDICT INCHANGE : PAS DE BOUTON. A REVOIR : la raison qui le justifiait
+//      (« la page est fausse a ce stade ») a disparu avec le lot L5 ; ce qui
+//      reste est un arbitrage de valeur, pas un constat.
 //
 // -- "ready" ----------------------------------------------------------------
 //   A partir de 4 seances terminees et 3 jours de charge reellement enregistree,
-//   la page porte enfin des blocs que cette carte ne peut pas contenir :
-//     - le calendrier du mois, jour par jour, alimente par de vraies seances
-//       terminees et de vraies charges saisies (:368-396) ;
-//     - les stats du mois et l'ecart avec le mois precedent, comptes sur des
-//       seances reelles (:294-330, :457-458) ;
-//     - la liste COMPLETE des comparaisons de tests, la ou la carte n'en montre
-//       qu'une.
-//   Le hero reste faux — il ne devient pas vrai a 4 seances. Mais la page cesse
-//   d'etre integralement fausse, et ce qu'elle apporte en plus est reel.
-//   -> VERDICT : BOUTON AFFICHE, en lien secondaire, avec la reserve enregistree
-//      dans `detail.reserve` et repetee dans `protoWarnings`.
+//   la page porte des blocs que cette carte ne peut pas contenir : le calendrier
+//   du mois jour par jour, les stats du mois comparees au mois precedent, la
+//   liste complete des comparaisons de tests. Tous comptes sur les predicats
+//   canoniques (`domain/resumeCanonique.ts`), comme cette carte.
+//   -> VERDICT : BOUTON AFFICHE, en lien secondaire, SANS reserve.
 // =============================================================================
 
 /**
@@ -1533,11 +1537,21 @@ export function buildProgressionViewModel(input: ProgressionInput): ProgressionV
  */
 const LIBELLE_DETAIL = "Voir ma progression";
 
-/** Reserve attachee au seul etat qui envoie reellement le joueur sur la page. */
-const RESERVE_PROGRESS_SCREEN =
-  "screens/ProgressScreen.tsx affiche en haut de page un libelle d'etat et une courbe de 30 jours reamorces sur ATL0/CTL0 (:251-252, :243-273), sans jamais dire sur quoi ils sont calcules (:547-549). Ce bloc doit etre corrige avant toute mise en production de ce lien.";
+// LA RESERVE A ETE LEVEE AU LOT L5.
+//
+// Elle disait : « screens/ProgressScreen.tsx affiche en haut de page un libelle
+// d'etat et une courbe de 30 jours reamorces sur ATL0/CTL0, sans jamais dire sur
+// quoi ils sont calcules. Ce bloc doit etre corrige avant toute mise en
+// production de ce lien. » C'etait une dette, ecrite noir sur blanc, avec sa
+// condition de leve. La condition est remplie : la page consomme desormais ce
+// selecteur, et sa courbe imprime `courbe.portee` — champ non nullable, donc
+// impossible a omettre.
+//
+// `detail.reserve` reste dans le contrat et vaut `null` partout. Ce n'est pas un
+// champ mort : c'est l'endroit ou s'ecrira la prochaine dette assumee sur une
+// destination, si jamais il y en a une. Le type dit deja qu'elle peut exister.
 
-function decisionDetail(state: ProgressionState, protoWarnings: string[]): ProgressionDetail {
+function decisionDetail(state: ProgressionState, _protoWarnings: string[]): ProgressionDetail {
   if (state === "empty") {
     return {
       affiche: false,
@@ -1545,7 +1559,7 @@ function decisionDetail(state: ProgressionState, protoWarnings: string[]): Progr
       target: null,
       emphasis: "lien_secondaire",
       motif:
-        "Aucun bouton : sur un compte sans seance terminee, la page Progression n'affiche que des faits faux — un etat de forme et une courbe issus des amorces ATL0/CTL0, six accomplissements tous verrouilles, un calendrier vide et des stats a 0 / tiret.",
+        "Aucun bouton : la page Progression ouvre sur exactement ce que cette carte vient d'afficher — meme selecteur, memes trois reperes. Ce qu'elle ajoute a ce stade est vide par construction : un calendrier sans jour actif, des stats du mois a zero, trois accomplissements verrouilles.",
       reserve: null,
     };
   }
@@ -1556,18 +1570,17 @@ function decisionDetail(state: ProgressionState, protoWarnings: string[]): Progr
       target: null,
       emphasis: "lien_secondaire",
       motif:
-        "Aucun bouton : la page Progression ouvre toujours sur le hero adosse aux amorces, le mur d'accomplissements reste verrouille, et ses stats du mois repetent les faits que cette carte vient d'enoncer. Son seul bloc honnete (l'evolution des tests) est deja calcule ici, et sur plus de champs.",
+        "Aucun bouton : le haut de la page est le meme bloc que cette carte, aux memes chiffres. Son seul apport reel a ce stade est la liste COMPLETE des comparaisons de tests, la ou cette carte n'en montre qu'une — un arbitrage de valeur qui revient au fondateur, plus un constat de faussete depuis le lot L5.",
       reserve: null,
     };
   }
-  protoWarnings.push(`Reserve sur la destination : ${RESERVE_PROGRESS_SCREEN}`);
   return {
     affiche: true,
     label: LIBELLE_DETAIL,
     target: "progression",
     emphasis: "lien_secondaire",
     motif:
-      "Bouton affiche : a partir de ce seuil, la page Progression porte des blocs reels que cette carte ne contient pas — le calendrier du mois jour par jour, les stats du mois comparees au mois precedent, et la liste complete des comparaisons de tests.",
-    reserve: RESERVE_PROGRESS_SCREEN,
+      "Bouton affiche : a partir de ce seuil, la page Progression porte des blocs reels que cette carte ne contient pas — le calendrier du mois jour par jour, les stats du mois comparees au mois precedent, et la liste complete des comparaisons de tests. Tous comptes sur les memes predicats canoniques que cette carte.",
+    reserve: null,
   };
 }

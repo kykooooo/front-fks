@@ -282,7 +282,10 @@ describe("Progression — etat 'ready'", () => {
     expect(vm.detail.label).toBe("Voir ma progression");
     expect(vm.detail.target).toBe("progression");
     expect(vm.detail.emphasis).toBe("lien_secondaire");
-    expect(vm.detail.reserve).not.toBeNull();
+    // Plus de reserve sur la destination : la page Progression consomme ce
+    // selecteur depuis le lot L5, et sa courbe imprime `courbe.portee`. La
+    // dette qui etait ecrite ici avait une condition de leve, elle est remplie.
+    expect(vm.detail.reserve).toBeNull();
   });
 });
 
@@ -858,12 +861,14 @@ describe("Progression — le pied 'Voir ma progression'", () => {
       if (vm.detail.affiche) {
         expect(vm.detail.label).toBe("Voir ma progression");
         expect(vm.detail.target).toBe("progression");
-        expect(vm.detail.reserve).not.toBeNull();
       } else {
         expect(vm.detail.label).toBeNull();
         expect(vm.detail.target).toBeNull();
-        expect(vm.detail.reserve).toBeNull();
       }
+      // AUCUN etat ne porte plus de reserve : la destination a ete refondue au
+      // lot L5 et ne ment plus. Le champ reste au contrat pour la prochaine
+      // dette assumee, s'il y en a une.
+      expect(vm.detail.reserve).toBeNull();
     }
   );
 
@@ -876,10 +881,20 @@ describe("Progression — le pied 'Voir ma progression'", () => {
     expect(vmDe("aucune-comparaison-de-test").detail.affiche).toBe(true);
   });
 
-  it("quand on y envoie le joueur, la reserve sur la destination est enregistree", () => {
+  it("la reserve sur la destination est levee, et plus rien ne l'annonce", () => {
+    // Ce test disait l'inverse jusqu'au lot L5 : il verifiait que la reserve
+    // etait bien ENREGISTREE, parce que la page Progression affichait alors une
+    // courbe reamorcee sur ATL0/CTL0 sans dire sur quoi elle etait calculee. La
+    // dette avait une condition de leve ecrite ; la page consomme desormais ce
+    // selecteur, donc elle est levee. Le test la verrouille dans ce sens-la,
+    // pour qu'une reserve ne puisse pas revenir sans que quelqu'un l'ecrive.
     const vm = vmDe("tendance-disponible");
-    expect(vm.detail.reserve).toContain("ATL0/CTL0");
-    expect(vm.protoWarnings.some((w) => w.startsWith("Reserve sur la destination"))).toBe(true);
+    expect(vm.detail.reserve).toBeNull();
+    expect(vm.protoWarnings.some((w) => w.startsWith("Reserve sur la destination"))).toBe(false);
+    // NB : un autre avertissement mentionne encore ATL0/CTL0 — celui de la
+    // decision D1 (aucun etat physique global sur cette carte). C'est un autre
+    // sujet, toujours d'actualite : le modele de charge de l'app ignore les
+    // entrainements club. On ne le vise pas ici.
   });
 });
 
