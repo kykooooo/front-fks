@@ -58,10 +58,16 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
   - `expo-notifications` integre, service dans `services/notifications.ts`.
   - Rappels seance, streak, veille de match, recap hebdo.
   - Toggles dans Settings avec rollback UI.
-- **ProgressScreen repense** :
-  - Hero football-friendly (plus de jargon ATL/CTL/TSB cote joueur).
-  - Systeme de milestones (6 accomplissements avec lock/unlock).
-  - Comparaison tests terrain avant/apres.
+- **Accueil vNext + Progression refondue** (integration du prototype Home) :
+  - L'onglet Accueil monte `screens/homeVNext/` ; l'ancien `HomeScreen.tsx` reste
+    en repli derriere `HOME_FEATURES.VNEXT` (`config/homeFeatures.ts`).
+  - Page Progression rebatie sur le MEME ViewModel que la carte du Home : plus de
+    hero forme amorce a ATL0/CTL0, plus de milestones deduits, plus de « record de
+    streak ». Portee ecrite sous la courbe (« seances FKS uniquement »).
+  - Etats honnetes : quand il n'y a pas assez de jours reels, la courbe n'est pas
+    tracee — on ne dessine pas une constante d'amorcage a la place d'un joueur.
+  - Comparaisons de tests terrain : 2 jours LOCAUX distincts exiges (`toDateKey`),
+    sens a trois valeurs (amelioration / regression / identique).
 - **Backend dev local** :
   - `config/backend.ts` pointe automatiquement vers l'IP du Mac (via `hostUri`) en dev, port 4000.
   - Retry automatique sur timeout (cold start Render) dans `api.ts`.
@@ -175,7 +181,13 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
     RootNavigator.tsx        # Auth flow + App flow + modals (transparentModal)
 
   /screens
-    HomeScreen.tsx            # Dashboard principal (StatusBar + Hero + CTA + Carousel)
+    HomeScreen.tsx            # ANCIEN accueil — repli seulement (HOME_FEATURES.VNEXT = false)
+    /homeVNext                # L'ACCUEIL REEL du joueur
+      HomeVNextContainer.tsx  # Ce que RootNavigator monte (lit les stores, cable les actions)
+      HomeVNextScreen.tsx     # Le rendu pur (aucun store, recoit un ViewModel)
+      viewModel.ts            # Contrat du Home : ce que l'ecran a le DROIT d'afficher
+      progressionViewModel.ts # Contrat de la carte progression (partage avec ProgressScreen)
+      fixtures.ts             # Jeux d'essai — lus par les tests uniquement
     LoginScreen.tsx           # Connexion (shake + toast sur erreur)
     RegisterScreen.tsx        # Inscription (fade in + slide up + shake)
     ProfileSetupScreen.tsx    # Setup profil multi-etapes
@@ -188,7 +200,7 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
     SessionHistoryScreen.tsx  # Historique (stagger animation)
     VideoLibraryScreen.tsx    # Catalogue exercices + videos (acces via ExerciseDetail stack, plus dans tab bar)
     NewSessionScreen.tsx      # Generation de seance
-    ProgressScreen.tsx        # Milestones, hero football-friendly, comparaison tests
+    ProgressScreen.tsx        # Page Progression sur le resume canonique (meme ViewModel que la carte du Home)
     TestsScreen.tsx           # Tests terrain
     SettingsScreen.tsx        # Parametres
     WelcomeScreen.tsx         # Ecran d'accueil premium (CTA -> Login ou Register)
@@ -197,14 +209,20 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
     /newSession               # Sous-modules generation (api, orchestrator, transform, UI)
 
   /components
-    /home
-      HomeReadinessHero.tsx   # Card large readiness + sparkline TSB (SVG)
-      HomePrimaryCTA.tsx      # Bouton action principale contextuel (pulse animation)
-      HomeCarouselCard.tsx    # Template card pour carousel
-      HomeCycleHero.tsx       # (legacy) Hero cycle
-      HomeDashboardCard.tsx   # (legacy) Dashboard metriques
-      HomeReadinessCard.tsx   # (legacy) Card readiness ancienne version
-      HomeNextSessionCard.tsx # (legacy) Card prochaine seance
+    /homeVNext                # Les briques de l'accueil reel (16 fichiers)
+      HomeVNextAction.tsx     # Le CTA unique + le "pourquoi" + le cycle
+      HomeVNextProgression.tsx# La carte progression (courbe, faits, repere de test)
+      HomeVNextDemarrage.tsx  # Bloc "Premiere mission" — nouveau joueur, etats REELS
+      HomeVNextWeek.tsx       # Ma semaine (compteur hebdo, seul de l'app)
+      HomeVNextSkeleton.tsx   # Rendu tant que les stores ne sont pas hydrates
+      homeVNextTypo.ts        # Echelle typo + plafonds maxFontSizeMultiplier par role
+      homeVNextTokens.ts      # Couleurs/espacements du Home (distinct de theme.ts)
+      homeVNextPresentation.tsx # Contexte reduceMotion + echelle (lit hooks/useReduceMotion)
+      (+ Header, Form, Sparkline, Note, DataNotice, Exit, Primitives, marqueurs)
+
+    /home                     # ANCIEN accueil — vit et meurt avec HomeScreen.tsx
+      HomeReadinessHero.tsx · HomePrimaryCTA.tsx · HomeCarouselCard.tsx
+      HomeNextSessionCard.tsx · HomeAdviceCard.tsx
 
     /modal
       ModalContainer.tsx      # Wrapper modal universel (blur + slide + handle)
@@ -225,14 +243,23 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
 
   /hooks
     useHaptics.ts             # Hook haptics centralise (respecte reduceMotion + settings)
+    useReduceMotion.ts        # Preference "reduire les animations" (SEULE source, ne pas recrire)
     useNetworkStatus.ts       # Statut reseau + queue count
+    useProgressionViewModel.ts# ViewModel progression partage Home <-> ProgressScreen
+    useMainObjective.ts       # Objectif declare au profil (pour le "pourquoi" du cycle)
     /home
-      useLoadSeries.ts        # Calcul serie TSB 7 jours (warmup 21j)
-      useMatchSoon.ts         # Detection match < 48h
-      useWeekDays.ts          # Jours de la semaine avec statuts (FKS, club, match, etc.)
-      useWeekSummary.ts       # Resume semaine (fksCount, extCount, message)
-      useActivityStreak.ts    # Streak d'activite consecutive
-      usePrimaryCta.ts        # Logique CTA intelligent (repos/generer/commencer/feedback)
+      # --- L'accueil reel ---
+      useHomeVNextViewModel.ts# Assemble l'ecran : etat des stores -> ViewModel
+      useEtatStoresHome.ts    # LA lecture des stores (le seul endroit qui les lit)
+      homeVNextAdapter.ts     # Stores -> HomeVNextInput (pur, teste ; jamais de valeur inventee)
+      homeVNextNavigation.ts  # Ou mene chaque action (pur, teste)
+      useContextualAdvice.ts  # Conseil contextuel (aussi utilise par NewSessionScreen)
+      # --- Ancien accueil : consommes par le seul HomeScreen.tsx ---
+      useLoadSeries.ts · useMatchSoon.ts · useWeekDays.ts
+      useWeekSummary.ts · useActivityStreak.ts · usePrimaryCta.ts
+
+  /domain
+    resumeCanonique.ts        # LE comptage hebdo des seances FKS — une seule implementation
 
   /utils
     dateHelpers.ts            # Helpers partages (toDateKey, isSameDay, frToKey)
@@ -250,7 +277,9 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
 Welcome -> Login/Register -> Setup profil (poste, niveau, pied fort, objectif, charge club/match, materiel, code club) -> Onboarding slides
 
 ### App (100% mode joueur, mode coach retire)
-- **Home** : StatusBar (phase + TSB + match) -> Hero photo (chips Semaine/Serie/Match) -> ReadinessHero (ATL/CTL/TSB + sparkline) -> CTA intelligent -> Carte Progression -> Card Prochaine seance
+- **Home (vNext)** : en-tete -> UN SEUL CTA (+ le « pourquoi » et le cycle) -> Ma semaine -> Ta forme -> Carte progression -> conseil -> sortie. Nouveau joueur : bloc « Premiere mission » a la place, qui disparait des la 1re seance terminee.
+  - Ce que le Home ne fait plus, et par decision : pas de pastille d'etat globale, pas de second CTA, pas de compteur de jours consecutifs (« Serie »), pas de courbe amorcee a ATL0/CTL0. Une donnee absente s'affiche comme absente — jamais un 0 de remplissage.
+  - Le compteur hebdomadaire de seances FKS vit ICI et nulle part ailleurs (`domain/resumeCanonique.ts`).
 - **Cycles** : 1 seul cycle actif, choix/gestion via modal, recommandation basee sur objectif + tests
 - **Generation** : choix environnement + materiel -> backend genere -> preview -> live -> feedback (RPE, fatigue, douleur)
 - **Tests terrain** : batterie de tests par playlist, accessibles via navigation stack (plus mise en avant Home)
@@ -273,7 +302,7 @@ Ecrans concernes : FeedbackScreen, CycleModalScreen, ExternalLoadScreen, Session
 ### Micro-animations (Phase 3)
 - **Button** : scale down 0.96 au press + overlay darken + haptic impactLight
 - **Erreurs** : shake animation (3 secousses) sur formulaires login/register
-- **Entrees** : stagger fade+slideUp sur HomeScreen (hero, CTA, carousel) et SessionHistory
+- **Entrees** : stagger fade+slideUp sur SessionHistory (l'accueil vNext n'anime pas ses entrees)
 - **CTA** : pulse subtil (scale 1 -> 1.015) en boucle quand actif
 - **Toast** : slide from top + fade, auto-dismiss apres 2.2s
 
@@ -323,8 +352,10 @@ Hook `useHaptics()` centralise :
 7. **Toast (pas Alert.alert) pour les notifications utilisateur simples**
 8. **Haptics via useHaptics() uniquement** (jamais d'appel direct expo-haptics)
 9. **Helpers partages dans utils/** (pas de duplication de toDateKey, isSameDay, frToKey)
-10. **Hooks metier du Home dans hooks/home/** (garder HomeScreen leger)
-11. **Socle visuel (regle d'or)** : tout nouvel ecran = `<Screen>` (`components/ui/Screen.tsx`, seule source de verite de la safe area, header-aware). Jamais de `<SafeAreaView edges={[...]}>` ni de `paddingTop` magique a la main. Jamais de `<StatusBar>` locale (une seule, globale, dans `App.tsx`). Sur les blocs de texte : `minHeight` (jamais `height`), et `numberOfLines` sur le contenu backend.
+10. **Hooks metier du Home dans hooks/home/** (l'ecran ne lit aucun store lui-meme)
+11. **Un chiffre = une implementation.** Le comptage hebdo des seances FKS passe par `domain/resumeCanonique.ts` — jamais un filtre recopie dans un ecran. Un test lit la source pour l'empecher (`domain/__tests__/resumeCanoniqueUnicite.test.ts`). Meme regle pour la progression : Home et page Progression lisent le MEME ViewModel (`useProgressionViewModel`).
+12. **Jamais de valeur de remplissage.** Une donnee qu'on ne sait pas alimenter vaut `null` et se signale dans `protoWarnings` ; elle ne vaut jamais 0, ni une moyenne, ni une amorce. Les etats « pas encore assez de donnees » sont des etats a part entiere, pas des zeros deguises.
+13. **Socle visuel (regle d'or)** : tout nouvel ecran = `<Screen>` (`components/ui/Screen.tsx`, seule source de verite de la safe area, header-aware). Jamais de `<SafeAreaView edges={[...]}>` ni de `paddingTop` magique a la main. Jamais de `<StatusBar>` locale (une seule, globale, dans `App.tsx`). Sur les blocs de texte : `minHeight` (jamais `height`), et `numberOfLines` sur le contenu backend.
 
 ## Note pour Claude
 Je suis Kyllian, non-developpeur, j'ai cree cette app avec GPT puis Claude Code. Mon co-fondateur s'appelle Marvin (gere la partie call/closing).
@@ -337,4 +368,6 @@ Quand tu m'expliques du code, utilise un francais simple et des analogies foot s
 - Toasts via `showToast()` (jamais `Alert.alert`)
 - Haptics via `useHaptics()` uniquement
 - Helpers de date dans `utils/dateHelpers.ts`
-- Hooks Home dans `hooks/home/` (garder HomeScreen leger)
+- Hooks Home dans `hooks/home/` (l'ecran d'accueil ne lit aucun store lui-meme)
+- Un chiffre = une implementation (comptage hebdo : `domain/resumeCanonique.ts`)
+- Donnee absente = `null`, jamais 0 ni valeur amorcee
