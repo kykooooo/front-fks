@@ -506,6 +506,33 @@ export function construireEntreeHome(etat: EtatStoresHome): HomeVNextInput {
   };
 }
 
+/**
+ * Ce que la carte progression doit savoir de « Ma semaine », pris SUR le
+ * ViewModel qui vient d'etre construit — jamais recalcule.
+ *
+ * R7 : la carte progression ne doit pas redire le chiffre que le bloc « Ma
+ * semaine » affiche deja 200 px plus haut. Le garde-fou ne vaut donc que si les
+ * deux parlent litteralement du meme nombre. Le recalculer ici (meme avec la
+ * fonction canonique) rouvrirait la porte a un ecart : deux appels, deux
+ * instants, deux reglages possibles. On lit donc la sortie.
+ *
+ * Cette fonction existe pour que ce cablage soit VERIFIABLE sans monter React :
+ * il vivait en une ligne dans `useHomeVNextViewModel`, vrai par construction et
+ * verrouille par aucun test — c'est-a-dire libre de deriver au premier
+ * refactor. Le dossier d'integration prevoyait `appariementVariante2.test.ts`
+ * pour cet invariant ; ce test-la dependait du harnais react-native-web (qui vit
+ * dans un autre worktree) et n'a pas ete porte. Le test qui protege reellement
+ * l'invariant est ici : `hooks/home/__tests__/homeVNextAdapter.test.ts`.
+ */
+export function construireSemaineCouranteDepuisLeHome(vm: {
+  week: { doneCount: number } | null;
+}): ProgressionSemaineCourante {
+  return {
+    blocAffiche: vm.week !== null,
+    seancesAffichees: vm.week?.doneCount ?? 0,
+  };
+}
+
 /** L'entree de la carte progression, remplie a partir des memes stores. */
 export function construireEntreeProgression(
   etat: EtatStoresHome,

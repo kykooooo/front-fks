@@ -26,7 +26,12 @@ import {
   buildProgressionViewModel,
   type ProgressionViewModel,
 } from "../../screens/homeVNext/progressionViewModel";
-import { construireEntreeHome, construireEntreeProgression, type EtatStoresHome } from "./homeVNextAdapter";
+import {
+  construireEntreeHome,
+  construireEntreeProgression,
+  construireSemaineCouranteDepuisLeHome,
+  type EtatStoresHome,
+} from "./homeVNextAdapter";
 
 import { auth } from "../../services/firebase";
 import { todayISO } from "../../utils/virtualClock";
@@ -135,11 +140,11 @@ export function useHomeVNextViewModel(): HomeVNextViewModels {
     // R7 — la carte progression a besoin de savoir ce que « Ma semaine » affiche
     // DEJA sur le meme ecran, pour ne pas redire le meme chiffre. On le lui donne
     // depuis le ViewModel qui vient d'etre construit : pas de second calcul.
+    // Le cablage est une fonction PURE et testee
+    // (`construireSemaineCouranteDepuisLeHome`) : ecrit en ligne ici, il etait
+    // vrai par construction et protege par aucun test.
     const progression = buildProgressionViewModel(
-      construireEntreeProgression(etat, {
-        blocAffiche: vm.week !== null,
-        seancesAffichees: vm.week?.doneCount ?? 0,
-      })
+      construireEntreeProgression(etat, construireSemaineCouranteDepuisLeHome(vm))
     );
 
     return { vm, progression, etat };

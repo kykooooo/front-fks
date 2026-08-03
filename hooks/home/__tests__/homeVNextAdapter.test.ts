@@ -33,6 +33,7 @@ import {
   construireEntreeHome,
   construireEntreeProgression,
   construireProchainMatch,
+  construireSemaineCouranteDepuisLeHome,
   construireSerieForme,
   type EtatStoresHome,
 } from "../homeVNextAdapter";
@@ -471,6 +472,54 @@ describe("l'entree de demarrage lit les trois champs que l'app possede deja", ()
     });
     expect(entree.testEntryCount).toBe(2);
     expect(entree.lastTestPlaylist).toBe("endurance");
+  });
+});
+
+// -----------------------------------------------------------------------------
+// 7. R7 — la carte progression et « Ma semaine » parlent du MEME chiffre
+// -----------------------------------------------------------------------------
+//
+// Le dossier d'integration prevoyait `appariementVariante2.test.ts` au L2. Ce
+// test-la portait sur l'outil de demonstration (il dependait du harnais
+// react-native-web, qui vit dans un autre worktree) et n'a pas ete porte —
+// l'invariant qu'il protegeait, lui, s'etait retrouve cable en dur dans le hook,
+// vrai par construction et verrouille par aucun test. Il l'est ici.
+
+describe("R7 : ce que la carte progression suppose de « Ma semaine » vient du Home", () => {
+  const seances = [
+    seance({ id: "a", completed: true, dateISO: "2026-08-10T10:00:00" }),
+    seance({ id: "b", completed: true, dateISO: "2026-08-11T10:00:00" }),
+  ];
+
+  it("le cablage recopie `week.doneCount`, il ne le recalcule pas", () => {
+    expect(construireSemaineCouranteDepuisLeHome({ week: { doneCount: 3 } })).toEqual({
+      blocAffiche: true,
+      seancesAffichees: 3,
+    });
+  });
+
+  it("sans bloc « Ma semaine », aucun doublon n'est possible : le garde-fou se retire", () => {
+    expect(construireSemaineCouranteDepuisLeHome({ week: null })).toEqual({
+      blocAffiche: false,
+      seancesAffichees: 0,
+    });
+  });
+
+  it("bout en bout : le chiffre suppose est EXACTEMENT celui que le Home affiche", () => {
+    const etat: EtatStoresHome = {
+      ...ETAT_VIDE,
+      sessions: seances,
+      targetFksSessionsPerWeek: 3, // sans objectif declare, le bloc semaine ne sort pas
+    };
+    const vm = buildHomeVNextViewModel(construireEntreeHome(etat), {
+      variante: "v2",
+      demarrage: "A",
+    });
+    expect(vm.week).not.toBeNull();
+
+    const semaine = construireSemaineCouranteDepuisLeHome(vm);
+    expect(semaine.seancesAffichees).toBe(vm.week!.doneCount);
+    expect(construireEntreeProgression(etat, semaine).semaineCourante).toEqual(semaine);
   });
 });
 

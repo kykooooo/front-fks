@@ -69,6 +69,25 @@ describe("joursDeLaSemaine reproduit exactement les deux semaines existantes", (
 
   it("une date illisible ne fabrique pas une semaine", () => {
     expect(joursDeLaSemaine("pas une date", "mon")).toEqual([]);
+    // Ecart ASSUME face a `weekKeyOf`, qui retombait sur l'horloge systeme et
+    // comptait la semaine reelle : ici, le vide remonte jusqu'a l'ecran.
+    expect(
+      compterSeancesFksSurJours(
+        [{ completed: true, dateISO: "2026-08-05T10:00:00" }],
+        joursDeLaSemaine("???", "mon")
+      )
+    ).toBe(0);
+  });
+
+  it("une date NUE est lue en LOCAL, jamais en UTC", () => {
+    // `new Date("2026-08-09")` vaut minuit UTC : en fuseau negatif, le 9 aout
+    // devient le 8 aout local et fait basculer toute la fenetre de semaine.
+    // La date nue est donc ancree a midi local, comme `weekKeyOf` et `toDateKey`.
+    expect(joursDeLaSemaine("2026-08-09", "mon")).toEqual(
+      joursDeLaSemaine("2026-08-09T12:00:00", "mon")
+    );
+    expect(joursDeLaSemaine("2026-08-09", "mon")[0]).toBe("2026-08-03");
+    expect(joursDeLaSemaine("2026-08-09", "sun")[0]).toBe("2026-08-09");
   });
 });
 

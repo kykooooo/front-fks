@@ -143,6 +143,29 @@ export function estSeanceFksTerminee(seance: SeanceDatee | null | undefined): bo
 }
 
 /**
+ * Un instant de reference, lu en heure LOCALE, ou `null` s'il est illisible.
+ *
+ * Une date NUE ("YYYY-MM-DD") est ancree a MIDI local et non parsee par
+ * `new Date()`, qui l'interpreterait en UTC : en fuseau negatif, "2026-08-09"
+ * deviendrait le 8 aout local et pourrait faire basculer toute la fenetre de
+ * semaine. Midi est le meme choix que celui deja fait plus bas pour l'arithmetique
+ * de jours : aucun basculement possible au passage a l'heure d'ete.
+ */
+function analyserInstantLocal(valeur: string | Date): Date | null {
+  if (valeur instanceof Date) {
+    return Number.isNaN(valeur.getTime()) ? null : new Date(valeur);
+  }
+  const brut = String(valeur).trim();
+  const dateNue = /^(\d{4})-(\d{2})-(\d{2})$/.exec(brut);
+  if (dateNue) {
+    const d = new Date(Number(dateNue[1]), Number(dateNue[2]) - 1, Number(dateNue[3]), 12, 0, 0, 0);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(brut);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
  * Les 7 cles de jour ("YYYY-MM-DD") de la semaine qui contient `nowISO`.
  *
  * Arithmetique de date LOCALE, comme `weekKeyOf` et comme `toDateKey` : un
@@ -152,13 +175,29 @@ export function estSeanceFksTerminee(seance: SeanceDatee | null | undefined): bo
  * @param debutDeSemaine "mon" (defaut de l'app) ou "sun". Pour la boucle de
  *   suivi, passer "mon" : c'est ce que fait `weekKeyOf`, dont la cle est
  *   partagee avec le coach.
+ *
+ * DEUX ECARTS ASSUMES FACE A L'ANCIEN `weekKeyOf`, ET POURQUOI
+ * ---------------------------------------------------------------------------
+ *   (a) INSTANT ILLISIBLE -> `[]`, donc zero seance comptee. `weekKeyOf`
+ *       retombait sur `toDateKey(new Date())` et comptait la semaine reelle.
+ *       C'est precisement ce qu'on ne veut plus : une fonction qui recoit une
+ *       date invalide et repond avec l'horloge systeme rend un chiffre que
+ *       personne n'a demande, et le rend en silence. Rendre `[]` fait remonter
+ *       le vide jusqu'a l'ecran, qui n'affichera rien plutot qu'un faux. Non
+ *       atteignable en pratique (`nowISO = devNowISO ?? todayISO()`, toujours un
+ *       ISO horodate valide) : c'est un choix de repli, pas un cas courant.
+ *   (b) DATE NUE "YYYY-MM-DD" -> ancree a MIDI LOCAL, comme `weekKeyOf` et
+ *       comme `toDateKey`. `new Date("2026-08-09")` parse en UTC : en fuseau
+ *       negatif, le 9 aout devenait le 8 aout local et faisait basculer la
+ *       semaine entiere. Sans consequence en France (UTC+1/+2), faux ailleurs —
+ *       corrige ici plutot que documente comme une fatalite.
  */
 export function joursDeLaSemaine(
   nowISO: string | Date,
   debutDeSemaine: DebutDeSemaine
 ): string[] {
-  const base = nowISO instanceof Date ? new Date(nowISO) : new Date(nowISO);
-  if (Number.isNaN(base.getTime())) return [];
+  const base = analyserInstantLocal(nowISO);
+  if (!base) return [];
 
   const premierJourIndex = debutDeSemaine === "sun" ? 0 : 1;
   const dow = base.getDay(); // 0 = dimanche … 6 = samedi (local)
@@ -282,8 +321,10 @@ export function compterJoursObserves(entree: {
   chargesExternes: readonly ChargeExterneDatee[];
 }): number {
   const fenetre = Math.max(1, Math.trunc(entree.fenetreJours ?? FENETRES_RESUME.charge.jours));
-  const fin = new Date(entree.nowISO);
-  if (Number.isNaN(fin.getTime())) return 0;
+  // Meme lecture locale que `joursDeLaSemaine` : une date nue ne doit pas etre
+  // parsee en UTC, sinon la fenetre glisse d'un jour en fuseau negatif.
+  const fin = analyserInstantLocal(entree.nowISO);
+  if (!fin) return 0;
 
   const joursAutorises = new Set<string>();
   const curseur = new Date(fin);
