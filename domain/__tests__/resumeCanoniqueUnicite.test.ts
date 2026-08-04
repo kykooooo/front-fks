@@ -73,7 +73,17 @@ describe("le comptage hebdo des seances FKS n'a qu'une implementation", () => {
         // La forme exacte du filtre duplique : « la seance est terminee » ET
         // « son jour est dans la fenetre de semaine », dans le meme fichier,
         // sans passer par la fonction canonique.
-        const testeLaCompletude = /\bs(?:ession)?\??\.completed\b/.test(contenu);
+        //
+        // LES DEUX FACONS D'ECRIRE « TERMINEE ». La sentinelle ne connaissait
+        // que la forme HISTORIQUE (`s.completed` a la main). Or ce lot vient de
+        // generaliser le predicat canonique partout : un doublon ecrit demain le
+        // serait naturellement avec `estSeanceFksTerminee`, c'est-a-dire dans la
+        // forme que la sentinelle ne voyait pas. Elle verrouillait donc la
+        // faute d'hier, pas la faute. Verifie sans faux positif : les trois
+        // fichiers qui portent une fenetre de semaine delegent tous au
+        // canonique, et le garde ci-dessous les exclut.
+        const testeLaCompletude =
+          /\bs(?:ession)?\??\.completed\b/.test(contenu) || /\bestSeanceFksTerminee\s*\(/.test(contenu);
         const testeLaFenetre = /week(?:Key)?Set\.has\(/.test(contenu);
         if (testeLaCompletude && testeLaFenetre && !contenu.includes("compterSeancesFksSurJours")) {
           fautifs.push(path.relative(RACINE, complet).replace(/\\/g, "/"));
