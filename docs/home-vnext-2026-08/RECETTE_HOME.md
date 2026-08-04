@@ -1,7 +1,7 @@
 # RECETTE TÉLÉPHONE — Accueil vNext + Progression refondue
 
 **Branche** : `feat/home-vnext-integration`, rebasée sur `origin/main` (`b50539a`, entrée coach incluse)
-**Portes automatiques au moment d'écrire** : `tsc` 0 erreur · `jest` 140 suites / 3364 verts / 1 ignoré / **0 échec** · `eslint` 0 erreur sur les 55 fichiers touchés par la branche
+**Portes automatiques au moment d'écrire** : `tsc` 0 erreur · `jest` 140 suites / 3364 verts / 1 ignoré / **0 échec** · `eslint` 0 erreur sur les 56 fichiers touchés par la branche (3 d'entre eux portent des avertissements, tous antérieurs à ce lot)
 **Ce document est la dernière porte avant merge.** Les trois portes ci-dessus ne prouvent rien de ce qui suit.
 
 > Ce fichier vit dans le dépôt, sur la branche, à côté du code qu'il juge — comme
