@@ -264,19 +264,20 @@ describe("HomeVNextScreen — le repere de cycle", () => {
   it("le nom de phase est annonce par le mot « Phase »", () => {
     for (const { f, vm } of AVEC_PHASE) {
       if (vm.cycle === null || vm.cycle.kind !== "en_cours") throw new Error("cycle attendu");
+      // Sorti de `vm.cycle` AVANT la fermeture : dans une closure, TypeScript
+      // perd le retrecissement de l'union et `phaseLabel` n'existe plus.
+      const phase = vm.cycle.phaseLabel;
       const rendu = monter(vm);
       const lus = textes(rendu.root);
 
       expect(lus).toContain(
-        ` · Séance ${vm.cycle.sessionNumber} sur ${vm.cycle.totalSessions} · Phase ${vm.cycle.phaseLabel}`
+        ` · Séance ${vm.cycle.sessionNumber} sur ${vm.cycle.totalSessions} · Phase ${phase}`
       );
 
       // ET SURTOUT : plus aucun segment ou le nom de phase suit un point median
       // tout seul — c'est cette forme-la qui se lisait comme un second cycle.
-      const nu = ` · ${vm.cycle.phaseLabel}`;
-      expect(lus.some((t) => t.includes(nu) && !t.includes(` · Phase ${vm.cycle.phaseLabel}`))).toBe(
-        false
-      );
+      const nu = ` · ${phase}`;
+      expect(lus.some((t) => t.includes(nu) && !t.includes(` · Phase ${phase}`))).toBe(false);
 
       demonter(rendu);
       expect(f.id).toBeTruthy();

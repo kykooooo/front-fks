@@ -1,7 +1,46 @@
 # RECETTE TÉLÉPHONE — Accueil vNext + Progression refondue
 
 **Branche** : `feat/home-vnext-integration`, rebasée sur `origin/main` (`b50539a`, entrée coach incluse)
-**Portes automatiques au moment d'écrire** : `tsc` 0 erreur · `jest` 142 suites / 3391 verts / 1 ignoré / **0 échec** · `eslint` **0 nouvelle erreur** sur les 64 fichiers touchés par la branche
+**Portes automatiques au moment d'écrire** : `tsc` 0 erreur · `jest` 142 suites / 3402 verts / 1 ignoré / **0 échec** · `eslint` **0 nouvelle erreur** sur les 64 fichiers touchés par la branche
+
+---
+
+## 🔴 AVANT TOUT — LE PREMIER ÉCRAN D'UN COMPTE NEUF [BLOQUANT]
+
+**Pourquoi cette section est en tête et pourquoi elle y restera.** La recette du 04/08 a trouvé, sur un
+compte neuf réel, que le bloc **« Première mission »** — l'écran de démarrage validé, celui que voit un
+joueur à sa toute première ouverture — **ne s'affichait pas du tout**. Le ViewModel le construisait ;
+l'écran le jetait, parce que la carte Progression occupait le même emplacement et passait devant.
+Ce que Kyllian a eu sous les yeux : une salutation, un bouton agrandi, la ligne de cycle, la carte
+Progression vide, et **un grand blanc**.
+
+**Les portes automatiques étaient vertes.** Les verrous du bloc montaient l'écran en variante 1 — une
+configuration que l'application ne produit jamais. Ils gardaient un écran fantôme. C'est corrigé, et
+les tests montent désormais l'écran exactement comme le conteneur ; mais la leçon vaut d'être écrite
+ici : **la première impression du produit n'avait aucun gardien humain dans ce document.** Elle en a un
+maintenant.
+
+Comment y arriver : **créer un compte neuf** (ou vider les données de l'app), finir le setup profil,
+choisir un cycle. Zéro séance terminée.
+
+- [ ] **[BLOQUANT]** Le bloc **« TES PREMIERS PAS »** est visible sur l'écran d'accueil
+- [ ] Il contient **exactement trois pas** (« Ton objectif », les tests, la première séance), chacun avec
+      son rond vide ou sa coche — et **les coches correspondent à ce que tu as vraiment fait**
+- [ ] **Aucune ligne du bloc n'est tapable** (c'est un repère, pas un menu — rien ne doit réagir au doigt)
+- [ ] Le bouton du jour est en **traitement héro** (plus grand, plus d'air) — il est le rang 1 de l'écran
+- [ ] **[BLOQUANT]** La carte **« TA PROGRESSION DÉMARRE ICI » n'est PAS là en même temps.** Ses trois
+      repères (« Termine ta première séance / Partage ton ressenti / Compare tes prochains tests ») disent
+      mot pour mot la même chose que les trois premiers pas. **Un seul message de démarrage à l'écran.**
+- [ ] Si tu as choisi un cycle : la ligne « pourquoi ce cycle » est **absente** (normal — un cycle tourne
+      déjà, l'écran n'en recommande pas un second). Si tu n'as **pas** de cycle : elle est **présente**
+- [ ] **L'écran ne se tasse pas en haut.** Sur un grand téléphone (844 px et plus), les trois blocs
+      respirent au lieu de s'empiler en haut avec un vide en bas. Sur petit écran, rien ne bouge
+- [ ] La ligne de cycle se lit **« Vitesse & détente · Séance 1 sur 12 · Phase Fondations »** — le mot
+      **« Phase »** doit y être. Sans lui, le troisième segment se lit comme un **deuxième cycle**
+      (c'est arrivé à Kyllian sur son propre produit)
+- [ ] **Dès la première séance terminée**, le bloc « TES PREMIERS PAS » disparaît **et la carte
+      Progression reprend sa place.** Sans « bravo », sans transition — l'écran a simplement des choses
+      vraies à dire, maintenant
 
 > **Ce que dit exactement la mesure eslint**, parce qu'une version précédente de cette ligne était fausse
 > et que ce document ne vaut que si chacune de ses lignes est vraie :
@@ -81,7 +120,7 @@ priorité du code.
 | ⑦ | « Voir ma séance de demain » | Une séance est prévue pour **demain**, rien pour aujourd'hui |
 | ⑧ | « Choisir mon cycle » / « Choisir mon prochain cycle » | Compte sans cycle actif — ou cycle terminé (12/12) |
 | ⑨ | « Préparer ma séance » | Cas courant : cycle actif, rien de prévu aujourd'hui |
-| ⑩ | Bloc **« Première mission »** | **Compte tout neuf**, zéro séance terminée |
+| ⑩ | Bloc **« Première mission »** | **Compte tout neuf**, zéro séance terminée — **déjà couvert en tête de document, section [BLOQUANT]** |
 
 ---
 

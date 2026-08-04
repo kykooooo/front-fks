@@ -582,7 +582,7 @@ const rendreCommeLApp = (vm: HomeVNextViewModel, input: HomeVNextInput) => {
 const textesRendus = (racine: ReturnType<typeof rendre>): string[] =>
   racine
     .findAllByType(Text, { deep: true })
-    .flatMap((n) => React.Children.toArray(n.props.children))
+    .flatMap((n) => React.Children.toArray(n.props.children as React.ReactNode))
     .filter((c): c is string => typeof c === "string");
 
 describe("Demarrage — le montage reel de l'application", () => {
