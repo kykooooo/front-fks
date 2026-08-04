@@ -1,7 +1,17 @@
 # RECETTE TÉLÉPHONE — Accueil vNext + Progression refondue
 
 **Branche** : `feat/home-vnext-integration`, rebasée sur `origin/main` (`b50539a`, entrée coach incluse)
-**Portes automatiques au moment d'écrire** : `tsc` 0 erreur · `jest` 140 suites / 3364 verts / 1 ignoré / **0 échec** · `eslint` 0 erreur sur les 56 fichiers touchés par la branche (3 d'entre eux portent des avertissements, tous antérieurs à ce lot)
+**Portes automatiques au moment d'écrire** : `tsc` 0 erreur · `jest` 142 suites / 3391 verts / 1 ignoré / **0 échec** · `eslint` **0 nouvelle erreur** sur les 64 fichiers touchés par la branche
+
+> **Ce que dit exactement la mesure eslint**, parce qu'une version précédente de cette ligne était fausse
+> et que ce document ne vaut que si chacune de ses lignes est vraie :
+> les 62 fichiers `.ts/.tsx` de la branche portent **40 erreurs**, toutes dans **deux** fichiers
+> (`screens/SettingsScreen.tsx` 29, `screens/HomeScreen.tsx` 11) et toutes **antérieures** — comptes
+> identiques avant et après les modifications du lot, `git blame` à l'appui. Ces deux fichiers n'étaient
+> pas dans le périmètre au départ ; ils y sont entrés avec le correctif de l'objectif hebdo, qui n'y
+> ajoute aucune erreur. Côté avertissements : **10**, dont **2 introduits par ce lot**
+> (`screens/ProgressScreen.tsx`, styles en ligne, commit `0e3a185`) et 8 antérieurs
+> (`RootNavigator` 2, `RoutineScreen` 2, `SettingsScreen` 4 — commits `c7aafd9c`, `037bd6ce`, `51fef837`).
 **Ce document est la dernière porte avant merge.** Les trois portes ci-dessus ne prouvent rien de ce qui suit.
 
 > Ce fichier vit dans le dépôt, sur la branche, à côté du code qu'il juge — comme
@@ -130,6 +140,17 @@ plus courant et l'état le plus riche, à la largeur qui casse. Le reste est du 
 - [ ] La semaine commence bien le jour réglé dans les Réglages (lundi ou dimanche)
 - [ ] Le chiffre est **identique** entre l'accueil et l'écran Routine (même semaine, deux écrans)
 
+**Le réglage « Objectif FKS hebdo » (Réglages) était devenu un bouton mort** : il écrivait un réglage
+local que plus rien ne lisait en premier. Il édite désormais le rythme déclaré au setup profil, le seul
+qui compte.
+
+- [ ] **[BLOQUANT]** Change l'objectif dans **Réglages > Objectif FKS hebdo**, reviens à l'accueil :
+      le **dénominateur** du compteur « ma semaine » a suivi (« 2 sur **4** »)
+- [ ] Le badge de l'écran Routine affiche **la même cible**
+- [ ] **Ferme et rouvre l'app** : la valeur est toujours la tienne (elle est enregistrée sur ton compte,
+      plus seulement sur le téléphone)
+- [ ] **En mode avion** : le changement s'affiche quand même, et il est toujours là au retour du réseau
+
 ---
 
 ## 4. « MA FORME » — plus jamais de courbe fabriquée
@@ -150,6 +171,19 @@ C'est voulu — l'ancienne partait d'une valeur inventée (une forme « +3 » le
 - [ ] **[BLOQUANT]** Texte au maximum : cette phrase de portée **n'est pas coupée** (elle a le droit de
       passer sur deux ou trois lignes, jamais d'être tronquée par « … »). C'est la plus longue phrase
       de l'écran : c'est elle qui casse en premier à 320 px.
+
+### Le tracé lui-même, sur la page Progression
+
+L'axe vertical était figé et rabotait les valeurs qui en sortaient. Sans conséquence tant que la courbe
+partait de valeurs d'amorçage ; faux depuis qu'elle part de zéro, où un joueur assidu descend
+régulièrement plus bas. L'échelle vient maintenant de **ta** série.
+
+- [ ] **[BLOQUANT]** La courbe **ne s'aplatit jamais contre le bord bas** du cadre sur plusieurs jours
+      d'affilée (un plateau parfaitement horizontal collé en bas = le défaut est revenu)
+- [ ] Le trait monte et descend dans le cadre, sans jamais toucher le bord haut ou bas plus d'un instant
+- [ ] Il n'y a **plus aucun chiffre** autour de la courbe — ni « 0 », ni « -10 », ni ligne orange de
+      seuil. Une ligne grise fine peut apparaître : c'est le zéro, et **seulement** quand ta courbe le
+      traverse vraiment
 
 ---
 
@@ -187,7 +221,11 @@ couleur, ni espacement n'ont bougé).
 
 - [ ] **[BLOQUANT]** Plus de gros bloc « TA FORME » en haut avec une valeur inventée
 - [ ] Plus de « Record de série »
-- [ ] Plus d'accomplissements/badges déduits automatiquement
+- [ ] Plus d'accomplissement **déduit d'une série de jours ou d'un raccourci de calcul** (« 7 jours
+      d'affilée », « 30 jours d'activité », « Cycle terminé » obtenu en divisant les séances par 12).
+      **La carte « Accomplissements » existe toujours** et c'est normal : les trois paliers qui restent
+      comptent tous la même chose, tes **séances FKS réellement terminées**. Ce que tu dois vérifier,
+      c'est que leur compte **colle** au chiffre « séances terminées » affiché plus haut sur la page
 - [ ] **« Ton suivi » est toujours là**, empilé **sous** le résumé, avec le bandeau de reprise en haut
 - [ ] Les deux compteurs de séances portent des **libellés différents** et compréhensibles :
       « séances **suivies** » (les 28 derniers jours) ≠ « séances **terminées** » (depuis le début)
@@ -295,8 +333,9 @@ L'accueil a changé, pas le reste. Rapide passe pour s'en assurer.
 
 - [ ] **Aucune ligne [BLOQUANT] en échec** → le merge peut avoir lieu
 - [ ] Si une ligne [BLOQUANT] échoue : ne pas merger, **et ne pas non plus basculer l'interrupteur** —
-      corriger. L'interrupteur (`config/homeFeatures.ts`, `VNEXT: false`) est le filet d'**après** le
-      merge, pour un problème découvert en production, pas une façon de faire passer une recette ratée.
+      corriger. L'interrupteur vaut `VNEXT: true` sur la branche (`config/homeFeatures.ts`) ; le passer
+      à `false` est le filet d'**après** le merge, pour un problème découvert en production, pas une
+      façon de faire passer une recette ratée. Sa valeur au merge est **ta** décision (hors périmètre §2).
 
 **Ce que la recette valide aussi, implicitement — à confirmer d'un mot :**
 
@@ -308,6 +347,52 @@ L'accueil a changé, pas le reste. Rapide passe pour s'en assurer.
       d'un « pas encore assez de données » : l'ancienne était fabriquée, la nouvelle est honnête, mais
       le joueur, lui, voit surtout qu'on lui a retiré quelque chose.
 - [ ] La graisse 700 sur la page Progression te va (section 5, « la couture typographique »).
+
+---
+
+## Hors périmètre — ce qui reste ouvert, en toutes lettres
+
+Deux vérificateurs indépendants ont relu ce lot. Ce qu'ils ont trouvé et qui **n'est pas corrigé ici**
+figure ci-dessous, sans arrondi : un document de fermeture qui tait ses restes ne ferme rien.
+
+**1. Aucun test ne monte l'écran de production avec ses vraies données.** `HomeVNextContainer` est bien
+monté par un test (celui des vibrations), mais avec le ViewModel remplacé par une doublure : le hook qui
+lit les 15 stores (`hooks/home/useEtatStoresHome.ts`) et celui qui construit le ViewModel ne sont
+exécutés par aucun test. Même chose pour la page Progression, dont la suite est un **scan de source**
+(du texte comparé à du texte), pas un rendu. Conséquence à connaître : **un plantage au montage
+passerait les 142 suites au vert.** C'est précisément ce que cette recette compense — et c'est pour ça
+qu'elle est bloquante. Le vrai correctif est un chantier de tests de rendu, pas une ligne.
+
+**2. L'interrupteur part à `true`.** `config/homeFeatures.ts` porte `VNEXT: true` : merger tel quel
+bascule **tous** les joueurs sur le nouvel accueil d'un coup. C'est assumé et documenté dans le fichier,
+mais **la valeur qui part en production doit être une décision tapée par toi**, pas un héritage de
+branche. Corollaire : l'ancien `screens/HomeScreen.tsx` et cinq hooks (`useLoadSeries`, `useMatchSoon`,
+`useWeekDays`, `useActivityStreak`, `usePrimaryCta`) restent dans le dépôt, devenus morts mais gardés
+exprès comme filet de retour arrière. Leur suppression est un lot à part.
+
+**3. Une source de données diffère de la décision écrite.** Le compte de « jours réellement observés »
+devait venir de `domain/tracking` + `useExecutionStore.history` ; il vient en fait des séances FKS
+terminées + des charges externes **saisies à la main**. Ce sont de vraies données, rien n'est inventé,
+et le choix se défend (il voit plus de jours que la source annoncée). Mais ce n'est pas ce qui avait été
+décidé : **à acter d'un mot de ta part**, plutôt qu'à laisser passer en silence.
+
+**4. Trois messages de commit annoncent une mesure eslint fausse** (`2de96f0`, `c3aa963`, `b297d4a` :
+« 0 erreur 0 warning »). L'historique ne se réécrit pas ; la mesure vraie est celle de l'en-tête de ce
+document. À décharge, la qualité, elle, a progressé : la version d'avant le lot de `ProgressScreen.tsx`
+portait 1 erreur et 15 avertissements, elle n'en porte plus que 2 avertissements.
+
+**5. `useMainObjective` ne se réabonne pas** si le compte n'est pas encore résolu au montage (`useEffect`
+à dépendances vides, sortie immédiate si `currentUser` est nul). Risque réel faible — l'arbre applicatif
+n'est monté qu'une fois l'utilisateur posé — et le hook copie un patron déjà accepté ailleurs dans le
+dépôt (`useSelfReportedGapDays`). Ce que ça donnerait si ça arrivait : la coche « Ton objectif » du bloc
+« Première mission » dirait qu'il manque un objectif que tu as pourtant rempli. **C'est la ligne de la
+section 2 qui l'attrape** — si elle échoue, c'est probablement là qu'il faut regarder.
+
+**6. Le repli déprécié `weeklyGoal` survit dans le store des réglages.** Plus aucun écran ne l'écrit
+depuis que les Réglages éditent le champ canonique, mais il reste lu en dernier recours pour les comptes
+anciens, et sa valeur par défaut (2) empêche l'app de distinguer « objectif jamais déclaré » de
+« objectif fixé à 2 ». Sans effet visible aujourd'hui — le setup profil impose le champ canonique — mais
+c'est un fait de parcours, pas une garantie. Sa suppression demande une migration, pas un effacement.
 
 ---
 
