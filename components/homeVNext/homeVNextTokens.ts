@@ -92,6 +92,30 @@ export const espacement = {
    * vide en fin de scroll ; l'ecran doit finir tot et net (doctrine 9).
    */
   finDEcran: theme.spacing.xl, // 24
+  /**
+   * PLAFOND de la respiration variable du seul ecran de demarrage.
+   *
+   * L'ecran d'un compte neuf est court par honnetete : il n'a que trois blocs
+   * vrais a montrer. Sur 729 px logiques il tombe juste ; sur 844 et au-dela, le
+   * surplus s'empilait entierement en bas et le peu de contenu se tassait en
+   * haut de l'ecran — « sobre » finissait par se lire « timide ».
+   *
+   * Deux intervalles peuvent donc absorber une part du surplus, chacun jusqu'a
+   * cette valeur. RIEN N'EST AJOUTE A L'ECRAN : aucun bloc, aucune phrase,
+   * aucune donnee. Seul l'ecart entre des blocs existants grandit.
+   *
+   * POURQUOI UN PLAFOND, ET POURQUOI CELUI-CI. Sans plafond, une tablette
+   * etalerait trois blocs sur toute la hauteur : ce n'est plus de la respiration,
+   * c'est un ecran troue. `theme.spacing.xl * 2` = 48, et deux intervalles
+   * plafonnes absorbent donc 96 px — l'ordre de grandeur d'un palier de
+   * telephone (729 -> 844). Au-dela, le vide restant tombe en fin de scroll,
+   * la ou il ne derange personne.
+   *
+   * EFFET NUL QUAND IL N'Y A PAS DE PLACE : sur un petit ecran, ou avec le texte
+   * systeme agrandi, le contenu remplit deja la hauteur — les deux intervalles
+   * valent alors zero et ne volent pas un pixel au texte.
+   */
+  respirationDemarrageMax: theme.spacing.xl * 2, // 48
 } as const;
 
 // -----------------------------------------------------------------------------

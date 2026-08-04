@@ -66,6 +66,7 @@ import { HomeVNextWeek } from "../../components/homeVNext/HomeVNextWeek";
 import { HomeVNextPresentation } from "../../components/homeVNext/homeVNextPresentation";
 import type { EchelleTypoId } from "../../components/homeVNext/homeVNextTypo";
 import { espacement } from "../../components/homeVNext/homeVNextTokens";
+import { MARQUEURS } from "../../components/homeVNext/homeVNextMarqueurs";
 import type { ProgressionViewModel } from "./progressionViewModel";
 import type { ActionTarget, HomeVNextViewModel } from "./viewModel";
 
@@ -272,6 +273,12 @@ export function HomeVNextScreen(props: HomeVNextScreenProps) {
               </Section>
             ) : null}
 
+            {/*
+              LA RESPIRATION DE L'ECRAN DE DEMARRAGE — voir `Respiration`.
+              Deux intervalles, et seulement quand le bloc de demarrage existe.
+            */}
+            {vm.demarrage !== null ? <Respiration /> : null}
+
             <Section>
               <HomeVNextActionBlock
                 action={vm.action}
@@ -287,6 +294,8 @@ export function HomeVNextScreen(props: HomeVNextScreenProps) {
                 hero={vm.demarrage !== null}
               />
             </Section>
+
+            {vm.demarrage !== null ? <Respiration /> : null}
 
             {vm.week ? (
               <Section>
@@ -392,6 +401,36 @@ function Section({ children }: { children: React.ReactNode }) {
   return <View style={styles.section}>{children}</View>;
 }
 
+/**
+ * Un intervalle qui grandit avec la hauteur de l'ecran — PLAFONNE.
+ *
+ * LE PROBLEME. L'ecran d'un compte neuf est court par honnetete : trois blocs
+ * vrais, rien d'autre a dire. Sur 729 px logiques il tombe juste. Sur 844 et
+ * au-dela, le surplus s'empilait en totalite en bas et les trois blocs se
+ * tassaient en haut — la presence validee (« sobre ne doit pas dire timide »)
+ * ne tenait que sur l'appareil ou elle avait ete dessinee.
+ *
+ * CE QUE CA N'EST PAS. Ce n'est pas du remplissage : aucun bloc, aucune phrase,
+ * aucune donnee n'apparait. Seul l'ecart entre deux blocs deja presents
+ * grandit. Un ecran de demarrage n'a rien de plus a dire — il a juste le droit
+ * d'occuper la place qu'on lui donne.
+ *
+ * COMMENT. `<Screen scroll>` pose deja `flexGrow: 1` sur son conteneur de
+ * contenu : celui-ci fait donc AU MOINS la hauteur visible. Ces intervalles se
+ * partagent le surplus, chacun jusqu'a `respirationDemarrageMax`.
+ *
+ * LES DEUX CAS LIMITES, ET POURQUOI ILS SONT SURS :
+ *   - petit ecran, ou texte systeme agrandi : le contenu remplit deja la
+ *     hauteur, il n'y a pas de surplus, les intervalles valent zero. Ils ne
+ *     peuvent pas voler un pixel au texte (`flexShrink` vaut 0 par defaut en
+ *     React Native, et il n'y a rien a retirer de toute facon) ;
+ *   - tablette : le plafond arrete la distribution, et le reste du vide tombe
+ *     en fin de scroll plutot que d'ecarteler trois blocs sur 1000 px.
+ */
+function Respiration() {
+  return <View style={styles.respiration} testID={MARQUEURS.respirationDemarrage} />;
+}
+
 const styles = StyleSheet.create({
   contenu: {
     paddingHorizontal: espacement.ecranX,
@@ -403,5 +442,11 @@ const styles = StyleSheet.create({
   },
   section: {
     marginTop: espacement.entreSections,
+  },
+  respiration: {
+    flexGrow: 1,
+    // LE PLAFOND, ET LA RAISON D'ETRE DU MARQUEUR : sans lui, trois blocs
+    // s'etaleraient sur toute la hauteur d'une tablette.
+    maxHeight: espacement.respirationDemarrageMax,
   },
 });

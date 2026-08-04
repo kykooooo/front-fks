@@ -23,7 +23,7 @@ import fs from "fs";
 import path from "path";
 
 import React from "react";
-import { Text } from "react-native";
+import { StyleSheet, Text } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
 import {
@@ -43,6 +43,7 @@ import {
 } from "../../screens/homeVNext/fixtures";
 import { HomeVNextScreen } from "../../screens/homeVNext/HomeVNextScreen";
 import { MARQUEURS } from "../../components/homeVNext/homeVNextMarqueurs";
+import { espacement } from "../../components/homeVNext/homeVNextTokens";
 
 // `<Screen>` lit les insets de la safe area : sans ce mock, le montage leve.
 // Meme mock que `HomeVNextScreen.test.tsx` — une seule facon de monter l'ecran.
@@ -659,6 +660,39 @@ describe("Demarrage — le montage reel de l'application", () => {
       { deep: true }
     );
     expect(tactiles).toEqual([]);
+  });
+
+  it("l'ecran de demarrage respire avec la hauteur — et son plafond tient", () => {
+    const input = entreeRecette();
+    const racine = rendreCommeLApp(buildHomeVNextViewModel(input, { demarrage: "A" }), input);
+
+    // Deux intervalles, pas trois : la respiration se glisse ENTRE les blocs
+    // existants. Un troisieme en fin d'ecran ne ferait que deplacer du vide.
+    const respirations = racine.findAll(
+      (n) => typeof n.type === "string" && n.props?.testID === MARQUEURS.respirationDemarrage,
+      { deep: true }
+    );
+    expect(respirations).toHaveLength(2);
+
+    // LE PLAFOND. Sans lui, une tablette etalerait trois blocs sur 1000 px.
+    for (const r of respirations) {
+      const style = StyleSheet.flatten(r.props.style) as { flexGrow?: number; maxHeight?: number };
+      expect(style.flexGrow).toBe(1);
+      expect(style.maxHeight).toBe(espacement.respirationDemarrageMax);
+    }
+
+    // Et rien n'a ete AJOUTE a l'ecran : un intervalle ne porte aucun texte.
+    for (const r of respirations) {
+      expect(r.findAllByType(Text, { deep: true })).toEqual([]);
+    }
+  });
+
+  it("hors demarrage, aucun intervalle extensible n'existe", () => {
+    // La respiration appartient au seul ecran qui en a besoin. Sur un ecran
+    // plein, elle ecarterait des blocs qui ont deja de quoi remplir la hauteur.
+    const plein = getHomeVNextFixture("tendance-disponible")!;
+    const racine = rendreCommeLApp(buildHomeVNextViewModel(plein.input), plein.input);
+    expect(compter(racine, MARQUEURS.respirationDemarrage)).toBe(0);
   });
 
   it("le montage teste ci-dessus est bien celui du conteneur", () => {

@@ -124,6 +124,15 @@ export const MARQUEURS = {
    * traitement typographique lui-meme est prouve.
    */
   actionHero: "home-vnext-action-hero",
+  /**
+   * Un intervalle de respiration variable de l'ecran de demarrage. Vide par
+   * definition — il ne porte aucun texte et n'annonce rien.
+   *
+   * Il est marque pour une seule raison : c'est la seule facon de prouver qu'il
+   * reste PLAFONNE. Un intervalle extensible sans plafond etalerait trois blocs
+   * sur toute la hauteur d'une tablette, et un diff ne le montre pas.
+   */
+  respirationDemarrage: "home-vnext-respiration-demarrage",
 } as const;
 
 export type MarqueurNom = keyof typeof MARQUEURS;
