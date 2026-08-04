@@ -19,6 +19,9 @@
 //     RIGOUREUSEMENT celui d'avant — `demarrage` mis a part, qui vaut `null`.
 // =============================================================================
 
+import fs from "fs";
+import path from "path";
+
 import React from "react";
 import { Text } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
@@ -32,9 +35,11 @@ import {
   type HomeVNextInput,
   type HomeVNextViewModel,
 } from "../../screens/homeVNext/viewModel";
+import { buildProgressionViewModel } from "../../screens/homeVNext/progressionViewModel";
 import {
   HOME_VNEXT_FIXTURES_RENDU,
   getHomeVNextFixture,
+  progressionInputDepuisHome,
 } from "../../screens/homeVNext/fixtures";
 import { HomeVNextScreen } from "../../screens/homeVNext/HomeVNextScreen";
 import { MARQUEURS } from "../../components/homeVNext/homeVNextMarqueurs";
@@ -521,5 +526,150 @@ describe("Demarrage — l'ecran rendu", () => {
         .filter((n) => n.props.allowFontScaling === false);
       expect(brides).toEqual([]);
     }
+  });
+});
+
+// -----------------------------------------------------------------------------
+// 7. L'ECRAN QUE L'APP MONTE VRAIMENT — variante 2
+// -----------------------------------------------------------------------------
+// POURQUOI CETTE SECTION EXISTE, ET CE QU'ELLE REPARE.
+//
+// Tout ce qui precede monte `<HomeVNextScreen vm={...} />` SANS `variante` :
+// l'ecran retombe donc sur "v1". Or le conteneur ne monte jamais ca. Il passe
+// `variante="v2"` ET une carte progression (HomeVNextContainer.tsx), et c'est le
+// SEUL montage qui atteint un telephone.
+//
+// Consequence, constatee en recette le 04/08 sur un compte neuf : tous les
+// verrous V-A ci-dessus etaient verts pendant que l'ecran reel n'affichait
+// AUCUN bloc de demarrage. Ils prouvaient une configuration que l'application
+// ne produit jamais. Un test qui garde un ecran fantome ne garde rien.
+//
+// Les tests ci-dessous montent l'ecran exactement comme le conteneur, et le
+// dernier d'entre eux verifie que cette phrase reste vraie.
+// -----------------------------------------------------------------------------
+
+/**
+ * Le profil EXACT de la recette telephone : compte neuf (zero seance terminee)
+ * sur lequel un cycle a deja ete choisi — l'ecran capture affichait « Vitesse &
+ * detente · Seance 1 sur 12 ».
+ *
+ * Ce detail n'est pas decoratif : c'est le cas ou le bloc V-A perd sa ligne
+ * « pourquoi ce cycle » (viewModel.ts §5.8 bis, un cycle tourne deja), donc
+ * celui ou il a le moins de contenu. S'il tient ici, il tient partout.
+ */
+const PROFIL_RECETTE: Partial<HomeVNextInput> = {
+  microcycleGoal: "explosivite",
+  microcycleSessionIndex: 0,
+};
+
+const entreeRecette = (): HomeVNextInput => ({ ...NOUVEAU().input, ...PROFIL_RECETTE });
+
+/** Le montage du conteneur, et rien d'autre : variante 2 + carte progression. */
+const rendreCommeLApp = (vm: HomeVNextViewModel, input: HomeVNextInput) => {
+  const progression = buildProgressionViewModel(progressionInputDepuisHome(input));
+  let rendu: TestRenderer.ReactTestRenderer | null = null;
+  act(() => {
+    rendu = TestRenderer.create(
+      <HomeVNextScreen vm={vm} variante="v2" progression={progression} largeurCourbe={311} />
+    );
+  });
+  if (!rendu) throw new Error("rendu impossible");
+  return (rendu as TestRenderer.ReactTestRenderer).root;
+};
+
+/** Tous les textes rendus, aplatis — pour prouver qu'une phrase N'EST PAS la. */
+const textesRendus = (racine: ReturnType<typeof rendre>): string[] =>
+  racine
+    .findAllByType(Text, { deep: true })
+    .flatMap((n) => React.Children.toArray(n.props.children))
+    .filter((c): c is string => typeof c === "string");
+
+describe("Demarrage — le montage reel de l'application", () => {
+  it("zero seance + cycle actif : l'etat est bien « premiere mission »", () => {
+    const vm = buildHomeVNextViewModel(entreeRecette(), { demarrage: "A" });
+
+    expect(vm.demarrage).not.toBeNull();
+    expect(vm.demarrage?.kind).toBe("premiere_mission");
+    if (vm.demarrage === null || vm.demarrage.kind !== "premiere_mission") throw new Error("V-A attendue");
+    expect(vm.demarrage.premiersPas).toHaveLength(3);
+    // Un cycle tourne deja : recommander un cycle a cote serait deux verites
+    // qui s'affrontent. La ligne est retiree A LA SOURCE, pas par l'ecran.
+    expect(vm.demarrage.pourquoiCeCycle).toBeNull();
+    // Et le bloc a bien absorbe « MA FORME » : une seule facon de le dire.
+    expect(vm.form).toBeNull();
+  });
+
+  it("le bloc « Premiere mission » est REELLEMENT rendu par le montage de l'app", () => {
+    const input = entreeRecette();
+    const vm = buildHomeVNextViewModel(input, { demarrage: "A" });
+    const racine = rendreCommeLApp(vm, input);
+
+    // Le coeur de la regression du 04/08 : le ViewModel construisait le bloc,
+    // l'ecran ne le rendait pas.
+    expect(compter(racine, MARQUEURS.demarrage)).toBe(1);
+    expect(compter(racine, MARQUEURS.demarragePas)).toBe(3);
+    // Le traitement hero et le bloc vont ENSEMBLE : un CTA agrandi sans le bloc
+    // qui le justifie, c'est exactement ce que la capture montrait.
+    expect(compter(racine, MARQUEURS.actionHero)).toBe(1);
+  });
+
+  it("un seul message de demarrage a l'ecran — la carte progression ne redit pas la meme chose", () => {
+    const input = entreeRecette();
+    const vm = buildHomeVNextViewModel(input, { demarrage: "A" });
+    const racine = rendreCommeLApp(vm, input);
+
+    // La carte progression a un etat « vide » dont les trois reperes disent mot
+    // pour mot ce que disent les trois premiers pas. Les deux ensemble, c'est la
+    // redite que le fondateur a vue sur son telephone.
+    expect(compter(racine, MARQUEURS.demarrage)).toBe(1);
+    expect(compter(racine, MARQUEURS.progression)).toBe(0);
+
+    const textes = textesRendus(racine);
+    for (const redite of [
+      "Termine ta première séance.",
+      "Partage ton ressenti.",
+      "Compare tes prochains tests.",
+    ]) {
+      expect(textes).not.toContain(redite);
+    }
+  });
+
+  it("des la premiere seance terminee, la carte progression reprend sa place", () => {
+    // Le bloc de demarrage ne masque pas la carte : il l'occupe TANT QU'IL
+    // EXISTE. Sans ce test, on pourrait « corriger » en supprimant la carte.
+    const plein = getHomeVNextFixture("tendance-disponible")!;
+    const vm = buildHomeVNextViewModel(plein.input, { demarrage: "A" });
+    expect(vm.demarrage).toBeNull();
+
+    const racine = rendreCommeLApp(vm, plein.input);
+    expect(compter(racine, MARQUEURS.demarrage)).toBe(0);
+    expect(compter(racine, MARQUEURS.progression)).toBe(1);
+  });
+
+  it("aucun element du bloc n'est tapable, en variante 2 aussi", () => {
+    const input = entreeRecette();
+    const racine = rendreCommeLApp(buildHomeVNextViewModel(input, { demarrage: "A" }), input);
+    const bloc = racine.find((n) => n.props && n.props.testID === MARQUEURS.demarrage);
+    const tactiles = bloc.findAll(
+      (n) =>
+        Boolean(n.props) &&
+        (typeof n.props.onPress === "function" ||
+          n.props.accessibilityRole === "button" ||
+          n.props.accessibilityRole === "link"),
+      { deep: true }
+    );
+    expect(tactiles).toEqual([]);
+  });
+
+  it("le montage teste ci-dessus est bien celui du conteneur", () => {
+    // LE TEST QUI EMPECHE CETTE SECTION DE REDEVENIR UN ECRAN FANTOME. Si le
+    // conteneur cesse un jour de monter la variante 2, les tests ci-dessus
+    // garderaient une configuration morte sans que rien ne le signale.
+    const source = fs.readFileSync(
+      path.join(__dirname, "..", "..", "screens", "homeVNext", "HomeVNextContainer.tsx"),
+      "utf8"
+    );
+    expect(source).toContain('variante="v2"');
+    expect(source).toContain("progression={progression}");
   });
 });

@@ -298,28 +298,62 @@ export function HomeVNextScreen(props: HomeVNextScreenProps) {
               LE SEUL ENDROIT OU LES VARIANTES DIVERGENT — TROIS CAS, UN SEUL
               EMPLACEMENT.
 
-              v2       : la carte progression, qui absorbe "MA FORME" et le lien
-                         de sortie.
               demarrage: la carte de demarrage (V-A ou V-B), qui absorbe
                          "MA FORME" — decision prise A LA SOURCE, dans le
                          ViewModel (§5.8 bis), qui a deja mis `vm.form` a `null`.
+              v2       : la carte progression, qui absorbe "MA FORME" et le lien
+                         de sortie.
               v1       : "MA FORME", inchangee.
 
-              L'ecran n'arbitre donc rien : les trois branches sont mutuellement
-              exclusives PAR LES DONNEES qu'il recoit, jamais par une condition
-              qu'il inventerait.
+              L'ORDRE EST LE CORRECTIF DU 04/08, ET IL SE LIT A L'ENVERS DE CE
+              QU'IL ETAIT.
+              -----------------------------------------------------------------
+              La version precedente testait `progression` EN PREMIER, sous un
+              commentaire affirmant que les trois branches etaient « mutuellement
+              exclusives PAR LES DONNEES ». C'etait faux, et c'est le bug que la
+              recette telephone a trouve : sur un compte a zero seance, la
+              variante 2 ET le demarrage sont vrais EN MEME TEMPS. Comme le
+              conteneur monte toujours la variante 2, la branche de demarrage
+              n'etait jamais atteinte — du code mort en production, alors que le
+              ViewModel construisait le bloc a chaque rendu.
+
+              Ce que voyait un compte neuf : un CTA agrandi (le traitement hero
+              lit `vm.demarrage`, pas la branche rendue), la carte progression
+              dans son etat vide, et un grand blanc a la place du bloc.
+
+              POURQUOI LE DEMARRAGE PASSE DEVANT, ET PAS L'INVERSE.
+              -----------------------------------------------------------------
+              Les deux blocs disent la meme chose au meme joueur : les trois
+              reperes de l'etat vide de la carte ("Termine ta premiere seance",
+              "Partage ton ressenti", "Compare tes prochains tests") sont mot
+              pour mot les trois premiers pas du V-A. Un seul doit rester, et
+              c'est le bloc de demarrage — c'est lui que le fondateur a valide,
+              lui qui coche les etats REELS de chaque pas, et lui qui explique
+              le cycle. La carte, elle, n'affiche AUCUN bouton dans son etat vide
+              (progressionViewModel.ts §6.7) : la retirer ne retire donc aucune
+              destination au joueur. Elle revient d'elle-meme des la premiere
+              seance terminee, quand elle a enfin quelque chose de mesure a dire.
+
+              CET ARBITRAGE EST BIEN A SA PLACE ICI. `progressionViewModel.ts`
+              le delegue explicitement (§6.6) : « En variante 2, un seul des deux
+              doit rester a l'ecran — arbitrage de mise en page, hors perimetre
+              de ce ViewModel. » Il etait annonce, il n'avait jamais ete fait.
+
+              L'ecran n'invente donc toujours rien : il choisit entre deux blocs
+              que le ViewModel lui a donnes, dans l'ordre que le ViewModel a
+              documente.
             */}
-            {progression !== null ? (
+            {vm.demarrage !== null ? (
+              <Section>
+                <HomeVNextDemarrage demarrage={vm.demarrage} />
+              </Section>
+            ) : progression !== null ? (
               <Section>
                 <HomeVNextProgression
                   progression={progression}
                   onDetail={onExit}
                   largeurCourbe={largeurCourbe}
                 />
-              </Section>
-            ) : vm.demarrage !== null ? (
-              <Section>
-                <HomeVNextDemarrage demarrage={vm.demarrage} />
               </Section>
             ) : vm.form ? (
               <Section>
