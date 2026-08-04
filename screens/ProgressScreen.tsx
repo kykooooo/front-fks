@@ -73,12 +73,31 @@ import { estChargeExterneManuelle, estSeanceFksTerminee } from "../domain/resume
 import { TonSuiviSection } from "../components/progress/TonSuiviSection";
 import { useProgressionViewModel } from "../hooks/useProgressionViewModel";
 import { useTrackingProgress } from "../hooks/useTrackingProgress";
+import {
+  calculerEchelleCourbe,
+  versYCourbe,
+  zeroEstDansLEchelle,
+  type GeometrieCourbe,
+} from "./progression/echelleCourbe";
 import type {
   ProgressionComparaisonTest,
   ProgressionFait,
 } from "./homeVNext/progressionViewModel";
 
 const palette = theme.colors;
+
+/**
+ * La zone de dessin de la courbe. La MARGE haute et basse existe pour que le
+ * point du jour, qui est le plus gros, ne soit jamais rogne par le bord.
+ */
+const GEOMETRIE_COURBE: GeometrieCourbe = { hauteur: 110, marge: 8 };
+
+/**
+ * Marge laterale du trace, a gauche comme a droite. Elle valait 24 a gauche pour
+ * loger les etiquettes « 0 » et « -10 » ; ces etiquettes sont parties, la courbe
+ * recupere la largeur.
+ */
+const MARGE_X_COURBE = 8;
 
 // =============================================================================
 // LES ACCOMPLISSEMENTS QUI RESTENT — TROIS COMPTES, ZERO DEDUCTION
@@ -263,7 +282,12 @@ export default function ProgressScreen() {
   // ───────────────────────────────────────────────────────────────────────────
 
   const courbe = progression.state === "ready" ? progression.courbe : null;
-  const points = courbe?.points ?? [];
+  /**
+   * Memoise pour que la serie garde la MEME reference d'un rendu a l'autre : les
+   * deux calculs qui en dependent (l'echelle, puis les points traces) se
+   * refont sinon a chaque rendu, sur des donnees identiques.
+   */
+  const points = useMemo(() => courbe?.points ?? [], [courbe]);
 
   /**
    * Les comparaisons de tests n'existent PAS dans l'etat "empty" — c'est le
@@ -274,26 +298,32 @@ export default function ProgressScreen() {
   const comparaisons = progression.state === "empty" ? null : progression.comparaisonsTests;
 
   const [largeurGraphe, setLargeurGraphe] = useState(0);
-  const hauteurGraphe = 110;
-  const marge = 8;
-  const margeGauche = 24;
-  const margeDroite = 8;
-  const tsbMin = -20;
-  const tsbMax = 20;
 
-  const versY = (valeur: number) => {
-    const borne = Math.max(tsbMin, Math.min(tsbMax, valeur));
-    const ratio = (borne - tsbMin) / (tsbMax - tsbMin);
-    return marge + (1 - ratio) * (hauteurGraphe - marge * 2);
-  };
+  /**
+   * L'ECHELLE VERTICALE VIENT DE LA SERIE, PAS D'UNE CONSTANTE.
+   *
+   * L'axe etait fige a [-20, +20] et toute valeur qui en sortait etait RABOTEE
+   * sur la borne. Inoffensif tant que la serie etait amorcee sur ATL0/CTL0 ;
+   * faux depuis qu'elle part de zero, ou un joueur assidu descend regulierement
+   * plus bas — et voyait alors sa courbe s'aplatir contre le bord en affichant
+   * une valeur que personne n'avait mesuree. Le calcul et son test vivent dans
+   * `screens/progression/echelleCourbe.ts`.
+   */
+  const echelle = useMemo(() => calculerEchelleCourbe(points), [points]);
+
+  const versY = (valeur: number) =>
+    echelle ? versYCourbe(valeur, echelle, GEOMETRIE_COURBE) : GEOMETRIE_COURBE.hauteur / 2;
 
   const pointsTraces = useMemo(() => {
-    if (!largeurGraphe || points.length < 2) return [];
-    const largeurInterne = Math.max(10, largeurGraphe - margeGauche - margeDroite);
+    if (!largeurGraphe || points.length < 2 || !echelle) return [];
+    const largeurInterne = Math.max(10, largeurGraphe - MARGE_X_COURBE * 2);
     const pas = largeurInterne / (points.length - 1);
-    return points.map((v, i) => ({ x: margeGauche + i * pas, y: versY(v), v }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [largeurGraphe, points]);
+    return points.map((v, i) => ({
+      x: MARGE_X_COURBE + i * pas,
+      y: versYCourbe(v, echelle, GEOMETRIE_COURBE),
+      v,
+    }));
+  }, [largeurGraphe, points, echelle]);
 
   const chemin = useMemo(
     () => pointsTraces.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" "),
@@ -356,23 +386,30 @@ export default function ProgressScreen() {
         {progression.state === "ready" && courbe ? (
           <>
             <View style={styles.zoneGraphe} onLayout={mesurerGraphe}>
-              <Svg width={largeurGraphe} height={hauteurGraphe}>
-                <Line
-                  x1={margeGauche}
-                  y1={versY(0)}
-                  x2={Math.max(margeGauche, largeurGraphe - margeDroite)}
-                  y2={versY(0)}
-                  stroke={palette.borderSoft}
-                  strokeWidth={1}
-                />
-                <Line
-                  x1={margeGauche}
-                  y1={versY(-10)}
-                  x2={Math.max(margeGauche, largeurGraphe - margeDroite)}
-                  y2={versY(-10)}
-                  stroke="rgba(245, 158, 11, 0.3)"
-                  strokeWidth={1}
-                />
+              <Svg width={largeurGraphe} height={GEOMETRIE_COURBE.hauteur}>
+                {/*
+                  LE SEUL REPERE QUI SUBSISTE, ET SEULEMENT S'IL EST TRAVERSE.
+                  Les deux etiquettes « 0 » et « -10 » et la ligne orange de
+                  seuil ont ete retirees : elles exposaient l'echelle interne du
+                  modele de charge a un joueur a qui l'accueil ne montre plus
+                  aucun chiffre de ce genre (regle posee dans
+                  components/homeVNext/HomeVNextSparkline.tsx). La ligne orange
+                  faisait pire : calibree sur l'ancienne serie amorcee, elle
+                  place un joueur normal en permanence « sous le seuil », alors
+                  que le ViewModel s'interdit desormais d'ecrire cet etat sans
+                  preuve. Un ecran ne peut pas dessiner ce que l'autre refuse
+                  d'ecrire.
+                */}
+                {echelle && zeroEstDansLEchelle(echelle) ? (
+                  <Line
+                    x1={MARGE_X_COURBE}
+                    y1={versY(0)}
+                    x2={Math.max(MARGE_X_COURBE, largeurGraphe - MARGE_X_COURBE)}
+                    y2={versY(0)}
+                    stroke={palette.borderSoft}
+                    strokeWidth={1}
+                  />
+                ) : null}
                 {chemin ? (
                   <Path d={chemin} stroke={palette.accent} strokeWidth={2.4} fill="none" />
                 ) : null}
@@ -386,8 +423,6 @@ export default function ProgressScreen() {
                   />
                 ))}
               </Svg>
-              <Text style={[styles.repereAxe, { top: versY(0) - 8 }]}>0</Text>
-              <Text style={[styles.repereAxe, { top: versY(-10) - 8, color: "#f59e0b" }]}>-10</Text>
             </View>
             <Text style={styles.periode}>{courbe.periodeLabel}</Text>
             {/*
@@ -716,13 +751,8 @@ const styles = StyleSheet.create({
   // ─── Courbe ───
   zoneGraphe: {
     marginTop: 4,
-    minHeight: 110,
-  },
-  repereAxe: {
-    position: "absolute",
-    left: 0,
-    fontSize: 10,
-    color: palette.muted,
+    // Une seule source pour la hauteur : celle qui sert au calcul des points.
+    minHeight: GEOMETRIE_COURBE.hauteur,
   },
   periode: {
     fontSize: 12,
