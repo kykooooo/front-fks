@@ -15,7 +15,6 @@ import type { Session, SessionFocus } from "../../domain/types";
 import { getCycleTheme, type CycleTheme } from "../../constants/cycleTheme";
 import { getMicrocyclePhase } from "../../utils/microcycleUtils";
 import { canonicalizeMicrocycleGoal, MICROCYCLE_TOTAL_SESSIONS_DEFAULT } from "../../domain/microcycles";
-import { weekKeyOf } from "../../utils/dateHelpers";
 import { prettifyName } from "../../screens/sessionPreview/sessionPreviewConfig";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -72,7 +71,18 @@ export type TrackingProgressViewModel = {
   sessionLabel: string; // "Séance 4/12"
   phaseLabel: string; // "Montée en puissance"
   completion: { hasData: boolean; sessionsTracked: number; completionAvgPct: number | null };
-  weekly: { completedThisWeek: number; target: number } | null;
+  // PAS DE COMPTEUR HEBDOMADAIRE ICI, ET C'EST UNE DECISION.
+  //
+  // Il y en avait un, et l'app en affichait DEUX : celui-ci (numerateur
+  // `countCompletedThisWeek` a lundi fixe, cible `targetFksSessionsPerWeek`) et
+  // celui du Home (numerateur `useWeekDays` au reglage du joueur, cible
+  // `weeklyGoal`). Deux numerateurs, deux denominateurs, deux endroits — pour
+  // repondre a la meme question. Le compteur hebdomadaire vit desormais au
+  // Home, seul (decision fermee du fondateur), et il passe par
+  // `construireResumeHebdo` (domain/resumeCanonique.ts).
+  //
+  // Le champ n'est pas devenu `null` : il a ete SUPPRIME. Un champ mort qu'un
+  // ecran peut encore lire, c'est le doublon qui attend de revenir.
   rpe: { hasSignal: boolean; deltaAvg: number | null };
   exerciseEvolutions: ExerciseEvolution[];
   focusBadges: FocusBadge[];
@@ -88,7 +98,6 @@ export type TrackingProgressInput = {
   lastDecision: TrackingDecision | null;
   microcycleGoal: string | null;
   microcycleSessionIndex: number;
-  targetFksSessionsPerWeek: number | null;
   selfReportedGapDays: number | null;
 };
 
@@ -184,14 +193,10 @@ function buildSessionsHistoryForGap(sessions: Session[]): TrackingHistoryEntry[]
     }));
 }
 
-function countCompletedThisWeek(sessions: Session[], nowISO: string): number {
-  const currentWeekKey = weekKeyOf(nowISO);
-  return sessions.filter((s) => {
-    if (!s.completed) return false;
-    const dateVal = s.dateISO ?? s.date;
-    return dateVal ? weekKeyOf(dateVal) === currentWeekKey : false;
-  }).length;
-}
+// `countCompletedThisWeek` vivait ici. Il comptait juste — il deleguait meme au
+// resume canonique. Ce qui etait faux, c'est qu'il existait EN PLUS de celui du
+// Home, avec une autre semaine (lundi fixe contre reglage du joueur) et une
+// autre cible. Deux reponses a une question qui n'en a qu'une.
 
 function computeFocusBadges(sessions: Session[], nowISO: string): FocusBadge[] {
   const nowMs = new Date(nowISO).getTime();
@@ -317,7 +322,6 @@ export function buildTrackingProgress(input: TrackingProgressInput): TrackingPro
     lastDecision,
     microcycleGoal,
     microcycleSessionIndex,
-    targetFksSessionsPerWeek,
     selfReportedGapDays,
   } = input;
 
@@ -336,11 +340,6 @@ export function buildTrackingProgress(input: TrackingProgressInput): TrackingPro
     completionAvgPct:
       signals.completionRateAvg != null ? Math.round(signals.completionRateAvg) : null,
   };
-
-  const weekly =
-    typeof targetFksSessionsPerWeek === "number" && Number.isFinite(targetFksSessionsPerWeek)
-      ? { completedThisWeek: countCompletedThisWeek(sessions, nowISO), target: targetFksSessionsPerWeek }
-      : null;
 
   const rpe = {
     hasSignal: signals.rpeDeltaCount >= TRACKING_CONFIG.rpe.minSessionsForSignal,
@@ -389,7 +388,6 @@ export function buildTrackingProgress(input: TrackingProgressInput): TrackingPro
     sessionLabel,
     phaseLabel: currentPhase.label,
     completion,
-    weekly,
     rpe,
     exerciseEvolutions,
     focusBadges,

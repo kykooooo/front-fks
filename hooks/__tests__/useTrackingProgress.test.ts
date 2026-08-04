@@ -95,7 +95,6 @@ function baseInput(overrides: Partial<TrackingProgressInput> = {}): TrackingProg
     lastDecision: null,
     microcycleGoal: "force",
     microcycleSessionIndex: 3,
-    targetFksSessionsPerWeek: null,
     selfReportedGapDays: null,
     ...overrides,
   };
@@ -340,19 +339,32 @@ describe("buildTrackingProgress — reprise (resumption)", () => {
   });
 });
 
-describe("buildTrackingProgress — régularité hebdo", () => {
-  test("target défini -> compte les séances complétées de la semaine en cours uniquement", () => {
+describe("buildTrackingProgress — le compteur hebdo n'est plus ici", () => {
+  // Cette section testait un compteur « régularité hebdo » : numérateur à lundi
+  // fixe, cible `targetFksSessionsPerWeek`. Il fonctionnait. Ce qui n'allait
+  // pas, c'est qu'il était le TROISIÈME de l'app à répondre à la même question,
+  // avec sa propre semaine et sa propre cible — à côté de celui du Home
+  // (semaine du joueur, cible `weeklyGoal`). Décision fermée du fondateur : le
+  // compteur hebdomadaire vit au Home, seul.
+  //
+  // Ces deux tests remplacent les deux anciens. Ils ne vérifient plus un
+  // calcul : ils verrouillent une ABSENCE, pour que le doublon ne puisse pas
+  // revenir en silence par un `?? 2` ajouté un jour de fatigue.
+
+  test("le ViewModel ne porte plus aucun champ hebdomadaire", () => {
     const sessions = [
-      makeSession({ id: "a", dateISO: "2026-07-27T09:00:00.000Z", completed: true }), // lundi (cette semaine)
-      makeSession({ id: "b", dateISO: "2026-07-29T09:00:00.000Z", completed: true }), // mercredi (cette semaine)
-      makeSession({ id: "c", dateISO: "2026-07-20T09:00:00.000Z", completed: true }), // semaine précédente
+      makeSession({ id: "a", dateISO: "2026-07-27T09:00:00.000Z", completed: true }),
+      makeSession({ id: "b", dateISO: "2026-07-29T09:00:00.000Z", completed: true }),
     ];
-    const vm = buildTrackingProgress(baseInput({ sessions, targetFksSessionsPerWeek: 3 }));
-    expect(vm.weekly).toEqual({ completedThisWeek: 2, target: 3 });
+    const vm = buildTrackingProgress(baseInput({ sessions }));
+    // Pas `toBeUndefined()` : le champ ne doit pas EXISTER, même à `null`. Un
+    // champ mort qu'un écran peut encore lire, c'est le doublon qui attend.
+    expect(Object.keys(vm)).not.toContain("weekly");
   });
 
-  test("pas de target déclaré -> pas de bloc régularité", () => {
-    const vm = buildTrackingProgress(baseInput({ targetFksSessionsPerWeek: null }));
-    expect(vm.weekly).toBeNull();
+  test("aucune clé du ViewModel ne parle de semaine", () => {
+    const vm = buildTrackingProgress(baseInput());
+    const clesHebdo = Object.keys(vm).filter((k) => /week|hebdo|semaine/i.test(k));
+    expect(clesHebdo).toEqual([]);
   });
 });

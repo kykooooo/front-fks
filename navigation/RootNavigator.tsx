@@ -6,6 +6,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { NavigatorScreenParams } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import HomeScreen from "../screens/HomeScreen";
+import { HomeVNextContainer } from "../screens/homeVNext/HomeVNextContainer";
 import NewSessionScreen from "../screens/NewSessionScreen";
 import FeedbackScreen from "../screens/FeedbackScreen";
 import ExternalLoadScreen from "../screens/ExternalLoadScreen";
@@ -38,6 +39,7 @@ import { coachColors } from "../components/coach/coachTheme";
 import { theme } from "../constants/theme";
 import { STORAGE_KEYS } from "../constants/storage";
 import { DEV_FLAGS } from "../config/devFlags";
+import { HOME_FEATURES } from "../config/homeFeatures";
 import { Ionicons } from "@expo/vector-icons";
 import { useSyncStore } from "../state/stores/useSyncStore";
 import { SwipeTabsWrapper } from "../components/SwipeTabsWrapper";
@@ -151,10 +153,25 @@ function MainTabs() {
         },
       })}
     >
+      {/*
+        L'ACCUEIL — UN SEUL NOM DE ROUTE, DEUX CONTENUS POSSIBLES.
+
+        Le flag change le COMPOSANT RENDU, jamais le nom de la route ni l'ordre
+        des onglets. C'est volontaire et ce n'est pas cosmetique : `PLAYER_TAB_ORDER`
+        pilote le swipe entre onglets, et le NavigationContainer restaure l'etat
+        par NOM de route. Introduire un "HomeVNext" a cote de "Home" ferait
+        exactement la faute deja payee plus bas dans ce fichier avec
+        `ProfileSetup` / `ProfileSetupGate` (voir le commentaire des deux arbres
+        `key="nav-app"` / `key="nav-gate"`) : deux routes homonymes-distinctes
+        qu'il faut ensuite desambiguiser a la main.
+
+        Repli : `HOME_FEATURES.VNEXT = false` (config/homeFeatures.ts) remet
+        l'ancien accueil et ne laisse aucune autre difference.
+      */}
       <Tab.Screen name="Home" options={{ title: "Accueil" }}>
         {() => (
           <SwipeTabsWrapper currentTab="Home" tabOrder={tabOrder}>
-            <HomeScreen />
+            {HOME_FEATURES.VNEXT ? <HomeVNextContainer /> : <HomeScreen />}
           </SwipeTabsWrapper>
         )}
       </Tab.Screen>

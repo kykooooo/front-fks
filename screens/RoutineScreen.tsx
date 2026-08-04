@@ -21,6 +21,7 @@ import { useExternalStore } from "../state/stores/useExternalStore";
 import { useSyncStore } from "../state/stores/useSyncStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
 import { useSettingsStore } from "../state/settingsStore";
+import { compterSeancesFksSurJours, resoudreObjectifHebdo } from "../domain/resumeCanonique";
 import { toDateKey } from "../utils/dateHelpers";
 
 const palette = theme.colors;
@@ -52,7 +53,18 @@ export default function RoutineScreen() {
   const devNowISO = useDebugStore((s) => s.devNowISO);
 
   const weekStart = useSettingsStore((s) => s.weekStart);
-  const weeklyGoal = useSettingsStore((s) => s.weeklyGoal ?? 2);
+  // L'OBJECTIF HEBDO PASSE PAR LE RESOLVEUR CANONIQUE, comme l'accueil. Ce badge
+  // lisait le seul reglage local : il pouvait donc afficher, pour le meme
+  // joueur, une cible differente de celle du compteur de l'accueil — et depuis
+  // que les Reglages ecrivent le champ canonique, il n'aurait plus bouge du
+  // tout. Le `?? 2` final reste le defaut P1.10 de l'audit (une cible inventee),
+  // mais il ne sert plus qu'a un compte n'ayant NI rythme declare au setup
+  // (champ pourtant obligatoire) NI reglage local. Le retirer pour de bon
+  // suppose de decider ce que ce badge montre sans objectif : decision d'ecran.
+  const targetFksSessionsPerWeek = useExternalStore((s) => s.targetFksSessionsPerWeek);
+  const weeklyGoalReglage = useSettingsStore((s) => s.weeklyGoal);
+  const weeklyGoal =
+    resoudreObjectifHebdo({ targetFksSessionsPerWeek, weeklyGoalReglage }) ?? 2;
   const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
   const sessionReminders = useSettingsStore((s) => s.sessionReminders);
   const reminderStrategy = useSettingsStore((s) => s.reminderStrategy);
@@ -131,10 +143,14 @@ export default function RoutineScreen() {
   );
 
   const weekSummary = useMemo(() => {
-    const fksCount = sessions.filter((s: any) => {
-      const key = toDateKey(s?.dateISO ?? s?.date);
-      return s.completed && weekKeySet.has(key);
-    }).length;
+    // Le comptage des seances FKS de la semaine est DELEGUE au resume canonique
+    // (domain/resumeCanonique.ts). C'etait la TROISIEME copie de ce filtre dans
+    // le depot, apres `useWeekSummary` et `buildTrackingProgress` : trois ecrans
+    // a un tap les uns des autres pouvaient afficher trois chiffres pour la meme
+    // semaine. Resultat rigoureusement identique a l'ancienne ligne (meme
+    // predicat strict `completed`, meme fenetre `weekKeySet`) — seule
+    // l'implementation est mise en commun.
+    const fksCount = compterSeancesFksSurJours(sessions, weekKeySet);
     const extCount = (externalLoads ?? []).filter((e: any) => {
       const key = toDateKey(e?.dateISO ?? e?.date);
       return weekKeySet.has(key);

@@ -67,15 +67,15 @@ export function TonSuiviSection() {
         </Text>
       </View>
 
-      {/* Reprise */}
-      {progress.resumption ? (
-        <View style={styles.resumptionBanner}>
-          <Ionicons name="leaf-outline" size={16} color={palette.warn} />
-          <Text style={styles.resumptionText}>{progress.resumption.message}</Text>
-        </View>
-      ) : null}
+      {/*
+        LE BANDEAU DE REPRISE N'EST PLUS ICI. Il a monte en haut de
+        `screens/ProgressScreen.tsx`, au-dessus du resume canonique : un joueur
+        qui revient apres trois semaines d'arret doit apprendre que ses chiffres
+        datent AVANT de les lire, pas apres. `useTrackingProgress().resumption`
+        reste la source, l'ecran la consomme.
+      */}
 
-      {/* Complétion */}
+      {/* Complétion — fenêtre 28 j de la boucle de suivi */}
       <View style={styles.row}>
         <Ionicons name="checkmark-done-outline" size={16} color={palette.accent} />
         <Text style={styles.rowText} numberOfLines={2}>
@@ -86,12 +86,20 @@ export function TonSuiviSection() {
             : "Pas encore assez de données sur tes dernières séances."}
         </Text>
       </View>
-      {progress.weekly ? (
-        <Text style={styles.subText}>
-          {progress.weekly.completedThisWeek}/{progress.weekly.target} séance
-          {progress.weekly.target > 1 ? "s" : ""} cette semaine
-        </Text>
-      ) : null}
+      {/*
+        « SÉANCES SUIVIES », ET PAS « TERMINÉES ». Le resume canonique affiche
+        juste au-dessus « Séances terminées depuis tes débuts » — un cumul, sans
+        borne. Ce compte-ci est autre chose : les séances de la fenêtre de suivi
+        (5 séances / 28 j, `domain/tracking/config.ts`) pour lesquelles une
+        exécution a été enregistrée. Deux mesures, deux périmètres, et c'est le
+        LIBELLÉ qui porte la différence.
+
+        LA LIGNE « X/Y séances cette semaine » A ÉTÉ RETIRÉE. Elle était le
+        troisième compteur hebdomadaire de l'app, avec sa propre semaine (lundi
+        fixe) et sa propre cible (`targetFksSessionsPerWeek`), à côté de celui du
+        Home (semaine du joueur, cible `weeklyGoal`). Le compteur hebdomadaire
+        vit désormais au Home, seul.
+      */}
 
       {/* RPE ressenti vs prévu */}
       <View style={styles.row}>
@@ -170,23 +178,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: palette.text,
   },
-  resumptionBanner: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-    padding: 10,
-    borderRadius: 14,
-    backgroundColor: "rgba(245,158,11,0.10)",
-    borderWidth: 1,
-    borderColor: "rgba(245,158,11,0.24)",
-  },
-  resumptionText: {
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 17,
-    color: palette.text,
-    fontWeight: "600",
-  },
   row: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -198,11 +189,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: palette.text,
     minHeight: 18,
-  },
-  subText: {
-    marginLeft: 24,
-    fontSize: 12,
-    color: palette.sub,
   },
   miniBlock: {
     gap: 4,

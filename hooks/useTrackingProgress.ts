@@ -18,7 +18,6 @@ import { trackEvent } from "../services/analytics";
 
 import { useExecutionStore } from "../state/stores/useExecutionStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
-import { useExternalStore } from "../state/stores/useExternalStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
 import { useSelfReportedGapDays } from "./useSelfReportedGapDays";
 
@@ -30,7 +29,6 @@ export function useTrackingProgress(): TrackingProgressViewModel {
   const sessions = useSessionsStore((s) => s.sessions ?? []);
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
   const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
-  const targetFksSessionsPerWeek = useExternalStore((s) => s.targetFksSessionsPerWeek);
   const devNowISO = useDebugStore((s) => s.devNowISO);
   const selfReportedGapDays = useSelfReportedGapDays();
 
@@ -45,7 +43,6 @@ export function useTrackingProgress(): TrackingProgressViewModel {
         lastDecision,
         microcycleGoal,
         microcycleSessionIndex,
-        targetFksSessionsPerWeek,
         selfReportedGapDays,
       }),
     [
@@ -55,7 +52,6 @@ export function useTrackingProgress(): TrackingProgressViewModel {
       lastDecision,
       microcycleGoal,
       microcycleSessionIndex,
-      targetFksSessionsPerWeek,
       selfReportedGapDays,
     ]
   );

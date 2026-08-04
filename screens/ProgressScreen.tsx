@@ -1,218 +1,169 @@
-import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  LayoutChangeEvent,
-} from "react-native";
+// screens/ProgressScreen.tsx
+// =============================================================================
+// LA PAGE PROGRESSION — CE QU'ELLE A LE DROIT DE DIRE
+// =============================================================================
+//
+// Cette page a longtemps ouvert sur un verdict ("TA FORME : Frais") et une
+// courbe de 30 jours. Les deux etaient faux sur un compte neuf, et faux de la
+// meme facon : la serie repartait des constantes d'amorcage ATL0/CTL0 avec 45
+// jours de chauffe, si bien qu'un joueur n'ayant JAMAIS rien enregistre lisait
+// une trajectoire — celle de la decroissance de deux constantes. Le libelle
+// d'etat, lui, venait de `useLoadStore.tsb`, initialise a `CTL0 - ATL0` : le
+// fameux « TSB initial = +3 ». Deux chiffres inventes, l'un sous l'autre.
+//
+// -----------------------------------------------------------------------------
+// CE QUI LES REMPLACE : LE RESUME CANONIQUE
+// -----------------------------------------------------------------------------
+// `useProgressionViewModel()` rend EXACTEMENT le ViewModel que la carte de
+// l'accueil affiche — meme selecteur pur, meme etat de stores, meme fenetre.
+// C'est tout l'objet du resume canonique : le joueur qui tape « Voir ma
+// progression » retrouve les chiffres qu'il vient de lire, pas une seconde
+// version calculee autrement.
+//
+// Ce ViewModel est une union discriminee sur `state` :
+//   - "empty"      : aucune seance terminee. Trois reperes, aucune courbe.
+//   - "collecting" : des faits reels, mais pas encore de tendance affichable.
+//   - "ready"      : la courbe, avec sa portee ecrite dessous.
+// `courbe: null` est un type LITTERAL dans les deux premiers etats : une courbe
+// y est impossible a rendre, pas seulement deconseillee.
+//
+// -----------------------------------------------------------------------------
+// CE QUE CETTE PAGE GARDE EN PROPRE, ET POURQUOI
+// -----------------------------------------------------------------------------
+// Le calendrier du mois, les stats du mois et la liste COMPLETE des comparaisons
+// de tests. Ce sont les trois blocs que la carte de l'accueil ne peut pas
+// contenir — c'est meme la seule raison pour laquelle son pied « Voir ma
+// progression » existe. Ils sont recalcules ici, mais sur les MEMES predicats
+// canoniques (`domain/resumeCanonique.ts`), jamais sur `s.completed` a la main.
+//
+// -----------------------------------------------------------------------------
+// CE QUI A DISPARU, ET CE QUI NE REVIENDRA PAS SANS SOURCE
+// -----------------------------------------------------------------------------
+//   - le hero « TA FORME » et sa pastille de couleur (verdict global sans
+//     source) ;
+//   - la serie ATL0/CTL0 de 30 jours (amorcage affiche comme une mesure) ;
+//   - les deux definitions de streak et l'accomplissement « 7 jours d'affilee »
+//     (decision fermee du fondateur : purge des streaks) ;
+//   - l'accomplissement « Cycle termine », deduit de `seances / 12` — un proxy
+//     que le code lui-meme documentait comme tel, faute de compteur persiste ;
+//   - l'accomplissement « 30 jours d'activite », compte sur un ensemble qui
+//     melangeait les charges club auto-injectees aux faits reels ;
+//   - l'ecart d'effort avec le mois dernier : `dailyApplied` est indecomposable
+//     (auto et reel s'y additionnent), donc l'ecart ne dit pas ce qu'il annonce.
+// =============================================================================
+
+import React, { useLayoutEffect, useMemo, useState } from "react";
+import { View, Text, StyleSheet, LayoutChangeEvent } from "react-native";
 import { Screen } from "../components/ui/Screen";
 import { useNavigation } from "@react-navigation/native";
-import {
-  format,
-  startOfMonth,
-  endOfMonth,
-  addDays,
-  subDays,
-  getDay,
-} from "date-fns";
+import { format, startOfMonth, endOfMonth, addDays, getDay } from "date-fns";
 import { fr } from "date-fns/locale";
 import Svg, { Line, Path, Circle } from "react-native-svg";
 import { Ionicons } from "@expo/vector-icons";
 
 import { theme } from "../constants/theme";
 import { useSettingsStore } from "../state/settingsStore";
-import { useLoadStore } from "../state/stores/useLoadStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useExternalStore } from "../state/stores/useExternalStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
 import { Card } from "../components/ui/Card";
-import { TRAINING_DEFAULTS, getFootballLabel } from "../config/trainingDefaults";
-import { updateTrainingLoad } from "../engine/loadModel";
-import { readTestsRaw } from "./tests/hooks/useTestsStorage";
-import { formatMinSec } from "./tests/testHelpers";
 import { toDateKey } from "../utils/dateHelpers";
+import { getSessionDuration } from "../utils/sessionHelpers";
+import { estChargeExterneManuelle, estSeanceFksTerminee } from "../domain/resumeCanonique";
 import { TonSuiviSection } from "../components/progress/TonSuiviSection";
+import { useProgressionViewModel } from "../hooks/useProgressionViewModel";
+import { useTrackingProgress } from "../hooks/useTrackingProgress";
+import {
+  calculerEchelleCourbe,
+  versYCourbe,
+  zeroEstDansLEchelle,
+  type GeometrieCourbe,
+} from "./progression/echelleCourbe";
+import type {
+  ProgressionComparaisonTest,
+  ProgressionFait,
+} from "./homeVNext/progressionViewModel";
 
 const palette = theme.colors;
 
-type LoadPoint = {
-  key: string;
-  atl: number;
-  ctl: number;
-  tsb: number;
-  load: number;
-};
+/**
+ * La zone de dessin de la courbe. La MARGE haute et basse existe pour que le
+ * point du jour, qui est le plus gros, ne soit jamais rogne par le bord.
+ */
+const GEOMETRIE_COURBE: GeometrieCourbe = { hauteur: 110, marge: 8 };
 
-// ──────────────────────── Milestones ────────────────────────
-type Milestone = {
+/**
+ * Marge laterale du trace, a gauche comme a droite. Elle valait 24 a gauche pour
+ * loger les etiquettes « 0 » et « -10 » ; ces etiquettes sont parties, la courbe
+ * recupere la largeur.
+ */
+const MARGE_X_COURBE = 8;
+
+// =============================================================================
+// LES ACCOMPLISSEMENTS QUI RESTENT — TROIS COMPTES, ZERO DEDUCTION
+// =============================================================================
+//
+// Les trois survivants comptent la MEME chose (des seances FKS terminees), avec
+// le meme predicat que le resume canonique et que le compteur hebdo de
+// l'accueil. Un joueur ne peut donc pas lire « 12 seances terminees » en haut de
+// page et « 10 / 10 » verrouille plus bas.
+//
+// Les trois autres sont partis parce qu'aucun ne reposait sur un fait constate :
+// deux sur des streaks (purge decidee), un sur un proxy `seances / 12`.
+// =============================================================================
+
+type Accomplissement = {
   id: string;
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
-  value: string;
-  color: string;
-  reached: boolean;
+  valeur: string;
+  couleur: string;
+  atteint: boolean;
 };
 
-function computeMilestones(
-  totalSessions: number,
-  totalDays: number,
-  maxStreak: number,
-  totalCycles: number
-): Milestone[] {
-  return [
-    {
-      id: "first_session",
-      icon: "flash",
-      label: "Première séance",
-      value: totalSessions >= 1 ? "Fait !" : "0 / 1",
-      color: "#ff7a1a",
-      reached: totalSessions >= 1,
-    },
-    {
-      id: "ten_sessions",
-      icon: "trophy",
-      label: "10 séances",
-      value: totalSessions >= 10 ? "Débloqué" : `${totalSessions} / 10`,
-      color: "#8b5cf6",
-      reached: totalSessions >= 10,
-    },
-    {
-      id: "fifty_sessions",
-      icon: "medal",
-      label: "50 séances",
-      value: totalSessions >= 50 ? "Débloqué" : `${totalSessions} / 50`,
-      color: "#f59e0b",
-      reached: totalSessions >= 50,
-    },
-    {
-      id: "streak_7",
-      icon: "flame",
-      label: "7 jours d'affilée",
-      value: maxStreak >= 7 ? "Débloqué" : `${maxStreak} / 7`,
-      color: "#ef4444",
-      reached: maxStreak >= 7,
-    },
-    {
-      id: "first_cycle",
-      icon: "ribbon",
-      label: "Cycle terminé",
-      value: totalCycles >= 1 ? "Fait !" : "0 / 1",
-      color: "#16a34a",
-      reached: totalCycles >= 1,
-    },
-    {
-      id: "active_30",
-      icon: "calendar",
-      label: "30 jours d'activité",
-      value: totalDays >= 30 ? "Débloqué" : `${totalDays} / 30`,
-      color: "#06b6d4",
-      reached: totalDays >= 30,
-    },
-  ];
-}
-
-// ──────────────────────── Test comparison helper ────────────────────────
-type TestEntry = {
-  ts: number;
-  playlist?: string;
-  broadJumpCm?: number;
-  tripleJumpCm?: number;
-  cmjCm?: number;
-  sprint10s?: number;
-  sprint20s?: number;
-  sprint30s?: number;
-  endurance6min_m?: number;
-  yoYoIR1_m?: number;
-  run1km_s?: number;
-  gobletKg?: number;
-  gobletReps?: number;
-  [key: string]: any;
-};
-
-type TestComparison = {
-  label: string;
-  unit: string;
-  before: number;
-  after: number;
-  diff: number;
-  improved: boolean;
-  lowerIsBetter: boolean;
-  /** "minsec" : before/after affichés en mm:ss (ex: 1 km). Le diff reste en secondes brutes. */
-  special?: "minsec";
-};
-
-const TEST_FIELDS: {
-  key: string;
-  label: string;
-  unit: string;
-  lowerIsBetter?: boolean;
-  special?: "minsec";
-}[] = [
-  { key: "broadJumpCm", label: "Saut longueur", unit: "cm" },
-  { key: "cmjCm", label: "CMJ", unit: "cm" },
-  { key: "sprint10s", label: "Sprint 10m", unit: "s", lowerIsBetter: true },
-  { key: "sprint20s", label: "Sprint 20m", unit: "s", lowerIsBetter: true },
-  { key: "sprint30s", label: "Sprint 30m", unit: "s", lowerIsBetter: true },
-  { key: "endurance6min_m", label: "Endurance 6min", unit: "m" },
-  { key: "yoYoIR1_m", label: "Yo-Yo IR1", unit: "m" },
-  { key: "run1km_s", label: "1 km", unit: "s", lowerIsBetter: true, special: "minsec" },
-  { key: "gobletKg", label: "Goblet Squat", unit: "kg" },
+/** Les paliers, dans l'ordre. `seuil` est la seule donnee variable. */
+const PALIERS: readonly { id: string; seuil: number; icon: keyof typeof Ionicons.glyphMap; label: string; couleur: string }[] = [
+  { id: "premiere_seance", seuil: 1, icon: "flash", label: "Première séance", couleur: "#ff7a1a" },
+  { id: "dix_seances", seuil: 10, icon: "trophy", label: "10 séances", couleur: "#8b5cf6" },
+  { id: "cinquante_seances", seuil: 50, icon: "medal", label: "50 séances", couleur: "#f59e0b" },
 ];
 
-/**
- * Historique unifié (Phase C) : plus de batteries par cycle, donc plus de
- * filtre par playlist ici. Pour CHAQUE test, on prend ses 2 valeurs les plus
- * récentes, tous cycles/entrées confondus (avant : la comparaison se limitait
- * aux 2 dernières entrées PARTAGEANT la playlist de la plus récente — changer
- * de cycle actif "cassait" la comparaison avant/après).
- */
-function computeTestComparisons(tests: TestEntry[]): TestComparison[] {
-  if (tests.length < 2) return [];
-  const sorted = [...tests].sort((a, b) => b.ts - a.ts);
-  const comparisons: TestComparison[] = [];
-
-  for (const field of TEST_FIELDS) {
-    let after: number | undefined;
-    let before: number | undefined;
-    for (const entry of sorted) {
-      const raw = entry[field.key];
-      if (typeof raw !== "number" || !(raw > 0)) continue;
-      if (after === undefined) {
-        after = raw;
-      } else {
-        before = raw;
-        break;
-      }
-    }
-    if (typeof before === "number" && typeof after === "number") {
-      const diff = after - before;
-      const improved = field.lowerIsBetter ? diff < 0 : diff > 0;
-      comparisons.push({
-        label: field.label,
-        unit: field.unit,
-        before,
-        after,
-        diff,
-        improved,
-        lowerIsBetter: !!field.lowerIsBetter,
-        special: field.special,
-      });
-    }
-  }
-  return comparisons;
+function construireAccomplissements(seancesTerminees: number): Accomplissement[] {
+  return PALIERS.map((palier) => {
+    const atteint = seancesTerminees >= palier.seuil;
+    return {
+      id: palier.id,
+      icon: palier.icon,
+      label: palier.label,
+      // Le compte affiche n'est JAMAIS borne au seuil : un joueur a 63 seances
+      // lit « Débloqué », pas « 50 / 50 », et la fraction dit le vrai reste.
+      valeur: atteint ? "Débloqué" : `${seancesTerminees} / ${palier.seuil}`,
+      couleur: palier.couleur,
+      atteint,
+    };
+  });
 }
 
-// ──────────────────────── Component ────────────────────────
+// =============================================================================
+// L'ECRAN
+// =============================================================================
+
 export default function ProgressScreen() {
   const navigation = useNavigation<any>();
-  const tsb = useLoadStore((s) => s.tsb);
   const devNowISO = useDebugStore((s) => s.devNowISO);
   const sessions = useSessionsStore((s) => s.sessions ?? []);
   const externalLoads = useExternalStore((s) => s.externalLoads ?? []);
-  const dailyApplied = useLoadStore((s) => s.dailyApplied ?? {});
   const weekStart = useSettingsStore((s) => s.weekStart);
-  const [testEntries, setTestEntries] = useState<TestEntry[]>([]);
+
+  /** LE resume canonique. Le meme que la carte de l'accueil, au champ pres. */
+  const progression = useProgressionViewModel();
+  /**
+   * Lu ici pour UNE chose : le bandeau de reprise, qui monte en haut de page.
+   * Il vivait dans « Ton suivi », c'est-a-dire sous le resume — un joueur qui
+   * revient apres trois semaines d'arret devait donc lire ses chiffres avant
+   * d'apprendre qu'ils datent. `TonSuiviSection` ne le rend plus.
+   */
+  const tracking = useTrackingProgress();
 
   useLayoutEffect(() => {
     navigation.setOptions?.({
@@ -223,890 +174,773 @@ export default function ProgressScreen() {
     });
   }, [navigation]);
 
-  // Load test data
-  useEffect(() => {
-    readTestsRaw().then((raw) => {
-      if (raw) {
-        try {
-          setTestEntries(JSON.parse(raw));
-        } catch (err) {
-          if (__DEV__) console.warn("[Progress] Failed to parse test data:", err);
-        }
-      }
-    });
-  }, []);
-
   const today = devNowISO ? new Date(devNowISO) : new Date();
   const todayKey = toDateKey(today);
-  const footballLabel = useMemo(() => getFootballLabel(tsb), [tsb]);
-
-  // ─── Load series (30 days) ───
-  const loadSeries = useMemo<LoadPoint[]>(() => {
-    const daysBack = 30;
-    const warmup = 45;
-    const totalDays = daysBack + warmup;
-    const orderedDays = Array.from({ length: totalDays }).map((_, idx) =>
-      subDays(today, totalDays - 1 - idx)
-    );
-
-    let atlSeed = TRAINING_DEFAULTS.ATL0;
-    let ctlSeed = TRAINING_DEFAULTS.CTL0;
-    const series: LoadPoint[] = [];
-
-    orderedDays.forEach((d, idx) => {
-      const key = toDateKey(d);
-      const load = Number(dailyApplied[key] ?? 0) || 0;
-      const next = updateTrainingLoad(atlSeed, ctlSeed, load, { dtDays: 1 });
-      atlSeed = next.atl;
-      ctlSeed = next.ctl;
-      if (idx >= warmup) {
-        series.push({
-          key,
-          atl: Number(next.atl.toFixed(1)),
-          ctl: Number(next.ctl.toFixed(1)),
-          tsb: Number(next.tsb.toFixed(1)),
-          load,
-        });
-      }
-    });
-
-    return series;
-  }, [dailyApplied, devNowISO]);
-
-  const tsbSeries = useMemo(() => loadSeries.map((d) => d.tsb), [loadSeries]);
-
-  // ─── Month data ───
   const monthKey = todayKey.slice(0, 7);
-  const lastMonth = (() => {
-    const d = startOfMonth(today);
-    const prev = subDays(d, 1);
-    return toDateKey(prev).slice(0, 7);
-  })();
 
-  const completedSessions = sessions.filter((s: any) => s?.completed);
-  const activitySet = new Set<string>();
-  completedSessions.forEach((s: any) =>
-    activitySet.add(toDateKey(s?.dateISO ?? s?.date))
-  );
-  externalLoads.forEach((e: any) =>
-    activitySet.add(toDateKey(e?.dateISO ?? e?.date))
-  );
+  // ───────────────────────────────────────────────────────────────────────────
+  // LES FAITS DU MOIS — sur les predicats canoniques, jamais sur `s.completed`
+  // ───────────────────────────────────────────────────────────────────────────
 
-  const monthSessions = completedSessions.filter((s: any) =>
-    toDateKey(s?.dateISO ?? s?.date).startsWith(monthKey)
-  );
-  const lastMonthSessions = completedSessions.filter((s: any) =>
-    toDateKey(s?.dateISO ?? s?.date).startsWith(lastMonth)
-  );
-
-  const monthLoad = Object.entries(dailyApplied)
-    .filter(([k]) => k.startsWith(monthKey))
-    .reduce((sum, [, v]) => sum + (Number(v) || 0), 0);
-
-  const lastMonthLoad = Object.entries(dailyApplied)
-    .filter(([k]) => k.startsWith(lastMonth))
-    .reduce((sum, [, v]) => sum + (Number(v) || 0), 0);
-
-  const avgRpe = (() => {
-    const rpes = monthSessions
-      .map((s: any) => s?.feedback?.rpe ?? s?.rpe)
-      .filter((v: any) => Number.isFinite(v));
-    if (!rpes.length) return null;
-    return Number(
-      (rpes.reduce((a: number, b: number) => a + b, 0) / rpes.length).toFixed(1)
-    );
-  })();
-
-  const avgDuration = (() => {
-    const durations = monthSessions
-      .map(
-        (s: any) =>
-          s?.feedback?.durationMin ?? s?.durationMin ?? s?.aiV2?.durationMin ?? s?.aiV2?.duration_min
-      )
-      .filter((v: any) => Number.isFinite(v));
-    if (!durations.length) return null;
-    return Math.round(
-      durations.reduce((a: number, b: number) => a + b, 0) / durations.length
-    );
-  })();
-
-  // ─── Streaks ───
-  const globalMaxStreak = useMemo(() => {
-    const allDays = Array.from(activitySet).sort();
-    let streak = 0;
-    let best = 0;
-    let prev = "";
-    for (const day of allDays) {
-      if (prev && toDateKey(subDays(new Date(`${day}T12:00:00`), 1)) === prev) {
-        streak += 1;
-      } else {
-        streak = 1;
-      }
-      best = Math.max(best, streak);
-      prev = day;
+  /**
+   * Jours ou l'app a VU quelque chose de reel : seance FKS terminee, ou charge
+   * externe SAISIE par le joueur.
+   *
+   * Les charges club/match auto-injectees sont exclues. Elles sont deduites des
+   * cases cochees au profil, pas constatees : les pointer sur le calendrier
+   * afficherait des jours « actifs » ou le joueur n'a rien fait de la sorte, et
+   * contredirait la phrase de portee imprimee sous la courbe.
+   */
+  const joursActifs = useMemo(() => {
+    const jours = new Set<string>();
+    for (const s of sessions) {
+      if (!estSeanceFksTerminee(s as any)) continue;
+      const cle = toDateKey((s as any)?.dateISO ?? (s as any)?.date);
+      if (cle) jours.add(cle);
     }
-    return best;
-  }, [activitySet]);
-
-  const maxStreakThisMonth = useMemo(() => {
-    const start = startOfMonth(today);
-    const end = endOfMonth(today);
-    let streak = 0;
-    let best = 0;
-    for (let d = start; d <= end; d = addDays(d, 1)) {
-      const key = toDateKey(d);
-      if (activitySet.has(key)) {
-        streak += 1;
-        best = Math.max(best, streak);
-      } else {
-        streak = 0;
-      }
+    for (const c of externalLoads) {
+      if (!estChargeExterneManuelle(c as any)) continue;
+      const cle = toDateKey((c as any)?.dateISO ?? (c as any)?.date);
+      if (cle) jours.add(cle);
     }
-    return best;
-  }, [activitySet, today]);
+    return jours;
+  }, [sessions, externalLoads]);
 
-  // ─── Calendar ───
-  const calendarDays = useMemo(() => {
-    const start = startOfMonth(today);
-    const end = endOfMonth(today);
-    const days: {
-      key: string;
-      label: string;
-      isActive: boolean;
-      isToday: boolean;
-    }[] = [];
-    const leadingEmpty = weekStart === "sun" ? getDay(start) : (getDay(start) + 6) % 7;
-    for (let i = 0; i < leadingEmpty; i += 1) {
-      days.push({
-        key: `empty_${i}`,
-        label: "",
-        isActive: false,
-        isToday: false,
-      });
-    }
-    for (let d = start; d <= end; d = addDays(d, 1)) {
-      const key = toDateKey(d);
-      days.push({
-        key,
-        label: String(d.getDate()),
-        isActive: activitySet.has(key),
-        isToday: key === todayKey,
-      });
-    }
-    return days;
-  }, [activitySet, today, todayKey, weekStart]);
+  const seancesTerminees = useMemo(
+    () => sessions.filter((s: any) => estSeanceFksTerminee(s)),
+    [sessions]
+  );
 
-  // ─── Milestones ───
-  // Proxy : cycles estimés via séances FKS complétées ÷ 12 (pas de compteur de cycles persisté)
-  const estimatedCycles = Math.floor(completedSessions.length / 12);
-  const milestones = useMemo(
+  const seancesDuMois = useMemo(
     () =>
-      computeMilestones(
-        completedSessions.length,
-        activitySet.size,
-        globalMaxStreak,
-        estimatedCycles
+      seancesTerminees.filter((s: any) =>
+        toDateKey(s?.dateISO ?? s?.date).startsWith(monthKey)
       ),
-    [completedSessions.length, activitySet.size, globalMaxStreak, estimatedCycles]
+    [seancesTerminees, monthKey]
   );
 
-  // ─── Tests comparisons ───
-  const testComparisons = useMemo(
-    () => computeTestComparisons(testEntries),
-    [testEntries]
+  const moisPrecedent = useMemo(() => {
+    const d = startOfMonth(today);
+    d.setDate(0);
+    return toDateKey(d).slice(0, 7);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayKey]);
+
+  const seancesMoisPrecedent = useMemo(
+    () =>
+      seancesTerminees.filter((s: any) =>
+        toDateKey(s?.dateISO ?? s?.date).startsWith(moisPrecedent)
+      ),
+    [seancesTerminees, moisPrecedent]
   );
 
-  // ─── TSB Sparkline ───
-  const [chartWidth, setChartWidth] = useState(0);
-  const chartHeight = 110;
-  const pad = 8;
-  const padLeft = 24;
-  const padRight = 8;
-  const tsbMin = -20;
-  const tsbMax = 20;
+  const effortMoyen = useMemo(() => {
+    const valeurs = seancesDuMois
+      .map((s: any) => s?.feedback?.rpe ?? s?.rpe)
+      .filter((v: any) => Number.isFinite(v)) as number[];
+    if (!valeurs.length) return null;
+    return Number((valeurs.reduce((a, b) => a + b, 0) / valeurs.length).toFixed(1));
+  }, [seancesDuMois]);
 
-  const toY = (value: number) => {
-    const clamped = Math.max(tsbMin, Math.min(tsbMax, value));
-    const ratio = (clamped - tsbMin) / (tsbMax - tsbMin);
-    return pad + (1 - ratio) * (chartHeight - pad * 2);
-  };
+  const dureeMoyenne = useMemo(() => {
+    const valeurs = seancesDuMois
+      .map((s: any) => getSessionDuration(s))
+      .filter((v: any): v is number => Number.isFinite(v));
+    if (!valeurs.length) return null;
+    return Math.round(valeurs.reduce((a, b) => a + b, 0) / valeurs.length);
+  }, [seancesDuMois]);
 
-  const tsbPoints = useMemo(() => {
-    if (!chartWidth || tsbSeries.length < 2) return [];
-    const innerWidth = Math.max(10, chartWidth - padLeft - padRight);
-    const step = innerWidth / (tsbSeries.length - 1);
-    return tsbSeries.map((v, i) => ({
-      x: padLeft + i * step,
-      y: toY(v),
+  const ecartSeances = seancesDuMois.length - seancesMoisPrecedent.length;
+
+  const accomplissements = useMemo(
+    () => construireAccomplissements(seancesTerminees.length),
+    [seancesTerminees.length]
+  );
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // LE CALENDRIER DU MOIS
+  // ───────────────────────────────────────────────────────────────────────────
+
+  const joursDuCalendrier = useMemo(() => {
+    const debut = startOfMonth(today);
+    const fin = endOfMonth(today);
+    const jours: { key: string; label: string; actif: boolean; aujourdhui: boolean }[] = [];
+    const videsEnTete = weekStart === "sun" ? getDay(debut) : (getDay(debut) + 6) % 7;
+    for (let i = 0; i < videsEnTete; i += 1) {
+      jours.push({ key: `vide_${i}`, label: "", actif: false, aujourdhui: false });
+    }
+    for (let d = debut; d <= fin; d = addDays(d, 1)) {
+      const key = toDateKey(d);
+      jours.push({ key, label: String(d.getDate()), actif: joursActifs.has(key), aujourdhui: key === todayKey });
+    }
+    return jours;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joursActifs, todayKey, weekStart]);
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // LA COURBE — uniquement quand le ViewModel en a construit une
+  // ───────────────────────────────────────────────────────────────────────────
+
+  const courbe = progression.state === "ready" ? progression.courbe : null;
+  /**
+   * Memoise pour que la serie garde la MEME reference d'un rendu a l'autre : les
+   * deux calculs qui en dependent (l'echelle, puis les points traces) se
+   * refont sinon a chaque rendu, sur des donnees identiques.
+   */
+  const points = useMemo(() => courbe?.points ?? [], [courbe]);
+
+  /**
+   * Les comparaisons de tests n'existent PAS dans l'etat "empty" — c'est le
+   * contrat, pas un oubli : sur un compte sans la moindre seance terminee, la
+   * page ne dit rien d'autre que ses trois reperes. La carte entiere disparait
+   * donc, au lieu d'afficher une explication d'absence a cote d'une autre.
+   */
+  const comparaisons = progression.state === "empty" ? null : progression.comparaisonsTests;
+
+  const [largeurGraphe, setLargeurGraphe] = useState(0);
+
+  /**
+   * L'ECHELLE VERTICALE VIENT DE LA SERIE, PAS D'UNE CONSTANTE.
+   *
+   * L'axe etait fige a [-20, +20] et toute valeur qui en sortait etait RABOTEE
+   * sur la borne. Inoffensif tant que la serie etait amorcee sur ATL0/CTL0 ;
+   * faux depuis qu'elle part de zero, ou un joueur assidu descend regulierement
+   * plus bas — et voyait alors sa courbe s'aplatir contre le bord en affichant
+   * une valeur que personne n'avait mesuree. Le calcul et son test vivent dans
+   * `screens/progression/echelleCourbe.ts`.
+   */
+  const echelle = useMemo(() => calculerEchelleCourbe(points), [points]);
+
+  const versY = (valeur: number) =>
+    echelle ? versYCourbe(valeur, echelle, GEOMETRIE_COURBE) : GEOMETRIE_COURBE.hauteur / 2;
+
+  const pointsTraces = useMemo(() => {
+    if (!largeurGraphe || points.length < 2 || !echelle) return [];
+    const largeurInterne = Math.max(10, largeurGraphe - MARGE_X_COURBE * 2);
+    const pas = largeurInterne / (points.length - 1);
+    return points.map((v, i) => ({
+      x: MARGE_X_COURBE + i * pas,
+      y: versYCourbe(v, echelle, GEOMETRIE_COURBE),
       v,
     }));
-  }, [chartWidth, tsbSeries]);
+  }, [largeurGraphe, points, echelle]);
 
-  const tsbPath = useMemo(() => {
-    if (!tsbPoints.length) return "";
-    return tsbPoints
-      .map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`)
-      .join(" ");
-  }, [tsbPoints]);
+  const chemin = useMemo(
+    () => pointsTraces.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" "),
+    [pointsTraces]
+  );
 
-  const handleLayout = (e: LayoutChangeEvent) => {
-    const w = e.nativeEvent.layout.width;
-    if (w && w !== chartWidth) setChartWidth(w);
+  const mesurerGraphe = (e: LayoutChangeEvent) => {
+    const l = e.nativeEvent.layout.width;
+    if (l && l !== largeurGraphe) setLargeurGraphe(l);
   };
 
-  // ─── Month delta helpers ───
-  const sessionsDelta = monthSessions.length - lastMonthSessions.length;
-  const loadDelta = Math.round(monthLoad - lastMonthLoad);
-
   return (
-    <Screen style={styles.safeArea}>
-      <ScrollView
-        contentContainerStyle={styles.container}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ═══════════ HERO : Forme actuelle ═══════════ */}
-        <Card variant="surface" style={styles.heroCard}>
-          <View style={styles.heroHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.kicker}>TA FORME</Text>
-              <Text style={[styles.heroTitle, { color: footballLabel.color }]}>
-                {footballLabel.label}
-              </Text>
-              <Text style={styles.heroMessage}>{footballLabel.message}</Text>
-            </View>
-            <View
-              style={[styles.statusDot, { backgroundColor: footballLabel.color }]}
-            />
-          </View>
+    <Screen scroll contentContainerStyle={styles.container}>
+      {/* ═══════════ BANDEAU REPRISE — avant tout chiffre ═══════════ */}
+      {tracking.resumption ? (
+        <View style={styles.bandeauReprise}>
+          <Ionicons name="leaf-outline" size={18} color={palette.warn} />
+          <Text style={styles.texteReprise}>{tracking.resumption.message}</Text>
+        </View>
+      ) : null}
 
-          {/* Sparkline TSB 30 jours */}
-          <View style={styles.chartWrap} onLayout={handleLayout}>
-            <Svg width={chartWidth} height={chartHeight}>
-              {/* Zone optimale */}
-              <Line
-                x1={padLeft}
-                y1={toY(5)}
-                x2={chartWidth - padRight}
-                y2={toY(5)}
-                stroke="rgba(34, 197, 94, 0.2)"
-                strokeWidth={1}
-                strokeDasharray="4,4"
-              />
-              <Line
-                x1={padLeft}
-                y1={toY(-5)}
-                x2={chartWidth - padRight}
-                y2={toY(-5)}
-                stroke="rgba(34, 197, 94, 0.2)"
-                strokeWidth={1}
-                strokeDasharray="4,4"
-              />
-              {/* Zero */}
-              <Line
-                x1={padLeft}
-                y1={toY(0)}
-                x2={chartWidth - padRight}
-                y2={toY(0)}
-                stroke={palette.borderSoft}
-                strokeWidth={1}
-              />
-              {/* Seuil surcharge */}
-              <Line
-                x1={padLeft}
-                y1={toY(-10)}
-                x2={chartWidth - padRight}
-                y2={toY(-10)}
-                stroke="rgba(245, 158, 11, 0.3)"
-                strokeWidth={1}
-              />
-              {/* Courbe */}
-              {tsbPath ? (
-                <Path
-                  d={tsbPath}
-                  stroke={footballLabel.color}
-                  strokeWidth={2.4}
-                  fill="none"
-                />
-              ) : null}
-              {tsbPoints.map((p, idx) => (
-                <Circle
-                  key={`dot_${idx}`}
-                  cx={p.x}
-                  cy={p.y}
-                  r={idx === tsbPoints.length - 1 ? 5 : 2.5}
-                  fill={footballLabel.color}
-                />
-              ))}
-            </Svg>
-            <Text style={[styles.refLabel, { top: toY(0) - 8 }]}>0</Text>
-            <Text
-              style={[styles.refLabel, { top: toY(-10) - 8, color: "#f59e0b" }]}
-            >
-              -10
-            </Text>
-          </View>
-          <Text style={styles.chartCaption}>
-            Ta forme sur 30 jours
-          </Text>
-        </Card>
+      {/* ═══════════ LE RESUME CANONIQUE ═══════════ */}
+      <Card variant="surface" style={styles.carte}>
+        <Text style={styles.titreSection}>{progression.titre}</Text>
 
-        {/* ═══════════ TON SUIVI (boucle de suivi joueur) ═══════════ */}
-        <TonSuiviSection />
-
-        {/* ═══════════ MILESTONES ═══════════ */}
-        <Card variant="surface" style={styles.milestonesCard}>
-          <Text style={styles.sectionTitle}>Accomplissements</Text>
-          <View style={styles.milestonesGrid}>
-            {milestones.map((m) => (
-              <View
-                key={m.id}
-                style={[
-                  styles.milestoneItem,
-                  !m.reached && styles.milestoneItemLocked,
-                ]}
-              >
-                <View
-                  style={[
-                    styles.milestoneIcon,
-                    {
-                      backgroundColor: m.reached
-                        ? `${m.color}20`
-                        : palette.cardSoft,
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={m.reached ? m.icon : "lock-closed"}
-                    size={20}
-                    color={m.reached ? m.color : palette.muted}
-                  />
-                </View>
-                <Text
-                  style={[
-                    styles.milestoneLabel,
-                    !m.reached && { color: palette.muted },
-                  ]}
-                >
-                  {m.label}
-                </Text>
-                <Text
-                  style={[
-                    styles.milestoneValue,
-                    m.reached && { color: m.color },
-                  ]}
-                >
-                  {m.value}
-                </Text>
+        {/* --- "empty" : trois reperes, aucun chiffre --- */}
+        {progression.state === "empty" ? (
+          <>
+            {progression.reperes.map((r) => (
+              <View key={r.numero} style={styles.ligneRepere}>
+                <Text style={styles.numeroRepere}>{r.numero}</Text>
+                <Text style={styles.texteRepere}>{r.texte}</Text>
               </View>
             ))}
-          </View>
-        </Card>
+            <Text style={styles.mention}>{progression.mention}</Text>
+          </>
+        ) : null}
 
-        {/* ═══════════ TESTS : Before / After ═══════════ */}
-        {testComparisons.length > 0 && (
-          <Card variant="surface" style={styles.testsCard}>
-            <View style={styles.testsTitleRow}>
-              <Ionicons name="analytics" size={18} color={palette.accent} />
-              <Text style={styles.sectionTitle}>Évolution tests</Text>
-            </View>
-            <Text style={styles.testsSub}>
-              Dernières valeurs connues, tous tests confondus
-            </Text>
-            {testComparisons.map((tc) => {
-              const isMinSec = tc.special === "minsec";
-              const diffStr = tc.lowerIsBetter
-                ? tc.diff < 0
-                  ? `${tc.diff.toFixed(1)} ${tc.unit}`
-                  : `+${tc.diff.toFixed(1)} ${tc.unit}`
-                : tc.diff > 0
-                  ? `+${tc.diff.toFixed(1)} ${tc.unit}`
-                  : `${tc.diff.toFixed(1)} ${tc.unit}`;
-              const beforeStr = isMinSec ? formatMinSec(tc.before) : `${tc.before} ${tc.unit}`;
-              const afterStr = isMinSec ? formatMinSec(tc.after) : `${tc.after} ${tc.unit}`;
-              return (
-                <View key={tc.label} style={styles.testRow}>
-                  <View style={styles.testLabelWrap}>
-                    <Text style={styles.testLabel}>{tc.label}</Text>
-                  </View>
-                  <Text style={styles.testBefore}>{beforeStr}</Text>
-                  <Ionicons
-                    name="arrow-forward"
-                    size={14}
-                    color={palette.muted}
+        {/* --- "collecting" : les faits reels, et ce qui manque --- */}
+        {progression.state === "collecting" ? (
+          <>
+            {progression.faits.map((f: ProgressionFait) => (
+              <View key={f.cle} style={styles.ligneFait}>
+                <Text style={styles.libelleFait} numberOfLines={2}>
+                  {f.libelle}
+                </Text>
+                <Text style={styles.valeurFait}>{f.valeur}</Text>
+              </View>
+            ))}
+            {/*
+              L'ETAT DE CONSTRUCTION, ECRIT PLUTOT QUE DESSINE. Le ViewModel dit
+              ce qui manque et combien ; la page ne fabrique pas une courbe plate
+              en attendant.
+            */}
+            <Text style={styles.mention}>{progression.tendanceIndisponible.explication}</Text>
+          </>
+        ) : null}
+
+        {/* --- "ready" : la courbe, et le fait qui l'accompagne --- */}
+        {progression.state === "ready" && courbe ? (
+          <>
+            <View style={styles.zoneGraphe} onLayout={mesurerGraphe}>
+              <Svg width={largeurGraphe} height={GEOMETRIE_COURBE.hauteur}>
+                {/*
+                  LE SEUL REPERE QUI SUBSISTE, ET SEULEMENT S'IL EST TRAVERSE.
+                  Les deux etiquettes « 0 » et « -10 » et la ligne orange de
+                  seuil ont ete retirees : elles exposaient l'echelle interne du
+                  modele de charge a un joueur a qui l'accueil ne montre plus
+                  aucun chiffre de ce genre (regle posee dans
+                  components/homeVNext/HomeVNextSparkline.tsx). La ligne orange
+                  faisait pire : calibree sur l'ancienne serie amorcee, elle
+                  place un joueur normal en permanence « sous le seuil », alors
+                  que le ViewModel s'interdit desormais d'ecrire cet etat sans
+                  preuve. Un ecran ne peut pas dessiner ce que l'autre refuse
+                  d'ecrire.
+                */}
+                {echelle && zeroEstDansLEchelle(echelle) ? (
+                  <Line
+                    x1={MARGE_X_COURBE}
+                    y1={versY(0)}
+                    x2={Math.max(MARGE_X_COURBE, largeurGraphe - MARGE_X_COURBE)}
+                    y2={versY(0)}
+                    stroke={palette.borderSoft}
+                    strokeWidth={1}
                   />
-                  <Text style={styles.testAfter}>{afterStr}</Text>
-                  <View
-                    style={[
-                      styles.testDiffBadge,
-                      {
-                        backgroundColor: tc.improved
-                          ? "rgba(22,163,74,0.12)"
-                          : "rgba(239,68,68,0.12)",
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      name={tc.improved ? "trending-up" : "trending-down"}
-                      size={12}
-                      color={tc.improved ? "#16a34a" : "#ef4444"}
-                    />
-                    <Text
-                      style={[
-                        styles.testDiffText,
-                        { color: tc.improved ? "#16a34a" : "#ef4444" },
-                      ]}
-                    >
-                      {diffStr}
+                ) : null}
+                {chemin ? (
+                  <Path d={chemin} stroke={palette.accent} strokeWidth={2.4} fill="none" />
+                ) : null}
+                {pointsTraces.map((p, idx) => (
+                  <Circle
+                    key={`point_${idx}`}
+                    cx={p.x}
+                    cy={p.y}
+                    r={idx === pointsTraces.length - 1 ? 5 : 2.5}
+                    fill={palette.accent}
+                  />
+                ))}
+              </Svg>
+            </View>
+            <Text style={styles.periode}>{courbe.periodeLabel}</Text>
+            {/*
+              LA PORTEE. Champ NON nullable du contrat : il est impossible de
+              construire une courbe sans dire sur quoi elle est calculee. C'est
+              la mention « seances FKS uniquement » que la page n'a jamais eue.
+            */}
+            <Text style={styles.portee}>{courbe.portee}</Text>
+            <View style={styles.ligneFait}>
+              <Text style={styles.libelleFait} numberOfLines={2}>
+                {progression.resume.libelle}
+              </Text>
+              <Text style={styles.valeurFait}>{progression.resume.valeur}</Text>
+            </View>
+          </>
+        ) : null}
+      </Card>
+
+      {/* ═══════════ TON SUIVI — empile sous le resume ═══════════ */}
+      {/*
+        LES DEUX COMPTEURS SE SUIVENT, ET LEURS LIBELLES PORTENT LA DIFFERENCE.
+        Au-dessus : « Séances terminées depuis tes débuts » (cumul, sans borne).
+        Ici : « N séances suivies » (fenetre de 28 jours de la boucle de suivi,
+        `domain/tracking/config.ts`). Ce sont deux mesures differentes de deux
+        choses differentes ; c'est le mot qui le dit, pas la taille du texte.
+      */}
+      <TonSuiviSection />
+
+      {/* ═══════════ EVOLUTION DES TESTS — la liste COMPLETE ═══════════ */}
+      {comparaisons ? (
+      <Card variant="surface" style={styles.carte}>
+        <View style={styles.ligneTitreIcone}>
+          <Ionicons name="analytics" size={18} color={palette.accent} />
+          <Text style={styles.titreSection}>Évolution tests</Text>
+        </View>
+        {comparaisons.possible ? (
+          <>
+            <Text style={styles.sousTitre}>Dernières valeurs connues, tous tests confondus</Text>
+            {comparaisons.comparaisons.map((c: ProgressionComparaisonTest) => {
+              // TROIS SENS, PAS UN BOOLEEN. L'ancienne page faisait tomber
+              // l'ecart exactement nul dans « pas ameliore » et l'affichait en
+              // rouge, fleche vers le bas : une valeur identique n'est pas une
+              // regression.
+              const couleur =
+                c.sens === "amelioration"
+                  ? "#16a34a"
+                  : c.sens === "regression"
+                    ? "#ef4444"
+                    : palette.sub;
+              const icone =
+                c.sens === "amelioration"
+                  ? "trending-up"
+                  : c.sens === "regression"
+                    ? "trending-down"
+                    : "remove";
+              return (
+                <View key={c.champ} style={styles.ligneTest}>
+                  <View style={styles.libelleTestBloc}>
+                    <Text style={styles.libelleTest} numberOfLines={1}>
+                      {c.label}
                     </Text>
+                  </View>
+                  <Text style={styles.valeurAvant}>{c.avantAffiche}</Text>
+                  <Ionicons name="arrow-forward" size={14} color={palette.muted} />
+                  <Text style={styles.valeurApres}>{c.apresAffiche}</Text>
+                  <View style={[styles.pastilleEcart, { backgroundColor: `${couleur}1f` }]}>
+                    <Ionicons name={icone} size={12} color={couleur} />
+                    <Text style={[styles.texteEcart, { color: couleur }]}>{c.ecartAffiche}</Text>
                   </View>
                 </View>
               );
             })}
-          </Card>
+          </>
+        ) : (
+          // L'ABSENCE EST EXPLIQUEE, PAS MASQUEE. L'ancienne page cachait toute
+          // la carte des qu'aucune paire n'etait comparable : le joueur ne
+          // savait pas s'il manquait un test ou si la fonction etait cassee.
+          <Text style={styles.mention}>{comparaisons.explication}</Text>
         )}
+      </Card>
+      ) : null}
 
-        {/* ═══════════ CALENDRIER ═══════════ */}
-        <Card variant="surface" style={styles.calendarCard}>
-          <Text style={styles.sectionTitle}>Calendrier</Text>
-          <Text style={styles.sectionSub}>
-            {format(today, "MMMM yyyy", { locale: fr })}
-          </Text>
-          <View style={styles.calendarHeader}>
-            {(weekStart === "sun"
-              ? ["D", "L", "M", "M", "J", "V", "S"]
-              : ["L", "M", "M", "J", "V", "S", "D"]
-            ).map((d, i) => (
-              <Text key={`dow_${i}_${d}`} style={styles.calendarDow}>
-                {d}
-              </Text>
-            ))}
+      {/* ═══════════ CALENDRIER ═══════════ */}
+      <Card variant="surface" style={styles.carte}>
+        <Text style={styles.titreSection}>Calendrier</Text>
+        <Text style={styles.sousTitre}>{format(today, "MMMM yyyy", { locale: fr })}</Text>
+        <View style={styles.enTeteCalendrier}>
+          {(weekStart === "sun"
+            ? ["D", "L", "M", "M", "J", "V", "S"]
+            : ["L", "M", "M", "J", "V", "S", "D"]
+          ).map((d, i) => (
+            <Text key={`jour_${i}_${d}`} style={styles.jourSemaine}>
+              {d}
+            </Text>
+          ))}
+        </View>
+        <View style={styles.grilleCalendrier}>
+          {joursDuCalendrier.map((jour) => (
+            <View key={jour.key} style={styles.celluleCalendrier}>
+              {jour.label ? (
+                <View
+                  style={[
+                    styles.pastilleJour,
+                    jour.actif && styles.pastilleJourActive,
+                    jour.aujourdhui && styles.pastilleJourAujourdhui,
+                  ]}
+                >
+                  <Text style={[styles.texteJour, jour.actif && styles.texteJourActif]}>
+                    {jour.label}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ))}
+        </View>
+        <View style={styles.legendeCalendrier}>
+          <View style={[styles.pointLegende, { backgroundColor: palette.accent }]} />
+          {/*
+            LE LIBELLE DIT EXACTEMENT CE QUI EST POINTE. « Seance / effort »
+            laissait croire que les entrainements club comptaient : ils sont
+            injectes automatiquement d'apres le profil, et ils ne sont pas ici.
+          */}
+          <Text style={styles.texteLegende}>Séance FKS terminée ou charge que tu as saisie</Text>
+        </View>
+      </Card>
+
+      {/* ═══════════ STATS DU MOIS ═══════════ */}
+      <Card variant="surface" style={styles.carte}>
+        <Text style={styles.titreSection}>Stats du mois</Text>
+        <View style={styles.grilleStats}>
+          <View style={styles.blocStat}>
+            <Ionicons name="barbell-outline" size={16} color={palette.accent} />
+            <Text style={styles.libelleStat}>Séances</Text>
+            <Text style={styles.valeurStat}>{seancesDuMois.length}</Text>
           </View>
-          <View style={styles.calendarGrid}>
-            {calendarDays.map((day) => (
-              <View key={day.key} style={styles.calendarCell}>
-                {day.label ? (
-                  <View
-                    style={[
-                      styles.calendarDot,
-                      day.isActive && styles.calendarDotActive,
-                      day.isToday && styles.calendarDotToday,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.calendarText,
-                        day.isActive && styles.calendarTextActive,
-                      ]}
-                    >
-                      {day.label}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-            ))}
+          <View style={styles.blocStat}>
+            <Ionicons name="speedometer-outline" size={16} color={palette.warn} />
+            <Text style={styles.libelleStat}>Effort moyen</Text>
+            <Text style={styles.valeurStat}>{effortMoyen ? `${effortMoyen} / 10` : "—"}</Text>
           </View>
-          <View style={styles.calendarLegend}>
-            <View
-              style={[styles.legendDot, { backgroundColor: palette.accent }]}
+          <View style={styles.blocStat}>
+            <Ionicons name="time-outline" size={16} color={palette.info} />
+            <Text style={styles.libelleStat}>Durée moy.</Text>
+            <Text style={styles.valeurStat}>{dureeMoyenne ? `${dureeMoyenne} min` : "—"}</Text>
+          </View>
+        </View>
+
+        <View style={styles.ligneComparaison}>
+          <Text style={styles.libelleComparaison}>vs mois dernier</Text>
+          <View
+            style={[
+              styles.pastilleEcart,
+              {
+                backgroundColor:
+                  ecartSeances >= 0 ? "rgba(22,163,74,0.12)" : "rgba(239,68,68,0.12)",
+              },
+            ]}
+          >
+            <Ionicons
+              name={ecartSeances >= 0 ? "trending-up" : "trending-down"}
+              size={12}
+              color={ecartSeances >= 0 ? "#16a34a" : "#ef4444"}
             />
-            <Text style={styles.legendText}>Séance / effort</Text>
+            <Text style={[styles.texteEcart, { color: ecartSeances >= 0 ? "#16a34a" : "#ef4444" }]}>
+              {ecartSeances >= 0 ? "+" : ""}
+              {ecartSeances} séances
+            </Text>
           </View>
-        </Card>
+        </View>
+      </Card>
 
-        {/* ═══════════ STATS DU MOIS ═══════════ */}
-        <Card variant="surface" style={styles.statsCard}>
-          <Text style={styles.sectionTitle}>Stats du mois</Text>
-          <View style={styles.statsGrid}>
-            <View style={styles.statItem}>
-              <Ionicons name="barbell-outline" size={16} color={palette.accent} />
-              <Text style={styles.statLabel}>Séances</Text>
-              <Text style={styles.statValue}>{monthSessions.length}</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Ionicons name="speedometer-outline" size={16} color={palette.warn} />
-              <Text style={styles.statLabel}>Effort moyen</Text>
-              <Text style={styles.statValue}>
-                {avgRpe ? `${avgRpe} / 10` : "—"}
-              </Text>
-            </View>
-            <View style={styles.statItem}>
-              <Ionicons name="time-outline" size={16} color={palette.info} />
-              <Text style={styles.statLabel}>Durée moy.</Text>
-              <Text style={styles.statValue}>
-                {avgDuration ? `${avgDuration} min` : "—"}
-              </Text>
-            </View>
-            <View style={styles.statItem}>
-              <Ionicons name="flame-outline" size={16} color="#ef4444" />
-              <Text style={styles.statLabel}>Record streak</Text>
-              <Text style={styles.statValue}>{maxStreakThisMonth} j</Text>
-            </View>
-          </View>
-
-          {/* Comparaison */}
-          <View style={styles.compareRow}>
-            <Text style={styles.compareLabel}>vs mois dernier</Text>
-            <View style={styles.compareChips}>
+      {/* ═══════════ ACCOMPLISSEMENTS ═══════════ */}
+      <Card variant="surface" style={styles.carte}>
+        <Text style={styles.titreSection}>Accomplissements</Text>
+        <View style={styles.grilleAccomplissements}>
+          {accomplissements.map((a) => (
+            <View
+              key={a.id}
+              style={[styles.blocAccomplissement, !a.atteint && styles.blocAccomplissementVerrouille]}
+            >
               <View
                 style={[
-                  styles.compareChip,
-                  {
-                    backgroundColor:
-                      sessionsDelta >= 0
-                        ? "rgba(22,163,74,0.12)"
-                        : "rgba(239,68,68,0.12)",
-                  },
+                  styles.iconeAccomplissement,
+                  { backgroundColor: a.atteint ? `${a.couleur}20` : palette.cardSoft },
                 ]}
               >
                 <Ionicons
-                  name={sessionsDelta >= 0 ? "trending-up" : "trending-down"}
-                  size={12}
-                  color={sessionsDelta >= 0 ? "#16a34a" : "#ef4444"}
+                  name={a.atteint ? a.icon : "lock-closed"}
+                  size={20}
+                  color={a.atteint ? a.couleur : palette.muted}
                 />
-                <Text
-                  style={{
-                    fontSize: 12,
-                    fontWeight: "700",
-                    color: sessionsDelta >= 0 ? "#16a34a" : "#ef4444",
-                  }}
-                >
-                  {sessionsDelta >= 0 ? "+" : ""}
-                  {sessionsDelta} séances
-                </Text>
               </View>
-              <View
-                style={[
-                  styles.compareChip,
-                  {
-                    backgroundColor:
-                      loadDelta >= 0
-                        ? "rgba(22,163,74,0.12)"
-                        : "rgba(239,68,68,0.12)",
-                  },
-                ]}
-              >
-                <Ionicons
-                  name={loadDelta >= 0 ? "trending-up" : "trending-down"}
-                  size={12}
-                  color={loadDelta >= 0 ? "#16a34a" : "#ef4444"}
-                />
-                <Text
-                  style={{
-                    fontSize: 12,
-                    fontWeight: "700",
-                    color: loadDelta >= 0 ? "#16a34a" : "#ef4444",
-                  }}
-                >
-                  {loadDelta >= 0 ? "+" : ""}
-                  {loadDelta} effort
-                </Text>
-              </View>
+              <Text style={[styles.libelleAccomplissement, !a.atteint && { color: palette.muted }]}>
+                {a.label}
+              </Text>
+              <Text style={[styles.valeurAccomplissement, a.atteint && { color: a.couleur }]}>
+                {a.valeur}
+              </Text>
             </View>
-          </View>
-        </Card>
-      </ScrollView>
+          ))}
+        </View>
+      </Card>
     </Screen>
   );
 }
 
-// ═══════════════════ STYLES ═══════════════════
+// =============================================================================
+// STYLES
+// =============================================================================
+//
+// GRAISSE MAXIMALE DE CET ECRAN : 700. Ce n'est pas un gout, c'est une couture.
+//
+// Cette page est a UN TAP de l'accueil (« Voir ma progression »), et l'accueil
+// rend l'echelle allegee retenue par le fondateur : zero role en 800, graisse
+// maximale 700, la hierarchie portee par la taille et la couleur plutot que par
+// l'epaisseur (`components/homeVNext/homeVNextTypo.ts`, jeu « allegee »).
+//
+// La refonte de cette page a repris sa couche de donnees (resume canonique) sans
+// toucher a sa typographie : elle a donc reconduit sept roles en 800 et un en
+// 900. Deux ecrans du meme parcours, deux epaisseurs de titre — ca ne se voit
+// sur aucune capture prise separement, ca se voit au premier aller-retour.
+//
+// Les tailles, les couleurs et l'espacement ne bougent pas : seule l'epaisseur
+// est ramenee dans l'echelle. Verrouille par
+// `__tests__/homeVNext/echelleProgression.test.ts`.
+// =============================================================================
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: palette.bg,
-  },
   container: {
     paddingHorizontal: 16,
     paddingVertical: 16,
     gap: 16,
-    backgroundColor: palette.bg,
   },
-
-  // ─── Hero ───
-  heroCard: {
+  carte: {
     padding: 16,
     borderRadius: 24,
+    gap: 10,
+  },
+
+  // ─── Bandeau reprise ───
+  bandeauReprise: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: "rgba(245,158,11,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(245,158,11,0.24)",
+  },
+  texteReprise: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
+    color: palette.text,
+    fontWeight: "600",
+    minHeight: 19,
+  },
+
+  // ─── Titres ───
+  titreSection: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: palette.text,
+    minHeight: 20,
+  },
+  ligneTitreIcone: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
-  heroHeader: {
+  sousTitre: {
+    fontSize: 12,
+    color: palette.sub,
+    minHeight: 16,
+  },
+
+  // ─── Etat "empty" ───
+  ligneRepere: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "flex-start",
     gap: 10,
   },
-  kicker: {
-    fontSize: 10,
-    letterSpacing: 1.4,
-    color: palette.sub,
-    textTransform: "uppercase",
-    fontWeight: "800",
-  },
-  heroTitle: {
-    marginTop: 4,
-    fontSize: 24,
-    fontWeight: "900",
-  },
-  heroMessage: {
-    marginTop: 4,
+  numeroRepere: {
     fontSize: 13,
-    color: palette.sub,
-    lineHeight: 18,
+    fontWeight: "700",
+    color: palette.accent,
+    minWidth: 16,
   },
-  statusDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 999,
-    marginTop: 6,
-  },
-  chartWrap: {
-    marginTop: 8,
-    minHeight: 110,
-  },
-  refLabel: {
-    position: "absolute",
-    left: 0,
-    fontSize: 10,
-    color: palette.sub,
-  },
-  chartCaption: {
-    fontSize: 11,
-    color: palette.sub,
-    fontWeight: "600",
+  texteRepere: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
+    color: palette.text,
+    minHeight: 19,
   },
 
-  // ─── Milestones ───
-  milestonesCard: {
-    padding: 16,
-    borderRadius: 24,
-    gap: 14,
-  },
-  milestonesGrid: {
+  // ─── Faits ───
+  ligneFait: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  milestoneItem: {
-    width: "30%",
     alignItems: "center",
-    gap: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    borderRadius: 16,
-    backgroundColor: palette.cardSoft,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
+    justifyContent: "space-between",
+    gap: 12,
   },
-  milestoneItemLocked: {
-    opacity: 0.55,
-  },
-  milestoneIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  milestoneLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: palette.text,
-    textAlign: "center",
-  },
-  milestoneValue: {
-    fontSize: 10,
-    fontWeight: "700",
+  libelleFait: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
     color: palette.sub,
+    minHeight: 18,
+  },
+  valeurFait: {
+    fontSize: 16,
+    // 16 / 700 : exactement le palier `valeur` de l'echelle allegee.
+    fontWeight: "700",
+    color: palette.text,
+  },
+
+  /** Toute phrase qui explique une ABSENCE. Un seul style pour toutes. */
+  mention: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: palette.sub,
+    minHeight: 18,
+  },
+
+  // ─── Courbe ───
+  zoneGraphe: {
+    marginTop: 4,
+    // Une seule source pour la hauteur : celle qui sert au calcul des points.
+    minHeight: GEOMETRIE_COURBE.hauteur,
+  },
+  periode: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: palette.text,
+    minHeight: 16,
+  },
+  portee: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: palette.sub,
+    minHeight: 17,
   },
 
   // ─── Tests ───
-  testsCard: {
-    padding: 16,
-    borderRadius: 24,
-    gap: 12,
-  },
-  testsTitleRow: {
+  ligneTest: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
-  testsSub: {
-    fontSize: 12,
-    color: palette.sub,
-    marginTop: -4,
-  },
-  testRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: palette.borderSoft,
-  },
-  testLabelWrap: {
+  libelleTestBloc: {
     flex: 1,
   },
-  testLabel: {
+  libelleTest: {
     fontSize: 13,
     fontWeight: "600",
     color: palette.text,
+    minHeight: 18,
   },
-  testBefore: {
+  valeurAvant: {
     fontSize: 12,
     color: palette.sub,
-    minWidth: 48,
-    textAlign: "right",
   },
-  testAfter: {
-    fontSize: 12,
+  valeurApres: {
+    fontSize: 13,
     fontWeight: "700",
     color: palette.text,
-    minWidth: 48,
-    textAlign: "right",
   },
-  testDiffBadge: {
+  pastilleEcart: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 8,
-    marginLeft: 4,
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
   },
-  testDiffText: {
-    fontSize: 10,
+  texteEcart: {
+    fontSize: 12,
     fontWeight: "700",
   },
 
-  // ─── Calendar ───
-  calendarCard: {
-    padding: 16,
-    borderRadius: 24,
-    gap: 10,
-  },
-  calendarHeader: {
+  // ─── Calendrier ───
+  enTeteCalendrier: {
     flexDirection: "row",
-    justifyContent: "space-between",
   },
-  calendarDow: {
-    width: 32,
+  jourSemaine: {
+    flex: 1,
     textAlign: "center",
     fontSize: 11,
+    fontWeight: "700",
     color: palette.sub,
   },
-  calendarGrid: {
+  grilleCalendrier: {
     flexDirection: "row",
     flexWrap: "wrap",
   },
-  calendarCell: {
-    width: "14.28%",
-    alignItems: "center",
-    marginVertical: 6,
-  },
-  calendarDot: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  celluleCalendrier: {
+    width: `${100 / 7}%`,
+    aspectRatio: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "transparent",
   },
-  calendarDotActive: {
+  pastilleJour: {
+    width: 30,
+    height: 30,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.cardSoft,
+  },
+  pastilleJourActive: {
     backgroundColor: palette.accent,
   },
-  calendarDotToday: {
-    borderWidth: 1,
+  pastilleJourAujourdhui: {
+    borderWidth: 2,
     borderColor: palette.text,
   },
-  calendarText: {
+  texteJour: {
     fontSize: 12,
     color: palette.sub,
+    fontWeight: "600",
   },
-  calendarTextActive: {
-    color: palette.text,
+  texteJourActif: {
+    color: "#0b0b0c",
     fontWeight: "700",
   },
-  calendarLegend: {
+  legendeCalendrier: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 4,
+    gap: 8,
   },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  pointLegende: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
   },
-  legendText: {
-    marginLeft: 6,
-    fontSize: 11,
+  texteLegende: {
+    flex: 1,
+    fontSize: 12,
     color: palette.sub,
+    minHeight: 16,
   },
 
   // ─── Stats ───
-  statsCard: {
-    padding: 16,
-    borderRadius: 24,
-    gap: 14,
-  },
-  statsGrid: {
+  grilleStats: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
   },
-  statItem: {
-    width: "46%",
+  blocStat: {
+    flexGrow: 1,
+    flexBasis: "30%",
     padding: 12,
-    borderRadius: 14,
+    borderRadius: 16,
     backgroundColor: palette.cardSoft,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
     gap: 4,
   },
-  statLabel: {
+  libelleStat: {
     fontSize: 11,
     color: palette.sub,
+    fontWeight: "600",
+    minHeight: 15,
   },
-  statValue: {
+  valeurStat: {
+    // Le seul 900 de l'ecran. Sa taille (18, la plus grosse de la page) suffit
+    // deja a le detacher : l'epaisseur n'ajoutait que du bruit.
     fontSize: 18,
-    fontWeight: "800",
+    fontWeight: "700",
     color: palette.text,
   },
-  compareRow: {
-    padding: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    backgroundColor: palette.card,
-    gap: 8,
-  },
-  compareLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: palette.sub,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  compareChips: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  compareChip: {
+  ligneComparaison: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
+    justifyContent: "space-between",
+    gap: 10,
   },
-
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: palette.text,
-  },
-  sectionSub: {
+  libelleComparaison: {
     fontSize: 12,
     color: palette.sub,
-    marginTop: 2,
+    fontWeight: "600",
+  },
+
+  // ─── Accomplissements ───
+  grilleAccomplissements: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  blocAccomplissement: {
+    flexGrow: 1,
+    flexBasis: "30%",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: palette.cardSoft,
+    gap: 6,
+  },
+  blocAccomplissementVerrouille: {
+    opacity: 0.7,
+  },
+  iconeAccomplissement: {
+    width: 40,
+    height: 40,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  libelleAccomplissement: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: palette.text,
+    textAlign: "center",
+    minHeight: 15,
+  },
+  valeurAccomplissement: {
+    fontSize: 12,
+    // 12 / 700 : le palier `metaAppuyee` de l'echelle allegee.
+    fontWeight: "700",
+    color: palette.sub,
   },
 });
