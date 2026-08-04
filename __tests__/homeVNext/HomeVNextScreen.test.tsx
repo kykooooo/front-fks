@@ -241,6 +241,59 @@ describe("HomeVNextScreen — rendu de tous les etats", () => {
   });
 });
 
+// -----------------------------------------------------------------------------
+// LE REPERE DE CYCLE — une phase ne doit pas se lire comme un second cycle
+// -----------------------------------------------------------------------------
+// Trouve en recette telephone (04/08). La ligne disait « Vitesse & détente ·
+// Séance 1 sur 12 · Fondations » : trois segments de meme poids, separes par le
+// meme point median, dont le dernier est un nom de PHASE. Le fondateur a cru
+// avoir deux cycles actifs sur son propre produit.
+// -----------------------------------------------------------------------------
+
+describe("HomeVNextScreen — le repere de cycle", () => {
+  /** Les fixtures dont le cycle tourne (celles qui affichent une phase). */
+  const AVEC_PHASE = ETATS.map((f) => ({ f, vm: buildHomeVNextViewModel(f.input) })).filter(
+    ({ vm }) => vm.cycle !== null && vm.cycle.kind === "en_cours"
+  );
+
+  it("il existe au moins un etat qui affiche une phase", () => {
+    // Sans ca, les deux tests suivants passeraient en ne verifiant rien.
+    expect(AVEC_PHASE.length).toBeGreaterThan(0);
+  });
+
+  it("le nom de phase est annonce par le mot « Phase »", () => {
+    for (const { f, vm } of AVEC_PHASE) {
+      if (vm.cycle === null || vm.cycle.kind !== "en_cours") throw new Error("cycle attendu");
+      const rendu = monter(vm);
+      const lus = textes(rendu.root);
+
+      expect(lus).toContain(
+        ` · Séance ${vm.cycle.sessionNumber} sur ${vm.cycle.totalSessions} · Phase ${vm.cycle.phaseLabel}`
+      );
+
+      // ET SURTOUT : plus aucun segment ou le nom de phase suit un point median
+      // tout seul — c'est cette forme-la qui se lisait comme un second cycle.
+      const nu = ` · ${vm.cycle.phaseLabel}`;
+      expect(lus.some((t) => t.includes(nu) && !t.includes(` · Phase ${vm.cycle.phaseLabel}`))).toBe(
+        false
+      );
+
+      demonter(rendu);
+      expect(f.id).toBeTruthy();
+    }
+  });
+
+  it("le mot n'est pas ajoute au libelle du cycle lui-meme", () => {
+    // Le cycle garde son nom nu : « Phase » qualifie la phase, jamais le cycle.
+    for (const { vm } of AVEC_PHASE) {
+      if (vm.cycle === null) throw new Error("cycle attendu");
+      const rendu = monter(vm);
+      expect(textes(rendu.root)).toContain(vm.cycle.cycleLabel);
+      demonter(rendu);
+    }
+  });
+});
+
 /** Un `Text` imbrique dans un autre `Text` herite de son `numberOfLines`. */
 function estFragmentImbrique(node: ReactTestInstance): boolean {
   let parent = node.parent;

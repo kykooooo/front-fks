@@ -362,7 +362,24 @@ function RepereCycle({ cycle }: { cycle: NonNullable<CycleBlock> }) {
     );
   }
 
-  const suite = ` · Séance ${cycle.sessionNumber} sur ${cycle.totalSessions} · ${cycle.phaseLabel}`;
+  // POURQUOI « Phase » EST ECRIT EN TOUTES LETTRES.
+  // ---------------------------------------------------------------------------
+  // La ligne se lisait « Vitesse & détente · Séance 1 sur 12 · Fondations ».
+  // Trois segments de meme poids, separes par le meme point median : le
+  // troisieme se lisait comme un SECOND cycle. Le fondateur s'y est trompe
+  // lui-meme en recette (04/08) — il a cru avoir deux cycles actifs.
+  //
+  // Le mot leve l'ambiguite sans rien retirer : « Fondations » est une vraie
+  // information (la periodisation du moteur), et c'est deja sous ce nom que
+  // l'ecran cycle la presente — `CycleModalScreen` affiche le libelle sous un
+  // intitule « SÉANCE n / 12 » puis « Ton voyage dans le cycle », ou le mot
+  // phase est porte par le contexte visuel. Sur une ligne plate, ce contexte
+  // n'existe pas : il doit etre dans le texte.
+  //
+  // Ecrit ICI et pas dans le ViewModel : `cycle.phaseLabel` reste le libelle nu
+  // (c'est ce que consomme le corpus anti-redite du conseil, §5.9), exactement
+  // comme « Séance n sur 12 » est compose ici a partir de deux nombres nus.
+  const suite = ` · Séance ${cycle.sessionNumber} sur ${cycle.totalSessions} · Phase ${cycle.phaseLabel}`;
   return (
     <View style={styles.cycle} accessible accessibilityLabel={`${cycle.cycleLabel}${suite}`}>
       <Text style={styles.cycleTexte} numberOfLines={2}>
