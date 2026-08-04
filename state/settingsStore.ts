@@ -15,6 +15,25 @@ export type SettingsState = {
   weightUnit: "kg" | "lb";
   weekStart: "mon" | "sun";
   themeMode: "light" | "dark";
+  /**
+   * @deprecated REPLI SEULEMENT — l'objectif hebdo canonique est
+   * `users/{uid}.targetFksSessionsPerWeek` (miroir local :
+   * `useExternalStore.targetFksSessionsPerWeek`), pose au setup profil et edite
+   * par les Reglages via `services/objectifHebdo.ts`.
+   *
+   * PLUS AUCUN ECRAN N'ECRIT CE CHAMP. Il n'est plus lu qu'a travers
+   * `resoudreObjectifHebdo` (domain/resumeCanonique.ts), et seulement quand le
+   * champ canonique est absent — un compte ancien, jamais passe par le setup
+   * dans sa forme actuelle. Il n'a PAS ete supprime parce qu'il est persiste
+   * chez des joueurs deja installes : le retirer effacerait leur objectif au
+   * lieu de le migrer.
+   *
+   * Le defaut a 2 ci-dessous est un choix historique assume, et c'est lui qui
+   * empeche `resoudreObjectifHebdo` de rendre `null` en conditions reelles : un
+   * objectif jamais declare y est indiscernable d'un 2 choisi. Sa portee est
+   * aujourd'hui nulle en pratique — le setup impose le champ canonique — mais
+   * ce n'est pas une garantie de type, c'est un fait de parcours.
+   */
   weeklyGoal: number;
 };
 

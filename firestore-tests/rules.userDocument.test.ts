@@ -104,14 +104,25 @@ async function seedProfilPropre(uid: string): Promise<void> {
 // `users/{uid}`. Elles sont pré-autorisées : sans elles, le merge produirait
 // deux refus SILENCIEUX côté joueur (ces écritures sont « best-effort »).
 
-type Origine = "register" | "setup" | "cycle" | "feedback" | "sync" | "club" | "boucle";
+type Origine =
+  | "register"
+  | "setup"
+  | "cycle"
+  | "feedback"
+  | "sync"
+  | "club"
+  | "boucle"
+  // Réglages : l'objectif hebdo y est désormais éditable après le setup
+  // (`services/objectifHebdo.ts`). Le champ était déjà mutable, c'est le
+  // MOMENT du parcours qui s'ajoute, pas une nouvelle autorisation.
+  | "reglages";
 
 const INVENTAIRE_MUTABLE: Record<string, Origine[]> = {
   // Identité applicative
   uid: ["setup", "club"],
   firstName: ["register", "setup", "club"],
   profileCompleted: ["register", "setup", "club"],
-  updatedAt: ["register", "setup", "cycle", "feedback", "sync", "club"],
+  updatedAt: ["register", "setup", "cycle", "feedback", "sync", "club", "reglages"],
   // Profil sportif
   position: ["setup"],
   ageCategory: ["setup"],
@@ -120,7 +131,7 @@ const INVENTAIRE_MUTABLE: Record<string, Origine[]> = {
   mainObjective: ["setup"],
   parentalConsent: ["setup"],
   // Rythme club et match
-  targetFksSessionsPerWeek: ["setup"],
+  targetFksSessionsPerWeek: ["setup", "reglages"],
   clubTrainingsPerWeek: ["setup"],
   matchesPerWeek: ["setup"],
   hasClubTrainings: ["setup"],
@@ -883,6 +894,11 @@ describe("G. Verrou anti-dérive entre l'inventaire et la liste blanche", () => 
       "screens/ProfileSetupScreen.tsx": { role: "ecriture" },
       "screens/RegisterScreen.tsx": { role: "ecriture" },
       "screens/feedback/hooks/useFeedbackSave.ts": { role: "ecriture" },
+      // Objectif hebdo édité depuis les Réglages. Les DEUX clefs qu'il écrit
+      // (`targetFksSessionsPerWeek`, `updatedAt`) figuraient déjà dans
+      // `userMutableFields` : ce chemin n'élargit pas la liste blanche, il
+      // ajoute un écrivain à un champ déjà autorisé.
+      "services/objectifHebdo.ts": { role: "ecriture" },
       "state/stores/useSyncStore.ts": { role: "ecriture" },
       // Sous-collections users/{uid}/sessions et /plannedSessions — hors sujet
       // de ce lot (leurs règles sont inchangées), listées pour que le scan soit

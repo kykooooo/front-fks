@@ -29,6 +29,8 @@ import { useExternalStore } from "../state/stores/useExternalStore";
 import { useSyncStore } from "../state/stores/useSyncStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
 import { useSettingsStore, type SettingsState } from "../state/settingsStore";
+import { resoudreObjectifHebdo } from "../domain/resumeCanonique";
+import { enregistrerObjectifHebdo } from "../services/objectifHebdo";
 import { DEV_FLAGS } from "../config/devFlags";
 import { ClubManagementCard } from "../components/settings/ClubManagementCard";
 import { AppSpaceSwitch } from "../components/AppSpaceSwitch";
@@ -114,6 +116,42 @@ export default function SettingsScreen() {
   const settings = useSettingsStore((s) => s);
   const updateSettings = useSettingsStore((s) => s.updateSettings);
   const resetSettings = useSettingsStore((s) => s.resetSettings);
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // L'OBJECTIF HEBDO — LE CHAMP CANONIQUE, PAS LE REGLAGE LOCAL
+  //
+  // Ce curseur ecrivait `useSettingsStore.weeklyGoal`, un reglage purement local
+  // que plus rien ne lit en premier : le resume canonique resout l'objectif en
+  // essayant d'abord `targetFksSessionsPerWeek`, le rythme declare au setup.
+  // Pour tout joueur ayant fait son setup — c'est-a-dire tous, le champ y est
+  // obligatoire — le curseur etait donc devenu un bouton mort : il bougeait,
+  // le compteur de l'accueil ne bougeait pas.
+  //
+  // Il edite desormais le champ canonique, lecture ET ecriture, avec la meme
+  // persistance `users/{uid}` que le setup. Voir services/objectifHebdo.ts.
+  // ───────────────────────────────────────────────────────────────────────────
+  const targetFksSessionsPerWeek = useExternalStore((s) => s.targetFksSessionsPerWeek);
+  const objectifHebdo = resoudreObjectifHebdo({
+    targetFksSessionsPerWeek,
+    weeklyGoalReglage: settings.weeklyGoal,
+  });
+
+  const changerObjectifHebdo = useCallback(async (valeur: string) => {
+    const issue = await enregistrerObjectifHebdo(Number(valeur));
+    if (issue === "refuse") {
+      showToast({
+        type: "error",
+        title: "Objectif non enregistré",
+        message: "Réessaie dans un instant.",
+      });
+    } else if (issue === "hors-ligne") {
+      showToast({
+        type: "info",
+        title: "Objectif enregistré",
+        message: "Il sera synchronisé à la reconnexion.",
+      });
+    }
+  }, []);
 
   const initials = useMemo(() => {
     const name =
@@ -461,16 +499,14 @@ export default function SettingsScreen() {
               subtitle="Nombre de séances FKS par semaine"
               right={
                 <SegmentedControl
-                  value={String(settings.weeklyGoal)}
+                  value={objectifHebdo === null ? "" : String(objectifHebdo)}
                   options={[
                     { value: "1", label: "1" },
                     { value: "2", label: "2" },
                     { value: "3", label: "3" },
                     { value: "4", label: "4" },
                   ]}
-                  onChange={(value) =>
-                    updateSettings({ weeklyGoal: Number(value) })
-                  }
+                  onChange={changerObjectifHebdo}
                 />
               }
             />

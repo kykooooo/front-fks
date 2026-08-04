@@ -60,10 +60,18 @@ export function useEtatStoresHome(): EtatStoresHome {
   // ── Reglages & synchro ──
   const storeHydrated = useSyncStore((s) => s.storeHydrated);
   const debutDeSemaine = useSettingsStore((s) => s.weekStart);
-  // LU BRUT, sans `?? 2` : le repli par defaut est resolu une seule fois, dans
-  // `resoudreObjectifHebdo` (domain/resumeCanonique.ts), qui rend `null` quand
-  // personne n'a rien declare. Ecrire un 2 ici le rendrait indiscernable d'un
-  // objectif choisi par le joueur.
+  // LU BRUT, sans `?? 2` : la resolution se fait une seule fois, dans
+  // `resoudreObjectifHebdo` (domain/resumeCanonique.ts). Ce champ est le REPLI
+  // DEPRECIE — plus aucun ecran ne l'ecrit depuis que les Reglages editent le
+  // champ canonique (`services/objectifHebdo.ts`) ; il ne sert plus qu'aux
+  // comptes anciens depourvus de `targetFksSessionsPerWeek`.
+  //
+  // HONNETETE SUR LA PORTEE DU `null` : `state/settingsStore.ts` pose
+  // `weeklyGoal: 2` par defaut, donc cette lecture rend TOUJOURS un nombre et
+  // `resoudreObjectifHebdo` ne peut pas rendre `null` sur un compte reel. Le
+  // « 0 sur 2 » qu'on veut eviter est ecarte ailleurs, par le garde
+  // `nbSeancesTerminees > 0` du ViewModel : c'est ce garde qui protege le compte
+  // neuf, pas ce `null`.
   const weeklyGoalReglage = useSettingsStore((s) => s.weeklyGoal);
 
   // ── Sources hors stores ──

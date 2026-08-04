@@ -21,7 +21,7 @@ import { useExternalStore } from "../state/stores/useExternalStore";
 import { useSyncStore } from "../state/stores/useSyncStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
 import { useSettingsStore } from "../state/settingsStore";
-import { compterSeancesFksSurJours } from "../domain/resumeCanonique";
+import { compterSeancesFksSurJours, resoudreObjectifHebdo } from "../domain/resumeCanonique";
 import { toDateKey } from "../utils/dateHelpers";
 
 const palette = theme.colors;
@@ -53,14 +53,18 @@ export default function RoutineScreen() {
   const devNowISO = useDebugStore((s) => s.devNowISO);
 
   const weekStart = useSettingsStore((s) => s.weekStart);
-  // TODO (lot d'ecran) : ce `?? 2` est le defaut P1.10 de l'audit — une cible
-  // inventee, indiscernable d'un objectif choisi par le joueur, et qui ecrase le
-  // rythme declare au setup (`useExternalStore.targetFksSessionsPerWeek`).
-  // `resoudreObjectifHebdo` (domain/resumeCanonique.ts) existe pour le remplacer
-  // et rend `null` quand personne n'a rien declare. Le remplacer ici CHANGE
-  // l'affichage du badge « Plan hebdo » : c'est une decision d'ecran, elle
-  // n'appartient pas au lot « couche de calcul ».
-  const weeklyGoal = useSettingsStore((s) => s.weeklyGoal ?? 2);
+  // L'OBJECTIF HEBDO PASSE PAR LE RESOLVEUR CANONIQUE, comme l'accueil. Ce badge
+  // lisait le seul reglage local : il pouvait donc afficher, pour le meme
+  // joueur, une cible differente de celle du compteur de l'accueil — et depuis
+  // que les Reglages ecrivent le champ canonique, il n'aurait plus bouge du
+  // tout. Le `?? 2` final reste le defaut P1.10 de l'audit (une cible inventee),
+  // mais il ne sert plus qu'a un compte n'ayant NI rythme declare au setup
+  // (champ pourtant obligatoire) NI reglage local. Le retirer pour de bon
+  // suppose de decider ce que ce badge montre sans objectif : decision d'ecran.
+  const targetFksSessionsPerWeek = useExternalStore((s) => s.targetFksSessionsPerWeek);
+  const weeklyGoalReglage = useSettingsStore((s) => s.weeklyGoal);
+  const weeklyGoal =
+    resoudreObjectifHebdo({ targetFksSessionsPerWeek, weeklyGoalReglage }) ?? 2;
   const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
   const sessionReminders = useSettingsStore((s) => s.sessionReminders);
   const reminderStrategy = useSettingsStore((s) => s.reminderStrategy);

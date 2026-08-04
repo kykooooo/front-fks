@@ -22,6 +22,7 @@ import { auth } from "../services/firebase";
 import { DEV_FLAGS } from "../config/devFlags";
 import { theme } from "../constants/theme";
 import { useSettingsStore } from "../state/settingsStore";
+import { resoudreObjectifHebdo } from "../domain/resumeCanonique";
 import HomeReadinessHero from "../components/home/HomeReadinessHero";
 import HomePrimaryCTA from "../components/home/HomePrimaryCTA";
 import HomeNextSessionCard from "../components/home/HomeNextSessionCard";
@@ -123,7 +124,16 @@ export default function HomeScreen() {
   }, [startFirestoreWatch, storeHydrated]);
 
   const weekStart = useSettingsStore((s) => s.weekStart);
-  const weeklyGoal = useSettingsStore((s) => s.weeklyGoal ?? 2);
+  // MEME RESOLUTION QUE LE NOUVEL ACCUEIL. Cet ecran est le filet d'apres merge
+  // (`config/homeFeatures.ts`, VNEXT a false) : s'il ressort un jour, il doit
+  // afficher la MEME cible que celle que les Reglages ecrivent, sinon le retour
+  // arriere se paie d'un compteur qui se contredit. Le `?? 2` final est le
+  // defaut P1.10, conserve tel quel ici : cet ecran n'a pas d'etat « objectif
+  // non declare » a montrer, c'est precisement ce que le vNext apporte.
+  const targetFksSessionsPerWeek = useExternalStore((s) => s.targetFksSessionsPerWeek);
+  const weeklyGoalReglage = useSettingsStore((s) => s.weeklyGoal);
+  const weeklyGoal =
+    resoudreObjectifHebdo({ targetFksSessionsPerWeek, weeklyGoalReglage }) ?? 2;
 
   const nowISO = devNowISO ?? undefined;
   const hasAppliedToday =
