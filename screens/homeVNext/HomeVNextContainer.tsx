@@ -15,10 +15,13 @@
 //   - OU va chaque action        -> `hooks/home/homeVNextNavigation.ts` (pur)
 //   - COMMENT c'est rendu        -> `screens/homeVNext/HomeVNextScreen.tsx`
 //
-// LA VARIANTE EST FIGEE A "v2" ET LE DEMARRAGE A "A" : ce sont deux decisions
-// fermees du fondateur, pas des options d'appelant. Elles sont posees une seule
-// fois, dans `useHomeVNextViewModel`, pour que l'option du ViewModel et la prop
-// de l'ecran ne puissent pas diverger (le piege D1 documente dans l'ecran).
+// LA VARIANTE EST FIGEE A "v2", ET LE DEMARRAGE EST PILOTE PAR LE DRAPEAU
+// `HOME_FEATURES.DEMARRAGE_PREMIERE_MISSION` (OFF depuis la decision Kyllian
+// du 04/08 : ecran normal des le jour 1, config/homeFeatures.ts) : ce sont
+// deux decisions fermees du fondateur, pas des options d'appelant. Elles sont
+// posees une seule fois, dans `useHomeVNextViewModel`, pour que l'option du
+// ViewModel et la prop de l'ecran ne puissent pas diverger (le piege D1
+// documente dans l'ecran).
 //
 // C'EST AUSSI ICI QUE VIT LE RETOUR HAPTIQUE, ET NULLE PART AILLEURS.
 // `components/homeVNext/HomeVNextPrimitives.tsx` (regle 3 de son entete) refuse

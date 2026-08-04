@@ -7,40 +7,36 @@
 
 ## 🔴 AVANT TOUT — LE PREMIER ÉCRAN D'UN COMPTE NEUF [BLOQUANT]
 
-**Pourquoi cette section est en tête et pourquoi elle y restera.** La recette du 04/08 a trouvé, sur un
-compte neuf réel, que le bloc **« Première mission »** — l'écran de démarrage validé, celui que voit un
-joueur à sa toute première ouverture — **ne s'affichait pas du tout**. Le ViewModel le construisait ;
-l'écran le jetait, parce que la carte Progression occupait le même emplacement et passait devant.
-Ce que Kyllian a eu sous les yeux : une salutation, un bouton agrandi, la ligne de cycle, la carte
-Progression vide, et **un grand blanc**.
+**Décision produit (Kyllian, 04/08, round 2) : l'écran d'un compte neuf reste l'écran NORMAL dès le
+jour 1.** Le bloc « Première mission » (V-A) décrit dans une version précédente de cette section est
+**désactivé** — raison : l'app ne doit pas changer de forme pour un seul écran, la checklist vide de la
+carte Progression suffisait déjà à donner un message de démarrage honnête. Le bloc et ses tests restent
+dans le dépôt (`config/homeFeatures.ts`, drapeau `DEMARRAGE_PREMIERE_MISSION`, `false`), conservés pour
+un futur onboarding sans cycle actif.
 
-**Les portes automatiques étaient vertes.** Les verrous du bloc montaient l'écran en variante 1 — une
-configuration que l'application ne produit jamais. Ils gardaient un écran fantôme. C'est corrigé, et
-les tests montent désormais l'écran exactement comme le conteneur ; mais la leçon vaut d'être écrite
-ici : **la première impression du produit n'avait aucun gardien humain dans ce document.** Elle en a un
-maintenant.
+**Pourquoi cette section reste en tête malgré tout.** La recette du 04/08 (matin) avait trouvé un vrai
+bug — le bloc V-A validé ce jour-là ne s'affichait pas du tout, malgré des portes automatiques vertes
+(les tests montaient l'écran en configuration « v1 », que l'application ne produit jamais). Ce risque-là
+— un écran de première impression sans gardien humain dans ce document — reste vrai même si le bloc a
+depuis été retiré de la production : c'est la raison de sa présence ici, pas le bloc lui-même.
 
 Comment y arriver : **créer un compte neuf** (ou vider les données de l'app), finir le setup profil,
 choisir un cycle. Zéro séance terminée.
 
-- [ ] **[BLOQUANT]** Le bloc **« TES PREMIERS PAS »** est visible sur l'écran d'accueil
-- [ ] Il contient **exactement trois pas** (« Ton objectif », les tests, la première séance), chacun avec
-      son rond vide ou sa coche — et **les coches correspondent à ce que tu as vraiment fait**
-- [ ] **Aucune ligne du bloc n'est tapable** (c'est un repère, pas un menu — rien ne doit réagir au doigt)
-- [ ] Le bouton du jour est en **traitement héro** (plus grand, plus d'air) — il est le rang 1 de l'écran
-- [ ] **[BLOQUANT]** La carte **« TA PROGRESSION DÉMARRE ICI » n'est PAS là en même temps.** Ses trois
-      repères (« Termine ta première séance / Partage ton ressenti / Compare tes prochains tests ») disent
-      mot pour mot la même chose que les trois premiers pas. **Un seul message de démarrage à l'écran.**
-- [ ] Si tu as choisi un cycle : la ligne « pourquoi ce cycle » est **absente** (normal — un cycle tourne
-      déjà, l'écran n'en recommande pas un second). Si tu n'as **pas** de cycle : elle est **présente**
-- [ ] **L'écran ne se tasse pas en haut.** Sur un grand téléphone (844 px et plus), les trois blocs
-      respirent au lieu de s'empiler en haut avec un vide en bas. Sur petit écran, rien ne bouge
+- [ ] **[BLOQUANT]** Aucun bloc **« TES PREMIERS PAS »** n'apparaît nulle part sur l'écran d'accueil
+- [ ] **[BLOQUANT]** Le bouton du jour n'est **pas** en traitement héro — même taille, même air que sur
+      n'importe quel autre compte
+- [ ] **[BLOQUANT]** La carte **« TA PROGRESSION DÉMARRE ICI » est bien visible**, avec ses trois repères
+      (« Termine ta première séance. » / « Partage ton ressenti. » / « Compare tes prochains tests. »).
+      **C'est elle, et elle seule, qui porte le message de démarrage.**
+- [ ] **Aucune section ne ment** : pas de courbe (même plate), pas de « 0 sur X » affiché comme une
+      progression, pas de tiret à la place d'une valeur. Une section sans donnée reste **absente**, elle
+      ne s'affiche jamais à moitié
 - [ ] La ligne de cycle se lit **« Vitesse & détente · Séance 1 sur 12 · Phase Fondations »** — le mot
       **« Phase »** doit y être. Sans lui, le troisième segment se lit comme un **deuxième cycle**
-      (c'est arrivé à Kyllian sur son propre produit)
-- [ ] **Dès la première séance terminée**, le bloc « TES PREMIERS PAS » disparaît **et la carte
-      Progression reprend sa place.** Sans « bravo », sans transition — l'écran a simplement des choses
-      vraies à dire, maintenant
+      (c'est arrivé à Kyllian sur son propre produit — fix `9848936`, toujours actif)
+- [ ] **Dès la première séance terminée**, rien de spécial ne doit se produire ici : c'est déjà l'écran
+      de tout le monde, il n'y a pas de transition à observer
 
 > **Ce que dit exactement la mesure eslint**, parce qu'une version précédente de cette ligne était fausse
 > et que ce document ne vaut que si chacune de ses lignes est vraie :
@@ -120,7 +116,7 @@ priorité du code.
 | ⑦ | « Voir ma séance de demain » | Une séance est prévue pour **demain**, rien pour aujourd'hui |
 | ⑧ | « Choisir mon cycle » / « Choisir mon prochain cycle » | Compte sans cycle actif — ou cycle terminé (12/12) |
 | ⑨ | « Préparer ma séance » | Cas courant : cycle actif, rien de prévu aujourd'hui |
-| ⑩ | Bloc **« Première mission »** | **Compte tout neuf**, zéro séance terminée — **déjà couvert en tête de document, section [BLOQUANT]** |
+| ⑩ | *(retiré)* — un compte neuf prend l'état **⑧** ou **⑨** normalement, sans traitement particulier | **Compte tout neuf**, zéro séance terminée — **couvert en tête de document, section [BLOQUANT]** (décision Kyllian 04/08 : plus de bloc dédié, le bouton du jour ne change pas de forme) |
 
 ---
 
@@ -143,10 +139,11 @@ bouton répond au premier tap et mène au bon endroit.
 | ⑦ Voir ma séance de demain | [ ] | [ ] | [ ] | [ ] | [ ] |
 | ⑧ Choisir mon cycle | [ ] | [ ] | [ ] | [ ] | [ ] |
 | ⑨ Préparer ma séance | [ ] | [ ] | [ ] | [ ] | [ ] |
-| ⑩ Première mission | [ ] | [ ] | [ ] | [ ] | [ ] |
+| ⑩ Compte neuf (écran normal, section [BLOQUANT] en tête) | [ ] | [ ] | [ ] | [ ] | [ ] |
 
 **Si tu manques de temps** : les états **⑨** et **⑩** à **320 px**, texte au maximum. Ce sont l'état le
-plus courant et l'état le plus riche, à la largeur qui casse. Le reste est du confort.
+plus courant et l'état du tout premier contact avec l'app, à la largeur qui casse. Le reste est du
+confort.
 
 ### Ce qu'il faut voir dans CHAQUE case ci-dessus
 
@@ -161,13 +158,12 @@ plus courant et l'état le plus riche, à la largeur qui casse. Le reste est du 
 - [ ] Aucune pastille d'état globale (pas de gros badge « EN FORME » / « FATIGUÉ » en haut)
 - [ ] Aucun compteur « Série de N jours » nulle part
 
-### Le bloc « Première mission » (⑩), en détail
+### L'état ⑩ « Compte neuf », en détail
 
-- [ ] Il affiche une liste de premiers pas avec des coches **qui reflètent la réalité** du compte
-- [ ] La coche « Ton profil » est cohérente avec ce que tu as réellement rempli
-- [ ] Le « pourquoi » du cycle proposé correspond à l'objectif choisi au profil
-- [ ] **[BLOQUANT]** Le bloc **disparaît** dès la 1re séance terminée (à revérifier juste après le feedback)
-- [ ] Aucun chiffre inventé dans ce bloc (pas de « 0 séance sur 12 » présenté comme une progression)
+Il n'existe plus de bloc dédié à vérifier ici — c'est exactement le point de la décision du 04/08. Le
+détail à cocher pour cet état est la checklist **[BLOQUANT]** en tête de document (« LE PREMIER ÉCRAN
+D'UN COMPTE NEUF »). Ne cherche pas de deuxième carte ni de troisième bouton : sur un compte neuf, l'écran
+n'a que le CTA normal, la ligne de cycle, et la carte Progression dans son état vide.
 
 ---
 
@@ -423,9 +419,9 @@ portait 1 erreur et 15 avertissements, elle n'en porte plus que 2 avertissements
 **5. `useMainObjective` ne se réabonne pas** si le compte n'est pas encore résolu au montage (`useEffect`
 à dépendances vides, sortie immédiate si `currentUser` est nul). Risque réel faible — l'arbre applicatif
 n'est monté qu'une fois l'utilisateur posé — et le hook copie un patron déjà accepté ailleurs dans le
-dépôt (`useSelfReportedGapDays`). Ce que ça donnerait si ça arrivait : la coche « Ton objectif » du bloc
-« Première mission » dirait qu'il manque un objectif que tu as pourtant rempli. **C'est la ligne de la
-section 2 qui l'attrape** — si elle échoue, c'est probablement là qu'il faut regarder.
+dépôt (`useSelfReportedGapDays`). Sans conséquence visible aujourd'hui : le bloc « Première mission » qui
+lisait cette donnée est désactivé (`HOME_FEATURES.DEMARRAGE_PREMIERE_MISSION`, `false`). Le risque
+resurgirait le jour où ce drapeau repasse à `true` — à revérifier à ce moment-là, pas avant.
 
 **6. Le repli déprécié `weeklyGoal` survit dans le store des réglages.** Plus aucun écran ne l'écrit
 depuis que les Réglages éditent le champ canonique, mais il reste lu en dernier recours pour les comptes

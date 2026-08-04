@@ -82,9 +82,38 @@
 //   trois suites, ce qui ne casse rien).
 // =============================================================================
 
+// =============================================================================
+// LE BLOC V-A « PREMIERE MISSION » — DESACTIVE (decision Kyllian 04/08)
+// =============================================================================
+//
+// LA DECISION, TELLE QU'ELLE A ETE PRISE : l'ecran d'un compte a 0 seance
+// reste l'ECRAN NORMAL des le jour 1 — meme CTA, meme ligne de cycle, meme
+// carte Progression que tout le monde. L'app ne change pas de forme pour un
+// joueur neuf.
+//
+// Ce que ca deplace, mecaniquement, sans une ligne de plus : la carte
+// Progression, dans son etat vide, affiche deja une checklist de trois
+// reperes (« Termine ta première séance. » / « Partage ton ressenti. » /
+// « Compare tes prochains tests. » — `progressionViewModel.ts` §6.7). Une fois
+// le bloc V-A retire, cette checklist devient LE message de demarrage
+// unique — elle n'a rien gagne, elle etait deja la.
+//
+// POURQUOI LE CODE RESTE (bloc, ViewModel, tests unitaires, respiration
+// f568d83) : conserve pour un futur onboarding SANS cycle actif — un moment
+// ou l'app aura reellement quelque chose de plus a dire a un joueur qui n'a
+// encore rien choisi. Tant que ce moment n'existe pas, le drapeau reste OFF.
+// `hooks/home/useHomeVNextViewModel.ts` est le SEUL point qui le lit.
 export const HOME_FEATURES: {
   /** `true` = accueil vNext ; `false` = `screens/HomeScreen.tsx` (ancien). */
   readonly VNEXT: boolean;
+  /**
+   * `true` = le bloc V-A « Première mission » remplace le CTA normal + « MA
+   * FORME » sur un compte a 0 seance. `false` = decision Kyllian 04/08 —
+   * conserve pour un futur onboarding sans cycle actif ; l'app ne change pas
+   * de forme.
+   */
+  readonly DEMARRAGE_PREMIERE_MISSION: boolean;
 } = {
   VNEXT: true,
+  DEMARRAGE_PREMIERE_MISSION: false,
 };

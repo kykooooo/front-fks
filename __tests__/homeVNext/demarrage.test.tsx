@@ -17,6 +17,15 @@
 //
 //  3. LA NON-REGRESSION. Sans l'option, le ViewModel des 15 etats est
 //     RIGOUREUSEMENT celui d'avant — `demarrage` mis a part, qui vaut `null`.
+//
+//  4. LA SECTION 7 NE TESTE PLUS CE QU'ELLE TESTAIT. Le 04/08, elle prouvait
+//     que le bloc V-A atteignait l'ecran (commit 4264174). Plus tard le meme
+//     jour, decision Kyllian : l'ecran d'un compte neuf reste l'ecran normal,
+//     le bloc passe derriere `HOME_FEATURES.DEMARRAGE_PREMIERE_MISSION`
+//     (OFF). La section 7 verifie maintenant l'inverse — et le fait en
+//     relisant la config reelle, jamais en ecrivant "A" ou "OFF" a la main
+//     (c'est exactement la faute du matin, qu'un test qui invente sa propre
+//     config ne peut pas attraper).
 // =============================================================================
 
 import fs from "fs";
@@ -26,6 +35,7 @@ import React from "react";
 import { StyleSheet, Text } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
+import { HOME_FEATURES } from "../../config/homeFeatures";
 import {
   buildHomeVNextViewModel,
   DEMARRAGE_VARIANTES,
@@ -531,22 +541,27 @@ describe("Demarrage — l'ecran rendu", () => {
 });
 
 // -----------------------------------------------------------------------------
-// 7. L'ECRAN QUE L'APP MONTE VRAIMENT — variante 2
+// 7. L'ECRAN QUE L'APP MONTE VRAIMENT — variante 2, drapeau de demarrage
 // -----------------------------------------------------------------------------
-// POURQUOI CETTE SECTION EXISTE, ET CE QU'ELLE REPARE.
+// CE QUE CETTE SECTION PROUVAIT LE MATIN DU 04/08 (commit 4264174) : que le
+// bloc V-A, une fois construit par le ViewModel, atteignait vraiment l'ecran
+// — pas seulement en configuration "v1" isolee, jamais montee par l'app.
 //
-// Tout ce qui precede monte `<HomeVNextScreen vm={...} />` SANS `variante` :
-// l'ecran retombe donc sur "v1". Or le conteneur ne monte jamais ca. Il passe
-// `variante="v2"` ET une carte progression (HomeVNextContainer.tsx), et c'est le
-// SEUL montage qui atteint un telephone.
+// CE QU'ELLE PROUVE MAINTENANT, DECISION KYLLIAN PRISE LE MEME JOUR : que ce
+// meme bloc N'ATTEINT PLUS l'ecran, parce que l'ecran d'un compte neuf reste
+// l'ecran NORMAL des le jour 1. `HOME_FEATURES.DEMARRAGE_PREMIERE_MISSION`
+// (config/homeFeatures.ts) est OFF ; la checklist 3 etapes de la carte
+// Progression VIDE (deja la, `progressionViewModel.ts` §6.7) devient le seul
+// message de demarrage.
 //
-// Consequence, constatee en recette le 04/08 sur un compte neuf : tous les
-// verrous V-A ci-dessus etaient verts pendant que l'ecran reel n'affichait
-// AUCUN bloc de demarrage. Ils prouvaient une configuration que l'application
-// ne produit jamais. Un test qui garde un ecran fantome ne garde rien.
-//
-// Les tests ci-dessous montent l'ecran exactement comme le conteneur, et le
-// dernier d'entre eux verifie que cette phrase reste vraie.
+// LA MEME LECON, APPLIQUEE DANS LES DEUX SENS. La faute du matin etait de
+// monter l'ecran en "v1", une config que le conteneur ne produit pas.
+// Ecrire ici `{ demarrage: undefined }` en dur commettrait la faute inverse :
+// un test qui invente sa propre config plutot que de lire celle du
+// conteneur ne prouve plus rien le jour ou quelqu'un modifie
+// `useHomeVNextViewModel.ts` sans toucher ce fichier. `demarrageDeLaProd()`
+// ci-dessous lit donc le VRAI drapeau, et le test de fin de section relit le
+// VRAI fichier pour verifier qu'il le lit bien de la meme facon.
 // -----------------------------------------------------------------------------
 
 /**
@@ -554,9 +569,11 @@ describe("Demarrage — l'ecran rendu", () => {
  * sur lequel un cycle a deja ete choisi — l'ecran capture affichait « Vitesse &
  * detente · Seance 1 sur 12 ».
  *
- * Ce detail n'est pas decoratif : c'est le cas ou le bloc V-A perd sa ligne
- * « pourquoi ce cycle » (viewModel.ts §5.8 bis, un cycle tourne deja), donc
- * celui ou il a le moins de contenu. S'il tient ici, il tient partout.
+ * Ce detail n'est pas decoratif : c'est le cas ou le bloc V-A, s'il etait
+ * actif, perdrait sa ligne « pourquoi ce cycle » (viewModel.ts §5.8 bis, un
+ * cycle tourne deja) — donc celui ou il a le moins de contenu. S'il tenait
+ * ici, il tenait partout ; et c'est le meme profil qui doit produire l'ecran
+ * normal maintenant que le drapeau est OFF.
  */
 const PROFIL_RECETTE: Partial<HomeVNextInput> = {
   microcycleGoal: "explosivite",
@@ -564,6 +581,15 @@ const PROFIL_RECETTE: Partial<HomeVNextInput> = {
 };
 
 const entreeRecette = (): HomeVNextInput => ({ ...NOUVEAU().input, ...PROFIL_RECETTE });
+
+/**
+ * L'option de demarrage EXACTEMENT comme la calcule la production
+ * (`hooks/home/useHomeVNextViewModel.ts`). N'ECRIS JAMAIS `"A"` ou
+ * `undefined` en dur a la place de cet appel dans cette section : ce serait
+ * rejouer, a l'envers, la config fantome du 04/08.
+ */
+const demarrageDeLaProd = (): DemarrageVarianteId | undefined =>
+  HOME_FEATURES.DEMARRAGE_PREMIERE_MISSION ? "A" : undefined;
 
 /** Le montage du conteneur, et rien d'autre : variante 2 + carte progression. */
 const rendreCommeLApp = (vm: HomeVNextViewModel, input: HomeVNextInput) => {
@@ -578,7 +604,7 @@ const rendreCommeLApp = (vm: HomeVNextViewModel, input: HomeVNextInput) => {
   return (rendu as TestRenderer.ReactTestRenderer).root;
 };
 
-/** Tous les textes rendus, aplatis — pour prouver qu'une phrase N'EST PAS la. */
+/** Tous les textes rendus, aplatis — pour prouver qu'une phrase EST ou N'EST PAS la. */
 const textesRendus = (racine: ReturnType<typeof rendre>): string[] =>
   racine
     .findAllByType(Text, { deep: true })
@@ -586,60 +612,66 @@ const textesRendus = (racine: ReturnType<typeof rendre>): string[] =>
     .filter((c): c is string => typeof c === "string");
 
 describe("Demarrage — le montage reel de l'application", () => {
-  it("zero seance + cycle actif : l'etat est bien « premiere mission »", () => {
-    const vm = buildHomeVNextViewModel(entreeRecette(), { demarrage: "A" });
-
-    expect(vm.demarrage).not.toBeNull();
-    expect(vm.demarrage?.kind).toBe("premiere_mission");
-    if (vm.demarrage === null || vm.demarrage.kind !== "premiere_mission") throw new Error("V-A attendue");
-    expect(vm.demarrage.premiersPas).toHaveLength(3);
-    // Un cycle tourne deja : recommander un cycle a cote serait deux verites
-    // qui s'affrontent. La ligne est retiree A LA SOURCE, pas par l'ecran.
-    expect(vm.demarrage.pourquoiCeCycle).toBeNull();
-    // Et le bloc a bien absorbe « MA FORME » : une seule facon de le dire.
-    expect(vm.form).toBeNull();
+  it("verrou de la decision Kyllian (04/08) : le bloc V-A est desactive en production", () => {
+    // Si cette ligne echoue, tout le reste de la section teste la mauvaise
+    // chose : relire config/homeFeatures.ts avant de toucher au reste.
+    expect(HOME_FEATURES.DEMARRAGE_PREMIERE_MISSION).toBe(false);
   });
 
-  it("le bloc « Premiere mission » est REELLEMENT rendu par le montage de l'app", () => {
-    const input = entreeRecette();
-    const vm = buildHomeVNextViewModel(input, { demarrage: "A" });
-    const racine = rendreCommeLApp(vm, input);
+  it("zero seance + cycle actif, config reelle : aucun bloc de demarrage ne se construit", () => {
+    const vm = buildHomeVNextViewModel(entreeRecette(), {
+      variante: "v2",
+      demarrage: demarrageDeLaProd(),
+    });
 
-    // Le coeur de la regression du 04/08 : le ViewModel construisait le bloc,
-    // l'ecran ne le rendait pas.
-    expect(compter(racine, MARQUEURS.demarrage)).toBe(1);
-    expect(compter(racine, MARQUEURS.demarragePas)).toBe(3);
-    // Le traitement hero et le bloc vont ENSEMBLE : un CTA agrandi sans le bloc
-    // qui le justifie, c'est exactement ce que la capture montrait.
-    expect(compter(racine, MARQUEURS.actionHero)).toBe(1);
+    expect(vm.demarrage).toBeNull();
+    // "MA FORME" n'a donc rien absorbe : elle existe toujours cote ViewModel,
+    // meme si l'ecran (variante 2, plus bas) la remplace par la carte
+    // progression pour l'affichage.
+    expect(vm.form).not.toBeNull();
   });
 
-  it("un seul message de demarrage a l'ecran — la carte progression ne redit pas la meme chose", () => {
+  it("le bloc « Premiere mission » n'est PAS rendu : l'ecran reste celui de tout le monde", () => {
     const input = entreeRecette();
-    const vm = buildHomeVNextViewModel(input, { demarrage: "A" });
+    const vm = buildHomeVNextViewModel(input, { variante: "v2", demarrage: demarrageDeLaProd() });
     const racine = rendreCommeLApp(vm, input);
 
-    // La carte progression a un etat « vide » dont les trois reperes disent mot
-    // pour mot ce que disent les trois premiers pas. Les deux ensemble, c'est la
-    // redite que le fondateur a vue sur son telephone.
-    expect(compter(racine, MARQUEURS.demarrage)).toBe(1);
-    expect(compter(racine, MARQUEURS.progression)).toBe(0);
+    // Le coeur de la decision du 04/08, prise quelques heures apres le
+    // correctif du matin : le bloc V-A ne doit RIEN afficher, et le bouton du
+    // jour ne prend pas le traitement hero qui n'allait qu'avec lui.
+    expect(compter(racine, MARQUEURS.demarrage)).toBe(0);
+    expect(compter(racine, MARQUEURS.actionHero)).toBe(0);
+    // La carte progression, elle, est bien la — c'est desormais elle qui
+    // porte le message de demarrage.
+    expect(compter(racine, MARQUEURS.progression)).toBe(1);
+  });
 
+  it("la carte Progression vide EST le message de demarrage unique", () => {
+    const input = entreeRecette();
+    const vm = buildHomeVNextViewModel(input, { variante: "v2", demarrage: demarrageDeLaProd() });
+    const racine = rendreCommeLApp(vm, input);
+
+    // Plus de bloc V-A pour porter ces trois phrases : c'est desormais
+    // exclusivement la carte Progression (etat "empty",
+    // progressionViewModel.ts §6.7) qui les affiche. Si elles disparaissent
+    // d'ici, l'ecran d'un compte neuf n'a plus AUCUN message de demarrage —
+    // ni invente, ni honnete : rien.
     const textes = textesRendus(racine);
-    for (const redite of [
+    for (const repere of [
       "Termine ta première séance.",
       "Partage ton ressenti.",
       "Compare tes prochains tests.",
     ]) {
-      expect(textes).not.toContain(redite);
+      expect(textes).toContain(repere);
     }
   });
 
-  it("des la premiere seance terminee, la carte progression reprend sa place", () => {
-    // Le bloc de demarrage ne masque pas la carte : il l'occupe TANT QU'IL
-    // EXISTE. Sans ce test, on pourrait « corriger » en supprimant la carte.
+  it("des la premiere seance terminee, la carte progression reste en place (rien ne change ici)", () => {
     const plein = getHomeVNextFixture("tendance-disponible")!;
-    const vm = buildHomeVNextViewModel(plein.input, { demarrage: "A" });
+    const vm = buildHomeVNextViewModel(plein.input, {
+      variante: "v2",
+      demarrage: demarrageDeLaProd(),
+    });
     expect(vm.demarrage).toBeNull();
 
     const racine = rendreCommeLApp(vm, plein.input);
@@ -647,63 +679,60 @@ describe("Demarrage — le montage reel de l'application", () => {
     expect(compter(racine, MARQUEURS.progression)).toBe(1);
   });
 
-  it("aucun element du bloc n'est tapable, en variante 2 aussi", () => {
+  it("aucun intervalle extensible (f568d83) ne se glisse sur l'ecran normal", () => {
+    // La respiration n'existe QUE quand `vm.demarrage !== null`
+    // (HomeVNextScreen.tsx). Le drapeau etant OFF, plus aucun montage reel
+    // ne peut l'activer — le code reste, tenu par le meme interrupteur que
+    // le bloc lui-meme, pas retire separement.
     const input = entreeRecette();
-    const racine = rendreCommeLApp(buildHomeVNextViewModel(input, { demarrage: "A" }), input);
-    const bloc = racine.find((n) => n.props && n.props.testID === MARQUEURS.demarrage);
-    const tactiles = bloc.findAll(
-      (n) =>
-        Boolean(n.props) &&
-        (typeof n.props.onPress === "function" ||
-          n.props.accessibilityRole === "button" ||
-          n.props.accessibilityRole === "link"),
-      { deep: true }
-    );
-    expect(tactiles).toEqual([]);
+    const vm = buildHomeVNextViewModel(input, { variante: "v2", demarrage: demarrageDeLaProd() });
+    const racine = rendreCommeLApp(vm, input);
+    expect(compter(racine, MARQUEURS.respirationDemarrage)).toBe(0);
   });
 
-  it("l'ecran de demarrage respire avec la hauteur — et son plafond tient", () => {
+  it("le mecanisme V-A + hero + respiration n'a pas ete demonte, seulement debranche", () => {
+    // Ce test-ci NE LIT PAS le drapeau : il force "A" pour prouver que la
+    // machinerie tient toujours debout. C'est la garantie concrete derriere
+    // le commentaire de config/homeFeatures.ts (« conserve pour un futur
+    // onboarding sans cycle actif »). S'il casse, la conservation du code
+    // est un mensonge.
     const input = entreeRecette();
-    const racine = rendreCommeLApp(buildHomeVNextViewModel(input, { demarrage: "A" }), input);
+    const vm = buildHomeVNextViewModel(input, { variante: "v2", demarrage: "A" });
+    const racine = rendreCommeLApp(vm, input);
+    expect(compter(racine, MARQUEURS.demarrage)).toBe(1);
+    expect(compter(racine, MARQUEURS.actionHero)).toBe(1);
 
-    // Deux intervalles, pas trois : la respiration se glisse ENTRE les blocs
-    // existants. Un troisieme en fin d'ecran ne ferait que deplacer du vide.
+    // La respiration (f568d83) tient encore, plafond compris : deux
+    // intervalles exactement, `flexGrow` a 1, plafond au jeton.
     const respirations = racine.findAll(
       (n) => typeof n.type === "string" && n.props?.testID === MARQUEURS.respirationDemarrage,
       { deep: true }
     );
     expect(respirations).toHaveLength(2);
-
-    // LE PLAFOND. Sans lui, une tablette etalerait trois blocs sur 1000 px.
     for (const r of respirations) {
       const style = StyleSheet.flatten(r.props.style) as { flexGrow?: number; maxHeight?: number };
       expect(style.flexGrow).toBe(1);
       expect(style.maxHeight).toBe(espacement.respirationDemarrageMax);
     }
-
-    // Et rien n'a ete AJOUTE a l'ecran : un intervalle ne porte aucun texte.
-    for (const r of respirations) {
-      expect(r.findAllByType(Text, { deep: true })).toEqual([]);
-    }
   });
 
-  it("hors demarrage, aucun intervalle extensible n'existe", () => {
-    // La respiration appartient au seul ecran qui en a besoin. Sur un ecran
-    // plein, elle ecarterait des blocs qui ont deja de quoi remplir la hauteur.
-    const plein = getHomeVNextFixture("tendance-disponible")!;
-    const racine = rendreCommeLApp(buildHomeVNextViewModel(plein.input), plein.input);
-    expect(compter(racine, MARQUEURS.respirationDemarrage)).toBe(0);
-  });
-
-  it("le montage teste ci-dessus est bien celui du conteneur", () => {
-    // LE TEST QUI EMPECHE CETTE SECTION DE REDEVENIR UN ECRAN FANTOME. Si le
-    // conteneur cesse un jour de monter la variante 2, les tests ci-dessus
-    // garderaient une configuration morte sans que rien ne le signale.
-    const source = fs.readFileSync(
+  it("le montage teste ci-dessus est bien celui du conteneur, drapeau compris", () => {
+    // LE TEST QUI EMPECHE CETTE SECTION DE REDEVENIR UN ECRAN FANTOME — dans
+    // un sens ou dans l'autre. Si le conteneur cesse de monter la variante 2,
+    // ou si quelqu'un fige a nouveau `demarrage: "A"` en dur (exactement la
+    // regression du 04/08, permanente cette fois), ce test le signale.
+    const sourceContainer = fs.readFileSync(
       path.join(__dirname, "..", "..", "screens", "homeVNext", "HomeVNextContainer.tsx"),
       "utf8"
     );
-    expect(source).toContain('variante="v2"');
-    expect(source).toContain("progression={progression}");
+    expect(sourceContainer).toContain('variante="v2"');
+    expect(sourceContainer).toContain("progression={progression}");
+
+    const sourceHook = fs.readFileSync(
+      path.join(__dirname, "..", "..", "hooks", "home", "useHomeVNextViewModel.ts"),
+      "utf8"
+    );
+    expect(sourceHook).toContain("HOME_FEATURES.DEMARRAGE_PREMIERE_MISSION");
+    expect(sourceHook).not.toContain('demarrage: "A"');
   });
 });

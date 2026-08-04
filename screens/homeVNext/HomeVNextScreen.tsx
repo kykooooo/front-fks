@@ -147,6 +147,17 @@ export const HOME_VNEXT_SECTION_ORDER_V2 = [
 //
 // `week`, `note` et `exit` restent dans l'ordre et restent `null` : sur un
 // compte a zero seance, le ViewModel les refuse deja tous les trois.
+//
+// DORMANT EN PRODUCTION DEPUIS LE 04/08 — ET C'EST VOULU
+// -----------------------------------------------------------------------------
+// Decision Kyllian (04/08, apres la recette telephone) : l'ecran d'un compte
+// neuf reste l'ecran NORMAL, hero compris. Tout ce qui suit ne s'active donc
+// plus : `hooks/home/useHomeVNextViewModel.ts` ne demande plus jamais
+// `demarrage: "A"` (drapeau `HOME_FEATURES.DEMARRAGE_PREMIERE_MISSION`,
+// `config/homeFeatures.ts`, OFF). Rien n'a ete supprime ici — cet ecran ne
+// lit toujours que `vm.demarrage`, jamais le drapeau — donc le jour ou
+// quelqu'un le rallume pour un futur onboarding sans cycle actif, ce bloc et
+// sa mise en page reprennent exactement la ou ils s'etaient arretes.
 // =============================================================================
 
 export const HOME_VNEXT_SECTION_ORDER_DEMARRAGE = [
@@ -426,6 +437,13 @@ function Section({ children }: { children: React.ReactNode }) {
  *     React Native, et il n'y a rien a retirer de toute facon) ;
  *   - tablette : le plafond arrete la distribution, et le reste du vide tombe
  *     en fin de scroll plutot que d'ecarteler trois blocs sur 1000 px.
+ *
+ * DEPUIS LE 04/08 : ce composant ne se monte plus en production. Il partage
+ * EXACTEMENT la condition du bloc de demarrage (`vm.demarrage !== null`, voir
+ * les deux appels ci-dessus) — pas une deuxieme, pas un drapeau a part. Le
+ * jour ou `HOME_FEATURES.DEMARRAGE_PREMIERE_MISSION` repasse a `true`, il se
+ * remonte tout seul, avec le bloc qu'il espace. Rien a retirer ici tant que ce
+ * bloc reste en code (voir config/homeFeatures.ts).
  */
 function Respiration() {
   return <View style={styles.respiration} testID={MARQUEURS.respirationDemarrage} />;

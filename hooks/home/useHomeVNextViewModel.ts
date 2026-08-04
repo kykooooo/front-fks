@@ -19,6 +19,7 @@
 
 import { useMemo } from "react";
 
+import { HOME_FEATURES } from "../../config/homeFeatures";
 import {
   buildHomeVNextViewModel,
   type HomeVNextInput,
@@ -62,8 +63,17 @@ export function useHomeVNextViewModel(): HomeVNextViewModels {
 
   return useMemo(() => {
     const entreeHome = construireEntreeHome(etat);
-    // Variante 2 et bloc de demarrage V-A : les deux decisions sont fermees.
-    const vm = buildHomeVNextViewModel(entreeHome, { variante: "v2", demarrage: "A" });
+    // Variante 2 : decision fermee. Bloc de demarrage V-A : pilote par
+    // `HOME_FEATURES.DEMARRAGE_PREMIERE_MISSION` (OFF depuis la decision
+    // Kyllian du 04/08 — voir config/homeFeatures.ts). Sans lui, l'option
+    // `demarrage` vaut `undefined` et le ViewModel se comporte exactement
+    // comme s'il n'existait pas : c'est le SEUL endroit de l'app qui decide
+    // "A" ou rien, pour que ce choix ne puisse pas diverger d'un montage a
+    // l'autre.
+    const vm = buildHomeVNextViewModel(entreeHome, {
+      variante: "v2",
+      demarrage: HOME_FEATURES.DEMARRAGE_PREMIERE_MISSION ? "A" : undefined,
+    });
 
     // R7 — la carte progression a besoin de savoir ce que « Ma semaine » affiche
     // DEJA sur le meme ecran, pour ne pas redire le meme chiffre. On le lui donne
