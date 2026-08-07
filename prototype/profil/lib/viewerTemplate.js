@@ -44,8 +44,9 @@ function viewerHtml(version) {
   <div class="grp"><span class="lab">Largeur</span><div class="seg" id="seg-largeur"></div></div>
   <div class="grp"><span class="lab">Vue</span><div class="seg" id="seg-vue"></div></div>
   <div class="grp"><span class="lab">Texte</span><div class="seg" id="seg-texte"></div></div>
+  <div class="grp" id="grp-accents"><span class="lab">Accents</span><div class="seg" id="seg-accents"></div></div>
   <div class="grp droite">
-    <span class="lab" id="raccourcis">↑↓ état · v variante · w largeur · e vue · t texte</span>
+    <span class="lab" id="raccourcis">↑↓ état · v variante · w largeur · e vue · t texte · c accents</span>
   </div>
 </div>
 
@@ -250,6 +251,17 @@ function viewerJs() {
     .concat([{ id: "actuel", libelle: "Profil actuel" }, { id: "duo", libelle: "Côte à côte" }]);
   var VUES = M.vues || ["visible", "entiere"];
 
+  // L'axe accents (D7) : liste et defaut lus dans le manifeste (qui les lit
+  // dans le produit). Sans axe (module illisible au build), la bascule n'a
+  // qu'un choix et reste inerte.
+  var ACCENTS = M.accents || [];
+  var ACCENTS_DEFAUT = M.accentsParDefaut || "sobre";
+  var libelleAccent = function (id) {
+    if (M.accentsLibelles && M.accentsLibelles[id]) return M.accentsLibelles[id];
+    for (var i = 0; i < ACCENTS.length; i += 1) if (ACCENTS[i].id === id) return ACCENTS[i].libelle;
+    return id;
+  };
+
   // --- etat courant + hash ------------------------------------------------
   var S = {
     etat: M.ordreEtats[0],
@@ -257,6 +269,7 @@ function viewerJs() {
     w: 375,
     vue: "visible",
     x13: 0,
+    acc: ACCENTS_DEFAUT,
     onglet: "decisions",
   };
   function lireHash() {
@@ -269,13 +282,14 @@ function viewerJs() {
       if (k === "w" && M.largeurs.indexOf(Number(val)) !== -1) S.w = Number(val);
       if (k === "vue" && VUES.indexOf(val) !== -1) S.vue = val;
       if (k === "x13") S.x13 = val === "1" ? 1 : 0;
+      if (k === "acc" && ACCENTS.some(function (a) { return a.id === val; })) S.acc = val;
       if (k === "onglet" && ["decisions", "etat", "limites"].indexOf(val) !== -1) S.onglet = val;
     });
     if (S.w !== M.largeurEchelle) S.x13 = 0;
   }
   function ecrireHash() {
     var h = "etat=" + S.etat + "&var=" + S.variante + "&w=" + S.w + "&vue=" + S.vue +
-      "&x13=" + S.x13 + "&onglet=" + S.onglet;
+      "&x13=" + S.x13 + "&acc=" + S.acc + "&onglet=" + S.onglet;
     if ("#" + h !== location.hash) history.replaceState(null, "", "#" + h);
   }
 
@@ -291,8 +305,16 @@ function viewerJs() {
   function pagesDe(varianteId) {
     var e = M.etats[S.etat];
     if (!e) return null;
+    // Le Profil actuel a son propre style : l'axe accents ne s'y applique pas.
     if (varianteId === "actuel") return e.actuel ? e.actuel.pages : null;
-    return e.vnext && e.vnext[varianteId] ? e.vnext[varianteId].pages : null;
+    var bloc = e.vnext && e.vnext[varianteId];
+    if (!bloc) return null;
+    if (S.acc !== ACCENTS_DEFAUT) {
+      // Table separee : une page accents absente rend null — le cadre explique,
+      // il ne sert JAMAIS la page sobre sous l'etiquette « Coloré ».
+      return (bloc.pagesAccents && bloc.pagesAccents[S.acc]) || null;
+    }
+    return bloc.pages;
   }
 
   // --- rendu de la barre ---------------------------------------------------
@@ -327,6 +349,22 @@ function viewerJs() {
           : "Généré en " + M.largeurEchelle + " px uniquement — passe la largeur à " + M.largeurEchelle + " pour comparer le texte agrandi",
       },
     ], S.x13, function (id) { if (id === 0 || x13Dispo) { S.x13 = id; rendre(); } });
+
+    // Accents (D7). Desactive sur « Profil actuel » : la production a son
+    // propre style, l'axe n'existe que sur le Profil vNext. En côte à côte,
+    // seule la colonne vNext change.
+    var accActif = S.variante !== "actuel";
+    seg($("seg-accents"), ACCENTS.map(function (a) {
+      return {
+        id: a.id,
+        libelle: libelleAccent(a.id),
+        disabled: !accActif,
+        title: accActif
+          ? a.description || ""
+          : "Le Profil actuel (production) a son propre style — l'axe accents ne s'applique qu'au Profil vNext",
+      };
+    }), S.acc, function (id) { if (accActif) { S.acc = id; rendre(); } });
+    $("grp-accents").style.display = ACCENTS.length > 1 ? "" : "none";
   }
 
   // --- rail ----------------------------------------------------------------
@@ -355,16 +393,19 @@ function viewerJs() {
     var cle = cleDePage();
     var rel = pages ? pages[cle] : null;
     var d = deviceDe(S.w);
+    var accentVisible = varianteId !== "actuel" && S.acc !== ACCENTS_DEFAUT;
     var t = '<div class="titre-cadre"><b>' + esc(nomVariante(varianteId)) + "</b> · " + S.w +
-      " px · " + (S.vue === "visible" ? "zone visible" : "page entière") + (S.x13 ? " · ×1,3" : "") + "</div>";
+      " px · " + (S.vue === "visible" ? "zone visible" : "page entière") + (S.x13 ? " · ×1,3" : "") +
+      (accentVisible ? " · accents " + esc(libelleAccent(S.acc)) : "") + "</div>";
     if (!rel) {
       return '<div class="cadre" style="width:' + Math.max(S.w, 340) + 'px">' + t +
         '<div class="cadre-absent"><b>Page non générée</b>' +
         "Aucune page pour l’état <code>" + esc(S.etat) + "</code> en " + S.w + " px, vue « " + esc(S.vue) + " »" +
-        (S.x13 ? ", texte ×1,3" : "") + ".<br>" +
-        "Génération partielle probable (FKS_ETATS / FKS_LARGEURS) — relance " +
-        "<code>node prototype/profil/build.js</code> sans filtre. Le visualiseur n’affiche jamais " +
-        "une autre page à la place.</div></div>";
+        (S.x13 ? ", texte ×1,3" : "") +
+        (accentVisible ? ", accents « " + esc(libelleAccent(S.acc)) + " »" : "") + ".<br>" +
+        "Génération partielle probable (FKS_ETATS / FKS_LARGEURS), ou axe accents absent au " +
+        "moment du build — relance <code>node prototype/profil/build.js</code> sans filtre. " +
+        "Le visualiseur n’affiche jamais une autre page à la place.</div></div>";
     }
     var m = mesures[rel];
     var mesureTxt;
@@ -521,6 +562,14 @@ function viewerJs() {
           '<button data-var="informe"' + (S.variante === "informe" ? ' class="on"' : "") + ">Voir en contrôle informé</button>" +
           "</div>";
       }
+      if (d.id === "D7" && ACCENTS.length > 1) {
+        // D7 se JUGE sur la bascule Accents (patron D1) : memes donnees, memes
+        // mots, deux habillages.
+        actions = '<div class="actions">' + ACCENTS.map(function (a) {
+          return '<button data-acc="' + esc(a.id) + '"' + (S.acc === a.id ? ' class="on"' : "") +
+            ">Voir en " + esc(libelleAccent(a.id).toLowerCase()) + "</button>";
+        }).join("") + "</div>";
+      }
       return '<div class="carte-p"><h3>' + esc(d.id) + " · " + esc(d.titre) + '</h3><div class="q">' +
         esc(d.question) + "</div>" + opts + actions + '<div class="cout">Coût : ' + esc(d.cout) + "</div></div>";
     }).join("");
@@ -610,6 +659,15 @@ function viewerJs() {
     Array.prototype.forEach.call(c.querySelectorAll("button[data-var]"), function (b) {
       b.addEventListener("click", function () { S.variante = b.getAttribute("data-var"); rendre(); });
     });
+    Array.prototype.forEach.call(c.querySelectorAll("button[data-acc]"), function (b) {
+      b.addEventListener("click", function () {
+        S.acc = b.getAttribute("data-acc");
+        // L'axe ne se voit pas sur le Profil actuel : on bascule sur la
+        // variante informee pour que le bouton montre reellement quelque chose.
+        if (S.variante === "actuel") S.variante = "informe";
+        rendre();
+      });
+    });
   }
 
   // --- clavier -------------------------------------------------------------
@@ -629,6 +687,13 @@ function viewerJs() {
       rendre();
     } else if (ev.key === "e") { S.vue = S.vue === "visible" ? "entiere" : "visible"; rendre(); }
     else if (ev.key === "t") { if (S.w === M.largeurEchelle) { S.x13 = S.x13 ? 0 : 1; rendre(); } }
+    else if (ev.key === "c") {
+      if (S.variante !== "actuel" && ACCENTS.length > 1) {
+        var as = ACCENTS.map(function (a) { return a.id; });
+        S.acc = as[(as.indexOf(S.acc) + 1) % as.length];
+        rendre();
+      }
+    }
   });
 
   window.addEventListener("hashchange", function () { lireHash(); rendre(); });
@@ -636,7 +701,8 @@ function viewerJs() {
   // --- rendu global --------------------------------------------------------
   function rendre() {
     ecrireHash();
-    $("bandeau-etat").textContent = S.etat + " · " + nomVariante(S.variante);
+    $("bandeau-etat").textContent = S.etat + " · " + nomVariante(S.variante) +
+      (S.variante !== "actuel" && S.acc !== ACCENTS_DEFAUT ? " · accents " + libelleAccent(S.acc) : "");
     $("bandeau-meta").textContent = "généré le " + (M.genereLe || "?") +
       " · toutes les données sont inventées";
     rendreBarre();

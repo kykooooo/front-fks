@@ -62,6 +62,32 @@ const { FOOTBALL_LABELS } = require(path.join(APP_ROOT, "config/trainingDefaults
 const FIXTURES = fixturesMod.PROFIL_VNEXT_FIXTURES_RENDU || fixturesMod.PROFIL_VNEXT_FIXTURES;
 const VARIANTES = Array.from(vmMod.PROFIL_VARIANTES); // pur / informe
 
+// L'axe accents (D7) — lu dans le produit, comme au build. S'il est illisible,
+// seules les pages sobres sont attendues (et le build l'aura signale).
+let accentsMod = null;
+try {
+  accentsMod = require(path.join(APP_ROOT, "components/profilVNext/profilVNextAccents.ts"));
+} catch (_) {
+  accentsMod = null;
+}
+const ACCENTS_PAR_DEFAUT = accentsMod ? accentsMod.ACCENTS_PAR_DEFAUT : "sobre";
+const ACCENTS_IDS = accentsMod
+  ? Array.from(accentsMod.ACCENTS_A_COMPARER).map((a) => a.id)
+  : [ACCENTS_PAR_DEFAUT];
+/** Suffixe de nom de fichier d'un accent ("" pour le defaut). */
+const suffixeAccent = (accId) => (accId === ACCENTS_PAR_DEFAUT ? "" : `_${accId}`);
+
+// La couleur des pilules du mode colore, lue dans le THEME (jamais recopiee) :
+// texte = accent, fond = accentSoft compose sur le fond de carte (blanc).
+const { theme } = require(path.join(APP_ROOT, "constants/theme.ts"));
+function hexVersRgbTexte(hex) {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || ""));
+  if (!m) return null;
+  return `rgb(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)})`;
+}
+const FOND_PILULE = hexVersRgbTexte(theme.colors.accentSoft);
+const TEXTE_PILULE = theme.colors.accent;
+
 /** Un ViewModel par (etat, variante). */
 const VM = new Map();
 for (const f of FIXTURES) {
@@ -128,18 +154,22 @@ function pagesAttendues() {
         const suffixe = echelle === 1 ? "" : "_x13";
         for (const vue of ["visible", "entiere"]) {
           for (const v of VARIANTES) {
-            liste.push({
-              variante: v.id,
-              etat: f.id,
-              largeur: d.width,
-              echelle,
-              vue,
-              hauteurVisible: d.stageVisible,
-              fichier: `pages/vnext/${f.id}_${v.id}_${d.width}_${vue}${suffixe}.html`,
-            });
+            for (const accId of ACCENTS_IDS) {
+              liste.push({
+                variante: v.id,
+                accents: accId,
+                etat: f.id,
+                largeur: d.width,
+                echelle,
+                vue,
+                hauteurVisible: d.stageVisible,
+                fichier: `pages/vnext/${f.id}_${v.id}_${d.width}_${vue}${suffixeAccent(accId)}${suffixe}.html`,
+              });
+            }
           }
           liste.push({
             variante: "actuel",
+            accents: null,
             etat: f.id,
             largeur: d.width,
             echelle,
@@ -256,7 +286,10 @@ async function mesurer(pages, port) {
 }
 
 function cle(p) {
-  return `${p.variante}|${p.etat}|${p.largeur}|${p.echelle}|${p.vue}`;
+  // L'accent non-defaut entre dans la cle : sans lui, la page coloree d'une
+  // variante ECRASERAIT la mesure de la page sobre dans la table des resultats.
+  const acc = p.accents && p.accents !== ACCENTS_PAR_DEFAUT ? `+${p.accents}` : "";
+  return `${p.variante}${acc}|${p.etat}|${p.largeur}|${p.echelle}|${p.vue}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -416,8 +449,10 @@ async function main() {
     noter(
       "c) Rendu : pages presentes, aucune page d'erreur, marqueur d'ecran partout",
       manquantes.length === 0 && erreurs.length === 0 && sansMarqueur.length === 0 ? "PASS" : "FAIL",
-      `${pages.length} pages attendues : ${vnextPages.length} vNext (7 etats x 2 variantes x 3 largeurs x 2 vues + x1,3 en 375)\n` +
-        `+ ${actuelPages.length} Profil actuel (7 x 3 x 2 + x1,3 en 375). Presentes : ${pages.length - manquantes.length}.\n` +
+      `${pages.length} pages attendues : ${vnextPages.length} vNext (7 etats x 2 variantes x ` +
+        `${ACCENTS_IDS.length} accent(s) [${ACCENTS_IDS.join("/")}] x 3 largeurs x 2 vues + x1,3 en 375)\n` +
+        `+ ${actuelPages.length} Profil actuel (7 x 3 x 2 + x1,3 en 375 — l'axe accents ne s'y applique pas). ` +
+        `Presentes : ${pages.length - manquantes.length}.\n` +
         (manquantes.length ? `MANQUANTES : ${manquantes.slice(0, 8).map((m) => m.fichier).join(", ")}\n` : "") +
         (erreurs.length ? `PAGES D'ERREUR : ${erreurs.slice(0, 8).join(", ")}\n` : "aucune page d'erreur.\n") +
         `Marqueur data-testid="profil-vnext-ecran" attendu exactement 1 fois par page vNext : ` +
@@ -533,6 +568,57 @@ async function main() {
         `Un champ ajoute (etat de forme, trophee, compteur, phase) echouerait ICI en se nommant.\n` +
         (fautesChemins.length ? `CHEMINS INTERDITS : ${[...new Set(fautesChemins)].slice(0, 12).join(" | ")}` : "aucun champ hors liste.")
     );
+
+    // -----------------------------------------------------------------------
+    // (f4) Les accents ne changent JAMAIS un caractere de texte
+    // -----------------------------------------------------------------------
+    // C'est LA promesse de l'axe (D7), mesuree sur le HTML RENDU — pas sur le
+    // ViewModel (que l'axe ne touche pas par construction) : si un composant
+    // ajoutait des initiales dans l'avatar ou un mot dans une pilule, c'est ICI
+    // que ca se verrait. Comparaison au caractere pres du texte visible de
+    // l'ecran (espaces normalises), page sobre contre page coloree, pour chaque
+    // etat x variante x largeur x vue x echelle.
+    // -----------------------------------------------------------------------
+    if (ACCENTS_IDS.length < 2) {
+      noter(
+        "f4) Texte identique au caractere pres entre sobre et colore",
+        "NON_EXECUTE",
+        "L'axe accents n'a qu'un seul mode (profilVNextAccents.ts illisible au moment du build ?) : rien a comparer."
+      );
+    } else {
+      const fautesTexte = [];
+      let comparaisons = 0;
+      const sobres = vnextPages.filter((p) => p.accents === ACCENTS_PAR_DEFAUT);
+      for (const p of sobres) {
+        for (const accId of ACCENTS_IDS) {
+          if (accId === ACCENTS_PAR_DEFAUT) continue;
+          const fichierAcc = p.fichier.replace(/(_x13)?\.html$/, (m, x13) => `${suffixeAccent(accId)}${x13 || ""}.html`);
+          const htmlSobre = contenus.get(p.fichier);
+          const htmlAcc = contenus.get(fichierAcc);
+          if (!htmlSobre || !htmlAcc) continue;
+          comparaisons++;
+          const a = texteEcran(htmlSobre);
+          const b = texteEcran(htmlAcc);
+          if (a !== b) {
+            let i = 0;
+            const n = Math.min(a.length, b.length);
+            while (i < n && a[i] === b[i]) i++;
+            fautesTexte.push(
+              `${p.etat}/${p.variante}@${p.largeur}${p.echelle !== 1 ? " x1,3" : ""}/${p.vue} vs ${accId} @${i} : ` +
+                `sobre « …${a.slice(Math.max(0, i - 30), i + 30)}… » / ${accId} « …${b.slice(Math.max(0, i - 30), i + 30)}… »`
+            );
+          }
+        }
+      }
+      noter(
+        "f4) Texte identique au caractere pres entre sobre et colore",
+        fautesTexte.length === 0 ? "PASS" : "FAIL",
+        `${comparaisons} paires de pages comparees (texte visible de l'ecran, espaces normalises, HTML rendu).\n` +
+          `La promesse de l'axe : le mode colore n'ajoute NI ne retire un caractere — avatar dessine sans\n` +
+          `initiales, pilules qui teintent des mots existants.\n` +
+          (fautesTexte.length ? `ECARTS : ${fautesTexte.slice(0, 6).join("\n  ")}` : "aucun ecart.")
+      );
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -560,7 +646,7 @@ async function main() {
         const tab = tableauComparatif(mesures, pages);
         fs.mkdirSync(DOSSIER_LIVRABLE, { recursive: true });
         const entete =
-          "# Hauteur de page — Profil actuel contre Profil vNext (pur / informé)\n\n" +
+          "# Hauteur de page — Profil actuel contre Profil vNext (pur / informé / informé coloré)\n\n" +
           "Données FICTIVES. Mesure faite dans un vrai moteur de rendu (Chrome sans interface),\n" +
           "sur la vue « page entière » (rien n'est coupé), marges de safe area comprises.\n" +
           "Même moteur, même feuille de style, même méthode des trois côtés : l'écart ne peut\n" +
@@ -639,10 +725,15 @@ function analyserMesures(mesures, pages, navigateur) {
     const m = mesures[cle(p)];
     if (!m || m.erreur) continue;
     const d = DEVICES_PROFIL.find((x) => x.width === p.largeur);
-    const observationSeulement = p.etat === "chargement" || (p.etat === "stress-textes-longs" && p.largeur === 320);
+    // Le VERDICT porte sur le rendu par defaut (sobre). Les pages colorees sont
+    // MESUREES et rapportees en observation : l'avatar du mode colore pousse
+    // les controles plus bas, et ce cout doit se lire ici — pas se deviner.
+    const estColore = p.accents != null && p.accents !== ACCENTS_PAR_DEFAUT;
+    const observationSeulement =
+      estColore || p.etat === "chargement" || (p.etat === "stress-textes-longs" && p.largeur === 320);
     for (const u of USAGES) {
       const pos = (m.positionsMarqueurs || []).filter((x) => x.marqueur === u);
-      const ligne = `${p.etat}/${p.variante}@${p.largeur}`;
+      const ligne = `${p.etat}/${p.variante}${estColore ? "+" + p.accents : ""}@${p.largeur}`;
       if (pos.length !== 1) {
         (observationSeulement ? observationsUsages : fautesUsages).push(`${ligne} : marqueur ${u} present ${pos.length} fois`);
         continue;
@@ -659,9 +750,12 @@ function analyserMesures(mesures, pages, navigateur) {
     fautesUsages.length === 0 ? "PASS" : "FAIL",
     `Marqueurs : ${USAGES.join(", ")} — presents exactement 1 fois et top < zone visible (stageVisible),\n` +
       `soit top - insetTop < hauteur lisible de l'appareil (lib/devices.js), sur chaque page vNext « visible » x1.\n` +
-      `Exemptions (mesurees, rapportees, sans echec) : etat « chargement », et « stress-textes-longs » a 320 px.\n` +
+      `Le verdict porte sur le rendu SOBRE (le defaut). Observations sans echec : etat « chargement »,\n` +
+      `« stress-textes-longs » a 320 px, et les pages COLOREES (le cout de l'avatar se lit ici — decision D7).\n` +
       (fautesUsages.length ? `SOUS LA FLOTTAISON : ${fautesUsages.slice(0, 12).join(" | ")}\n` : "tous visibles sans defiler.\n") +
-      (observationsUsages.length ? `OBSERVATIONS (exemptees) : ${observationsUsages.slice(0, 6).join(" | ")}` : "observations exemptees : aucune.")
+      (observationsUsages.length
+        ? `OBSERVATIONS (${observationsUsages.length}) : ${observationsUsages.slice(0, 14).join(" | ")}`
+        : "observations : aucune.")
   );
 
   // --- (g) zones tactiles ----------------------------------------------------
@@ -694,9 +788,11 @@ function analyserMesures(mesures, pages, navigateur) {
   let pireTexte = "";
   const ratiosCles = new Map();
   const aDefinir = new Map();
+  const pilules = new Map();
   for (const p of vnext) {
     const m = mesures[cle(p)];
     if (!m || m.erreur) continue;
+    const estColore = p.accents != null && p.accents !== ACCENTS_PAR_DEFAUT;
     for (const c of m.contrastes || []) {
       nbTextes++;
       const seuil = c.grandTexte ? SEUIL_CONTRASTE_AA_GRAND : SEUIL_CONTRASTE_AA;
@@ -704,6 +800,11 @@ function analyserMesures(mesures, pages, navigateur) {
       if (!ratiosCles.has(identite)) ratiosCles.set(identite, { ratio: c.ratio, exemple: c.texte, seuil });
       if (c.texte.startsWith("À définir") && !aDefinir.has(identite)) {
         aDefinir.set(identite, c.ratio);
+      }
+      // Les pilules du mode colore : texte accent sur fond accentSoft (valeurs
+      // lues dans constants/theme.ts, jamais recopiees). Mesure EXPLICITE.
+      if (estColore && FOND_PILULE && c.fond === FOND_PILULE && !pilules.has(identite)) {
+        pilules.set(identite, { ratio: c.ratio, exemple: c.texte, seuil });
       }
       if (c.ratio < pireRatio) {
         pireRatio = c.ratio;
@@ -719,13 +820,16 @@ function analyserMesures(mesures, pages, navigateur) {
     .slice(0, 8)
     .map(([id, v]) => `${v.ratio}:1 — ${id} (« ${v.exemple} »)`);
   noter(
-    "h) Contraste WCAG des textes rendus",
+    "h) Contraste WCAG des textes rendus (sobre ET colore)",
     sousLeSeuil.size === 0 ? "PASS" : "FAIL",
     `Calcul WCAG 2.1 sur les COULEURS REELLEMENT RENDUES : texte compose sur son fond effectif (premier fond\n` +
       `opaque en remontant les parents — moteur du Home). ${nbTextes} textes mesures, ${ratiosCles.size} combinaisons distinctes.\n` +
       `Seuils : ${SEUIL_CONTRASTE_AA}:1 en texte normal, ${SEUIL_CONTRASTE_AA_GRAND}:1 en grand texte (>= 24px, ou >= 18,66px gras).\n` +
       `« À définir » (italique, texte secondaire), mesure EXPLICITEMENT :\n  ` +
       ([...aDefinir.entries()].map(([id, r]) => `${r}:1 — ${id}`).join("\n  ") || "(aucune occurrence rendue — inattendu si profil-partiel est genere)") +
+      `\nPilules du mode colore (texte ${TEXTE_PILULE} sur fond ${FOND_PILULE || "?"}), mesure EXPLICITE :\n  ` +
+      ([...pilules.entries()].map(([id, v]) => `${v.ratio}:1 — ${id} (« ${v.exemple} », seuil ${v.seuil})`).join("\n  ") ||
+        "(aucune pilule mesuree — inattendu si les pages colorees sont generees)") +
       `\nPire ratio du prototype : ${pireRatio}:1 (${pireTexte}).\n` +
       `Les 8 plus bas :\n  ` +
       listeRatios.join("\n  ") +
@@ -747,7 +851,8 @@ function analyserMesures(mesures, pages, navigateur) {
   for (const p of pagesSerrees) {
     const m = mesures[cle(p)];
     if (!m || m.erreur) continue;
-    const ou = `${p.etat}/${p.variante}@${p.largeur}${p.echelle !== 1 ? " x1,3" : ""}`;
+    const acc = p.accents && p.accents !== ACCENTS_PAR_DEFAUT ? `+${p.accents}` : "";
+    const ou = `${p.etat}/${p.variante}${acc}@${p.largeur}${p.echelle !== 1 ? " x1,3" : ""}`;
     const estActuel = p.variante === "actuel";
     const cible = estActuel ? obsSerre : fautesSerre;
     for (const d of m.debordements || []) {
@@ -761,28 +866,34 @@ function analyserMesures(mesures, pages, navigateur) {
       (obs ? obsSerre : fautesSerre).push(`${ou} : tronque « ${cl.texte.slice(0, 50)} »`);
     }
   }
-  // Diagnostic des troncatures d'ETIQUETTE de la carte identite : la faute la
-  // plus probable n'est pas le texte long lui-meme mais l'etiquette d'en face,
-  // ecrasee par lui. On la nomme quand elle est mesuree.
+  // Diagnostics nommes, quand ils sont mesures.
+  // 1. Troncature d'ETIQUETTE : etait le defaut flexShrink (corrige en 9fada11).
   const ETIQUETTES_IDENTITE = ["Prénom", "Poste", "Niveau", "Pied fort", "Objectif"];
   const etiquettesTronquees = [...new Set(fautesSerre)].some((f) =>
     ETIQUETTES_IDENTITE.some((e) => f.includes(`tronque « ${e} »`))
   );
   const diagnosticEtiquette = etiquettesTronquees
-    ? `\nCAUSE IDENTIFIEE (sur pieces, page sans-cycle_informe_320) : c'est l'ETIQUETTE de la ligne identite\n` +
-      `qui est tronquee, pas la valeur. Mecanisme : dans ProfilVNextIdentite, l'etiquette (numberOfLines=1,\n` +
-      `donc nowrap + ellipsis) n'a PAS de flexShrink explicite ; la valeur d'en face (flexShrink: 1) est\n` +
-      `longue, et l'etiquette se fait ecraser. Nuance de fidelite, verifiee dans app.css : la base View de\n` +
-      `react-native-web pose flex-shrink: 0 (parite RN) mais la base Text n'en pose AUCUN — le web applique\n` +
-      `alors son defaut (1), la ou Yoga applique 0 sur telephone. La troncature est donc CERTAINE dans ce\n` +
-      `harnais et PROBABLE-ABSENTE sur telephone — a trancher en recette. Le correctif robuste dans les deux\n` +
-      `mondes : flexShrink: 0 explicite sur le style label de ProfilVNextIdentite (hors perimetre d'ecriture\n` +
-      `de ce verificateur — NON corrige ici, rapporte).`
+    ? `\nCAUSE IDENTIFIEE (etiquette) : l'etiquette de la ligne identite est ecrasee par la valeur d'en face\n` +
+      `— le flexShrink: 0 explicite du label (correctif 9fada11) a saute ou ne suffit plus. A re-instruire.`
+    : "";
+  // 2. Troncature de VALEUR sur les pages COLOREES uniquement : l'avatar.
+  const valeursColoreTronquees = [...new Set(fautesSerre)].some(
+    (f) => f.includes("+colore") && f.includes("tronque « Mieux encaisser")
+  );
+  const diagnosticAvatar = valeursColoreTronquees
+    ? `\nCAUSE IDENTIFIEE (sur pieces, sans-cycle 320 sobre vs colore) : le balisage de la ligne Objectif est\n` +
+      `IDENTIQUE dans les deux modes — ce qui change est l'ANCETRE. En mode colore, ProfilVNextIdentite pose\n` +
+      `l'avatar (44 px) et les lignes COTE A COTE (rangeeAvatar en row + gap 12) : chaque ligne d'identite\n` +
+      `perd ~56 px de largeur. A 320 px x1 et a 375 px x1,3, l'objectif le plus long du referentiel\n` +
+      `(46 caracteres) passe alors a 3 lignes et numberOfLines={2} le coupe — et cette coupe MASQUE le cout\n` +
+      `en hauteur (la page colore de sans-cycle ne grandit pas : elle tronque a la place). Le mode sobre,\n` +
+      `lui, tient en 2 lignes aux memes largeurs. Pertinent pour la decision D7 ; correctif produit possible\n` +
+      `(avatar AU-DESSUS des lignes, pas a cote) — hors perimetre d'ecriture de ce verificateur, rapporte.`
     : "";
   noter(
     "i) 320 px et texte x1,3 — debordement, chevauchement, troncature",
     fautesSerre.length === 0 ? "PASS" : "FAIL",
-    `${pagesSerrees.length} pages « entiere » analysees (320 px x1 + 375 px x1,3, vNext ET actuel).\n` +
+    `${pagesSerrees.length} pages « entiere » analysees (320 px x1 + 375 px x1,3 — vNext sobre ET colore, plus le Profil actuel).\n` +
       `ECHEC pour les pages vNext : tout debordement horizontal, tout chevauchement de textes, et toute\n` +
       `troncature reelle sur un ETAT PRODUIT. OBSERVATION : le Profil actuel (hors perimetre) et les\n` +
       `troncatures de « stress-textes-longs » (pousser a la coupe est le role de cette fixture).\n` +
@@ -790,7 +901,8 @@ function analyserMesures(mesures, pages, navigateur) {
       (obsSerre.length
         ? `OBSERVATIONS (${obsSerre.length}) :\n  ${[...new Set(obsSerre)].slice(0, 10).join("\n  ")}`
         : "aucune observation.") +
-      diagnosticEtiquette
+      diagnosticEtiquette +
+      diagnosticAvatar
   );
 }
 
@@ -802,12 +914,13 @@ function tableauComparatif(mesures, pages) {
   const lignes = [];
   for (const f of FIXTURES) {
     for (const d of DEVICES_PROFIL) {
-      const g = (variante, echelle) => {
-        const m = mesures[`${variante}|${f.id}|${d.width}|${echelle}|entiere`];
+      const g = (varianteCle, echelle) => {
+        const m = mesures[`${varianteCle}|${f.id}|${d.width}|${echelle}|entiere`];
         return m && !m.erreur ? m : null;
       };
       const pur = g("pur", 1);
       const inf = g("informe", 1);
+      const infCol = g("informe+colore", 1);
       const act = g("actuel", 1);
       lignes.push({
         etat: f.id,
@@ -815,6 +928,7 @@ function tableauComparatif(mesures, pages) {
         visible: d.stageVisible,
         purH: pur ? pur.hauteurTotale : null,
         infH: inf ? inf.hauteurTotale : null,
+        infColH: infCol ? infCol.hauteurTotale : null,
         actH: act ? act.hauteurTotale : null,
         actBlocs: act ? act.nbBlocs : null,
         infBlocs: inf ? inf.nbBlocs : null,
@@ -824,14 +938,15 @@ function tableauComparatif(mesures, pages) {
 
   md.push("## Hauteurs à l'échelle 1 (vue « page entière », safe area comprise)");
   md.push("");
-  md.push("| État | Largeur | Profil actuel | vNext pur | vNext informé | Écart informé vs actuel | Blocs actuel → informé |");
-  md.push("|---|---:|---:|---:|---:|---:|---:|");
+  md.push("| État | Largeur | Profil actuel | vNext pur | vNext informé | vNext informé coloré | Écart informé vs actuel | Blocs actuel → informé |");
+  md.push("|---|---:|---:|---:|---:|---:|---:|---:|");
   for (const l of lignes) {
     const ecart = l.actH != null && l.infH != null ? l.infH - l.actH : null;
     const pct = ecart != null && l.actH ? Math.round((ecart / l.actH) * 1000) / 10 : null;
     md.push(
       `| ${l.etat} | ${l.largeur} | ${l.actH != null ? l.actH + " px" : "—"} | ${l.purH != null ? l.purH + " px" : "—"} | ` +
         `${l.infH != null ? l.infH + " px" : "—"} | ` +
+        `${l.infColH != null ? l.infColH + " px" : "—"} | ` +
         `${ecart != null ? (ecart > 0 ? "+" : "") + ecart + " px (" + (pct > 0 ? "+" : "") + pct + " %)" : "—"} | ` +
         `${l.actBlocs != null ? l.actBlocs : "—"} → ${l.infBlocs != null ? l.infBlocs : "—"} |`
     );
@@ -843,23 +958,37 @@ function tableauComparatif(mesures, pages) {
   const moyPct = totalA ? Math.round(((totalI - totalA) / totalA) * 1000) / 10 : 0;
   md.push("");
   md.push(
-    `**Moyenne sur les ${paires.length} comparaisons : ${moyPct} % de hauteur de page (informé vs actuel).** ` +
+    `**Moyenne sur les ${paires.length} comparaisons : ${moyPct} % de hauteur de page (informé sobre vs actuel).** ` +
       `Écrans qui tiennent SANS DÉFILER : ${lignes.filter((l) => l.infH != null && l.infH <= l.visible).length}/${lignes.length} en informé, ` +
+      `${lignes.filter((l) => l.infColH != null && l.infColH <= l.visible).length}/${lignes.length} en informé coloré, ` +
       `${lignes.filter((l) => l.purH != null && l.purH <= l.visible).length}/${lignes.length} en pur, ` +
       `${paires.filter((l) => l.actH <= l.visible).length}/${paires.length} pour le Profil actuel.`
   );
 
+  // Le cout du mode colore (decision D7), etat par etat a 375 px.
+  const lignes375 = lignes.filter((l) => l.largeur === SCALE_WIDTH && l.infH != null && l.infColH != null);
+  if (lignes375.length) {
+    const deltas = lignes375.map((l) => l.infColH - l.infH);
+    const dMin = Math.min(...deltas);
+    const dMax = Math.max(...deltas);
+    md.push("");
+    md.push(
+      `**Coût du mode coloré (D7), informé à 375 px : de +${dMin} à +${dMax} px de hauteur de page** ` +
+        `(${lignes375.map((l) => `${l.etat} +${l.infColH - l.infH}`).join(" · ")}).`
+    );
+  }
+
   md.push("");
   md.push("## Texte ×1,3 (375 px, vue « page entière »)");
   md.push("");
-  md.push("| État | Profil actuel ×1,3 | vNext pur ×1,3 | vNext informé ×1,3 |");
-  md.push("|---|---:|---:|---:|");
+  md.push("| État | Profil actuel ×1,3 | vNext pur ×1,3 | vNext informé ×1,3 | vNext informé coloré ×1,3 |");
+  md.push("|---|---:|---:|---:|---:|");
   for (const f of FIXTURES) {
-    const g = (variante) => {
-      const m = mesures[`${variante}|${f.id}|375|${TEXT_SCALE}|entiere`];
+    const g = (varianteCle) => {
+      const m = mesures[`${varianteCle}|${f.id}|375|${TEXT_SCALE}|entiere`];
       return m && !m.erreur ? m.hauteurTotale + " px" : "—";
     };
-    md.push(`| ${f.id} | ${g("actuel")} | ${g("pur")} | ${g("informe")} |`);
+    md.push(`| ${f.id} | ${g("actuel")} | ${g("pur")} | ${g("informe")} | ${g("informe+colore")} |`);
   }
   md.push("");
   md.push(

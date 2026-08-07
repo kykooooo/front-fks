@@ -252,7 +252,13 @@ async function monter({ cle, element, device }) {
 // on cherche le marqueur de racine (`profil-vnext-ecran`) dans le HTML produit.
 // Absent, la page n'est PAS servie : elle est remplacee par une explication.
 // ---------------------------------------------------------------------------
-async function renderProfilVNext(fixture, device, varianteId) {
+/**
+ * @param {?string} accentsId  l'axe « accents » (D7). `null`/`undefined` = ne
+ *   PAS passer la prop : l'ecran applique son defaut (« sobre ») et les pages
+ *   deja validees restent rendues par un sac de props RIGOUREUSEMENT identique
+ *   a celui d'avant l'ajout de cet axe — pas un chemin « equivalent ».
+ */
+async function renderProfilVNext(fixture, device, varianteId, accentsId) {
   const mod = getProfilVNext();
   const vmMod = getViewModelModule();
   const marqueur = getMarqueurEcran();
@@ -304,13 +310,15 @@ async function renderProfilVNext(fixture, device, varianteId) {
 
   // Les props EXACTES du contrat, rien de plus : `vm` (le ViewModel construit),
   // `echelle` laisse a undefined (l'ecran applique son defaut, celui du Home),
-  // `reduceMotion: true` pour le determinisme de la capture.
+  // `reduceMotion: true` pour le determinisme de la capture, et `accents`
+  // UNIQUEMENT quand un accent non-defaut est demande.
   const props = { vm: viewModel, echelle: undefined, reduceMotion: true };
+  if (accentsId != null) props.accents = accentsId;
 
   let rendu;
   try {
     rendu = await monter({
-      cle: `vnext_${varianteId}_${fixture.id}_${device.width}`,
+      cle: `vnext_${varianteId}_${fixture.id}_${device.width}${accentsId ? `_${accentsId}` : ""}`,
       element: React.createElement(mod.Comp, props),
       device,
     });

@@ -122,14 +122,19 @@ export function ProfilVNextIdentite({ identite, accents = ACCENTS_PAR_DEFAUT }: 
   return (
     <CarteSection titre="Identité">
       <View testID={PROFIL_MARQUEURS.identite}>
+        {/*
+          L'avatar a SA PROPRE RANGEE, jamais a cote des lignes : en ligne, ses
+          44 px + le gap ampuptaient la largeur des valeurs et l'objectif de 46
+          caracteres se tronquait a 320 px et en texte agrandi (mesure par le
+          verificateur, controle i). Le cout du mode colore passe en HAUTEUR —
+          visible et mesure — au lieu d'une troncature qui le cache.
+        */}
         {palette.avatarFond != null && palette.avatarTrait != null ? (
           <View style={styles.rangeeAvatar}>
             <AvatarGlyphe fond={palette.avatarFond} trait={palette.avatarTrait} />
-            <View style={styles.colonneApresAvatar}>{lignes}</View>
           </View>
-        ) : (
-          lignes
-        )}
+        ) : null}
+        {lignes}
       </View>
     </CarteSection>
   );
@@ -178,12 +183,8 @@ const creerStyles = (t: EchelleTypo) =>
       overflow: "hidden",
     },
     rangeeAvatar: {
-      flexDirection: "row",
-      gap: espacement.interne,
       alignItems: "flex-start",
-    },
-    colonneApresAvatar: {
-      flex: 1,
+      marginBottom: espacement.serre,
     },
     barreAttente: {
       height: 14,

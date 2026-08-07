@@ -197,6 +197,46 @@ const DECISIONS = [
       "Historique à 591-599 dans l'ordre actuel. Le réordonnancement est un déplacement de " +
       "section dans l'écran (aucun changement de contrat) — montrable en une itération si choisi.",
   },
+  {
+    id: "D7",
+    titre: "Le Profil retrouve-t-il de la couleur ?",
+    question:
+      "Retour du fondateur : l'ancien Profil avait de la vie visuelle (badges, couleurs), mais " +
+      "elle jurait avec le langage des autres écrans. Le refondu sobre est-il trop austère — et " +
+      "si oui, la couleur revient-elle DANS le langage du Home ? Se juge à la bascule " +
+      "« Accents » du visualiseur : mêmes données, mêmes mots, deux habillages.",
+    options: [
+      {
+        id: "sobre",
+        libelle: "Sobre (rendu de référence)",
+        consequences:
+          "La couleur ne vit que dans les marques de section. Zéro risque de patchwork, écran le " +
+          "plus court. Coût : austère à côté de rien — c'est précisément le reproche du fondateur.",
+      },
+      {
+        id: "colore",
+        libelle: "Coloré (famille d'accents du Home)",
+        consequences:
+          "La même information, habillée dans la famille d'accents du Home : avatar dessiné (un " +
+          "glyphe, jamais des initiales), faits en pilules teintées accentSoft, valeurs de rythme " +
+          "accentuées, chevrons accent. Jamais un texte ajouté ni retiré (verrouillé par test), " +
+          "jamais l'orange d'action — il reste réservé à l'unique aplat du Home. Coût : l'avatar " +
+          "grandit la carte identité (~44-56 px estimés, mesure ci-dessous).",
+      },
+    ],
+    recommandation: "colore",
+    cout:
+      "Mesuré par le vérificateur (Chrome headless, page entière, informé à 375 px), APRÈS le " +
+      "correctif de l'avatar : l'avatar en ligne tronquait l'objectif long à 320 px et en " +
+      "texte agrandi (contrôle i) — il a donc SA PROPRE RANGÉE, le coût passe en hauteur, " +
+      "visible et mesuré : de +24 à +76 px selon l'état (joueur-complet +76, compte-neuf +60, " +
+      "profil-partiel +68, chargement +24, propriétaire-club +76, sans-cycle +68, stress +76). " +
+      "Zéro troncature sur les états produit ; contrastes des pilules 6,18:1 et 5,22:1 " +
+      "(seuil 4,5). Attention au couplage avec D6 : à 320 px en coloré, cette hauteur en plus " +
+      "pousse les TROIS usages réels sous la ligne de flottaison (553-651 px pour 519) — si " +
+      "« coloré » est retenu, la réponse de D6 (rythme après les contrôles) devient d'autant " +
+      "plus importante.",
+  },
 ];
 
 module.exports = { DECISIONS };

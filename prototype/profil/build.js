@@ -11,6 +11,7 @@
 //   app.css             la feuille generee par react-native-web (echelle 1)
 //   app-x13.css         la meme, tailles de texte multipliees par 1,3
 //   pages/vnext/…       le Profil vNext, 7 etats x 2 variantes (pur / informe)
+//                       x 2 accents (sobre / colore, suffixe _colore)
 //                       x 3 largeurs x 2 vues, + les x1,3 en 375
 //   pages/actuel/…      le Profil de production, 7 etats x 3 largeurs x 2 vues,
 //                       + les x1,3 en 375
@@ -56,6 +57,24 @@ const VARIANTES = vmMod.ok
     ];
 const VARIANTE_PAR_DEFAUT = vmMod.ok ? vmMod.mod.PROFIL_VARIANTE_PAR_DEFAUT : "informe";
 const SEUILS = vmMod.ok ? vmMod.mod.PROFIL_VNEXT_SEUILS : [];
+
+// ---------------------------------------------------------------------------
+// L'axe « accents » (decision D7) : sobre / colore.
+// ---------------------------------------------------------------------------
+// La liste vient du PRODUIT (`ACCENTS_A_COMPARER`), jamais recopiee ici. Si le
+// module est illisible, seul le rendu par defaut est genere : la bascule perd
+// l'axe, elle n'invente pas de reglages — et le manifeste le dit.
+// ---------------------------------------------------------------------------
+let accentsMod = null;
+try {
+  accentsMod = require(path.join(APP_ROOT, "components/profilVNext/profilVNextAccents.ts"));
+} catch (err) {
+  console.warn("[harnais] axe accents illisible :", err.message);
+}
+const ACCENTS = accentsMod ? Array.from(accentsMod.ACCENTS_A_COMPARER) : [];
+const ACCENTS_PAR_DEFAUT = accentsMod ? accentsMod.ACCENTS_PAR_DEFAUT : "sobre";
+/** Les accents NON par defaut : chacun produit un lot de pages suffixees. */
+const ACCENTS_SUPPLEMENTAIRES = ACCENTS.filter((a) => a.id !== ACCENTS_PAR_DEFAUT);
 
 // ---------------------------------------------------------------------------
 // Largeurs : le 768 du Home est retire — le Profil se juge sur telephone.
@@ -119,16 +138,18 @@ const VERSION_RESSOURCES = empreinteDesSources();
 /**
  * Ecrit les pages d'un rendu reussi : 2 vues a l'echelle 1, plus les 2 vues
  * x1,3 quand la largeur est celle de la comparaison de texte (375).
- * Nommage : <etat>_<variante>_<largeur>_<vue>[_x13].html — la variante du
- * Profil actuel est "actuel" et son dossier n'a pas de segment de variante.
+ * Nommage : <etat>_<variante>_<largeur>_<vue>[_colore][_x13].html — la variante
+ * du Profil actuel est "actuel" et son dossier n'a pas de segment de variante.
+ * `suffixeNom` (ex. "_colore") : VIDE pour l'accent par defaut — les pages deja
+ * validees gardent EXACTEMENT leur nom, rien ne bouge.
  */
-function ecrirePages({ dossier, variante, segments, etatId, etatTitre, etatResume, device, html, ecart }) {
+function ecrirePages({ dossier, variante, segments, etatId, etatTitre, etatResume, device, html, ecart, suffixeNom }) {
   const pages = {};
   const echelles = device.width === SCALE_WIDTH ? [1, TEXT_SCALE] : [1];
   for (const echelle of echelles) {
     for (const vue of ["visible", "entiere"]) {
       const suffixe = echelle === 1 ? "" : "_x13";
-      const rel = `pages/${dossier}/${segments.join("_")}_${device.width}_${vue}${suffixe}.html`;
+      const rel = `pages/${dossier}/${segments.join("_")}_${device.width}_${vue}${suffixeNom || ""}${suffixe}.html`;
       const contenu = pageEcran({
         variante,
         etatId,
@@ -148,13 +169,13 @@ function ecrirePages({ dossier, variante, segments, etatId, etatTitre, etatResum
 }
 
 /** Ecrit les memes fichiers, mais en page d'explication : on ne sert jamais un ecran vide. */
-function ecrirePagesErreur({ dossier, variante, segments, etatId, etatTitre, device, indisponible, viewModel, titreVm, noteVm }) {
+function ecrirePagesErreur({ dossier, variante, segments, etatId, etatTitre, device, indisponible, viewModel, titreVm, noteVm, suffixeNom }) {
   const pages = {};
   const echelles = device.width === SCALE_WIDTH ? [1, TEXT_SCALE] : [1];
   for (const echelle of echelles) {
     for (const vue of ["visible", "entiere"]) {
       const suffixe = echelle === 1 ? "" : "_x13";
-      const rel = `pages/${dossier}/${segments.join("_")}_${device.width}_${vue}${suffixe}.html`;
+      const rel = `pages/${dossier}/${segments.join("_")}_${device.width}_${vue}${suffixeNom || ""}${suffixe}.html`;
       const contenu = pageErreur({
         variante,
         etatId,
@@ -216,6 +237,13 @@ async function main() {
         "d'ecran utilise la valeur de repli « profil-vnext-ecran »."
     );
   }
+  if (!accentsMod) {
+    rapport.alertes.push(
+      "AXE ACCENTS INDISPONIBLE — components/profilVNext/profilVNextAccents.ts n'a pas pu etre " +
+        "lu. Seul le rendu par defaut (sobre) est genere : la bascule « Accents » n'aura qu'un " +
+        "seul choix, et la decision D7 ne peut pas se juger a l'ecran."
+    );
+  }
   if (PARTIEL) {
     rapport.alertes.push(
       `GENERATION PARTIELLE — ${FIXTURES.length} etat(s) sur ${TOUTES_LES_FIXTURES.length}, ` +
@@ -245,6 +273,9 @@ async function main() {
 
     for (const device of DEVICES_ACTIFS) {
       // --- Profil vNext, une passe par variante -----------------------------
+      // L'accent PAR DEFAUT (sobre) passe toujours EN PREMIER, sans prop
+      // `accents` : les pages deja validees gardent leur nom ET leur chemin de
+      // rendu exacts. Les accents supplementaires suivent, suffixes.
       for (const v of VARIANTES) {
         const bloc = entree.vnext[v.id];
         const rv = await render.renderProfilVNext(fixture, device, v.id);
@@ -290,6 +321,49 @@ async function main() {
           if (device.width === SCALE_WIDTH) bloc.sonde = rv.sonde;
         }
         process.stdout.write(".");
+
+        // --- les accents supplementaires (D7 : « colore ») ------------------
+        for (const acc of ACCENTS_SUPPLEMENTAIRES) {
+          bloc.pagesAccents = bloc.pagesAccents || {};
+          bloc.pagesAccents[acc.id] = bloc.pagesAccents[acc.id] || {};
+          const ra2 = await render.renderProfilVNext(fixture, device, v.id, acc.id);
+          if (ra2.indisponible) {
+            Object.assign(
+              bloc.pagesAccents[acc.id],
+              ecrirePagesErreur({
+                dossier: "vnext",
+                variante: v.id,
+                segments: [fixture.id, v.id],
+                etatId: fixture.id,
+                etatTitre: `${fixture.titre} — ${v.libelle} — accents ${acc.libelle}`,
+                device,
+                indisponible: ra2.indisponible,
+                viewModel: ra2.viewModel,
+                suffixeNom: `_${acc.id}`,
+              })
+            );
+            rapport.alertes.push(
+              `${fixture.id}/${v.id}/${acc.id}@${device.width} : rendu accents indisponible — ${ra2.indisponible.titre}`
+            );
+          } else {
+            Object.assign(
+              bloc.pagesAccents[acc.id],
+              ecrirePages({
+                dossier: "vnext",
+                variante: v.id,
+                segments: [fixture.id, v.id],
+                etatId: fixture.id,
+                etatTitre: `${fixture.titre} — ${v.libelle} — accents ${acc.libelle}`,
+                etatResume: fixture.description,
+                device,
+                html: ra2.html,
+                ecart: null,
+                suffixeNom: `_${acc.id}`,
+              })
+            );
+          }
+          process.stdout.write("+");
+        }
       }
 
       // --- Profil actuel ----------------------------------------------------
@@ -382,6 +456,11 @@ async function main() {
     variantes: VARIANTES,
     varianteParDefaut: VARIANTE_PAR_DEFAUT,
     vues: ["visible", "entiere"],
+    // L'axe accents (D7) : libelles et defaut lus dans le PRODUIT
+    // (profilVNextAccents.ts) — jamais recopies ici.
+    accents: ACCENTS,
+    accentsLibelles: accentsMod ? accentsMod.ACCENTS_LIBELLES : {},
+    accentsParDefaut: ACCENTS_PAR_DEFAUT,
     decisions: DECISIONS,
     seuils: SEUILS,
     seuilsNote:
