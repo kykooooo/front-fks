@@ -71,8 +71,8 @@ function viewerHtml(version) {
 function viewerCss() {
   return `/* Habillage du visualiseur — volontairement TRES different du produit. */
 :root {
-  --fond: #0C1119; --fond-2: #131B27; --fond-3: #1A2432; --bord: #26344A;
-  --texte: #DCE6F4; --texte-2: #8DA0BC; --actif: #4C8DFF; --alerte: #7A1F1F;
+  --fond: #0B0F17; --fond-2: #111826; --fond-3: #192336; --bord: #263349;
+  --texte: #E2EAF6; --texte-2: #93A5C0; --actif: #4C8DFF; --alerte: #8C1D1D;
   --avert: #B4530C; --ok: #2E7D5B; --reco: #C9A227;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --sans: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -83,13 +83,13 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 
 /* --- bandeau permanent --------------------------------------------------- */
 #bandeau {
-  flex: 0 0 auto; background: var(--alerte); color: #fff;
-  padding: 7px 14px; font-family: var(--mono); font-size: 11.5px; letter-spacing: .4px;
+  flex: 0 0 auto; background: linear-gradient(90deg, var(--alerte), #6E1717); color: #fff;
+  padding: 6px 14px; font-family: var(--mono); font-size: 11px; letter-spacing: .4px;
   display: flex; align-items: center; gap: 9px;
 }
 #bandeau .pastille {
   background: #fff; color: var(--alerte); font-weight: 800; text-transform: uppercase;
-  padding: 2px 6px; border-radius: 3px; font-size: 10px;
+  padding: 2px 6px; border-radius: 999px; font-size: 9.5px;
 }
 #bandeau .sep { opacity: .5; }
 #bandeau .droite { margin-left: auto; opacity: .8; font-size: 10.5px; }
@@ -97,21 +97,21 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 /* --- barre d'outils ------------------------------------------------------ */
 #barre {
   flex: 0 0 auto; background: var(--fond-2); border-bottom: 1px solid var(--bord);
-  padding: 8px 14px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  padding: 9px 16px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
 }
-#barre .grp { display: flex; align-items: center; gap: 8px; }
+#barre .grp { display: flex; align-items: center; gap: 9px; }
 #barre .grp.droite { margin-left: auto; }
 #barre .lab {
   font-family: var(--mono); font-size: 9.5px; letter-spacing: 1.1px; text-transform: uppercase;
   color: var(--texte-2);
 }
-.seg { display: flex; border: 1px solid var(--bord); border-radius: 6px; overflow: hidden; }
+.seg { display: flex; background: #0D1420; border: 1px solid var(--bord); border-radius: 999px; padding: 2px; gap: 2px; }
 .seg button {
-  background: var(--fond-3); color: var(--texte-2); border: 0; border-right: 1px solid var(--bord);
-  padding: 6px 11px; font-family: var(--mono); font-size: 11px; cursor: pointer; white-space: nowrap;
+  background: transparent; color: var(--texte-2); border: 0; border-radius: 999px;
+  padding: 5px 12px; font-family: var(--mono); font-size: 11px; cursor: pointer; white-space: nowrap;
+  transition: background .12s ease, color .12s ease;
 }
-.seg button:last-child { border-right: 0; }
-.seg button:hover:not(:disabled) { background: #223047; color: var(--texte); }
+.seg button:hover:not(:disabled):not(.on) { background: #1C2839; color: var(--texte); }
 .seg button.on { background: var(--actif); color: #06101F; font-weight: 700; }
 .seg button:disabled { opacity: .35; cursor: not-allowed; }
 
@@ -119,40 +119,68 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 #corps { flex: 1 1 auto; display: flex; min-height: 0; }
 
 #rail {
-  flex: 0 0 262px; background: var(--fond-2); border-right: 1px solid var(--bord);
+  flex: 0 0 258px; background: var(--fond-2); border-right: 1px solid var(--bord);
   overflow-y: auto; padding: 12px 0 40px;
 }
-#rail .entete { padding: 4px 14px 8px; font-family: var(--mono); font-size: 9.5px;
+#rail .entete { padding: 4px 16px 8px; font-family: var(--mono); font-size: 9.5px;
   letter-spacing: 1.2px; text-transform: uppercase; color: var(--actif); }
 #rail button.etat {
-  display: block; width: 100%; text-align: left; background: transparent; border: 0;
-  border-left: 3px solid transparent; color: var(--texte); padding: 9px 14px 9px 11px;
+  display: block; width: calc(100% - 12px); margin: 1px 6px; text-align: left; background: transparent;
+  border: 0; border-radius: 8px; color: var(--texte); padding: 8px 10px;
   cursor: pointer; font-size: 12.5px; line-height: 1.35;
+  transition: background .12s ease;
 }
 #rail button.etat:hover { background: var(--fond-3); }
-#rail button.etat.on { background: var(--fond-3); border-left-color: var(--actif); font-weight: 700; }
-#rail button.etat .sous { display: block; font-family: var(--mono); font-size: 10px; color: var(--texte-2); margin-top: 2px; font-weight: 400; }
+#rail button.etat.on { background: var(--fond-3); box-shadow: inset 3px 0 0 var(--actif); font-weight: 700; }
+#rail button.etat .sous { display: block; font-family: var(--mono); font-size: 9.5px; color: var(--texte-2); margin-top: 2px; font-weight: 400; }
 
-#scene { flex: 1 1 auto; overflow: auto; padding: 16px 20px 60px; min-width: 0; }
-#scene-titre { font-size: 17px; font-weight: 700; }
+#scene {
+  flex: 1 1 auto; overflow: auto; padding: 14px 20px 30px; min-width: 0;
+  background: radial-gradient(1100px 500px at 50% -80px, #141D2E 0%, var(--fond) 60%);
+}
+#scene-titre { font-size: 16px; font-weight: 700; }
 #scene-resume { font-size: 12.5px; color: var(--texte-2); margin-top: 3px; line-height: 1.5; max-width: 900px; }
 #scene-alertes { margin-top: 9px; max-width: 900px; }
 #scene-alertes .alerte {
-  background: #3A1A16; border: 1px solid #6B2B22; color: #FFD8CF; border-radius: 6px;
+  background: #3A1A16; border: 1px solid #6B2B22; color: #FFD8CF; border-radius: 8px;
   padding: 8px 11px; font-size: 12px; line-height: 1.5; margin-bottom: 6px;
 }
-#cadres { display: flex; gap: 26px; align-items: flex-start; margin-top: 14px; flex-wrap: wrap; }
+#cadres { display: flex; gap: 34px; align-items: flex-start; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
 .cadre { flex: 0 0 auto; }
 .cadre .titre-cadre {
   font-family: var(--mono); font-size: 10.5px; letter-spacing: .8px; text-transform: uppercase;
-  color: var(--texte-2); margin-bottom: 6px;
+  color: var(--texte-2); margin-bottom: 8px; text-align: center;
 }
 .cadre .titre-cadre b { color: var(--texte); }
-.cadre iframe { border: 1px solid var(--bord); border-radius: 4px; background: #F5F7FA; display: block; }
-.cadre .sous-cadre { font-family: var(--mono); font-size: 10px; color: var(--texte-2); margin-top: 6px; max-width: 420px; line-height: 1.55; }
+
+/* Le chassis du telephone : lunette sombre arrondie, encoche, ombre portee.
+   L'iframe garde la TAILLE LOGIQUE exacte (largeur d'appareil) ; c'est le
+   chassis entier qui est mis a l'echelle pour tenir dans la fenetre —
+   .fit recoit un transform scale() calcule par le script, et le conteneur
+   .viewport reserve exactement la place a l'echelle. */
+.cadre .viewport { position: relative; overflow: hidden; }
+/* inline-block : le chassis prend sa taille INTRINSEQUE (celle de l'iframe),
+   jamais celle du conteneur — sinon la mesure d'echelle se mord la queue
+   (viewport reduit -> chassis reduit -> echelle fausse). */
+.cadre .fit { transform-origin: top left; display: inline-block; }
+.cadre .shell {
+  position: relative; display: inline-block; padding: 12px; background: #05070C;
+  border: 1px solid #2A3548; border-radius: 40px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 4px 14px rgba(0,0,0,.4);
+}
+.cadre .shell .encoche {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  width: 32%; height: 13px; background: #05070C; z-index: 5;
+  border-radius: 0 0 12px 12px; pointer-events: none;
+}
+.cadre iframe { border: 0; border-radius: 28px; background: #F5F7FA; display: block; }
+.cadre .sous-cadre {
+  font-family: var(--mono); font-size: 10px; color: var(--texte-2); margin-top: 10px;
+  max-width: 430px; line-height: 1.55; text-align: center; margin-left: auto; margin-right: auto;
+}
 .cadre .mesure { color: var(--texte); }
 .cadre-absent {
-  border: 1px dashed #6B2B22; border-radius: 6px; background: #1C1210; color: #FFD8CF;
+  border: 1px dashed #6B2B22; border-radius: 10px; background: #1C1210; color: #FFD8CF;
   padding: 16px 14px; font-size: 12px; line-height: 1.6;
 }
 .cadre-absent b { display: block; color: #FF9E8C; margin-bottom: 6px; }
@@ -346,12 +374,15 @@ function viewerJs() {
           Math.max(0, m.contenu - (d ? d.stageVisible : 0)) + " px</span>"
         : "mesure en cours…";
     } else {
-      mesureTxt = "hauteur de contenu : passe en vue « page entière » (touche e) pour la mesure";
+      mesureTxt = "ce qui touche la ligne rouge continue sous la barre d'onglets : sur le téléphone, ça défile. " +
+        "Vue « page entière » (touche e) pour tout voir et mesurer";
     }
     return '<div class="cadre"><a href="' + esc(rel) + '" target="_blank" style="text-decoration:none">' + t + "</a>" +
+      '<div class="viewport"><div class="fit"><div class="shell"><div class="encoche"></div>' +
       '<iframe src="' + esc(rel) + '" data-rel="' + esc(rel) + '" width="' + S.w +
       '" height="' + (d ? d.screenHeight : 800) + '" scrolling="no" title="' + esc(nomVariante(varianteId)) + '"></iframe>' +
-      '<div class="sous-cadre">' + mesureTxt + (d ? "<br>" + esc(d.calcul) : "") + "</div></div>";
+      "</div></div></div>" +
+      '<div class="sous-cadre"><span class="echelle-txt"></span>' + mesureTxt + (d ? "<br>" + esc(d.calcul) : "") + "</div></div>";
   }
 
   function brancherMesures() {
@@ -361,8 +392,14 @@ function viewerJs() {
           var doc = f.contentDocument;
           var stage = doc.querySelector("[data-fks-stage]");
           var contenu = stage ? stage.scrollHeight : doc.body.scrollHeight;
-          f.style.height = doc.body.scrollHeight + "px";
+          // L'iframe s'arrete au CADRE du telephone (le stage) : le bloc
+          // d'identification sous le cadre appartient a la page ouverte seule,
+          // pas au visualiseur (le panneau « Cet etat » porte deja tout ca).
+          if (S.vue === "entiere") {
+            f.style.height = (stage ? stage.offsetHeight : doc.body.scrollHeight) + "px";
+          }
           mesures[f.getAttribute("data-rel")] = { contenu: contenu };
+          ajusterEchelles();
           rendreSousCadres();
           if (S.onglet === "etat") rendrePanneau();
         } catch (_) { /* iframe inaccessible : on n'affiche pas de fausse mesure */ }
@@ -370,8 +407,49 @@ function viewerJs() {
     });
   }
 
+  // --- mise a l'echelle : TOUT le telephone tient dans la fenetre -----------
+  // En vue « zone visible » (la vue de jugement), le chassis entier est reduit
+  // pour tenir dans la scene : plus jamais un bas d'ecran coupe par la fenetre.
+  // En vue « page entiere » (exploration), on ne reduit que si la LARGEUR
+  // deborde — la hauteur se parcourt au defilement, c'est son role.
+  function ajusterEchelles() {
+    var scene = $("scene");
+    var cadres = document.querySelectorAll("#cadres .cadre");
+    if (!cadres.length) return;
+    // Hauteur disponible pour le chassis : la scene moins l'en-tete de scene
+    // (titre + resume + alertes) et le titre/sous-titre du cadre (~110 px).
+    var enTete = $("scene-titre").offsetHeight + $("scene-resume").offsetHeight +
+      $("scene-alertes").offsetHeight;
+    var dispoH = Math.max(260, scene.clientHeight - enTete - 168);
+    var nb = cadres.length;
+    var dispoW = Math.max(300, (scene.clientWidth - 40 - (nb - 1) * 34) / nb);
+    Array.prototype.forEach.call(cadres, function (c) {
+      var fit = c.querySelector(".fit");
+      var shell = c.querySelector(".shell");
+      var viewport = c.querySelector(".viewport");
+      var echelleTxt = c.querySelector(".echelle-txt");
+      if (!fit || !shell || !viewport) return;
+      var w = shell.offsetWidth;
+      var h = shell.offsetHeight;
+      if (!w || !h) return;
+      var s = Math.min(1, dispoW / w);
+      if (S.vue === "visible") s = Math.min(s, dispoH / h);
+      s = Math.max(s, 0.3);
+      fit.style.transform = "scale(" + s + ")";
+      viewport.style.width = Math.round(w * s) + "px";
+      viewport.style.height = Math.round(h * s) + "px";
+      if (echelleTxt) {
+        echelleTxt.textContent = s < 0.995
+          ? "affiché à " + Math.round(s * 100) + " % — les mesures restent en pixels logiques · "
+          : "";
+      }
+    });
+  }
+  window.addEventListener("resize", ajusterEchelles);
+
   function rendreSousCadres() {
-    // Re-rend uniquement les textes de mesure, sans recharger les iframes.
+    // Re-rend uniquement les textes de mesure, sans recharger les iframes ni
+    // perdre l'indication d'echelle (reposee ensuite par ajusterEchelles).
     var d = deviceDe(S.w);
     Array.prototype.forEach.call(document.querySelectorAll("#cadres .cadre"), function (c) {
       var f = c.querySelector("iframe");
@@ -379,11 +457,12 @@ function viewerJs() {
       if (!f || !sous) return;
       var m = mesures[f.getAttribute("data-rel")];
       if (S.vue === "entiere" && m) {
-        sous.innerHTML = '<span class="mesure">hauteur de page mesurée : ' + m.contenu +
+        sous.innerHTML = '<span class="echelle-txt"></span><span class="mesure">hauteur de page mesurée : ' + m.contenu +
           " px · sous la ligne de flottaison : " + Math.max(0, m.contenu - (d ? d.stageVisible : 0)) +
           " px</span>" + (d ? "<br>" + esc(d.calcul) : "");
       }
     });
+    ajusterEchelles();
   }
 
   function rendreScene() {
@@ -402,6 +481,9 @@ function viewerJs() {
     }
     $("cadres").innerHTML = html;
     brancherMesures();
+    // Premier calage avant le chargement des iframes (le chassis a deja sa
+    // taille), puis recalage a chaque « load » et a chaque redimensionnement.
+    ajusterEchelles();
   }
 
   // --- panneaux ------------------------------------------------------------
