@@ -156,6 +156,47 @@ const DECISIONS = [
       "Pas de mesure chiffrée : le coût du bloc compte est une section de plus et une double " +
       "vérité de compte — le genre de redite que la refonte supprime.",
   },
+  {
+    id: "D6",
+    titre: "À 320 px, deux des trois usages réels passent sous la ligne de flottaison",
+    question:
+      "Mesure du vérificateur (contrôle e) : sur un iPhone SE (320 px, 499 px lisibles), " +
+      "« Réglages » commence à ~546 px et « Mes séances passées » à ~591 px — seul « Modifier " +
+      "mon profil » tient au-dessus de la flottaison. À 375 et 390 px, les trois passent " +
+      "partout. Que fait-on du petit écran ?",
+    options: [
+      {
+        id: "accepter-le-defilement",
+        libelle: "Accepter le défilement à 320 px",
+        consequences:
+          "L'écran garde une seule forme à toutes les largeurs (la leçon du Home : pas d'état " +
+          "spécial fragile). Sur SE, un demi-geste de pouce révèle les contrôles — l'écran " +
+          "entier fait ~820-880 px, soit à peine 1,7 hauteur d'écran.",
+      },
+      {
+        id: "rythme-apres-controles",
+        libelle: "Passer « Mon rythme » sous les contrôles",
+        consequences:
+          "Ordre : identité → contrôles → rythme. L'identité garde l'ouverture (c'est le sens " +
+          "de l'écran), les trois usages remontent d'~130 px et passent au-dessus de la " +
+          "flottaison à 320 px aussi. Une seule forme, tous formats. Coût : le rythme, donnée " +
+          "de même nature que l'identité, s'en retrouve séparé.",
+      },
+      {
+        id: "controles-en-tete",
+        libelle: "Les contrôles avant tout",
+        consequences:
+          "La lecture la plus littérale du cap (« les trois usages réels en haut ») : la liste " +
+          "de contrôles ouvre l'écran, l'identité suit. Coût : l'écran s'ouvre sur des boutons, " +
+          "pas sur le joueur — le Profil perd son ouverture d'identité.",
+      },
+    ],
+    recommandation: "rythme-apres-controles",
+    cout:
+      "Chiffres du vérificateur : flottaison 519 px à 320 (499 lisibles), Réglages à 546-554, " +
+      "Historique à 591-599 dans l'ordre actuel. Le réordonnancement est un déplacement de " +
+      "section dans l'écran (aucun changement de contrat) — montrable en une itération si choisi.",
+  },
 ];
 
 module.exports = { DECISIONS };

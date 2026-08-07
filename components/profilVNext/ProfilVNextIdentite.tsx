@@ -101,6 +101,12 @@ const creerStyles = (t: EchelleTypo) =>
     label: {
       ...t.corps,
       color: couleurs.texteSecondaire,
+      // L'etiquette ne cede JAMAIS sa place : c'est la valeur (bornee a 2
+      // lignes) qui se replie. Sans ce 0 explicite, react-native-web laisse le
+      // defaut flex-shrink:1 du web sur Text et « Objectif » se fait ecraser
+      // par une valeur longue — mesure par le verificateur (controle i), pas
+      // reproduit par Yoga sur telephone (defaut 0) : on aligne les deux mondes.
+      flexShrink: 0,
     },
     valeur: {
       ...t.emphaseCorps,

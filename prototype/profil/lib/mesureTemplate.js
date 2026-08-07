@@ -1,4 +1,4 @@
-// prototype/home-vnext/lib/mesureTemplate.js
+// prototype/profil/lib/mesureTemplate.js
 // =============================================================================
 // LA PAGE QUI MESURE — celle qu'un vrai navigateur execute
 // =============================================================================
@@ -134,6 +134,24 @@ function mesurerUnePage(doc, cible) {
 
   // ---- marqueurs ------------------------------------------------------------
   const marqueur = (nom) => vue.querySelectorAll('[data-testid="' + nom + '"]').length;
+
+  // ---- positions des marqueurs du PROFIL (ajout profil, purement additif) ---
+  // Chaque element dont le data-testid commence par "profil-vnext-" est releve
+  // avec sa position verticale par rapport au HAUT PHYSIQUE de l'ecran (y = 0,
+  // la ou commence .device). Sert au controle « les 3 usages reels au-dessus de
+  // la ligne de flottaison » du verificateur. Sur une page du Profil actuel, la
+  // liste est simplement vide : aucun champ existant ne change.
+  const positionsMarqueurs = Array.from(
+    vue.querySelectorAll('[data-testid^="profil-vnext-"]')
+  ).map(function (el) {
+    const r = el.getBoundingClientRect();
+    return {
+      marqueur: el.getAttribute("data-testid"),
+      top: Math.round((r.top - rVue.top) * 10) / 10,
+      bas: Math.round((r.bottom - rVue.top) * 10) / 10,
+      hauteur: Math.round(r.height * 10) / 10,
+    };
+  });
 
   // ---- carte progression (VARIANTE 2) ---------------------------------------
   // AJOUT DE LA PASSE D'INTEGRATION. Plusieurs regles portent sur la CARTE et
@@ -388,6 +406,7 @@ function mesurerUnePage(doc, cible) {
       basDernierContenu === null ? null : Math.round(hauteurTotale - basDernierContenu),
     nbBlocs: blocs.length,
     blocs,
+    positionsMarqueurs,
     marqueurs: {
       actionPrincipale: marqueur("home-vnext-action-principale"),
       lienSecondaire: marqueur("home-vnext-lien-secondaire"),
