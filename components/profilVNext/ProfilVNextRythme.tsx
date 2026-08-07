@@ -20,11 +20,13 @@ import { stylesParEchelle, useStylesEchelle } from "../homeVNext/homeVNextPresen
 import type { EchelleTypo } from "../homeVNext/homeVNextTypo";
 import { couleurs, espacement } from "../homeVNext/homeVNextTokens";
 import { PROFIL_MARQUEURS } from "./profilVNextMarqueurs";
+import { ACCENTS_PAR_DEFAUT, paletteAccents, type AccentsId } from "./profilVNextAccents";
 
-type Props = { rythme: RythmeBlock };
+type Props = { rythme: RythmeBlock; accents?: AccentsId };
 
-export function ProfilVNextRythme({ rythme }: Props) {
+export function ProfilVNextRythme({ rythme, accents = ACCENTS_PAR_DEFAUT }: Props) {
   const styles = useStylesEchelle(STYLES);
+  const palette = paletteAccents(accents);
 
   const colonnes: ReadonlyArray<{ cle: string; label: string; valeur: number | null }> = [
     { cle: "fks", label: "Séances FKS / sem", valeur: rythme.fksParSemaine },
@@ -38,7 +40,9 @@ export function ProfilVNextRythme({ rythme }: Props) {
         {colonnes.map((c) => (
           <View key={c.cle} style={styles.colonne}>
             {c.valeur != null ? (
-              <Text style={styles.valeur}>{c.valeur}</Text>
+              <Text style={[styles.valeur, palette.valeur != null && { color: palette.valeur }]}>
+                {c.valeur}
+              </Text>
             ) : (
               <Text style={styles.aDefinir} testID={PROFIL_MARQUEURS.aDefinir}>
                 À définir

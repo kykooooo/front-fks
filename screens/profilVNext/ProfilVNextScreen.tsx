@@ -36,6 +36,7 @@ import {
 } from "../../components/homeVNext/homeVNextPresentation";
 import { plafondDuRole, type EchelleTypo, type EchelleTypoId } from "../../components/homeVNext/homeVNextTypo";
 import { couleurs, espacement } from "../../components/homeVNext/homeVNextTokens";
+import { ACCENTS_PAR_DEFAUT, type AccentsId } from "../../components/profilVNext/profilVNextAccents";
 import type { CibleControle, ControleLigne, ProfilVNextViewModel } from "./viewModel";
 
 export type ProfilVNextScreenProps = {
@@ -47,15 +48,26 @@ export type ProfilVNextScreenProps = {
   echelle?: EchelleTypoId;
   /** Surcharge « reduire les animations » — tests et visualiseur uniquement. */
   reduceMotion?: boolean;
+  /**
+   * L'axe « accents » (decision D7) : sobre (defaut) ou colore. Une
+   * PRESENTATION — jamais un caractere de texte de plus ou de moins.
+   */
+  accents?: AccentsId;
 };
 
-export function ProfilVNextScreen({ vm, onControle, echelle, reduceMotion }: ProfilVNextScreenProps) {
+export function ProfilVNextScreen({
+  vm,
+  onControle,
+  echelle,
+  reduceMotion,
+  accents = ACCENTS_PAR_DEFAUT,
+}: ProfilVNextScreenProps) {
   // `<Screen>` est la SEULE source de verite de la safe area (regle d'or n° 13).
   // Aucun SafeAreaView, aucun paddingTop magique, aucune StatusBar locale.
   return (
     <Screen scroll contentContainerStyle={styles.contenu}>
       <HomeVNextPresentation echelle={echelle} reduceMotion={reduceMotion}>
-        <Corps vm={vm} onControle={onControle} />
+        <Corps vm={vm} onControle={onControle} accents={accents} />
       </HomeVNextPresentation>
     </Screen>
   );
@@ -68,9 +80,11 @@ export function ProfilVNextScreen({ vm, onControle, echelle, reduceMotion }: Pro
 function Corps({
   vm,
   onControle,
+  accents,
 }: {
   vm: ProfilVNextViewModel;
   onControle?: ProfilVNextScreenProps["onControle"];
+  accents: AccentsId;
 }) {
   const stylesEchelle = useStylesEchelle(STYLES);
   return (
@@ -89,15 +103,15 @@ function Corps({
       </Text>
 
       <View style={styles.section}>
-        <ProfilVNextIdentite identite={vm.identite} />
+        <ProfilVNextIdentite identite={vm.identite} accents={accents} />
       </View>
 
       <View style={styles.section}>
-        <ProfilVNextRythme rythme={vm.rythme} />
+        <ProfilVNextRythme rythme={vm.rythme} accents={accents} />
       </View>
 
       <View style={styles.section}>
-        <ProfilVNextControles controles={vm.controles} onControle={onControle} />
+        <ProfilVNextControles controles={vm.controles} onControle={onControle} accents={accents} />
       </View>
     </View>
   );

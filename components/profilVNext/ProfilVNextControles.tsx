@@ -32,19 +32,28 @@ import {
 import { plafondDuRole, type EchelleTypo } from "../homeVNext/homeVNextTypo";
 import { couleurs, espacement, rayons, TAILLE_TACTILE_MIN } from "../homeVNext/homeVNextTokens";
 import { PROFIL_MARQUEURS } from "./profilVNextMarqueurs";
+import {
+  ACCENTS_PAR_DEFAUT,
+  paletteAccents,
+  type AccentsId,
+  type PaletteAccents,
+} from "./profilVNextAccents";
 
 type Props = {
   controles: ControleLigne[];
   /** Sans callback : aucun effet (tests, fixtures, harnais). */
   onControle?: (cible: CibleControle, id: ControleLigne["id"]) => void;
+  accents?: AccentsId;
 };
 
 function LigneControle({
   ligne,
   onControle,
+  palette,
 }: {
   ligne: ControleLigne;
   onControle?: Props["onControle"];
+  palette: PaletteAccents;
 }) {
   const styles = useStylesEchelle(STYLES);
   const { pression, onPressIn, onPressOut } = usePressionAnimee();
@@ -74,25 +83,35 @@ function LigneControle({
             {ligne.label}
           </Text>
           {ligne.fait != null ? (
-            <Text style={styles.fait} numberOfLines={2} testID={PROFIL_MARQUEURS.fait}>
+            <Text
+              style={[
+                styles.fait,
+                palette.piluleFond != null && styles.faitPilule,
+                palette.piluleFond != null && { backgroundColor: palette.piluleFond },
+                palette.piluleTexte != null && { color: palette.piluleTexte },
+              ]}
+              numberOfLines={2}
+              testID={PROFIL_MARQUEURS.fait}
+            >
               {ligne.fait.texte}
             </Text>
           ) : null}
         </View>
-        <Chevron color={couleurs.texteSecondaire} size={8} thickness={1.8} />
+        <Chevron color={palette.chevron ?? couleurs.texteSecondaire} size={8} thickness={1.8} />
       </Animated.View>
     </Pressable>
   );
 }
 
-export function ProfilVNextControles({ controles, onControle }: Props) {
+export function ProfilVNextControles({ controles, onControle, accents = ACCENTS_PAR_DEFAUT }: Props) {
   const styles = useStylesEchelle(STYLES);
+  const palette = paletteAccents(accents);
   return (
     <Card variant="surface" style={styles.carte}>
       {controles.map((ligne, i) => (
         <React.Fragment key={ligne.id}>
           {i > 0 ? <Filet /> : null}
-          <LigneControle ligne={ligne} onControle={onControle} />
+          <LigneControle ligne={ligne} onControle={onControle} palette={palette} />
         </React.Fragment>
       ))}
     </Card>
@@ -128,6 +147,16 @@ const creerStyles = (t: EchelleTypo) =>
     fait: {
       ...t.meta,
       color: couleurs.texteSecondaire,
+    },
+    // En mode colore, le fait devient une pilule teintee (famille accent du
+    // Home) — memes mots, jamais un caractere de plus.
+    faitPilule: {
+      alignSelf: "flex-start",
+      paddingHorizontal: 10,
+      paddingVertical: 3,
+      borderRadius: 999,
+      overflow: "hidden",
+      marginTop: 2,
     },
   });
 

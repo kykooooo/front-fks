@@ -24,8 +24,40 @@ import { stylesParEchelle, useStylesEchelle } from "../homeVNext/homeVNextPresen
 import type { EchelleTypo } from "../homeVNext/homeVNextTypo";
 import { couleurs, espacement } from "../homeVNext/homeVNextTokens";
 import { PROFIL_MARQUEURS } from "./profilVNextMarqueurs";
+import { ACCENTS_PAR_DEFAUT, paletteAccents, type AccentsId } from "./profilVNextAccents";
 
-type Props = { identite: IdentiteBlock };
+type Props = { identite: IdentiteBlock; accents?: AccentsId };
+
+/**
+ * Avatar DESSINE (tete + epaules en bordures), jamais des initiales : une
+ * lettre serait un texte que le mode sobre n'a pas, et les accents n'ont pas
+ * le droit d'ajouter un caractere (regle du module profilVNextAccents).
+ */
+function AvatarGlyphe({ fond, trait }: { fond: string; trait: string }) {
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={[stylesAvatar.disque, { backgroundColor: fond }]}
+    >
+      <View style={[stylesAvatar.tete, { backgroundColor: trait }]} />
+      <View style={[stylesAvatar.epaules, { backgroundColor: trait }]} />
+    </View>
+  );
+}
+
+const stylesAvatar = StyleSheet.create({
+  disque: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  tete: { width: 12, height: 12, borderRadius: 6, marginBottom: 2 },
+  epaules: { width: 22, height: 12, borderTopLeftRadius: 11, borderTopRightRadius: 11, marginBottom: -6 },
+});
 
 const LIGNES: ReadonlyArray<{
   cle: "prenom" | "poste" | "niveau" | "pied" | "objectif";
@@ -38,8 +70,9 @@ const LIGNES: ReadonlyArray<{
   { cle: "objectif", label: "Objectif" },
 ];
 
-export function ProfilVNextIdentite({ identite }: Props) {
+export function ProfilVNextIdentite({ identite, accents = ACCENTS_PAR_DEFAUT }: Props) {
   const styles = useStylesEchelle(STYLES);
+  const palette = paletteAccents(accents);
 
   if (identite.kind === "chargement") {
     return (
@@ -56,31 +89,47 @@ export function ProfilVNextIdentite({ identite }: Props) {
     );
   }
 
+  const lignes = LIGNES.map(({ cle, label }, i) => {
+    const valeur = identite[cle];
+    return (
+      <React.Fragment key={cle}>
+        {i > 0 ? <Filet /> : null}
+        <View style={styles.ligne}>
+          <Text style={styles.label} numberOfLines={1}>
+            {label}
+          </Text>
+          {valeur != null ? (
+            <Text style={styles.valeur} numberOfLines={2}>
+              {valeur}
+            </Text>
+          ) : (
+            <Text
+              style={[
+                styles.aDefinir,
+                palette.aDefinirFond != null && styles.aDefinirPilule,
+                palette.aDefinirFond != null && { backgroundColor: palette.aDefinirFond },
+              ]}
+              testID={PROFIL_MARQUEURS.aDefinir}
+            >
+              À définir
+            </Text>
+          )}
+        </View>
+      </React.Fragment>
+    );
+  });
+
   return (
     <CarteSection titre="Identité">
       <View testID={PROFIL_MARQUEURS.identite}>
-        {LIGNES.map(({ cle, label }, i) => {
-          const valeur = identite[cle];
-          return (
-            <React.Fragment key={cle}>
-              {i > 0 ? <Filet /> : null}
-              <View style={styles.ligne}>
-                <Text style={styles.label} numberOfLines={1}>
-                  {label}
-                </Text>
-                {valeur != null ? (
-                  <Text style={styles.valeur} numberOfLines={2}>
-                    {valeur}
-                  </Text>
-                ) : (
-                  <Text style={styles.aDefinir} testID={PROFIL_MARQUEURS.aDefinir}>
-                    À définir
-                  </Text>
-                )}
-              </View>
-            </React.Fragment>
-          );
-        })}
+        {palette.avatarFond != null && palette.avatarTrait != null ? (
+          <View style={styles.rangeeAvatar}>
+            <AvatarGlyphe fond={palette.avatarFond} trait={palette.avatarTrait} />
+            <View style={styles.colonneApresAvatar}>{lignes}</View>
+          </View>
+        ) : (
+          lignes
+        )}
       </View>
     </CarteSection>
   );
@@ -118,6 +167,23 @@ const creerStyles = (t: EchelleTypo) =>
       ...t.corps,
       color: couleurs.texteSecondaire,
       fontStyle: "italic",
+    },
+    // En mode colore, « A definir » devient une pilule NEUTRE (fond bordure) :
+    // on invite a completer, on ne celebre pas une absence avec l'accent.
+    aDefinirPilule: {
+      fontStyle: "normal",
+      paddingHorizontal: 10,
+      paddingVertical: 3,
+      borderRadius: 999,
+      overflow: "hidden",
+    },
+    rangeeAvatar: {
+      flexDirection: "row",
+      gap: espacement.interne,
+      alignItems: "flex-start",
+    },
+    colonneApresAvatar: {
+      flex: 1,
     },
     barreAttente: {
       height: 14,
