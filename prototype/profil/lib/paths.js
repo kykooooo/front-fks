@@ -1,15 +1,15 @@
-// prototype/home-vnext/lib/paths.js
-// Racines du harnais. Tout est deduit de __dirname : aucun chemin machine en dur,
-// le harnais suit le worktree ou il est commite.
+// prototype/profil/lib/paths.js
+// Racines du harnais du Profil. Tout est deduit de __dirname : aucun chemin
+// machine en dur, le harnais suit le worktree ou il est commite.
 "use strict";
 
 const path = require("path");
 const os = require("os");
 const fs = require("fs");
 
-/** prototype/home-vnext/lib -> prototype/home-vnext */
+/** prototype/profil/lib -> prototype/profil */
 const HARNESS_ROOT = path.resolve(__dirname, "..");
-/** prototype/home-vnext -> racine du worktree (le depot front-fks) */
+/** prototype/profil -> racine du worktree (le depot front-fks) */
 const APP_ROOT = path.resolve(HARNESS_ROOT, "..", "..");
 /** Dossier de sortie des pages generees. */
 const OUT_ROOT = path.join(HARNESS_ROOT, "out");
@@ -21,7 +21,7 @@ const STUBS = path.join(__dirname, "stubs");
  * salir le worktree avec des fichiers generes que `.gitignore` (fichier interdit
  * de modification) ne couvre pas.
  */
-const CACHE_DIR = path.join(os.tmpdir(), "fks-home-vnext-harness-cache");
+const CACHE_DIR = path.join(os.tmpdir(), "fks-profil-harness-cache");
 
 function ensureDirs() {
   for (const dir of [OUT_ROOT, CACHE_DIR]) {

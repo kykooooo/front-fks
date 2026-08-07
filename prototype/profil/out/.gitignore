@@ -1,0 +1,4 @@
+# Contenu genere par prototype/profil/build.js.
+# Ne doit jamais etre commite : il se regenere en une commande.
+*
+!.gitignore

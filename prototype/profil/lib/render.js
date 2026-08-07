@@ -1,11 +1,12 @@
-// prototype/home-vnext/lib/render.js
+// prototype/profil/lib/render.js
 // =============================================================================
-// MOTEUR DE RENDU — UN SEUL PIPELINE POUR LES DEUX VARIANTES
+// MOTEUR DE RENDU — UN SEUL PIPELINE POUR LES DEUX ECRANS
 // =============================================================================
-// `renderActuel` et `renderVNext` partagent exactement le meme montage :
-// meme jsdom, meme react-native-web, memes stubs, meme temps de stabilisation,
-// meme extraction. La seule difference est ce qu'on monte et comment on lui
-// donne ses donnees (stores bouchonnes d'un cote, ViewModel de l'autre).
+// `renderActuel` (le Profil de production) et `renderProfilVNext` (la
+// proposition) partagent exactement le meme montage : meme jsdom, meme
+// react-native-web, memes stubs, meme temps de stabilisation, meme extraction.
+// La seule difference est ce qu'on monte et comment on lui donne ses donnees
+// (stores bouchonnes d'un cote, ViewModel de l'autre).
 //
 // C'est la condition pour que la comparaison veuille dire quelque chose : si les
 // deux ecrans passaient par des chaines differentes, un ecart pourrait venir du
@@ -34,11 +35,11 @@ const RNW = require("react-native-web");
 const { APP_ROOT } = require("./paths");
 const safeArea = require("./stubs/safe-area-context");
 const scenarioState = require("./stubs/scenarioState");
-const scenariosActuel = require("./scenariosActuel");
+const scenariosProfil = require("./scenariosProfil");
 
-// Determinisme : on force « mouvement reduit ». Le Home de production pose alors
-// directement ses valeurs animees a 1 (etat stabilise) au lieu de jouer le
-// fondu en cascade. Sans ca, une capture prise trop tot serait transparente.
+// Determinisme : on force « mouvement reduit ». Le Profil de production joue
+// quand meme son stagger d'entree (il ne consulte pas le reglage — c'est un fait
+// du produit, pas du harnais) mais tout ce qui le consulte reste immobile.
 RNW.AccessibilityInfo.isReduceMotionEnabled = async () => true;
 
 /** Temps laisse aux effets pour se stabiliser (surchargeable : FKS_SETTLE). */
@@ -48,9 +49,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------------------
 // Chargement paresseux des ecrans
-// ---------------------------------------------------------------------------
-// L'ecran vNext est ecrit par un autre agent, en parallele. Il peut ne pas
-// exister au moment ou le harnais tourne : on ne plante pas, on le signale.
 // ---------------------------------------------------------------------------
 function chargerModule(relatif) {
   try {
@@ -71,27 +69,15 @@ function chargerModule(relatif) {
   }
 }
 
-let cacheHome = null;
-function getHomeActuel() {
-  if (!cacheHome) cacheHome = chargerModule("screens/HomeScreen.tsx");
-  return cacheHome;
-}
-
-let cacheBanner = null;
-function getOfflineBanner() {
-  if (!cacheBanner) {
-    try {
-      cacheBanner = { ok: true, Comp: require(path.join(APP_ROOT, "components/OfflineBanner.tsx")).OfflineBanner };
-    } catch (e) {
-      cacheBanner = { ok: false, detail: String(e) };
-    }
-  }
-  return cacheBanner;
+let cacheActuel = null;
+function getProfilActuel() {
+  if (!cacheActuel) cacheActuel = chargerModule("screens/ProfileScreen.tsx");
+  return cacheActuel;
 }
 
 let cacheVNext = null;
-function getVNext() {
-  if (!cacheVNext) cacheVNext = chargerModule("screens/homeVNext/HomeVNextScreen.tsx");
+function getProfilVNext() {
+  if (!cacheVNext) cacheVNext = chargerModule("screens/profilVNext/ProfilVNextScreen.tsx");
   return cacheVNext;
 }
 
@@ -99,7 +85,7 @@ let cacheViewModel = null;
 function getViewModelModule() {
   if (!cacheViewModel) {
     try {
-      cacheViewModel = { ok: true, mod: require(path.join(APP_ROOT, "screens/homeVNext/viewModel.ts")) };
+      cacheViewModel = { ok: true, mod: require(path.join(APP_ROOT, "screens/profilVNext/viewModel.ts")) };
     } catch (err) {
       cacheViewModel = { ok: false, detail: (err && err.stack) || String(err) };
     }
@@ -107,43 +93,35 @@ function getViewModelModule() {
   return cacheViewModel;
 }
 
-let cacheProgression = null;
-function getProgressionModule() {
-  if (!cacheProgression) {
-    try {
-      cacheProgression = {
-        ok: true,
-        mod: require(path.join(APP_ROOT, "screens/homeVNext/progressionViewModel.ts")),
-      };
-    } catch (err) {
-      cacheProgression = { ok: false, detail: (err && err.stack) || String(err) };
-    }
-  }
-  return cacheProgression;
-}
-
 /**
- * Le composant de la carte, ecrit par l'autre agent. On ne le monte JAMAIS
- * nous-memes — c'est l'ecran qui doit le poser, sinon on ne teste pas la
- * variante mais un montage du harnais. On l'interroge uniquement pour savoir
- * s'il existe, et le dire.
+ * Le marqueur qui prouve que la page servie est bien le Profil vNext. Il vient
+ * du PRODUIT (`profilVNextMarqueurs.ts`), jamais d'une chaine recopiee : si le
+ * marqueur change la-bas, le harnais suit — ou echoue en le disant.
  */
-let cacheCarte = null;
-function getCarteProgression() {
-  if (!cacheCarte) {
+let cacheMarqueurs = null;
+function getMarqueurEcran() {
+  if (!cacheMarqueurs) {
     try {
-      const mod = require(path.join(APP_ROOT, "components/homeVNext/HomeVNextProgression.tsx"));
-      const noms = Object.keys(mod || {});
-      cacheCarte = { ok: true, exports: noms };
+      const mod = require(path.join(APP_ROOT, "components/profilVNext/profilVNextMarqueurs.ts"));
+      cacheMarqueurs = { ok: true, ecran: mod.PROFIL_MARQUEURS.ecran };
     } catch (err) {
-      cacheCarte = {
+      cacheMarqueurs = {
         ok: false,
-        raison: err && err.code === "MODULE_NOT_FOUND" ? "fichier_absent" : "erreur_chargement",
+        // Repli DOCUMENTE : la valeur du contrat au moment ou ce harnais a ete
+        // ecrit. Si le module est illisible, le controle mesure encore quelque
+        // chose — et le detail de l'erreur est conserve.
+        ecran: "profil-vnext-ecran",
         detail: (err && (err.stack || err.message)) || String(err),
       };
     }
   }
-  return cacheCarte;
+  return cacheMarqueurs;
+}
+
+/** Compte les occurrences d'un `data-testid` dans un fragment de HTML. */
+function compterMarqueur(html, marqueur) {
+  const re = new RegExp('data-testid="' + marqueur + '"', "g");
+  return (String(html || "").match(re) || []).length;
 }
 
 // ---------------------------------------------------------------------------
@@ -153,9 +131,6 @@ function getCarteProgression() {
 // mise en page (racine react-native-web, safe area, zone de defilement). On les
 // marque `data-fks="chain"` — c'est eux, et eux seuls, que la vue « page
 // entiere » neutralise. Le premier noeud a plusieurs enfants est le CONTENU.
-//
-// Cas particulier : quand le bandeau hors-ligne est monte, la racine porte deux
-// enfants. On identifie le bandeau par son texte et on continue dans l'autre.
 // ---------------------------------------------------------------------------
 function tagStructure(root) {
   const chain = [];
@@ -262,25 +237,31 @@ async function monter({ cle, element, device }) {
 }
 
 // ---------------------------------------------------------------------------
-// Variante A — la proposition
+// Variante A — le Profil vNext (controle pur / controle informe)
 // ---------------------------------------------------------------------------
-/**
- * L'ecran vNext est ecrit par un autre agent : sa signature exacte n'est pas
- * connue au moment ou ce harnais est ecrit. On lui passe donc un sac de props
- * couvrant les formes plausibles (`viewModel`, `vm`, `input`, `fixture`,
- * `fixtureId`) plus une navigation inerte. Un composant qui n'en lit qu'une
- * fonctionne ; les autres props sont ignorees.
- */
-async function renderVNext(fixture, device, presentation) {
-  const mod = getVNext();
+// L'ecran a un contrat CONNU (il est deja ecrit et teste) : il prend `vm`, le
+// ViewModel deja construit — jamais l'input. La variante est decidee PAR LE
+// SELECTEUR (`{ variante }`), pas par une prop d'ecran : l'ecran a une seule
+// forme, une ligne sans fait est simplement plus courte.
+//
+// LE PIEGE, ET LA PARADE
+// -----------------------------------------------------------------------------
+// Si l'ecran cassait — export renomme, marqueur retire, exception avalee par un
+// boundary — le harnais pourrait servir une page vide ou un autre ecran sous
+// l'etiquette « Profil vNext ». On se protege par une MESURE : apres le rendu,
+// on cherche le marqueur de racine (`profil-vnext-ecran`) dans le HTML produit.
+// Absent, la page n'est PAS servie : elle est remplacee par une explication.
+// ---------------------------------------------------------------------------
+async function renderProfilVNext(fixture, device, varianteId) {
+  const mod = getProfilVNext();
   const vmMod = getViewModelModule();
-  const presentations = require("./presentations");
+  const marqueur = getMarqueurEcran();
 
   let viewModel = null;
   let erreurVm = null;
   if (vmMod.ok) {
     try {
-      viewModel = vmMod.mod.buildHomeVNextViewModel(fixture.input);
+      viewModel = vmMod.mod.buildProfilVNextViewModel(fixture.input, { variante: varianteId });
     } catch (err) {
       erreurVm = (err && err.stack) || String(err);
     }
@@ -293,12 +274,12 @@ async function renderVNext(fixture, device, presentation) {
       indisponible: {
         titre:
           mod.raison === "fichier_absent"
-            ? "L'ecran de la proposition n'existe pas encore"
-            : "L'ecran de la proposition n'a pas pu etre charge",
+            ? "L'ecran du Profil vNext n'existe pas"
+            : "L'ecran du Profil vNext n'a pas pu etre charge",
         message:
           mod.raison === "fichier_absent"
-            ? "Le fichier screens/homeVNext/HomeVNextScreen.tsx est ecrit par un autre agent, en parallele. " +
-              "Relance `node prototype/home-vnext/build.js` quand il sera la : rien d'autre a faire."
+            ? "Le fichier screens/profilVNext/ProfilVNextScreen.tsx est introuvable. " +
+              "Relance `node prototype/profil/build.js` quand il sera la : rien d'autre a faire."
             : "Le module existe mais son chargement a echoue. Detail ci-dessous.",
         detail: mod.detail,
       },
@@ -307,515 +288,123 @@ async function renderVNext(fixture, device, presentation) {
     };
   }
 
-  const nav = require("./stubs/navigation-native").__nav;
-  // Pour la presentation PAR DEFAUT, `propsDePresentation` renvoie un objet vide :
-  // l'ecran applique alors ses propres valeurs par defaut, exactement comme avant
-  // l'ajout de cet axe. Les pages deja validees passent donc par le meme chemin,
-  // pas par un chemin « equivalent ».
-  const props = {
-    viewModel,
-    vm: viewModel,
-    input: fixture.input,
-    fixture,
-    fixtureId: fixture.id,
-    navigation: nav,
-    onAction: () => {},
-    route: { key: "harnais", name: "HomeVNext", params: { fixtureId: fixture.id } },
-    ...presentations.propsDePresentation(presentation),
-  };
+  if (!viewModel) {
+    return {
+      indisponible: {
+        titre: "Le selecteur du Profil vNext a echoue",
+        message:
+          "buildProfilVNextViewModel a leve une exception (ou le module est illisible). " +
+          "Sans ViewModel, l'ecran n'a rien a rendre : le harnais ne fabrique pas de donnees a sa place.",
+        detail: erreurVm,
+      },
+      viewModel: null,
+      sonde: { erreurs: erreurVm ? [erreurVm] : [] },
+    };
+  }
 
-  const suffixeCle = presentation && !presentation.parDefaut ? `_${presentation.id}` : "";
+  // Les props EXACTES du contrat, rien de plus : `vm` (le ViewModel construit),
+  // `echelle` laisse a undefined (l'ecran applique son defaut, celui du Home),
+  // `reduceMotion: true` pour le determinisme de la capture.
+  const props = { vm: viewModel, echelle: undefined, reduceMotion: true };
 
+  let rendu;
   try {
-    const { html, sonde } = await monter({
-      cle: `vnext_${fixture.id}_${device.width}${suffixeCle}`,
+    rendu = await monter({
+      cle: `vnext_${varianteId}_${fixture.id}_${device.width}`,
       element: React.createElement(mod.Comp, props),
       device,
     });
-    return {
-      html,
-      viewModel,
-      mouvement: presentations.mesurerMouvement(html),
-      sonde: { ...sonde, erreurs: [...sonde.erreurs, ...(erreurVm ? [erreurVm] : [])] },
-    };
   } catch (err) {
     return {
       indisponible: {
-        titre: "L'ecran de la proposition a plante au rendu",
+        titre: "L'ecran du Profil vNext a plante au rendu",
         message:
-          "Le composant existe mais lever une exception pendant le montage. Le harnais ne masque pas : " +
-          "voici la trace.",
+          "Le composant existe mais leve une exception pendant le montage. Le harnais ne masque " +
+          "pas : voici la trace.",
         detail: (err && err.stack) || String(err),
       },
       viewModel,
       sonde: { erreurs: [(err && err.stack) || String(err)] },
     };
   }
-}
 
-// ---------------------------------------------------------------------------
-// Variante A bis — la proposition AVEC la carte progression integree
-// ---------------------------------------------------------------------------
-// MEME pipeline, MEME ecran, MEMES stubs que la variante 1. La seule difference
-// est le sac de props (voir lib/appariementVariante2.js).
-//
-// LE POINT CRITIQUE : si l'ecran ne connait pas encore la variante 2 — parce que
-// la prop porte un autre nom, ou parce que le composant de carte n'est pas
-// encore ecrit — il rendra la variante 1 SANS RIEN DIRE. Montrer ce rendu sous
-// l'etiquette « Progression integree » serait le pire defaut possible de ce
-// harnais : le fondateur validerait un ecran qu'il n'a jamais vu.
-//
-// On se protege par une mesure, pas par une convention : on cherche dans le
-// rendu les phrases que le ViewModel de la carte a produites. Si le titre de la
-// carte n'y est pas, on refuse de servir la page et on explique pourquoi.
-// ---------------------------------------------------------------------------
-async function renderVNext2({ fixtureHote, fixtureProgression, device, htmlVariante1, presentation }) {
-  const mod = getVNext();
-  const vmMod = getViewModelModule();
-  const progMod = getProgressionModule();
-  const appariement = require("./appariementVariante2");
-  const presentations = require("./presentations");
-
-  const erreurs = [];
-  let homeVm = null;
-  let progVm = null;
-
-  if (vmMod.ok) {
-    try {
-      // Les options de la VARIANTE 2, pas celles par defaut : c'est ce qui
-      // active le verrou de la pastille d'etat du jour dans le ViewModel.
-      // La variante 1 (`renderVNext`, plus haut) appelle sans options et reste
-      // donc rigoureusement identique a ce qui a deja ete valide.
-      homeVm = vmMod.mod.buildHomeVNextViewModel(
-        fixtureHote.input,
-        appariement.OPTIONS_VM_VARIANTE2
-      );
-    } catch (err) {
-      erreurs.push(`Selecteur du Home : ${(err && err.stack) || String(err)}`);
-    }
-  } else {
-    erreurs.push(`Selecteur du Home illisible : ${vmMod.detail}`);
-  }
-
-  if (progMod.ok) {
-    try {
-      progVm = progMod.mod.buildProgressionViewModel(fixtureProgression.input);
-    } catch (err) {
-      erreurs.push(`Selecteur de la carte : ${(err && err.stack) || String(err)}`);
-    }
-  } else {
-    erreurs.push(`Selecteur de la carte illisible : ${progMod.detail}`);
-  }
-
-  const carte = getCarteProgression();
-
-  // --- l'ecran lui-meme est-il chargeable ? ---------------------------------
-  if (!mod.ok) {
+  // --- l'ecran est-il REELLEMENT celui du Profil vNext ? --------------------
+  const trouves = compterMarqueur(rendu.html, marqueur.ecran);
+  if (trouves !== 1) {
     return {
       indisponible: {
-        titre: "L'ecran de la proposition n'existe pas encore",
+        titre: "Le marqueur du Profil vNext n'apparait pas dans l'ecran rendu",
         message:
-          "La variante 2 se rend avec le MEME ecran que la variante 1, avec une prop en plus. " +
-          "Cet ecran n'a pas pu etre charge.",
-        detail: mod.detail,
-      },
-      homeVm,
-      progVm,
-      sonde: { erreurs },
-    };
-  }
-
-  const nav = require("./stubs/navigation-native").__nav;
-  const props = appariement.propsVariante2({
-    homeVm,
-    progVm,
-    nav,
-    presentation: presentations.propsDePresentation(presentation),
-  });
-  const suffixeCle = presentation && !presentation.parDefaut ? `_${presentation.id}` : "";
-
-  let rendu;
-  try {
-    rendu = await monter({
-      cle: `vnext2_${fixtureProgression.id}_${device.width}${suffixeCle}`,
-      element: React.createElement(mod.Comp, props),
-      device,
-    });
-  } catch (err) {
-    return {
-      indisponible: {
-        titre: "L'ecran a plante en variante 2",
-        message:
-          "Le composant existe mais leve une exception quand on lui passe le sac de props de la " +
-          "variante 2. Le harnais ne masque pas : voici la trace.",
-        detail: (err && err.stack) || String(err),
-      },
-      homeVm,
-      progVm,
-      sonde: { erreurs: [...erreurs, (err && err.stack) || String(err)] },
-    };
-  }
-
-  // --- la carte est-elle REELLEMENT a l'ecran ? -----------------------------
-  // On isole son balisage : certaines regles portent sur la CARTE et pas sur
-  // l'ecran. « En forme » lu dans la pastille d'en-tete du Home n'est pas la
-  // carte qui annonce un etat global — accuser le mauvais bloc serait une mesure
-  // fausse. On reutilise le jsdom deja monte : aucune dependance en plus.
-  let htmlCarte = null;
-  try {
-    const bac = doc.createElement("div");
-    bac.innerHTML = rendu.html;
-    const el = bac.querySelector(`[data-testid="${appariement.MARQUEURS.progression}"]`);
-    htmlCarte = el ? el.outerHTML : null;
-  } catch (err) {
-    erreurs.push(`Isolation de la carte impossible : ${String(err)}`);
-  }
-
-  const mesures = appariement.mesurerVariante2(rendu.html, homeVm, progVm, htmlCarte);
-  const mouvement = presentations.mesurerMouvement(rendu.html);
-
-  if (!mesures.carteDetectee) {
-    const identique = htmlVariante1 != null && htmlVariante1 === rendu.html;
-    const manquants = mesures.marqueurs.filter((m) => !m.trouve);
-    return {
-      indisponible: {
-        titre: "La carte progression n'apparait pas dans l'ecran rendu",
-        message:
-          (identique
-            ? "Le rendu est RIGOUREUSEMENT IDENTIQUE a celui de la variante 1 : la prop de " +
-              "variante n'a eu aucun effet. L'ecran ne connait pas (ou plus) la valeur que le " +
-              "harnais lui passe.\n\n"
-            : "L'ecran a bien reagi (le rendu differe de la variante 1) mais le marqueur de la " +
-              "carte n'y est pas.\n\n") +
-          "Le harnais REFUSE de servir cette page. Afficher la variante 1 sous l'etiquette " +
-          "« Progression integree » ferait valider un ecran qui n'existe pas.\n\n" +
-          "Rien a corriger cote harnais : relance `node prototype/home-vnext/build.js` quand " +
-          "l'ecran saura poser la carte.",
+          "Le composant a monte quelque chose, mais le marqueur de racine de l'ecran n'y est pas " +
+          "(ou y est plusieurs fois).\n\n" +
+          "Le harnais REFUSE de servir cette page. Afficher un autre rendu sous l'etiquette " +
+          "« Profil vNext » ferait valider un ecran qui n'existe pas.\n\n" +
+          "Rien a corriger cote harnais : relance `node prototype/profil/build.js` quand l'ecran " +
+          "posera son marqueur.",
         detail:
-          `Marqueur cherche : data-testid="${appariement.MARQUEURS.progression}" ` +
-          `(pose par components/homeVNext/HomeVNextProgression.tsx via homeVNextMarqueurs.ts).\n` +
-          `Trouve : ${mesures.controles.find((c) => c.cle === "carte").valeur} fois, attendu 1.\n` +
-          `\n` +
-          `Composant de carte : ` +
-          `${carte.ok ? `present, exports = ${carte.exports.join(", ") || "(aucun)"}` : `ABSENT (${carte.raison})`}\n` +
-          `\n` +
-          `Props passees a l'ecran par le harnais :\n  ` +
-          appariement.clesDuSac().join(", ") +
-          `\n  variante = "${appariement.VALEUR_VARIANTE}"\n` +
-          `\n` +
-          `Contrat attendu par screens/homeVNext/HomeVNextScreen.tsx au moment ou ce harnais a ete\n` +
-          `ecrit : union discriminee { variante: "v2"; progression: ProgressionViewModel }.\n` +
-          `S'il a change, la seule ligne a corriger est VALEUR_VARIANTE dans\n` +
-          `prototype/home-vnext/lib/appariementVariante2.js.\n` +
-          `\n` +
-          `Phrases du contrat retrouvees dans le rendu : ${mesures.marqueursTrouves} / ${mesures.marqueursTotal}.` +
-          (manquants.length
-            ? `\nIntrouvables :\n` + manquants.map((m) => `  - ${m.quoi} : « ${m.texte} »`).join("\n")
-            : ""),
+          `Marqueur cherche : data-testid="${marqueur.ecran}" ` +
+          `(pose par screens/profilVNext/ProfilVNextScreen.tsx via ` +
+          `components/profilVNext/profilVNextMarqueurs.ts, champ PROFIL_MARQUEURS.ecran).\n` +
+          `Trouve : ${trouves} fois, attendu 1.\n` +
+          (marqueur.ok
+            ? ""
+            : `\nATTENTION : profilVNextMarqueurs.ts est illisible (${String(marqueur.detail).split("\n")[0]}) — ` +
+              `le harnais a compare contre la valeur de repli « profil-vnext-ecran ».\n`) +
+          `\nProps passees a l'ecran par le harnais : vm (ViewModel construit par ` +
+          `buildProfilVNextViewModel(input, { variante: "${varianteId}" })), echelle: undefined, ` +
+          `reduceMotion: true.\n` +
+          `\nAvertissements du selecteur :\n  ` +
+          ((viewModel.protoWarnings || []).join("\n  ") || "(aucun)"),
       },
-      homeVm,
-      progVm,
-      mesures,
-      sonde: { ...rendu.sonde, erreurs: [...rendu.sonde.erreurs, ...erreurs] },
+      viewModel,
+      sonde: rendu.sonde,
     };
   }
 
-  return {
-    html: rendu.html,
-    homeVm,
-    progVm,
-    mesures,
-    mouvement,
-    carte,
-    sonde: { ...rendu.sonde, erreurs: [...rendu.sonde.erreurs, ...erreurs] },
-  };
+  return { html: rendu.html, viewModel, sonde: rendu.sonde };
 }
 
 // ---------------------------------------------------------------------------
-// Variantes de DEMARRAGE — l'ecran du nouveau joueur (V-A / V-B)
+// Variante B — le Profil de production
 // ---------------------------------------------------------------------------
-// MEME pipeline, MEME ecran, MEMES stubs, MEME ViewModel que la variante 1. La
-// SEULE difference est une option passee au selecteur : `{ demarrage: "A" }` ou
-// `{ demarrage: "B" }`. L'ecran, lui, ne recoit AUCUNE prop supplementaire — il
-// lit `vm.demarrage` et en deduit tout, traitement hero compris.
+// `screens/ProfileScreen.tsx` est lu en LECTURE SEULE et alimente par des stores
+// bouchonnes (lib/scenariosProfil.js — les approximations y sont listees).
 //
-// C'est ce qui rend la comparaison honnete : entre V-actuelle, V-A et V-B, la
-// seule chose qui bouge est cette option. Pas un stub, pas une prop de harnais,
-// pas un montage different.
-//
-// LE MEME PIEGE QU'EN VARIANTE 2, ET LA MEME PARADE
-// -----------------------------------------------------------------------------
-// Si le contrat changeait — option renommee, bloc retire, composant absent —
-// l'ecran rendrait la variante actuelle SANS RIEN DIRE. Servir ce rendu sous
-// l'etiquette « V-A » ferait valider un ecran qui n'existe pas. On se protege
-// par une MESURE : on cherche le marqueur du bloc dans le HTML produit, et s'il
-// n'y est pas, on refuse de servir la page.
-// ---------------------------------------------------------------------------
-
-/** Ce que le harnais cherche dans le rendu pour prouver qu'il regarde bien V-A / V-B. */
-const MARQUEURS_DEMARRAGE = {
-  bloc: "home-vnext-demarrage",
-  pas: "home-vnext-demarrage-pas",
-  pasFait: "home-vnext-demarrage-pas-fait",
-  pourquoiCycle: "home-vnext-demarrage-pourquoi-cycle",
-  apercu: "home-vnext-demarrage-apercu",
-  hero: "home-vnext-action-hero",
-  actionPrincipale: "home-vnext-action-principale",
-  formeInsuffisante: "home-vnext-forme-insuffisante",
-};
-
-/** Compte les occurrences d'un `data-testid` dans un fragment de HTML. */
-function compterMarqueur(html, marqueur) {
-  const re = new RegExp('data-testid="' + marqueur + '"', "g");
-  return (String(html || "").match(re) || []).length;
-}
-
-/**
- * Les controles chiffres d'une page de demarrage.
- *
- * Chaque attendu est DEDUIT DU VIEWMODEL, jamais ecrit a la main : c'est la
- * seule facon qu'un controle continue de mesurer quelque chose le jour ou le
- * contenu bouge. Un attendu recopie deviendrait faux en silence.
- */
-function mesurerDemarrage(html, vm) {
-  const bloc = vm && vm.demarrage ? vm.demarrage : null;
-  const pasAttendus = bloc && bloc.kind === "premiere_mission" ? bloc.premiersPas.length : 0;
-  const pasFaitsAttendus =
-    bloc && bloc.kind === "premiere_mission"
-      ? bloc.premiersPas.filter((p) => p.fait).length
-      : 0;
-  const pourquoiAttendu =
-    bloc && bloc.kind === "premiere_mission" && bloc.pourquoiCeCycle ? 1 : 0;
-  const apercusAttendus = bloc && bloc.kind === "anticipation" ? bloc.apercus.length : 0;
-
-  const controles = [
-    {
-      cle: "bloc",
-      quoi: "le bloc de demarrage",
-      valeur: compterMarqueur(html, MARQUEURS_DEMARRAGE.bloc),
-      attendu: 1,
-    },
-    {
-      cle: "hero",
-      quoi: "l'action en traitement hero",
-      valeur: compterMarqueur(html, MARQUEURS_DEMARRAGE.hero),
-      attendu: 1,
-    },
-    {
-      cle: "action_unique",
-      quoi: "une seule action principale",
-      valeur: compterMarqueur(html, MARQUEURS_DEMARRAGE.actionPrincipale),
-      attendu: 1,
-    },
-    {
-      cle: "pas",
-      quoi: "les lignes de premier pas",
-      valeur: compterMarqueur(html, MARQUEURS_DEMARRAGE.pas),
-      attendu: pasAttendus,
-    },
-    {
-      cle: "pas_faits",
-      quoi: "les pas COCHES (doivent egaler ceux dont fait=true)",
-      valeur: compterMarqueur(html, MARQUEURS_DEMARRAGE.pasFait),
-      attendu: pasFaitsAttendus,
-    },
-    {
-      cle: "pourquoi_cycle",
-      quoi: "la ligne « pourquoi ce cycle »",
-      valeur: compterMarqueur(html, MARQUEURS_DEMARRAGE.pourquoiCycle),
-      attendu: pourquoiAttendu,
-    },
-    {
-      cle: "apercus",
-      quoi: "les lignes d'apercu",
-      valeur: compterMarqueur(html, MARQUEURS_DEMARRAGE.apercu),
-      attendu: apercusAttendus,
-    },
-    {
-      cle: "forme_absorbee",
-      quoi: "la carte MA FORME, absorbee par le bloc",
-      valeur: compterMarqueur(html, MARQUEURS_DEMARRAGE.formeInsuffisante),
-      attendu: 0,
-    },
-  ];
-
-  return {
-    blocDetecte: controles[0].valeur === 1,
-    controles,
-    clesEnEchec: controles.filter((c) => c.valeur !== c.attendu).map((c) => c.cle),
-  };
-}
-
-/**
- * Rend l'ecran du nouveau joueur dans l'une des deux variantes de demarrage.
- *
- * @param {object} fixture             la fixture Home (« nouveau-joueur »)
- * @param {object} device              le format
- * @param {object} presentation        la combinaison typo x mouvement
- * @param {"A"|"B"} varianteDemarrage  laquelle des deux
- * @param {?string} htmlActuel         le rendu de la variante ACTUELLE du meme
- *   etat, a la meme largeur et dans la meme presentation. Sert a UNE chose :
- *   quand le bloc n'est pas detecte, savoir dire si l'ecran a reagi ou non.
- */
-async function renderDemarrage(fixture, device, presentation, varianteDemarrage, htmlActuel) {
-  const mod = getVNext();
-  const vmMod = getViewModelModule();
-  const presentations = require("./presentations");
-
-  let viewModel = null;
-  const erreurs = [];
-  if (vmMod.ok) {
-    try {
-      viewModel = vmMod.mod.buildHomeVNextViewModel(fixture.input, {
-        demarrage: varianteDemarrage,
-      });
-    } catch (err) {
-      erreurs.push((err && err.stack) || String(err));
-    }
-  } else {
-    erreurs.push(vmMod.detail);
-  }
-
-  if (!mod.ok) {
-    return {
-      indisponible: {
-        titre: "L'ecran de la proposition n'a pas pu etre charge",
-        message:
-          "Les variantes de demarrage se rendent avec le MEME ecran que la variante actuelle : " +
-          "seule une option du selecteur change. Cet ecran n'a pas pu etre charge.",
-        detail: mod.detail,
-      },
-      viewModel,
-      sonde: { erreurs },
-    };
-  }
-
-  const nav = require("./stubs/navigation-native").__nav;
-  const props = {
-    viewModel,
-    vm: viewModel,
-    input: fixture.input,
-    fixture,
-    fixtureId: fixture.id,
-    navigation: nav,
-    onAction: () => {},
-    route: { key: "harnais", name: "HomeVNext", params: { fixtureId: fixture.id } },
-    ...presentations.propsDePresentation(presentation),
-  };
-
-  const suffixeCle = presentation && !presentation.parDefaut ? `_${presentation.id}` : "";
-
-  let rendu;
-  try {
-    rendu = await monter({
-      cle: `vnext${varianteDemarrage}_${fixture.id}_${device.width}${suffixeCle}`,
-      element: React.createElement(mod.Comp, props),
-      device,
-    });
-  } catch (err) {
-    return {
-      indisponible: {
-        titre: `L'ecran a plante en variante V-${varianteDemarrage}`,
-        message:
-          "Le composant existe mais leve une exception quand le ViewModel porte un bloc de " +
-          "demarrage. Le harnais ne masque pas : voici la trace.",
-        detail: (err && err.stack) || String(err),
-      },
-      viewModel,
-      sonde: { erreurs: [...erreurs, (err && err.stack) || String(err)] },
-    };
-  }
-
-  const mesures = mesurerDemarrage(rendu.html, viewModel);
-  const mouvement = presentations.mesurerMouvement(rendu.html);
-
-  if (!mesures.blocDetecte) {
-    const identique = htmlActuel != null && htmlActuel === rendu.html;
-    return {
-      indisponible: {
-        titre: `Le bloc de demarrage n'apparait pas dans l'ecran rendu (V-${varianteDemarrage})`,
-        message:
-          (identique
-            ? "Le rendu est RIGOUREUSEMENT IDENTIQUE a celui de la variante actuelle : l'option " +
-              "du selecteur n'a eu aucun effet. Le ViewModel ne connait pas (ou plus) la valeur " +
-              "que le harnais lui passe.\n\n"
-            : "Le selecteur a bien reagi (le rendu differe de la variante actuelle) mais le " +
-              "marqueur du bloc n'y est pas.\n\n") +
-          "Le harnais REFUSE de servir cette page. Afficher l'ecran actuel sous l'etiquette " +
-          `« V-${varianteDemarrage} » ferait valider un ecran qui n'existe pas.\n\n` +
-          "Rien a corriger cote harnais : relance `node prototype/home-vnext/build.js` quand " +
-          "le selecteur saura construire le bloc.",
-        detail:
-          `Marqueur cherche : data-testid="${MARQUEURS_DEMARRAGE.bloc}" ` +
-          `(pose par components/homeVNext/HomeVNextDemarrage.tsx via homeVNextMarqueurs.ts).\n` +
-          `Trouve : ${mesures.controles[0].valeur} fois, attendu 1.\n\n` +
-          `Option passee au selecteur : ` +
-          `buildHomeVNextViewModel(input, { demarrage: "${varianteDemarrage}" }).\n` +
-          `Bloc produit : ` +
-          (viewModel && viewModel.demarrage
-            ? `kind = "${viewModel.demarrage.kind}"`
-            : "AUCUN (vm.demarrage === null)") +
-          `\n\nAvertissements du selecteur :\n  ` +
-          (((viewModel && viewModel.protoWarnings) || []).join("\n  ") || "(aucun)"),
-      },
-      viewModel,
-      mesures,
-      sonde: { ...rendu.sonde, erreurs: [...rendu.sonde.erreurs, ...erreurs] },
-    };
-  }
-
-  return {
-    html: rendu.html,
-    viewModel,
-    mesures,
-    mouvement,
-    sonde: { ...rendu.sonde, erreurs: [...rendu.sonde.erreurs, ...erreurs] },
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Variante B — le Home de production
+// Il fait aussi une lecture ASYNCHRONE hors store : `readTestsRaw()` lit
+// AsyncStorage (`fks_tests_v1_<uid>`, uid du stub = "harnais-uid"). Le stub
+// AsyncStorage est une memoire PARTAGEE entre tous les rendus : on re-seme donc
+// les tests A CHAQUE rendu, sinon les entrees d'un etat fuiraient dans le
+// suivant. Le `SETTLE_MS` laisse largement le temps a la lecture de se resoudre.
 // ---------------------------------------------------------------------------
 async function renderActuel(scenario, device) {
-  const mod = getHomeActuel();
+  const mod = getProfilActuel();
   if (!mod.ok) {
     return {
       indisponible: {
-        titre: "Le Home de production n'a pas pu etre charge",
-        message: "Le harnais lit screens/HomeScreen.tsx en lecture seule. Le chargement a echoue.",
+        titre: "Le Profil de production n'a pas pu etre charge",
+        message: "Le harnais lit screens/ProfileScreen.tsx en lecture seule. Le chargement a echoue.",
         detail: mod.detail,
       },
       sonde: { erreurs: [mod.detail] },
     };
   }
 
-  scenarioState.setState(scenariosActuel.toStorePatch(scenario));
-
-  let element = React.createElement(mod.Comp, null);
-  if (scenario.offline) {
-    const banner = getOfflineBanner();
-    if (banner.ok) {
-      element = React.createElement(
-        RNW.View,
-        { style: { flex: 1 } },
-        element,
-        React.createElement(banner.Comp, null)
-      );
-    }
-  }
+  scenarioState.setState(scenariosProfil.toStorePatch(scenario));
+  // AVANT le montage, a CHAQUE rendu : voir le commentaire de tete.
+  await scenariosProfil.seedAsyncStorage(scenario);
 
   try {
     const { html, sonde } = await monter({
       cle: `actuel_${scenario.id}_${device.width}`,
-      element,
+      element: React.createElement(mod.Comp, null),
       device,
     });
     return { html, sonde };
   } catch (err) {
     return {
       indisponible: {
-        titre: "Le Home de production a plante au rendu",
-        message: "Exception pendant le montage du Home actuel avec ce jeu de donnees fictives.",
+        titre: "Le Profil de production a plante au rendu",
+        message: "Exception pendant le montage du Profil actuel avec ce jeu de donnees fictives.",
         detail: (err && err.stack) || String(err),
       },
       sonde: { erreurs: [(err && err.stack) || String(err)] },
@@ -872,16 +461,13 @@ function scaleCss(css, factor) {
 }
 
 module.exports = {
-  renderVNext,
-  renderVNext2,
-  renderDemarrage,
-  MARQUEURS_DEMARRAGE,
+  renderProfilVNext,
   renderActuel,
   extractCss,
   scaleCss,
-  getVNext,
+  getProfilVNext,
+  getProfilActuel,
   getViewModelModule,
-  getProgressionModule,
-  getCarteProgression,
+  getMarqueurEcran,
   SETTLE_MS,
 };

@@ -1,11 +1,11 @@
-// prototype/home-vnext/serve.js
+// prototype/profil/serve.js
 // =============================================================================
-// SERVEUR LOCAL DU VISUALISEUR
+// SERVEUR LOCAL DU VISUALISEUR DU PROFIL
 // =============================================================================
-//   node prototype/home-vnext/serve.js
+//   node prototype/profil/serve.js
 //
-// Sert prototype/home-vnext/out/ sur http://127.0.0.1:8140/ .
-// Si 8140 est occupe, prend le port libre suivant et AFFICHE l'URL reelle.
+// Sert prototype/profil/out/ sur http://127.0.0.1:8150/ .
+// Si 8150 est occupe, prend le port libre suivant et AFFICHE l'URL reelle.
 //
 // Ecoute sur 127.0.0.1 uniquement : rien n'est expose sur le reseau.
 // Aucune dependance : uniquement les modules livres avec Node.
@@ -19,7 +19,7 @@ const path = require("path");
 const { OUT_ROOT } = require("./lib/paths");
 
 const HOTE = "127.0.0.1";
-const PORT_DEPART = Number(process.env.PORT || 8140);
+const PORT_DEPART = Number(process.env.PORT || 8150);
 const PORTS_A_ESSAYER = 20;
 
 const TYPES = {
@@ -32,8 +32,8 @@ const TYPES = {
 };
 
 if (!fs.existsSync(path.join(OUT_ROOT, "index.html"))) {
-  console.error("Rien a servir : prototype/home-vnext/out/index.html est absent.");
-  console.error("Lance d'abord :  node prototype/home-vnext/build.js");
+  console.error("Rien a servir : prototype/profil/out/index.html est absent.");
+  console.error("Lance d'abord :  node prototype/profil/build.js");
   process.exit(1);
 }
 
@@ -80,7 +80,7 @@ function ecouter(port, restants) {
     serveur.removeListener("error", surErreur);
     const url = `http://${HOTE}:${port}/`;
     console.log("");
-    console.log("  PROTOTYPE HOME vNEXT — DONNEES FICTIVES, NON CONNECTE");
+    console.log("  PROTOTYPE PROFIL vNEXT — DONNEES FICTIVES, NON CONNECTE");
     console.log("");
     console.log(`  Visualiseur : ${url}`);
     console.log(`  Racine servie : ${OUT_ROOT}`);

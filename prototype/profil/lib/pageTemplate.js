@@ -1,4 +1,4 @@
-// prototype/home-vnext/lib/pageTemplate.js
+// prototype/profil/lib/pageTemplate.js
 // =============================================================================
 // GABARIT D'UNE PAGE D'ECRAN — HTML STATIQUE, SANS JAVASCRIPT
 // =============================================================================
@@ -168,19 +168,20 @@ ${
 }
 
 function tabbarHtml() {
+  // L'onglet ACTIF est « Profil » : c'est l'ecran que ce harnais montre.
   return `<div class="tabbar">
-  <div class="tab on"><div class="dot"></div><div class="lbl">Accueil</div></div>
+  <div class="tab"><div class="dot"></div><div class="lbl">Accueil</div></div>
   <div class="tab"><div class="dot"></div><div class="lbl">Seance</div></div>
-  <div class="tab"><div class="dot"></div><div class="lbl">Profil</div></div>
+  <div class="tab on"><div class="dot"></div><div class="lbl">Profil</div></div>
   <div class="fantome">barre d'onglets — ce qui est ici est masque</div>
 </div>`;
 }
 
 /** Nom lisible d'une variante. Une seule table, utilisee par les deux gabarits. */
 const NOMS_VARIANTE = {
-  vnext: "Proposition vNext",
-  vnext2: "Progression integree (variante 2)",
-  actuel: "Home actuel (production)",
+  pur: "Profil vNext — controle pur",
+  informe: "Profil vNext — controle informe",
+  actuel: "Profil actuel (production)",
 };
 const nomDeVariante = (v) => NOMS_VARIANTE[v] || v;
 
