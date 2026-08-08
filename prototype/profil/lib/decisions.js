@@ -239,4 +239,26 @@ const DECISIONS = [
   },
 ];
 
-module.exports = { DECISIONS };
+// =============================================================================
+// TRANCHE PAR LE FONDATEUR — 08/08/2026 (« vas-y reste sobre et le reste comme
+// tu proposes / oui et ok pour tes recos »)
+// =============================================================================
+// D1 « oui » = informe ; D7 « reste sobre » = sobre (l'axe accents ne part PAS
+// en integration : le module profilVNextAccents et la prop `accents` restent
+// dans le prototype pour memoire, ils ne seront pas cables) ; D2-D6 = les
+// recommandations. La maquette est GELEE sur ces choix.
+// =============================================================================
+const TRANCHES = {
+  D1: "informe",
+  D2: "tappable-si-vide",
+  D3: "ligne",
+  D4: "aucune",
+  D5: "oui",
+  D6: "rythme-apres-controles",
+  D7: "sobre",
+};
+for (const d of DECISIONS) {
+  d.tranchee = { option: TRANCHES[d.id], date: "2026-08-08" };
+}
+
+module.exports = { DECISIONS, TRANCHES };

@@ -102,16 +102,23 @@ function Corps({
         Profil
       </Text>
 
+      {/*
+        ORDRE TRANCHE PAR LE FONDATEUR (D6, 08/08) : identite -> controles ->
+        rythme. L'identite garde l'ouverture (c'est le sens de l'ecran), les
+        trois usages reels remontent au-dessus de la ligne de flottaison a
+        320 px aussi — une seule forme, tous formats. Le rythme, donnee
+        declaree, ferme l'ecran.
+      */}
       <View style={styles.section}>
         <ProfilVNextIdentite identite={vm.identite} accents={accents} />
       </View>
 
       <View style={styles.section}>
-        <ProfilVNextRythme rythme={vm.rythme} accents={accents} />
+        <ProfilVNextControles controles={vm.controles} onControle={onControle} accents={accents} />
       </View>
 
       <View style={styles.section}>
-        <ProfilVNextControles controles={vm.controles} onControle={onControle} accents={accents} />
+        <ProfilVNextRythme rythme={vm.rythme} accents={accents} />
       </View>
     </View>
   );

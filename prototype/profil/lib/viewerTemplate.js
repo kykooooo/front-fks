@@ -211,6 +211,10 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 }
 .carte-p .opt .csq { color: var(--texte-2); margin-top: 2px; }
 .carte-p .cout { font-size: 11.5px; color: var(--texte-2); border-top: 1px solid var(--bord); margin-top: 8px; padding-top: 7px; }
+.carte-p .tranchee {
+  background: rgba(46,125,91,.18); border: 1px solid var(--ok); color: #9CD4B5;
+  border-radius: 6px; padding: 5px 9px; font-size: 11.5px; margin: 2px 0 8px;
+}
 .carte-p .actions { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
 .carte-p .actions button {
   background: var(--fond-2); color: var(--texte); border: 1px solid var(--bord); border-radius: 5px;
@@ -570,8 +574,18 @@ function viewerJs() {
             ">Voir en " + esc(libelleAccent(a.id).toLowerCase()) + "</button>";
         }).join("") + "</div>";
       }
-      return '<div class="carte-p"><h3>' + esc(d.id) + " · " + esc(d.titre) + '</h3><div class="q">' +
-        esc(d.question) + "</div>" + opts + actions + '<div class="cout">Coût : ' + esc(d.cout) + "</div></div>";
+      var tranchee = "";
+      if (d.tranchee && d.tranchee.option) {
+        var libOpt = d.tranchee.option;
+        for (var oi = 0; oi < d.options.length; oi += 1) {
+          if (d.options[oi].id === d.tranchee.option) libOpt = d.options[oi].libelle;
+        }
+        tranchee = '<div class="tranchee">✔ Tranché le ' + esc(d.tranchee.date) + " : <b>" +
+          esc(libOpt) + "</b></div>";
+      }
+      return '<div class="carte-p"><h3>' + esc(d.id) + " · " + esc(d.titre) + '</h3>' + tranchee +
+        '<div class="q">' + esc(d.question) + "</div>" + opts + actions +
+        '<div class="cout">Coût : ' + esc(d.cout) + "</div></div>";
     }).join("");
   }
 
