@@ -166,23 +166,21 @@ const inferTags = (id: string, modality: BankModality): ExerciseTag[] => {
   return Array.from(tags);
 };
 
+// Les nombres d'un id ne sont des minutes QUE pour du cardio continu (z2, tempo, easy…).
+// Partout ailleurs ce sont des mètres (sprints, navettes), des secondes (rafales,
+// formats travail/repos) ou des angles (leg lowering 90/90) : on ne déduit rien.
+const CONTINUOUS_CARDIO_HINT = /(^|_)(z2|tempo|easy|jog|walk|fartlek|recovery)(_|$)/;
+
 const inferDefaultDurationMin = (id: string): number | undefined => {
-  const m = id.match(/_(\d{2})_(\d{2})$/);
-  if (m) {
-    const a = Number(m[1]);
-    const b = Number(m[2]);
-    const guess = Math.round((a + b) / 2);
+  if (/_\d+_\d+m$/.test(id)) return undefined; // ..._10_20m : des mètres
+  if (/_\d+_\d+s$/.test(id)) return undefined; // ..._10_15s : des secondes
+  if (/\d+x\d+/.test(id)) return undefined; // ..._12x60_60 : format séries×durée
+  if (!CONTINUOUS_CARDIO_HINT.test(id)) return undefined;
+  const range = id.match(/_(\d{2})_(\d{2})$/);
+  if (range) {
+    const guess = Math.round((Number(range[1]) + Number(range[2])) / 2);
     return Number.isFinite(guess) ? guess : undefined;
   }
-  const m2 = id.match(/_(\d{2})_(\d{2})[a-z]?$/);
-  if (m2) {
-    const a = Number(m2[1]);
-    const b = Number(m2[2]);
-    const guess = Math.round((a + b) / 2);
-    return Number.isFinite(guess) ? guess : undefined;
-  }
-  const anyMin = id.match(/_(\d{2})_(\d{2})m$/);
-  if (anyMin) return undefined;
   const solo = id.match(/_(\d{2})$/);
   if (solo) {
     const v = Number(solo[1]);
