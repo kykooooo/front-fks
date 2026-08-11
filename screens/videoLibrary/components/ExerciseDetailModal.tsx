@@ -4,7 +4,9 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-nati
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../../constants/theme";
 import { ModalContainer } from "../../../components/modal/ModalContainer";
+import { Badge } from "../../../components/ui/Badge";
 import { EXERCISE_BY_ID, type ExerciseDef } from "../../../engine/exerciseBank";
+import { estExerciceNonSolo } from "../../../engine/nonSoloExercises";
 import { EXERCISE_INSTRUCTIONS } from "../../../engine/exerciseInstructions";
 import { getExerciseVideoRef } from "../../../engine/exerciseVideos";
 import {
@@ -90,6 +92,11 @@ export function ExerciseDetailModal({
               {MODALITY_LABELS[exercise.modality]} · {INTENSITY_LABELS[exercise.intensity]}
               {formatDefaults(exercise) ? ` · ${formatDefaults(exercise)}` : ""}
             </Text>
+            {estExerciceNonSolo(exercise.id) ? (
+              <View style={{ flexDirection: "row", marginTop: 6 }}>
+                <Badge label="À deux" tone="warn" />
+              </View>
+            ) : null}
           </View>
           <TouchableOpacity onPress={onClose} activeOpacity={0.85} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.modalCloseButton}>
             <Ionicons name="close" size={18} color={palette.sub} />

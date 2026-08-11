@@ -6,6 +6,7 @@ import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
 import { getExerciseVideoRef } from "../../../engine/exerciseVideos";
+import { estExerciceNonSolo } from "../../../engine/nonSoloExercises";
 import type { ExerciseDef } from "../../../engine/exerciseBank";
 import {
   MODALITY_CONFIG,
@@ -52,6 +53,7 @@ export const ExerciseListCard = React.memo(function ExerciseListCard({
                 {item.name}
               </Text>
             </View>
+            {estExerciceNonSolo(item.id) ? <Badge label="À deux" tone="warn" /> : null}
             <Badge label={INTENSITY_LABELS[item.intensity]} tone={intensityTone(item.intensity)} />
           </View>
           <Text style={styles.exerciseMeta} numberOfLines={1}>
