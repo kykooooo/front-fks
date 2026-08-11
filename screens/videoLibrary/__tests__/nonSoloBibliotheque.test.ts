@@ -13,7 +13,7 @@
 //    exerciseBank/exerciseInstructions sont le chantier parallèle
 //    fix/bibliotheque-precision, on ne les touche pas (constat documenté,
 //    pas un trou de garde : le badge porte l'information).
-//  - reste .failing : la purge des stubs collectifs (remède 3).
+//  - les stubs collectifs (rsa_ssg_*) sont purgés de la banque (remède 3).
 
 import { EXERCISE_BANK, EXERCISE_BY_ID } from "../../../engine/exerciseBank";
 import { EXERCISE_INSTRUCTIONS } from "../../../engine/exerciseInstructions";
@@ -77,7 +77,7 @@ describe("bibliothèque — fiches non-solo", () => {
     }
   });
 
-  test.failing("SOUHAITÉ (remède 3) : plus aucun jeu réduit collectif (rsa_ssg_*, 4 à 12 joueurs) dans la bibliothèque du joueur solo", () => {
+  test("plus aucun jeu réduit collectif (rsa_ssg_*, 4 à 12 joueurs) dans la bibliothèque du joueur solo", () => {
     for (const id of NON_SOLO_GROUPE_IDS_FRONT) {
       expect(EXERCISE_BY_ID[id]).toBeUndefined();
     }

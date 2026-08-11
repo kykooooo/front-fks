@@ -2,6 +2,7 @@
 // Banque d'exos autonome (pas d'import domain/* pour éviter les cycles)
 
 import { BACKEND_EXERCISE_IDS } from "./backendExerciseIds";
+import { estExerciceNonSolo } from "./nonSoloExercises";
 
 export type ExerciseTag =
   | 'sprint'
@@ -920,7 +921,11 @@ const baseById = BASE_EXERCISE_BANK.reduce(
 
 export const EXERCISE_BANK: ExerciseDef[] = [
   ...BASE_EXERCISE_BANK,
-  ...BACKEND_EXERCISE_IDS.filter((id) => !baseById[id]).map((id) => buildExerciseFromBackendId(id)),
+  // Jamais de stub auto-généré pour une fiche à 2+ (jeux réduits rsa_ssg_*,
+  // sprint à signal externe) : infaisable seul, fiche fausse de bout en bout.
+  ...BACKEND_EXERCISE_IDS.filter((id) => !baseById[id] && !estExerciceNonSolo(id)).map((id) =>
+    buildExerciseFromBackendId(id)
+  ),
 ];
 
 export const EXERCISE_BY_ID: Record<string, ExerciseDef> = EXERCISE_BANK.reduce(

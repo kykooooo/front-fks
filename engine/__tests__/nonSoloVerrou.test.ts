@@ -27,33 +27,23 @@ import {
 } from "./nonSoloIds.fixture";
 
 describe("inventaire non-solo — surfaces front", () => {
-  test("la bibliothèque (EXERCISE_BY_ID) expose les 12 fiches non-solo : 5 partenaire + 7 jeux réduits", () => {
-    // EXERCISE_BANK complète BASE_EXERCISE_BANK par un stub auto-généré pour
-    // CHAQUE id backend absent localement (buildExerciseFromBackendId,
-    // engine/exerciseBank.ts:921) — rsa_reaction_sprint_10m et les 7
-    // rsa_ssg_* entrent donc en bibliothèque par ce chemin, sans fiche
-    // rédigée.
+  test("la bibliothèque n'expose plus que les 4 fiches partenaire rédigées (nordic ×3 + razor) — badgées « À deux »", () => {
+    // Avant le remède 3 (GO 11/08), EXERCISE_BANK stub-ait AUSSI tout id
+    // backend absent localement : rsa_reaction_sprint_10m et les 7 rsa_ssg_*
+    // entraient en bibliothèque en fiches fantômes. L'assemblage filtre
+    // désormais estExerciceNonSolo (engine/exerciseBank.ts).
     const enBanque = NON_SOLO_IDS_FRONT.filter((id) => Boolean(EXERCISE_BY_ID[id]));
-    expect([...enBanque].sort()).toEqual([...NON_SOLO_IDS_FRONT].sort());
+    expect([...enBanque].sort()).toEqual([
+      "str_eccentric_nordic_3s",
+      "str_nordic",
+      "str_nordic_hamstring_eccentric",
+      "str_razor_curl",
+    ]);
   });
 
-  test("rsa_reaction_sprint_10m n'existe qu'en STUB : nom fabriqué depuis l'id, aucune consigne « Comment faire »", () => {
-    const stub = EXERCISE_BY_ID["rsa_reaction_sprint_10m"];
-    expect(stub).toBeDefined();
-    // Nom issu de fallbackName/titleize (aucun préfixe rsa_ géré) — pas d'un
-    // rédacteur : si ce test casse parce qu'un nom rédigé apparaît, vérifier
-    // qu'il porte la mention « à 2 » (cf. nonSoloBibliotheque.test.ts).
-    expect(stub.name.toLowerCase()).toMatch(/reaction[_ ]sprint/);
-    expect(EXERCISE_INSTRUCTIONS["rsa_reaction_sprint_10m"]).toBeUndefined();
-  });
-
-  test("les 7 jeux réduits (4 à 12 joueurs, coach requis côté V2) sont des stubs mal catégorisés « strength », sans consigne", () => {
-    for (const id of NON_SOLO_GROUPE_IDS_FRONT) {
-      const stub = EXERCISE_BY_ID[id];
-      expect(stub).toBeDefined();
-      // inferModality ne connaît pas rsa_ssg_* → retombe sur strength : un
-      // 5c5 est présenté comme du renforcement. Constat figé (P1 du rapport).
-      expect(stub.modality).toBe("strength");
+  test("purge : plus aucun stub auto-généré non-solo en banque (rsa_reaction_sprint_10m + les 7 rsa_ssg_*)", () => {
+    for (const id of ["rsa_reaction_sprint_10m", ...NON_SOLO_GROUPE_IDS_FRONT]) {
+      expect(EXERCISE_BY_ID[id]).toBeUndefined();
       expect(EXERCISE_INSTRUCTIONS[id]).toBeUndefined();
     }
   });
