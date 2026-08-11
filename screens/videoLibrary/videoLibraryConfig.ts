@@ -151,6 +151,7 @@ export const isBallExercise = (item: ExerciseDef) => {
     id.includes("medball") ||
     id.startsWith("mb_") ||
     id.includes("swiss_ball") ||
+    id.includes("swissball") ||
     id.includes("fitball") ||
     id.includes("medicine_ball")
   );

@@ -600,7 +600,7 @@ const autoNameAndDescription = (id: string, modality: BankModality, intensity: B
     if (id === "core_reverse_crunch") return { name: "Reverse crunch", description: "Relevé bassin contrôlé, pas d’élan." };
     if (id === "core_side_plank_reach_through") return { name: "Side plank reach-through", description: "Planche latérale + passage bras. Rotation contrôlée." };
     if (id === "core_side_plank_row") return { name: "Side plank row", description: "Planche latérale + row élastique. Anti-rotation." };
-    if (id === "core_stir_pot") return { name: "Stir the pot", description: "Gainage dynamique (cercles). Version au sol ou swissball." };
+    if (id === "core_stir_pot") return { name: "Stir the pot", description: "Gainage dynamique (cercles), version au sol." };
   }
 
   if (k.startsWith("mob_") || k.startsWith("generic_")) {

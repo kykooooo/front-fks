@@ -208,7 +208,7 @@ const T = {
     cues: ["Tronc gaine", "Controle lent", "Amplitude propre"],
   },
   adductorSqueeze: {
-    howTo: "Allonge, serre un ballon entre les genoux, tiens la pression.",
+    howTo: "Allonge, serre un coussin ou une serviette pliee entre les genoux, tiens la pression.",
     cues: ["Respiration lente", "Tension constante", "Bassin stable"],
   },
   benchPress: {
@@ -497,7 +497,7 @@ const T = {
     cues: ["Bassin stable", "Controle", "Pas de rotation"],
   },
   stirThePot: {
-    howTo: "Avant-bras sur ballon, fais de petits cercles.",
+    howTo: "Planche sur avant-bras, dessine de petits cercles avec les coudes, bassin immobile.",
     cues: ["Bassin stable", "Controle", "Respiration"],
   },
   halfKneelingPallof: {
