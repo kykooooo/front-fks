@@ -109,9 +109,19 @@ describe("orphelins V2 : liste exacte et repli legacy intact", () => {
   it("la liste des ids sans fiche V2 ne bouge pas en silence", () => {
     const bankIds = EXERCISE_BANK.map((e) => e.id);
     const noV2 = bankIds.filter((id) => !EXERCISE_CONTENT_V2[id]).sort();
-    // orphelins + exclusions déclarées du générateur (ballon, marqueurs de chantier)
+    // orphelins + exclusions déclarées du générateur (ballon, marqueurs de chantier).
+    // 394 = 401 de l'audit moins les 7 stubs rsa_ssg_* purgés de la source
+    // (décision 11/08 : ballon par nature + non faisables seul).
     for (const orphan of ORPHANS) expect(noV2).toContain(orphan);
-    expect(noV2.length).toBe(401 - 375);
+    expect(noV2.length).toBe(394 - 375);
+  });
+
+  it("purge structurelle : les 7 jeux réduits rsa_ssg_* n'existent plus dans la banque", () => {
+    const bankIds = new Set(EXERCISE_BANK.map((e) => e.id));
+    for (const id of ["rsa_ssg_2v2", "rsa_ssg_3v2", "rsa_ssg_3v3", "rsa_ssg_4v3", "rsa_ssg_4v4", "rsa_ssg_5v5", "rsa_ssg_6v6"]) {
+      expect(bankIds.has(id)).toBe(false);
+    }
+    expect(EXERCISE_BANK.length).toBe(394);
   });
 
   it("les orphelins avec instruction legacy la servent encore, sans « À éviter »", () => {

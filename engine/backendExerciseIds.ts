@@ -16,9 +16,11 @@ export const BACKEND_EXERCISE_IDS = [
   "row_easy_15_25",
   "row_engine_tempo_12_20",
   "rsa_runs_20_20_2x8",
-  "rsa_ssg_3v3",
-  "rsa_ssg_4v4",
-  "rsa_ssg_5v5",
+  // rsa_ssg_* (jeux réduits collectifs) : PURGÉS de la source des fiches —
+  // décision Kyllian 11/08/2026, double motif : ballon par nature (doctrine
+  // zéro ballon) ET non faisables seul (V2 : minPlayers 4-12, requiresCoach).
+  // Le masquage d'affichage complémentaire vit sur fix/non-solo-front
+  // (engine/nonSoloExercises.ts) — le merge ne doit pas refaire le travail.
   "run_strides_10_15s",
   "run_strides",
   "treadmill_engine_intervals_12x60_60",
@@ -349,10 +351,7 @@ export const BACKEND_EXERCISE_IDS = [
   "rsa_runs_30_30_2x6",
   "rsa_sprint_30m_repeat",
   "rsa_sprint_5_5_5",
-  "rsa_ssg_2v2",
-  "rsa_ssg_3v2",
-  "rsa_ssg_4v3",
-  "rsa_ssg_6v6",
+  // rsa_ssg_2v2/3v2/4v3/6v6 : purgés (voir note rsa_ssg_* plus haut).
   "rsa_curve_sprint_20m",
   "rsa_circuit_lateral_bound_shuttle",
   "rsa_circuit_medball_slam_shuttle",

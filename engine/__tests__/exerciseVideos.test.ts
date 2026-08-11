@@ -39,7 +39,9 @@ describe("par construction, sur toute la banque", () => {
     }
   });
 
-  it("répartition mesurée : 105 vetted / 77 variant / 219 search (chiffres de l'audit)", () => {
+  // 212 = les 219 recherches de l'audit moins les 7 stubs rsa_ssg_* purgés
+  // (décision 11/08 : ballon + non-solo, purge structurelle sur cette branche).
+  it("répartition mesurée : 105 vetted / 77 variant / 212 search", () => {
     let vetted = 0;
     let variant = 0;
     let search = 0;
@@ -51,6 +53,6 @@ describe("par construction, sur toute la banque", () => {
     }
     expect(vetted).toBe(105);
     expect(variant).toBe(77);
-    expect(search).toBe(219);
+    expect(search).toBe(212);
   });
 });
