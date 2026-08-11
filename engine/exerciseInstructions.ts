@@ -322,7 +322,7 @@ const T = {
   },
   proneYtw: {
     howTo: "Allonge sur ventre, leve bras en Y, T, W.",
-    cues: ["Cou nu long", "Controle", "Omoplates serrees"],
+    cues: ["Cou long", "Controle", "Omoplates serrees"],
   },
   scapPushup: {
     howTo: "Pompe scapulaire, sans plier les coudes.",
@@ -676,7 +676,7 @@ const T = {
   },
   rowEasy: {
     howTo: "Rameur facile, poussee jambes puis tirage.",
-    cues: ["Dos droit", "Sequence jambe- bras", "Rythme fluide"],
+    cues: ["Dos droit", "Séquence jambes-bras", "Rythme fluide"],
   },
   inclineWalk: {
     howTo: "Marche en pente a rythme modere.",
@@ -693,7 +693,7 @@ const T = {
   },
   fallingStart: {
     howTo: "Penche-toi puis accelere des que tu pars.",
-    cues: ["Inclinaison controllee", "Appuis rapides", "Posture"],
+    cues: ["Inclinaison contrôlée", "Appuis rapides", "Posture"],
   },
   hillSprint: {
     howTo: "Sprint court en cote.",
