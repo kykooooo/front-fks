@@ -25,8 +25,12 @@ export const NON_SOLO_PARTENAIRE_IDS = [
 
 /**
  * Jeux réduits COLLECTIFS (V2 : minPlayers 4 → 12, requiresCoach=true,
- * équipement avec ballon). Jamais faisables seul, jamais affichables en
- * bibliothèque joueur.
+ * équipement avec ballon). Décision Kyllian 11/08/2026 : MASQUÉS, double
+ * motif indépendant — ballon par nature (doctrine zéro ballon) ET non
+ * faisables seul. Ici = masquage MINIMAL d'affichage (assemblage
+ * d'EXERCISE_BANK) ; la purge structurelle des fiches à la source
+ * appartient au chantier fix/bibliotheque-precision — ne pas étendre ce
+ * masquage, le merge ne doit pas faire le travail deux fois.
  */
 export const NON_SOLO_GROUPE_IDS = [
   "rsa_ssg_2v2", // V2 : minPlayers=4

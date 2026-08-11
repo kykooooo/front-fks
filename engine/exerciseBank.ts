@@ -923,6 +923,8 @@ export const EXERCISE_BANK: ExerciseDef[] = [
   ...BASE_EXERCISE_BANK,
   // Jamais de stub auto-généré pour une fiche à 2+ (jeux réduits rsa_ssg_*,
   // sprint à signal externe) : infaisable seul, fiche fausse de bout en bout.
+  // Masquage MINIMAL (décision 11/08, double motif ballon + non-solo) — la
+  // purge structurelle des fiches vit sur fix/bibliotheque-precision.
   ...BACKEND_EXERCISE_IDS.filter((id) => !baseById[id] && !estExerciceNonSolo(id)).map((id) =>
     buildExerciseFromBackendId(id)
   ),
