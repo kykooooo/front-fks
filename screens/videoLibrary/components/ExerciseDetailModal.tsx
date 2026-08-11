@@ -1,11 +1,11 @@
 // screens/videoLibrary/components/ExerciseDetailModal.tsx
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../../constants/theme";
 import { ModalContainer } from "../../../components/modal/ModalContainer";
 import { EXERCISE_BY_ID, type ExerciseDef } from "../../../engine/exerciseBank";
-import { EXERCISE_INSTRUCTIONS } from "../../../engine/exerciseInstructions";
+import { getExerciseContent } from "../../../engine/exerciseContent";
 import { getExerciseVideoRef } from "../../../engine/exerciseVideos";
 import {
   MODALITY_CONFIG,
@@ -43,26 +43,16 @@ export function ExerciseDetailModal({
   getVariants,
   getNoEquipmentVariants,
 }: Props) {
-  const [expanded, setExpanded] = useState(false);
-
-  useEffect(() => {
-    setExpanded(false);
-  }, [exerciseId]);
-
   const exercise = exerciseId ? EXERCISE_BY_ID[exerciseId] : undefined;
   if (!exercise) return null;
 
-  const instruction = EXERCISE_INSTRUCTIONS[exercise.id];
+  const content = getExerciseContent(exercise.id);
   const videoRef = getExerciseVideoRef(exercise.id);
   const variants = getVariants(exercise);
   const noEquip = getNoEquipmentVariants(exercise);
   const equipment = inferEquipment(exercise);
   const favorite = isFavorite(exercise.id);
   const config = MODALITY_CONFIG[exercise.modality];
-
-  const cues = instruction?.cues ?? [];
-  const visibleCues = expanded ? cues : cues.slice(0, 2);
-  const hasMoreCues = cues.length > 2;
 
   return (
     <ModalContainer
@@ -144,32 +134,43 @@ export function ExerciseDetailModal({
             </Text>
           ) : null}
 
-          {instruction ? (
+          {content ? (
             <View style={{ gap: 8 }}>
               <Text style={styles.modalRowTitle}>Comment faire</Text>
-              <Text style={styles.modalRowText}>{instruction.howTo}</Text>
-              {visibleCues.length > 0 ? (
-                <View style={{ gap: 4 }}>
-                  {visibleCues.map((cue) => (
-                    <Text key={`${exercise.id}_${cue}`} style={styles.modalRowText}>
-                      • {cue}
-                    </Text>
-                  ))}
-                </View>
+              {content.setup ? (
+                <Text style={[styles.modalRowText, { color: palette.muted }]}>{content.setup}</Text>
               ) : null}
-              {hasMoreCues ? (
-                <TouchableOpacity
-                  onPress={() => setExpanded((v) => !v)}
-                  activeOpacity={0.85}
-                  style={[styles.modalActionButton, { alignSelf: "flex-start" }]}
-                >
-                  <Ionicons
-                    name={expanded ? "chevron-up" : "chevron-down"}
-                    size={16}
-                    color={palette.sub}
-                  />
-                  <Text style={styles.modalActionText}>{expanded ? "Voir moins" : "Voir plus"}</Text>
-                </TouchableOpacity>
+              <View style={{ gap: 4 }}>
+                {content.steps.map((step, index) => (
+                  <Text key={`${exercise.id}_step_${index}`} style={styles.modalRowText}>
+                    {content.steps.length > 1 ? `${index + 1}. ` : ""}
+                    {step}
+                  </Text>
+                ))}
+              </View>
+              {content.cues.length > 0 ? (
+                <>
+                  <Text style={styles.modalRowTitle}>Un bon geste</Text>
+                  <View style={{ gap: 4 }}>
+                    {content.cues.map((cue) => (
+                      <Text key={`${exercise.id}_${cue}`} style={styles.modalRowText}>
+                        • {cue}
+                      </Text>
+                    ))}
+                  </View>
+                </>
+              ) : null}
+              {content.avoid.length > 0 ? (
+                <>
+                  <Text style={styles.modalRowTitle}>À éviter</Text>
+                  <View style={{ gap: 4 }}>
+                    {content.avoid.map((item) => (
+                      <Text key={`${exercise.id}_${item}`} style={[styles.modalRowText, styles.modalAvoidText]}>
+                        ✕ {item}
+                      </Text>
+                    ))}
+                  </View>
+                </>
               ) : null}
             </View>
           ) : null}
@@ -300,6 +301,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   modalRowText: { fontSize: 13, color: palette.sub, lineHeight: 18 },
+  modalAvoidText: { color: theme.colors.danger },
   modalActions: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   modalActionButton: {
     flexDirection: "row",
