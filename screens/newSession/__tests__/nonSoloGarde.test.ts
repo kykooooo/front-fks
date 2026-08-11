@@ -1,25 +1,19 @@
 // screens/newSession/__tests__/nonSoloGarde.test.ts
 //
-// FILET « JOUEUR SEUL » — la génération (vérification du 11/08/2026,
-// rapport RAPPORT_NON_SOLO.md).
+// FILET « JOUEUR SEUL » — la génération (11/08/2026, RAPPORT_NON_SOLO.md §4).
 //
-// Le moteur backend ferme la classe « fiche partenaire servie à un joueur
-// seul » (lot A2, 10/08/2026 : sélection ET réparation lisent
-// participation.{soloEligible,minPlayers}). CE FICHIER fige ce que fait le
-// FRONT en face : aujourd'hui il n'a AUCUNE défense propre — si une vieille
-// séance planifiée (Firestore d'avant le fix), un cache local, ou une
-// régression moteur renvoie un exo à 2, il est affiché tel quel, sans
-// mention partenaire.
+// Historique assumé : la première version de ce fichier figeait le TROU
+// (CONSTAT vert « l'exo à 2 est servi tel quel » + test.failing « SOUHAITÉ :
+// refusé ou marqué »). Le GO Kyllian du 11/08 a retenu le remplacement/
+// marquage plutôt que le refus : la paire est donc retournée en tests VERTS
+// du comportement réel — aucune assertion relâchée, elles sont devenues plus
+// exigeantes (id, nom, notes, dosage vérifiés).
 //
-// Deux tests se répondent, par paire :
-//  - le CONSTAT (vert) fige le comportement ACTUEL — le jour où quelqu'un
-//    ajoute la garde, ce test casse exprès, pour être supprimé en même temps
-//    que le marqueur .failing d'en dessous ;
-//  - le SOUHAITÉ (test.failing) décrit la garde attendue — il est compté
-//    « passé » tant qu'elle n'existe pas, et vire au rouge le jour où elle
-//    existe : signal qu'il faut retirer le marqueur .failing.
-// AUCUN comportement d'app n'est modifié par ce fichier (décision Kyllian
-// requise avant tout correctif — voir P1/P2 du rapport).
+// La garde (screens/newSession/soloGuard.ts, appelée par v2ToLocalSession) :
+//  - équivalent solo fiable (moteur selectReplacement, raison no_partner) →
+//    remplacement tracé dans les notes, dosage moteur conservé ;
+//  - sinon (âge inconnu, matériel absent, pas d'alternative) → nom marqué
+//    « (à 2) » + consigne vers la raison d'écart « Partenaire indisponible ».
 
 import { v2ToLocalSession } from "../transform";
 import { buildAllowedExercisesPayload } from "../api";
@@ -29,12 +23,16 @@ import { NON_SOLO_IDS_FRONT } from "../../../engine/__tests__/nonSoloIds.fixture
 
 const PHASE = "in_season" as Session["phase"];
 
-const v2AvecExoPartenaire = (exerciseId: string): FKS_NextSessionV2 =>
+type ItemBrut = Record<string, unknown>;
+
+const v2Avec = (items: ItemBrut[], equipmentAvailable: string[] = []): FKS_NextSessionV2 =>
   ({
     title: "Séance test",
     durationMin: 40,
     intensity: "moderate",
     focusPrimary: "strength",
+    // Même champ que celui lu par SessionLiveScreen et par la garde solo.
+    equipmentAvailable,
     blocks: [
       {
         id: "b1",
@@ -42,46 +40,91 @@ const v2AvecExoPartenaire = (exerciseId: string): FKS_NextSessionV2 =>
         goal: "posterior",
         intensity: "moderate",
         durationMin: 12,
-        items: [{ exerciseId, name: null, sets: 3, reps: 5 }],
+        items,
       },
     ],
   } as unknown as FKS_NextSessionV2);
 
-describe("génération — un exo à 2 reçu du serveur", () => {
-  test("CONSTAT (P1 ouvert) : v2ToLocalSession sert un exo minPlayers=2 tel quel, sans garde ni marquage", () => {
+describe("garde solo — un exo à 2 reçu du serveur n'est jamais affiché nu", () => {
+  test("équivalent solo disponible : str_nordic → Nordic assisté élastique, tracé dans les notes, dosage moteur conservé", () => {
     const session = v2ToLocalSession(
-      v2AvecExoPartenaire("str_eccentric_nordic_3s"),
+      v2Avec([{ exerciseId: "str_nordic", name: null, sets: 3, reps: 5 }], ["home_small"]),
+      PHASE,
+      "2026-08-11",
+      { ageCategory: "U15" }
+    );
+    const [ex] = session.exercises;
+    expect(ex.id).toBe("str_nordic_assisted_band");
+    expect(ex.name).toBe("Nordic assisté élastique");
+    // Dosage prescrit par le moteur conservé (même famille de mouvement).
+    expect(ex.sets).toBe(3);
+    expect(ex.reps).toBe(5);
+    expect(ex.notes).toContain("à la place");
+  });
+
+  test("âge inconnu : jamais de swap à seuil d'âge (minAge U15 au registre) — marquage « (à 2) »", () => {
+    const session = v2ToLocalSession(
+      v2Avec([{ exerciseId: "str_nordic", name: null, sets: 3, reps: 5 }], ["home_small"]),
       PHASE,
       "2026-08-11"
     );
-    const ids = session.exercises.map((e) => e.id);
-    expect(ids).toContain("str_eccentric_nordic_3s");
+    const [ex] = session.exercises;
+    expect(ex.id).toBe("str_nordic");
+    expect(ex.name).toMatch(/\(à 2\)$/);
+    expect(ex.notes).toContain("Partenaire indisponible");
   });
 
-  test.failing("SOUHAITÉ (P1) : un exo minPlayers>=2 est refusé (refus typé, comme item_sans_charge) ou marqué « à 2 » avant l'écran", () => {
-    expect(() =>
-      v2ToLocalSession(v2AvecExoPartenaire("str_eccentric_nordic_3s"), PHASE, "2026-08-11")
-    ).toThrow();
+  test("sans équivalent solo au registre (razor curl) : marquage « (à 2) » + consigne d'écart", () => {
+    const session = v2ToLocalSession(
+      v2Avec([{ exerciseId: "str_razor_curl", name: null, sets: 3, reps: 6 }], ["home_small"]),
+      PHASE,
+      "2026-08-11",
+      { ageCategory: "Senior" }
+    );
+    const [ex] = session.exercises;
+    expect(ex.id).toBe("str_razor_curl");
+    expect(ex.name).toMatch(/\(à 2\)$/);
+    expect(ex.notes).toContain("Partenaire indisponible");
+  });
+
+  test("un remplacement ne crée jamais de doublon d'id dans la séance", () => {
+    // L'alternative unique du nordic est déjà servie par le moteur : la garde
+    // doit marquer le nordic, pas dupliquer str_nordic_assisted_band.
+    const session = v2ToLocalSession(
+      v2Avec(
+        [
+          { exerciseId: "str_nordic_assisted_band", name: null, sets: 3, reps: 8 },
+          { exerciseId: "str_nordic", name: null, sets: 3, reps: 5 },
+        ],
+        ["home_small"]
+      ),
+      PHASE,
+      "2026-08-11",
+      { ageCategory: "Senior" }
+    );
+    const ids = session.exercises.map((e) => e.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(session.exercises[1].name).toMatch(/\(à 2\)$/);
+  });
+
+  test("un exo solo normal traverse intact (aucun effet de bord de la garde)", () => {
+    const session = v2ToLocalSession(
+      v2Avec([{ exerciseId: "str_air_squat", name: null, sets: 3, reps: 10 }]),
+      PHASE,
+      "2026-08-11",
+      { ageCategory: "U15" }
+    );
+    const [ex] = session.exercises;
+    expect(ex.id).toBe("str_air_squat");
+    expect(ex.name).not.toMatch(/\(à 2\)/);
+    expect(ex.notes).toBeUndefined();
   });
 });
 
-describe("génération — ce que le front PROPOSE au backend (allowed_exercises)", () => {
-  test("CONSTAT (P2 ouvert) : le payload propose encore les 12 exos non-solo au backend (le moteur les refuse depuis le lot A2)", () => {
-    // Les 12 (5 partenaire + 7 jeux réduits), car la banque stub-e tout id
-    // backend absent localement (engine/exerciseBank.ts:921) :
-    // rsa_reaction_sprint_10m et les rsa_ssg_* passent donc aussi le
-    // .filter(Boolean) de buildAllowedExercisesPayload.
+describe("garde solo — le front ne PROPOSE plus d'exo à 2 au backend", () => {
+  test("allowed_exercises ne contient plus aucun id non-solo (avant le 11/08 : les 12 y étaient)", () => {
     const ids = buildAllowedExercisesPayload().map((ex) => ex.id);
-    const nonSolo = ids.filter((id) =>
-      (NON_SOLO_IDS_FRONT as readonly string[]).includes(id)
-    );
-    expect(nonSolo.sort()).toEqual([...NON_SOLO_IDS_FRONT].sort());
-  });
-
-  test.failing("SOUHAITÉ (P2) : allowed_exercises ne propose plus aucun exo à 2 au backend", () => {
-    const ids = buildAllowedExercisesPayload().map((ex) => ex.id);
-    expect(
-      ids.some((id) => (NON_SOLO_IDS_FRONT as readonly string[]).includes(id))
-    ).toBe(false);
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids.some((id) => (NON_SOLO_IDS_FRONT as readonly string[]).includes(id))).toBe(false);
   });
 });

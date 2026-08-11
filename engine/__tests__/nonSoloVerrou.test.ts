@@ -58,7 +58,7 @@ describe("inventaire non-solo — surfaces front", () => {
     }
   });
 
-  test("BACKEND_EXERCISE_IDS liste aujourd'hui les 12 ids non-solo (constat figé — la protection est côté moteur)", () => {
+  test("BACKEND_EXERCISE_IDS liste toujours les 12 ids non-solo (contrat d'ids connus — le payload, lui, ne les propose plus, cf. nonSoloGarde)", () => {
     const proposes = BACKEND_EXERCISE_IDS.filter((id) =>
       (NON_SOLO_IDS_FRONT as readonly string[]).includes(id)
     );

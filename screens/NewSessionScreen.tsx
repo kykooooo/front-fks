@@ -138,6 +138,8 @@ export default function NewSessionScreen() {
   );
   const tsb = useLoadStore((s) => s.tsb);
   const clubTrainingDays = useExternalStore((s) => s.clubTrainingDays ?? []);
+  // Garde solo (transform) : même source d'âge que SessionLiveScreen.
+  const ageCategory = useExternalStore((s) => s.ageCategory ?? null);
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
   const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
 
@@ -279,6 +281,7 @@ export default function NewSessionScreen() {
         clubTrainingDays,
         tsb,
         alreadyAppliedToday,
+        ageCategory,
         pushSession,
         persistPlanned,
         setLastAiSessionV2,
@@ -524,6 +527,7 @@ export default function NewSessionScreen() {
         clubTrainingDays,
         tsb,
         alreadyAppliedToday,
+      ageCategory,
       pushSession,
       persistPlanned,
       setLastAiSessionV2,
@@ -683,6 +687,7 @@ export default function NewSessionScreen() {
         clubTrainingDays,
         tsb,
         alreadyAppliedToday,
+        ageCategory,
         pushSession,
         persistPlanned,
         setLastAiSessionV2,
