@@ -1441,8 +1441,8 @@ export const EXERCISE_CONTENT_V2: Record<string, GeneratedExerciseContent> = {
   },
   "rsa_reaction_sprint_10m": {
     name: "RSA sprints 10 m sur signal externe",
-    description: "8-12 sprints 10m sur signal (voix/clap), recuperation 30-45s. Focus reaction.",
-    steps: ["8-12 sprints 10m sur signal (voix/clap), recuperation 30-45s. Focus reaction."],
+    description: "8-12 sprints 10m sur signal (voix/clap), récupération 30-45s. Focus réaction.",
+    steps: ["8-12 sprints 10m sur signal (voix/clap), récupération 30-45s. Focus réaction."],
     cues: [],
     avoid: [],
     equipment: ["field", "cones"],

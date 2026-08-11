@@ -67,6 +67,16 @@ const DOCTRINE_TEXT_FIXES = {
 const INTERNAL_NOTE_DROP = /(=\s*paramètre|\(une seule fiche\))/i;
 const INTERNAL_MARKER_EXCLUDE = /_A_VALIDER/;
 const INTERNAL_DESCRIPTION_OMIT = /(canonique paramétrable|presets? legacy)/i;
+// Réparations d'accents : mots qui n'existent pas en français sans leur accent,
+// trouvés désaccentués dans une fiche V2 source (signalés au chantier catalogue).
+// Réparation mécanique mot entier, sans changement de sens.
+const ACCENT_REPAIRS = [
+  [/\brecuperation\b/g, "récupération"],
+  [/\bRecuperation\b/g, "Récupération"],
+  [/\breaction\b/g, "réaction"],
+  [/\bReaction\b/g, "Réaction"],
+];
+
 // Notes de provenance « legacy » : les chiffres restent, le jargon disparaît.
 // ⚠ L'ORDRE compte : les règles qui préservent un chiffre passent avant la
 // suppression générique des parenthèses contenant « legacy ».
@@ -229,6 +239,7 @@ for (const frontId of sortedFrontIds) {
     for (const [find, replace] of GLOBAL_TEXT_FIXES) {
       out = typeof find === "string" ? out.split(find).join(replace) : out.replace(find, replace);
     }
+    for (const [find, replace] of ACCENT_REPAIRS) out = out.replace(find, replace);
     return out.trim();
   };
   const dropInternal = (list, kind) =>
