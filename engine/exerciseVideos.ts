@@ -2,6 +2,10 @@ import { EXERCISE_BY_ID } from "./exerciseBank";
 
 export type ExerciseVideoRef =
   | { kind: "vetted"; url: string; label: string }
+  // La vidéo d'un AUTRE exercice (une variante) : jamais présentée comme la vidéo
+  // de l'exercice lui-même — l'UI dit « Voir un exercice proche » et les filtres
+  // « avec vidéo » ne la comptent pas.
+  | { kind: "variant"; url: string; label: string; variantId: string; variantName: string }
   | { kind: "search"; url: string; query: string };
 
 const ytSearch = (query: string) =>
@@ -450,12 +454,12 @@ export const getExerciseVideoRef = (exerciseId: string): ExerciseVideoRef => {
   for (const variantId of variants) {
     const v = VETTED_BY_ID[variantId];
     if (!v || v.kind !== "vetted") continue;
-    const variantName = EXERCISE_BY_ID[variantId]?.name ?? variantId;
-    const originalName = ex?.name ?? exerciseId;
     return {
-      kind: "vetted",
+      kind: "variant",
       url: v.url,
-      label: `Alternative (${variantName}) pour ${originalName} — ${v.label}`,
+      label: v.label,
+      variantId,
+      variantName: EXERCISE_BY_ID[variantId]?.name ?? variantId,
     };
   }
 

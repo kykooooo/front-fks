@@ -124,7 +124,11 @@ export function ExerciseDetailModal({
             >
               <Ionicons name="logo-youtube" size={16} color={palette.sub} />
               <Text style={styles.modalActionText}>
-                {videoRef.kind === "vetted" ? "Voir vidéo" : "Rechercher"}
+                {videoRef.kind === "vetted"
+                  ? "Voir vidéo"
+                  : videoRef.kind === "variant"
+                    ? "Voir un exercice proche"
+                    : "Rechercher"}
               </Text>
             </TouchableOpacity>
           </View>
@@ -132,6 +136,11 @@ export function ExerciseDetailModal({
           {videoRef.kind === "vetted" ? (
             <Text style={[styles.modalRowText, { color: palette.muted }]}>
               Source : {videoRef.label}
+            </Text>
+          ) : videoRef.kind === "variant" ? (
+            <Text style={[styles.modalRowText, { color: palette.muted }]} numberOfLines={3}>
+              Pas encore de vidéo pour cet exercice — celle-ci montre un exercice proche :{" "}
+              {videoRef.variantName} ({videoRef.label})
             </Text>
           ) : null}
 
