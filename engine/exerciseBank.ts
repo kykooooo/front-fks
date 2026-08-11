@@ -138,13 +138,26 @@ const inferModality = (id: string): BankModality => {
   return "strength";
 };
 
+// Matche des SEGMENTS d'id entiers (délimités par _), jamais des sous-chaînes :
+// « hi » ne doit pas matcher « hip » ni « machine », « hold » ne doit pas matcher
+// « threshold ». Un chiffre collé au mot (flying20) compte comme le mot.
+const idHasSegment = (id: string, hint: string): boolean => {
+  if (hint.includes("_")) return `_${id}_`.includes(`_${hint}_`);
+  for (const raw of id.split("_")) {
+    if (raw === hint) return true;
+    if (raw.replace(/\d+$/, "") === hint) return true;
+  }
+  return false;
+};
+
 const inferIntensity = (id: string): BankIntensity => {
   const k = id.toLowerCase();
+  const highHints = ["sprint", "sprints", "accel", "vma", "maxv", "intervals", "flying", "hill", "hills", "depth", "jump", "hi", "power"];
   const lowHints = ["easy", "z2", "recovery", "walk", "mob", "stretch", "breathing", "hold", "iso"];
-  const highHints = ["sprint", "accel", "vma_short", "intervals", "flying", "hill", "depth", "jump", "hi", "power"];
-  if (highHints.some((h) => k.includes(h))) return "high";
-  if (lowHints.some((h) => k.includes(h))) return "low";
-  if (k.includes("tempo") || k.includes("threshold") || k.includes("cruise") || k.includes("mod")) return "moderate";
+  const modHints = ["tempo", "threshold", "cruise", "mod"];
+  if (highHints.some((h) => idHasSegment(k, h))) return "high";
+  if (lowHints.some((h) => idHasSegment(k, h))) return "low";
+  if (modHints.some((h) => idHasSegment(k, h))) return "moderate";
   return "moderate";
 };
 
@@ -451,6 +464,13 @@ const autoNameAndDescription = (id: string, modality: BankModality, intensity: B
     };
   }
 
+  if (id === "treadmill_maxv_10_15s") {
+    return {
+      name: "Tapis vitesse max 10–15s",
+      description: "Rafales de 10–15 secondes à vitesse maximale sur tapis. Récupération complète entre les efforts.",
+    };
+  }
+
   const bikeIntervals = id.match(/^bike_engine_intervals_(\d+)x(\d+)_(\d+)$/);
   if (bikeIntervals) {
     const reps = Number(bikeIntervals[1]);
@@ -508,6 +528,13 @@ const autoNameAndDescription = (id: string, modality: BankModality, intensity: B
   }
 
   if (k.startsWith("speed_") || k.startsWith("sprint_") || k.startsWith("spd_")) {
+    if (id === "spd_maxv_30_60")
+      return {
+        name: "Vitesse max 30–60m",
+        description: "Sprints lancés à vitesse maximale sur 30–60m. Récupération complète entre les courses, qualité avant volume.",
+      };
+    if (id === "spd_a_run")
+      return { name: "A-run", description: "Drill technique : montées de genoux en course, appuis réactifs, posture haute." };
     if (id === "speed_b_skip") return { name: "B-skip", description: "Drill technique : genou haut, extension jambe, appui réactif." };
     if (id === "speed_dribbles") return { name: "Dribbles", description: "Petits appuis rapides sous le bassin, cadence élevée, relâchement." };
     if (id === "speed_fast_leg_cycles") return { name: "Fast leg cycles", description: "Cycles de jambes rapides, posture haute, bassin stable." };
