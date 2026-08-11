@@ -26,7 +26,7 @@ import {
   type BankModality,
   type BankIntensity,
 } from "../engine/exerciseBank";
-import { EXERCISE_INSTRUCTIONS } from "../engine/exerciseInstructions";
+import { getExerciseContent } from "../engine/exerciseContent";
 import { getExerciseVideoRef } from "../engine/exerciseVideos";
 import { YouTubePlayer } from "../components/ui/YouTubePlayer";
 
@@ -104,9 +104,9 @@ export default function VideoLibraryScreen() {
 
   const filtered = useMemo(() => {
     return visibleBank.filter((item) => {
-      const instruction = EXERCISE_INSTRUCTIONS[item.id];
-      const instructionText = instruction
-        ? `${instruction.howTo} ${instruction.cues.join(" ")}`.toLowerCase()
+      const content = getExerciseContent(item.id);
+      const instructionText = content
+        ? [content.setup ?? "", ...content.steps, ...content.cues, ...content.avoid].join(" ").toLowerCase()
         : "";
       const hasVideo = getExerciseVideoRef(item.id).kind === "vetted";
       const matchesQuery =

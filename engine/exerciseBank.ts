@@ -2,6 +2,7 @@
 // Banque d'exos autonome (pas d'import domain/* pour éviter les cycles)
 
 import { BACKEND_EXERCISE_IDS } from "./backendExerciseIds";
+import { EXERCISE_CONTENT_V2 } from "./generated/exerciseContentV2";
 
 export type ExerciseTag =
   | 'sprint'
@@ -943,10 +944,24 @@ const baseById = BASE_EXERCISE_BANK.reduce(
   {} as Record<string, ExerciseDef>
 );
 
+// Overlay éditorial : le nom français et la description viennent du catalogue V2
+// (fichier généré) quand la fiche existe. Sans nom généré (collisions d'alias :
+// plusieurs ids front → même fiche V2), le nom front est conservé pour garder la
+// distinction (« Accélération 10m » ≠ « Accélération 20m »).
+const applyEditorialContent = (ex: ExerciseDef): ExerciseDef => {
+  const v2 = EXERCISE_CONTENT_V2[ex.id];
+  if (!v2) return ex;
+  return {
+    ...ex,
+    name: v2.name ?? ex.name,
+    description: v2.description ?? ex.description,
+  };
+};
+
 export const EXERCISE_BANK: ExerciseDef[] = [
   ...BASE_EXERCISE_BANK,
   ...BACKEND_EXERCISE_IDS.filter((id) => !baseById[id]).map((id) => buildExerciseFromBackendId(id)),
-];
+].map(applyEditorialContent);
 
 export const EXERCISE_BY_ID: Record<string, ExerciseDef> = EXERCISE_BANK.reduce(
   (acc, ex) => {

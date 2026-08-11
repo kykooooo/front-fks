@@ -1,5 +1,6 @@
 // screens/videoLibrary/videoLibraryConfig.ts
 import type { ExerciseDef, ExerciseTag, BankModality, BankIntensity } from "../../engine/exerciseBank";
+import { EXERCISE_CONTENT_V2 } from "../../engine/generated/exerciseContentV2";
 
 export type CategoryView = BankModality | "favorites";
 export type SortMode = "favorites" | "alpha" | "recent";
@@ -15,7 +16,24 @@ export type EquipmentKey =
   | "bench"
   | "trx"
   | "bike"
-  | "rower";
+  | "rower"
+  // Clés issues du matériel exact du catalogue V2 (affichées sur la fiche ;
+  // les puces de FILTRE restent limitées à EQUIPMENT_ORDER, inchangé).
+  | "treadmill"
+  | "field"
+  | "cones"
+  | "wall"
+  | "pullup_bar"
+  | "sled"
+  | "rack"
+  | "backpack"
+  | "partner"
+  | "stopwatch"
+  | "smartphone"
+  | "table"
+  | "bottles"
+  | "rope"
+  | "abwheel";
 
 export const MODALITY_LABELS: Record<BankModality, string> = {
   run: "Course",
@@ -97,6 +115,21 @@ export const EQUIPMENT_LABELS: Record<EquipmentKey, string> = {
   trx: "TRX",
   bike: "Vélo",
   rower: "Rameur",
+  treadmill: "Tapis de course",
+  field: "Terrain dégagé",
+  cones: "Plots / repères",
+  wall: "Mur",
+  pullup_bar: "Barre de traction",
+  sled: "Traîneau",
+  rack: "Rack",
+  backpack: "Sac lesté",
+  partner: "Partenaire",
+  stopwatch: "Chrono",
+  smartphone: "Téléphone posé",
+  table: "Table solide",
+  bottles: "Bouteilles d'eau",
+  rope: "Corde à sauter",
+  abwheel: "Roue abdominale",
 };
 
 export const EQUIPMENT_ORDER: EquipmentKey[] = [
@@ -124,6 +157,13 @@ export const intensityTone = (intensity: BankIntensity) => {
 };
 
 export const inferEquipment = (item: ExerciseDef): EquipmentKey[] => {
+  // Le matériel EXACT du catalogue V2 prime ; l'inférence par id ne sert plus
+  // que de repli (fiches sans contenu généré : orphelins, exclusions ballon).
+  const generated = EXERCISE_CONTENT_V2[item.id]?.equipment;
+  if (generated && generated.length > 0) {
+    const known = generated.filter((k): k is EquipmentKey => k in EQUIPMENT_LABELS);
+    if (known.length > 0) return known;
+  }
   const id = item.id.toLowerCase();
   const equip = new Set<EquipmentKey>();
   if (id.includes("db_") || id.includes("_db")) equip.add("dumbbell");

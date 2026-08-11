@@ -9,26 +9,31 @@ const ex = (id: string) => {
   return e;
 };
 
+// NB : depuis le branchement du catalogue V2 (B2), les noms/descriptions de ces ids
+// viennent des fiches V2 — les assertions portent sur la PROPRIÉTÉ (« plus jamais
+// présenté comme une course modérée »), pas sur une chaîne exacte.
 describe("vitesse maximale : haute intensité + description honnête", () => {
   it("spd_maxv_30_60 n'est plus une « course modérée »", () => {
     const e = ex("spd_maxv_30_60");
     expect(e.intensity).toBe("high");
-    expect(e.description).toMatch(/vitesse maximale/i);
+    expect(e.description).toMatch(/sprint|vitesse max/i);
     expect(e.description).not.toMatch(/modérée/i);
-    expect(e.name).toBe("Vitesse max 30–60m");
+    expect(e.name).not.toBe("Maxv 30 60");
   });
 
   it("treadmill_maxv_10_15s n'est plus une « course modérée »", () => {
     const e = ex("treadmill_maxv_10_15s");
     expect(e.intensity).toBe("high");
-    expect(e.description).toMatch(/vitesse maximale/i);
+    expect(e.description).toMatch(/vitesse (max|élevée)/i);
     expect(e.description).not.toMatch(/modérée/i);
+    expect(e.name).not.toBe("Tapis Maxv 10 15s");
   });
 
-  it("spd_a_run est décrit comme un drill, pas comme une course modérée", () => {
+  it("spd_a_run est décrit comme un drill technique, pas comme une course modérée", () => {
     const e = ex("spd_a_run");
-    expect(e.description).toMatch(/^Drill technique/);
+    expect(e.description).toMatch(/technique/i);
     expect(e.description).not.toMatch(/modérée/i);
+    expect(e.name).not.toBe("A Run");
   });
 });
 
