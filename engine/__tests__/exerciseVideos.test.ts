@@ -39,9 +39,13 @@ describe("par construction, sur toute la banque", () => {
     }
   });
 
-  // 212 = les 219 recherches de l'audit moins les 7 stubs rsa_ssg_* purgés
-  // (décision 11/08 : ballon + non-solo, purge structurelle sur cette branche).
-  it("répartition mesurée : 105 vetted / 77 variant / 212 search", () => {
+  // 211 = les 219 recherches de l'audit moins 8 fiches à 2+ sorties de la
+  // banque : les 7 stubs rsa_ssg_* purgés à la source (décision 11/08, ballon
+  // + non-solo) et, DEPUIS LE MERGE (12/08), le stub rsa_reaction_sprint_10m
+  // que le filtre estExerciceNonSolo écarte aussi (sprint sur signal externe).
+  // Les buckets vetted/variant ne bougent pas : ces 8 ids n'avaient que des
+  // recherches. Total contrôlé ailleurs : EXERCISE_BANK.length === 393.
+  it("répartition mesurée : 105 vetted / 77 variant / 211 search", () => {
     let vetted = 0;
     let variant = 0;
     let search = 0;
@@ -53,6 +57,8 @@ describe("par construction, sur toute la banque", () => {
     }
     expect(vetted).toBe(105);
     expect(variant).toBe(77);
-    expect(search).toBe(212);
+    expect(search).toBe(211);
+    // Le compte couvre bien toute la banque (aucune fiche hors bucket).
+    expect(vetted + variant + search).toBe(EXERCISE_BANK.length);
   });
 });

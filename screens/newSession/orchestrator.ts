@@ -86,6 +86,8 @@ export async function processV2(
     tsb: number;
     alreadyAppliedToday: boolean;
     location: string;
+    /** Âge du joueur (store) pour la garde solo — null = jamais de swap à seuil d'âge. */
+    ageCategory?: string | null;
   } & CallbacksPersistanceEtAffichage
 ) {
   const {
@@ -96,6 +98,7 @@ export async function processV2(
     tsb,
     alreadyAppliedToday,
     location,
+    ageCategory,
     pushSession,
     persistPlanned,
     setLastAiSessionV2,
@@ -122,7 +125,9 @@ export async function processV2(
   const plannedDateISO = toDateKey(plannedDate);
   const plannedTomorrowISO = toDateKey(addDays(plannedDate, 1));
 
-  const sessionFromV2 = v2ToLocalSession(v2, phase as any, plannedDateISO);
+  const sessionFromV2 = v2ToLocalSession(v2, phase as any, plannedDateISO, {
+    ageCategory: ageCategory ?? null,
+  });
   const sessionWithAi = { ...sessionFromV2, aiV2: v2 } as any;
 
   // v2ToLocalSession lève (refus typé, docs/CONTRAT_ERREUR_FRONT.md §2.1)

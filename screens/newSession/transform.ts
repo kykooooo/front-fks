@@ -1,6 +1,7 @@
 import type { Exercise, Session } from "../../domain/types";
 import { BackendError } from "../../utils/errorHandler";
 import { modalityFromBlockType, normalizeFocus, prettifyName, toPlannedIntensity } from "./helpers";
+import { garantirSeanceSolo } from "./soloGuard";
 import type { FKS_NextSessionV2 } from "./types";
 
 /** Guard: retourne fallback si la valeur n'est pas un nombre fini > 0 */
@@ -36,7 +37,8 @@ function refusTypeTransform(message: string, failedStep: string): BackendError {
 export function v2ToLocalSession(
   v2: FKS_NextSessionV2,
   phase: Session["phase"],
-  plannedDateISO: string
+  plannedDateISO: string,
+  contexteGardeSolo?: { ageCategory?: string | null }
 ): Session {
   const seenExerciseIds = new Set<string>();
 
@@ -185,6 +187,22 @@ export function v2ToLocalSession(
     );
   }
 
+  // Garde « joueur seul » : un exo à 2+ est remplacé par son équivalent solo
+  // ou marqué « (à 2) », jamais servi nu (soloGuard.ts). Équipement lu depuis
+  // la séance v2 — mêmes champs que SessionLiveScreen (equipmentAvailable ??
+  // equipmentUsed) ; âge transmis par l'écran (store), null = jamais de swap
+  // à seuil d'âge.
+  const v2Equip = v2 as unknown as { equipmentAvailable?: unknown; equipmentUsed?: unknown };
+  const equipmentAvailable = Array.isArray(v2Equip.equipmentAvailable)
+    ? (v2Equip.equipmentAvailable as string[])
+    : Array.isArray(v2Equip.equipmentUsed)
+      ? (v2Equip.equipmentUsed as string[])
+      : [];
+  const exercisesSoloSafe = garantirSeanceSolo(blocks, {
+    equipmentAvailable,
+    ageCategory: contexteGardeSolo?.ageCategory ?? null,
+  });
+
   const baseModality = normalizeFocus(v2.focusPrimary || "run");
   const baseIntensity = toPlannedIntensity(v2.intensity) as Exercise["intensity"];
 
@@ -207,6 +225,6 @@ export function v2ToLocalSession(
     dateISO: `${plannedDateISO}T12:00:00`, // midi local : évite le recul d'un jour via toDateKey dans les fuseaux UTC-
     completed: false,
     volumeScore,
-    exercises: blocks,
+    exercises: exercisesSoloSafe,
   } as Session;
 }

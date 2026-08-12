@@ -110,18 +110,25 @@ describe("orphelins V2 : liste exacte et repli legacy intact", () => {
     const bankIds = EXERCISE_BANK.map((e) => e.id);
     const noV2 = bankIds.filter((id) => !EXERCISE_CONTENT_V2[id]).sort();
     // orphelins + exclusions déclarées du générateur (ballon, marqueurs de chantier).
-    // 394 = 401 de l'audit moins les 7 stubs rsa_ssg_* purgés de la source
-    // (décision 11/08 : ballon par nature + non faisables seul).
+    // 393 ids en banque − 374 d'entre eux couverts par une fiche V2 = 19.
+    // (Le catalogue compte 375 fiches : rsa_reaction_sprint_10m en a une mais
+    // n'est plus en banque depuis le merge, cf. le test suivant.)
     for (const orphan of ORPHANS) expect(noV2).toContain(orphan);
-    expect(noV2.length).toBe(394 - 375);
+    expect(noV2.length).toBe(393 - 374);
   });
 
-  it("purge structurelle : les 7 jeux réduits rsa_ssg_* n'existent plus dans la banque", () => {
+  it("purge structurelle : les 7 jeux réduits rsa_ssg_* n'existent plus dans la banque (+ le stub à 2 rsa_reaction_sprint_10m, retiré au merge)", () => {
     const bankIds = new Set(EXERCISE_BANK.map((e) => e.id));
     for (const id of ["rsa_ssg_2v2", "rsa_ssg_3v2", "rsa_ssg_3v3", "rsa_ssg_4v3", "rsa_ssg_4v4", "rsa_ssg_5v5", "rsa_ssg_6v6"]) {
       expect(bankIds.has(id)).toBe(false);
     }
-    expect(EXERCISE_BANK.length).toBe(394);
+    // 8e absence, arrivée AU MERGE et pas sur cette branche : le filtre
+    // estExerciceNonSolo (fix/non-solo-front) empêche aussi le stub auto-généré
+    // de rsa_reaction_sprint_10m — sprint sur signal externe, infaisable seul.
+    // Le compte n'est donc pas relâché, il descend d'un cran pour une raison
+    // nommée : 401 (audit) − 7 purgés à la source − 1 filtré = 393.
+    expect(bankIds.has("rsa_reaction_sprint_10m")).toBe(false);
+    expect(EXERCISE_BANK.length).toBe(393);
   });
 
   it("les orphelins avec instruction legacy la servent encore, sans « À éviter »", () => {

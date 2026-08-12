@@ -1,6 +1,7 @@
 // screens/videoLibrary/videoLibraryConfig.ts
 import type { ExerciseDef, ExerciseTag, BankModality, BankIntensity } from "../../engine/exerciseBank";
 import { EXERCISE_CONTENT_V2 } from "../../engine/generated/exerciseContentV2";
+import { estExerciceNonSolo } from "../../engine/nonSoloExercises";
 
 export type CategoryView = BankModality | "favorites";
 export type SortMode = "favorites" | "alpha" | "recent";
@@ -134,7 +135,7 @@ export const EQUIPMENT_LABELS: Record<EquipmentKey, string> = {
 
 export const EQUIPMENT_ORDER: EquipmentKey[] = [
   "bodyweight", "dumbbell", "barbell", "kettlebell", "band",
-  "machine", "box", "bench", "trx", "bike", "rower",
+  "machine", "box", "bench", "trx", "bike", "rower", "partner",
 ];
 
 export const MODALITY_ORDER: BankModality[] = [
@@ -180,6 +181,9 @@ export const inferEquipment = (item: ExerciseDef): EquipmentKey[] => {
   if (id.includes("bench") || id.includes("floor_press")) equip.add("bench");
   if (id.startsWith("bike_")) equip.add("bike");
   if (id.startsWith("row_")) equip.add("rower");
+  // Fiches à 2+ (fiche V2 : equipment ["bodyweight","partner"]) : la ligne
+  // matériel ne doit jamais dire « Sans matériel » pour un exo à partenaire.
+  if (estExerciceNonSolo(item.id)) equip.add("partner");
   if (equip.size === 0) equip.add("bodyweight");
   return Array.from(equip);
 };

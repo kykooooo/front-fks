@@ -5,6 +5,7 @@ import { Platform } from "react-native";
 import { BACKEND_URL, backendAuthHeaders } from "../../config/backend";
 import { BACKEND_EXERCISE_IDS } from "../../engine/backendExerciseIds";
 import { EXERCISE_BY_ID } from "../../engine/exerciseBank";
+import { estExerciceNonSolo } from "../../engine/nonSoloExercises";
 import type { FKS_NextSessionV2 } from "./types";
 import { safeFetch, BackendError } from "../../utils/errorHandler";
 import { detecterSentinellesReparation, estSeanceReparee, sessionV2Schema } from "../../schemas/sessionSchema";
@@ -15,7 +16,11 @@ import { snakeToCamel } from "../../utils/caseTransform";
 // banque d'exercices côté serveur. Actuellement le backend dépend des données complètes
 // envoyées par le client pour le matching des token pools.
 export const buildAllowedExercisesPayload = () =>
-  BACKEND_EXERCISE_IDS.map((id) => EXERCISE_BY_ID[id])
+  BACKEND_EXERCISE_IDS
+    // App 100 % joueur seul : jamais une fiche à 2+ dans les pools proposés
+    // au moteur (miroir de la garde d'affichage, soloGuard.ts).
+    .filter((id) => !estExerciceNonSolo(id))
+    .map((id) => EXERCISE_BY_ID[id])
     .filter(Boolean)
     .map((ex) => ({
       id: ex.id,
