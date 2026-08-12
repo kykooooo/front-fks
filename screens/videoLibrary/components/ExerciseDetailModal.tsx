@@ -17,7 +17,6 @@ import {
   EQUIPMENT_LABELS,
   formatDefaults,
   inferEquipment,
-  type EquipmentKey,
 } from "../videoLibraryConfig";
 
 const palette = theme.colors;
