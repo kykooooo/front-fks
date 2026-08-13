@@ -4,17 +4,24 @@ import Svg, { Line, Path, Circle } from "react-native-svg";
 import { theme } from "../../constants/theme";
 import { Card } from "../ui/Card";
 import { getFootballLabel } from "../../config/trainingDefaults";
+import { POINTS_MIN_POUR_COURBE } from "../../hooks/home/useRealLoadData";
 
 const palette = theme.colors;
 
 type Props = {
   tsb: number;
   tsbHistory: number[];
+  /** Prédicat "données réelles de charge" (useRealLoadData) — false = aucun jugement affiché. */
+  hasRealLoadData: boolean;
+  /** Jours d'activité réels distincts — pilote le seuil d'affichage de la courbe. */
+  realActivityDayCount: number;
 };
 
 function HomeReadinessHeroInner({
   tsb,
   tsbHistory,
+  hasRealLoadData,
+  realActivityDayCount,
 }: Props) {
   if (__DEV__) console.log("[RENDER] HomeReadinessHero");
   const [chartWidth, setChartWidth] = useState(0);
@@ -28,6 +35,10 @@ function HomeReadinessHeroInner({
   // points dans cet ordre pour que le dernier point (droite, gros point) = aujourd'hui.
   const history = useMemo(() => {
     if (tsbHistory.length >= 7) return tsbHistory.slice(-7);
+    // Garde anti-doublon : rebuildLoad pousse déjà un point decay-to-now égal au
+    // tsb courant quand un gap existe — sans elle on dessinerait 2 points superposés.
+    const last = tsbHistory[tsbHistory.length - 1];
+    if (tsbHistory.length > 0 && last === tsb) return tsbHistory.slice(-7);
     return [...tsbHistory, tsb].slice(-7);
   }, [tsbHistory, tsb]);
 
@@ -62,6 +73,26 @@ function HomeReadinessHeroInner({
     if (w && w !== chartWidth) setChartWidth(w);
   };
 
+  // H1 — état vide honnête : aucune donnée réelle de charge, donc aucun jugement
+  // ("En forme" sur les constantes d'amorçage était un mensonge). Même carte,
+  // même kicker ; textes validés par le fondateur (prototype VNext) ; pas de
+  // pastille (c'est un jugement), pas de courbe, pas de repères.
+  if (!hasRealLoadData) {
+    return (
+      <Card variant="surface" style={styles.card}>
+        <View style={styles.headerRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.kicker}>TON ÉTAT</Text>
+            <Text style={styles.title}>Ta tendance se construit</Text>
+            <Text style={styles.sub}>
+              Termine quelques séances et partage ton ressenti pour obtenir un repère plus utile.
+            </Text>
+          </View>
+        </View>
+      </Card>
+    );
+  }
+
   return (
     <Card variant="surface" style={styles.card}>
       <View style={styles.headerRow}>
@@ -75,28 +106,43 @@ function HomeReadinessHeroInner({
         </View>
       </View>
 
-      <View style={styles.chartWrap} onLayout={handleLayout}>
-        <Svg width={chartWidth} height={chartHeight}>
-          {/* Optimal zone band (-5 to +5) */}
-          <Line x1={padLeft} y1={toY(5)} x2={chartWidth - padRight} y2={toY(5)} stroke="rgba(34, 197, 94, 0.2)" strokeWidth={1} strokeDasharray="4,4" />
-          <Line x1={padLeft} y1={toY(-5)} x2={chartWidth - padRight} y2={toY(-5)} stroke="rgba(34, 197, 94, 0.2)" strokeWidth={1} strokeDasharray="4,4" />
-          {/* Zero line */}
-          <Line x1={padLeft} y1={toY(0)} x2={chartWidth - padRight} y2={toY(0)} stroke={palette.borderSoft} strokeWidth={1} />
-          {/* Overreaching threshold */}
-          <Line x1={padLeft} y1={toY(-10)} x2={chartWidth - padRight} y2={toY(-10)} stroke="rgba(245, 158, 11, 0.3)" strokeWidth={1} />
-          {/* TSB curve */}
-          {path ? <Path d={path} stroke={lineColor} strokeWidth={2.6} fill="none" /> : null}
-          {points.map((p, idx) => (
-            <Circle key={`dot_${idx}`} cx={p.x} cy={p.y} r={idx === points.length - 1 ? 5 : 3} fill={lineColor} />
-          ))}
-        </Svg>
-        <Text style={[styles.refLabel, { top: toY(0) - 8 }]}>0</Text>
-        <Text style={[styles.refLabel, { top: toY(-10) - 8, color: "#f59e0b" }]}>-10</Text>
-      </View>
+      {realActivityDayCount < POINTS_MIN_POUR_COURBE ? (
+        // H2 — pas encore assez de jours réels pour tracer une tendance (deux
+        // points font un segment, pas une tendance). Même chartWrap (minHeight 90)
+        // pour la stabilité du gabarit ; texte validé, pas de repères 0/-10.
+        <View style={styles.chartWrap}>
+          <Text style={styles.sub}>
+            Termine quelques séances et partage ton ressenti pour obtenir un repère plus utile.
+          </Text>
+        </View>
+      ) : (
+        <>
+          <View style={styles.chartWrap} onLayout={handleLayout}>
+            <Svg width={chartWidth} height={chartHeight}>
+              {/* Optimal zone band (-5 to +5) */}
+              <Line x1={padLeft} y1={toY(5)} x2={chartWidth - padRight} y2={toY(5)} stroke="rgba(34, 197, 94, 0.2)" strokeWidth={1} strokeDasharray="4,4" />
+              <Line x1={padLeft} y1={toY(-5)} x2={chartWidth - padRight} y2={toY(-5)} stroke="rgba(34, 197, 94, 0.2)" strokeWidth={1} strokeDasharray="4,4" />
+              {/* Zero line */}
+              <Line x1={padLeft} y1={toY(0)} x2={chartWidth - padRight} y2={toY(0)} stroke={palette.borderSoft} strokeWidth={1} />
+              {/* Overreaching threshold */}
+              <Line x1={padLeft} y1={toY(-10)} x2={chartWidth - padRight} y2={toY(-10)} stroke="rgba(245, 158, 11, 0.3)" strokeWidth={1} />
+              {/* TSB curve */}
+              {path ? <Path d={path} stroke={lineColor} strokeWidth={2.6} fill="none" /> : null}
+              {points.map((p, idx) => (
+                <Circle key={`dot_${idx}`} cx={p.x} cy={p.y} r={idx === points.length - 1 ? 5 : 3} fill={lineColor} />
+              ))}
+            </Svg>
+            <Text style={[styles.refLabel, { top: toY(0) - 8 }]}>0</Text>
+            <Text style={[styles.refLabel, { top: toY(-10) - 8, color: "#f59e0b" }]}>-10</Text>
+          </View>
 
-      <View style={styles.chartLabelRow}>
-        <Text style={styles.chartLabel}>Ta forme sur 7 jours</Text>
-      </View>
+          <View style={styles.chartLabelRow}>
+            {/* Points = jours d'activité calculés par le modèle (pas 7 jours
+                calendaires) : "Ta forme sur 7 jours" mentirait. */}
+            <Text style={styles.chartLabel}>Ta tendance récente</Text>
+          </View>
+        </>
+      )}
     </Card>
   );
 }

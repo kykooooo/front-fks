@@ -6,6 +6,16 @@ import { useHaptics } from "../../hooks/useHaptics";
 
 const palette = theme.colors;
 
+// Contraste WCAG AA (H6) — teinte d'action reprise du prototype VNext
+// (homeVNextTokens.ts, ACTION_ORANGE) : même teinte orange que palette.cta,
+// assombrie. Blanc plein sur #B4530C = 5.02:1 (vs 2.88:1 sur #F2741B).
+// Portée locale : le CTA du Home uniquement — theme.colors.cta ne bouge pas.
+const CTA_ACTION_BG = "#B4530C";
+// Texte du tone "warn" : amber-800 (même famille que palette.warn #D97706).
+// #92400E sur le fond composite rgb(245,233,212) = 5.89:1 (palette.warn n'y
+// faisait que 2.65:1 ; l'amber-700 #B45309 échoue à 4.17:1, d'où ce palier).
+const CTA_WARN_TEXT = "#92400E";
+
 type Props = {
   label: string;
   subLabel?: string;
@@ -52,15 +62,17 @@ function HomePrimaryCTAInner({
     inputRange: [0, 1],
     outputRange: [1, 1.015],
   });
-  // CTA primaire = action clé → fond orange (cta) + texte BLANC (contraste propre).
+  // CTA primaire = action clé → aplat d'action foncé + texte blanc PLEIN
+  // (règle prototype : sur l'aplat, tout texte est blanc à 100 % — la hiérarchie
+  // label/sous-titre passe par taille et graisse, pas par l'opacité).
   const bg =
-    tone === "warn" ? "rgba(245,158,11,0.16)" : tone === "disabled" ? palette.cardSoft : palette.cta;
+    tone === "warn" ? "rgba(245,158,11,0.16)" : tone === "disabled" ? palette.cardSoft : CTA_ACTION_BG;
   const border =
-    tone === "warn" ? palette.warn : tone === "disabled" ? palette.borderSoft : palette.cta;
+    tone === "warn" ? palette.warn : tone === "disabled" ? palette.borderSoft : CTA_ACTION_BG;
   const textColor =
-    tone === "warn" ? palette.warn : tone === "disabled" ? palette.sub : "#ffffff";
+    tone === "warn" ? CTA_WARN_TEXT : tone === "disabled" ? palette.sub : "#ffffff";
   const subColor =
-    tone === "disabled" ? palette.sub : tone === "warn" ? palette.warn : "rgba(255,255,255,0.9)";
+    tone === "disabled" ? palette.sub : tone === "warn" ? CTA_WARN_TEXT : "#FFFFFF";
 
   return (
     <Animated.View style={{ transform: [{ scale }, { scale: pressScale }] }}>
