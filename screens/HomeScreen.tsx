@@ -27,7 +27,7 @@ import HomeReadinessHero from "../components/home/HomeReadinessHero";
 import HomePrimaryCTA from "../components/home/HomePrimaryCTA";
 import HomeNextSessionCard from "../components/home/HomeNextSessionCard";
 import HomeCarouselCard from "../components/home/HomeCarouselCard";
-import { useLoadSeries } from "../hooks/home/useLoadSeries";
+import { useRealLoadData } from "../hooks/home/useRealLoadData";
 import { useMatchSoon } from "../hooks/home/useMatchSoon";
 import { useWeekDays } from "../hooks/home/useWeekDays";
 import { useWeekSummary } from "../hooks/home/useWeekSummary";
@@ -107,6 +107,10 @@ export default function HomeScreen() {
   const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
   const dailyApplied = useLoadStore((s) => s.dailyApplied);
   const lastAppliedDate = useLoadStore((s) => s.lastAppliedDate);
+  // Série TSB : UNE SEULE vérité, celle du store (écrite par rebuildLoad /
+  // applyFeedback / applyExternalLoad) — plus de resimulation locale (ex-useLoadSeries)
+  // qui contredisait le chiffre affiché à côté.
+  const tsbHistoryRaw = useLoadStore((s) => s.tsbHistory);
 
   // ── Sessions & calendar ──
   const sessions = useSessionsStore((s) => s.sessions);
@@ -141,7 +145,15 @@ export default function HomeScreen() {
     !!lastAppliedDate &&
     isSameDay(new Date(lastAppliedDate), nowISO ? new Date(nowISO) : new Date());
 
-  const loadSeries = useLoadSeries(dailyApplied, nowISO);
+  // Le store est NEWEST-FIRST (rebuildLoad/applyFeedback/applyExternalLoad
+  // prependent) ; HomeReadinessHero attend du CHRONOLOGIQUE (dernier point = aujourd'hui).
+  const tsbHistoryChrono = useMemo(
+    () => [...(tsbHistoryRaw ?? [])].reverse(),
+    [tsbHistoryRaw]
+  );
+
+  // Prédicat "données réelles" (H1) : conditionne chip état + carte TON ÉTAT + courbe.
+  const { hasRealLoadData, realActivityDayCount } = useRealLoadData(sessions, externalLoads);
 
   // Libellé "état du jour" joueur-friendly (jamais de TSB brut).
   const football = getFootballLabel(tsb);
@@ -258,10 +270,16 @@ export default function HomeScreen() {
               <Text style={styles.greeting} numberOfLines={1}>Salut, {athleteName}</Text>
               <Text style={styles.date}>{todayLabel}</Text>
             </View>
-            <View style={styles.readyChip}>
-              <View style={[styles.readyDot, { backgroundColor: football.color }]} />
-              <Text style={styles.readyLabel} numberOfLines={1}>{football.label}</Text>
-            </View>
+            {!storeHydrated ? (
+              // H4 — squelette pendant l'hydratation : pas de verdict d'usine.
+              <View style={styles.readyChipSkeleton} />
+            ) : hasRealLoadData ? (
+              <View style={styles.readyChip}>
+                <View style={[styles.readyDot, { backgroundColor: football.color }]} />
+                <Text style={styles.readyLabel} numberOfLines={1}>{football.label}</Text>
+              </View>
+            ) : null}
+            {/* H1 — sans données réelles : pas de chip (le header garde salutation + date). */}
           </View>
         </Animated.View>
 
@@ -299,31 +317,46 @@ export default function HomeScreen() {
 
         {/* Ligne stats compacte : Semaine / Série / Match */}
         <Animated.View style={animStyle(ctaAnim)}>
-          <View style={styles.statsLine}>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Semaine</Text>
-              <Text style={styles.statValue}>{weekSummary.fksCount}/{weeklyGoal}</Text>
+          {!storeHydrated ? (
+            // H4 — squelette pendant l'hydratation (gabarit de la ligne stats).
+            <View style={styles.statsLineSkeleton} />
+          ) : (
+            <View style={styles.statsLine}>
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Semaine</Text>
+                <Text style={styles.statValue}>{weekSummary.fksCount}/{weeklyGoal}</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Série</Text>
+                <Text style={styles.statValue}>{activityStreak > 0 ? `${activityStreak} j` : "Nouvelle"}</Text>
+              </View>
+              {matchSoon ? (
+                <>
+                  <View style={styles.statDivider} />
+                  <View style={styles.statItem}>
+                    <Text style={styles.statLabel}>Match</Text>
+                    <Text style={[styles.statValue, { color: palette.warn }]}>Proche</Text>
+                  </View>
+                </>
+              ) : null}
             </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Série</Text>
-              <Text style={styles.statValue}>{activityStreak > 0 ? `${activityStreak} j` : "Nouvelle"}</Text>
-            </View>
-            {matchSoon ? (
-              <>
-                <View style={styles.statDivider} />
-                <View style={styles.statItem}>
-                  <Text style={styles.statLabel}>Match</Text>
-                  <Text style={[styles.statValue, { color: palette.warn }]}>Proche</Text>
-                </View>
-              </>
-            ) : null}
-          </View>
+          )}
         </Animated.View>
 
-        {/* État du jour (détail + tendance 7j) — placé plus bas, ne vole pas la vedette */}
+        {/* État du jour (détail + tendance) — placé plus bas, ne vole pas la vedette */}
         <Animated.View style={animStyle(cardsAnim)}>
-          <HomeReadinessHero tsb={tsb} tsbHistory={loadSeries.tsbArr} />
+          {!storeHydrated ? (
+            // H4 — squelette pendant l'hydratation (gabarit de la carte pleine ~223 px).
+            <View style={styles.readinessSkeleton} />
+          ) : (
+            <HomeReadinessHero
+              tsb={tsb}
+              tsbHistory={tsbHistoryChrono}
+              hasRealLoadData={hasRealLoadData}
+              realActivityDayCount={realActivityDayCount}
+            />
+          )}
         </Animated.View>
 
         {advice && (
@@ -437,6 +470,27 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: palette.text,
     flexShrink: 1,
+  },
+  // ── Squelettes d'hydratation (H4) — aplats gris statiques, mêmes gabarits ──
+  readyChipSkeleton: {
+    borderRadius: 999,
+    height: 32,
+    width: 110,
+    backgroundColor: palette.cardSoft,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+  },
+  statsLineSkeleton: {
+    borderRadius: 12,
+    height: 57,
+    backgroundColor: palette.cardSoft,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+  },
+  readinessSkeleton: {
+    borderRadius: 26,
+    minHeight: 220,
+    backgroundColor: palette.cardSoft,
   },
   // ── Ligne stats compacte ──
   cycleChip: {
