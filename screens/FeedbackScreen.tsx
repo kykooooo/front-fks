@@ -403,6 +403,7 @@ function FeedbackScreen() {
                     projectedTsb={projectedTsb}
                     projectedDelta={projectedDelta}
                     onDurationChange={onDurationChange}
+                    plannedFallbackMin={durationPrefill}
                   />
                 </Animated.View>
 

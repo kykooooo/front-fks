@@ -14,11 +14,14 @@ type Props = {
   projectedTsb: number | null;
   projectedDelta: number | null;
   onDurationChange: (v: string) => void;
+  /** Durée retenue si le champ reste vide (repli d'applyFeedback) — affichée
+   *  pour que le repli ne soit plus silencieux (P1-15). */
+  plannedFallbackMin?: number | null;
 };
 
 export function MetricsRow({
   durationMin, durationValid, estimatedLoad, tsb,
-  projectedTsb, projectedDelta, onDurationChange,
+  projectedTsb, projectedDelta, onDurationChange, plannedFallbackMin,
 }: Props) {
   return (
     <>
@@ -30,10 +33,12 @@ export function MetricsRow({
         <TextInput
           value={durationMin}
           onChangeText={onDurationChange}
-          onFocus={() => {
-            // Vider le champ au focus pour que le joueur puisse taper directement sa valeur
-            if (durationMin) onDurationChange("");
-          }}
+          // selectTextOnFocus et non « vider au focus » (P1-15) : l'ancien
+          // onFocus DÉTRUISAIT la valeur — un tap sans saisie laissait le
+          // champ vide pour toujours, et le vide retombait en silence sur la
+          // durée prévue. Ici, taper remplace la sélection ; ne rien taper
+          // conserve la valeur.
+          selectTextOnFocus
           placeholder="ex: 60"
           placeholderTextColor={COLORS.textMuted}
           keyboardType="number-pad"
@@ -44,6 +49,13 @@ export function MetricsRow({
         <Text style={styles.metricHint}>minutes</Text>
         {!durationValid && durationMin ? (
           <Text style={styles.metricError}>Entre 5 et 300 min</Text>
+        ) : null}
+        {!durationMin ? (
+          <Text style={styles.metricHint}>
+            {plannedFallbackMin
+              ? `Vide : on garde la durée prévue (${plannedFallbackMin} min).`
+              : 'Vide : on garde la durée prévue.'}
+          </Text>
         ) : null}
       </View>
       <View style={styles.metricCard}>

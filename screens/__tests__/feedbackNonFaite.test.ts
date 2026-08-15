@@ -57,3 +57,18 @@ describe("Historique — « Pas faite » se distingue de « Non validée »", ()
     expect(source).toContain("archivée sans charge");
   });
 });
+
+describe("Durée réelle (P1-15) — la valeur n'est plus détruite, le repli est dit", () => {
+  const metricsSource = lire("screens/feedback/components/MetricsRow.tsx");
+
+  test("selectTextOnFocus a remplacé le vidage au focus", () => {
+    expect(metricsSource).toContain("selectTextOnFocus");
+    expect(metricsSource).not.toMatch(/onFocus=\{\(\) => \{[\s\S]*?onDurationChange\(""\)/);
+  });
+
+  test("champ vide → le repli sur la durée prévue est affiché, plus silencieux", () => {
+    expect(metricsSource).toContain("Vide : on garde la durée prévue");
+    expect(metricsSource).toMatch(/plannedFallbackMin/);
+    expect(lire("screens/FeedbackScreen.tsx")).toMatch(/plannedFallbackMin=\{durationPrefill\}/);
+  });
+});
