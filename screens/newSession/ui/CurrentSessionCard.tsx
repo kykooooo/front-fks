@@ -93,11 +93,14 @@ export function CurrentSessionCard({
         </View>
       ) : null}
 
-      <View style={[styles.buttonRow, { marginTop: 10 }]}>
-        <TouchableOpacity style={[styles.cta, styles.ctaSecondaryGreen]} onPress={onAdvanceDay}>
-          <Text style={styles.ctaSecondaryGreenText}>Jour OFF (+1j)</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Outil d'horloge DEV — gaté __DEV__, voir GenerationActions (P1-10). */}
+      {__DEV__ ? (
+        <View style={[styles.buttonRow, { marginTop: 10 }]}>
+          <TouchableOpacity style={[styles.cta, styles.ctaSecondaryGreen]} onPress={onAdvanceDay}>
+            <Text style={styles.ctaSecondaryGreenText}>Jour OFF (+1j)</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {alreadyAppliedToday ? (
         <Text style={[styles.helper, { marginTop: 4 }]}>
