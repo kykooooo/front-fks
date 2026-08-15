@@ -39,6 +39,7 @@ import { getCycleTheme } from "../constants/cycleTheme";
 import { getMicrocyclePhase, getMicrocyclePhaseRanges } from "../utils/microcycleUtils";
 import { Badge } from "../components/ui/Badge";
 import { showToast } from "../utils/toast";
+import { withTimeout, TimeoutError } from "../utils/errorHandler";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { trackEvent } from "../services/analytics";
@@ -174,11 +175,35 @@ export default function CycleModalScreen() {
   const activeCycle = activeCycleId ? MICROCYCLES[activeCycleId] : null;
 
   // ─── Actions ───
+  // P1-25 (inventaire clubs) : hors-ligne, setDoc PEND indéfiniment — le
+  // bouton « Démarrer ce cycle » était mort en silence (aucun état de
+  // chargement dans tout l'écran, toast d'erreur inatteignable). La garde
+  // vit ICI pour couvrir les 3 écritures du modal d'un coup.
+  const [persisting, setPersisting] = useState(false);
   const persistCycle = async (payload: Record<string, any>) => {
     const uid = auth.currentUser?.uid ?? null;
     if (!uid) throw new Error("Not authenticated");
     const ref = doc(db, "users", uid);
-    await setDoc(ref, { ...payload, updatedAt: serverTimestamp() }, { merge: true });
+    setPersisting(true);
+    try {
+      await withTimeout(
+        setDoc(ref, { ...payload, updatedAt: serverTimestamp() }, { merge: true }),
+        15000
+      );
+    } finally {
+      setPersisting(false);
+    }
+  };
+  const toastEchecCycle = (e: unknown, action: string) => {
+    showToast(
+      e instanceof TimeoutError
+        ? {
+            type: "warn",
+            title: "Pas de connexion",
+            message: `${action} n'a pas été enregistré. Vérifie ta connexion et réessaie.`,
+          }
+        : { type: "error", title: "Erreur", message: `${action} n'a pas pu être enregistré. Réessaie.` }
+    );
   };
 
   // Ferme le modal et revient à l'écran qui l'a ouvert (NewSession, Profile, Home…).
@@ -212,8 +237,8 @@ export default function CycleModalScreen() {
         origin: params.origin ?? "unknown",
       });
       goNextAfterStart();
-    } catch {
-      showToast({ type: "error", title: "Erreur", message: "Impossible d'enregistrer ton cycle. Réessaie." });
+    } catch (e) {
+      toastEchecCycle(e, "Ton cycle");
     }
   };
 
@@ -237,8 +262,8 @@ export default function CycleModalScreen() {
       setActivePathway(null);
       setAbandonOpen(false);
       trackEvent("cycle_abandoned", { cycleId: activeCycleId ?? "none", reason, origin: params.origin ?? "unknown" });
-    } catch {
-      showToast({ type: "error", title: "Erreur", message: "Impossible de changer de cycle. Réessaie." });
+    } catch (e) {
+      toastEchecCycle(e, "Ton changement de cycle");
     }
   };
 
@@ -419,9 +444,10 @@ export default function CycleModalScreen() {
         {/* CTA */}
         <View style={s.confirmActions}>
           <Button
-            label="Démarrer ce cycle"
+            label={persisting ? "Enregistrement…" : "Démarrer ce cycle"}
             onPress={handleStartCycle}
             fullWidth
+            disabled={persisting}
             style={s.ctaBlue}
           />
           <Button
@@ -639,10 +665,10 @@ export default function CycleModalScreen() {
             setMicrocycleGoal(null);
             setActivePathway(null);
             goToStep(1);
-          } catch {
-            showToast({ type: "error", title: "Erreur", message: "Impossible de changer de cycle. Réessaie." });
+          } catch (e) {
+            toastEchecCycle(e, "Ton changement de cycle");
           }
-        }} fullWidth style={s.ctaBlue} />
+        }} fullWidth disabled={persisting} style={s.ctaBlue} />
       </View>
     );
   };
