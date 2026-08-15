@@ -93,11 +93,11 @@ export function buildResetExplain(
   if (feedbackCap) reasons.push("Tes derniers retours étaient durs, on allège.");
   if (match) reasons.push("Match proche : priorité à la fraîcheur.");
   if (club) reasons.push("Entraînement club proche : on protège la récup.");
-  if (timeLow) reasons.push("Temps dispo court : format reset plus court.");
-  if (poolIssue) reasons.push("Contraintes de matériel/contraintes trop fortes : reset sûr.");
+  if (timeLow) reasons.push("Temps dispo court : format allégé, plus court.");
+  if (poolIssue) reasons.push("Matériel ou contraintes trop limitants : on part sur une séance allégée sûre.");
 
   if (!reasons.length) {
-    reasons.push("Reset choisi pour sécuriser ta progression aujourd'hui.");
+    reasons.push("Séance allégée choisie pour sécuriser ta progression aujourd'hui.");
   }
 
   const position = profile?.position?.trim() || "joueur";
@@ -107,7 +107,7 @@ export function buildResetExplain(
   // pas durationMin, on decrit la seance sans chiffre plutot que d'afficher
   // une fourchette fabriquee cote front.
   const duration = v2.durationMin != null ? `${v2.durationMin} min` : null;
-  const seanceStandard = duration ? `${duration} (${place})` : `format reset (${place})`;
+  const seanceStandard = duration ? `${duration} (${place})` : `séance allégée (${place})`;
   const seanceLight = duration ? `${duration}, légère` : `format léger`;
   const seed = hashString(
     `${v2.archetypeId ?? ""}|${selection?.cap ?? ""}|${position}|${objective}|${duration ?? "na"}`
@@ -116,7 +116,7 @@ export function buildResetExplain(
   const pool: string[] = [];
   if (match) {
     pool.push(
-      `Exemple : ${position} avec match demain → reset pour garder du jus.\nSéance : ${seanceStandard}.\nBut : arriver frais au match.`
+      `Exemple : ${position} avec match demain → séance allégée pour garder du jus.\nSéance : ${seanceStandard}.\nBut : arriver frais au match.`
     );
   }
   if (capEasy || fatigueTrend) {
@@ -126,29 +126,29 @@ export function buildResetExplain(
   }
   if (feedbackCap) {
     pool.push(
-      `Exemple : ${position} qui a mis RPE 9-10 deux fois → reset.\nSéance : ${seanceStandard}.\nBut : éviter le surmenage.`
+      `Exemple : ${position} qui a mis RPE 9-10 deux fois → séance allégée.\nSéance : ${seanceStandard}.\nBut : éviter le surmenage.`
     );
   }
   if (poolIssue || timeLow) {
     pool.push(
-      `Exemple : ${position} avec peu de matériel ou 15 min dispo → reset court.\nSéance : ${seanceStandard}.\nBut : rester actif sans risque.`
+      `Exemple : ${position} avec peu de matériel ou 15 min dispo → séance allégée courte.\nSéance : ${seanceStandard}.\nBut : rester actif sans risque.`
     );
   }
   if (objective.includes("blessure") || objective.includes("reprise")) {
     pool.push(
-      `Exemple : ${position} en reprise → reset pour éviter le surmenage.\nSéance : ${seanceLight}.\nBut : reprendre proprement.`
+      `Exemple : ${position} en reprise → séance allégée pour éviter le surmenage.\nSéance : ${seanceLight}.\nBut : reprendre proprement.`
     );
   }
   if (!pool.length) {
     pool.push(
-      `Exemple : ${position} en semaine chargée → reset contrôlé.\nSéance : ${seanceStandard}.\nBut : garder la récup.`
+      `Exemple : ${position} en semaine chargée → séance allégée contrôlée.\nSéance : ${seanceStandard}.\nBut : garder la récup.`
     );
   }
 
   const locationText = place ? `(${place})` : "";
 
   return {
-    title: "Pourquoi reset ?",
+    title: "Pourquoi une séance allégée ?",
     subtitle: locationText
       ? `Séance légère pensée pour protéger ta récup ${locationText}.`
       : "Séance légère pensée pour protéger ta récup.",
