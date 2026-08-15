@@ -3,7 +3,7 @@
 // Le coach pilote le contexte du club ; il ne génère pas les séances (c'est FKS le prépa).
 
 import React, { useState } from "react";
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, Keyboard } from "react-native";
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, Keyboard, Alert } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { getAuth, signOut } from "firebase/auth";
@@ -70,7 +70,11 @@ export default function CoachOnboardingScreen({ onRetourJoueur }: CoachOnboardin
     }
   };
 
-  const handleCreate = async () => {
+  // Confirmation OBLIGATOIRE avant la création (décision Kyllian 15/08,
+  // P1-07 inventaire clubs) : créer un club bascule TOUT le compte en espace
+  // coach, sans retour possible sans le support. Deux boutons explicites,
+  // aucun « oui » par défaut — le choix mis en avant est « Annuler ».
+  const handleCreate = () => {
     if (!canSubmit) return;
     Keyboard.dismiss();
 
@@ -82,11 +86,23 @@ export default function CoachOnboardingScreen({ onRetourJoueur }: CoachOnboardin
       return;
     }
 
+    Alert.alert(
+      "Créer un espace entraîneur ?",
+      "Tu crées un espace ENTRAÎNEUR pour gérer des joueurs. Cette action est définitive sur ce compte.",
+      [
+        { text: "Annuler", style: "cancel" },
+        { text: "Créer mon espace entraîneur", onPress: () => void doCreate(user.uid) },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  const doCreate = async (uid: string) => {
     try {
       setLoading(true);
       await createClubAsCoach({
         name: clubName.trim(),
-        uid: user.uid,
+        uid,
         coachName: coachName.trim() || null,
       });
       haptics.success();

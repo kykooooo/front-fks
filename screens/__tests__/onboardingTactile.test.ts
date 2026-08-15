@@ -139,8 +139,12 @@ describe("couverture haptique — tout ce qui se tape répond au doigt", () => {
   });
 
   test("création de club : la déconnexion et l'échec de création restent audibles", () => {
+    // `handleCreate` n'est plus async : depuis la confirmation obligatoire
+    // (décision 15/08), il ouvre l'Alert et c'est `doCreate` qui porte l'appel
+    // réseau — et donc les haptics succès/échec.
     const source = lire(ECRANS["création de club"]);
-    for (const handler of ["const handleLogout = async", "const handleCreate = async"]) {
+    for (const handler of ["const handleLogout = async", "const handleCreate = ", "const doCreate = async"]) {
+      expect(source.indexOf(handler)).toBeGreaterThanOrEqual(0);
       const bloc = source.slice(source.indexOf(handler));
       expect(bloc.slice(0, 1200)).toMatch(/haptics\.(impactLight|success|error)\(\)/);
     }
