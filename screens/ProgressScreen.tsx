@@ -849,7 +849,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   texteJourActif: {
-    color: "#0b0b0c",
+    // palette.bg et non un noir en dur (P1-24) : « #0b0b0c » était un reliquat
+    // du thème sombre — sur la pastille accent du thème CLAIR (#2A4D8F), le
+    // numéro du jour actif tombait à 2,40:1, quasi illisible. Le fond du thème
+    // donne ~6,7:1 dans les deux thèmes (même règle que le texte du CTA
+    // Valider du feedback : couleur de fond sur fond accent).
+    color: palette.bg,
     fontWeight: "700",
   },
   legendeCalendrier: {
