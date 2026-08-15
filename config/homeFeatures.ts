@@ -3,17 +3,24 @@
 // L'INTERRUPTEUR DU HOME VNEXT
 // =============================================================================
 //
-// UNE SEULE LIGNE decide quel accueil le joueur voit. `false` remet l'ancien
-// `screens/HomeScreen.tsx` en place et ne laisse AUCUNE autre difference : le
+// UNE SEULE LIGNE decide quel accueil le joueur voit. `false` monte l'ancien
+// `screens/HomeScreen.tsx` et ne laisse AUCUNE autre difference : le
 // nouvel ecran et ses hooks restent dans le depot, compiles et testes, mais plus
-// personne ne les monte. C'est le repli d'urgence, et il ne demande ni revert ni
-// redeploiement d'un binaire — un `eas update` suffit.
+// personne ne les monte. Rebasculer ne demande ni revert ni redeploiement d'un
+// binaire — un `eas update` suffit.
 //
-// POURQUOI IL EST A `true` SUR CETTE BRANCHE : la recette telephone est
-// bloquante avant tout merge (320/375/390 px x texte x1,3 x animations
-// reduites), et elle ne peut pas avoir lieu sur un ecran que personne n'affiche.
-// La valeur qui part en production est une decision de merge, pas une decision
-// de branche.
+// POURQUOI IL EST A `false` : DECISION PRODUIT du fondateur, 15/08/2026, prise
+// en direct — l'ecran d'accueil actif redevient l'ANCIEN Home (« A »), porteur
+// (1) des corrections d'honnetete de fix/home-honnetete (le Home ne ment plus,
+// le look ne bouge pas) et (2) de la carte « Ma progression » enrichie SUR
+// PLACE (meme cadre, meme position, contenu du resume canonique). Le vNext
+// n'est plus « le repli d'urgence » : c'est l'ALTERNATIVE DESACTIVEE, conservee
+// compilee et testee, re-basculable en cinq minutes si la decision s'inverse.
+//
+// La checklist ci-dessous (« comment retirer l'ancien ») date de l'epoque
+// vNext-actif ; elle ne redevient d'actualite que si la decision s'inverse a
+// nouveau. Elle reste ici parce qu'elle est verifiee et qu'une enquete refaite
+// coute plus cher qu'une checklist conservee.
 //
 // -----------------------------------------------------------------------------
 // POURQUOI IL A SURVECU AU LOT L6 — ET COMMENT LE RETIRER
@@ -114,6 +121,6 @@ export const HOME_FEATURES: {
    */
   readonly DEMARRAGE_PREMIERE_MISSION: boolean;
 } = {
-  VNEXT: true,
+  VNEXT: false,
   DEMARRAGE_PREMIERE_MISSION: false,
 };

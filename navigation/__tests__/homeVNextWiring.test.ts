@@ -7,11 +7,13 @@
 // ecrans. Ce qu'on verifie ici n'est de toute facon pas un comportement de
 // rendu, mais trois proprietes STRUCTURELLES que seule la source dit :
 //
-//   1. l'accueil vNext est reellement monte, et derriere un interrupteur ;
+//   1. l'accueil vNext est reellement branche, derriere un interrupteur —
+//      quelle que soit la valeur du flag (decision 15/08 : ancien Home actif,
+//      vNext = alternative desactivee mais compilee et re-basculable) ;
 //   2. il n'a PAS pris un nouveau nom de route — la faute deja payee dans ce
 //      fichier avec `ProfileSetup` / `ProfileSetupGate` ;
-//   3. l'ancien accueil est toujours la, donc le repli est reel et pas une
-//      promesse de commentaire.
+//   3. les DEUX accueils restent importes, donc la bascule (dans un sens comme
+//      dans l'autre) est reelle et pas une promesse de commentaire.
 //
 // Le comportement, lui, est teste ailleurs : `hooks/home/__tests__/
 // homeVNextNavigation.test.ts` (ou mene chaque action) et
@@ -26,7 +28,7 @@ const lire = (rel: string) => readFileSync(resolve(racine, rel), "utf8");
 const navigateur = lire("navigation/RootNavigator.tsx");
 const flag = lire("config/homeFeatures.ts");
 
-describe("RootNavigator — l'accueil vNext est monte derriere un interrupteur", () => {
+describe("RootNavigator — l'accueil vNext est branche derriere un interrupteur", () => {
   test("le conteneur vNext est importe et rendu", () => {
     expect(navigateur).toMatch(/import\s*\{\s*HomeVNextContainer\s*\}\s*from/);
     expect(navigateur).toContain("<HomeVNextContainer />");
@@ -37,7 +39,7 @@ describe("RootNavigator — l'accueil vNext est monte derriere un interrupteur",
     expect(navigateur).toContain("HOME_FEATURES.VNEXT ? <HomeVNextContainer /> : <HomeScreen />");
   });
 
-  test("l'ancien accueil reste importe : le repli est reel", () => {
+  test("l'ancien accueil reste importe : la bascule est reelle", () => {
     // Si cet import disparait sans que le flag disparaisse aussi, l'interrupteur
     // devient decoratif — bascule a `false` et l'app ne compile plus.
     expect(navigateur).toMatch(/import\s+HomeScreen\s+from/);
