@@ -8,7 +8,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { readTestsRaw } from './tests/hooks/useTestsStorage';
+import { readTestsRaw, onTestsUpdated } from './tests/hooks/useTestsStorage';
 
 import { useSessionsStore } from '../state/stores/useSessionsStore';
 import { useLoadStore } from '../state/stores/useLoadStore';
@@ -126,6 +126,10 @@ export default function ProfileScreen() {
   const [monthlyTestsCount, setMonthlyTestsCount] = useState(0);
   const [lastTestTs, setLastTestTs] = useState<number | null>(null);
   const [lastTestPlaylist, setLastTestPlaylist] = useState<MicrocycleId | null>(null);
+  // P1-19 : l'onglet Profil reste monté — sans ce réveil, une batterie
+  // enregistrée sur l'écran Tests n'existait pas ici de toute la session.
+  const [testsVersion, setTestsVersion] = useState(0);
+  useEffect(() => onTestsUpdated(() => setTestsVersion((v) => v + 1)), []);
 
   useEffect(() => {
     let alive = true;
@@ -155,7 +159,7 @@ export default function ProfileScreen() {
       } catch { /* best effort */ }
     })();
     return () => { alive = false; };
-  }, [devNowISO]);
+  }, [devNowISO, testsVersion]);
 
   /* ─── Entrance animations ─── */
   const anims = useRef(Array.from({ length: SECTION_COUNT }, () => new Animated.Value(0))).current;

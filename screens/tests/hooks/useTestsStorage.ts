@@ -1,5 +1,6 @@
 // screens/tests/hooks/useTestsStorage.ts
 import { useEffect, useState } from "react";
+import { DeviceEventEmitter } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { STORAGE_KEYS } from "../../../constants/storage";
 import { auth } from "../../../services/firebase";
@@ -20,6 +21,20 @@ export const TESTS_MAX_ENTRIES = 500;
 /** Applique la borne SANS réordonner : l'appelant garde le plus récent en tête. */
 export const capTestEntries = <T,>(list: T[]): T[] => list.slice(0, TESTS_MAX_ENTRIES);
 
+// ─── Bus « les tests ont changé » (P1-19) ───
+// Les onglets restent MONTÉS (tab bar) : une batterie enregistrée sur l'écran
+// Tests n'existait pas pour le Home et le Profil déjà rendus, figés sur « zéro
+// test » toute la session d'app. Même mécanique que le bus de toast
+// (DeviceEventEmitter) : chaque écriture émet, chaque lecteur se re-lit.
+export const TESTS_UPDATED_EVENT = "fks:tests-updated";
+export const emitTestsUpdated = () =>
+  DeviceEventEmitter.emit(TESTS_UPDATED_EVENT);
+/** Abonne un lecteur ; retourne le désabonnement. */
+export const onTestsUpdated = (cb: () => void): (() => void) => {
+  const sub = DeviceEventEmitter.addListener(TESTS_UPDATED_EVENT, cb);
+  return () => sub.remove();
+};
+
 export const getTestsStorageKey = () => {
   const uid = auth.currentUser?.uid ?? null;
   return uid ? `${LEGACY_STORAGE_KEY}_${uid}` : LEGACY_STORAGE_KEY;
@@ -35,6 +50,10 @@ export async function readTestsRaw(): Promise<string | null> {
 
 export function useTestsStorage() {
   const [entries, setEntries] = useState<TestEntry[]>([]);
+  // Re-lecture quand une AUTRE instance du hook écrit (P1-19) : re-parcourir
+  // le même storage est idempotent, l'écho de sa propre écriture est inoffensif.
+  const [version, setVersion] = useState(0);
+  useEffect(() => onTestsUpdated(() => setVersion((v) => v + 1)), []);
 
   useEffect(() => {
     (async () => {
@@ -76,11 +95,14 @@ export function useTestsStorage() {
         }
       }
     })();
-  }, []);
+  }, [version]);
 
   const persistEntries = async (next: TestEntry[]) => {
     setEntries(next);
     await AsyncStorage.setItem(getTestsStorageKey(), JSON.stringify(next));
+    // Réveille les autres lecteurs (Home, Profil) — APRÈS l'écriture, pour
+    // qu'une re-lecture immédiate voie déjà la nouvelle donnée.
+    emitTestsUpdated();
   };
 
   return { entries, persistEntries };
