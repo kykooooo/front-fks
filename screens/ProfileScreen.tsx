@@ -110,6 +110,10 @@ export default function ProfileScreen() {
   const extTargetFks = useExternalStore((s) => s.targetFksSessionsPerWeek ?? null);
   const extClubPerWeek = useExternalStore((s) => s.clubTrainingsPerWeek ?? null);
   const extMatchesPerWeek = useExternalStore((s) => s.matchesPerWeek ?? null);
+  // Les charges club/match REELLES (auto-appliquées depuis les jours déclarés,
+  // ou saisies) : c'est elles que « Club / match » doit compter — pas le
+  // tableau vide codé en dur qui figeait le compteur à « 0 sem » à vie (P1-01).
+  const externalLoads = useExternalStore((s) => s.externalLoads ?? []);
   const devNowISO = useDebugStore((s) => s.devNowISO);
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
   const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
@@ -119,6 +123,7 @@ export default function ProfileScreen() {
 
   /* ─── Tests terrain ─── */
   const [testsCount, setTestsCount] = useState(0);
+  const [monthlyTestsCount, setMonthlyTestsCount] = useState(0);
   const [lastTestTs, setLastTestTs] = useState<number | null>(null);
   const [lastTestPlaylist, setLastTestPlaylist] = useState<MicrocycleId | null>(null);
 
@@ -131,6 +136,17 @@ export default function ProfileScreen() {
         const parsed = JSON.parse(raw) as Array<any>;
         if (!Array.isArray(parsed)) return;
         if (alive) setTestsCount(parsed.length);
+        // « Tests ce mois » compte les VRAIS relevés de tests terrain (cette
+        // source-ci), plus jamais les séances de course de streakStats : une
+        // batterie faite le jour 1 doit afficher 1, un footing doit afficher 0
+        // (P1-02 — l'heuristique « VMA-like » comptait l'inverse).
+        const now = new Date(devNowISO ?? Date.now());
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+        const monthly = parsed.filter((e) => {
+          const ts = Number(e?.ts);
+          return Number.isFinite(ts) && ts >= monthStart;
+        }).length;
+        if (alive) setMonthlyTestsCount(monthly);
         const latest = [...parsed].sort((a, b) => Number(b?.ts ?? 0) - Number(a?.ts ?? 0))[0];
         const latestTs = Number(latest?.ts ?? 0);
         if (alive && Number.isFinite(latestTs) && latestTs > 0) setLastTestTs(latestTs);
@@ -139,7 +155,7 @@ export default function ProfileScreen() {
       } catch { /* best effort */ }
     })();
     return () => { alive = false; };
-  }, []);
+  }, [devNowISO]);
 
   /* ─── Entrance animations ─── */
   const anims = useRef(Array.from({ length: SECTION_COUNT }, () => new Animated.Value(0))).current;
@@ -266,8 +282,8 @@ export default function ProfileScreen() {
 
   /* ─── Streaks ─── */
   const streaks = useMemo(
-    () => computeStreakStats(sessions as any, [] as any, devNowISO ?? new Date().toISOString()),
-    [sessions, devNowISO],
+    () => computeStreakStats(sessions as any, externalLoads as any, devNowISO ?? new Date().toISOString()),
+    [sessions, externalLoads, devNowISO],
   );
 
   /* ─── Weekly ─── */
@@ -297,9 +313,9 @@ export default function ProfileScreen() {
       make('weekly', 'Semaine active', last7Completed, weeklyThresholds, 'séance'),
       make('streak', 'Régularité', streaks.weeksFks, streakThresholds, 'semaine'),
       make('load', 'Constance', loadDays, loadThresholds, 'jour'),
-      make('vma', 'Tests du mois', streaks.monthlyVmaCount, vmaThresholds, 'test'),
+      make('vma', 'Tests du mois', monthlyTestsCount, vmaThresholds, 'test'),
     ];
-  }, [last7Completed, weeklyThresholds, streaks, streakThresholds, loadDays, loadThresholds, vmaThresholds]);
+  }, [last7Completed, weeklyThresholds, streaks, streakThresholds, loadDays, loadThresholds, vmaThresholds, monthlyTestsCount]);
 
   const earnedBadges = badgeItems.filter((b) => b.earned).length;
   const barLbl = (i: number) => (i === 0 ? 'J' : `J-${i}`);
@@ -546,7 +562,7 @@ export default function ProfileScreen() {
             {([
               { label: 'Semaines FKS', value: streaks.weeksFks, unit: 'sem', icon: 'flame-outline' as const, tint: '#ef4444' },
               { label: 'Club / match', value: streaks.weeksClubMatch, unit: 'sem', icon: 'shield-outline' as const, tint: palette.info },
-              { label: 'Tests ce mois', value: streaks.monthlyVmaCount, unit: 'tests', icon: 'speedometer-outline' as const, tint: '#8b5cf6' },
+              { label: 'Tests ce mois', value: monthlyTestsCount, unit: 'tests', icon: 'speedometer-outline' as const, tint: '#8b5cf6' },
             ]).map((item, idx) => (
               <React.Fragment key={item.label}>
                 <View style={styles.momentumRow}>
