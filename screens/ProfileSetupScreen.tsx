@@ -53,6 +53,7 @@ import { PRIVACY_POLICY } from "../utils/legalContent";
 import { recommendMicrocycle } from "../domain/recommendMicrocycle";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { showToast } from "../utils/toast";
+import { withTimeout, TimeoutError } from "../utils/errorHandler";
 import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
 import { trackEvent } from "../services/analytics";
@@ -422,7 +423,13 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       // APRÈS l'enregistrement du profil — voir screens/profileSetup/attachClub.
       const existingClubId: string | null = clubId?.trim() ? clubId.trim() : null;
 
-      const attach = await saveProfileThenAttachClub(
+      // Délai de garde 15 s (P1-05) : hors réseau, le setDoc pend sans fin et
+      // l'overlay « Enregistrement… » gelait à jamais — force-kill = tout le
+      // questionnaire perdu. Au timeout : toast honnête, les réponses restent
+      // en place, « Terminer » se retape (setDoc merge idempotent). Si
+      // l'écriture atterrit après coup (réseau revenu), le listener du
+      // RootNavigator voit profileCompleted et bascule tout seul.
+      const attach = await withTimeout(saveProfileThenAttachClub(
         {
           saveProfile: () =>
             setDoc(doc(db, "users", user.uid), {
@@ -469,7 +476,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
           joinClub: joinClubWithInviteCode,
         },
         normalizedInvite,
-      );
+      ), 15000);
 
       if (attach.status !== "skipped") {
         // Mesure du taux d'échec du code club. On ne sait plus POURQUOI un code
@@ -520,6 +527,17 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
         navigation.goBack();
       }
     } catch (error) {
+      if (error instanceof TimeoutError) {
+        // Rien n'est perdu : le state du questionnaire est intact, l'écran
+        // reste ouvert, et l'écriture partie peut encore atterrir toute seule.
+        haptics.warning();
+        showToast({
+          type: "warn",
+          title: "Impossible d'enregistrer pour le moment",
+          message: "Vérifie ta connexion. Tes réponses sont conservées — réessaie dans un instant.",
+        });
+        return;
+      }
       if (__DEV__) console.error("Erreur sauvegarde profil:", error);
       runShake(shake);
       haptics.error();

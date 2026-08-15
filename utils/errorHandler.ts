@@ -374,3 +374,31 @@ export function showErrorWithRetry(
 
   Alert.alert(title, appError.userMessage, buttons);
 }
+
+/**
+ * Erreur typée d'un délai de garde local — distincte des erreurs réseau
+ * classifiées : la promesse d'origine n'est PAS annulée (une écriture
+ * Firestore peut atterrir après coup, et c'est voulu : latency compensation).
+ */
+export class TimeoutError extends Error {
+  constructor(ms: number) {
+    super(`Délai de garde dépassé (${ms} ms)`);
+    this.name = "TimeoutError";
+  }
+}
+
+/**
+ * Borne une promesse par un délai de garde. Firestore, hors-ligne, laisse
+ * `setDoc` PENDANT indéfiniment (ack serveur requis, aucun reject) : tout
+ * overlay bloquant posé sur une telle écriture doit passer par ici, sinon
+ * l'écran gèle sans issue (P1-05/P1-27 inventaire clubs 15/08).
+ */
+export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new TimeoutError(ms)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); }
+    );
+  });
+}
