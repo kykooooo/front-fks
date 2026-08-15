@@ -50,7 +50,7 @@ export function BadgesCard({ badges }: Props) {
             <Ionicons name="flame" size={16} color="#fff" />
           </LinearGradient>
           <Text style={styles.badgeValue}>{badges.streak}</Text>
-          <Text style={styles.badgeLabel}>jours streak</Text>
+          <Text style={styles.badgeLabel}>jours d'affilée</Text>
         </View>
         <View style={styles.badgeItem}>
           <LinearGradient

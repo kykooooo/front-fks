@@ -31,7 +31,7 @@ export const PREBUILT_SESSIONS: Prebuilt[] = [
   },
   {
     category: "ACTIVATION",
-    title: "Warm-up terrain complet",
+    title: "Échauffement terrain complet",
     intensity: "easy",
     duration: "12-15 min",
     objective: "Prépare muscles et système nerveux avant l'entraînement",
@@ -107,21 +107,21 @@ export const PREBUILT_SESSIONS: Prebuilt[] = [
   // ============================================================
   {
     category: "RÉCUPÉRATION",
-    title: "Cooldown post-entraînement",
+    title: "Retour au calme post-entraînement",
     intensity: "easy",
     duration: "10-12 min",
     objective: "Fais redescendre le rythme cardiaque après l'effort",
     focus: "mobility",
     location: "pitch",
     equipment: [],
-    tags: ["Post-training", "Cooldown", "Standard"],
+    tags: ["Post-entraînement", "Retour au calme", "Standard"],
     level: "Tout niveau",
     detail: [
       "Marche ou footing très léger: 3-4 min — Redescendre le cardio progressivement",
-      "Respiration ventrale: 10 cycles — Inspir 4s par le nez, expir 6s par la bouche, ventre qui gonfle",
+      "Respiration ventrale: 10 cycles — Inspire 4 s par le nez, expire 6 s par la bouche, ventre qui gonfle",
       "Étirements légers: 30\" chaque — Cuisses, arrière des cuisses, mollets tenus sans forcer",
-      "Hip flexor stretch: 30\" / côté — Genou au sol, hanche avant, sentir l'étirement devant la hanche",
-      "Child's pose: 1 min — À genoux, assis sur les talons, bras tendus devant, front au sol",
+      "Étirement fléchisseur de hanche: 30\" / côté — Genou au sol, hanche avant, sentir l'étirement devant la hanche",
+      "Posture de l'enfant: 1 min — À genoux, assis sur les talons, bras tendus devant, front au sol",
     ],
     expectations: [
       "Rythme cardiaque qui redescend.",
@@ -145,7 +145,7 @@ export const PREBUILT_SESSIONS: Prebuilt[] = [
       "90/90 switches: 3 x 6 / côté — Assis, jambes à 90°, bascule d'un côté à l'autre sans les mains",
       "Foam roller: 2 min — Roule sur les zones tendues pour détendre les muscles",
       "Étirements doux: 5 min — Tiens chaque position 30-45s sans forcer",
-      "Respiration 4-7-8: 5 cycles — Inspir 4s, blocage 7s, expir lente 8s pour te relaxer",
+      "Respiration 4-7-8: 5 cycles — Inspire 4 s, bloque 7 s, expire lentement 8 s pour te relaxer",
     ],
     expectations: [
       "Zéro intensité, zéro fatigue.",
@@ -191,11 +191,11 @@ export const PREBUILT_SESSIONS: Prebuilt[] = [
     level: "Tout niveau",
     detail: [
       "Lumière tamisée, écrans éteints — Prépare ton cerveau au sommeil",
-      "Child's pose: 1 min — À genoux, assis sur les talons, bras tendus devant, front au sol",
+      "Posture de l'enfant: 1 min — À genoux, assis sur les talons, bras tendus devant, front au sol",
       "Happy baby: 1 min — Sur le dos, attrape tes pieds, genoux vers les aisselles, bascule doucement",
       "Supine twist: 30\" / côté — Allongé, genoux pliés qui tombent d'un côté, regard à l'opposé",
       "Legs up the wall: 3 min — Allongé, jambes verticales contre le mur, détend tout",
-      "Respiration 4-7-8: 8 cycles — Inspir 4s, blocage 7s, expir 8s pour ralentir le système nerveux",
+      "Respiration 4-7-8: 8 cycles — Inspire 4 s, bloque 7 s, expire 8 s pour ralentir le système nerveux",
       "Body scan mental: 2 min — Allongé, scanne ton corps de la tête aux pieds en relâchant chaque zone",
     ],
     expectations: [
@@ -272,7 +272,7 @@ export const PREBUILT_SESSIONS: Prebuilt[] = [
       "Thread the needle: 6 / côté — À 4 pattes, passe un bras sous le corps, épaule au sol, tourne le buste",
       "Open book: 6 / côté — Sur le côté, ouvre le bras du dessus en tournant le buste, regard suit la main",
       "Prone Y-T-W: 6 de chaque — Ventre au sol, dessine Y puis T puis W avec les bras, omoplates serrées",
-      "Child's pose avec rotation: 30\" / côté — Position de l'enfant avec un bras qui pousse sur le côté",
+      "Posture de l'enfant avec rotation: 30\" / côté — Position de l'enfant avec un bras qui pousse sur le côté",
     ],
     expectations: [
       "Rotation thoracique, pas lombaire.",
@@ -427,7 +427,7 @@ export const PREBUILT_SESSIONS: Prebuilt[] = [
     expectations: [
       "Essentiel après une entorse.",
       "Progression vers surfaces instables.",
-      "Intégrer dans le warm-up régulier.",
+      "Intégrer dans l'échauffement régulier.",
     ],
   },
   {
@@ -485,7 +485,7 @@ export const PREBUILT_SESSIONS: Prebuilt[] = [
   },
   {
     category: "MATCH DAY",
-    title: "Warm-up pré-match terrain",
+    title: "Échauffement pré-match terrain",
     intensity: "moderate",
     duration: "20-25 min",
     objective: "L'échauffement complet avant le coup d'envoi",
@@ -549,7 +549,7 @@ export const PREBUILT_SESSIONS: Prebuilt[] = [
       "Foam roller complet: 8-10 min — Roule cuisses, mollets, fessiers, dos, zones sensibles du match",
       "Mobilité douce: 5 min — Cercles de hanches, rotations du dos, bras, tout en douceur",
       "Étirements passifs légers: 5 min — Positions tenues 30-40s, respire dans l'étirement",
-      "Respiration profonde: 2 min — Inspir 4s, expir 6s, active la récupération du système nerveux",
+      "Respiration profonde: 2 min — Inspire 4 s, expire 6 s, active la récupération du système nerveux",
     ],
     expectations: [
       "Zéro intensité.",
@@ -753,7 +753,7 @@ export const PREBUILT_SESSIONS: Prebuilt[] = [
       "Dead bug: 30\" — Sur le dos, bras en l'air, alterne jambe/bras opposés sans cambrer",
       "Hollow hold: 30\" — Sur le dos, jambes et épaules décollées, bas du dos plaqué au sol",
       "Superman: 30\" — Sur le ventre, décolle bras et jambes en même temps, serre le dos",
-      "Planche finale: 45\" — Dernière planche, tiens jusqu'au bout, finish strong",
+      "Planche finale: 45\" — Dernière planche, tiens jusqu'au bout, finis fort",
     ],
     expectations: [
       "Pas de pause entre les exercices.",
@@ -896,7 +896,7 @@ export const PREBUILT_SESSIONS: Prebuilt[] = [
     ],
     expectations: [
       "Forme parfaite sur chaque rep — mieux vaut ralentir que bâcler.",
-      "Adapt le nombre de reps si c'est trop facile ou trop dur.",
+      "Adapte le nombre de répétitions si c'est trop facile ou trop dur.",
       "Progression : ajoute un tour ou réduis le repos entre les tours.",
     ],
   },
