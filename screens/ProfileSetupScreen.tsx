@@ -54,6 +54,11 @@ import { recommendMicrocycle } from "../domain/recommendMicrocycle";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { showToast } from "../utils/toast";
 import { withTimeout, TimeoutError } from "../utils/errorHandler";
+import {
+  POSITION_DISPLAY_LABELS,
+  LEVEL_DISPLAY_LABELS,
+  OBJECTIVE_DISPLAY_LABELS,
+} from "../utils/profileDisplayLabels";
 import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
 import { trackEvent } from "../services/analytics";
@@ -110,19 +115,9 @@ type SelfReportedGapOptionId = (typeof SELF_REPORTED_GAP_OPTIONS)[number]["id"];
 
 // ⚠️ Les valeurs de `positions`, `levels` et `objectives` sont PERSISTÉES en Firestore
 // et comparées à des allowlists SANS accents côté Cloud Functions (functions/src/coachLabels.ts)
-// + matching substring dans recommendMicrocycle. On ne les modifie donc JAMAIS :
-// ces maps servent uniquement à afficher un libellé accentué dans l'UI.
-const POSITION_DISPLAY_LABELS: Partial<Record<(typeof positions)[number], string>> = {
-  Defenseur: "Défenseur",
-};
-const LEVEL_DISPLAY_LABELS: Partial<Record<(typeof levels)[number], string>> = {
-  Regional: "Régional",
-};
-const OBJECTIVE_DISPLAY_LABELS: Partial<Record<(typeof objectives)[number], string>> = {
-  "Etre en forme toute la saison": "Être en forme toute la saison",
-  "Gagner en vitesse / explosivite": "Gagner en vitesse / explosivité",
-  "Reprendre apres une blessure": "Reprendre après une blessure",
-};
+// + matching substring dans recommendMicrocycle. On ne les modifie donc JAMAIS.
+// Les maps d'affichage accentué vivent désormais dans utils/profileDisplayLabels.ts
+// (partagées avec ProfileScreen, qui relisait les valeurs brutes — P1-20).
 
 const daysOfWeek = [
   { id: "mon", label: "Lun" }, { id: "tue", label: "Mar" }, { id: "wed", label: "Mer" },

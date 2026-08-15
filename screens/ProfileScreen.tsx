@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { readTestsRaw, onTestsUpdated } from './tests/hooks/useTestsStorage';
+import { displayPosition, displayLevel, displayObjective } from '../utils/profileDisplayLabels';
 
 import { useSessionsStore } from '../state/stores/useSessionsStore';
 import { useLoadStore } from '../state/stores/useLoadStore';
@@ -177,10 +178,15 @@ export default function ProfileScreen() {
 
   /* ─── Derived ─── */
   const athleteName = profile?.first_name?.trim() || auth.currentUser?.displayName || 'Joueur';
-  const athleteLevel = labelize(profile?.level);
-  const athletePosition = labelize(profile?.position);
+  // displayPosition/displayLevel (P1-20) : les valeurs persistées sont SANS
+  // accents par convention — le héro affichait « Defenseur · Regional ».
+  const athleteLevel = labelize(displayLevel(profile?.level));
+  const athletePosition = labelize(displayPosition(profile?.position));
   const athleteFoot = labelize(profile?.dominant_foot);
   const mainObjective = profile?.main_objective?.trim() ?? null;
+  // Version ACCENTUÉE pour l'affichage seulement — la valeur brute reste celle
+  // du matching de recommendMicrocycle (persistée sans accents, P1-20).
+  const mainObjectiveDisplay = displayObjective(mainObjective);
   // Source de vérité = watcher Firestore users/{uid} (useExternalStore, temps réel).
   // Fallback sur le profil renvoyé par la dernière génération IA (peut être en retard d'une session).
   const targetFks = extTargetFks ?? (typeof profile?.target_fks_sessions_per_week === 'number' ? profile.target_fks_sessions_per_week : null);
@@ -359,10 +365,10 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            {mainObjective ? (
+            {mainObjectiveDisplay ? (
               <View style={styles.objectivePill}>
                 <Ionicons name="flag-outline" size={14} color={palette.accent} />
-                <Text style={styles.objectiveText}>{mainObjective}</Text>
+                <Text style={styles.objectiveText}>{mainObjectiveDisplay}</Text>
               </View>
             ) : null}
 
