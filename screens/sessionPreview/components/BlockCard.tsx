@@ -6,6 +6,7 @@ import { theme } from "../../../constants/theme";
 import { Card } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
 import { getBlockVisual, getBlockLabel, getTransitionLabel } from "../../../components/session/blockConfig";
+import { frIntensity } from "../../../utils/frLabels";
 import { getExerciseBenefit } from "../../../engine/exerciseBenefits";
 import {
   type Block,
@@ -100,7 +101,9 @@ export function BlockCard({
               </View>
               <View style={styles.vBlockBadges}>
                 {block.intensity ? (
-                  <Badge label={block.intensity} tone={intensityTone(block.intensity)} />
+                  // frIntensity (P1-12) : le token backend brut (« hard »,
+                  // « moderate ») s'affichait en anglais sur chaque carte.
+                  <Badge label={frIntensity(block.intensity)} tone={intensityTone(block.intensity)} />
                 ) : null}
                 {isComplete ? <Badge label="OK" tone="ok" /> : null}
               </View>

@@ -1,6 +1,7 @@
 // screens/feedback/hooks/useSuggestions.ts
 import { useMemo } from 'react';
 import type { Session } from '../../../domain/types';
+import { frIntensity } from '../../../utils/frLabels';
 
 export type FeedbackSuggestion = {
   rpe: number;
@@ -35,7 +36,9 @@ export function useSuggestions(
       fatigue: intensity.includes('hard') ? 4 : intensity.includes('easy') ? 2 : 3,
       recovery: intensity.includes('hard') ? 3 : intensity.includes('easy') ? 4 : 3,
       pain: 0,
-      intensityLabel: intensity,
+      // frIntensity (P1-14) : « Basées sur l'intensité moderate » mélangeait
+      // un token backend anglais dans une phrase française.
+      intensityLabel: frIntensity(intensity),
     };
   }, [prefillRpe, targetSession]);
 }

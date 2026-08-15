@@ -49,7 +49,7 @@ import { trackEvent } from "../services/analytics";
 import { STORAGE_KEYS } from "../constants/storage";
 import { buildResetExplain } from "./newSession/resetExplain";
 import { useContextualAdvice } from "../hooks/home/useContextualAdvice";
-import { toDateKey } from "../utils/dateHelpers";
+import { toDateKey, formatDayFR } from "../utils/dateHelpers";
 import { selectPendingSession } from "../utils/sessionHelpers";
 
 /** Catalogue matériel (ids alignés avec le profil) */
@@ -289,7 +289,7 @@ export default function NewSessionScreen() {
             sessionId,
           }),
         alertPlanified: (dateISO: string) => {
-          showToast({ type: "info", title: "Planifiée pour demain", message: `Séance planifiée pour le ${dateISO}.` });
+          showToast({ type: "info", title: "Planifiée pour demain", message: `Séance planifiée pour ${formatDayFR(dateISO) || dateISO}.` });
         },
       });
       trackEvent("session_generate_success", {
@@ -534,7 +534,7 @@ export default function NewSessionScreen() {
           sessionId,
           }),
         alertPlanified: (dateISO: string) => {
-          showToast({ type: "info", title: "Planifiée pour demain", message: `Séance planifiée pour le ${dateISO}.` });
+          showToast({ type: "info", title: "Planifiée pour demain", message: `Séance planifiée pour ${formatDayFR(dateISO) || dateISO}.` });
         },
       });
       trackEvent("session_generate_success", {
@@ -632,7 +632,7 @@ export default function NewSessionScreen() {
         navigate: ({ v2, plannedDateISO, sessionId }) =>
           nav.navigate("SessionPreview", { v2, plannedDateISO, sessionId }),
         alertPlanified: (dateISO: string) => {
-          showToast({ type: "info", title: "Planifiée pour demain", message: `Séance planifiée pour le ${dateISO}.` });
+          showToast({ type: "info", title: "Planifiée pour demain", message: `Séance planifiée pour ${formatDayFR(dateISO) || dateISO}.` });
         },
       });
     } catch (err: any) {
@@ -689,7 +689,7 @@ export default function NewSessionScreen() {
         navigate: ({ v2: navV2, plannedDateISO, sessionId }) =>
           nav.navigate("SessionPreview", { v2: navV2, plannedDateISO, sessionId }),
         alertPlanified: (dateISO: string) => {
-          showToast({ type: "info", title: "Planifiée pour demain", message: `Séance planifiée pour le ${dateISO}.` });
+          showToast({ type: "info", title: "Planifiée pour demain", message: `Séance planifiée pour ${formatDayFR(dateISO) || dateISO}.` });
         },
       });
       trackEvent("session_generate_from_cache", { cycleId });

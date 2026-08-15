@@ -32,7 +32,11 @@ export function SuggestionsCard({
           <Text style={styles.suggestTitle}>Suggestions rapides</Text>
         </View>
         <Text style={styles.suggestSubtitle}>
-          Basées sur l'intensité {suggestion.intensityLabel || 'du jour'}
+          {/* Forme « : {label} » (P1-14) : évite l'accord (« l'intensité
+              Modéré ») et plus jamais de token backend brut. */}
+          {suggestion.intensityLabel
+            ? `Basées sur l'intensité prévue : ${suggestion.intensityLabel}`
+            : "Basées sur l'intensité du jour"}
         </Text>
       </View>
       <View style={styles.suggestRow}>

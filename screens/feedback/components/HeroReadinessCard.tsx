@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../../../constants/theme';
+import { formatDayFR } from '../../../utils/dateHelpers';
 
 const COLORS = theme.colors;
 
@@ -34,16 +35,19 @@ export function HeroReadinessCard({ readiness, readinessLabel, todayKey, fadeAni
           <Text style={styles.heroTitle}>État du joueur</Text>
         </View>
         <View style={styles.heroDateBadge}>
-          <Text style={styles.heroDate}>{todayKey}</Text>
+          {/* formatDayFR (P1-13) : plus de date ISO brute « 2026-08-15 » en badge. */}
+          <Text style={styles.heroDate}>{formatDayFR(todayKey)}</Text>
         </View>
       </View>
       <View style={styles.heroBodyRow}>
-        <View style={styles.heroScoreCircle} accessibilityRole="text" accessibilityLabel={`Score de readiness : ${readiness} sur 100, ${readinessLabel}`}>
+        <View style={styles.heroScoreCircle} accessibilityRole="text" accessibilityLabel={`État du jour : ${readiness} sur 100, ${readinessLabel}`}>
           <Text style={styles.heroScore}>{readiness}</Text>
           <Text style={styles.heroScoreSuffix}>/100</Text>
         </View>
         <View style={styles.heroInfo}>
-          <Text style={styles.heroTag}>Readiness</Text>
+          {/* « État du jour » (P1-13) : « Readiness » était le seul anglicisme
+              affiché du formulaire. */}
+          <Text style={styles.heroTag}>État du jour</Text>
           <Text style={styles.heroLabel}>{readinessLabel}</Text>
           <Text style={styles.heroSub}>
             FKS ajuste la prochaine séance en fonction de ton état réel.
