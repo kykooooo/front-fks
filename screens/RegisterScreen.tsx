@@ -105,8 +105,13 @@ export default function RegisterScreen({ navigation }: Props) {
         doc(db, "users", cred.user.uid),
         {
           email: cred.user.email ?? emailTrimmed,
-          displayName: cleanName || emailTrimmed.split("@")[0],
-          firstName: cleanName || emailTrimmed.split("@")[0],
+          // Prénom absent = null, JAMAIS la partie locale de l'email (règle 12).
+          // L'ancien repli écrivait « kyky76700 » en base : re-préaffiché au
+          // setup ET montré au coach dans son effectif (P1-04 inventaire
+          // clubs). Le setup exige un prénom à l'étape 1 — c'est LÀ qu'il
+          // arrive ; CoachPlayerRow sait afficher un état « sans prénom ».
+          displayName: cleanName || null,
+          firstName: cleanName || null,
           profileCompleted: false,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
