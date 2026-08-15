@@ -87,6 +87,22 @@ export async function registerForPushNotifications(): Promise<string | null> {
   return token;
 }
 
+/**
+ * Statut RÉEL de la permission — pour garder Réglages honnête (P1-26).
+ * `null` = on ne conclut rien (web, ou lecture impossible) : ne jamais
+ * dégrader un réglage sur un signal ambigu. Distinct du token push :
+ * les rappels LOCAUX ne dépendent que de la permission, pas du token.
+ */
+export async function isNotificationPermissionGranted(): Promise<boolean | null> {
+  if (Platform.OS === "web") return null;
+  try {
+    const { status } = await Notifications.getPermissionsAsync();
+    return status === "granted";
+  } catch {
+    return null;
+  }
+}
+
 // ──────────────────────── Préférences ────────────────────────
 
 export async function getNotifPrefs(): Promise<NotifPrefs> {
