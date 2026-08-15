@@ -201,9 +201,15 @@ export default function ProfileScreen() {
       });
   }, [sessions]);
 
+  // Règle 12 (jamais de valeur d'amorçage) : tant qu'aucune séance n'est
+  // validée, ATL/CTL/TSB ne portent que les constantes d'amorce (CTL0−ATL0 =
+  // +3) — afficher « En forme — Prêt à performer » là-dessus, c'est prétendre
+  // connaître un joueur qu'on n'a jamais vu jouer. Même porte que la carte
+  // Progression du Home : l'état de forme n'existe qu'après la 1re séance.
+  const hasFormData = completedCount > 0;
   const footballStatus = getFootballLabel(tsb);
-  const tsbLabel = footballStatus.label;
-  const tsbColor = footballStatus.color;
+  const tsbLabel = hasFormData ? footballStatus.label : '—';
+  const tsbColor = hasFormData ? footballStatus.color : palette.borderStrong;
 
   // Tendance TSB sur la fenêtre dispo (jusqu'à 7 jours) : diff > 0 = TSB qui remonte (forme qui revient),
   // diff < 0 = TSB qui descend (charge récente plus dense). Libellés neutres, factuels, sans jugement.
@@ -213,6 +219,12 @@ export default function ProfileScreen() {
     const diff = vals[0] - vals[vals.length - 1];
     return diff > 2 ? 'ça repart' : diff < -2 ? 'charge qui monte' : 'stable';
   }, [tsbHistory]);
+  // Une tendance ne s'affirme que si elle repose sur ≥ 2 relevés réels : avant
+  // ça, « Stable » serait un verdict fabriqué sur du vide.
+  const showTrend = hasFormData && tsbHistory.length >= 2;
+  // P0-4 : uniquement les relevés RÉELS du store — plus jamais `?? tsb` pour
+  // boucher les trous (7 barres identiques fabriquées sur un compte neuf).
+  const formBars = useMemo(() => tsbHistory.slice(0, 7), [tsbHistory]);
 
   const todayKey = useMemo(() => toDateKey(devNowISO ?? new Date()), [devNowISO]);
   const last7Keys = useMemo(() => lastNDates(todayKey, 7), [todayKey]);
@@ -525,9 +537,11 @@ export default function ProfileScreen() {
 
         {/* ─── MOMENTUM ─── */}
         <Animated.View style={[styles.section, aStyle(4)]}>
-          {/* Pas de labelize() ici : il capitalise CHAQUE mot ("Charge Qui Monte") — une
-              phrase FR ne prend qu'une majuscule initiale. */}
-          <SectionHeader title="Ta régularité" right={<Badge label={tsbTrend.charAt(0).toUpperCase() + tsbTrend.slice(1)} tone={trendTone} />} />
+          {/* Le badge de tendance de FORME qui coiffait cette section était un
+              mislabel (il parlait du TSB, pas de la régularité) — il vit
+              désormais uniquement sur « Ta forme », et seulement s'il repose
+              sur des relevés réels. */}
+          <SectionHeader title="Ta régularité" />
           <Card variant="soft" style={styles.momentumCard}>
             {([
               { label: 'Semaines FKS', value: streaks.weeksFks, unit: 'sem', icon: 'flame-outline' as const, tint: '#ef4444' },
@@ -550,36 +564,66 @@ export default function ProfileScreen() {
 
         {/* ─── CHARGE & FORME ─── */}
         <Animated.View style={[styles.section, aStyle(5)]}>
-          <SectionHeader title="Ta forme" right={<Badge label={`Tendance : ${tsbTrend}`} tone={trendTone} />} />
+          <SectionHeader
+            title="Ta forme"
+            right={showTrend ? <Badge label={`Tendance : ${tsbTrend}`} tone={trendTone} /> : undefined}
+          />
           <Card variant="soft" style={styles.chargeCard}>
-            <View style={styles.chargeStatusRow}>
-              <View style={[styles.chargeStatusDot, { backgroundColor: tsbColor }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.chargeStatusLabel, { color: tsbColor }]}>{tsbLabel}</Text>
-                <Text style={styles.chargeStatusMsg}>{footballStatus.message}</Text>
-              </View>
-            </View>
-            <View style={styles.tagRow}>
-              <Badge label={tsb <= -15 ? 'Jambes lourdes' : tsb <= -8 ? 'Un peu de fatigue' : 'Frais'} tone={fatigueTone} />
-              <Badge label={tsb <= -12 ? 'Attention blessure' : tsb < -5 ? 'Chargé' : 'C\'est bon'} tone={riskTone} />
-            </View>
-
-            <Text style={styles.chartTitle}>Ta forme sur 7 jours</Text>
-            <View style={styles.chartRow}>
-              {Array.from({ length: 7 }).map((_, idx) => {
-                const val = tsbHistory[idx] ?? tsb;
-                const h = Math.max(8, Math.min(60, Math.abs(val) * 2));
-                const c = val >= 5 ? palette.success : val >= 0 ? '#34d399' : val >= -8 ? palette.warn : palette.danger;
-                const isToday = idx === 0;
-                return (
-                  <View key={idx} style={styles.barCol}>
-                    <Text style={[styles.barVal, isToday && { fontWeight: '700', color: palette.text }]}>{val.toFixed(0)}</Text>
-                    <View style={[styles.bar, { height: h, backgroundColor: c, opacity: isToday ? 1 : 0.7 }]} />
-                    <Text style={[styles.barLbl, isToday && { fontWeight: '700', color: palette.text }]}>{barLbl(idx)}</Text>
+            {hasFormData ? (
+              <>
+                <View style={styles.chargeStatusRow}>
+                  <View style={[styles.chargeStatusDot, { backgroundColor: tsbColor }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.chargeStatusLabel, { color: tsbColor }]}>{tsbLabel}</Text>
+                    <Text style={styles.chargeStatusMsg}>{footballStatus.message}</Text>
                   </View>
-                );
-              })}
-            </View>
+                </View>
+                <View style={styles.tagRow}>
+                  <Badge label={tsb <= -15 ? 'Jambes lourdes' : tsb <= -8 ? 'Un peu de fatigue' : 'Frais'} tone={fatigueTone} />
+                  <Badge label={tsb <= -12 ? 'Attention blessure' : tsb < -5 ? 'Chargé' : 'C\'est bon'} tone={riskTone} />
+                </View>
+
+                {/* Relevés RÉELS uniquement. Les anciennes étiquettes J…J-6
+                    mentaient deux fois : barres manquantes bouchées avec le TSB
+                    du jour, et série par ÉVÉNEMENT présentée comme des jours
+                    calendaires. Tant que la série n'est pas reconstruite par
+                    jour (refonte Profil), on affiche ce qu'elle est vraiment :
+                    les derniers relevés, du plus récent au plus ancien. */}
+                <Text style={styles.chartTitle}>Ta forme — derniers relevés</Text>
+                {formBars.length >= 2 ? (
+                  <View style={styles.chartRow}>
+                    {formBars.map((val, idx) => {
+                      const h = Math.max(8, Math.min(60, Math.abs(val) * 2));
+                      const c = val >= 5 ? palette.success : val >= 0 ? '#34d399' : val >= -8 ? palette.warn : palette.danger;
+                      const isLatest = idx === 0;
+                      return (
+                        <View key={idx} style={styles.barCol}>
+                          <Text style={[styles.barVal, isLatest && { fontWeight: '700', color: palette.text }]}>{val.toFixed(0)}</Text>
+                          <View style={[styles.bar, { height: h, backgroundColor: c, opacity: isLatest ? 1 : 0.7 }]} />
+                          <Text style={[styles.barLbl, isLatest && { fontWeight: '700', color: palette.text }]}>
+                            {isLatest ? 'Dernier' : ''}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <Text style={styles.chartEmptyText}>
+                    Encore trop peu de relevés pour tracer une tendance.
+                  </Text>
+                )}
+              </>
+            ) : (
+              <View style={styles.chargeStatusRow}>
+                <View style={[styles.chargeStatusDot, { backgroundColor: palette.borderStrong }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.chargeStatusLabel}>Pas encore de données</Text>
+                  <Text style={styles.chargeStatusMsg}>
+                    Ta forme se calcule sur tes séances validées. Termine ta première séance pour la voir ici.
+                  </Text>
+                </View>
+              </View>
+            )}
 
             <View style={styles.chartSep} />
 
@@ -954,6 +998,7 @@ const styles = StyleSheet.create({
   chargeStatusMsg: { fontSize: 12, color: palette.sub, marginTop: 2 },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   chartTitle: { marginTop: 12, fontSize: 12, fontWeight: '700', color: palette.text },
+  chartEmptyText: { marginTop: 8, fontSize: 12, color: palette.sub },
   chartRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginTop: 8, height: 80 },
   chartHeaderRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   chartMetaRow: { flexDirection: 'row', gap: 6 },
