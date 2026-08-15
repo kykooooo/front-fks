@@ -19,7 +19,10 @@ const source = readFileSync(
 describe("CycleModal — écritures bornées et boutons vivants", () => {
   test("persistCycle passe par withTimeout (les 3 écritures du modal)", () => {
     expect(source).toMatch(/withTimeout\(\s*setDoc\(/);
-    expect((source.match(/persistCycle\(/g) ?? []).length).toBeGreaterThanOrEqual(4); // déf + 3 appels
+    // La définition s'écrit `persistCycle =` ; les occurrences avec parenthèse
+    // sont les APPELS — les 3 écritures du modal (démarrer/abandonner/terminé).
+    expect(source).toMatch(/const persistCycle = async/);
+    expect((source.match(/await persistCycle\(/g) ?? []).length).toBe(3);
   });
 
   test("l'état persisting existe et pilote les CTA", () => {
