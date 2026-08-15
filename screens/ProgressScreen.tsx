@@ -374,13 +374,13 @@ export default function ProgressScreen() {
               </View>
             ))}
             {/*
-              PAS de `tendanceIndisponible.explication` ici (P1-18) : le dernier
-              fait de la liste dit deja « Avant d'afficher une tendance /
-              Encore N seances » — l'explication repete la meme phrase dans
-              l'autre ordre, deux fois dans trois centimetres. Meme regle que la
-              carte du Home (HomeVNextProgression, bloc « CE QUI N'EST PAS
-              AFFICHE ») : les deux surfaces lisent le MEME ViewModel et
-              affichent la meme chose.
+              PAS de phrase d'explication supplementaire ici (P1-18) : le
+              dernier fait de la liste dit deja « Avant d'afficher une
+              tendance / Encore N seances » — la re-imprimer dans l'autre ordre
+              mettait la meme phrase deux fois dans trois centimetres. Meme
+              regle que la carte du Home (HomeVNextProgression, bloc « CE QUI
+              N'EST PAS AFFICHE ») : les deux surfaces lisent le MEME ViewModel
+              et affichent la meme chose. Un test-source verrouille.
             */}
           </>
         ) : null}
