@@ -39,7 +39,13 @@ function navigateFromPayload(data: Record<string, unknown> | undefined): void {
       break;
 
     case "weekly_recap":
-      if (canNavigate("Progression")) navigationRef.navigate("Progression");
+      // → Home, pas la page Progression (P1-17) : par navigation normale, la
+      // page est inatteignable en états empty/collecting (verrou produit) — la
+      // notif du dimanche 20h perçait ce verrou pendant la semaine 1 pilote et
+      // ouvrait une page sans aucun bilan. Le Home porte « Ma semaine » ET la
+      // carte progression, honnêtes dans tous les états ; le joueur « ready »
+      // y accède à la page en un tap, comme d'habitude.
+      if (canNavigate("Tabs")) navigationRef.navigate("Tabs", { screen: "Home" });
       break;
 
     case "session_planned": {
