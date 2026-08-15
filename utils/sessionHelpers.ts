@@ -98,6 +98,8 @@ export function estSeanceArtificielle(session: Session | any): boolean {
  * ici pour ne jamais bloquer la génération ni le CTA du Home.
  * Les séances artificielles (ancienne séance de secours) sont écartées de la
  * même façon : une panne passée ne doit pas devenir la séance du jour.
+ * Les séances déclarées « non faites » (notDone) aussi : le joueur a répondu,
+ * elles ne doivent plus bloquer ni le CTA ni la génération (décision 15/08).
  * Utilisé par usePrimaryCta, NewSessionScreen et SessionHubScreen.
  */
 export function selectPendingSession(
@@ -106,6 +108,7 @@ export function selectPendingSession(
 ): Session | undefined {
   return [...sessions]
     .filter((s) => !s.completed)
+    .filter((s) => !s.notDone)
     .filter((s) => !estSeanceArtificielle(s))
     .filter((s) => isWithinFeedbackWindow(getSessionDate(s), todayKey))
     .sort((a, b) => {

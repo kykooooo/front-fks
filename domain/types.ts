@@ -166,6 +166,14 @@ export type Session = {
   exercises: Exercise[];
   completed?: boolean;
 
+  // ---- « Je ne l'ai pas faite » (décision Kyllian 15/08) ----
+  // Séance générée puis déclarée non faite par le joueur : archivée SANS
+  // charge (ATL/CTL intacts, aucun RPE inventé), ne bloque plus le CTA ni la
+  // génération. Distinct de `completed` (feedback donné) et de la zombie
+  // (non complétée sortie de fenêtre toute seule).
+  notDone?: boolean;
+  notDoneAt?: string;       // ISO
+
   // ---- Charge / feedback ----
   durationMin?: number;     // durée effective (minutes)
   modality?: Modality;      // modalité dominante

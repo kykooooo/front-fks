@@ -81,26 +81,37 @@ export function mergePlannedIntoLocalSessions(
   local: Session[],
   incoming: Session[]
 ): Session[] {
-  const completedLocal = local.filter((s) => s.completed);
-  const completedLocalIds = new Set(completedLocal.map((s) => s.id));
+  // « Réglée » = complétée (feedback) OU déclarée non faite (décision 15/08).
+  // Dans les deux cas le joueur a répondu : le doc entrant encore `planned`
+  // (marqueur serveur pas atterri, hors-ligne) ne doit JAMAIS remplacer la
+  // copie locale — sinon le flag local saute et la séance ressuscite comme
+  // « à faire ». Extension de l'invariant 1 (P0-1) au cas notDone.
+  const settledLocal = local.filter((s) => s.completed || s.notDone);
+  const settledLocalIds = new Set(settledLocal.map((s) => s.id));
   const completedDayKeys = new Set(
-    completedLocal
+    local
+      .filter((s) => s.completed)
       .map((s) => toDateKey((s.dateISO ?? s.date ?? "").toString()))
       .filter(Boolean)
   );
 
   const planned = incoming
-    .filter((p) => !completedLocalIds.has(p.id))
+    .filter((p) => !settledLocalIds.has(p.id))
     .filter((p) => {
       const dayKey = toDateKey((p.dateISO ?? "").toString());
+      // Jour déjà COMPLÉTÉ : rien ne redevient « à faire » ce jour-là.
+      // Un jour seulement « non fait » ne bloque pas : le joueur a le droit
+      // de générer une nouvelle séance le même jour (nouvel id).
       return !completedDayKeys.has(dayKey);
     });
 
   const plannedIds = new Set(planned.map((p) => p.id));
 
-  // Invariants 1 & 2 : les complétées restent toujours ; les non complétées ne
-  // cèdent leur place qu'à leur remplaçante effectivement retenue dans `planned`.
-  const nonPlanned = local.filter((s) => s.completed || !plannedIds.has(s.id));
+  // Invariants 1 & 2 : les réglées restent toujours ; les autres ne cèdent
+  // leur place qu'à leur remplaçante effectivement retenue dans `planned`.
+  const nonPlanned = local.filter(
+    (s) => s.completed || s.notDone || !plannedIds.has(s.id)
+  );
 
   return [...planned, ...nonPlanned];
 }

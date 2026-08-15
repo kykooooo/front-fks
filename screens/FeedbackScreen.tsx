@@ -36,6 +36,8 @@ import { ModalContainer, type ModalDismissControl } from '../components/modal/Mo
 import { withSessionErrorBoundary } from '../components/withErrorBoundary';
 import { clamp } from './feedback/feedbackScales';
 import { summarizeExecution } from '../domain/tracking/execution';
+import { markSessionNotDone } from '../state/orchestrators/markSessionNotDone';
+import { showToast } from '../utils/toast';
 
 // Hooks extraits
 import { useSessionResolution } from './feedback/hooks/useSessionResolution';
@@ -225,6 +227,44 @@ function FeedbackScreen() {
     }
     navigation.goBack();
   }, [navigation, targetSession, stayInFeedback]);
+
+  // « Je ne l'ai pas faite » (décision Kyllian 15/08, P1-08) : l'issue honnête
+  // pour une séance générée mais jamais ouverte. Archive SANS charge (aucun
+  // RPE inventé, ATL/CTL intacts — l'orchestrateur ne touche pas au feedback)
+  // et libère immédiatement le CTA et la génération. Proposée seulement quand
+  // aucune exécution réelle n'existe : un joueur qui a coché des séries en
+  // Live a forcément fait quelque chose — son chemin, c'est le feedback.
+  const canDeclareNotDone = Boolean(
+    targetSession && !targetSession.completed && !executionSummary
+  );
+  const onNotDone = useCallback(() => {
+    if (!targetSessionId) return;
+    Alert.alert(
+      "Tu n'as pas fait cette séance ?",
+      "Elle sera archivée sans charge d'entraînement. Ça arrive — ta prochaine séance n'en tiendra pas compte.",
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Oui, pas faite',
+          style: 'destructive',
+          onPress: () => {
+            const ok = markSessionNotDone(targetSessionId);
+            if (ok) {
+              haptics.impactLight();
+              showToast({
+                type: 'success',
+                title: 'Séance archivée',
+                message: 'Aucune charge comptée. Tu peux passer à la suite.',
+              });
+              navigation.goBack();
+            } else {
+              showToast({ type: 'error', title: 'Impossible', message: 'Cette séance est déjà réglée.' });
+            }
+          },
+        },
+      ]
+    );
+  }, [targetSessionId, navigation, haptics]);
 
   // Callbacks pour suggestions
   const applyRpe = useCallback(() => { setRpe(suggestion.rpe); haptics.impactLight(); }, [suggestion.rpe, haptics]);
@@ -417,6 +457,17 @@ function FeedbackScreen() {
                 style={styles.saveBtn}
                 textStyle={styles.saveText}
               />
+              {canDeclareNotDone ? (
+                <TouchableOpacity
+                  onPress={onNotDone}
+                  style={styles.notDoneLink}
+                  hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Je n'ai pas fait cette séance, l'archiver sans charge"
+                >
+                  <Text style={styles.notDoneLinkText}>Je ne l'ai pas faite</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           </KeyboardAvoidingView>
 
@@ -475,6 +526,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.accent,
   },
   saveText: { color: COLORS.background, fontWeight: '700', fontSize: 15 },
+  // Issue « pas faite » : lien discret sous le CTA — jamais un second bouton
+  // qui se disputerait la hiérarchie avec « Valider ».
+  notDoneLink: { alignSelf: 'center', paddingVertical: 10, marginTop: 2 },
+  notDoneLinkText: { fontSize: 13, fontWeight: '600', color: COLORS.sub },
   debug: {
     marginTop: 8,
     borderRadius: 14,
