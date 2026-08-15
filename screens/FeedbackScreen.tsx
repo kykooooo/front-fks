@@ -32,7 +32,7 @@ import { DEV_FLAGS } from '../config/devFlags';
 import { theme } from '../constants/theme';
 import { Button } from '../components/ui/Button';
 import { LoadingOverlay } from '../components/ui/LoadingOverlay';
-import { ModalContainer } from '../components/modal/ModalContainer';
+import { ModalContainer, type ModalDismissControl } from '../components/modal/ModalContainer';
 import { withSessionErrorBoundary } from '../components/withErrorBoundary';
 import { clamp } from './feedback/feedbackScales';
 import { summarizeExecution } from '../domain/tracking/execution';
@@ -201,16 +201,30 @@ function FeedbackScreen() {
   });
 
   // Fermeture (backdrop/swipe/croix) : ne pas laisser croire que le feedback est parti.
+  // « Rester » doit RÉTABLIR le modal : après un swipe, la feuille est déjà
+  // hors écran et le verrou anti double-dismiss est posé — sans cancelDismiss,
+  // le joueur restait devant un fond flouté vide (P0-2 inventaire clubs).
+  const dismissControl = useRef<ModalDismissControl | null>(null);
+  const stayInFeedback = useCallback(() => {
+    dismissControl.current?.cancelDismiss();
+  }, []);
   const confirmClose = useCallback(() => {
     if (targetSession && !targetSession.completed) {
-      Alert.alert('Feedback non enregistré', 'Quitter sans valider ton retour ?', [
-        { text: 'Rester', style: 'cancel' },
-        { text: 'Quitter', style: 'destructive', onPress: () => navigation.goBack() },
-      ]);
+      Alert.alert(
+        'Feedback non enregistré',
+        'Quitter sans valider ton retour ?',
+        [
+          { text: 'Rester', style: 'cancel', onPress: stayInFeedback },
+          { text: 'Quitter', style: 'destructive', onPress: () => navigation.goBack() },
+        ],
+        // Android : l'alerte peut se fermer d'un tap hors dialogue — même issue
+        // que « Rester », sinon l'écran mort revient par cette porte-là.
+        { cancelable: true, onDismiss: stayInFeedback }
+      );
       return;
     }
     navigation.goBack();
-  }, [navigation, targetSession]);
+  }, [navigation, targetSession, stayInFeedback]);
 
   // Callbacks pour suggestions
   const applyRpe = useCallback(() => { setRpe(suggestion.rpe); haptics.impactLight(); }, [suggestion.rpe, haptics]);
@@ -252,6 +266,7 @@ function FeedbackScreen() {
         blurIntensity={40}
         allowBackdropDismiss
         allowSwipeDismiss
+        dismissControl={dismissControl}
       >
         <View
           style={[

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useWindowDimensions } from "react-native";
 import { Gesture } from "react-native-gesture-handler";
 import {
@@ -49,5 +49,13 @@ export function useSwipeToDismiss({
     transform: [{ translateY: translateY.value }],
   }));
 
-  return { gesture, animatedStyle };
+  // Ramène la feuille à sa place après un dismiss ANNULÉ. Nécessaire pour les
+  // écrans dont le onDismiss ouvre une confirmation : le geste a déjà envoyé la
+  // feuille hors écran (withTiming(screenHeight) ci-dessus) — si l'utilisateur
+  // choisit de rester, personne d'autre ne réécrit translateY.
+  const reset = useCallback(() => {
+    translateY.value = withTiming(0, { duration: 180 });
+  }, [translateY]);
+
+  return { gesture, animatedStyle, reset };
 }
