@@ -707,7 +707,7 @@ export default function CoachWeekScreen() {
           <CoachStateBlock
             icon="people-circle-outline"
             title="Aucun club rattaché"
-            body="Votre compte n'est rattaché à aucun club. Créez votre club, ou demandez à FKS de vous rattacher au vôtre : le suivi de la semaine s'affichera ensuite ici."
+            body="Ton compte n'est rattaché à aucun club. Crée ton club, ou demande à FKS de te rattacher au tien : le suivi de la semaine s'affichera ensuite ici."
             level="unknown"
           />
           <CoachLegalFooter />

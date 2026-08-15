@@ -15,8 +15,9 @@ import { initAnalytics } from "./services/analytics";
 import { ToastHost } from "./components/ui/ToastHost";
 import { OfflineBanner } from "./components/OfflineBanner";
 import { setupAutoSync, teardownAutoSync } from "./utils/offlineQueue";
-import { registerForPushNotifications, scheduleAllNotifications } from "./services/notifications";
+import { registerForPushNotifications, scheduleAllNotifications, isNotificationPermissionGranted } from "./services/notifications";
 import { auth } from "./services/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import { applyFeedback } from "./state/orchestrators/applyFeedback";
 import { navigationRef } from "./navigation/navigationRef";
 import { useNotificationHandler } from "./hooks/useNotificationHandler";
@@ -68,17 +69,40 @@ export default function App() {
     return () => teardownAutoSync();
   }, [hydrated]);
 
+  // P1-26 (inventaire clubs) : `auth.currentUser` lu une seule fois au boot
+  // est null pour un compte NEUF (l'inscription arrive après cet effet) et
+  // souvent null au démarrage à froid (restauration auth asynchrone) — la
+  // permission notifications n'était JAMAIS demandée de toute la première
+  // session, aucun rappel programmé, pendant que Réglages affichait « Notifs
+  // activées ». On suit l'état auth réel : l'effet rejoue quand l'utilisateur
+  // se connecte.
+  const [authUid, setAuthUid] = useState<string | null>(auth.currentUser?.uid ?? null);
+  useEffect(() => onAuthStateChanged(auth, (u) => setAuthUid(u?.uid ?? null)), []);
+
   useEffect(() => {
     if (!hydrated) return;
     setThemeMode(themeMode);
     const Root = require("./navigation/RootNavigator").default;
     setNavigator(() => Root);
     initAnalytics();
-    if (auth.currentUser && notificationsEnabled) {
+    if (authUid && notificationsEnabled) {
       // Ne pas afficher la popup permissions avant connexion utilisateur.
-      registerForPushNotifications().then(() => scheduleAllNotifications());
+      registerForPushNotifications().then(async () => {
+        // Le token push peut être null pour d'autres raisons (web, projectId
+        // absent) : c'est la PERMISSION qui décide des rappels locaux.
+        const granted = await isNotificationPermissionGranted();
+        if (granted === true) {
+          scheduleAllNotifications();
+        } else if (granted === false) {
+          // Permission refusée : refléter l'état réel dans Réglages plutôt
+          // que d'afficher « Notifs activées » pour des notifications qui ne
+          // partiront jamais. Un OFF→ON manuel depuis Réglages redemandera
+          // la permission (chemin déjà géré là-bas).
+          useSettingsStore.getState().updateSettings({ notificationsEnabled: false });
+        }
+      });
     }
-  }, [hydrated, themeMode, notificationsEnabled]);
+  }, [hydrated, themeMode, notificationsEnabled, authUid]);
 
   if (!hydrated || !Navigator) {
     return (

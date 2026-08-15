@@ -118,7 +118,7 @@ describe("CoachErrorState — constat, action, hypothèse au conditionnel", () =
   test("la structure exigée est respectée : action puis hypothèse au conditionnel", async () => {
     const texte = await renderText(<CoachErrorState variant="unexpected" subject="effectif" />);
     expect(texte).toContain(
-      "Impossible de charger l'effectif. Réessayez. Si le problème persiste, votre accès au club devra peut-être être vérifié.",
+      "Impossible de charger l'effectif. Réessaie. Si le problème persiste, ton accès au club devra peut-être être vérifié.",
     );
   });
 

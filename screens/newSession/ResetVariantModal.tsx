@@ -26,7 +26,7 @@ export function ResetVariantModal({ variants, onSelect, onCancel, explain }: Pro
           contentContainerStyle={styles.resetContent}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.resetTitle}>Séance Prime (reset)</Text>
+          <Text style={styles.resetTitle}>Séance allégée</Text>
           <Text style={styles.resetSubtitle}>
             Choisis la variante légère du jour
           </Text>

@@ -7,7 +7,6 @@ import {
   Pressable,
   Platform,
   KeyboardAvoidingView,
-  TouchableWithoutFeedback,
   Keyboard,
   ScrollView,
   StyleSheet,
@@ -157,11 +156,12 @@ export default function ExternalLoadScreen() {
               <Ionicons name="close" size={22} color={palette.text} />
             </Pressable>
           </View>
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-            <ScrollView
-              contentContainerStyle={styles.container}
-              keyboardShouldPersistTaps="handled"
-            >
+          {/* Wrapper TouchableWithoutFeedback supprimé (P1-16, motif b708fe9). */}
+          <ScrollView
+            contentContainerStyle={styles.container}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+          >
               <SectionHeader title="Ajouter une charge externe" />
 
           {/* Date */}
@@ -301,8 +301,7 @@ export default function ExternalLoadScreen() {
 
           {/* Submit */}
               <Button label="Enregistrer" onPress={onSubmit} fullWidth size="lg" />
-            </ScrollView>
-          </TouchableWithoutFeedback>
+          </ScrollView>
         </KeyboardAvoidingView>
         </View>
       </ModalContainer>

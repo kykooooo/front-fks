@@ -449,7 +449,8 @@ export const BlockCard = React.memo(function BlockCard({
           </View>
           <View style={styles.blockHeaderBadges}>
             {block.intensity ? (
-              <Badge label={block.intensity} tone={intensityTone(block.intensity)} />
+              // frIntensity (P1-12) : plus de token backend brut sur les cartes.
+              <Badge label={frIntensity(block.intensity)} tone={intensityTone(block.intensity)} />
             ) : null}
             {isComplete ? <Badge label="OK" tone="ok" /> : null}
           </View>

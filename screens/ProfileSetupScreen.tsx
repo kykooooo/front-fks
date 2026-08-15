@@ -53,6 +53,12 @@ import { PRIVACY_POLICY } from "../utils/legalContent";
 import { recommendMicrocycle } from "../domain/recommendMicrocycle";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { showToast } from "../utils/toast";
+import { withTimeout, TimeoutError } from "../utils/errorHandler";
+import {
+  POSITION_DISPLAY_LABELS,
+  LEVEL_DISPLAY_LABELS,
+  OBJECTIVE_DISPLAY_LABELS,
+} from "../utils/profileDisplayLabels";
 import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
 import { trackEvent } from "../services/analytics";
@@ -109,19 +115,9 @@ type SelfReportedGapOptionId = (typeof SELF_REPORTED_GAP_OPTIONS)[number]["id"];
 
 // ⚠️ Les valeurs de `positions`, `levels` et `objectives` sont PERSISTÉES en Firestore
 // et comparées à des allowlists SANS accents côté Cloud Functions (functions/src/coachLabels.ts)
-// + matching substring dans recommendMicrocycle. On ne les modifie donc JAMAIS :
-// ces maps servent uniquement à afficher un libellé accentué dans l'UI.
-const POSITION_DISPLAY_LABELS: Partial<Record<(typeof positions)[number], string>> = {
-  Defenseur: "Défenseur",
-};
-const LEVEL_DISPLAY_LABELS: Partial<Record<(typeof levels)[number], string>> = {
-  Regional: "Régional",
-};
-const OBJECTIVE_DISPLAY_LABELS: Partial<Record<(typeof objectives)[number], string>> = {
-  "Etre en forme toute la saison": "Être en forme toute la saison",
-  "Gagner en vitesse / explosivite": "Gagner en vitesse / explosivité",
-  "Reprendre apres une blessure": "Reprendre après une blessure",
-};
+// + matching substring dans recommendMicrocycle. On ne les modifie donc JAMAIS.
+// Les maps d'affichage accentué vivent désormais dans utils/profileDisplayLabels.ts
+// (partagées avec ProfileScreen, qui relisait les valeurs brutes — P1-20).
 
 const daysOfWeek = [
   { id: "mon", label: "Lun" }, { id: "tue", label: "Mar" }, { id: "wed", label: "Mer" },
@@ -422,7 +418,13 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       // APRÈS l'enregistrement du profil — voir screens/profileSetup/attachClub.
       const existingClubId: string | null = clubId?.trim() ? clubId.trim() : null;
 
-      const attach = await saveProfileThenAttachClub(
+      // Délai de garde 15 s (P1-05) : hors réseau, le setDoc pend sans fin et
+      // l'overlay « Enregistrement… » gelait à jamais — force-kill = tout le
+      // questionnaire perdu. Au timeout : toast honnête, les réponses restent
+      // en place, « Terminer » se retape (setDoc merge idempotent). Si
+      // l'écriture atterrit après coup (réseau revenu), le listener du
+      // RootNavigator voit profileCompleted et bascule tout seul.
+      const attach = await withTimeout(saveProfileThenAttachClub(
         {
           saveProfile: () =>
             setDoc(doc(db, "users", user.uid), {
@@ -469,7 +471,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
           joinClub: joinClubWithInviteCode,
         },
         normalizedInvite,
-      );
+      ), 15000);
 
       if (attach.status !== "skipped") {
         // Mesure du taux d'échec du code club. On ne sait plus POURQUOI un code
@@ -520,6 +522,17 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
         navigation.goBack();
       }
     } catch (error) {
+      if (error instanceof TimeoutError) {
+        // Rien n'est perdu : le state du questionnaire est intact, l'écran
+        // reste ouvert, et l'écriture partie peut encore atterrir toute seule.
+        haptics.warning();
+        showToast({
+          type: "warn",
+          title: "Impossible d'enregistrer pour le moment",
+          message: "Vérifie ta connexion. Tes réponses sont conservées — réessaie dans un instant.",
+        });
+        return;
+      }
       if (__DEV__) console.error("Erreur sauvegarde profil:", error);
       runShake(shake);
       haptics.error();

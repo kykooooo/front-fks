@@ -114,6 +114,10 @@ export default function SessionHistoryScreen() {
           <View style={{ gap: 10 }}>
             {sorted.map((s, idx) => {
               const isZombie = !s.completed;
+              // « Pas faite » (déclarée par le joueur, décision 15/08) se
+              // distingue de « Non validée » (sortie de fenêtre sans réponse) :
+              // dans un cas le joueur a répondu, dans l'autre non.
+              const isNotDone = !!s.notDone;
               const date = toDateKey(s.dateISO ?? s.date);
               const focus =
                 s.focus ||
@@ -163,13 +167,15 @@ export default function SessionHistoryScreen() {
                           <Text style={styles.rowTitle}>{formatDayFR(date) || date}</Text>
                           {isZombie ? (
                             <View style={styles.zombieBadge}>
-                              <Text style={styles.zombieBadgeText}>Non validée</Text>
+                              <Text style={styles.zombieBadgeText}>{isNotDone ? 'Pas faite' : 'Non validée'}</Text>
                             </View>
                           ) : null}
                         </View>
                         {isZombie ? (
                           <Text style={styles.rowSub}>
-                            {focus} · sans feedback · pas comptée dans ta charge
+                            {isNotDone
+                              ? `${focus} · archivée sans charge`
+                              : `${focus} · sans feedback · pas comptée dans ta charge`}
                           </Text>
                         ) : (
                           <Text style={styles.rowSub}>

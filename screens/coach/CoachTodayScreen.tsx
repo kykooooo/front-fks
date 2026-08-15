@@ -309,7 +309,7 @@ export default function CoachTodayScreen({
         <CoachStateBlock
           icon="people-circle-outline"
           title="Aucun club rattaché à ce compte"
-          body="Ce compte n'est associé à aucun club. Créez votre club pour ouvrir votre espace, ou contactez FKS si vous pensez qu'il s'agit d'une erreur."
+          body="Ce compte n'est associé à aucun club. Crée ton club pour ouvrir ton espace, ou contacte FKS si tu penses qu'il s'agit d'une erreur."
           level="unknown"
           testID="coach-today-no-club"
         />

@@ -3,7 +3,7 @@
 // Le coach pilote le contexte du club ; il ne génère pas les séances (c'est FKS le prépa).
 
 import React, { useState } from "react";
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, Keyboard } from "react-native";
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, Keyboard, Alert } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { getAuth, signOut } from "firebase/auth";
@@ -16,6 +16,7 @@ import { coachColors, coachRadius } from "../components/coach/coachUi";
 import { createClubAsCoach } from "../repositories/clubsRepo";
 import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
+import { withTimeout, TimeoutError } from "../utils/errorHandler";
 
 const palette = coachColors;
 
@@ -70,7 +71,11 @@ export default function CoachOnboardingScreen({ onRetourJoueur }: CoachOnboardin
     }
   };
 
-  const handleCreate = async () => {
+  // Confirmation OBLIGATOIRE avant la création (décision Kyllian 15/08,
+  // P1-07 inventaire clubs) : créer un club bascule TOUT le compte en espace
+  // coach, sans retour possible sans le support. Deux boutons explicites,
+  // aucun « oui » par défaut — le choix mis en avant est « Annuler ».
+  const handleCreate = () => {
     if (!canSubmit) return;
     Keyboard.dismiss();
 
@@ -82,13 +87,29 @@ export default function CoachOnboardingScreen({ onRetourJoueur }: CoachOnboardin
       return;
     }
 
+    Alert.alert(
+      "Créer un espace entraîneur ?",
+      "Tu crées un espace ENTRAÎNEUR pour gérer des joueurs. Cette action est définitive sur ce compte.",
+      [
+        { text: "Annuler", style: "cancel" },
+        { text: "Créer mon espace entraîneur", onPress: () => void doCreate(user.uid) },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  const doCreate = async (uid: string) => {
     try {
       setLoading(true);
-      await createClubAsCoach({
+      // Délai de garde 15 s (P1-27) : hors réseau, l'écriture Firestore pend
+      // sans fin et l'overlay « Création de ton club... » gelait à jamais. Au
+      // timeout : toast honnête, la saisie reste en place. Si l'écriture
+      // atterrit après coup, le RootNavigator dérive l'espace coach tout seul.
+      await withTimeout(createClubAsCoach({
         name: clubName.trim(),
-        uid: user.uid,
+        uid,
         coachName: coachName.trim() || null,
-      });
+      }), 15000);
       haptics.success();
       // Plus de code annoncé ici : il n'est plus créé avec le club. Le coach le
       // génère quand il en a besoin (onglet Semaine), et il ne s'affiche qu'à
@@ -102,6 +123,15 @@ export default function CoachOnboardingScreen({ onRetourJoueur }: CoachOnboardin
       // à l'appartenance `clubs/{clubId}/members/{uid}` (écrite juste avant avec
       // le rôle propriétaire) et en dérive l'espace coach. Rien d'autre à faire ici.
     } catch (error) {
+      if (error instanceof TimeoutError) {
+        haptics.warning();
+        showToast({
+          type: "warn",
+          title: "Impossible de créer le club pour le moment",
+          message: "Vérifie ta connexion. Ta saisie est conservée — réessaie dans un instant.",
+        });
+        return;
+      }
       if (__DEV__) console.error("[CoachOnboarding] create club failed:", error);
       haptics.error();
       showToast({ type: "error", title: "Erreur", message: "Impossible de créer le club. Réessaie." });

@@ -8,9 +8,7 @@ import {
   ScrollView,
   Platform,
   KeyboardAvoidingView,
-  TouchableWithoutFeedback,
   TouchableOpacity,
-  Keyboard,
   Animated,
   Alert,
 } from 'react-native';
@@ -32,10 +30,12 @@ import { DEV_FLAGS } from '../config/devFlags';
 import { theme } from '../constants/theme';
 import { Button } from '../components/ui/Button';
 import { LoadingOverlay } from '../components/ui/LoadingOverlay';
-import { ModalContainer } from '../components/modal/ModalContainer';
+import { ModalContainer, type ModalDismissControl } from '../components/modal/ModalContainer';
 import { withSessionErrorBoundary } from '../components/withErrorBoundary';
 import { clamp } from './feedback/feedbackScales';
 import { summarizeExecution } from '../domain/tracking/execution';
+import { markSessionNotDone } from '../state/orchestrators/markSessionNotDone';
+import { showToast } from '../utils/toast';
 
 // Hooks extraits
 import { useSessionResolution } from './feedback/hooks/useSessionResolution';
@@ -201,16 +201,68 @@ function FeedbackScreen() {
   });
 
   // Fermeture (backdrop/swipe/croix) : ne pas laisser croire que le feedback est parti.
+  // « Rester » doit RÉTABLIR le modal : après un swipe, la feuille est déjà
+  // hors écran et le verrou anti double-dismiss est posé — sans cancelDismiss,
+  // le joueur restait devant un fond flouté vide (P0-2 inventaire clubs).
+  const dismissControl = useRef<ModalDismissControl | null>(null);
+  const stayInFeedback = useCallback(() => {
+    dismissControl.current?.cancelDismiss();
+  }, []);
   const confirmClose = useCallback(() => {
     if (targetSession && !targetSession.completed) {
-      Alert.alert('Feedback non enregistré', 'Quitter sans valider ton retour ?', [
-        { text: 'Rester', style: 'cancel' },
-        { text: 'Quitter', style: 'destructive', onPress: () => navigation.goBack() },
-      ]);
+      Alert.alert(
+        'Feedback non enregistré',
+        'Quitter sans valider ton retour ?',
+        [
+          { text: 'Rester', style: 'cancel', onPress: stayInFeedback },
+          { text: 'Quitter', style: 'destructive', onPress: () => navigation.goBack() },
+        ],
+        // Android : l'alerte peut se fermer d'un tap hors dialogue — même issue
+        // que « Rester », sinon l'écran mort revient par cette porte-là.
+        { cancelable: true, onDismiss: stayInFeedback }
+      );
       return;
     }
     navigation.goBack();
-  }, [navigation, targetSession]);
+  }, [navigation, targetSession, stayInFeedback]);
+
+  // « Je ne l'ai pas faite » (décision Kyllian 15/08, P1-08) : l'issue honnête
+  // pour une séance générée mais jamais ouverte. Archive SANS charge (aucun
+  // RPE inventé, ATL/CTL intacts — l'orchestrateur ne touche pas au feedback)
+  // et libère immédiatement le CTA et la génération. Proposée seulement quand
+  // aucune exécution réelle n'existe : un joueur qui a coché des séries en
+  // Live a forcément fait quelque chose — son chemin, c'est le feedback.
+  const canDeclareNotDone = Boolean(
+    targetSession && !targetSession.completed && !executionSummary
+  );
+  const onNotDone = useCallback(() => {
+    if (!targetSessionId) return;
+    Alert.alert(
+      "Tu n'as pas fait cette séance ?",
+      "Elle sera archivée sans charge d'entraînement. Ça arrive — ta prochaine séance n'en tiendra pas compte.",
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Oui, pas faite',
+          style: 'destructive',
+          onPress: () => {
+            const ok = markSessionNotDone(targetSessionId);
+            if (ok) {
+              haptics.impactLight();
+              showToast({
+                type: 'success',
+                title: 'Séance archivée',
+                message: 'Aucune charge comptée. Tu peux passer à la suite.',
+              });
+              navigation.goBack();
+            } else {
+              showToast({ type: 'error', title: 'Impossible', message: 'Cette séance est déjà réglée.' });
+            }
+          },
+        },
+      ]
+    );
+  }, [targetSessionId, navigation, haptics]);
 
   // Callbacks pour suggestions
   const applyRpe = useCallback(() => { setRpe(suggestion.rpe); haptics.impactLight(); }, [suggestion.rpe, haptics]);
@@ -252,6 +304,7 @@ function FeedbackScreen() {
         blurIntensity={40}
         allowBackdropDismiss
         allowSwipeDismiss
+        dismissControl={dismissControl}
       >
         <View
           style={[
@@ -282,13 +335,18 @@ function FeedbackScreen() {
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
           >
-            <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-              <ScrollView
-                style={styles.scroll}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={[styles.container, { flexGrow: 1 }]}
-                keyboardShouldPersistTaps="handled"
-              >
+            {/* AUDIT TACTILE (P1-16, même motif que b708fe9 / recette 03/08) :
+                le TouchableWithoutFeedback qui enveloppait ce ScrollView pose
+                un responder sur TOUS ses descendants et peut avaler les taps
+                (RN 0.81 / new arch). Supprimé ; le clavier se ferme par
+                glissement, comme sur l'onboarding. */}
+            <ScrollView
+              style={styles.scroll}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={[styles.container, { flexGrow: 1 }]}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+            >
                 {(!isOnline || queueCount > 0) && (
                   <View style={styles.syncBanner}>
                     <Ionicons
@@ -348,6 +406,7 @@ function FeedbackScreen() {
                     projectedTsb={projectedTsb}
                     projectedDelta={projectedDelta}
                     onDurationChange={onDurationChange}
+                    plannedFallbackMin={durationPrefill}
                   />
                 </Animated.View>
 
@@ -381,8 +440,7 @@ function FeedbackScreen() {
                     <Text style={styles.debugText}>combined: {day.adaptive.combined}</Text>
                   </View>
                 )}
-              </ScrollView>
-            </TouchableWithoutFeedback>
+            </ScrollView>
 
             {cyclePromptVisible && (
               <CyclePrompt
@@ -402,6 +460,17 @@ function FeedbackScreen() {
                 style={styles.saveBtn}
                 textStyle={styles.saveText}
               />
+              {canDeclareNotDone ? (
+                <TouchableOpacity
+                  onPress={onNotDone}
+                  style={styles.notDoneLink}
+                  hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Je n'ai pas fait cette séance, l'archiver sans charge"
+                >
+                  <Text style={styles.notDoneLinkText}>Je ne l'ai pas faite</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           </KeyboardAvoidingView>
 
@@ -460,6 +529,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.accent,
   },
   saveText: { color: COLORS.background, fontWeight: '700', fontSize: 15 },
+  // Issue « pas faite » : lien discret sous le CTA — jamais un second bouton
+  // qui se disputerait la hiérarchie avec « Valider ».
+  notDoneLink: { alignSelf: 'center', paddingVertical: 10, marginTop: 2 },
+  notDoneLinkText: { fontSize: 13, fontWeight: '600', color: COLORS.sub },
   debug: {
     marginTop: 8,
     borderRadius: 14,

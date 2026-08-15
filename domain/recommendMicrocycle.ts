@@ -30,13 +30,19 @@ export function recommendMicrocycle(input: {
   // Objective → primary signal (profileSetup objectives).
   let objectivePick: MicrocycleId | null = null;
   if (objective) {
+    // ORDRE = SPÉCIFIQUE AVANT GÉNÉRIQUE. « Etre en forme toute la saison »
+    // (objectif n°1 du setup) contient le mot « saison » : la branche
+    // générique saison/maintien le capturait AVANT la branche écrite pour lui,
+    // qui était du code mort — un nouveau joueur démarrait sur « Saison /
+    // Maintien » au lieu de Fondation, notre cycle d'entrée (décision Kyllian
+    // 15/08). Le test recommendMicrocycleMapping fige ce mapping.
     if (objective.includes("bless")) objectivePick = "fondation";
+    else if (objective.includes("toute la saison") || objective.includes("forme")) objectivePick = "fondation";
     else if (objective.includes("force") || objective.includes("muscu")) objectivePick = "force";
     else if (objective.includes("vitesse") || objective.includes("technique")) objectivePick = "explosivite";
     else if (objective.includes("explos") || objective.includes("reactiv")) objectivePick = "explosivite";
     else if (objective.includes("encaisser") || objective.includes("charges") || objective.includes("encha")) objectivePick = "endurance";
     else if (objective.includes("saison") || objective.includes("maintien")) objectivePick = "saison";
-    else if (objective.includes("toute la saison") || objective.includes("forme")) objectivePick = "fondation";
   }
   if (objectivePick) {
     scores[objectivePick] += 2;

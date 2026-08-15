@@ -83,16 +83,22 @@ export function GenerationActions({
         </TouchableOpacity>
       </View>
 
-      <View style={[styles.buttonRow, { marginTop: 10 }]}>
-        <TouchableOpacity
-          style={[styles.cta, styles.ctaSecondaryGreen, generating && { opacity: 0.5 }]}
-          onPress={() => guardedPress(onAdvanceDay)}
-          disabled={generating}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.ctaSecondaryGreenText}>Jour OFF (+1j)</Text>
-        </TouchableOpacity>
-      </View>
+      {/* « Jour OFF (+1j) » = outil d'HORLOGE DEV (avance lastLoadDayKey et
+          décaye ATL/CTL sans retour visuel). Gaté __DEV__ (P1-10 inventaire
+          clubs) : dans le binaire des clubs, il corrompait la charge de la
+          session en cours en silence. */}
+      {__DEV__ ? (
+        <View style={[styles.buttonRow, { marginTop: 10 }]}>
+          <TouchableOpacity
+            style={[styles.cta, styles.ctaSecondaryGreen, generating && { opacity: 0.5 }]}
+            onPress={() => guardedPress(onAdvanceDay)}
+            disabled={generating}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.ctaSecondaryGreenText}>Jour OFF (+1j)</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {!storeHydrated ? (
         <Text style={styles.helper}>Chargement de ton historique...</Text>

@@ -374,11 +374,14 @@ export default function ProgressScreen() {
               </View>
             ))}
             {/*
-              L'ETAT DE CONSTRUCTION, ECRIT PLUTOT QUE DESSINE. Le ViewModel dit
-              ce qui manque et combien ; la page ne fabrique pas une courbe plate
-              en attendant.
+              PAS de phrase d'explication supplementaire ici (P1-18) : le
+              dernier fait de la liste dit deja « Avant d'afficher une
+              tendance / Encore N seances » — la re-imprimer dans l'autre ordre
+              mettait la meme phrase deux fois dans trois centimetres. Meme
+              regle que la carte du Home (HomeVNextProgression, bloc « CE QUI
+              N'EST PAS AFFICHE ») : les deux surfaces lisent le MEME ViewModel
+              et affichent la meme chose. Un test-source verrouille.
             */}
-            <Text style={styles.mention}>{progression.tendanceIndisponible.explication}</Text>
           </>
         ) : null}
 
@@ -846,7 +849,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   texteJourActif: {
-    color: "#0b0b0c",
+    // palette.bg et non un noir en dur (P1-24) : « #0b0b0c » était un reliquat
+    // du thème sombre — sur la pastille accent du thème CLAIR (#2A4D8F), le
+    // numéro du jour actif tombait à 2,40:1, quasi illisible. Le fond du thème
+    // donne ~6,7:1 dans les deux thèmes (même règle que le texte du CTA
+    // Valider du feedback : couleur de fond sur fond accent).
+    color: palette.bg,
     fontWeight: "700",
   },
   legendeCalendrier: {

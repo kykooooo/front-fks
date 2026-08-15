@@ -50,3 +50,19 @@ export async function markPlannedSessionCompleted(sessionId: string): Promise<vo
   const ref = doc(db, 'users', uid, 'plannedSessions', String(sessionId));
   await setDoc(ref, { status: 'completed', completedAt: serverTimestamp() }, { merge: true });
 }
+
+/**
+ * « Je ne l'ai pas faite » (décision 15/08) — même mécanique que le marqueur
+ * `completed` : un statut `not_done` en setDoc merge, jamais de delete. Le
+ * watcher plannedSessions ne redescend que les docs `status === 'planned'`
+ * (ou sans status) : une séance déclarée non faite ne réapparaît plus comme
+ * « à faire ». Silencieux si non connecté ou id manquant.
+ */
+export async function markPlannedSessionNotDone(sessionId: string): Promise<void> {
+  const auth = getAuth();
+  const uid = auth.currentUser?.uid;
+  if (!uid || !sessionId) return;
+
+  const ref = doc(db, 'users', uid, 'plannedSessions', String(sessionId));
+  await setDoc(ref, { status: 'not_done', notDoneAt: serverTimestamp() }, { merge: true });
+}

@@ -20,7 +20,7 @@ import {
   type FieldConfig,
   type StepId,
 } from "./tests/testConfig";
-import { useTestsStorage } from "./tests/hooks/useTestsStorage";
+import { useTestsStorage, capTestEntries } from "./tests/hooks/useTestsStorage";
 import { getTestTimingBanner } from "./tests/testTiming";
 import { fieldKeysWithData, pickFieldSamples } from "./tests/testHelpers";
 
@@ -250,7 +250,10 @@ export default function TestsScreen() {
     if (isCoreFlow) cleanEntry.notes = formSnapshot.notes?.trim() || undefined;
 
     try {
-      const next = [cleanEntry, ...entries].slice(0, 30);
+      // capTestEntries (borne large) : l'ancien cap de 30 détruisait les
+      // relevés les plus anciens à chaque sauvegarde au-delà — records de
+      // début de saison perdus sans avertissement (P0-5).
+      const next = capTestEntries([cleanEntry, ...entries]);
       await persistEntries(next);
       showToast({
         type: "success",

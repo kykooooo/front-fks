@@ -8,7 +8,8 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { readTestsRaw } from './tests/hooks/useTestsStorage';
+import { readTestsRaw, onTestsUpdated } from './tests/hooks/useTestsStorage';
+import { displayPosition, displayLevel, displayObjective } from '../utils/profileDisplayLabels';
 
 import { useSessionsStore } from '../state/stores/useSessionsStore';
 import { useLoadStore } from '../state/stores/useLoadStore';
@@ -110,6 +111,10 @@ export default function ProfileScreen() {
   const extTargetFks = useExternalStore((s) => s.targetFksSessionsPerWeek ?? null);
   const extClubPerWeek = useExternalStore((s) => s.clubTrainingsPerWeek ?? null);
   const extMatchesPerWeek = useExternalStore((s) => s.matchesPerWeek ?? null);
+  // Les charges club/match REELLES (auto-appliquées depuis les jours déclarés,
+  // ou saisies) : c'est elles que « Club / match » doit compter — pas le
+  // tableau vide codé en dur qui figeait le compteur à « 0 sem » à vie (P1-01).
+  const externalLoads = useExternalStore((s) => s.externalLoads ?? []);
   const devNowISO = useDebugStore((s) => s.devNowISO);
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
   const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
@@ -119,8 +124,13 @@ export default function ProfileScreen() {
 
   /* ─── Tests terrain ─── */
   const [testsCount, setTestsCount] = useState(0);
+  const [monthlyTestsCount, setMonthlyTestsCount] = useState(0);
   const [lastTestTs, setLastTestTs] = useState<number | null>(null);
   const [lastTestPlaylist, setLastTestPlaylist] = useState<MicrocycleId | null>(null);
+  // P1-19 : l'onglet Profil reste monté — sans ce réveil, une batterie
+  // enregistrée sur l'écran Tests n'existait pas ici de toute la session.
+  const [testsVersion, setTestsVersion] = useState(0);
+  useEffect(() => onTestsUpdated(() => setTestsVersion((v) => v + 1)), []);
 
   useEffect(() => {
     let alive = true;
@@ -131,6 +141,17 @@ export default function ProfileScreen() {
         const parsed = JSON.parse(raw) as Array<any>;
         if (!Array.isArray(parsed)) return;
         if (alive) setTestsCount(parsed.length);
+        // « Tests ce mois » compte les VRAIS relevés de tests terrain (cette
+        // source-ci), plus jamais les séances de course de streakStats : une
+        // batterie faite le jour 1 doit afficher 1, un footing doit afficher 0
+        // (P1-02 — l'heuristique « VMA-like » comptait l'inverse).
+        const now = new Date(devNowISO ?? Date.now());
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+        const monthly = parsed.filter((e) => {
+          const ts = Number(e?.ts);
+          return Number.isFinite(ts) && ts >= monthStart;
+        }).length;
+        if (alive) setMonthlyTestsCount(monthly);
         const latest = [...parsed].sort((a, b) => Number(b?.ts ?? 0) - Number(a?.ts ?? 0))[0];
         const latestTs = Number(latest?.ts ?? 0);
         if (alive && Number.isFinite(latestTs) && latestTs > 0) setLastTestTs(latestTs);
@@ -139,7 +160,7 @@ export default function ProfileScreen() {
       } catch { /* best effort */ }
     })();
     return () => { alive = false; };
-  }, []);
+  }, [devNowISO, testsVersion]);
 
   /* ─── Entrance animations ─── */
   const anims = useRef(Array.from({ length: SECTION_COUNT }, () => new Animated.Value(0))).current;
@@ -157,10 +178,15 @@ export default function ProfileScreen() {
 
   /* ─── Derived ─── */
   const athleteName = profile?.first_name?.trim() || auth.currentUser?.displayName || 'Joueur';
-  const athleteLevel = labelize(profile?.level);
-  const athletePosition = labelize(profile?.position);
+  // displayPosition/displayLevel (P1-20) : les valeurs persistées sont SANS
+  // accents par convention — le héro affichait « Defenseur · Regional ».
+  const athleteLevel = labelize(displayLevel(profile?.level));
+  const athletePosition = labelize(displayPosition(profile?.position));
   const athleteFoot = labelize(profile?.dominant_foot);
   const mainObjective = profile?.main_objective?.trim() ?? null;
+  // Version ACCENTUÉE pour l'affichage seulement — la valeur brute reste celle
+  // du matching de recommendMicrocycle (persistée sans accents, P1-20).
+  const mainObjectiveDisplay = displayObjective(mainObjective);
   // Source de vérité = watcher Firestore users/{uid} (useExternalStore, temps réel).
   // Fallback sur le profil renvoyé par la dernière génération IA (peut être en retard d'une session).
   const targetFks = extTargetFks ?? (typeof profile?.target_fks_sessions_per_week === 'number' ? profile.target_fks_sessions_per_week : null);
@@ -201,9 +227,15 @@ export default function ProfileScreen() {
       });
   }, [sessions]);
 
+  // Règle 12 (jamais de valeur d'amorçage) : tant qu'aucune séance n'est
+  // validée, ATL/CTL/TSB ne portent que les constantes d'amorce (CTL0−ATL0 =
+  // +3) — afficher « En forme — Prêt à performer » là-dessus, c'est prétendre
+  // connaître un joueur qu'on n'a jamais vu jouer. Même porte que la carte
+  // Progression du Home : l'état de forme n'existe qu'après la 1re séance.
+  const hasFormData = completedCount > 0;
   const footballStatus = getFootballLabel(tsb);
-  const tsbLabel = footballStatus.label;
-  const tsbColor = footballStatus.color;
+  const tsbLabel = hasFormData ? footballStatus.label : '—';
+  const tsbColor = hasFormData ? footballStatus.color : palette.borderStrong;
 
   // Tendance TSB sur la fenêtre dispo (jusqu'à 7 jours) : diff > 0 = TSB qui remonte (forme qui revient),
   // diff < 0 = TSB qui descend (charge récente plus dense). Libellés neutres, factuels, sans jugement.
@@ -213,6 +245,12 @@ export default function ProfileScreen() {
     const diff = vals[0] - vals[vals.length - 1];
     return diff > 2 ? 'ça repart' : diff < -2 ? 'charge qui monte' : 'stable';
   }, [tsbHistory]);
+  // Une tendance ne s'affirme que si elle repose sur ≥ 2 relevés réels : avant
+  // ça, « Stable » serait un verdict fabriqué sur du vide.
+  const showTrend = hasFormData && tsbHistory.length >= 2;
+  // P0-4 : uniquement les relevés RÉELS du store — plus jamais `?? tsb` pour
+  // boucher les trous (7 barres identiques fabriquées sur un compte neuf).
+  const formBars = useMemo(() => tsbHistory.slice(0, 7), [tsbHistory]);
 
   const todayKey = useMemo(() => toDateKey(devNowISO ?? new Date()), [devNowISO]);
   const last7Keys = useMemo(() => lastNDates(todayKey, 7), [todayKey]);
@@ -254,8 +292,8 @@ export default function ProfileScreen() {
 
   /* ─── Streaks ─── */
   const streaks = useMemo(
-    () => computeStreakStats(sessions as any, [] as any, devNowISO ?? new Date().toISOString()),
-    [sessions, devNowISO],
+    () => computeStreakStats(sessions as any, externalLoads as any, devNowISO ?? new Date().toISOString()),
+    [sessions, externalLoads, devNowISO],
   );
 
   /* ─── Weekly ─── */
@@ -285,9 +323,9 @@ export default function ProfileScreen() {
       make('weekly', 'Semaine active', last7Completed, weeklyThresholds, 'séance'),
       make('streak', 'Régularité', streaks.weeksFks, streakThresholds, 'semaine'),
       make('load', 'Constance', loadDays, loadThresholds, 'jour'),
-      make('vma', 'Tests du mois', streaks.monthlyVmaCount, vmaThresholds, 'test'),
+      make('vma', 'Tests du mois', monthlyTestsCount, vmaThresholds, 'test'),
     ];
-  }, [last7Completed, weeklyThresholds, streaks, streakThresholds, loadDays, loadThresholds, vmaThresholds]);
+  }, [last7Completed, weeklyThresholds, streaks, streakThresholds, loadDays, loadThresholds, vmaThresholds, monthlyTestsCount]);
 
   const earnedBadges = badgeItems.filter((b) => b.earned).length;
   const barLbl = (i: number) => (i === 0 ? 'J' : `J-${i}`);
@@ -327,10 +365,10 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            {mainObjective ? (
+            {mainObjectiveDisplay ? (
               <View style={styles.objectivePill}>
                 <Ionicons name="flag-outline" size={14} color={palette.accent} />
-                <Text style={styles.objectiveText}>{mainObjective}</Text>
+                <Text style={styles.objectiveText}>{mainObjectiveDisplay}</Text>
               </View>
             ) : null}
 
@@ -525,14 +563,16 @@ export default function ProfileScreen() {
 
         {/* ─── MOMENTUM ─── */}
         <Animated.View style={[styles.section, aStyle(4)]}>
-          {/* Pas de labelize() ici : il capitalise CHAQUE mot ("Charge Qui Monte") — une
-              phrase FR ne prend qu'une majuscule initiale. */}
-          <SectionHeader title="Ta régularité" right={<Badge label={tsbTrend.charAt(0).toUpperCase() + tsbTrend.slice(1)} tone={trendTone} />} />
+          {/* Le badge de tendance de FORME qui coiffait cette section était un
+              mislabel (il parlait du TSB, pas de la régularité) — il vit
+              désormais uniquement sur « Ta forme », et seulement s'il repose
+              sur des relevés réels. */}
+          <SectionHeader title="Ta régularité" />
           <Card variant="soft" style={styles.momentumCard}>
             {([
               { label: 'Semaines FKS', value: streaks.weeksFks, unit: 'sem', icon: 'flame-outline' as const, tint: '#ef4444' },
               { label: 'Club / match', value: streaks.weeksClubMatch, unit: 'sem', icon: 'shield-outline' as const, tint: palette.info },
-              { label: 'Tests ce mois', value: streaks.monthlyVmaCount, unit: 'tests', icon: 'speedometer-outline' as const, tint: '#8b5cf6' },
+              { label: 'Tests ce mois', value: monthlyTestsCount, unit: 'tests', icon: 'speedometer-outline' as const, tint: '#8b5cf6' },
             ]).map((item, idx) => (
               <React.Fragment key={item.label}>
                 <View style={styles.momentumRow}>
@@ -550,36 +590,66 @@ export default function ProfileScreen() {
 
         {/* ─── CHARGE & FORME ─── */}
         <Animated.View style={[styles.section, aStyle(5)]}>
-          <SectionHeader title="Ta forme" right={<Badge label={`Tendance : ${tsbTrend}`} tone={trendTone} />} />
+          <SectionHeader
+            title="Ta forme"
+            right={showTrend ? <Badge label={`Tendance : ${tsbTrend}`} tone={trendTone} /> : undefined}
+          />
           <Card variant="soft" style={styles.chargeCard}>
-            <View style={styles.chargeStatusRow}>
-              <View style={[styles.chargeStatusDot, { backgroundColor: tsbColor }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.chargeStatusLabel, { color: tsbColor }]}>{tsbLabel}</Text>
-                <Text style={styles.chargeStatusMsg}>{footballStatus.message}</Text>
-              </View>
-            </View>
-            <View style={styles.tagRow}>
-              <Badge label={tsb <= -15 ? 'Jambes lourdes' : tsb <= -8 ? 'Un peu de fatigue' : 'Frais'} tone={fatigueTone} />
-              <Badge label={tsb <= -12 ? 'Attention blessure' : tsb < -5 ? 'Chargé' : 'C\'est bon'} tone={riskTone} />
-            </View>
-
-            <Text style={styles.chartTitle}>Ta forme sur 7 jours</Text>
-            <View style={styles.chartRow}>
-              {Array.from({ length: 7 }).map((_, idx) => {
-                const val = tsbHistory[idx] ?? tsb;
-                const h = Math.max(8, Math.min(60, Math.abs(val) * 2));
-                const c = val >= 5 ? palette.success : val >= 0 ? '#34d399' : val >= -8 ? palette.warn : palette.danger;
-                const isToday = idx === 0;
-                return (
-                  <View key={idx} style={styles.barCol}>
-                    <Text style={[styles.barVal, isToday && { fontWeight: '700', color: palette.text }]}>{val.toFixed(0)}</Text>
-                    <View style={[styles.bar, { height: h, backgroundColor: c, opacity: isToday ? 1 : 0.7 }]} />
-                    <Text style={[styles.barLbl, isToday && { fontWeight: '700', color: palette.text }]}>{barLbl(idx)}</Text>
+            {hasFormData ? (
+              <>
+                <View style={styles.chargeStatusRow}>
+                  <View style={[styles.chargeStatusDot, { backgroundColor: tsbColor }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.chargeStatusLabel, { color: tsbColor }]}>{tsbLabel}</Text>
+                    <Text style={styles.chargeStatusMsg}>{footballStatus.message}</Text>
                   </View>
-                );
-              })}
-            </View>
+                </View>
+                <View style={styles.tagRow}>
+                  <Badge label={tsb <= -15 ? 'Jambes lourdes' : tsb <= -8 ? 'Un peu de fatigue' : 'Frais'} tone={fatigueTone} />
+                  <Badge label={tsb <= -12 ? 'Attention blessure' : tsb < -5 ? 'Chargé' : 'C\'est bon'} tone={riskTone} />
+                </View>
+
+                {/* Relevés RÉELS uniquement. Les anciennes étiquettes J…J-6
+                    mentaient deux fois : barres manquantes bouchées avec le TSB
+                    du jour, et série par ÉVÉNEMENT présentée comme des jours
+                    calendaires. Tant que la série n'est pas reconstruite par
+                    jour (refonte Profil), on affiche ce qu'elle est vraiment :
+                    les derniers relevés, du plus récent au plus ancien. */}
+                <Text style={styles.chartTitle}>Ta forme — derniers relevés</Text>
+                {formBars.length >= 2 ? (
+                  <View style={styles.chartRow}>
+                    {formBars.map((val, idx) => {
+                      const h = Math.max(8, Math.min(60, Math.abs(val) * 2));
+                      const c = val >= 5 ? palette.success : val >= 0 ? '#34d399' : val >= -8 ? palette.warn : palette.danger;
+                      const isLatest = idx === 0;
+                      return (
+                        <View key={idx} style={styles.barCol}>
+                          <Text style={[styles.barVal, isLatest && { fontWeight: '700', color: palette.text }]}>{val.toFixed(0)}</Text>
+                          <View style={[styles.bar, { height: h, backgroundColor: c, opacity: isLatest ? 1 : 0.7 }]} />
+                          <Text style={[styles.barLbl, isLatest && { fontWeight: '700', color: palette.text }]}>
+                            {isLatest ? 'Dernier' : ''}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <Text style={styles.chartEmptyText}>
+                    Encore trop peu de relevés pour tracer une tendance.
+                  </Text>
+                )}
+              </>
+            ) : (
+              <View style={styles.chargeStatusRow}>
+                <View style={[styles.chargeStatusDot, { backgroundColor: palette.borderStrong }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.chargeStatusLabel}>Pas encore de données</Text>
+                  <Text style={styles.chargeStatusMsg}>
+                    Ta forme se calcule sur tes séances validées. Termine ta première séance pour la voir ici.
+                  </Text>
+                </View>
+              </View>
+            )}
 
             <View style={styles.chartSep} />
 
@@ -954,6 +1024,7 @@ const styles = StyleSheet.create({
   chargeStatusMsg: { fontSize: 12, color: palette.sub, marginTop: 2 },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   chartTitle: { marginTop: 12, fontSize: 12, fontWeight: '700', color: palette.text },
+  chartEmptyText: { marginTop: 8, fontSize: 12, color: palette.sub },
   chartRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginTop: 8, height: 80 },
   chartHeaderRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   chartMetaRow: { flexDirection: 'row', gap: 6 },

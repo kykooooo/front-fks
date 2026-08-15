@@ -14,6 +14,15 @@ import { zIndex as Z } from "../../theme/zIndex";
 import { GestureDetector } from "react-native-gesture-handler";
 import { useSwipeToDismiss } from "./useSwipeToDismiss";
 
+/**
+ * Commande rendue aux écrans dont le `onClose` peut REFUSER de fermer (flux de
+ * confirmation, ex. Feedback : « Quitter sans valider ton retour ? »). Sans
+ * elle, un dismiss annulé laissait un écran mort : la feuille était déjà partie
+ * hors écran (swipe) et le verrou anti double-dismiss restait posé — plus rien
+ * n'était tappable, seule issue : tuer l'app (P0-2 inventaire clubs 15/08).
+ */
+export type ModalDismissControl = { cancelDismiss: () => void };
+
 type Props = {
   visible: boolean;
   onClose?: () => void;
@@ -25,6 +34,8 @@ type Props = {
   showHandle?: boolean;
   children: React.ReactNode;
   contentStyle?: StyleProp<ViewStyle>;
+  /** À câbler UNIQUEMENT si `onClose` peut décliner la fermeture. */
+  dismissControl?: React.MutableRefObject<ModalDismissControl | null>;
 };
 
 export function ModalContainer({
@@ -38,6 +49,7 @@ export function ModalContainer({
   showHandle = true,
   children,
   contentStyle,
+  dismissControl,
 }: Props) {
   const [mounted, setMounted] = useState(visible);
 
@@ -67,11 +79,29 @@ export function ModalContainer({
     onClosed: () => setMounted(false),
   });
 
-  const { gesture, animatedStyle } = useSwipeToDismiss({
+  const { gesture, animatedStyle, reset: resetSwipe } = useSwipeToDismiss({
     enabled: allowSwipeDismiss,
     threshold: swipeThreshold,
     onDismiss: handleClose,
   });
+
+  // Un dismiss ANNULÉ par l'écran (bouton « Rester » d'une confirmation) doit
+  // remettre le modal dans l'état d'avant le geste : feuille à sa place ET
+  // verrou S25 réarmé. `visible` étant souvent un littéral `true` chez les
+  // consommateurs (la visibilité est portée par la navigation), l'effet
+  // [visible] ne rejoue jamais — ce chemin est le SEUL réarmement possible.
+  useEffect(() => {
+    if (!dismissControl) return;
+    dismissControl.current = {
+      cancelDismiss: () => {
+        dismissingRef.current = false;
+        resetSwipe();
+      },
+    };
+    return () => {
+      dismissControl.current = null;
+    };
+  }, [dismissControl, resetSwipe]);
 
   const blurTint = useMemo(() => "dark" as const, []);
 

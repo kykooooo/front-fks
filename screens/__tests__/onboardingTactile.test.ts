@@ -139,8 +139,12 @@ describe("couverture haptique — tout ce qui se tape répond au doigt", () => {
   });
 
   test("création de club : la déconnexion et l'échec de création restent audibles", () => {
+    // `handleCreate` n'est plus async : depuis la confirmation obligatoire
+    // (décision 15/08), il ouvre l'Alert et c'est `doCreate` qui porte l'appel
+    // réseau — et donc les haptics succès/échec.
     const source = lire(ECRANS["création de club"]);
-    for (const handler of ["const handleLogout = async", "const handleCreate = async"]) {
+    for (const handler of ["const handleLogout = async", "const handleCreate = ", "const doCreate = async"]) {
+      expect(source.indexOf(handler)).toBeGreaterThanOrEqual(0);
       const bloc = source.slice(source.indexOf(handler));
       expect(bloc.slice(0, 1200)).toMatch(/haptics\.(impactLight|success|error)\(\)/);
     }
@@ -154,5 +158,25 @@ describe("cibles tactiles — la zone tapable dépasse le pixel du glyphe", () =
     const source = lire(ECRANS["création de club"]);
     const entete = source.slice(source.indexOf("styles.headerRow"), source.indexOf("styles.header}"));
     expect((entete.match(/hitSlop=/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("les modals ne portent plus le wrapper avaleur de taps (P1-16)", () => {
+  // Même motif que b708fe9/onboarding, resté sur 4 modals : le TWF posé pour
+  // fermer le clavier enveloppait tout le contenu (formulaire de feedback
+  // post-séance compris). Le backdrop de ModalContainer, lui, garde son TWF :
+  // il n'enveloppe QUE le fond flouté, le contenu est un frère.
+  const MODALS = [
+    "screens/FeedbackScreen.tsx",
+    "screens/ExternalLoadScreen.tsx",
+    "screens/CycleModalScreen.tsx",
+    "screens/DeleteAccountScreen.tsx",
+  ];
+
+  test.each(MODALS)("%s : wrapper supprimé, clavier au glissement", (chemin) => {
+    const source = lire(chemin);
+    expect(source).not.toContain("<TouchableWithoutFeedback");
+    expect(source).not.toMatch(/^\s*TouchableWithoutFeedback,?$/m);
+    expect(source).toMatch(/keyboardDismissMode/);
   });
 });

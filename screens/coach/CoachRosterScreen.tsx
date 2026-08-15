@@ -150,7 +150,7 @@ const VIDE_PAR_FILTRE: Record<CoachRosterFilter, VideCopy> = {
     icone: "checkmark-circle-outline",
     titre: "Personne à vérifier",
     corps:
-      "Aucun fait connu ne demande une lecture de votre part aujourd'hui. Ce filtre ne dit rien des joueurs dont aucune donnée ne remonte : ils apparaissent dans « Sans donnée récente ».",
+      "Aucun fait connu ne demande une lecture de ta part aujourd'hui. Ce filtre ne dit rien des joueurs dont aucune donnée ne remonte : ils apparaissent dans « Sans donnée récente ».",
   },
   a_surveiller: {
     icone: "checkmark-circle-outline",
@@ -572,7 +572,7 @@ export default function CoachRosterScreen({ filtreInitial = null }: CoachRosterS
   const listFooter =
     roster.memberCount >= PLAFOND_LECTURE_EFFECTIF ? (
       <Text style={styles.plafond} numberOfLines={3} testID="coach-roster-limit-note">
-        {`Seuls les ${PLAFOND_LECTURE_EFFECTIF} premiers membres du club sont lus. Si votre effectif est plus grand, les suivants n'apparaissent pas dans cette liste.`}
+        {`Seuls les ${PLAFOND_LECTURE_EFFECTIF} premiers membres du club sont lus. Si ton effectif est plus grand, les suivants n'apparaissent pas dans cette liste.`}
       </Text>
     ) : null;
 
@@ -616,7 +616,7 @@ export default function CoachRosterScreen({ filtreInitial = null }: CoachRosterS
         <CoachStateBlock
           icon="shield-outline"
           title="Aucun club rattaché"
-          body="Votre compte n'est rattaché à aucun club. Créez votre club depuis l'accueil, puis partagez son code d'invitation à vos joueurs."
+          body="Ton compte n'est rattaché à aucun club. Crée ton club depuis l'accueil, puis partage son code d'invitation à tes joueurs."
           testID="coach-roster-no-club"
         />
       </CoachScreen>

@@ -382,6 +382,12 @@ const splashStyles = StyleSheet.create({
 export default function RootNavigator() {
   const [user, setUser] = useState<User | null>(null);
   const [initializing, setInitializing] = useState(true);
+  // P1-06 (inventaire clubs) : au démarrage à froid HORS LIGNE, le premier
+  // snapshot du profil est un cache VIDE (fromCache, exists=false — aucun
+  // persistentLocalCache configuré). Le traiter comme « pas de profil »
+  // montrait le questionnaire VIERGE à un joueur déjà configuré, qui croyait
+  // son compte effacé. Ce flag garde l'attente honnête à la place.
+  const [profilIllisibleHorsLigne, setProfilIllisibleHorsLigne] = useState(false);
   // AUDIT P0-2 : true dès que onAuthStateChanged a répondu UNE première fois.
   // Distinct de `initializing` (qui repasse à true pendant l'attente du profil).
   const [authResolved, setAuthResolved] = useState(false);
@@ -561,6 +567,18 @@ export default function RootNavigator() {
     const unsubProfile = onSnapshot(
       ref,
       (snap) => {
+        // Cache vide hors-ligne = on ne SAIT pas (ni « pas de profil », ni
+        // « profil complet »). On ne conclut rien : initializing reste vrai et
+        // la branche d'attente affiche pourquoi. Dès que le réseau revient, le
+        // listener re-tire avec la vraie réponse. Un compte réellement neuf,
+        // lui, arrive ici EN LIGNE (l'inscription exige le réseau) : son
+        // snapshot serveur (fromCache=false, exists=false) passe ce garde et
+        // ouvre le questionnaire normalement.
+        if (snap.metadata.fromCache && !snap.exists()) {
+          setProfilIllisibleHorsLigne(true);
+          return;
+        }
+        setProfilIllisibleHorsLigne(false);
         const data = snap.data();
         setProfileCompleted(!!data?.profileCompleted);
         // OÙ regarder, jamais QUI on est. Le jour où plusieurs clubs deviendront
@@ -603,7 +621,17 @@ export default function RootNavigator() {
   // déjà inscrit (pas seulement à l'inscription) : libellé neutre, vrai pour
   // tous les cas de cette branche (pas de nouvel état à faire courir avec la
   // logique auth pour distinguer inscription/login/restauration).
-  if (initializing) return <Splash label="Chargement de ton profil…" />;
+  if (initializing) {
+    return (
+      <Splash
+        label={
+          profilIllisibleHorsLigne
+            ? "Hors connexion — ton profil ne peut pas être chargé. L'app reprendra dès que le réseau revient."
+            : "Chargement de ton profil…"
+        }
+      />
+    );
+  }
 
   // 5bis) Pas connecté → Auth stack (Welcome intégré dans le stack pour back navigation)
   if (!user) {

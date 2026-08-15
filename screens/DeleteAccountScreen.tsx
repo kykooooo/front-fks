@@ -13,7 +13,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableWithoutFeedback,
   View,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
@@ -186,8 +185,13 @@ export default function DeleteAccountScreen() {
   };
 
   return (
-    <Screen scroll keyboardAvoiding>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+    <Screen
+      scroll
+      keyboardAvoiding
+      // Wrapper TouchableWithoutFeedback supprimé (P1-16, motif b708fe9) : le
+      // clavier se ferme par glissement, via le ScrollView interne de <Screen>.
+      scrollProps={{ keyboardDismissMode: "on-drag", keyboardShouldPersistTaps: "handled" }}
+    >
         <View style={styles.container}>
           <Text style={styles.title}>Tu es sur le point de supprimer ton compte</Text>
           <Text style={styles.subtitle}>
@@ -268,7 +272,6 @@ export default function DeleteAccountScreen() {
             <Text style={styles.cancelText}>Annuler et garder mon compte</Text>
           </Pressable>
         </View>
-      </TouchableWithoutFeedback>
     </Screen>
   );
 }

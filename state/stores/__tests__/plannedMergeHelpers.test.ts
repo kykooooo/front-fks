@@ -162,3 +162,40 @@ describe("mergePlannedIntoLocalSessions — la séance complétée SURVIT (P0-1a
     expect(merged.filter((s) => s.id === "s1")).toHaveLength(1);
   });
 });
+
+describe("« pas faite » (décision 15/08) — une séance réglée ne ressuscite jamais", () => {
+  test("le doc entrant encore `planned` ne remplace pas la copie locale notDone", () => {
+    // Scénario : le joueur déclare « pas faite » ; le marqueur serveur
+    // `not_done` n'a pas encore atterri (hors-ligne) → le doc redescend
+    // encore `planned`. Sans protection, il écraserait le flag local et la
+    // séance re-bloquerait le CTA et la génération.
+    const locale = makeLocal({ id: "p1", notDone: true, notDoneAt: `${TODAY}T12:00:00.000Z` });
+    const entrant = mapIncomingPlannedSessions([makeDoc({ id: "p1" })], TODAY);
+    const merged = mergePlannedIntoLocalSessions([locale], entrant);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe("p1");
+    expect(merged[0].notDone).toBe(true);
+  });
+
+  test("un jour « pas faite » n'interdit pas une NOUVELLE séance le même jour", () => {
+    // Contrairement à un jour complété : le joueur qui n'a pas fait sa séance
+    // a le droit d'en générer une autre aujourd'hui (nouvel id).
+    const locale = makeLocal({ id: "p1", notDone: true });
+    const entrant = mapIncomingPlannedSessions([makeDoc({ id: "p2" })], TODAY);
+    const merged = mergePlannedIntoLocalSessions([locale], entrant);
+
+    const ids = merged.map((s) => s.id).sort();
+    expect(ids).toEqual(["p1", "p2"]);
+    expect(merged.find((s) => s.id === "p2")?.completed).toBe(false);
+  });
+
+  test("un jour COMPLÉTÉ continue de bloquer les docs entrants du même jour", () => {
+    // Non-régression de l'invariant 3 après l'extension notDone.
+    const faite = makeLocal({ id: "s-faite", completed: true });
+    const entrant = mapIncomingPlannedSessions([makeDoc({ id: "p-nouveau" })], TODAY);
+    const merged = mergePlannedIntoLocalSessions([faite], entrant);
+
+    expect(merged.map((s) => s.id)).toEqual(["s-faite"]);
+  });
+});
