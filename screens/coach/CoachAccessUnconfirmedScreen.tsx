@@ -56,7 +56,7 @@ export default function CoachAccessUnconfirmedScreen({ onRetry }: Props) {
         action={{
           label: COACH_ACCESS_UNCONFIRMED_COPY.action,
           onPress: onRetry,
-          accessibilityHint: "Relance la verification de tes acces au club",
+          accessibilityHint: "Relance la vérification de tes accès au club",
         }}
       />
     </CoachScreen>

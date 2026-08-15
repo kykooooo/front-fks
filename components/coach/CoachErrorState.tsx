@@ -64,7 +64,7 @@ const SUBJECT_CONSTAT: Record<CoachErrorSubject, string> = {
  * être », et l'app ne sait pas laquelle des deux causes s'applique.
  */
 const RETRY_ET_HYPOTHESE =
-  "Réessayez. Si le problème persiste, votre accès au club devra peut-être être vérifié.";
+  "Réessaie. Si le problème persiste, ton accès au club devra peut-être être vérifié.";
 
 type ErrorCopy = {
   icon: CoachIconName;
@@ -84,7 +84,7 @@ const ERROR_COPY: Record<CoachErrorVariant, ErrorCopy> = {
     icon: "lock-closed-outline",
     title: "Accès non autorisé",
     body:
-      "Cet espace n'a pas pu être ouvert avec votre compte. Reconnectez-vous ; si le problème persiste, votre rattachement au club devra peut-être être vérifié.",
+      "Cet espace n'a pas pu être ouvert avec ton compte. Reconnecte-toi ; si le problème persiste, ton rattachement au club devra peut-être être vérifié.",
     level: "check",
     actionLabel: "Se reconnecter",
   },

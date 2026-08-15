@@ -318,7 +318,7 @@ function StatutSection({ view }: { view: CoachPlayerView }) {
   return (
     <CoachSectionCard
       title="Statut du jour"
-      subtitle="Ce qui demande — ou non — votre lecture aujourd'hui."
+      subtitle="Ce qui demande — ou non — ta lecture aujourd'hui."
       noPadding
       testID="coach-player-statut"
     >
@@ -952,7 +952,7 @@ const GESTE_COPY: Record<ClubMemberGeste, GesteCopy> = {
     hint: "Retire ce joueur de l'effectif suivi. Son compte FKS n'est pas supprimé.",
     titre: (nom) => `Arrêter le suivi de ${nom} ?`,
     fait: (nom) =>
-      `Ce que fait ce geste : ${nom} sort de l'effectif suivi. Sa fiche disparaît de votre liste et vous ne verrez plus ses séances.`,
+      `Ce que fait ce geste : ${nom} sort de l'effectif suivi. Sa fiche disparaît de ta liste et tu ne verras plus ses séances.`,
     conserve: (nom) =>
       `Ce qui est conservé : son compte FKS, ses séances et son historique personnel restent intacts. Si ${nom} fait partie de l'encadrement du club, il garde tous ses accès d'encadrant.`,
     confirmer: "Confirmer l'arrêt du suivi",

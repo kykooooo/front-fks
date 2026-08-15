@@ -222,7 +222,7 @@ export function ClubManagementCard() {
           <Badge label={appartenance.badge} tone="ok" />
         </View>
         <Text style={styles.clubDescription}>
-          Ton coach peut suivre ta progression et régler le cadre de vos séances (intensité, objectif
+          Ton coach peut suivre ta progression et régler le cadre de tes séances (intensité, objectif
           de la semaine).
         </Text>
         {/* Le joueur DÉJÀ dans un club doit pouvoir relire ce que son

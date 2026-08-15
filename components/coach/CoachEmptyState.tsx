@@ -46,9 +46,9 @@ const EMPTY_COPY: Record<CoachEmptyVariant, EmptyCopy> = {
   // et il n'est affiché qu'à ce moment-là.
   firstLogin: {
     icon: "clipboard-outline",
-    title: "Bienvenue dans votre espace",
+    title: "Bienvenue dans ton espace",
     body:
-      "Votre club est créé. Générez un code d'invitation et partagez-le à vos joueurs : dès qu'ils rejoignent et terminent une séance, leur suivi apparaît ici.",
+      "Ton club est créé. Génère un code d'invitation et partage-le à tes joueurs : dès qu'ils rejoignent et terminent une séance, leur suivi apparaît ici.",
     level: "unknown",
     actionLabel: "Générer un code d'invitation",
   },
@@ -79,7 +79,7 @@ const EMPTY_COPY: Record<CoachEmptyVariant, EmptyCopy> = {
     icon: "sync-outline",
     title: "Synchronisation en cours",
     body:
-      "Les données de certains joueurs sont en cours de préparation. Elles apparaissent d'elles-mêmes dès qu'elles sont prêtes, sans rien faire de votre côté.",
+      "Les données de certains joueurs sont en cours de préparation. Elles apparaissent d'elles-mêmes dès qu'elles sont prêtes, sans rien faire de ton côté.",
     level: "watch",
     actionLabel: "Actualiser",
   },
