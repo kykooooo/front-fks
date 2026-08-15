@@ -396,7 +396,7 @@ describe("États — un vide n'est pas une panne", () => {
     mockRoster.value = rosterReady([], { status: "unavailable", unreadableCount: 4, memberCount: 4 });
     const texte = await renderText();
     expect(texte).toContain("Impossible de charger l'effectif.");
-    expect(texte).toContain("Réessayez.");
+    expect(texte).toContain("Réessaie.");
     expect(texte).toContain("devra peut-être être vérifié");
     expect(texte).not.toContain("Vérifiez votre connexion");
     expect(texte).not.toContain("conservées côté serveur");
