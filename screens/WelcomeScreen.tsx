@@ -149,10 +149,20 @@ export default function WelcomeScreen({ onComplete }: Props) {
   return (
     <Screen bottomInset={false} style={styles.container}>
       {/* Lien "Passer" (DA Polish) : le carrousel n'avait aucun moyen d'accès
-          direct au compte hors swipe complet des 3 slides. */}
+          direct au compte hors swipe complet des 3 slides.
+          `insets.top` est appliqué ICI et pas dans la feuille de style : un
+          enfant `position:absolute` avec un `top` défini est positionné contre
+          la border-box de son parent — le paddingTop safe-area de <Screen> ne
+          le protège pas. Sans cet inset, « Passer » se dessine sous la barre de
+          statut (batterie/heure), comme le bloc CTA du bas qui compense déjà
+          avec insets.bottom. */}
       <Pressable
         onPress={handleStart}
-        style={({ pressed }) => [styles.skip, pressed && styles.skipPressed]}
+        style={({ pressed }) => [
+          styles.skip,
+          { top: insets.top + theme.spacing.sm },
+          pressed && styles.skipPressed,
+        ]}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         accessibilityRole="button"
         accessibilityLabel="Passer l'introduction"
@@ -242,7 +252,8 @@ const styles = StyleSheet.create({
   },
   skip: {
     position: "absolute",
-    top: theme.spacing.sm,
+    // `top` volontairement absent : il est calculé au rendu (insets.top +
+    // spacing.sm) — voir le commentaire sur le Pressable.
     right: theme.spacing.xl2,
     zIndex: 1,
     paddingVertical: 8,
