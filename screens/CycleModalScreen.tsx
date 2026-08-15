@@ -15,8 +15,6 @@ import {
   View,
   Platform,
   KeyboardAvoidingView,
-  TouchableWithoutFeedback,
-  Keyboard,
   Animated,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -713,17 +711,18 @@ export default function CycleModalScreen() {
             behavior={Platform.OS === "ios" ? "padding" : "height"}
             keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
           >
-            <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-              <ScrollView
-                contentContainerStyle={s.scrollContent}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-              >
-                <Animated.View style={{ opacity: fadeAnim }}>
-                  {renderContent()}
-                </Animated.View>
-              </ScrollView>
-            </TouchableWithoutFeedback>
+            {/* Wrapper TouchableWithoutFeedback supprimé (P1-16, motif b708fe9) :
+                il avalait potentiellement les taps de tous ses descendants. */}
+            <ScrollView
+              contentContainerStyle={s.scrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+            >
+              <Animated.View style={{ opacity: fadeAnim }}>
+                {renderContent()}
+              </Animated.View>
+            </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
       </ModalContainer>

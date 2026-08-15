@@ -8,9 +8,7 @@ import {
   ScrollView,
   Platform,
   KeyboardAvoidingView,
-  TouchableWithoutFeedback,
   TouchableOpacity,
-  Keyboard,
   Animated,
   Alert,
 } from 'react-native';
@@ -337,13 +335,18 @@ function FeedbackScreen() {
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
           >
-            <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-              <ScrollView
-                style={styles.scroll}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={[styles.container, { flexGrow: 1 }]}
-                keyboardShouldPersistTaps="handled"
-              >
+            {/* AUDIT TACTILE (P1-16, même motif que b708fe9 / recette 03/08) :
+                le TouchableWithoutFeedback qui enveloppait ce ScrollView pose
+                un responder sur TOUS ses descendants et peut avaler les taps
+                (RN 0.81 / new arch). Supprimé ; le clavier se ferme par
+                glissement, comme sur l'onboarding. */}
+            <ScrollView
+              style={styles.scroll}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={[styles.container, { flexGrow: 1 }]}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+            >
                 {(!isOnline || queueCount > 0) && (
                   <View style={styles.syncBanner}>
                     <Ionicons
@@ -437,8 +440,7 @@ function FeedbackScreen() {
                     <Text style={styles.debugText}>combined: {day.adaptive.combined}</Text>
                   </View>
                 )}
-              </ScrollView>
-            </TouchableWithoutFeedback>
+            </ScrollView>
 
             {cyclePromptVisible && (
               <CyclePrompt

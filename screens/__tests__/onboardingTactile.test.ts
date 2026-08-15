@@ -160,3 +160,23 @@ describe("cibles tactiles — la zone tapable dépasse le pixel du glyphe", () =
     expect((entete.match(/hitSlop=/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 });
+
+describe("les modals ne portent plus le wrapper avaleur de taps (P1-16)", () => {
+  // Même motif que b708fe9/onboarding, resté sur 4 modals : le TWF posé pour
+  // fermer le clavier enveloppait tout le contenu (formulaire de feedback
+  // post-séance compris). Le backdrop de ModalContainer, lui, garde son TWF :
+  // il n'enveloppe QUE le fond flouté, le contenu est un frère.
+  const MODALS = [
+    "screens/FeedbackScreen.tsx",
+    "screens/ExternalLoadScreen.tsx",
+    "screens/CycleModalScreen.tsx",
+    "screens/DeleteAccountScreen.tsx",
+  ];
+
+  test.each(MODALS)("%s : wrapper supprimé, clavier au glissement", (chemin) => {
+    const source = lire(chemin);
+    expect(source).not.toContain("<TouchableWithoutFeedback");
+    expect(source).not.toMatch(/^\s*TouchableWithoutFeedback,?$/m);
+    expect(source).toMatch(/keyboardDismissMode/);
+  });
+});
