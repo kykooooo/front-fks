@@ -27,6 +27,8 @@ import HomeReadinessHero from "../components/home/HomeReadinessHero";
 import HomePrimaryCTA from "../components/home/HomePrimaryCTA";
 import HomeNextSessionCard from "../components/home/HomeNextSessionCard";
 import HomeCarouselCard from "../components/home/HomeCarouselCard";
+import HomeProgressionCard from "../components/home/HomeProgressionCard";
+import { useHomeVNextViewModel } from "../hooks/home/useHomeVNextViewModel";
 import { useRealLoadData } from "../hooks/home/useRealLoadData";
 import { useMatchSoon } from "../hooks/home/useMatchSoon";
 import { useWeekDays } from "../hooks/home/useWeekDays";
@@ -210,6 +212,15 @@ export default function HomeScreen() {
 
   const advice = useContextualAdvice();
 
+  // Carte « Ma progression » enrichie SUR PLACE (decision fondateur 15/08) :
+  // son contenu vient du ViewModel canonique de la carte progression, via le
+  // pipeline vNext — seule `progression` est consommee (vm/etat/entree ignores).
+  // R7 tenu par construction : le compte hebdo que ce VM connait est celui de
+  // `construireSemaineCouranteDepuisLeHome`, le MEME nombre que la ligne stats
+  // ci-dessus (les deux delegent a compterSeancesFksSurJours — unicite
+  // verrouillee par resumeCanoniqueUnicite).
+  const { progression } = useHomeVNextViewModel();
+
   // Recommandations du coach
 
   const onRunHarness = () => {
@@ -367,21 +378,12 @@ export default function HomeScreen() {
 
         <Animated.View style={animStyle(cardsAnim)}>
           <View style={styles.cardsStack}>
+            {/* Cadre et position INCHANGES (decision « Enrichir sur place ») :
+                seuls les children changent. La ligne serie (flamme) est partie —
+                doublon de la stat « Série » au-dessus ; le lien « Voir ma
+                progression » est desormais decide par le ViewModel (vm.detail). */}
             <HomeCarouselCard title="Progression" subtitle="Régularité & forme">
-              <View style={styles.progressRow}>
-                <Ionicons name="flame" size={18} color={palette.cta} />
-                <Text style={styles.progressText}>
-                  {activityStreak === 0
-                    ? "Lance ta première séance"
-                    : activityStreak === 1
-                      ? "1 jour d’affilée"
-                      : `${activityStreak} jours d’affilée`}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={goToProgression} style={styles.link}>
-                <Text style={styles.linkText}>Voir ma progression</Text>
-                <Text style={styles.linkArrow}>→</Text>
-              </TouchableOpacity>
+              <HomeProgressionCard vm={progression} onVoirProgression={goToProgression} />
             </HomeCarouselCard>
 
             <HomeNextSessionCard
@@ -542,32 +544,8 @@ const styles = StyleSheet.create({
   cardsStack: {
     gap: 16,
   },
-  progressRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  progressText: {
-    fontSize: 13,
-    color: palette.text,
-    fontWeight: "700",
-  },
-  link: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    alignSelf: "flex-start",
-    paddingVertical: 6,
-  },
-  linkText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: palette.accent,
-  },
-  linkArrow: {
-    fontSize: 14,
-    color: palette.accent,
-  },
+  // progressRow/progressText/link* : partis avec la ligne serie — le contenu de
+  // la carte Progression (et son pied) vit dans HomeProgressionCard.
   devChip: {
     alignSelf: "flex-start",
     paddingHorizontal: 10,
