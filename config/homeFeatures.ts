@@ -22,6 +22,17 @@
 // nouveau. Elle reste ici parce qu'elle est verifiee et qu'une enquete refaite
 // coute plus cher qu'une checklist conservee.
 //
+// MISE A JOUR 15/08 (bascule A) — trois faits de la checklist ont change :
+//   - `useLoadSeries` n'existe PLUS (supprime par la bascule : H2, la serie TSB
+//     vient du store). Le rayer de l'etape 4.
+//   - `hooks/home/useRealLoadData.ts` (H1) est nouveau et doit etre GARDE meme
+//     si l'ancien accueil part : `useContextualAdvice` (garde pour
+//     NewSessionScreen) lui prend countRealActivityDays.
+//   - Partent AVEC l'ancien accueil, en plus de la liste : HomeProgressionCard
+//     (+ components/home/__tests__/) et, dans hooks/home/__tests__/, les suites
+//     activityStreak et needsCycleChoice (realLoadData et adviceGating restent
+//     avec leurs hooks). Les comptes de lignes des etapes 2-4 datent d'avant.
+//
 // -----------------------------------------------------------------------------
 // POURQUOI IL A SURVECU AU LOT L6 — ET COMMENT LE RETIRER
 // -----------------------------------------------------------------------------
