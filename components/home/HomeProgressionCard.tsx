@@ -77,7 +77,9 @@ export default function HomeProgressionCard({ vm, onVoirProgression }: Props) {
           </Text>
           {vm.reperes.map((repere) => (
             <View key={repere.numero} style={styles.repereRow}>
-              <Text style={styles.repereNumero}>{repere.numero}.</Text>
+              <Text style={styles.repereNumero} numberOfLines={1}>
+                {repere.numero}.
+              </Text>
               <Text style={styles.repereTexte} numberOfLines={2}>
                 {repere.texte}
               </Text>
@@ -129,7 +131,9 @@ export default function HomeProgressionCard({ vm, onVoirProgression }: Props) {
           <Text style={styles.linkText} numberOfLines={1}>
             {vm.detail.label}
           </Text>
-          <Text style={styles.linkArrow}>→</Text>
+          <Text style={styles.linkArrow} numberOfLines={1}>
+            →
+          </Text>
         </TouchableOpacity>
       ) : null}
     </>
