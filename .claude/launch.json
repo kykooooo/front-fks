@@ -2,6 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "recette-phone",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/expo/bin/cli", "start"],
+      "port": 8081,
+      "autoPort": false
+    },
+    {
       "name": "expo-start",
       "runtimeExecutable": "node",
       "runtimeArgs": ["node_modules/expo/bin/cli", "start", "--web"],
