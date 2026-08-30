@@ -27,7 +27,9 @@ import HomeReadinessHero from "../components/home/HomeReadinessHero";
 import HomePrimaryCTA from "../components/home/HomePrimaryCTA";
 import HomeNextSessionCard from "../components/home/HomeNextSessionCard";
 import HomeCarouselCard from "../components/home/HomeCarouselCard";
-import { useLoadSeries } from "../hooks/home/useLoadSeries";
+import HomeProgressionCard from "../components/home/HomeProgressionCard";
+import { useHomeVNextViewModel } from "../hooks/home/useHomeVNextViewModel";
+import { useRealLoadData } from "../hooks/home/useRealLoadData";
 import { useMatchSoon } from "../hooks/home/useMatchSoon";
 import { useWeekDays } from "../hooks/home/useWeekDays";
 import { useWeekSummary } from "../hooks/home/useWeekSummary";
@@ -107,6 +109,10 @@ export default function HomeScreen() {
   const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
   const dailyApplied = useLoadStore((s) => s.dailyApplied);
   const lastAppliedDate = useLoadStore((s) => s.lastAppliedDate);
+  // Série TSB : UNE SEULE vérité, celle du store (écrite par rebuildLoad /
+  // applyFeedback / applyExternalLoad) — plus de resimulation locale (ex-useLoadSeries)
+  // qui contredisait le chiffre affiché à côté.
+  const tsbHistoryRaw = useLoadStore((s) => s.tsbHistory);
 
   // ── Sessions & calendar ──
   const sessions = useSessionsStore((s) => s.sessions);
@@ -141,7 +147,15 @@ export default function HomeScreen() {
     !!lastAppliedDate &&
     isSameDay(new Date(lastAppliedDate), nowISO ? new Date(nowISO) : new Date());
 
-  const loadSeries = useLoadSeries(dailyApplied, nowISO);
+  // Le store est NEWEST-FIRST (rebuildLoad/applyFeedback/applyExternalLoad
+  // prependent) ; HomeReadinessHero attend du CHRONOLOGIQUE (dernier point = aujourd'hui).
+  const tsbHistoryChrono = useMemo(
+    () => [...(tsbHistoryRaw ?? [])].reverse(),
+    [tsbHistoryRaw]
+  );
+
+  // Prédicat "données réelles" (H1) : conditionne chip état + carte TON ÉTAT + courbe.
+  const { hasRealLoadData, realActivityDayCount } = useRealLoadData(sessions, externalLoads);
 
   // Libellé "état du jour" joueur-friendly (jamais de TSB brut).
   const football = getFootballLabel(tsb);
@@ -197,6 +211,15 @@ export default function HomeScreen() {
   const feedbackDue = Boolean(pendingDateKey && pendingDateKey < todayKey);
 
   const advice = useContextualAdvice();
+
+  // Carte « Ma progression » enrichie SUR PLACE (decision fondateur 15/08) :
+  // son contenu vient du ViewModel canonique de la carte progression, via le
+  // pipeline vNext — seule `progression` est consommee (vm/etat/entree ignores).
+  // R7 tenu par construction : le compte hebdo que ce VM connait est celui de
+  // `construireSemaineCouranteDepuisLeHome`, le MEME nombre que la ligne stats
+  // ci-dessus (les deux delegent a compterSeancesFksSurJours — unicite
+  // verrouillee par resumeCanoniqueUnicite).
+  const { progression } = useHomeVNextViewModel();
 
   // Recommandations du coach
 
@@ -258,10 +281,16 @@ export default function HomeScreen() {
               <Text style={styles.greeting} numberOfLines={1}>Salut, {athleteName}</Text>
               <Text style={styles.date}>{todayLabel}</Text>
             </View>
-            <View style={styles.readyChip}>
-              <View style={[styles.readyDot, { backgroundColor: football.color }]} />
-              <Text style={styles.readyLabel} numberOfLines={1}>{football.label}</Text>
-            </View>
+            {!storeHydrated ? (
+              // H4 — squelette pendant l'hydratation : pas de verdict d'usine.
+              <View style={styles.readyChipSkeleton} />
+            ) : hasRealLoadData ? (
+              <View style={styles.readyChip}>
+                <View style={[styles.readyDot, { backgroundColor: football.color }]} />
+                <Text style={styles.readyLabel} numberOfLines={1}>{football.label}</Text>
+              </View>
+            ) : null}
+            {/* H1 — sans données réelles : pas de chip (le header garde salutation + date). */}
           </View>
         </Animated.View>
 
@@ -299,31 +328,46 @@ export default function HomeScreen() {
 
         {/* Ligne stats compacte : Semaine / Série / Match */}
         <Animated.View style={animStyle(ctaAnim)}>
-          <View style={styles.statsLine}>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Semaine</Text>
-              <Text style={styles.statValue}>{weekSummary.fksCount}/{weeklyGoal}</Text>
+          {!storeHydrated ? (
+            // H4 — squelette pendant l'hydratation (gabarit de la ligne stats).
+            <View style={styles.statsLineSkeleton} />
+          ) : (
+            <View style={styles.statsLine}>
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Semaine</Text>
+                <Text style={styles.statValue}>{weekSummary.fksCount}/{weeklyGoal}</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Série</Text>
+                <Text style={styles.statValue}>{activityStreak > 0 ? `${activityStreak} j` : "Nouvelle"}</Text>
+              </View>
+              {matchSoon ? (
+                <>
+                  <View style={styles.statDivider} />
+                  <View style={styles.statItem}>
+                    <Text style={styles.statLabel}>Match</Text>
+                    <Text style={[styles.statValue, { color: palette.warn }]}>Proche</Text>
+                  </View>
+                </>
+              ) : null}
             </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Série</Text>
-              <Text style={styles.statValue}>{activityStreak > 0 ? `${activityStreak} j` : "Nouvelle"}</Text>
-            </View>
-            {matchSoon ? (
-              <>
-                <View style={styles.statDivider} />
-                <View style={styles.statItem}>
-                  <Text style={styles.statLabel}>Match</Text>
-                  <Text style={[styles.statValue, { color: palette.warn }]}>Proche</Text>
-                </View>
-              </>
-            ) : null}
-          </View>
+          )}
         </Animated.View>
 
-        {/* État du jour (détail + tendance 7j) — placé plus bas, ne vole pas la vedette */}
+        {/* État du jour (détail + tendance) — placé plus bas, ne vole pas la vedette */}
         <Animated.View style={animStyle(cardsAnim)}>
-          <HomeReadinessHero tsb={tsb} tsbHistory={loadSeries.tsbArr} />
+          {!storeHydrated ? (
+            // H4 — squelette pendant l'hydratation (gabarit de la carte pleine ~223 px).
+            <View style={styles.readinessSkeleton} />
+          ) : (
+            <HomeReadinessHero
+              tsb={tsb}
+              tsbHistory={tsbHistoryChrono}
+              hasRealLoadData={hasRealLoadData}
+              realActivityDayCount={realActivityDayCount}
+            />
+          )}
         </Animated.View>
 
         {advice && (
@@ -334,21 +378,12 @@ export default function HomeScreen() {
 
         <Animated.View style={animStyle(cardsAnim)}>
           <View style={styles.cardsStack}>
+            {/* Cadre et position INCHANGES (decision « Enrichir sur place ») :
+                seuls les children changent. La ligne serie (flamme) est partie —
+                doublon de la stat « Série » au-dessus ; le lien « Voir ma
+                progression » est desormais decide par le ViewModel (vm.detail). */}
             <HomeCarouselCard title="Progression" subtitle="Régularité & forme">
-              <View style={styles.progressRow}>
-                <Ionicons name="flame" size={18} color={palette.cta} />
-                <Text style={styles.progressText}>
-                  {activityStreak === 0
-                    ? "Lance ta première séance"
-                    : activityStreak === 1
-                      ? "1 jour d’affilée"
-                      : `${activityStreak} jours d’affilée`}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={goToProgression} style={styles.link}>
-                <Text style={styles.linkText}>Voir ma progression</Text>
-                <Text style={styles.linkArrow}>→</Text>
-              </TouchableOpacity>
+              <HomeProgressionCard vm={progression} onVoirProgression={goToProgression} />
             </HomeCarouselCard>
 
             <HomeNextSessionCard
@@ -438,6 +473,27 @@ const styles = StyleSheet.create({
     color: palette.text,
     flexShrink: 1,
   },
+  // ── Squelettes d'hydratation (H4) — aplats gris statiques, mêmes gabarits ──
+  readyChipSkeleton: {
+    borderRadius: 999,
+    height: 32,
+    width: 110,
+    backgroundColor: palette.cardSoft,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+  },
+  statsLineSkeleton: {
+    borderRadius: 12,
+    height: 57,
+    backgroundColor: palette.cardSoft,
+    borderWidth: 1,
+    borderColor: palette.borderSoft,
+  },
+  readinessSkeleton: {
+    borderRadius: 26,
+    minHeight: 220,
+    backgroundColor: palette.cardSoft,
+  },
   // ── Ligne stats compacte ──
   cycleChip: {
     flexDirection: "row",
@@ -488,32 +544,8 @@ const styles = StyleSheet.create({
   cardsStack: {
     gap: 16,
   },
-  progressRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  progressText: {
-    fontSize: 13,
-    color: palette.text,
-    fontWeight: "700",
-  },
-  link: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    alignSelf: "flex-start",
-    paddingVertical: 6,
-  },
-  linkText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: palette.accent,
-  },
-  linkArrow: {
-    fontSize: 14,
-    color: palette.accent,
-  },
+  // progressRow/progressText/link* : partis avec la ligne serie — le contenu de
+  // la carte Progression (et son pied) vit dans HomeProgressionCard.
   devChip: {
     alignSelf: "flex-start",
     paddingHorizontal: 10,

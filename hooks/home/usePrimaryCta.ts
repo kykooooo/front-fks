@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { Alert } from "react-native";
 import { showToast } from "../../utils/toast";
-import { MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../../domain/microcycles";
+import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../../domain/microcycles";
 import { DEV_FLAGS } from "../../config/devFlags";
 import { toDateKey } from "../../utils/dateHelpers";
 import { selectPendingSession } from "../../utils/sessionHelpers";
@@ -12,6 +12,22 @@ import type { Session } from "../../domain/types";
 type Nav = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
 };
+
+/**
+ * true si presser "nouvelle séance" ouvre en réalité CycleModal (aucun cycle
+ * actif, ou cycle terminé). Mêmes 3 lignes que le début de onPressNew — le
+ * texte du CTA et sa navigation ne doivent jamais diverger. Exportée pure
+ * pour les tests (pas de renderer dans le dépôt).
+ */
+export function computeNeedsCycleChoice(
+  microcycleGoal: string | null,
+  microcycleSessionIndex?: number | null
+): boolean {
+  const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
+  const microIdx = Math.max(0, Math.trunc(microcycleSessionIndex ?? 0));
+  const cycleCompleted = Boolean(cycleId) && microIdx >= MICROCYCLE_TOTAL_SESSIONS_DEFAULT;
+  return !cycleId || cycleCompleted;
+}
 
 type Params = {
   nav: Nav;
@@ -183,7 +199,9 @@ export function usePrimaryCta({
         return;
       }
     }
-    guardNav(() => nav.navigate("NewSession"));
+    // Route AppStack "GenerateSession" = le VRAI écran de génération
+    // (l'onglet "NewSession" rend SessionHubScreen, un menu — le CTA mentait).
+    guardNav(() => nav.navigate("GenerateSession"));
   }, [
     nav,
     microcycleGoal,
@@ -235,6 +253,17 @@ export function usePrimaryCta({
         onPress: undefined,
       };
     }
+    // Quand la vraie cible de onPressNew est CycleModal (pas la génération),
+    // le CTA doit le dire — même calcul que onPressNew pour ne jamais diverger.
+    if (computeNeedsCycleChoice(microcycleGoal, microcycleSessionIndex)) {
+      return {
+        label: "Choisir mon cycle",
+        sub: `${Object.keys(MICROCYCLES).length} cycles, ${MICROCYCLE_TOTAL_SESSIONS_DEFAULT} séances chacun.`,
+        tone: "primary" as const,
+        disabled: false,
+        onPress: onPressNew,
+      };
+    }
     return {
       label: "Préparer ma séance",
       sub: "On te prépare un programme adapté en 2 min.",
@@ -251,6 +280,8 @@ export function usePrimaryCta({
     startPendingSession,
     onPressNew,
     goToRecovery,
+    microcycleGoal,
+    microcycleSessionIndex,
   ]);
 
   return {

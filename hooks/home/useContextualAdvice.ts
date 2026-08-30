@@ -10,12 +10,51 @@ import { useExternalStore } from "../../state/stores/useExternalStore";
 import { useFeedbackStore } from "../../state/stores/useFeedbackStore";
 import { useDebugStore } from "../../state/stores/useDebugStore";
 import { useRoutineBadges } from "../useRoutineBadges";
-import { ADVICE_RULES, type Advice, type AdviceContext } from "../../domain/adviceRules";
+import { ADVICE_RULES, type Advice, type AdviceContext, type AdviceId } from "../../domain/adviceRules";
 import { frToKey, toDateKey } from "../../utils/dateHelpers";
 import { MICROCYCLE_TOTAL_SESSIONS_DEFAULT } from "../../domain/microcycles";
+import { countRealActivityDays } from "./useRealLoadData";
 
 // Catégories de routines mobilité (pour détecter dernière mobilité)
 const MOBILITY_CATEGORIES = ["MOBILITÉ EXPRESS", "PACK 7 JOURS"];
+
+// Règles qui affirment un ÉTAT MESURÉ (TSB fabriqué par les constantes
+// d'amorçage) ou reprochent l'ABSENCE de données (no_mobility sur un compte
+// neuf) : sautées tant qu'aucune donnée réelle de charge n'existe (H1).
+// Les règles calendrier/signaux réels (match, club, gêne, cycle, streak)
+// continuent de se déclencher : elles affirment des faits déclarés, pas un
+// état mesuré. Le gating vit ICI (domain/adviceRules.ts n'est pas modifié).
+export const REGLES_EXIGEANT_DONNEES_REELLES: AdviceId[] = [
+  "tsb_extreme_fatigue",
+  "tsb_fatigue",
+  "recovery_needed",
+  "no_mobility",
+  "good_shape",
+  "ready_default",
+];
+
+/**
+ * Évaluation pure des règles (exportée pour les tests — pas de renderer dans
+ * le dépôt) : filtre les règles exigeant des données réelles quand il n'y en a
+ * pas, puis retourne le premier conseil dont la condition passe.
+ */
+export function evaluateAdviceRules(
+  ctx: AdviceContext,
+  hasRealLoadData: boolean
+): Advice | null {
+  const rules = hasRealLoadData
+    ? ADVICE_RULES
+    : ADVICE_RULES.filter((r) => !REGLES_EXIGEANT_DONNEES_REELLES.includes(r.id));
+  const sortedRules = [...rules].sort((a, b) => a.priority - b.priority);
+
+  for (const rule of sortedRules) {
+    if (rule.condition(ctx)) {
+      return rule.build(ctx);
+    }
+  }
+
+  return null;
+}
 
 export function useContextualAdvice(): Advice | null {
   // Données du store
@@ -29,6 +68,8 @@ export function useContextualAdvice(): Advice | null {
   const devNowISO = useDebugStore((s) => s.devNowISO);
   const dayStates = useFeedbackStore((s) => s.dayStates ?? {});
   const completedRoutines = useExternalStore((s) => s.completedRoutines ?? []);
+  const sessions = useSessionsStore((s) => s.sessions);
+  const externalLoads = useExternalStore((s) => s.externalLoads);
 
   // Badges routines (pour streak)
   const routineBadges = useRoutineBadges();
@@ -110,16 +151,9 @@ export function useContextualAdvice(): Advice | null {
       nowISO,
     };
 
-    // === Évaluation des règles par priorité ===
-    const sortedRules = [...ADVICE_RULES].sort((a, b) => a.priority - b.priority);
-
-    for (const rule of sortedRules) {
-      if (rule.condition(ctx)) {
-        return rule.build(ctx);
-      }
-    }
-
-    return null;
+    // === Évaluation des règles par priorité (gating données réelles, H1) ===
+    const hasRealLoadData = countRealActivityDays(sessions, externalLoads) > 0;
+    return evaluateAdviceRules(ctx, hasRealLoadData);
   }, [
     tsb,
     atl,
@@ -132,5 +166,7 @@ export function useContextualAdvice(): Advice | null {
     dayStates,
     completedRoutines,
     routineBadges.streak,
+    sessions,
+    externalLoads,
   ]);
 }
