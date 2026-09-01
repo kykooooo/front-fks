@@ -30,6 +30,27 @@ export function readRecoveryTips(
   return undefined;
 }
 
+/**
+ * Contrat front↔back : `coaching_tips` est un tableau de STRINGS au niveau
+ * SÉANCE (fks/src/fksSchema.ts:121 — `coaching_tips: z.array(z.string())`),
+ * jamais rattaché à un bloc. Agent B en produit 3 (fks/src/agents/agentB.*.ts),
+ * bornés à 150 caractères pièce ; le post-traitement backend peut en garder
+ * moins après dédup.
+ * Retourne undefined si aucun conseil (jamais un tableau vide), et filtre les
+ * entrées non-string ou vides pour ne jamais rendre une puce fantôme.
+ */
+export function readCoachingTips(
+  v2: Pick<FKS_NextSessionV2, "coachingTips"> | null | undefined
+): string[] | undefined {
+  const raw = v2?.coachingTips;
+  if (!Array.isArray(raw)) return undefined;
+  const clean = raw
+    .filter((t): t is string => typeof t === "string")
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+  return clean.length > 0 ? clean : undefined;
+}
+
 export function prettifyName(name: string) {
   const trimmed = (name || "").trim();
   if (!trimmed) return "Exercice";

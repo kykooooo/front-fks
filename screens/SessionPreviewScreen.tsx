@@ -31,7 +31,7 @@ import { useNavGuard } from '../hooks/useNavGuard';
 import type { SessionTimerHandle } from '../components/session/SessionTimer';
 import { getCycleTheme } from '../constants/cycleTheme';
 import { buildResetExplain } from './newSession/resetExplain';
-import { readRecoveryTips } from './newSession/helpers';
+import { readRecoveryTips, readCoachingTips } from './newSession/helpers';
 import { useTestsStorage } from './tests/hooks/useTestsStorage';
 import { useClubDirective } from '../hooks/useClubDirective';
 import { pickLatestTestValues } from './sessionPreview/testReferenceMapping';
@@ -82,6 +82,8 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
   // Conseils de récup : racine v2.recoveryTips (contrat backend actuel) avec
   // compat postSession.recoveryTips — cf. readRecoveryTips.
   const recoveryTips = readRecoveryTips(v2);
+  // Conseils IA d'Agent B : niveau SÉANCE (jamais par bloc) — cf. readCoachingTips.
+  const coachingTips = readCoachingTips(v2);
   const soundsEnabled = useSettingsStore((s) => s.soundsEnabled);
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
   const phase = useSessionsStore((s) => s.phase);
@@ -519,13 +521,21 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
                 onStopRest={() => { setRestRunning(false); setRestSec(0); }}
               />
 
-              {/* Coaching */}
-              {v2.coachingTips && v2.coachingTips.length > 0 ? (
+              {/* Conseils du coach : les VRAIS tips d'Agent B, niveau s\u00e9ance.
+                  Contenu backend -> numberOfLines born\u00e9 (r\u00e8gle d'or CLAUDE.md). */}
+              {coachingTips ? (
                 <Card variant="soft" style={styles.coachCard}>
-                  <SectionHeader title="Coaching" />
+                  <SectionHeader title="Conseils du coach" />
                   <View style={{ gap: 6 }}>
-                    {v2.coachingTips.map((tip: string, i: number) => (
-                      <Text key={`tip_${i}`} style={styles.bullet}>{'\u2022'} {tip}</Text>
+                    {coachingTips.map((tip: string, i: number) => (
+                      <Text
+                        key={`tip_${i}`}
+                        style={styles.bullet}
+                        numberOfLines={4}
+                        testID={`preview-coaching-tip-${i}`}
+                      >
+                        {'\u2022'} {tip}
+                      </Text>
                     ))}
                   </View>
                 </Card>
