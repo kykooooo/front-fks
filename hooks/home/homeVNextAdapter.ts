@@ -62,6 +62,10 @@ import { frIntensity, frFocus } from "../../utils/frLabels";
 import { toDateKey } from "../../utils/dateHelpers";
 import { getSessionDuration, selectPendingSession } from "../../utils/sessionHelpers";
 import type { TestEntry } from "../../screens/tests/testConfig";
+// Meme sens d'import que `prettifyName` dans hooks/trackingProgress : les
+// helpers purs de screens/ sont la source unique, pas a recopier ici.
+import { readCoachingTips } from "../../screens/newSession/helpers";
+import type { FKS_NextSessionV2 } from "../../screens/newSession/types";
 import type {
   HomeVNextCompletedSession,
   HomeVNextDemarrageInput,
@@ -418,9 +422,11 @@ export function construireSeanceEnAttente(
   const ai = aiSeance ?? aiDernier;
   const analytics = (ai?.analytics ?? null) as Record<string, unknown> | null;
   const playerContext = (ai?.playerContext ?? null) as Record<string, unknown> | null;
-  const coachingTips = Array.isArray(ai?.coachingTips)
-    ? (ai!.coachingTips as unknown[]).filter((t): t is string => typeof t === "string" && t.trim() !== "")
-    : [];
+  // Source unique de la lecture des conseils IA (meme filtre, meme trim que la
+  // preview et le live) : une copie locale ici laissait passer les espaces de
+  // bord que `readCoachingTips` coupe. Le Home veut une liste, jamais undefined.
+  const coachingTips =
+    readCoachingTips(ai as Pick<FKS_NextSessionV2, "coachingTips"> | null) ?? [];
 
   const focusBrut = texteOuNull(ai?.focusPrimary) ?? texteOuNull(pending.focus);
   const intensiteBrute = texteOuNull(ai?.intensity) ?? texteOuNull(pending.intensity);
