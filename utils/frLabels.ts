@@ -3,10 +3,15 @@
 // focus, lieu). Fallback : renvoie le token d'origine si inconnu — on
 // n'affiche jamais undefined ni une chaîne vide inattendue.
 
+// Enum backend reel (fks/src/fksSchema.ts : `z.enum(["easy","moderate","hard"])`).
+// `recovery` et `max` ne sont pas dans l'enum mais circulent dans des payloads
+// plus anciens / des seances pre-batie : traduits ici pour ne jamais afficher un
+// token anglais brut sur un badge. Tout token inconnu retombe sur lui-meme.
 const INTENSITY_FR: Record<string, string> = {
   easy: "Facile",
   moderate: "Modéré",
   hard: "Intense",
+  max: "Max",
   recovery: "Récup",
 };
 

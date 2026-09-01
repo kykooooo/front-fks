@@ -22,6 +22,7 @@ import { Button } from "../components/ui/Button";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { useExternalStore } from "../state/stores/useExternalStore";
 import { parseStepLine } from "./prebuilt/parseStepLine";
+import { frIntensity } from "../utils/frLabels";
 
 const palette = theme.colors;
 
@@ -67,12 +68,8 @@ const getCategoryConfig = (category: string): CategoryConfig =>
     tintSoft: "rgba(107,114,128,0.12)",
   };
 
-const INTENSITY_LABEL: Record<string, string> = {
-  easy: "Facile",
-  moderate: "Modéré",
-  hard: "Intense",
-};
-
+// Le mapping FR de l'intensite vivait ici en doublon de `utils/frLabels.ts` (et
+// n'y couvrait que 3 tokens). Source unique : `frIntensity`.
 type BadgeTone = "default" | "ok" | "warn" | "danger";
 const INTENSITY_TONE: Record<string, BadgeTone> = {
   easy: "ok",
@@ -176,7 +173,7 @@ export default function PrebuiltSessionDetailScreen() {
   const parsedSteps = useMemo(() => detailLines.map(parseStepLine), [detailLines]);
 
   const categoryConfig = getCategoryConfig(session.category);
-  const intensityLabel = INTENSITY_LABEL[session.intensity] ?? session.intensity;
+  const intensityLabel = frIntensity(session.intensity) || session.intensity;
   const intensityTone = INTENSITY_TONE[session.intensity] ?? "default";
 
   const handleFinish = useCallback(() => {
