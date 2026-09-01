@@ -12,7 +12,6 @@ import {
   type Block,
   type BlockItem,
   intensityTone,
-  getCoachTip,
   getDisplayName,
   getExerciseId,
   formatItemMeta,
@@ -37,6 +36,12 @@ type Props = {
   cycleTheme: CycleTheme;
   /** Dernieres valeurs de test terrain (par cle), pour la ligne de reference sous l'exercice. */
   testValues?: TestReferenceValues;
+  /**
+   * Phrase de l'encadre « Repere technique ». Calculee par le PARENT via
+   * `coachTipsForBlocks(blocks)` : le choix depend du rang du bloc dans sa
+   * famille, donc de la seance entiere, pas de ce bloc isole.
+   */
+  coachTip: string;
 };
 
 export function BlockCard({
@@ -52,12 +57,12 @@ export function BlockCard({
   getPulse,
   cycleTheme,
   testValues,
+  coachTip,
 }: Props) {
   const cfg = getBlockVisual(block);
   const items = block.items ?? [];
   const blockTitle =
     block.goal || block.name || block.type || block.focus || `Bloc ${blockIndex + 1}`;
-  const tipText = getCoachTip(block, blockIndex);
   const blockOpacity = blockAnim;
   const blockTranslateY = blockAnim.interpolate({
     inputRange: [0, 1],
@@ -205,11 +210,15 @@ export function BlockCard({
             >
               <View style={styles.coachTipHeader}>
                 <Ionicons name="chatbubble-ellipses-outline" size={12} color={cycleTheme.textOnSoft} />
+                {/* « Repere technique » et NON « Conseil du coach » : ce texte
+                    est un rappel local d'execution, alors que l'encart
+                    « Conseils du coach » de la seance porte les VRAIS conseils
+                    d'Agent B. Les deux intitules ne differaient que d'un « s ». */}
                 <Text style={[styles.coachTipKicker, { color: cycleTheme.textOnSoft }]}>
-                  Conseil du coach
+                  Repère technique
                 </Text>
               </View>
-              <Text style={[styles.coachTipText, { color: cycleTheme.textOnSoft }]}>{tipText}</Text>
+              <Text style={[styles.coachTipText, { color: cycleTheme.textOnSoft }]}>{coachTip}</Text>
             </View>
           </View>
         </Card>
@@ -239,7 +248,7 @@ const styles = StyleSheet.create({
   vBlockBadges: { flexDirection: "row", gap: 6 },
   vBlockNotes: { fontSize: 12, color: palette.sub, lineHeight: 18 },
   vBlockItems: { gap: 10 },
-  // Encadré "Conseil du coach" : fond "soft" + barre gauche "strong" du cycle.
+  // Encadré "Repère technique" : fond "soft" + barre gauche "strong" du cycle.
   // border-radius 0 côté barre (bord simple), arrondi côté opposé.
   coachTipBox: {
     gap: 4,

@@ -27,9 +27,11 @@ import { withSessionErrorBoundary } from "../components/withErrorBoundary";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { SessionTimer, type SessionTimerHandle } from "../components/session/SessionTimer";
 import { getBlockLabel } from "../components/session/blockConfig";
-import { readRecoveryTips } from "./newSession/helpers";
+import { readRecoveryTips, readCoachingTips } from "./newSession/helpers";
 import { formatDayFR, toDateKey } from "../utils/dateHelpers";
 import { frIntensity, frFocus, frLocation } from "../utils/frLabels";
+// Source unique du fallback « Repère technique » par bloc (plus de copie locale).
+import { getCoachTip } from "./sessionPreview/sessionPreviewConfig";
 import { useSettingsStore } from "../state/settingsStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useExternalStore } from "../state/stores/useExternalStore";
@@ -184,29 +186,9 @@ const intensityTone = (intensity?: string) => {
   return "default";
 };
 
-const getCoachTip = (block: Block | undefined, index: number) => {
-  if (!block) return "Qualité d'exécution avant volume.";
-  const raw = `${block.type ?? ""} ${block.focus ?? ""} ${block.goal ?? ""}`.toLowerCase();
-  if (raw.includes("strength") || raw.includes("force")) {
-    return "Technique propre, amplitude contrôlée, tempo stable.";
-  }
-  if (raw.includes("speed") || raw.includes("vitesse")) {
-    return "Explosivité max, récup complète, départs propres.";
-  }
-  if (raw.includes("endurance") || raw.includes("tempo") || raw.includes("run")) {
-    return "Rythme constant, respiration posée, relâchement.";
-  }
-  if (raw.includes("plyo") || raw.includes("saut")) {
-    return "Contacts courts, gainage actif, atterrissages doux.";
-  }
-  if (raw.includes("cod") || raw.includes("agility") || raw.includes("appuis")) {
-    return "Appuis bas, changements propres, regard haut.";
-  }
-  if (raw.includes("mobility") || raw.includes("mobilite")) {
-    return "Amplitude progressive, aucune douleur, respiration lente.";
-  }
-  return `Bloc ${index + 1} : qualité d'exécution avant volume.`;
-};
+// `getCoachTip` vivait ici en DOUBLON de sessionPreviewConfig : les deux copies
+// ont derive et rendaient la meme phrase sur tous les blocs d'une seance Force.
+// Source unique desormais : `screens/sessionPreview/sessionPreviewConfig.ts`.
 
 const MAX_SESSION_SEC = 4 * 60 * 60; // 4 heures (timeout de sécurité)
 
@@ -1124,9 +1106,13 @@ function SessionLiveScreen() {
   }, []);
 
   const coachTip = useMemo(
-    () => getCoachTip(blocks[activeBlock], activeBlock),
+    // La seance ENTIERE, pas le seul bloc actif : le choix de la phrase depend
+    // du rang du bloc dans sa famille (2e bloc force -> 2e phrase du pool).
+    () => getCoachTip(blocks, activeBlock),
     [blocks, activeBlock]
   );
+  // Conseils IA d'Agent B : niveau SÉANCE (jamais par bloc) — cf. readCoachingTips.
+  const coachingTips = useMemo(() => readCoachingTips(v2), [v2]);
   const timerPresets = useMemo(() => {
     const globalRaw = Array.isArray(v2.display?.timerPresets) ? v2.display?.timerPresets : [];
     const blockRaw = Array.isArray(blocks[activeBlock]?.timerPresets)
@@ -1793,12 +1779,19 @@ function SessionLiveScreen() {
               </Card>
             ) : null}
 
-            {Array.isArray(v2.coachingTips) && v2.coachingTips.length > 0 ? (
+            {/* Conseils du coach : les VRAIS tips d'Agent B, niveau séance.
+                Contenu backend -> numberOfLines borné (règle d'or CLAUDE.md). */}
+            {coachingTips ? (
               <Card variant="soft" style={styles.coachCard}>
-                <SectionHeader title="Coaching rapide" />
+                <SectionHeader title="Conseils du coach" />
                 <View style={{ gap: 6 }}>
-                  {v2.coachingTips.map((tip: string, i: number) => (
-                    <Text key={`coach_${i}`} style={styles.coachText}>
+                  {coachingTips.map((tip: string, i: number) => (
+                    <Text
+                      key={`coach_${i}`}
+                      style={styles.coachText}
+                      numberOfLines={4}
+                      testID={`live-coaching-tip-${i}`}
+                    >
                       • {tip}
                     </Text>
                   ))}

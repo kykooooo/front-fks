@@ -39,6 +39,7 @@ import { pickLatestTestValues } from './sessionPreview/testReferenceMapping';
 import {
   type Block,
   intensityTone,
+  coachTipsForBlocks,
 } from './sessionPreview/sessionPreviewConfig';
 import { HeroCard } from './sessionPreview/components/HeroCard';
 import { FlowStrip } from './sessionPreview/components/FlowStrip';
@@ -84,6 +85,11 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
   const recoveryTips = readRecoveryTips(v2);
   // Conseils IA d'Agent B : niveau SÉANCE (jamais par bloc) — cf. readCoachingTips.
   const coachingTips = readCoachingTips(v2);
+  // Repères techniques par bloc : calculés ICI pour la séance ENTIÈRE, le rang
+  // d'un bloc dans sa famille ne se lisant pas sur le bloc isolé. Pas de
+  // useMemo : fonction pure sur au plus 7 blocs (plafond du contrat backend),
+  // et `blocks` est de toute façon reconstruit à chaque rendu juste au-dessus.
+  const coachTips = coachTipsForBlocks(blocks);
   const soundsEnabled = useSettingsStore((s) => s.soundsEnabled);
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
   const phase = useSessionsStore((s) => s.phase);
@@ -498,6 +504,7 @@ function SessionPreviewContent({ route }: { route: SessionPreviewRoute }) {
                       getPulse={getPulse}
                       cycleTheme={cycleTheme}
                       testValues={latestTestValues}
+                      coachTip={coachTips[blockIndex] ?? ''}
                     />
                   ))}
                 </>
