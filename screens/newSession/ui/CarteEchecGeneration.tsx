@@ -135,8 +135,10 @@ const styles = StyleSheet.create({
     color: palette.sub,
     minHeight: 38,
   },
-  // Sur le fond teinté du refus, `sub` passe sous le seuil de contraste :
-  // le texte principal reprend la couleur de texte pleine.
+  // Sur le fond teinté du refus, `sub` tiendrait tout juste le seuil AA
+  // (4,58:1 mesuré en clair, pour 4,5:1 exigé) : marge trop faible pour un
+  // texte que le joueur doit lire jusqu'au bout. On passe à `text`, qui
+  // mesure 13,1:1 en clair et 13,9:1 en sombre sur ce même fond.
   messageSecurite: {
     color: palette.text,
     fontSize: 14,

@@ -42,7 +42,7 @@ la non-régression).
 
 Quand le backend a pu qualifier sa propre panne, il répond avec un corps JSON
 que le front sait lire (`lireCorpsContrat`,
-`screens/newSession/echecGeneration.ts:160-191`). Le front ne lit ce corps que
+`screens/newSession/echecGeneration.ts:202-236`). Le front ne lit ce corps que
 depuis `error.message` (le point d'entrée est toujours une exception —
 `BackendError` levée par `safeFetch`, `utils/errorHandler.ts:260-313` — dont
 le `message` porte le corps de réponse HTTP brut).
@@ -66,12 +66,15 @@ porte huit champs :
 }
 ```
 
-Le front n'en lit que **cinq** (`lireCorpsContrat`) :
+`lireCorpsContrat` (`echecGeneration.ts:202-236`) lit **sept** champs en tout :
+les **cinq** ci-dessous, présents sur n'importe quel corps contrat, plus deux
+qui n'existent que sur le refus de sécurité (`safety_flags` et `disclaimer`,
+§2.3). Sur le corps de huit champs de cet exemple, cinq sont donc lus :
 
 | Champ JSON | Type | Lu par le front comme |
 |---|---|---|
 | `code` | string, requis | `EchecGeneration.code` (identifiant opaque, jamais interprété au-delà de `missing_goal`, voir §4.3) |
-| `category` | `"transitoire" \| "sportif" \| "technique"`, optionnel | `EchecGeneration.categorie` — si absent ou hors de cette liste, déduit de `retryable` (`true` → `"transitoire"`, `false` → `"technique"`) |
+| `category` | `"transitoire" \| "sportif" \| "technique"`, optionnel (`CATEGORIES`, `echecGeneration.ts:156`) | `EchecGeneration.categorie` — si absent ou hors de cette liste, déduit de `retryable` (`true` → `"transitoire"`, `false` → `"technique"`). Sur un refus de sécurité, ce champ n'est jamais consulté : la catégorie vient du `code` (§2.3) |
 | `retryable` | boolean, optionnel (défaut `false`) | `EchecGeneration.retryable` |
 | `message` | string, requis | `EchecGeneration.messageJoueur`, affiché **tel quel** (voir §6) |
 | `requestId` | string, optionnel | `EchecGeneration.requestId`, affiché en petit dans `CarteEchecGeneration` |
@@ -96,7 +99,7 @@ LOT 4c)** : un 429 peut porter à la fois un corps typé (§2.1) et un en-tête
 `Retry-After` (posé par `safeFetch` sur `retryAfterS`). Le front ne les
 oppose pas : `attendreS` reprend `retryAfterS` dès qu'il est numérique et
 `> 0` ; sinon (absent, non numérique, ou `<= 0`) il reste `null`
-(`echecGeneration.ts:313-322`). Trois tests verrouillent ce comportement
+(`echecGeneration.ts:435-459`). Trois tests verrouillent ce comportement
 dans `echecGeneration.test.ts` : « 429 avec corps type ET Retry-After :
 attendreS preserve, pas ecrase a null » (lignes 300-316), « corps type SANS
 Retry-After (ex: 422 sportif) : attendreS reste null, comportement inchange »
@@ -109,7 +112,7 @@ Deux cas sortent délibérément du contrat et sont traités par le front lui-m�
 **avant** toute tentative de lecture du corps :
 
 1. **Authentification** (`brut.code === "AUTH_REQUIRED"` ou `brut.status === 401`,
-   `echecGeneration.ts:302-304`) : ces réponses portent un jeton technique
+   `echecGeneration.ts:424-426`) : ces réponses portent un jeton technique
    dans leur `message` (`missing_auth`, `invalid_id_token`…) qu'il ne faut
    surtout pas montrer. Le front écrit son propre texte
    (`echecAuthentification()`), toujours, sans essayer de parser le corps.
@@ -151,8 +154,8 @@ Deux champs de plus que §2.1, lus par le front :
 
 | Champ | Type | Lu comme |
 |---|---|---|
-| `safety_flags` | string[], optionnel | Choisit l'explication affichée : un drapeau commençant par `RF1` → phrase « douleur », par `RF2` → phrase « blessure ». Un drapeau inconnu est ignoré ; les identifiants eux-mêmes ne sont **jamais** affichés |
-| `disclaimer` | string, optionnel | Remplace l'avertissement santé écrit par le front |
+| `safety_flags` | string[], optionnel (`lireDrapeauxSecurite`, `echecGeneration.ts:191-194`) | Choisit l'explication affichée : un drapeau commençant par `RF1` → phrase « douleur », par `RF2` → phrase « blessure » (`messageRefusSecurite`, `echecGeneration.ts:264-280`). Un drapeau inconnu est ignoré ; les identifiants eux-mêmes ne sont **jamais** affichés |
+| `disclaimer` | string, optionnel | Remplace l'avertissement santé écrit par le front (`TEXTES_SECURITE`, `echecGeneration.ts:246-257`) |
 
 Trois différences de traitement, verrouillées par les tests
 (`echecGeneration.test.ts`, section « refus de securite ») :
@@ -179,7 +182,7 @@ manque, le front ne retombe **pas** sur la classification client — qui
 dirait « modifie ton lieu ou ton matériel, puis réessaie », c'est-à-dire
 pousserait un joueur douloureux à retaper contre un mur. Il écrit sa propre
 phrase de tête et garde tout le reste du traitement de sécurité
-(`lireRefusSecuriteDegrade`).
+(`lireRefusSecuriteDegrade`, `echecGeneration.ts:288-308`).
 
 **Avant ce correctif (P0 vivant en prod le 01/09/2026)** : ce refus sortait
 en `500 {"ok":false,"error":"invalid_version"}`. Sans `code` ni `message`,
@@ -196,9 +199,11 @@ le 422 typé, et lui seul, qui déclenche le message de sécurité.
 
 ### §3.1 — Catégories
 
-Quatre catégories (`CategorieEchec`, `echecGeneration.ts`). Trois sont
-déclarables par le backend dans son champ `category` (`CATEGORIES`) ; la
-quatrième, `securite`, est déduite du code et ne peut pas être déclarée :
+Quatre catégories (`CategorieEchec`, `echecGeneration.ts:29`). Trois sont
+déclarables par le backend dans son champ `category` (`CATEGORIES`,
+`echecGeneration.ts:156`) ; la quatrième, `securite`, est déduite du code
+(`CODE_REFUS_SECURITE`, `echecGeneration.ts:32`) et ne peut pas être
+déclarée :
 
 | Catégorie | Signification | Effet sur les actions (§4.3) |
 |---|---|---|
@@ -231,7 +236,7 @@ exemples réels de ce que le backend peut renvoyer — cette liste est
 
 ## §4 — Actions proposées au joueur
 
-`ActionEchec` (`echecGeneration.ts:23-30`) : `reessayer`,
+`ActionEchec` (`echecGeneration.ts:35-42`) : `reessayer`,
 `reessayer_enregistrement`, `modifier_contraintes`, `choisir_cycle`,
 `se_reconnecter`, `reprendre_seance`, `retour_accueil`. La première action du
 tableau `EchecGeneration.actions` est la principale (bouton mis en avant dans
@@ -239,7 +244,7 @@ tableau `EchecGeneration.actions` est la principale (bouton mis en avant dans
 
 ### §4.3 — Règle de sélection (chemin contrat)
 
-`actionsDuContrat()` :
+`actionsDuContrat()` (`echecGeneration.ts:315-328`) :
 
 0. `categorie === "securite"` (§2.3) → `["retour_accueil"]`, et rien d'autre.
    Ni `reessayer` (le refus ne bougera pas), ni `modifier_contraintes`
@@ -255,8 +260,8 @@ type d'erreur : `VALIDATION` → `modifier_contraintes` en tête ; `AUTH` →
 `se_reconnecter` en tête ; les autres → `reessayer` en tête. Toutes se
 terminent par `retour_accueil`.
 
-`decisionApresEchec()` ajoute ensuite `reprendre_seance` en **deuxième
-position** (juste après l'action principale, jamais devant) quand une vraie
+`decisionApresEchec()` (`echecGeneration.ts:581-609`) ajoute ensuite
+`reprendre_seance` en **deuxième position** (juste après l'action principale, jamais devant) quand une vraie
 séance déjà persistée peut être rouverte (§5.3) — **sauf** sur un refus de
 sécurité, où aucune séance n'est proposée à la réouverture (§2.3).
 
@@ -266,9 +271,9 @@ sécurité, où aucune séance n'est proposée à la réouverture (§2.3).
 
 ### §5.2 — Budget de ré-essai automatique côté écran : zéro
 
-`REESSAIS_AUTOMATIQUES_ECRAN = 0` (`echecGeneration.ts:123`), sans exception.
+`REESSAIS_AUTOMATIQUES_ECRAN = 0` (`echecGeneration.ts:135`), sans exception.
 Le seul ré-essai automatique du parcours est déjà dépensé **avant** que ce
-module intervienne : `fetchV2` (`screens/newSession/api.ts:206-222`) retente
+module intervienne : `fetchV2` (`screens/newSession/api.ts:227-243`) retente
 une fois un `Failed to fetch`/timeout, pour couvrir le réveil (cold start)
 du serveur Render. Une fois cet essai unique épuisé, plus aucune relance
 n'est automatique — chaque nouvelle tentative est un geste explicite du
@@ -277,7 +282,7 @@ selon la complexité).
 
 ### §5.3 — Reprise d'une vraie séance déjà persistée
 
-`chercherRepriseSeance()` (`echecGeneration.ts:368-414`) est distinct d'un
+`chercherRepriseSeance()` (`echecGeneration.ts:507-553`) est distinct d'un
 ré-essai : il ne relance rien, il cherche si une séance **déjà prescrite,
 validée et persistée** peut simplement être rouverte plutôt que perdue à
 cause d'une panne réseau/affichage qui a suivi. Refusée si :
@@ -298,21 +303,22 @@ séance existait déjà avant la panne.
 ## §6 — Le message est affiché tel quel
 
 Quand le contrat backend est présent (§2), son champ `message` est montré au
-joueur **sans modification** (`EchecGeneration.messageJoueur = corps.message`)
-— c'est le backend qui rédige le texte définitif dans ce cas.
-`CarteEchecGeneration` l'affiche dans un seul bloc de texte, jamais tronqué
-au-delà de 6 lignes (`numberOfLines={6}`).
+joueur **sans modification** (`EchecGeneration.messageJoueur = corps.message`,
+`echecGeneration.ts:435-459`) — c'est le backend qui rédige le texte définitif
+dans ce cas. `CarteEchecGeneration` l'affiche dans un seul bloc de texte,
+jamais tronqué au-delà de 6 lignes
+(`screens/newSession/ui/CarteEchecGeneration.tsx:77`).
 
 **Seule exception, le refus de sécurité (§2.3)** : le `message` backend n'est
 pas remplacé, il est mis **en tête** d'un texte composé (explication + voie de
-sortie + avertissement santé). Ce texte étant plus long, la carte lui accorde
-16 lignes et une couleur de texte pleine, sur un encadré teinté — un message
-de coach, pas un état d'erreur : titre « Pas de séance aujourd'hui » au lieu
-de « On n'a pas pu préparer ta séance », et pas de référence support (rien
-n'est cassé, il n'y a pas d'incident à faire remonter).
+sortie + avertissement santé). Ce texte étant plus long, la même ligne 77 lui
+accorde 16 lignes, sur un encadré teinté — un message de coach, pas un état
+d'erreur : titre « Pas de séance aujourd'hui » au lieu de « On n'a pas pu
+préparer ta séance » (`CarteEchecGeneration.tsx:70`), et pas de référence
+support (`:104`, rien n'est cassé, il n'y a pas d'incident à faire remonter).
 
 Quand il n'y a **pas** de corps contrat (§2.2), le front rédige lui-même le
-texte (`MESSAGES`, `echecGeneration.ts:129-142`) — toujours sur le même
+texte (`MESSAGES`, `echecGeneration.ts:141-154`) — toujours sur le même
 principe : dire ce qui s'est passé, redire qu'aucune séance n'a été
 enregistrée (sauf §7, où ce serait faux), et indiquer l'action utile.
 
@@ -351,7 +357,7 @@ seance }` ou `null`) pour que l'écran puisse câbler ce rejeu sans que
 
 Une génération coûte de l'argent : deux appuis ne doivent jamais produire
 deux requêtes concurrentes. `creerVerrouGeneration()`
-(`echecGeneration.ts:479-492`) fournit un verrou **synchrone** (pas un état
+(`echecGeneration.ts:623-636`) fournit un verrou **synchrone** (pas un état
 React, qui serait périmé dans le même tick) : `prendre()` renvoie `false` si
 le verrou est déjà tenu, `rendre()` le libère une fois la requête réellement
 retombée (bloc `finally`). Dix appuis rapides ne produisent qu'une seule
