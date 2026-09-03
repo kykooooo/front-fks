@@ -129,25 +129,14 @@ export const useFeedbackStore = create<FeedbackState>()(
         });
       },
 
-      setInjury: (dateISO, injury) => {
-        const dayKey = toDateKey(dateISO);
-
-        set((state) => {
-          const prevDayState = state.dayStates[dayKey] ?? ({ date: dayKey, adaptive: NEUTRAL_ADAPTIVE } as DayState);
-
-          let fb: DailyFeedback = {
-            fatigue: prevDayState.feedback?.fatigue ?? 3,
-            injury,
-            timestamp: new Date().toISOString(),
-          } as DailyFeedback;
-
-          fb = withIfDefined(fb, "pain", prevDayState.feedback?.pain);
-          fb = withIfDefined(fb, "recoveryPerceived", prevDayState.feedback?.recoveryPerceived);
-
-          const next: DayState = { date: dayKey, feedback: fb, adaptive: prevDayState.adaptive ?? NEUTRAL_ADAPTIVE };
-          return { dayStates: { ...state.dayStates, [dayKey]: next } };
-        });
-      },
+      // `setInjury` vivait ici : l'unique action qui écrivait
+      // `dayStates[jour].feedback.injury`. Le détail des gênes s'écrit
+      // désormais dans `useBodyStore` (« Mon corps », `ajouterGene` /
+      // `changerStatutBlessure`) — cette action n'avait plus aucun appelant
+      // depuis le retrait du formulaire du feedback (P3, round 2). Le champ
+      // `injury` reste lisible dans les `dayStates` historiques : seule sa
+      // reprise (`state/migration/migrateInjuries.ts`) le lit encore, jamais
+      // en écriture.
 
       getAdaptiveFactorsForDate: (dateISO) =>
         get().dayStates[toDateKey(dateISO)]?.adaptive ?? null,

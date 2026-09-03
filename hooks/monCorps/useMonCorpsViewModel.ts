@@ -8,9 +8,12 @@
 // saison ». Un compteur sur des declarations faites au doigt mouille, c'est un
 // chiffre faux qui a l'air vrai (decision D9).
 //
-// Il n'y a pas non plus de nombre de JOURS affiche au joueur. La relance sait
+// Il n'y a pas de DECOMPTE DE RELANCE affiche au joueur : la relance sait
 // qu'une gene date de sept jours ; elle lui demande « où en es-tu ? », elle ne
-// lui recite pas un decompte.
+// lui recite pas ce chiffre-la (voir `aRelancer`, sans age affiche). La DATE
+// RELATIVE de declaration (`dateRelative`, « il y a 4 jours »), elle, EST
+// affichee sur chaque carte — c'est un repere pour le joueur, pas un
+// decompte qui pousse vers une echeance.
 
 import { useMemo } from "react";
 

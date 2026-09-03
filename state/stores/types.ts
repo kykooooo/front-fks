@@ -9,7 +9,6 @@ import type {
   DayState,
   DailyFeedback,
   AdaptiveFactors,
-  InjuryRecord,
   AgeCategory,
   BodyArea,
   BodyInjury,
@@ -148,7 +147,6 @@ export type FeedbackState = {
   // actions
   getPrevFatigueSmoothed: (dateISO: string) => number | null;
   setDailyFeedback: (dateISO: string, payload: Omit<DailyFeedback, "timestamp">) => void;
-  setInjury: (dateISO: string, injury: InjuryRecord | null) => void;
   getAdaptiveFactorsForDate: (dateISO: string) => AdaptiveFactors | null;
 };
 

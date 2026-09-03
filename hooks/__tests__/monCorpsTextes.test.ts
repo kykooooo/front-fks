@@ -108,4 +108,17 @@ describe("la phrase « reste sur ton téléphone » n'est écrite que là où el
     // Ce qui ne doit JAMAIS être promis en bloc.
     expect(texte).not.toContain("Toutes tes données de santé restent");
   });
+
+  // La politique in-app (`utils/legalContent.ts`) et la page publique
+  // App Store (`docs/appstore/privacy.html`) doivent dire la MÊME chose sur
+  // les données de santé (P3, round 2) : un joueur qui compare les deux
+  // avant d'installer ne doit jamais lire deux versions de la vérité.
+  it("docs/appstore/privacy.html porte la même honnêteté que la politique in-app", () => {
+    const html = lire("docs/appstore/privacy.html");
+    expect(html).toContain("Où vivent tes données de santé");
+    expect(html).toContain("sur nos serveurs");
+    expect(html).toContain("reste stocké sur ton appareil");
+    expect(html).toContain("Rien de tout cela n'est transmis à ton club ni à ton coach");
+    expect(html).not.toContain("Toutes tes données de santé restent");
+  });
 });

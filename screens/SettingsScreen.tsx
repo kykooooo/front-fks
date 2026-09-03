@@ -212,7 +212,7 @@ export default function SettingsScreen() {
           return rest;
         })(),
         feedback: (() => {
-          const { getPrevFatigueSmoothed, setDailyFeedback, setInjury, getAdaptiveFactorsForDate, ...rest } = useFeedbackStore.getState();
+          const { getPrevFatigueSmoothed, setDailyFeedback, getAdaptiveFactorsForDate, ...rest } = useFeedbackStore.getState();
           return rest;
         })(),
         external: (() => {

@@ -333,10 +333,6 @@ export default function SessionHubScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: palette.bg,
-  },
   container: {
     padding: 16,
     gap: 16,
