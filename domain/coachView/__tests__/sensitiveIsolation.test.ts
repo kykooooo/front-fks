@@ -97,6 +97,15 @@ const payloadSensible = () => {
     tsb: -31.5,
     comment: "SENTINEL_COMMENT_mal_au_genou",
     injuries: [{ zone: "SENTINEL_ZONE", severity: 3 }],
+    // « Mon corps » (lot 1) : la liste est LOCALE au téléphone, elle n'existe
+    // pas côté serveur — la frontière coach tient donc aujourd'hui par
+    // construction. On arme quand même la sentinelle AVANT qu'un lot de
+    // synchronisation existe, plutôt qu'après : le jour où `bodyInjuries`
+    // partirait vers Firestore, c'est ce test qui doit tomber, pas un coach qui
+    // doit lire la blessure d'un joueur dans son effectif.
+    bodyInjuries: [
+      { id: "SENTINEL_ID", zone: "SENTINEL_ZONE", gravite: 3, statut: "active", source: "manual" },
+    ],
     latestSession: { ...base.latestSession, painFlag: true, rpe: 9 },
     execution: { ...base.execution, painReported: true, comments: ["SENTINEL_COMMENT_ITEM"] },
   };
@@ -127,7 +136,7 @@ describe("front — aucun signal coach ne naît d'une donnée sensible", () => {
   it("aucune sentinelle sensible ne survit à la frontière de parsing", () => {
     const blob = JSON.stringify(chaineComplete(payloadSensible()));
     expect(blob).not.toContain("SENTINEL");
-    for (const mot of ["painlevel", "painzones", "painflag", "painreported", "injuries", "\"rpe\"", "\"tsb\"", "\"atl\"", "\"ctl\"", "\"sleep\"", "\"comment\""]) {
+    for (const mot of ["painlevel", "painzones", "painflag", "painreported", "injuries", "bodyinjuries", "gravite", "\"rpe\"", "\"tsb\"", "\"atl\"", "\"ctl\"", "\"sleep\"", "\"comment\""]) {
       expect(blob.toLowerCase()).not.toContain(mot);
     }
   });

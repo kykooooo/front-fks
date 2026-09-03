@@ -48,9 +48,24 @@ export const PRIVACY_POLICY: LegalSection[] = [
     body: [
       "Email (connexion).",
       "Nom / prénom (profil utilisateur).",
-      "Données de santé : blessures, douleurs, fatigue (RPE).",
+      "Données de santé : douleurs et fatigue ressenties après une séance, gênes et blessures que tu déclares dans « Mon corps ».",
       "Données de performance : séances, tests, ATL/CTL/TSB.",
       "Données d'usage (analytics) : pages visitées, temps passé.",
+    ],
+  },
+  // Section AJOUTÉE avec l'espace « Mon corps », et écrite au plus juste.
+  // Ce qu'elle NE dit PAS, volontairement : « tes données de santé restent sur
+  // ton téléphone ». Ce serait faux et opposable — le score de douleur 0-5 saisi
+  // au feedback part bien vers nos serveurs avec la séance. Seul le DÉTAIL des
+  // gênes (zone, gravité, note) reste local. La distinction est faite ici parce
+  // qu'elle est vraie, pas parce qu'elle est flatteuse.
+  {
+    title: "Où vivent tes données de santé",
+    body: [
+      "La douleur et la fatigue que tu notes après une séance sont enregistrées avec cette séance sur nos serveurs (Firebase). Elles servent à adapter tes séances suivantes et ne sont lues que par FKS.",
+      "Le détail des gênes et blessures que tu déclares dans « Mon corps » (zone, gravité, note) reste stocké sur ton appareil et n'est envoyé à aucun serveur. Si tu changes de téléphone, ces déclarations sont perdues.",
+      "Rien de tout cela n'est transmis à ton club ni à ton coach. Ton coach ne voit ni tes douleurs, ni les zones concernées, ni tes notes personnelles.",
+      "Tu peux supprimer une gêne à tout moment depuis l'écran « Mon corps » : elle est alors effacée de ton appareil.",
     ],
   },
   {
@@ -71,6 +86,7 @@ export const PRIVACY_POLICY: LegalSection[] = [
     body: [
       "Données actives : tant que le compte existe.",
       "Données inactives : suppression 2 ans après la dernière connexion.",
+      "Gênes et blessures déclarées dans « Mon corps » : conservées sur ton appareil jusqu'à ce que tu les supprimes, ou jusqu'à la désinstallation de l'application.",
     ],
   },
   {
