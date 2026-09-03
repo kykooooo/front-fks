@@ -841,3 +841,26 @@ voie de sortie (mise à jour de l'état → « Mon corps », ou en attendant : u
 réel `198-223` ; `useContextualAdvice.ts:124-127` → réel `125-128` ;
 `firestore.rules:665-666` → réel `~658`. L'estimation « 14 à 20 heures-agent » du §4 n'a
 pas de méthode déclarée : la lire comme un ordre de grandeur, pas comme un chiffre.
+
+---
+
+## 7. DÉCISIONS PRISES — 01/09/2026 (délégation explicite de Kyllian à l'orchestrateur : « prends les meilleures pour FKS »)
+
+| # | Décision | Choix retenu | Pourquoi |
+|---|---|---|---|
+| D1 | Nom de l'espace | **« Mon corps »** | Mot de joueur, pas de jargon médical ; dit ce que c'est sans promettre un diagnostic. |
+| D2 | Emplacement | **Onglet Séance** : carte en haut de `SessionHubScreen`, au-dessus du bouton de génération, + écran plein en route stack | Rituel d'avant-séance (« je vérifie mon état, puis je génère »). Profil = identité stable, pas l'état du jour. |
+| D3 | Seuil de la passerelle feedback | **3/5** (= `TRACKING_CONFIG.pain.feedbackThreshold` existant) | Un chiffre = une implémentation ; ≥3 = douleur réelle d'après la constante déjà commentée. |
+| D4 | Cycle de statut | **3 états : active / en reprise / guérie** | Éviter une seconde migration ; « en reprise » est l'état réel d'un footballeur amateur les 2/3 du temps. |
+| D5 | Relance | **In-app à 7 jours** (carte question « toujours gênant ? » sur le hub Séance et avant génération) ; **sans réponse la gêne reste active** ; notification locale = lot 2 | Jamais d'expiration silencieuse. Le push est un canal fragile (permissions), l'in-app est certain. |
+| D6 | Question blessure du setup profil | **Le setup écrit dans Mon corps** (une seule source), formulaire séparé supprimé | Règle « un chiffre = une implémentation » appliquée aux blessures. |
+| D7 | Échelle de gravité (mots joueur) | **1 « Gêne légère — je peux jouer » · 2 « Douleur nette — je m'adapte » · 3 « Blessure — je ne peux pas jouer »** | Chaque cran dit ce qu'il déclenche ; le 3 annonce honnêtement qu'il n'y aura pas de séance (RF2). |
+| D8 | Blessures multiples | **Oui, liste** | Le backend accepte déjà `pains[]` ; l'objet unique était une limite front, pas produit. |
+| D9 | Historique | **Visible, replié** (guéries en bas, dépliable) | Utile au joueur et au futur « Mon corps » coach-safe ; coût nul si replié. |
+| D10 | Refus de séance | **B — FAIT le 01/09** (`fix/refus-securite-transport` 2a68aa0 + `fix/refus-securite-front` ddee2e9, mis en prod le même soir) | Voir erratum 2 : seule option défendable. |
+| D11 | Zone aine / adducteurs | **Oui, lot 1** (`groin_pain`) | Pubalgie = blessure n°1 du footballeur amateur ; backend prêt, 4 lignes front. |
+| D12 | Le lot 1 change-t-il le payload ? | **OUI** : `pains[]` est piloté par le STATUT, plus par la fenêtre 7 jours. Active → envoyée avec sa gravité ; en reprise → envoyée en gravité 1 (zone à ménager) ; guérie → absente. Sentinelle #7 conservée, #2 remplacée par « le payload reflète le statut ». Effet sur les pools à MESURER avant merge (masstest côté backend non requis : format inchangé, seule la population des zones change). | Le filet de sécurité existe désormais : le refus est honnête (D10) ET le joueur a une porte de sortie (baisser sa gravité dans Mon corps). Sans D12, la relance de D5 n'aurait aucun effet moteur. |
+| RGPD | Textes | **Lot 1 = politique de confidentialité recalée honnêtement** (`utils/legalContent.ts`) : douleur par séance synchronisée sur nos serveurs, détail des blessures stocké sur l'appareil uniquement ; **aucune phrase « reste sur l'appareil » globale**. Consentement spécifique santé + mineurs = question juridique hors app, lot 2. | Erratum 3. On n'écrit rien de faux, on n'invente pas un dispositif juridique dans un écran. |
+| Sync | Firestore | **Lot 1 = local uniquement** (`bodyInjuries` hors Firestore), test `sensitiveIsolation` étendu | Frontière coach-safe intacte par construction ; la perte au changement de téléphone est acceptée et DITE dans l'écran (une ligne). |
+
+**Périmètre lot 1 (front uniquement, aucune modification backend)** : modèle `BodyInjury` + slice de store persistée + migration idempotente des `dayStates.injury` (7 derniers jours → statut active) ; écran « Mon corps » + carte hub ; passerelle feedback ≥3/5 (non bloquante) ; `collectActivePainConstraints` réécrit sur le statut (SEULE lecture) ; relance in-app 7 j ; zone aine ; setup profil branché sur la même source ; suppression de `InjuryForm.tsx` et des constantes orphelines ; politique de confidentialité recalée ; sentinelles : une seule lecture des blessures actives, frontière coach-safe, migration idempotente, état vide honnête, payload = statut, aucun chiffre inventé.
