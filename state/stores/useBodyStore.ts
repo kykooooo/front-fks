@@ -52,8 +52,47 @@ export const useBodyStore = create<BodyState>()(
     (set, get) => ({
       ...baseBodyState(),
 
+      /**
+       * GARDE ANTI-DOUBLON PAR ZONE (P3, round 2). Une zone deja `active` ou
+       * `recovering` ne peut pas se retrouver declaree deux fois : le setup
+       * (D6) et la passerelle du feedback (D3) peuvent tous les deux ecrire
+       * pour une meme zone deja suivie ailleurs — sans cette garde, « genou »
+       * pourrait exister en double, et `collectActivePainConstraints` prendrait
+       * la mauvaise ligne. Une gene deja guérie, elle, NE bloque rien : la
+       * rouvrir est une nouvelle declaration légitime (une même zone peut se
+       * blesser à nouveau).
+       *
+       * Quand une ligne active/en reprise existe deja pour la zone, ce n'est
+       * plus un AJOUT mais une MISE A JOUR de cette ligne : gravite et statut
+       * (repasse a `active`, une nouvelle déclaration dit "ça recommence" ou
+       * "c'est toujours la", jamais "en reprise" — ce serait inventer un
+       * jugement que le joueur n'a pas donne) suivent la nouvelle
+       * declaration ; la note n'est remplacee que si une nouvelle est fournie,
+       * jamais effacee par une declaration silencieuse.
+       */
       ajouterBlessure: ({ zone, gravite, note, source, nowISO }) => {
         const horodatage = nowISO ?? new Date().toISOString();
+        const noteFinale = note && note.trim() ? note.trim() : undefined;
+
+        const state = get();
+        const existante = state.bodyInjuries.find(
+          (b) => b.zone === zone && (b.statut === "active" || b.statut === "recovering")
+        );
+
+        if (existante) {
+          const misAJour: BodyInjury = {
+            ...existante,
+            gravite,
+            statut: "active",
+            updatedAt: horodatage,
+            ...(noteFinale ? { note: noteFinale } : {}),
+          };
+          set((s) => ({
+            bodyInjuries: s.bodyInjuries.map((b) => (b.id === existante.id ? misAJour : b)),
+          }));
+          return misAJour;
+        }
+
         const blessure: BodyInjury = {
           id: genererIdBlessure(zone, horodatage),
           zone,
@@ -64,9 +103,9 @@ export const useBodyStore = create<BodyState>()(
           updatedAt: horodatage,
           // Note ABSENTE si vide : on ne stocke pas une chaine vide comme s'il
           // y avait quelque chose a lire.
-          ...(note && note.trim() ? { note: note.trim() } : {}),
+          ...(noteFinale ? { note: noteFinale } : {}),
         };
-        set((state) => ({ bodyInjuries: [blessure, ...state.bodyInjuries] }));
+        set((s) => ({ bodyInjuries: [blessure, ...s.bodyInjuries] }));
         return blessure;
       },
 
