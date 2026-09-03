@@ -7,8 +7,9 @@ import { fr } from "date-fns/locale";
 import { useLoadStore } from "../../state/stores/useLoadStore";
 import { useSessionsStore } from "../../state/stores/useSessionsStore";
 import { useExternalStore } from "../../state/stores/useExternalStore";
-import { useFeedbackStore } from "../../state/stores/useFeedbackStore";
 import { useDebugStore } from "../../state/stores/useDebugStore";
+import { useBlessures, geneLaPlusMarquante } from "../../state/selectors/blessures";
+import { LIBELLE_ZONE } from "../../domain/monCorps/zones";
 import { useRoutineBadges } from "../useRoutineBadges";
 import { ADVICE_RULES, type Advice, type AdviceContext, type AdviceId } from "../../domain/adviceRules";
 import { frToKey, toDateKey } from "../../utils/dateHelpers";
@@ -66,7 +67,11 @@ export function useContextualAdvice(): Advice | null {
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
   const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex ?? 0);
   const devNowISO = useDebugStore((s) => s.devNowISO);
-  const dayStates = useFeedbackStore((s) => s.dayStates ?? {});
+  // Gênes : MÊME source que la génération (« Mon corps »), via l'unique
+  // sélecteur. Avant, ce hook lisait `dayStates[aujourd'hui].feedback.injury` et
+  // ne voyait donc une gêne QUE le jour de sa déclaration, pendant que le
+  // moteur la comptait 7 jours — deux fenêtres pour la même donnée (§1.4).
+  const blessures = useBlessures();
   const completedRoutines = useExternalStore((s) => s.completedRoutines ?? []);
   const sessions = useSessionsStore((s) => s.sessions);
   const externalLoads = useExternalStore((s) => s.externalLoads);
@@ -122,10 +127,11 @@ export function useContextualAdvice(): Advice | null {
     }
 
     // === Gêne signalée ===
-    const todayDayState = dayStates[nowISO];
-    const injury = todayDayState?.feedback?.injury;
-    const hasActiveInjury = Boolean(injury && injury.severity > 0);
-    const injuryArea = injury?.area;
+    // Tant que le joueur n'a pas dit qu'elle était passée, elle compte. Une
+    // gêne « en reprise » compte aussi : le conseil doit continuer d'en parler.
+    const gene = geneLaPlusMarquante(blessures);
+    const hasActiveInjury = gene !== null;
+    const injuryArea = gene ? LIBELLE_ZONE[gene.zone].toLowerCase() : undefined;
 
     // === Cycle remaining ===
     const cycleRemaining = MICROCYCLE_TOTAL_SESSIONS_DEFAULT - microcycleSessionIndex;
@@ -163,7 +169,7 @@ export function useContextualAdvice(): Advice | null {
     microcycleGoal,
     microcycleSessionIndex,
     devNowISO,
-    dayStates,
+    blessures,
     completedRoutines,
     routineBadges.streak,
     sessions,

@@ -34,8 +34,8 @@ import { useSessionsStore } from "../stores/useSessionsStore";
 import { useExternalStore } from "../stores/useExternalStore";
 import { useDebugStore } from "../stores/useDebugStore";
 import { useSyncStore } from "../stores/useSyncStore";
-import { useFeedbackStore } from "../stores/useFeedbackStore";
 import { useExecutionStore } from "../stores/useExecutionStore";
+import { lireBlessures } from "../selectors/blessures";
 
 export function applyFeedback(
   sessionId: string,
@@ -223,8 +223,8 @@ export function applyFeedback(
     // hors fichiers autorises pour ce lot). Defauts pilote : collecte+shadow ON.
     const modes = resolveTrackingModes();
     if (modes.shadow) {
-      const dayStates = useFeedbackStore.getState().dayStates;
-      const history = buildTrackingHistory(nextSessions, dayStates);
+      // Gênes déclarées : même source unique que la génération (« Mon corps »).
+      const history = buildTrackingHistory(nextSessions, lireBlessures());
       const nowISOForDecision = feedback.createdAt || new Date().toISOString();
       const { decision, signals } = computeShadowDecision(history, nowISOForDecision);
 

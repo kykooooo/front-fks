@@ -7,12 +7,13 @@
 //
 // Le fichier `aiContext.ts` reexporte tout ce dont les autres ecrans ont besoin.
 
-import { toDateKey, lastNDates } from "../utils/dateHelpers";
+import { toDateKey } from "../utils/dateHelpers";
 import { estSeanceArtificielle } from "../utils/sessionHelpers";
-import type { Session, Exercise, ClubTrainingIntensity, ClubWeekGoal, ClubTeamGender, DailyFeedback, InjuryRecord } from "../domain/types";
+import type { Session, Exercise, ClubTrainingIntensity, ClubWeekGoal, ClubTeamGender, BodyInjury } from "../domain/types";
 import { normalizeClubTrainingIntensity, normalizeClubWeekGoal } from "../domain/types";
 import { isClubDirectiveApplicable, parseClubDirective } from "../domain/clubDirective";
-import { INJURY_AREA_TO_BACKEND_PAIN, mapAreaToPain, type BackendPainToken } from "../shared/injuryMapping";
+import { mapBodyAreaToPain } from "../domain/monCorps/zones";
+import type { BackendPainToken } from "../shared/injuryMapping";
 // Import type-only : aucun cout runtime (erase par tsc/babel), evite un import
 // reel de services/ vers screens/ (testConfig.ts importe @expo/vector-icons
 // pour le typage des icones de groupe, inutile ici).
@@ -595,105 +596,87 @@ export function buildRecentByFocus(
 //
 // Le backend attend `constraints.pains: string[]` (tokens `ankle_pain`, ...)
 // et `constraints.injury_max_severity: 0..3` (fksOrchestrator.ts:1879).
-// Source front : l'InjuryRecord declare au feedback post-seance
-// (FeedbackScreen -> useFeedbackStore.setInjury -> dayStates[day].feedback.injury).
+// Source front : la liste `bodyInjuries` de « Mon corps » (`useBodyStore`),
+// lue par le SEUL selecteur `state/selectors/blessures.ts`.
 //
-// FENETRE D'ACTIVITE (choix conservateur, documente) :
-// InjuryRecord n'a pas de statut actif/resolu explicite. Une blessure declaree
-// hier soir doit encore contraindre la seance d'aujourd'hui et des jours
-// suivants — on ne lit donc PAS que le dayState du jour. Regle retenue :
-//   - une declaration avec severity >= 1 reste ACTIVE pendant
-//     INJURY_ACTIVE_WINDOW_DAYS jours (jour de declaration inclus) ;
-//   - par zone, la declaration LA PLUS RECENTE fait foi : re-declarer
-//     renouvelle la fenetre, declarer severity 0 ("OK" dans InjuryForm)
-//     leve explicitement la contrainte pour cette zone ;
-//   - un feedback ulterieur SANS blessure (injury: null, toggle "Aucune"
-//     par defaut) ne leve RIEN : dans le doute on TRANSMET la douleur,
-//     c'est le backend qui decide quoi en faire.
-// 7 jours : couvre l'ecart max realiste entre deux feedbacks (2-3 seances
-// FKS/semaine) sans qu'une gene oubliee d'il y a un mois bride le joueur
-// pour toujours. Levee anticipee possible via severity 0.
-export const INJURY_ACTIVE_WINDOW_DAYS = 7;
-export const INJURY_ACTIVE_MIN_SEVERITY = 1;
-
-/** Tokens backend connus (valeurs du mapping + groin_pain, non emis en MVP). */
-const KNOWN_PAIN_TOKENS: ReadonlySet<string> = new Set<string>([
-  ...Object.values(INJURY_AREA_TO_BACKEND_PAIN),
-  "groin_pain",
-]);
+// CE QUI A CHANGE, ET POURQUOI (decision D12, DESIGN_MON_CORPS.md §7)
+// -----------------------------------------------------------------------------
+// AVANT : la source etait `dayStates[jour].feedback.injury` et l'activite se
+// deduisait d'une FENETRE GLISSANTE de 7 jours. Consequence, ecrite noir sur
+// blanc dans l'audit (§T3) : au 8e jour la contrainte disparaissait toute
+// seule, sans un mot. Un joueur qui declarait une entorse et regenerait dix
+// jours plus tard recevait une seance normale, sprints compris, sans qu'on lui
+// ait jamais demande ou il en etait.
+//
+// APRES : on lit un STATUT, pose par le joueur lui-meme. Plus aucune fenetre
+// ici. Une gene ne cesse de contraindre que si le joueur dit qu'elle est
+// passee. C'est la relance in-app a 7 jours (« Toujours gênant ? ») qui pose la
+// question — et SANS REPONSE, LA GENE RESTE ACTIVE.
+//
+// LA TABLE DE TRADUCTION, statut -> ce qui part au backend :
+//
+//   | statut       | pains[]          | injury_max_severity |
+//   |--------------|------------------|---------------------|
+//   | active       | jeton de la zone | gravite declaree    |
+//   | recovering   | jeton de la zone | 1                   |
+//   | healed       | rien             | rien                |
+//
+// « en reprise » -> gravite 1 : la zone reste ecartee des exercices qui la
+// sollicitent (le jeton part), mais elle ne plafonne plus l'intensite de toute
+// la seance (cote backend, severite 1 n'a aucun effet de securite). C'est
+// exactement ce que veut dire « je reprends doucement ». On ne DESCEND jamais
+// une gravite `active` que le joueur n'a pas baissee lui-meme : ce serait une
+// valeur inventee, et dans le sens du risque.
+//
+// La zone « autre » (et toute zone non mappable) n'emet aucun jeton : aucun
+// filtre d'exercice ne peut s'appliquer sans zone precise. Sa gravite alimente
+// quand meme `injury_max_severity`, seul garde-fou disponible dans ce cas.
 
 /**
- * Normalise une entree douleur brute (legacy `feedback.pains` / `painZones`)
- * vers un token backend : token deja valide -> passe tel quel, zone fr -> mappee,
- * inconnu -> null (jamais d'invention).
+ * Fenetre historique de 7 jours.
+ *
+ * ELLE NE PILOTE PLUS LA GENERATION (voir ci-dessus). Elle ne sert plus qu'a
+ * UNE chose : borner la reprise des declarations faites a l'ancienne
+ * (`state/migration/migrateInjuries.ts`), qui rejoue une derniere fois la regle
+ * d'hier pour ne reprendre que ce qui contraignait encore. Elle reste exportee
+ * d'ici pour qu'il n'y ait, la aussi, qu'une seule definition du chiffre.
  */
-export function normalizePainEntry(raw: unknown): BackendPainToken | null {
-  if (typeof raw !== "string") return null;
-  const s = raw.trim().toLowerCase();
-  if (!s) return null;
-  if (KNOWN_PAIN_TOKENS.has(s)) return s as BackendPainToken;
-  return mapAreaToPain(s);
-}
+export const INJURY_ACTIVE_WINDOW_DAYS = 7;
 
 export type ActivePainConstraints = {
   /** Tokens backend a envoyer dans `constraints.pains` (tries, dedupliques). */
   pains: BackendPainToken[];
-  /** Severite max des blessures actives (0 = aucune) -> `constraints.injury_max_severity`. */
+  /** Severite max des genes transmises (0 = aucune) -> `constraints.injury_max_severity`. */
   injuryMaxSeverity: number;
 };
 
-type DayStateLike = { feedback?: DailyFeedback | null } | null | undefined;
-
 /**
- * Collecte les douleurs actives sur la fenetre glissante et les traduit en
- * contraintes backend. Pur (aucune dependance store) : recoit `dayStates` et
- * la cle du jour, pour rester testable avec une horloge virtuelle.
+ * Traduit les genes declarees en contraintes backend.
+ *
+ * PURE : ne lit aucun store, recoit la liste. C'est le selecteur
+ * `state/selectors/blessures.ts` qui va chercher la liste — et c'est le SEUL.
+ * Une sentinelle le verifie sur la source
+ * (`domain/__tests__/monCorpsLectureUnique.test.ts`).
  */
 export function collectActivePainConstraints(
-  dayStates: Record<string, DayStateLike> | null | undefined,
-  todayKey: string
+  injuries: readonly BodyInjury[] | null | undefined
 ): ActivePainConstraints {
   const tokens = new Set<BackendPainToken>();
   let injuryMaxSeverity = 0;
-  if (!dayStates || !todayKey) return { pains: [], injuryMaxSeverity };
+  if (!injuries || injuries.length === 0) return { pains: [], injuryMaxSeverity };
 
-  // lastNDates renvoie du plus recent au plus ancien -> la premiere
-  // declaration rencontree pour une zone est la plus recente (elle fait foi).
-  const windowKeys = lastNDates(todayKey, INJURY_ACTIVE_WINDOW_DAYS);
-  const latestByArea = new Map<string, InjuryRecord>();
+  for (const gene of injuries) {
+    if (!gene || gene.statut === "healed") continue;
 
-  for (const key of windowKeys) {
-    const fb = dayStates[key]?.feedback;
-    if (!fb) continue;
+    const graviteDeclaree = Number(gene.gravite);
+    if (!Number.isFinite(graviteDeclaree) || graviteDeclaree < 1) continue;
 
-    const injury = fb.injury;
-    if (injury && typeof injury.area === "string") {
-      const areaKey = injury.area.trim().toLowerCase();
-      if (areaKey && !latestByArea.has(areaKey)) latestByArea.set(areaKey, injury);
-    }
+    const graviteTransmise =
+      gene.statut === "recovering" ? 1 : Math.min(3, Math.max(1, Math.trunc(graviteDeclaree)));
 
-    // Champs legacy jamais ecrits par l'UI actuelle mais lus historiquement
-    // par aiContext : on les conserve en source additionnelle (tokens only,
-    // pas de severite connue).
-    const legacy = fb as unknown as Record<string, unknown>;
-    for (const list of [legacy.pains, legacy.painZones]) {
-      if (!Array.isArray(list)) continue;
-      for (const raw of list) {
-        const token = normalizePainEntry(raw);
-        if (token) tokens.add(token);
-      }
-    }
-  }
+    injuryMaxSeverity = Math.max(injuryMaxSeverity, graviteTransmise);
 
-  for (const injury of latestByArea.values()) {
-    const severity = Number(injury.severity);
-    // severity 0 explicite ("OK") = levee de la contrainte pour cette zone.
-    if (!Number.isFinite(severity) || severity < INJURY_ACTIVE_MIN_SEVERITY) continue;
-    // "autre" (ou zone non mappable) : pas de token, mais la severite alimente
-    // quand meme injury_max_severity — le cap backend (>=3 force easy,
-    // >=2 plafonne moderate_light) protege sans zone precise.
-    injuryMaxSeverity = Math.max(injuryMaxSeverity, Math.min(3, Math.trunc(severity)));
-    const token = mapAreaToPain(injury.area);
+    const token = mapBodyAreaToPain(gene.zone);
     if (token) tokens.add(token);
   }
 

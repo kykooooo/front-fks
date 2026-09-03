@@ -20,6 +20,7 @@ import { useLoadStore } from "../../stores/useLoadStore";
 import { useExternalStore } from "../../stores/useExternalStore";
 import { useSyncStore } from "../../stores/useSyncStore";
 import { useFeedbackStore } from "../../stores/useFeedbackStore";
+import { useBodyStore, getBodyDefaults } from "../../stores/useBodyStore";
 import { useExecutionStore } from "../../stores/useExecutionStore";
 import type { Session, SessionFeedback } from "../../../domain/types";
 import type { PrescribedItem, PrescribedSnapshot, SessionExecution } from "../../../domain/tracking/types";
@@ -58,6 +59,7 @@ beforeEach(() => {
     weekly: { hasRunStructured: false, hasCircuit: false },
   } as any);
   useFeedbackStore.setState({ dayStates: {} } as any);
+  useBodyStore.setState({ ...getBodyDefaults() } as any);
   useExecutionStore.getState().resetAll();
 });
 
@@ -202,7 +204,9 @@ describe("applyFeedback — boucle de suivi (Lot 4)", () => {
 
   test("une erreur dans le calcul de la decision shadow n'empeche jamais le reste du feedback (try/catch non-bloquant)", () => {
     useSessionsStore.setState({ sessions: [makeSession()] } as any);
-    const spy = jest.spyOn(useFeedbackStore, "getState").mockImplementationOnce(() => {
+    // La source des gênes est désormais « Mon corps » (state/selectors/blessures) :
+    // c'est ce store-là qu'on fait exploser pour rejouer le crash.
+    const spy = jest.spyOn(useBodyStore, "getState").mockImplementationOnce(() => {
       throw new Error("boom — shadow computation failure");
     });
 

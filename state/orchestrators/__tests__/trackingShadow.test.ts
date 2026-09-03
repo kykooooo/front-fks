@@ -9,7 +9,7 @@ import {
   sessionToTrackingHistoryEntry,
 } from "../trackingShadow";
 import type { PrescribedItem, PrescribedSnapshot, SessionExecution } from "../../../domain/tracking/types";
-import type { DayState, Session } from "../../../domain/types";
+import type { BodyInjury, Session } from "../../../domain/types";
 
 function makePrescribedItem(index: number, overrides: Partial<PrescribedItem> = {}): PrescribedItem {
   return {
@@ -137,7 +137,7 @@ describe("sessionToTrackingHistoryEntry", () => {
       feedback: { rpe: 8, fatigue: 3, sleep: 3, pain: 1, createdAt: "2026-07-25T10:00:00.000Z", durationMin: 55 } as any,
       aiV2: { rpe_target: 6, duration_min: 55 },
     });
-    const entry = sessionToTrackingHistoryEntry(s, {});
+    const entry = sessionToTrackingHistoryEntry(s, []);
     expect(entry.dateISO).toBe("2026-07-25T00:00:00.000Z");
     expect(entry.feedback).toEqual({ rpe: 8, pain: 1, durationMin: 55 });
     expect(entry.rpeTarget).toBe(6);
@@ -147,59 +147,78 @@ describe("sessionToTrackingHistoryEntry", () => {
 
   test("dateISO retombe sur `date` si dateISO absent", () => {
     const s = makeSession({ dateISO: undefined as any, date: "2026-07-20" });
-    const entry = sessionToTrackingHistoryEntry(s, {});
+    const entry = sessionToTrackingHistoryEntry(s, []);
     expect(entry.dateISO).toBe("2026-07-20");
   });
 
   test("injuryDeclared=true quand feedback.pain >= seuil (3)", () => {
     const s = makeSession({ feedback: { rpe: 5, fatigue: 3, sleep: 3, pain: 4, createdAt: "x" } as any });
-    expect(sessionToTrackingHistoryEntry(s, {}).injuryDeclared).toBe(true);
+    expect(sessionToTrackingHistoryEntry(s, []).injuryDeclared).toBe(true);
   });
 
-  test("injuryDeclared=true via dayStates meme si pain feedback bas (injury structuree severite>0)", () => {
+  test("injuryDeclared=true via « Mon corps » meme si le score de douleur est bas", () => {
     const s = makeSession({
       dateISO: "2026-07-25T00:00:00.000Z",
       feedback: { rpe: 5, fatigue: 3, sleep: 3, pain: 0, createdAt: "x" } as any,
     });
-    const dayStates: Record<string, DayState> = {
-      "2026-07-25": {
-        date: "2026-07-25",
-        feedback: {
-          fatigue: 3,
-          injury: { area: "genou", severity: 2, type: "aigu", restrictions: {}, startDate: "x", lastConfirm: "x" },
-          timestamp: "x",
-        },
-        adaptive: { fatigueFactor: 1, painFactor: 1, combined: 1 },
+    const blessures: BodyInjury[] = [
+      {
+        id: "b1",
+        zone: "genou",
+        gravite: 2,
+        statut: "active",
+        source: "feedback",
+        declaredAt: "2026-07-25T20:00:00.000Z",
+        updatedAt: "2026-07-25T20:00:00.000Z",
       },
-    };
-    expect(sessionToTrackingHistoryEntry(s, dayStates).injuryDeclared).toBe(true);
+    ];
+    expect(sessionToTrackingHistoryEntry(s, blessures).injuryDeclared).toBe(true);
   });
 
-  test("injury severite 0 (levee explicite) ne declenche pas injuryDeclared", () => {
+  test("une gene marquee GUERIE ne declenche plus injuryDeclared", () => {
     const s = makeSession({
       dateISO: "2026-07-25T00:00:00.000Z",
       feedback: { rpe: 5, fatigue: 3, sleep: 3, pain: 0, createdAt: "x" } as any,
     });
-    const dayStates: Record<string, DayState> = {
-      "2026-07-25": {
-        date: "2026-07-25",
-        feedback: {
-          fatigue: 3,
-          injury: { area: "genou", severity: 0, type: "aigu", restrictions: {}, startDate: "x", lastConfirm: "x" },
-          timestamp: "x",
-        },
-        adaptive: { fatigueFactor: 1, painFactor: 1, combined: 1 },
+    const blessures: BodyInjury[] = [
+      {
+        id: "b1",
+        zone: "genou",
+        gravite: 2,
+        statut: "healed",
+        source: "feedback",
+        declaredAt: "2026-07-25T20:00:00.000Z",
+        updatedAt: "2026-07-28T20:00:00.000Z",
       },
-    };
-    expect(sessionToTrackingHistoryEntry(s, dayStates).injuryDeclared).toBe(false);
+    ];
+    expect(sessionToTrackingHistoryEntry(s, blessures).injuryDeclared).toBe(false);
+  });
+
+  test("une gene declaree un AUTRE jour ne marque pas cette seance", () => {
+    const s = makeSession({
+      dateISO: "2026-07-25T00:00:00.000Z",
+      feedback: { rpe: 5, fatigue: 3, sleep: 3, pain: 0, createdAt: "x" } as any,
+    });
+    const blessures: BodyInjury[] = [
+      {
+        id: "b1",
+        zone: "genou",
+        gravite: 2,
+        statut: "active",
+        source: "manual",
+        declaredAt: "2026-07-28T20:00:00.000Z",
+        updatedAt: "2026-07-28T20:00:00.000Z",
+      },
+    ];
+    expect(sessionToTrackingHistoryEntry(s, blessures).injuryDeclared).toBe(false);
   });
 
   test("execution attachee via cast defensif (invalide -> null)", () => {
     const exec = makeExecution("s1");
-    const withValid = sessionToTrackingHistoryEntry(makeSession({ execution: exec }), {});
+    const withValid = sessionToTrackingHistoryEntry(makeSession({ execution: exec }), []);
     expect(withValid.execution).toEqual(exec);
 
-    const withInvalid = sessionToTrackingHistoryEntry(makeSession({ execution: { garbage: true } }), {});
+    const withInvalid = sessionToTrackingHistoryEntry(makeSession({ execution: { garbage: true } }), []);
     expect(withInvalid.execution).toBeNull();
   });
 });
@@ -211,7 +230,7 @@ describe("buildTrackingHistory", () => {
       makeSession({ id: "b", completed: false }),
       makeSession({ id: "c", completed: true }),
     ];
-    const history = buildTrackingHistory(sessions, {});
+    const history = buildTrackingHistory(sessions, []);
     expect(history).toHaveLength(2);
   });
 });

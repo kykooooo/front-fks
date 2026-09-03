@@ -36,11 +36,10 @@ import { useSettingsStore } from "../state/settingsStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useExternalStore } from "../state/stores/useExternalStore";
 import { useLoadStore } from "../state/stores/useLoadStore";
-import { useFeedbackStore } from "../state/stores/useFeedbackStore";
 import { getCycleTheme, type CycleTheme } from "../constants/cycleTheme";
 import { EXERCISE_BY_ID } from "../engine/exerciseBank";
 import { trackEvent } from "../services/analytics";
-import { collectActivePainConstraints } from "../services/aiContextHelpers";
+import { useContraintesDouleur } from "../state/selectors/blessures";
 import { showToast } from "../utils/toast";
 // ---- Boucle de suivi joueur (Lot 2) ----
 import { useExecutionStore } from "../state/stores/useExecutionStore";
@@ -662,12 +661,10 @@ function SessionLiveScreen() {
   const externalMatchDay = useExternalStore((s) => s.matchDay);
   const ageCategory = useExternalStore((s) => s.ageCategory);
   const tsb = useLoadStore((s) => s.tsb);
-  const feedbackDayStates = useFeedbackStore((s) => s.dayStates);
-  const todayKeyRef = useRef(toDateKey(new Date().toISOString()));
-  const activePains = useMemo(
-    () => collectActivePainConstraints(feedbackDayStates, todayKeyRef.current).pains,
-    [feedbackDayStates]
-  );
+  // Gênes déclarées dans « Mon corps » : même source que la génération, via
+  // l'unique sélecteur. L'écran s'y abonne, donc un changement de statut fait
+  // pendant la séance est pris en compte tout de suite.
+  const { pains: activePains } = useContraintesDouleur();
   const matchSoon = useMemo(() => {
     const ctx = execution?.snapshot.matchContext;
     return ctx === "match_today" || ctx === "match_tomorrow" || ctx === "match_in_two_days";

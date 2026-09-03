@@ -2,8 +2,9 @@
 // Helpers PURS pour la decision shadow attachee au feedback (Lot 4/5) : cast
 // defensif de l'execution stockee sur `Session.execution` (unknown, cf.
 // domain/types.ts), construction de l'historique `TrackingHistoryEntry[]`
-// depuis les sessions completees + les dayStates (injure declaree), calcul de
-// la decision. Aucun acces Firestore/store ici -- testable sans mock reseau.
+// depuis les sessions completees + les genes declarees dans « Mon corps »,
+// calcul de la decision. Aucun acces Firestore/store ici -- testable sans mock
+// reseau (la liste de genes est RECUE, jamais lue ici).
 // Voir docs/boucle-suivi-2026-07-25/{ARCHITECTURE_BOUCLE,MODELE_DONNEES,REGLES_AJUSTEMENT}.md
 import { toDateKey } from "../../utils/dateHelpers";
 import { readSessionRpeTarget } from "../../services/aiContextHelpers";
@@ -12,7 +13,8 @@ import { computeTrackingSignals, type TrackingHistoryEntry } from "../../domain/
 import { decideAdjustment } from "../../domain/tracking/rulesEngine";
 import { decorateDecision } from "../../domain/tracking/explain";
 import type { SessionExecution, TrackingDecision, TrackingSignals } from "../../domain/tracking/types";
-import type { DayState, Session } from "../../domain/types";
+import type { BodyInjury, Session } from "../../domain/types";
+import { geneDeclareeLeJour } from "../selectors/blessures";
 
 /**
  * Cast defensif de `Session.execution` (type `unknown`, cf. domain/types.ts)
@@ -53,31 +55,35 @@ export function readPlannedDurationMin(s: Session): number | null {
 
 /**
  * "Injure declaree" pour la journee d'une seance : feedback.pain >= seuil OU
- * blessure structuree declaree ce jour-la (severite > 0 -- 0 = levee explicite
- * de la contrainte, cf. services/aiContextHelpers.ts collectActivePainConstraints).
+ * gene declaree ce jour-la dans « Mon corps » et pas encore marquee guerie.
  *
- * Limite connue et assumee : pour la seance TOUT JUSTE completee dans le meme
- * appel applyFeedback, l'injury structuree (saisie via useFeedbackStore.setInjury)
- * n'est pas encore ecrite dans dayStates a ce stade (useFeedbackSave.ts l'ecrit
- * APRES avoir appele applyFeedback) -- seul le pain feedback direct est visible
- * immediatement. Une injury declaree SANS score de douleur eleve sur cette
- * seance precise ne sera donc visible qu'a la decision suivante. Acceptable :
- * decision shadow uniquement (n'influence rien), jamais de donnee fabriquee.
+ * Limite connue et assumee, INCHANGEE par le passage a « Mon corps » : pour la
+ * seance TOUT JUSTE completee dans le meme appel applyFeedback, la gene n'est
+ * pas encore posee a ce stade (la passerelle du feedback la propose APRES
+ * l'enregistrement) -- seul le score de douleur direct est visible tout de
+ * suite. Une gene declaree SANS douleur elevee sur cette seance precise ne sera
+ * donc visible qu'a la decision suivante. Acceptable : decision shadow
+ * uniquement (n'influence rien), jamais de donnee fabriquee.
+ *
+ * Deuxieme limite, celle-la NOUVELLE et dite : la reprise des declarations
+ * historiques ne remonte que sur les 7 derniers jours (voir
+ * state/migration/migrateInjuries.ts). Pour les seances PLUS ANCIENNES que
+ * cette reprise, `injuryDeclared` ne repose plus que sur le score de douleur.
+ * On ne reconstruit pas un passe qu'on n'a pas ; le signal reste shadow.
  */
-function isInjuryDeclaredForSession(s: Session, dayStates: Record<string, DayState>): boolean {
+function isInjuryDeclaredForSession(s: Session, blessures: readonly BodyInjury[]): boolean {
   const painFromFeedback = typeof s.feedback?.pain === "number" ? s.feedback.pain : null;
   if (painFromFeedback !== null && painFromFeedback >= TRACKING_CONFIG.pain.feedbackThreshold) return true;
 
   const dateISO = typeof s.dateISO === "string" ? s.dateISO : typeof s.date === "string" ? s.date : null;
   if (!dateISO) return false;
-  const dayInjury = dayStates[toDateKey(dateISO)]?.feedback?.injury ?? null;
-  return Boolean(dayInjury && typeof dayInjury.severity === "number" && dayInjury.severity > 0);
+  return geneDeclareeLeJour(blessures, toDateKey(dateISO));
 }
 
 /** Session -> TrackingHistoryEntry (contrat domain/tracking/signals.ts). */
 export function sessionToTrackingHistoryEntry(
   s: Session,
-  dayStates: Record<string, DayState>
+  blessures: readonly BodyInjury[]
 ): TrackingHistoryEntry {
   const dateISO = typeof s.dateISO === "string" ? s.dateISO : typeof s.date === "string" ? s.date : "";
   const painFromFeedback = typeof s.feedback?.pain === "number" ? s.feedback.pain : null;
@@ -95,7 +101,7 @@ export function sessionToTrackingHistoryEntry(
     rpeTarget: readSessionRpeTarget(s),
     plannedDurationMin: readPlannedDurationMin(s),
     execution: castSessionExecution(s.execution),
-    injuryDeclared: isInjuryDeclaredForSession(s, dayStates),
+    injuryDeclared: isInjuryDeclaredForSession(s, blessures),
   };
 }
 
@@ -107,9 +113,9 @@ export function sessionToTrackingHistoryEntry(
  */
 export function buildTrackingHistory(
   sessions: Session[],
-  dayStates: Record<string, DayState>
+  blessures: readonly BodyInjury[]
 ): TrackingHistoryEntry[] {
-  return sessions.filter((s) => s.completed).map((s) => sessionToTrackingHistoryEntry(s, dayStates));
+  return sessions.filter((s) => s.completed).map((s) => sessionToTrackingHistoryEntry(s, blessures));
 }
 
 /** Signaux + decision decoree (explication FR), en un seul appel. */

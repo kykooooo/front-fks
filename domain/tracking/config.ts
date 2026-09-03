@@ -53,7 +53,13 @@ export const TRACKING_CONFIG = {
 
   pain: {
     feedbackThreshold: 3, // echelle app 0-5 (>= 3 = douleur reelle, pas une gene mineure)
-    windowDays: 7, // aligne collectActivePainConstraints (services/aiContext.ts)
+    // Fenetre d'analyse des SIGNAUX de la boucle de suivi (combien de seances
+    // recentes on regarde). Ce n'est plus la duree de vie d'une gene : depuis
+    // « Mon corps », une gene vit tant que le joueur ne dit pas qu'elle est
+    // passee. Le meme chiffre pilote desormais la RELANCE
+    // (`JOURS_AVANT_RELANCE`, state/selectors/blessures.ts) : au bout de 7 jours
+    // on POSE UNE QUESTION, on n'oublie plus en silence.
+    windowDays: 7,
   },
 
   resumption: {

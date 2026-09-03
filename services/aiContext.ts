@@ -5,7 +5,6 @@ import { doc, getDoc } from "firebase/firestore";
 import { useLoadStore } from "../state/stores/useLoadStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
-import { useFeedbackStore } from "../state/stores/useFeedbackStore";
 import { toDateKey } from "../utils/dateHelpers";
 import type { Session, AgeCategory } from "../domain/types";
 import { normalizeAgeCategory, normalizeTeamGender } from "../domain/types";
@@ -32,10 +31,10 @@ import {
   buildRecentFksSessionsPayload,
   buildClubContextPayload,
   buildFieldTestsPayload,
-  collectActivePainConstraints,
   type ClubContextPayload,
   type FKS_FieldTestEntry,
 } from "./aiContextHelpers";
+import { contraintesDouleurCourantes } from "../state/selectors/blessures";
 
 // Reexport public API (le code applicatif importe depuis "./aiContext").
 export type {
@@ -195,16 +194,14 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
   const equipment_available = buildEquipmentFromProfile(data as Record<string, unknown>);
 
   const debugState = useDebugStore.getState();
-  const feedbackState = useFeedbackStore.getState();
   const nowISO = debugState.devNowISO ?? new Date().toISOString();
   const todayKey = toDateKey(nowISO);
-  // Blessures déclarées au feedback (dayStates.injury) → tokens backend.
-  // Fenêtre glissante 7 jours : une blessure déclarée hier contraint encore
-  // aujourd'hui (voir collectActivePainConstraints dans aiContextHelpers).
-  const { pains, injuryMaxSeverity } = collectActivePainConstraints(
-    feedbackState.dayStates,
-    todayKey
-  );
+  // Gênes déclarées dans « Mon corps » → tokens backend.
+  // Plus de fenêtre glissante : c'est le STATUT posé par le joueur qui décide
+  // (active → transmise avec sa gravité, en reprise → gravité 1, guérie →
+  // absente). Voir collectActivePainConstraints dans aiContextHelpers, et
+  // state/selectors/blessures.ts pour l'unique lecture du store.
+  const { pains, injuryMaxSeverity } = contraintesDouleurCourantes();
 
   // Contexte de semaine club (FKS Club) : si le joueur a un clubId, on lit le
   // weekContext de la semaine courante. Lecture best-effort : toute erreur est
