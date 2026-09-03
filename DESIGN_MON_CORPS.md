@@ -769,3 +769,75 @@ Hors correctif backend de D10 (à chiffrer sur l'autre repo).
 8. **Aucune donnée d'usage.** Je ne sais pas combien de joueurs déclarent une blessure
    ni à quelle fréquence. Tout ci-dessus vient du code et de la logique du terrain,
    jamais de chiffres que je n'ai pas.
+
+---
+
+## 6. ERRATA — contre-vérification adversariale du 01/09/2026
+
+Le document ci-dessus a été contre-vérifié ligne à ligne par un second agent (≈40 citations
+échantillonnées, toutes exactes à trois numéros de ligne près ; les 9 « surprises » du §1
+confirmées). Le point 1 du §5 est LEVÉ : la production Render tourne sur `b2c3351`
+(`/ready` vérifié le 01/09 au soir), qui contient le bloc red-flag. Le point 2 du §5 est
+LEVÉ aussi : le refus a été rejoué avec les fonctions réelles du backend (sans appel
+payant) — curseur 4/5 → 8/10 → `RF1_pain_recent_high`. **T1 est un bug de production
+actif.** Quatre corrections de fond s'imposent ; l'ancien texte reste lisible plus haut,
+il n'est pas effacé.
+
+**Erratum 1 — T2/T3 : le blocage RF1 est DÉFINITIF, pas « 7 jours ».**
+~~La fenêtre de 7 jours finit par libérer le joueur.~~ C'est vrai pour `pains[]` /
+`injury_max_severity` (RF2, fenêtre `INJURY_ACTIVE_WINDOW_DAYS = 7`,
+`services/aiContextHelpers.ts:616`), **faux pour RF1** : le backend lit
+`recentSessions[0].feedback.pain` (`src/fksWorkflow.ts:5283-5292`) **sans aucune borne de
+temps**, et cette valeur ne peut jamais être rebaissée — `applyFeedback` refuse toute
+séance déjà complétée (`state/orchestrators/applyFeedback.ts:54`), les séances ne se créent
+que par la génération (bloquée), les charges externes n'en créent pas, et `feedback.pain`
+est synchronisé dans Firestore donc survit à une réinstallation
+(`state/stores/persistHelpers.ts:175`). Un joueur qui a mis 4/5 ou 5/5 à son dernier
+feedback ne génère plus jamais de séance, et lit « service indisponible » à chaque essai.
+
+**Erratum 2 — D10 : l'option C est RETIRÉE.**
+~~C avec un contournement explicite — plafonner ce que « Mon corps » émet en sévérité 3.~~
+Ce contournement n'agit que sur RF2 (sévérité). Le déclencheur mesuré est **RF1**, produit
+par le curseur douleur du feedback — que le §2.4 laisse volontairement en place, hors de
+« Mon corps ». Il n'y a donc **pas de filet** derrière C. **B est la seule option
+défendable**, et elle doit passer AVANT tout écran « Mon corps ». Argument supplémentaire
+en faveur de B : le même écrasement en 500 frappe `missing_goal`
+(`src/fksWorkflow.ts:5270-5275`), pour lequel le front porte déjà une branche morte
+(`screens/newSession/echecGeneration.ts:199`) — le correctif backend répare deux chemins.
+Le correctif doit venir avec un **test de transport HTTP** du refus (`safety_no_session`
+n'apparaît qu'une fois dans tout le backend, `fksWorkflow.ts:5322`, et aucun test ne garde
+la réponse HTTP — c'est le seul test qui aurait attrapé ce bug).
+
+**Erratum 3 — §1.3 et §2.8 point 3 : la douleur QUITTE l'appareil.**
+~~« La donnée de santé ne quitte jamais l'appareil » / « écrire dans la politique que ces
+données restent sur l'appareil ».~~ Vrai pour la blessure détaillée (`dayStates.injury`,
+jamais écrite dans Firestore), **faux pour la douleur par séance** : `feedback.pain` part
+vers `users/{uid}/sessions` (`persistHelpers.ts:175` → `useSyncStore.ts:135-137` →
+`repositories/sessionsRepo.ts:143-157`), et la politique de confidentialité la liste déjà
+comme donnée de santé (`utils/legalContent.ts:51`). **Ne pas écrire** « reste sur
+l'appareil » dans la politique : ce serait une inexactitude opposable. La frontière
+coach-safe, elle, ne repose pas sur cette phrase mais sur la projection serveur
+(`functions/src/dto.ts`, rules, `sensitiveIsolation.test.ts:126-133`) — elle reste étanche.
+
+**Erratum 4 — §2.3 vs §2.6 : contradiction à trancher (tests #2 et #7 du §4).**
+Le §2.6 promet « rien ne change côté backend, mêmes `pains[]` » (sentinelle #2) ; le §2.3
+promet « plus de fenêtre glissante, on lit les statuts » et la sentinelle #7 exige qu'une
+gêne de 30 jours sans réponse soit **toujours** dans `pains[]`. Aujourd'hui elle n'y est
+pas. **Les deux ne peuvent pas être verts en même temps.** Décision à ajouter (D12) : le
+lot 1 conserve-t-il le payload à l'identique (alors #7 saute et la relance à 7 jours n'a
+pas d'effet moteur) ou change-t-il le payload (alors #2 saute et il faut mesurer l'effet
+sur les pools) ? Risque associé, non listé dans le doc : supprimer l'expiration à 7 jours
+**élargit** la population sous RF2 permanent — donc sous l'écran de panne — tant que T1
+n'est pas corrigé. Raison de plus pour que B (erratum 2) précède tout.
+
+**Erratum mineur — §2.4 :** l'audit (§1.6) identifie le curseur douleur comme le
+déclencheur du refus ; la proposition le laisse en place sans avertissement joueur ni
+lien vers le refus. À traiter dans le lot 1 de B : quand le refus s'affiche, dire
+franchement « c'est ta douleur du dernier feedback qui déclenche le repos », et offrir la
+voie de sortie (mise à jour de l'état → « Mon corps », ou en attendant : une action
+« mon état a changé » explicite).
+
+**Vétilles de numéros de ligne** (sans effet) : `schemas/firestoreSchemas.ts:193-223` →
+réel `198-223` ; `useContextualAdvice.ts:124-127` → réel `125-128` ;
+`firestore.rules:665-666` → réel `~658`. L'estimation « 14 à 20 heures-agent » du §4 n'a
+pas de méthode déclarée : la lire comme un ordre de grandeur, pas comme un chiffre.
