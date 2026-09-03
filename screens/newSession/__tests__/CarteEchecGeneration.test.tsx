@@ -43,6 +43,7 @@ type Handlers = {
   onChoisirCycle: jest.Mock;
   onSeReconnecter: jest.Mock;
   onReprendreSeance: jest.Mock;
+  onOuvrirMonCorps: jest.Mock;
   onRetourAccueil: jest.Mock;
 };
 
@@ -54,6 +55,7 @@ function buildHandlers(): Handlers {
     onChoisirCycle: jest.fn(),
     onSeReconnecter: jest.fn(),
     onReprendreSeance: jest.fn(),
+    onOuvrirMonCorps: jest.fn(),
     onRetourAccueil: jest.fn(),
   };
 }
@@ -76,6 +78,7 @@ function renderCarte(
         onChoisirCycle={handlers.onChoisirCycle}
         onSeReconnecter={handlers.onSeReconnecter}
         onReprendreSeance={handlers.onReprendreSeance}
+        onOuvrirMonCorps={handlers.onOuvrirMonCorps}
         onRetourAccueil={handlers.onRetourAccueil}
       />
     );
@@ -191,9 +194,10 @@ describe("CarteEchecGeneration — message et actions du contrat, jamais de séa
         "Le repos est la séance du jour. Cette prudence s'applique tant que ta dernière déclaration est récente.\n\n" +
         "Si la douleur persiste, consulte un professionnel de santé.",
       requestId: "req-secu-1",
-      actions: ["retour_accueil"],
+      actions: ["ouvrir_mon_corps", "retour_accueil"],
     });
-    const tree = renderCarte(echec, buildHandlers());
+    const handlers = buildHandlers();
+    const tree = renderCarte(echec, handlers);
     const texts = allTexts(tree);
 
     expect(texts).toContain("Pas de séance aujourd'hui");
@@ -204,14 +208,25 @@ describe("CarteEchecGeneration — message et actions du contrat, jamais de séa
     expect(texts).not.toContain("Réessayer");
     expect(texts).not.toContain("Modifier mon lieu ou mon matériel");
     expect(texts).not.toContain("Reprendre ma séance");
+    // Une vraie porte de sortie, en tête (P1 round 2) : le joueur bloqué par
+    // une gêne déclarée peut aller la mettre à jour, pas seulement fuir l'écran.
+    expect(texts).toContain("Ouvrir Mon corps");
     expect(texts).toContain("Revenir à l'accueil");
+
+    const boutonMonCorps = pressableForLabel(tree, "Ouvrir Mon corps");
+    expect(boutonMonCorps).toBeTruthy();
+    act(() => {
+      (boutonMonCorps!.props.onPress as () => void)();
+    });
+    expect(handlers.onOuvrirMonCorps).toHaveBeenCalledTimes(1);
+    expect(handlers.onRetourAccueil).not.toHaveBeenCalled();
 
     // Pas d'incident : pas de référence support, même si le backend en donne une.
     expect(texts.some((t) => t.startsWith("Réf. support"))).toBe(false);
   });
 
   test("refus de securite : le texte long n'est pas coupe a 6 lignes", () => {
-    const echec = buildEchec({ categorie: "securite", actions: ["retour_accueil"] });
+    const echec = buildEchec({ categorie: "securite", actions: ["ouvrir_mon_corps", "retour_accueil"] });
     const tree = renderCarte(echec, buildHandlers());
     const messages = tree.root
       .findAllByType(Text)

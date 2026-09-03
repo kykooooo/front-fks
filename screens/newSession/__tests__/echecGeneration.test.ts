@@ -473,6 +473,12 @@ const PHRASE_DOULEUR =
 const PHRASE_BLESSURE =
   "C'est la blessure que tu as déclarée (gravité forte) qui déclenche cette prudence.";
 const PHRASE_SORTIE = "Le repos est la séance du jour.";
+// La suite de la phrase de sortie dépend du drapeau (P1 round 2, erratum 1) :
+// RF1 n'a pas de vraie fin (le backend lit `recentSessions[0].feedback.pain`
+// sans fenêtre) ; RF2, lui, a une porte de sortie nommée dans Mon corps.
+const PHRASE_SORTIE_RF1 = "Cette prudence s'applique tant que ta dernière déclaration est récente.";
+const PHRASE_SORTIE_RF2 =
+  "Cette prudence s'applique tant que tu n'as pas mis à jour cette gêne dans Mon corps.";
 const PHRASE_SANTE = "Si la douleur persiste, consulte un professionnel de santé.";
 
 /** Ce qu'un refus de sécurité ne doit JAMAIS contenir, quel que soit le cas. */
@@ -507,17 +513,20 @@ describe("lireEchecGeneration — refus de securite (422 safety_no_session)", ()
     expect(echec.messageJoueur).toContain(PHRASE_DOULEUR);
     expect(echec.messageJoueur).not.toContain(PHRASE_BLESSURE);
     expect(echec.messageJoueur).toContain(PHRASE_SORTIE);
-    expect(echec.messageJoueur).toContain("tant que ta dernière déclaration est récente");
+    expect(echec.messageJoueur).toContain(PHRASE_SORTIE_RF1);
+    // RF1 seul : la phrase RF2 (mise à jour dans Mon corps) ne doit PAS
+    // apparaître — elle promettrait une action que RF1 seul ne concerne pas.
+    expect(echec.messageJoueur).not.toContain(PHRASE_SORTIE_RF2);
     expect(echec.messageJoueur).toContain(PHRASE_SANTE);
     verifierInterditsSecurite(echec.messageJoueur);
 
-    // Une seule sortie, et surtout pas « Réessayer ».
-    expect(echec.actions).toEqual(["retour_accueil"]);
+    // « Ouvrir Mon corps » en premier, jamais « Réessayer ».
+    expect(echec.actions).toEqual(["ouvrir_mon_corps", "retour_accueil"]);
     expect(echec.actions).not.toContain("reessayer");
     expect(echec.actions).not.toContain("modifier_contraintes");
   });
 
-  test("RF2 (blessure severite 3) : explication blessure, pas l'explication douleur", () => {
+  test("RF2 (blessure severite 3) : explication blessure, sortie vers Mon corps (pas 'declaration recente')", () => {
     const echec = lireEchecGeneration(
       erreurRefusSecurite({
         message: "Aucune séance tant que ta blessure est déclarée.",
@@ -529,11 +538,16 @@ describe("lireEchecGeneration — refus de securite (422 safety_no_session)", ()
     expect(echec.messageJoueur).toContain(PHRASE_BLESSURE);
     expect(echec.messageJoueur).not.toContain(PHRASE_DOULEUR);
     expect(echec.messageJoueur).toContain(PHRASE_SORTIE);
+    // RF2 : contrairement à RF1, il existe une vraie sortie que le front peut
+    // nommer — la déclaration ne s'efface jamais toute seule (D12), dire
+    // "récente" serait donc faux (erratum 1 du design).
+    expect(echec.messageJoueur).toContain(PHRASE_SORTIE_RF2);
+    expect(echec.messageJoueur).not.toContain(PHRASE_SORTIE_RF1);
     verifierInterditsSecurite(echec.messageJoueur);
-    expect(echec.actions).toEqual(["retour_accueil"]);
+    expect(echec.actions).toEqual(["ouvrir_mon_corps", "retour_accueil"]);
   });
 
-  test("RF1 + RF2 : les DEUX explications, dans l'ordre douleur puis blessure", () => {
+  test("RF1 + RF2 : les DEUX explications, mais la phrase de sortie est celle de RF2 (la plus exigeante)", () => {
     const echec = lireEchecGeneration(
       erreurRefusSecurite({
         message: PHRASE_BACKEND,
@@ -546,7 +560,12 @@ describe("lireEchecGeneration — refus de securite (422 safety_no_session)", ()
     expect(echec.messageJoueur.indexOf(PHRASE_DOULEUR)).toBeLessThan(
       echec.messageJoueur.indexOf(PHRASE_BLESSURE)
     );
+    // RF2 gagne sur la phrase de sortie : dire "récente" (RF1) laisserait
+    // croire à une expiration alors que RF2, présent aussi, n'en a aucune.
+    expect(echec.messageJoueur).toContain(PHRASE_SORTIE_RF2);
+    expect(echec.messageJoueur).not.toContain(PHRASE_SORTIE_RF1);
     verifierInterditsSecurite(echec.messageJoueur);
+    expect(echec.actions).toEqual(["ouvrir_mon_corps", "retour_accueil"]);
   });
 
   test("disclaimer fourni par le backend : repris tel quel, le front n'en ecrit pas un second", () => {
@@ -563,14 +582,19 @@ describe("lireEchecGeneration — refus de securite (422 safety_no_session)", ()
     expect(echec.messageJoueur).not.toContain(PHRASE_SANTE);
   });
 
-  test("sans drapeau : pas d'explication inventee, mais la voie de sortie reste", () => {
+  test("sans drapeau : pas d'explication inventee, mais la voie de sortie reste (repli RF1, le moins engageant)", () => {
     const echec = lireEchecGeneration(erreurRefusSecurite({ message: PHRASE_BACKEND }));
 
     expect(echec.categorie).toBe("securite");
     expect(echec.messageJoueur).not.toContain(PHRASE_DOULEUR);
     expect(echec.messageJoueur).not.toContain(PHRASE_BLESSURE);
     expect(echec.messageJoueur).toContain(PHRASE_SORTIE);
-    expect(echec.actions).toEqual(["retour_accueil"]);
+    // Sans savoir QUEL drapeau a motivé le refus, le front ne peut pas
+    // affirmer qu'une mise à jour dans Mon corps rouvrira la génération : il
+    // retombe sur la formule la plus prudente, pas la plus engageante.
+    expect(echec.messageJoueur).toContain(PHRASE_SORTIE_RF1);
+    expect(echec.messageJoueur).not.toContain(PHRASE_SORTIE_RF2);
+    expect(echec.actions).toEqual(["ouvrir_mon_corps", "retour_accueil"]);
   });
 
   test("drapeau inconnu du front : ignore, jamais affiche, jamais de plantage", () => {
@@ -593,7 +617,7 @@ describe("lireEchecGeneration — refus de securite (422 safety_no_session)", ()
     expect(echec.messageJoueur).toContain("On ne te propose pas de séance aujourd'hui");
     expect(echec.messageJoueur).toContain(PHRASE_DOULEUR);
     verifierInterditsSecurite(echec.messageJoueur);
-    expect(echec.actions).toEqual(["retour_accueil"]);
+    expect(echec.actions).toEqual(["ouvrir_mon_corps", "retour_accueil"]);
     expect(echec.messageJoueur).not.toContain("Modifie ton lieu");
   });
 
@@ -636,7 +660,7 @@ describe("lireEchecGeneration — refus de securite (422 safety_no_session)", ()
     });
 
     expect(decision.echec.categorie).toBe("securite");
-    expect(decision.actions).toEqual(["retour_accueil"]);
+    expect(decision.actions).toEqual(["ouvrir_mon_corps", "retour_accueil"]);
     expect(decision.actions).not.toContain("reprendre_seance");
     expect(decision.seanceCreee).toBeNull();
   });

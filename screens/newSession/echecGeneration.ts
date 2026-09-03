@@ -39,7 +39,18 @@ export type ActionEchec =
   | "choisir_cycle"
   | "se_reconnecter"
   | "reprendre_seance"
+  | "ouvrir_mon_corps"
   | "retour_accueil";
+
+/**
+ * Sorties d'un refus de sécurité — les MÊMES sur le chemin normal
+ * (`actionsDuContrat`) et sur le corps abîmé (`lireRefusSecuriteDegrade`) :
+ * un refus de sécurité reste un refus de sécurité, que le backend ait ou non
+ * réussi à joindre un `message`. « Ouvrir Mon corps » avant « Revenir à
+ * l'accueil » (P1 round 2) : le joueur bloqué par une gêne déclarée a une
+ * porte de sortie nommée, pas seulement la sortie de l'écran.
+ */
+const ACTIONS_REFUS_SECURITE: ActionEchec[] = ["ouvrir_mon_corps", "retour_accueil"];
 
 export type EchecGeneration = {
   /** "contrat" = corps typé du backend ; "client" = panne avant/hors contrat. */
@@ -251,8 +262,25 @@ const TEXTES_SECURITE = {
     "C'est la douleur que tu as indiquée à ton dernier feedback qui déclenche cette prudence.",
   blessure:
     "C'est la blessure que tu as déclarée (gravité forte) qui déclenche cette prudence.",
-  sortie:
-    "Le repos est la séance du jour. Cette prudence s'applique tant que ta dernière déclaration est récente.",
+  /** Partie commune, quel que soit le drapeau. */
+  sortieRepos: "Le repos est la séance du jour.",
+  /**
+   * RF1 (douleur du feedback) : la fenêtre est côté backend
+   * (`INJURY_ACTIVE_WINDOW_DAYS`, 7 jours glissants côté `pains[]`/
+   * `injury_max_severity` — RF1 lui-même n'a PAS de fenêtre, cf. erratum 1 du
+   * design, mais le front ne le sait pas et ne l'invente pas). Formule neutre,
+   * sans promettre une expiration que le front ne peut pas garantir.
+   */
+  sortieRf1: "Cette prudence s'applique tant que ta dernière déclaration est récente.",
+  /**
+   * RF2 (blessure gravité 3) : CONTRAIREMENT à RF1, il existe une vraie porte
+   * de sortie que le front connaît et peut nommer — baisser la gravité ou
+   * changer le statut dans « Mon corps » (D12 : une gêne en reprise part en
+   * gravité 1, une gêne guérie ne part plus du tout). Dire « récente » ici
+   * serait faux : la déclaration ne s'efface jamais toute seule (D12), seul
+   * un geste du joueur dans Mon corps la fait bouger.
+   */
+  sortieRf2: "Cette prudence s'applique tant que tu n'as pas mis à jour cette gêne dans Mon corps.",
   disclaimer: "Si la douleur persiste, consulte un professionnel de santé.",
 } as const;
 
@@ -260,6 +288,13 @@ const TEXTES_SECURITE = {
  * Assemble le message d'un refus de sécurité : phrase du backend, explication
  * honnête selon les drapeaux, voie de sortie, avertissement santé (celui du
  * backend s'il en envoie un, plutôt qu'un texte écrit ici).
+ *
+ * La voie de sortie n'est PAS un texte unique : RF1 (douleur du feedback) et
+ * RF2 (gravité 3 dans Mon corps) ne se lèvent pas de la même façon (erratum 1
+ * du design, P1 round 2). Quand RF2 est présent — seul ou avec RF1 — c'est SA
+ * phrase qui sort : c'est la plus exigeante (rien ne bouge sans un geste
+ * explicite dans Mon corps), et c'est aussi la seule des deux qui offre une
+ * vraie action au joueur.
  */
 export function messageRefusSecurite(params: {
   message?: string | null;
@@ -273,7 +308,7 @@ export function messageRefusSecurite(params: {
   const paragraphes = [lireTexte(params.message) || TEXTES_SECURITE.entete];
   if (douleur) paragraphes.push(TEXTES_SECURITE.douleur);
   if (blessure) paragraphes.push(TEXTES_SECURITE.blessure);
-  paragraphes.push(TEXTES_SECURITE.sortie);
+  paragraphes.push(`${TEXTES_SECURITE.sortieRepos} ${blessure ? TEXTES_SECURITE.sortieRf2 : TEXTES_SECURITE.sortieRf1}`);
   paragraphes.push(lireTexte(params.disclaimer) || TEXTES_SECURITE.disclaimer);
 
   return paragraphes.join("\n\n");
@@ -303,7 +338,7 @@ function lireRefusSecuriteDegrade(brut: unknown): EchecGeneration | null {
     }),
     requestId: lireTexte(analyse.requestId) || null,
     attendreS: null,
-    actions: ["retour_accueil"],
+    actions: ACTIONS_REFUS_SECURITE,
   };
 }
 
@@ -313,10 +348,10 @@ function lireRefusSecuriteDegrade(brut: unknown): EchecGeneration | null {
  * l'identique une demande impossible ne la rendra pas possible.
  */
 function actionsDuContrat(corps: CorpsContrat): ActionEchec[] {
-  // Refus de sécurité : une seule sortie, et surtout PAS « Réessayer ».
-  // Modifier son matériel ne lève pas une douleur déclarée non plus.
+  // Refus de sécurité : jamais « Réessayer » (modifier son matériel ne lève
+  // pas une douleur déclarée), mais une vraie porte de sortie vers Mon corps.
   if (corps.categorie === "securite") {
-    return ["retour_accueil"];
+    return ACTIONS_REFUS_SECURITE;
   }
   if (corps.code === "missing_goal") {
     return ["choisir_cycle", "reessayer", "retour_accueil"];

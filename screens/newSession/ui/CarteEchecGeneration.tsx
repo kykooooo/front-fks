@@ -22,6 +22,7 @@ type Props = {
   onChoisirCycle: () => void;
   onSeReconnecter: () => void;
   onReprendreSeance: () => void;
+  onOuvrirMonCorps: () => void;
   onRetourAccueil: () => void;
 };
 
@@ -32,6 +33,7 @@ const LIBELLES: Record<ActionEchec, string> = {
   choisir_cycle: "Choisir un cycle",
   se_reconnecter: "Me reconnecter",
   reprendre_seance: "Reprendre ma séance",
+  ouvrir_mon_corps: "Ouvrir Mon corps",
   retour_accueil: "Revenir à l'accueil",
 };
 
@@ -45,6 +47,7 @@ export function CarteEchecGeneration({
   onChoisirCycle,
   onSeReconnecter,
   onReprendreSeance,
+  onOuvrirMonCorps,
   onRetourAccueil,
 }: Props) {
   const gestionnaires: Record<ActionEchec, () => void> = {
@@ -54,6 +57,7 @@ export function CarteEchecGeneration({
     choisir_cycle: onChoisirCycle,
     se_reconnecter: onSeReconnecter,
     reprendre_seance: onReprendreSeance,
+    ouvrir_mon_corps: onOuvrirMonCorps,
     retour_accueil: onRetourAccueil,
   };
 

@@ -109,6 +109,7 @@ type RootStackParamList = {
     sessionId?: string;
   };
   CycleModal: { mode?: "select" | "manage"; origin?: "home" | "profile" | "newSession" | "feedback" } | undefined;
+  MonCorps: { ouvrirAjout?: boolean; source?: "feedback" | "manual" | "setup" } | undefined;
 };
 
 /** Funnel analytics : mesure Register → 1ère séance générée (fire once, timestamp consommé). */
@@ -861,6 +862,10 @@ export default function NewSessionScreen() {
               nav.navigate("Tabs", { screen: "Profile" });
             }}
             onReprendreSeance={reprendreSeanceReelle}
+            onOuvrirMonCorps={() => {
+              setEchec(null);
+              nav.navigate("MonCorps");
+            }}
             onRetourAccueil={() => {
               setEchec(null);
               nav.navigate("Tabs", { screen: "Home" });

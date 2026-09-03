@@ -127,6 +127,17 @@ export const AVERTISSEMENT_ZONE_AUTRE =
   "Sans zone précise, FKS peut alléger ta séance mais pas écarter d'exercice en particulier.";
 
 /**
+ * Ce qu'on dit franchement du cran 3 (P1 round 2) : une gêne `active` de
+ * gravité 3 déclenche le refus de sécurité du moteur (blessure grave), SANS expiration
+ * (le payload suit le statut, pas une fenêtre — décision D12). Le laisser
+ * deviner serait le piège identique à celui de l'erratum 2 du design : inviter
+ * à déclarer une gêne forte sans dire ce que ça produit. La sortie existe et
+ * est nommée : baisser la gravité ou passer en reprise/guéri, ici même.
+ */
+export const AVERTISSEMENT_GRAVITE_3 =
+  "Pas de séance tant que cette gêne reste à ce niveau.";
+
+/**
  * Ce qui reste vrai sur le stockage, et rien de plus (erratum 3 du design) :
  * le DETAIL des blessures ne quitte pas l'appareil. La douleur 0-5 du feedback,
  * elle, est synchronisee — cette phrase ne la couvre pas et ne doit jamais

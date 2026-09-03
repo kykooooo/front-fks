@@ -439,7 +439,7 @@ describe("fetchV2 — refus de securite en 422 : corps preserve, aucun re-essai"
     } catch (err: any) {
       const echec = lireEchecGeneration(err);
       expect(echec.categorie).toBe("securite");
-      expect(echec.actions).toEqual(["retour_accueil"]);
+      expect(echec.actions).toEqual(["ouvrir_mon_corps", "retour_accueil"]);
       expect(echec.messageJoueur).toContain(
         "C'est la douleur que tu as indiquée à ton dernier feedback"
       );

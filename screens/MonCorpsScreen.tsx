@@ -41,6 +41,7 @@ import { useRoute, type RouteProp } from "@react-navigation/native";
 import { Screen } from "../components/ui/Screen";
 import { theme } from "../constants/theme";
 import {
+  AVERTISSEMENT_GRAVITE_3,
   AVERTISSEMENT_ZONE_AUTRE,
   BODY_AREAS,
   LIBELLE_GRAVITE,
@@ -166,6 +167,14 @@ function CarteGene({
           </TouchableOpacity>
         ))}
       </View>
+      {/* Honnêteté sur ce que déclenche le cran 3 (P1 round 2) : une gêne
+          ACTIVE de gravité 3 refuse la séance côté moteur (blessure grave),
+          sans expiration automatique (D12). « En reprise »/« guérie » ne
+          déclenchent rien à ce cran — la ligne ne s'affiche donc que pour ce
+          qui est réellement bloquant aujourd'hui. */}
+      {ligne.gravite === 3 && ligne.statut === "active" ? (
+        <Text style={styles.avertissement}>{AVERTISSEMENT_GRAVITE_3}</Text>
+      ) : null}
 
       <TouchableOpacity
         style={styles.lienSupprimer}
@@ -366,6 +375,9 @@ export default function MonCorpsScreen() {
               </TouchableOpacity>
             ))}
           </View>
+          {/* Une déclaration part toujours en statut `active` (§2.3) : le
+              cran 3 déclenche donc le refus de sécurité dès l'enregistrement. */}
+          {gravite === 3 ? <Text style={styles.avertissement}>{AVERTISSEMENT_GRAVITE_3}</Text> : null}
 
           <Text style={styles.champLabel}>Un mot, si tu veux (facultatif)</Text>
           <TextInput
