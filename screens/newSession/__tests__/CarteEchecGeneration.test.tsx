@@ -175,6 +175,52 @@ describe("CarteEchecGeneration — message et actions du contrat, jamais de séa
     expect(texts.some((t) => t.startsWith("Réf. support"))).toBe(false);
   });
 
+  test("refus de securite : titre de coach, aucun bouton de relance, aucune ref support", () => {
+    // Ce cas n'est pas une panne : le moteur refuse par prudence (douleur
+    // récente forte / blessure grave). La carte doit le dire calmement et ne
+    // JAMAIS offrir de quoi relancer — le joueur retaperait contre un refus
+    // qui ne bougera pas tant que sa déclaration est là.
+    const echec = buildEchec({
+      source: "contrat",
+      code: "safety_no_session",
+      categorie: "securite",
+      retryable: false,
+      messageJoueur:
+        "On ne te propose pas de séance aujourd'hui : tu as signalé une douleur importante.\n\n" +
+        "C'est la douleur que tu as indiquée à ton dernier feedback qui déclenche cette prudence.\n\n" +
+        "Le repos est la séance du jour. Cette prudence s'applique tant que ta dernière déclaration est récente.\n\n" +
+        "Si la douleur persiste, consulte un professionnel de santé.",
+      requestId: "req-secu-1",
+      actions: ["retour_accueil"],
+    });
+    const tree = renderCarte(echec, buildHandlers());
+    const texts = allTexts(tree);
+
+    expect(texts).toContain("Pas de séance aujourd'hui");
+    expect(texts).not.toContain("On n'a pas pu préparer ta séance");
+    expect(texts.some((t) => t.includes("Le repos est la séance du jour"))).toBe(true);
+
+    // Aucune sortie qui inviterait à relancer.
+    expect(texts).not.toContain("Réessayer");
+    expect(texts).not.toContain("Modifier mon lieu ou mon matériel");
+    expect(texts).not.toContain("Reprendre ma séance");
+    expect(texts).toContain("Revenir à l'accueil");
+
+    // Pas d'incident : pas de référence support, même si le backend en donne une.
+    expect(texts.some((t) => t.startsWith("Réf. support"))).toBe(false);
+  });
+
+  test("refus de securite : le texte long n'est pas coupe a 6 lignes", () => {
+    const echec = buildEchec({ categorie: "securite", actions: ["retour_accueil"] });
+    const tree = renderCarte(echec, buildHandlers());
+    const messages = tree.root
+      .findAllByType(Text)
+      .filter((t) => flattenText(t) === echec.messageJoueur);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].props.numberOfLines).toBeGreaterThan(6);
+  });
+
   test("avec attendreS et requestId (429 avec Retry-After) : les deux s'affichent, singulier respecté", () => {
     const echec = buildEchec({ attendreS: 1, requestId: "req-abc-123" });
     const tree = renderCarte(echec, buildHandlers());

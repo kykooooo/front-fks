@@ -57,13 +57,25 @@ export function CarteEchecGeneration({
     retour_accueil: onRetourAccueil,
   };
 
+  // Refus de sécurité : ce n'est pas une panne, c'est une décision du coach.
+  // Même carte, ton différent : pas de « on n'a pas pu », pas de rouge, et
+  // aucune action de relance (elles n'arrivent pas jusqu'ici, cf.
+  // `actionsDuContrat`). Le texte est plus long que celui d'une panne (raison,
+  // explication, voie de sortie, avertissement santé) : il lui faut ses lignes.
+  const refusSecurite = echec.categorie === "securite";
+
   return (
-    <View style={styles.carte}>
-      <Text style={styles.titre}>On n'a pas pu préparer ta séance</Text>
+    <View style={[styles.carte, refusSecurite && styles.carteSecurite]}>
+      <Text style={styles.titre}>
+        {refusSecurite ? "Pas de séance aujourd'hui" : "On n'a pas pu préparer ta séance"}
+      </Text>
 
       {/* Message du contrat backend affiché tel quel, ou texte client quand le
           serveur n'a rien pu dire. Ni code, ni statut HTTP, ni étape interne. */}
-      <Text style={styles.message} numberOfLines={6}>
+      <Text
+        style={[styles.message, refusSecurite && styles.messageSecurite]}
+        numberOfLines={refusSecurite ? 16 : 6}
+      >
         {echec.messageJoueur}
       </Text>
 
@@ -87,7 +99,9 @@ export function CarteEchecGeneration({
         ))}
       </View>
 
-      {echec.requestId ? (
+      {/* Pas de référence support sur un refus de sécurité : rien n'est cassé,
+          il n'y a pas d'incident à faire remonter. */}
+      {echec.requestId && !refusSecurite ? (
         <Text style={styles.reference} selectable numberOfLines={1}>
           Réf. support : {echec.requestId}
         </Text>
@@ -111,11 +125,22 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: palette.text,
   },
+  carteSecurite: {
+    borderColor: palette.accent,
+    backgroundColor: palette.accentSoft,
+  },
   message: {
     fontSize: 13,
     lineHeight: 19,
     color: palette.sub,
     minHeight: 38,
+  },
+  // Sur le fond teinté du refus, `sub` passe sous le seuil de contraste :
+  // le texte principal reprend la couleur de texte pleine.
+  messageSecurite: {
+    color: palette.text,
+    fontSize: 14,
+    lineHeight: 21,
   },
   attente: {
     fontSize: 12,
