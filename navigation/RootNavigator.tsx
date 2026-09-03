@@ -21,6 +21,7 @@ import PrebuiltSessionsScreen from "../screens/PrebuiltSessionsScreen";
 import PrebuiltSessionDetailScreen from "../screens/PrebuiltSessionDetailScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import TestsScreen from "../screens/TestsScreen";
+import MonCorpsScreen from "../screens/MonCorpsScreen";
 import WelcomeScreen, { type WelcomeCompleteOptions } from "../screens/WelcomeScreen";
 import SessionLiveScreen from "../screens/SessionLiveScreen";
 import SessionSummaryScreen from "../screens/SessionSummaryScreen";
@@ -99,6 +100,12 @@ export type AppStackParamList = {
   ProfileSetupGate: undefined;
   CoachOnboarding: undefined;
   Tests: { initialPlaylist?: string } | undefined;
+  /**
+   * « Mon corps ». `ouvrirAjout` déplie directement le formulaire (arrivée
+   * depuis la passerelle du feedback) ; `source` trace d'où vient la
+   * déclaration — jamais utilisée pour un calcul, seulement pour l'afficher.
+   */
+  MonCorps: { ouvrirAjout?: boolean; source?: "feedback" | "manual" | "setup" } | undefined;
   ExerciseDetail: { highlightId: string };
   Progression: undefined;
   LegalNotice: undefined;
@@ -245,6 +252,9 @@ function AppNavigator() {
         options={{ headerShown: false, animation: "slide_from_right" }}
       />
       <AppStack.Screen name="Tests" component={TestsScreen} options={{ headerShown: true, title: "Tests terrain" }} />
+      {/* « Mon corps » : écran plein en route stack, atteint depuis la carte du
+          hub Séance et depuis la passerelle du feedback. */}
+      <AppStack.Screen name="MonCorps" component={MonCorpsScreen} options={{ headerShown: true, title: "Mon corps" }} />
       <AppStack.Screen name="ExerciseDetail" component={VideoLibraryScreen} options={{ headerShown: true, title: "Fiche exercice" }} />
       <AppStack.Screen
         name="CycleModal"
@@ -740,6 +750,9 @@ export default function RootNavigator() {
             }}
           />
           <AppStack.Screen name="Tests" component={TestsScreen} options={{ headerShown: true, title: "Tests terrain" }} />
+          {/* Le setup profil peut envoyer ici (D6) : la route doit exister AUSSI
+              dans cette pile, sinon la question de fin de setup mènerait nulle part. */}
+          <AppStack.Screen name="MonCorps" component={MonCorpsScreen} options={{ headerShown: true, title: "Mon corps" }} />
       </AppStack.Navigator>
     );
   }

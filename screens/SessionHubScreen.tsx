@@ -10,7 +10,6 @@ import {
   ScrollView,
   Animated,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -24,6 +23,8 @@ import { useHaptics } from "../hooks/useHaptics";
 import { useNavGuard } from "../hooks/useNavGuard";
 import { toDateKey } from "../utils/dateHelpers";
 import { selectPendingSession } from "../utils/sessionHelpers";
+import { Screen } from "../components/ui/Screen";
+import { MonCorpsHubCard } from "../components/monCorps/MonCorpsHubCard";
 
 const palette = theme.colors;
 
@@ -221,7 +222,10 @@ export default function SessionHubScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    // Socle visuel (CLAUDE.md règle 13) : cet écran utilisait une
+    // `<SafeAreaView>` en direct, seul rescapé du whack-a-mole de safe area.
+    // `<Screen>` est la source unique de vérité, header-aware.
+    <Screen>
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
@@ -293,6 +297,12 @@ export default function SessionHubScreen() {
           </Card>
         ) : null}
 
+        {/* MON CORPS (décision D2) — au-dessus du bouton qui fabrique la séance,
+            parce que c'est exactement ce que l'information sert à fabriquer :
+            « je regarde mon corps, puis je lance ». Dans Profil, elle serait
+            rangée avec l'état civil, consultée une fois puis jamais rouverte. */}
+        <MonCorpsHubCard onPress={() => guardNav(() => nav.navigate("MonCorps"))} />
+
         {/* Pas de 2e alerte "Tests terrain" ici : le hub grid ci-dessous (entrée
             "tests" de HUB_OPTIONS) est déjà l'entrée permanente vers Tests, et
             ProfileScreen porte déjà une relance contextuelle avec fraîcheur
@@ -318,7 +328,7 @@ export default function SessionHubScreen() {
           </Text>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

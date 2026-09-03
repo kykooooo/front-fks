@@ -139,10 +139,41 @@ const formatDayFR = (value?: string | Date | null): string => {
   return `${FR_DAYS[d.getDay()]} ${d.getDate()} ${FR_MONTHS[d.getMonth()]}`;
 };
 
+/**
+ * Date RELATIVE lisible FR, calculée sur des CLÉS DE JOUR locales et non sur
+ * des millisecondes : « hier » doit rester « hier » qu'il soit 8 h ou 23 h.
+ *
+ * Retourne `null` quand la date est illisible ou dans le futur — plutôt qu'un
+ * « il y a 0 jour » qui aurait l'air d'une information.
+ */
+const formatDateRelativeFR = (
+  value?: string | Date | null,
+  todayKey?: string
+): string | null => {
+  const jour = toDateKey(value);
+  const reference = todayKey || toDateKey(new Date());
+  if (!jour || !reference) return null;
+  if (jour > reference) return null;
+  if (jour === reference) return "aujourd'hui";
+
+  const debut = new Date(`${jour}T12:00:00`);
+  const fin = new Date(`${reference}T12:00:00`);
+  if (Number.isNaN(debut.getTime()) || Number.isNaN(fin.getTime())) return null;
+  const jours = Math.round((fin.getTime() - debut.getTime()) / 86_400_000);
+
+  if (jours === 1) return "hier";
+  if (jours < 7) return `il y a ${jours} jours`;
+  if (jours < 14) return "il y a une semaine";
+  if (jours < 31) return `il y a ${Math.floor(jours / 7)} semaines`;
+  if (jours < 62) return "il y a un mois";
+  return `il y a ${Math.floor(jours / 30)} mois`;
+};
+
 export {
   toDateKey,
   isSameDay,
   frToKey,
+  formatDateRelativeFR,
   dayKeyToDow,
   isClubDay,
   lastNDates,
