@@ -419,6 +419,285 @@ describe("decisionApresEchec — postGeneration (lot 1)", () => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * 1quater. REFUS DE SÉCURITÉ (P0 du 01/09/2026)
+ *
+ * Le moteur refuse une séance quand le joueur a déclaré une douleur récente
+ * forte (drapeau RF1) ou une blessure grave (RF2). Ce refus arrivait en 500
+ * `{ok:false,error:"invalid_version"}` : sans `code` ni `message`, le front
+ * le lisait comme une panne serveur et affichait « Le service est
+ * momentanément indisponible… réessaie ». Le joueur croyait à une panne et
+ * retapait — contre un mur, sans jamais savoir que c'est SA douleur qui
+ * bloquait.
+ *
+ * Nouveau contrat : HTTP 422, `code: "safety_no_session"`, `message`,
+ * `safety_flags[]`, `disclaimer?`. Ce n'est pas une panne : catégorie
+ * dédiée, aucun ré-essai proposé, et une explication qui nomme la
+ * déclaration en cause — jamais le code du drapeau, jamais un nombre de
+ * jours que le front ne connaît pas.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/** Corps du refus de sécurité, tel que le backend le renvoie en 422. */
+const corpsRefusSecurite = (params: {
+  message?: string | null;
+  flags?: string[];
+  disclaimer?: string;
+  requestId?: string;
+}) =>
+  JSON.stringify({
+    ok: false,
+    code: "safety_no_session",
+    error: "safety_no_session",
+    ...(params.message === undefined ? {} : { message: params.message }),
+    ...(params.flags ? { safety_flags: params.flags } : {}),
+    ...(params.disclaimer ? { disclaimer: params.disclaimer } : {}),
+    ...(params.requestId ? { requestId: params.requestId } : {}),
+  });
+
+const erreurRefusSecurite = (
+  params: Parameters<typeof corpsRefusSecurite>[0],
+  retryAfterS?: number
+) =>
+  new BackendError(
+    422,
+    "Unprocessable Entity",
+    corpsRefusSecurite(params),
+    undefined,
+    retryAfterS
+  );
+
+const PHRASE_BACKEND =
+  "On ne te propose pas de séance aujourd'hui : tu as signalé une douleur importante après ta dernière séance.";
+
+const PHRASE_DOULEUR =
+  "C'est la douleur que tu as indiquée à ton dernier feedback qui déclenche cette prudence.";
+const PHRASE_BLESSURE =
+  "C'est la blessure que tu as déclarée (gravité forte) qui déclenche cette prudence.";
+const PHRASE_SORTIE = "Le repos est la séance du jour.";
+const PHRASE_SANTE = "Si la douleur persiste, consulte un professionnel de santé.";
+
+/** Ce qu'un refus de sécurité ne doit JAMAIS contenir, quel que soit le cas. */
+function verifierInterditsSecurite(messageJoueur: string) {
+  const minuscule = messageJoueur.toLowerCase();
+  expect(minuscule).not.toContain("réessai"); // « réessaie », « réessayer »…
+  expect(minuscule).not.toContain("reessai");
+  expect(minuscule).not.toContain("indisponible");
+  expect(minuscule).not.toContain("erreur");
+  // Jargon interne : les identifiants de drapeaux ne sortent jamais.
+  expect(messageJoueur).not.toContain("RF1");
+  expect(messageJoueur).not.toContain("RF2");
+  expect(messageJoueur).not.toContain("safety");
+  // Aucun compteur inventé : le front ignore la fenêtre appliquée au moteur.
+  expect(messageJoueur).not.toMatch(/\d+\s*jour/i);
+}
+
+describe("lireEchecGeneration — refus de securite (422 safety_no_session)", () => {
+  test("RF1 (douleur recente forte) : categorie dediee, phrase backend + explication douleur, AUCUN re-essai", () => {
+    const echec = lireEchecGeneration(
+      erreurRefusSecurite({ message: PHRASE_BACKEND, flags: ["RF1_pain_recent_high"] })
+    );
+
+    expect(echec.source).toBe("contrat");
+    expect(echec.code).toBe("safety_no_session");
+    // Ni SERVER ni RESEAU : ce n'est pas une panne.
+    expect(echec.categorie).toBe("securite");
+    expect(echec.retryable).toBe(false);
+
+    // La phrase du backend est en tête, puis l'explication honnête.
+    expect(echec.messageJoueur.startsWith(PHRASE_BACKEND)).toBe(true);
+    expect(echec.messageJoueur).toContain(PHRASE_DOULEUR);
+    expect(echec.messageJoueur).not.toContain(PHRASE_BLESSURE);
+    expect(echec.messageJoueur).toContain(PHRASE_SORTIE);
+    expect(echec.messageJoueur).toContain("tant que ta dernière déclaration est récente");
+    expect(echec.messageJoueur).toContain(PHRASE_SANTE);
+    verifierInterditsSecurite(echec.messageJoueur);
+
+    // Une seule sortie, et surtout pas « Réessayer ».
+    expect(echec.actions).toEqual(["retour_accueil"]);
+    expect(echec.actions).not.toContain("reessayer");
+    expect(echec.actions).not.toContain("modifier_contraintes");
+  });
+
+  test("RF2 (blessure severite 3) : explication blessure, pas l'explication douleur", () => {
+    const echec = lireEchecGeneration(
+      erreurRefusSecurite({
+        message: "Aucune séance tant que ta blessure est déclarée.",
+        flags: ["RF2_severite_3"],
+      })
+    );
+
+    expect(echec.categorie).toBe("securite");
+    expect(echec.messageJoueur).toContain(PHRASE_BLESSURE);
+    expect(echec.messageJoueur).not.toContain(PHRASE_DOULEUR);
+    expect(echec.messageJoueur).toContain(PHRASE_SORTIE);
+    verifierInterditsSecurite(echec.messageJoueur);
+    expect(echec.actions).toEqual(["retour_accueil"]);
+  });
+
+  test("RF1 + RF2 : les DEUX explications, dans l'ordre douleur puis blessure", () => {
+    const echec = lireEchecGeneration(
+      erreurRefusSecurite({
+        message: PHRASE_BACKEND,
+        flags: ["RF2_severite_3", "RF1_pain_recent_high"],
+      })
+    );
+
+    expect(echec.messageJoueur).toContain(PHRASE_DOULEUR);
+    expect(echec.messageJoueur).toContain(PHRASE_BLESSURE);
+    expect(echec.messageJoueur.indexOf(PHRASE_DOULEUR)).toBeLessThan(
+      echec.messageJoueur.indexOf(PHRASE_BLESSURE)
+    );
+    verifierInterditsSecurite(echec.messageJoueur);
+  });
+
+  test("disclaimer fourni par le backend : repris tel quel, le front n'en ecrit pas un second", () => {
+    const disclaimer = "En cas de douleur qui dure, prends l'avis d'un kiné ou d'un médecin.";
+    const echec = lireEchecGeneration(
+      erreurRefusSecurite({
+        message: PHRASE_BACKEND,
+        flags: ["RF1_pain_recent_high"],
+        disclaimer,
+      })
+    );
+
+    expect(echec.messageJoueur).toContain(disclaimer);
+    expect(echec.messageJoueur).not.toContain(PHRASE_SANTE);
+  });
+
+  test("sans drapeau : pas d'explication inventee, mais la voie de sortie reste", () => {
+    const echec = lireEchecGeneration(erreurRefusSecurite({ message: PHRASE_BACKEND }));
+
+    expect(echec.categorie).toBe("securite");
+    expect(echec.messageJoueur).not.toContain(PHRASE_DOULEUR);
+    expect(echec.messageJoueur).not.toContain(PHRASE_BLESSURE);
+    expect(echec.messageJoueur).toContain(PHRASE_SORTIE);
+    expect(echec.actions).toEqual(["retour_accueil"]);
+  });
+
+  test("drapeau inconnu du front : ignore, jamais affiche, jamais de plantage", () => {
+    const echec = lireEchecGeneration(
+      erreurRefusSecurite({ message: PHRASE_BACKEND, flags: ["RF9_futur_drapeau"] })
+    );
+
+    expect(echec.categorie).toBe("securite");
+    expect(echec.messageJoueur).not.toContain("RF9");
+    expect(echec.messageJoueur).toContain(PHRASE_SORTIE);
+  });
+
+  test("corps 422 abime (safety_no_session SANS message) : repli sur, jamais 'modifie tes reglages'", () => {
+    const echec = lireEchecGeneration(
+      erreurRefusSecurite({ message: undefined, flags: ["RF1_pain_recent_high"] })
+    );
+
+    expect(echec.categorie).toBe("securite");
+    expect(echec.code).toBe("safety_no_session");
+    expect(echec.messageJoueur).toContain("On ne te propose pas de séance aujourd'hui");
+    expect(echec.messageJoueur).toContain(PHRASE_DOULEUR);
+    verifierInterditsSecurite(echec.messageJoueur);
+    expect(echec.actions).toEqual(["retour_accueil"]);
+    expect(echec.messageJoueur).not.toContain("Modifie ton lieu");
+  });
+
+  test("message vide : meme repli sur, aucune chaine vide affichee", () => {
+    const echec = lireEchecGeneration(
+      erreurRefusSecurite({ message: "   ", flags: ["RF2_severite_3"] })
+    );
+    expect(echec.categorie).toBe("securite");
+    expect(echec.messageJoueur.trim().length).toBeGreaterThan(0);
+    expect(echec.messageJoueur).toContain(PHRASE_BLESSURE);
+  });
+
+  test("retryable:true dans le corps ne rend PAS le refus retryable", () => {
+    const corps = JSON.stringify({
+      ok: false,
+      code: "safety_no_session",
+      error: "safety_no_session",
+      retryable: true,
+      message: PHRASE_BACKEND,
+      safety_flags: ["RF1_pain_recent_high"],
+    });
+    const echec = lireEchecGeneration(new BackendError(422, "Unprocessable Entity", corps));
+
+    expect(echec.retryable).toBe(false);
+    expect(echec.actions).not.toContain("reessayer");
+  });
+
+  test("un Retry-After sur un refus de securite n'affiche aucun compte a rebours", () => {
+    const echec = lireEchecGeneration(
+      erreurRefusSecurite({ message: PHRASE_BACKEND, flags: ["RF1_pain_recent_high"] }, 30)
+    );
+    expect(echec.attendreS).toBeNull();
+  });
+
+  test("une seance rouvrable ne transforme pas le refus en 'Reprendre ma seance'", () => {
+    const decision = decisionApresEchec({
+      erreur: erreurRefusSecurite({ message: PHRASE_BACKEND, flags: ["RF1_pain_recent_high"] }),
+      sessions: [vraieSeance()],
+      todayKey: AUJOURDHUI,
+    });
+
+    expect(decision.echec.categorie).toBe("securite");
+    expect(decision.actions).toEqual(["retour_accueil"]);
+    expect(decision.actions).not.toContain("reprendre_seance");
+    expect(decision.seanceCreee).toBeNull();
+  });
+
+  test("REGRESSION : un vrai 500 sans contrat reste une panne 'indisponible'", () => {
+    // Forme exacte du bug de prod (01/09) : tant que le backend répond ça, le
+    // front n'a AUCUN moyen de savoir que c'est un refus — et il ne doit pas
+    // deviner. Ce test verrouille la frontière : c'est le 422 typé, et lui
+    // seul, qui déclenche le message de sécurité.
+    const echec = lireEchecGeneration(
+      new BackendError(500, "Internal Server Error", JSON.stringify({ ok: false, error: "invalid_version" }))
+    );
+    expect(echec.categorie).toBe("transitoire");
+    expect(echec.messageJoueur).toContain("momentanément indisponible");
+    expect(echec.messageJoueur).not.toContain(PHRASE_DOULEUR);
+  });
+
+  test("422 sportif ordinaire (sans safety_no_session) : comportement inchange", () => {
+    const echec = lireEchecGeneration(
+      erreurContrat(422, {
+        code: "NO_VALID_PRESCRIPTION",
+        category: "sportif",
+        retryable: false,
+        message: "Rien n'a été ajouté à ton programme.",
+      })
+    );
+    expect(echec.categorie).toBe("sportif");
+    expect(echec.actions[0]).toBe("modifier_contraintes");
+    expect(echec.actions).toContain("reessayer");
+  });
+});
+
+describe("lireEchecGeneration — missing_goal, enfin lu (le contrat porte code ET message)", () => {
+  test("missing_goal : message backend affiche tel quel, 'Choisir un cycle' en tete", () => {
+    const message = "Choisis d'abord un cycle : sans objectif, on ne prépare pas de séance.";
+    const corps = JSON.stringify({
+      ok: false,
+      code: "missing_goal",
+      error: "missing_goal",
+      message,
+    });
+    const echec = lireEchecGeneration(new BackendError(422, "Unprocessable Entity", corps));
+
+    expect(echec.source).toBe("contrat");
+    expect(echec.code).toBe("missing_goal");
+    expect(echec.messageJoueur).toBe(message);
+    expect(echec.actions[0]).toBe("choisir_cycle");
+    expect(echec.actions).toContain("retour_accueil");
+  });
+
+  test("missing_goal sans message : le corps ne fait pas foi, repli client (aucun texte vide)", () => {
+    const corps = JSON.stringify({ ok: false, code: "missing_goal", error: "missing_goal" });
+    const echec = lireEchecGeneration(new BackendError(400, "Bad Request", corps));
+
+    expect(echec.source).toBe("client");
+    expect(echec.messageJoueur.trim().length).toBeGreaterThan(0);
+    expect(echec.messageJoueur).toContain("Aucune séance n'a été enregistrée");
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * 2. Réouverture : une VRAIE séance oui, une séance artificielle jamais
  * ═══════════════════════════════════════════════════════════════════════ */
 

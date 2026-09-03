@@ -16,8 +16,20 @@ import { ErrorType, classifyError } from "../../utils/errorHandler";
 import { estSeanceArtificielle, selectPendingSession } from "../../utils/sessionHelpers";
 import type { FKS_NextSessionV2 } from "./types";
 
-/** Catégories du contrat backend (§2.1). Jamais affichées au joueur. */
-export type CategorieEchec = "transitoire" | "sportif" | "technique";
+/**
+ * Catégories du contrat backend (§2.1). Jamais affichées au joueur.
+ *
+ * `securite` n'est PAS une panne : c'est un refus délibéré du moteur quand le
+ * joueur a déclaré une douleur récente forte ou une blessure grave. Elle est
+ * déduite du code `safety_no_session` (le backend n'envoie pas de `category`
+ * sur ce corps-là), et elle ne propose jamais de ré-essai — relancer ne
+ * change rien tant que la déclaration est là, et le laisser croire le
+ * contraire pousserait le joueur à s'entraîner blessé.
+ */
+export type CategorieEchec = "transitoire" | "sportif" | "technique" | "securite";
+
+/** Code du refus de sécurité (contrat backend, HTTP 422). */
+export const CODE_REFUS_SECURITE = "safety_no_session";
 
 /** Sorties proposées au joueur. La première du tableau est la principale. */
 export type ActionEchec =
@@ -149,7 +161,37 @@ type CorpsContrat = {
   retryable: boolean;
   message: string;
   requestId: string | null;
+  /** Drapeaux du refus de sécurité (`safety_flags`). Vide sinon. */
+  drapeauxSecurite: string[];
+  /** Avertissement santé rédigé par le backend, quand il en fournit un. */
+  disclaimer: string | null;
 };
+
+/** Décode le corps HTTP brut porté par `error.message`, sans rien interpréter. */
+function analyserCorpsBrut(brut: unknown): Record<string, unknown> | null {
+  if (typeof brut !== "string") return null;
+  const texte = brut.trim();
+  if (!texte.startsWith("{")) return null;
+
+  let analyse: unknown;
+  try {
+    analyse = JSON.parse(texte);
+  } catch {
+    return null;
+  }
+  if (!analyse || typeof analyse !== "object" || Array.isArray(analyse)) return null;
+  return analyse as Record<string, unknown>;
+}
+
+function lireTexte(valeur: unknown): string {
+  return typeof valeur === "string" ? valeur.trim() : "";
+}
+
+/** `safety_flags` : liste de chaînes, toujours rendue comme un tableau. */
+function lireDrapeauxSecurite(valeur: unknown): string[] {
+  if (!Array.isArray(valeur)) return [];
+  return valeur.map((d) => lireTexte(d)).filter((d) => d.length > 0);
+}
 
 /**
  * Lit le corps d'erreur typé du backend (§2.1 : huit champs, jamais un
@@ -158,36 +200,111 @@ type CorpsContrat = {
  * qu'il ne faut surtout pas montrer au joueur.
  */
 function lireCorpsContrat(brut: unknown): CorpsContrat | null {
-  if (typeof brut !== "string") return null;
-  const texte = brut.trim();
-  if (!texte.startsWith("{")) return null;
+  const analyse = analyserCorpsBrut(brut);
+  if (!analyse) return null;
 
-  let analyse: Record<string, unknown>;
-  try {
-    analyse = JSON.parse(texte) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-  if (!analyse || typeof analyse !== "object") return null;
-
-  const code = typeof analyse.code === "string" ? analyse.code.trim() : "";
-  const message = typeof analyse.message === "string" ? analyse.message.trim() : "";
+  const code = lireTexte(analyse.code);
+  const message = lireTexte(analyse.message);
   if (!code || !message) return null;
 
-  const retryable = analyse.retryable === true;
-  const categorie: CategorieEchec =
-    typeof analyse.category === "string" && CATEGORIES.includes(analyse.category)
-      ? (analyse.category as CategorieEchec)
-      : retryable
-      ? "transitoire"
-      : "technique";
+  const drapeauxSecurite = lireDrapeauxSecurite(analyse.safety_flags);
+  const disclaimerBackend = lireTexte(analyse.disclaimer);
+  const refusSecurite = code === CODE_REFUS_SECURITE;
 
-  const requestId =
-    typeof analyse.requestId === "string" && analyse.requestId.trim()
-      ? analyse.requestId.trim()
-      : null;
+  // Un refus de sécurité n'est jamais retryable, quoi que dise le corps :
+  // le moteur refusera à l'identique tant que la déclaration est récente.
+  const retryable = refusSecurite ? false : analyse.retryable === true;
+  const categorie: CategorieEchec = refusSecurite
+    ? "securite"
+    : typeof analyse.category === "string" && CATEGORIES.includes(analyse.category)
+    ? (analyse.category as CategorieEchec)
+    : retryable
+    ? "transitoire"
+    : "technique";
 
-  return { code, categorie, retryable, message, requestId };
+  const requestId = lireTexte(analyse.requestId) || null;
+
+  return {
+    code,
+    categorie,
+    retryable,
+    message,
+    requestId,
+    drapeauxSecurite,
+    disclaimer: disclaimerBackend || null,
+  };
+}
+
+/* ─── Refus de sécurité : le texte montré au joueur ────────────────────────
+ * Le backend écrit la phrase de tête (la raison sportive, rédigée d'avance).
+ * Le front n'y ajoute que ce qu'il sait de source sûre : QUELLE déclaration
+ * du joueur a déclenché la prudence, et ce qu'il fait aujourd'hui. Aucun
+ * nombre de jours n'est affiché — le front ne connaît pas la fenêtre appliquée
+ * par le moteur, donc il n'en invente pas. Les identifiants de drapeaux
+ * (RF1…, RF2…) ne sortent JAMAIS de ce fichier. */
+
+const TEXTES_SECURITE = {
+  /** Utilisé seulement si le backend n'a pas fourni de `message` (corps abîmé). */
+  entete:
+    "On ne te propose pas de séance aujourd'hui : ta dernière déclaration demande de la prudence.",
+  douleur:
+    "C'est la douleur que tu as indiquée à ton dernier feedback qui déclenche cette prudence.",
+  blessure:
+    "C'est la blessure que tu as déclarée (gravité forte) qui déclenche cette prudence.",
+  sortie:
+    "Le repos est la séance du jour. Cette prudence s'applique tant que ta dernière déclaration est récente.",
+  disclaimer: "Si la douleur persiste, consulte un professionnel de santé.",
+} as const;
+
+/**
+ * Assemble le message d'un refus de sécurité : phrase du backend, explication
+ * honnête selon les drapeaux, voie de sortie, avertissement santé (celui du
+ * backend s'il en envoie un, plutôt qu'un texte écrit ici).
+ */
+export function messageRefusSecurite(params: {
+  message?: string | null;
+  drapeaux?: string[];
+  disclaimer?: string | null;
+}): string {
+  const drapeaux = params.drapeaux ?? [];
+  const douleur = drapeaux.some((d) => d.toUpperCase().startsWith("RF1"));
+  const blessure = drapeaux.some((d) => d.toUpperCase().startsWith("RF2"));
+
+  const paragraphes = [lireTexte(params.message) || TEXTES_SECURITE.entete];
+  if (douleur) paragraphes.push(TEXTES_SECURITE.douleur);
+  if (blessure) paragraphes.push(TEXTES_SECURITE.blessure);
+  paragraphes.push(TEXTES_SECURITE.sortie);
+  paragraphes.push(lireTexte(params.disclaimer) || TEXTES_SECURITE.disclaimer);
+
+  return paragraphes.join("\n\n");
+}
+
+/**
+ * Refus de sécurité dont le corps est incomplet (`message` manquant ou vide) :
+ * on ne retombe PAS sur la classification client, qui dirait « modifie ton
+ * lieu ou ton matériel, puis réessaie ». Ce serait pousser un joueur douloureux
+ * à retaper contre un refus qui ne bougera pas.
+ */
+function lireRefusSecuriteDegrade(brut: unknown): EchecGeneration | null {
+  const analyse = analyserCorpsBrut(brut);
+  if (!analyse) return null;
+  const code = lireTexte(analyse.code) || lireTexte(analyse.error);
+  if (code !== CODE_REFUS_SECURITE) return null;
+
+  return {
+    source: "contrat",
+    code: CODE_REFUS_SECURITE,
+    categorie: "securite",
+    retryable: false,
+    messageJoueur: messageRefusSecurite({
+      message: lireTexte(analyse.message),
+      drapeaux: lireDrapeauxSecurite(analyse.safety_flags),
+      disclaimer: lireTexte(analyse.disclaimer),
+    }),
+    requestId: lireTexte(analyse.requestId) || null,
+    attendreS: null,
+    actions: ["retour_accueil"],
+  };
 }
 
 /**
@@ -196,6 +313,11 @@ function lireCorpsContrat(brut: unknown): CorpsContrat | null {
  * l'identique une demande impossible ne la rendra pas possible.
  */
 function actionsDuContrat(corps: CorpsContrat): ActionEchec[] {
+  // Refus de sécurité : une seule sortie, et surtout PAS « Réessayer ».
+  // Modifier son matériel ne lève pas une douleur déclarée non plus.
+  if (corps.categorie === "securite") {
+    return ["retour_accueil"];
+  }
   if (corps.code === "missing_goal") {
     return ["choisir_cycle", "reessayer", "retour_accueil"];
   }
@@ -312,17 +434,34 @@ export function lireEchecGeneration(erreur: unknown): EchecGeneration {
     // délai à respecter alors que le backend l'a bien communiqué.
     const attendreS =
       typeof brut.retryAfterS === "number" && brut.retryAfterS > 0 ? brut.retryAfterS : null;
+    const refusSecurite = corps.categorie === "securite";
     return {
       source: "contrat",
       code: corps.code,
       categorie: corps.categorie,
       retryable: corps.retryable,
-      messageJoueur: corps.message,
+      // §6 : le message backend est affiché tel quel. Pour un refus de
+      // sécurité, il reste la phrase de tête — le front ajoute seulement
+      // l'explication et la voie de sortie, jamais un chiffre.
+      messageJoueur: refusSecurite
+        ? messageRefusSecurite({
+            message: corps.message,
+            drapeaux: corps.drapeauxSecurite,
+            disclaimer: corps.disclaimer,
+          })
+        : corps.message,
       requestId: corps.requestId,
-      attendreS,
+      // Un refus de sécurité n'a pas de délai à faire patienter : il n'y a
+      // rien à relancer une fois le compteur écoulé.
+      attendreS: refusSecurite ? null : attendreS,
       actions: actionsDuContrat(corps),
     };
   }
+
+  // Refus de sécurité au corps abîmé : traité avant la classification client,
+  // qui en ferait un « modifie tes réglages et réessaie » trompeur.
+  const refusDegrade = lireRefusSecuriteDegrade(brut.message);
+  if (refusDegrade) return refusDegrade;
 
   return echecCote(erreur);
 }
@@ -452,9 +591,14 @@ export function decisionApresEchec(params: {
     uid: params.uid ?? null,
   });
 
-  const actions: ActionEchec[] = reprise.reouvrable
-    ? [...echec.actions.slice(0, 1), "reprendre_seance", ...echec.actions.slice(1)]
-    : [...echec.actions];
+  // Refus de sécurité : on ne propose pas non plus de rouvrir une séance déjà
+  // prescrite. « Le repos est la séance du jour » et un bouton « Reprendre ma
+  // séance » juste en dessous se contrediraient — et c'est le bouton qui
+  // gagnerait.
+  const actions: ActionEchec[] =
+    reprise.reouvrable && echec.categorie !== "securite"
+      ? [...echec.actions.slice(0, 1), "reprendre_seance", ...echec.actions.slice(1)]
+      : [...echec.actions];
 
   const postGeneration =
     params.erreur instanceof EchecPostGeneration
