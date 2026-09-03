@@ -62,6 +62,9 @@ import {
 import { runShake } from "../utils/animations";
 import { theme } from "../constants/theme";
 import { trackEvent } from "../services/analytics";
+import { BODY_AREAS, LIBELLE_GRAVITE, LIBELLE_ZONE } from "../domain/monCorps/zones";
+import type { BodyArea, BodyInjurySeverity } from "../domain/types";
+import { ajouterGene } from "../hooks/monCorps/monCorpsActions";
 
 // 5 → 4 étapes (mai 2026) : le matériel (29 cases, ≥1 obligatoire) sort du
 // setup — cf. docs/onboarding-design.md §4.6/§4.3 (design validé par le
@@ -176,6 +179,15 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   const [clubTrainingDays, setClubTrainingDays] = useState<string[]>([]);
   const [matchDays, setMatchDays] = useState<string[]>([]);
   const [hasGymAccess, setHasGymAccess] = useState<"oui" | "occasionnel" | "non" | "">("");
+  // Question santé du setup (D6). Écrite dans « Mon corps » à l'enregistrement,
+  // jamais dans le profil Firestore : le détail d'une blessure ne quitte pas
+  // l'appareil (voir state/stores/useBodyStore.ts).
+  const [geneSetup, setGeneSetup] = useState<"oui" | "non" | "">("");
+  const [geneZone, setGeneZone] = useState<BodyArea | null>(null);
+  const [geneGravite, setGeneGravite] = useState<BodyInjurySeverity | null>(null);
+  // Anti-doublon : « Terminer » se retape après un échec réseau (setDoc merge
+  // idempotent, cf. délai de garde P1-05). L'écriture locale, elle, ne l'est pas.
+  const geneEcriteRef = useRef(false);
   // gymEquipment/homeEquipment/hasHomeEquipment : plus de grille dans le setup
   // (docs/onboarding-design.md §4.6, "les 29 cases de matériel disparaissent").
   // Ces états ne sont plus modifiables ici — on les garde uniquement pour
@@ -406,6 +418,15 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
     const autoCycleId = isMicrocycleId(activeCycleGoal)
       ? null
       : recommendMicrocycle({ mainObjective, lastTestPlaylist: null }).id;
+
+    // Gêne déclarée au setup (D6) -> « Mon corps », source `setup`.
+    // Écrite AVANT l'enregistrement Firestore parce qu'elle est locale et
+    // instantanée : elle ne dépend pas du réseau, et si le profil échoue, le
+    // joueur retape « Terminer » — la garde ci-dessous évite le doublon.
+    if (geneSetup === "oui" && geneZone && geneGravite && !geneEcriteRef.current) {
+      ajouterGene({ zone: geneZone, gravite: geneGravite, source: "setup" });
+      geneEcriteRef.current = true;
+    }
 
     try {
       setLoading(true);
@@ -800,6 +821,62 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
             <Text style={styles.hintText}>
               Le matériel exact, tu le choisiras au moment de ta séance.
             </Text>
+
+            {/* UNE SEULE QUESTION SANTÉ DANS LE SETUP (décision D6).
+                Constat de l'audit : le setup ne demandait RIEN sur les gênes.
+                Un joueur qui s'inscrit en revenant de blessure — cas explicite,
+                puisqu'un des objectifs proposés s'appelle « Reprendre apres une
+                blessure » — recevait une première séance qui ignorait
+                complètement son état.
+                Elle écrit dans « Mon corps » (source `setup`), la même et unique
+                source que tout le reste : pas de champ profil parallèle qui
+                divergerait dès la première mise à jour.
+                Elle est FACULTATIVE et ne bloque jamais « Terminer » : le setup
+                doit rester sous trois minutes. */}
+            <Text style={styles.fieldLabel}>Une gêne ou une blessure en ce moment ?</Text>
+            <View style={styles.chipRow}>
+              <Chip
+                label="Non, rien"
+                selected={geneSetup === "non"}
+                onPress={() => setGeneSetup("non")}
+              />
+              <Chip
+                label="Oui"
+                selected={geneSetup === "oui"}
+                onPress={() => setGeneSetup("oui")}
+              />
+            </View>
+
+            {geneSetup === "oui" ? (
+              <>
+                <Text style={styles.fieldLabel}>Où ?</Text>
+                <View style={styles.chipRow}>
+                  {BODY_AREAS.map((z) => (
+                    <Chip
+                      key={z}
+                      label={LIBELLE_ZONE[z]}
+                      selected={geneZone === z}
+                      onPress={() => setGeneZone(z)}
+                    />
+                  ))}
+                </View>
+                <Text style={styles.fieldLabel}>Ça t'empêche de quoi ?</Text>
+                <View style={styles.chipRow}>
+                  {([1, 2, 3] as BodyInjurySeverity[]).map((g) => (
+                    <Chip
+                      key={g}
+                      label={LIBELLE_GRAVITE[g]}
+                      selected={geneGravite === g}
+                      onPress={() => setGeneGravite(g)}
+                    />
+                  ))}
+                </View>
+                <Text style={styles.hintText}>
+                  Tu pourras la mettre à jour quand tu veux depuis « Mon corps »,
+                  dans l'onglet Séance.
+                </Text>
+              </>
+            ) : null}
           </>
         );
 
