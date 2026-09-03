@@ -130,20 +130,82 @@ inconnue) est également classifiée côté client par `echecCote()`, qui
 délègue à `utils/errorHandler.ts` (`classifyError`) — **jamais une seconde
 liste de codes concurrente**.
 
+### §2.3 — Refus de sécurité (`safety_no_session`, ajouté le 01/09/2026)
+
+Le moteur refuse de prescrire quand le joueur a déclaré une douleur récente
+forte ou une blessure grave. Ce n'est **pas** une panne, et ce corps a sa
+propre forme (HTTP **422**) :
+
+```json
+{
+  "ok": false,
+  "code": "safety_no_session",
+  "error": "safety_no_session",
+  "message": "Phrase de sécurité, écrite par le backend, affichée en tête.",
+  "disclaimer": "Avertissement santé, optionnel.",
+  "safety_flags": ["RF1_pain_recent_high"]
+}
+```
+
+Deux champs de plus que §2.1, lus par le front :
+
+| Champ | Type | Lu comme |
+|---|---|---|
+| `safety_flags` | string[], optionnel | Choisit l'explication affichée : un drapeau commençant par `RF1` → phrase « douleur », par `RF2` → phrase « blessure ». Un drapeau inconnu est ignoré ; les identifiants eux-mêmes ne sont **jamais** affichés |
+| `disclaimer` | string, optionnel | Remplace l'avertissement santé écrit par le front |
+
+Trois différences de traitement, verrouillées par les tests
+(`echecGeneration.test.ts`, section « refus de securite ») :
+
+1. **Catégorie dédiée** `securite` — déduite du `code`, pas d'un champ
+   `category` (le backend n'en envoie pas ici). Ni `transitoire` ni
+   `technique` : le joueur ne doit jamais lire « le service est
+   indisponible » alors que le service a parfaitement fonctionné.
+2. **Aucun ré-essai** : `retryable` est forcé à `false` même si le corps dit
+   l'inverse, `attendreS` reste `null`, `actions` vaut exactement
+   `["retour_accueil"]`, et `decisionApresEchec` n'ajoute pas
+   `reprendre_seance` (« Le repos est la séance du jour » et un bouton
+   « Reprendre ma séance » se contrediraient).
+3. **Message composé, pas remplacé** : le `message` backend reste en tête,
+   suivi de l'explication tirée des drapeaux, de la voie de sortie
+   (« Le repos est la séance du jour. Cette prudence s'applique tant que ta
+   dernière déclaration est récente. ») et de l'avertissement santé. Le front
+   n'affiche **aucun nombre de jours** : la fenêtre appliquée est une décision
+   du moteur, le front ne la connaît pas et ne l'invente pas (règle 12 du
+   CLAUDE.md).
+
+**Corps abîmé** : si `code` vaut `safety_no_session` mais que `message`
+manque, le front ne retombe **pas** sur la classification client — qui
+dirait « modifie ton lieu ou ton matériel, puis réessaie », c'est-à-dire
+pousserait un joueur douloureux à retaper contre un mur. Il écrit sa propre
+phrase de tête et garde tout le reste du traitement de sécurité
+(`lireRefusSecuriteDegrade`).
+
+**Avant ce correctif (P0 vivant en prod le 01/09/2026)** : ce refus sortait
+en `500 {"ok":false,"error":"invalid_version"}`. Sans `code` ni `message`,
+`lireCorpsContrat` rendait `null`, le front classait `ErrorType.SERVER` et
+affichait « Le service est momentanément indisponible… réessaie ». Le joueur
+croyait à une panne et relançait, sans jamais apprendre que c'était sa propre
+déclaration de douleur qui bloquait. Un test de non-régression garde la
+frontière : un vrai 500 sans contrat reste une panne « indisponible » — c'est
+le 422 typé, et lui seul, qui déclenche le message de sécurité.
+
 ---
 
 ## §3 — Taxonomie
 
 ### §3.1 — Catégories
 
-Trois catégories, et seulement trois (`CategorieEchec`,
-`echecGeneration.ts:20`, `CATEGORIES`, `echecGeneration.ts:144`) :
+Quatre catégories (`CategorieEchec`, `echecGeneration.ts`). Trois sont
+déclarables par le backend dans son champ `category` (`CATEGORIES`) ; la
+quatrième, `securite`, est déduite du code et ne peut pas être déclarée :
 
 | Catégorie | Signification | Effet sur les actions (§4.3) |
 |---|---|---|
 | `transitoire` | Panne probablement passagère (réseau, timeout, serveur surchargé, rate limit, 5xx contrat retryable) | Action principale : `reessayer` |
 | `sportif` | Le backend n'a pas pu construire une séance sûre/utile avec les contraintes actuelles (matériel, douleurs, temps, objectif) | Action principale : `modifier_contraintes` |
 | `technique` | Panne interne non retryable en l'état (ex. budget de génération dépassé) | Action principale : `reessayer` (le joueur reste libre d'essayer, mais rien ne garantit que ça change) |
+| `securite` | Pas une panne : refus délibéré du moteur sur déclaration de douleur/blessure (§2.3) | Une seule action, `retour_accueil` — **jamais** de ré-essai, jamais de reprise |
 
 ### §3.2 — Codes observés
 
@@ -161,7 +223,8 @@ exemples réels de ce que le backend peut renvoyer — cette liste est
 | `SESSION_CONTRACT_FAILED` | 422 | `sportif` | `false` |
 | `SESSION_CONSTRAINTS_UNRESOLVED` | 422 | `sportif` | `false` |
 | `SESSION_SCHEMA_INVALID` | 422 | `technique` | `false` |
-| `missing_goal` | 400 | `sportif` | `false` |
+| `missing_goal` | 400 / 422 | `technique` (le corps ne porte pas de `category`) | `false` |
+| `safety_no_session` | 422 | `securite` (§2.3) | `false`, toujours |
 | `generation_budget_exceeded` | 503 | `technique` | `false` |
 
 ---
@@ -176,8 +239,11 @@ tableau `EchecGeneration.actions` est la principale (bouton mis en avant dans
 
 ### §4.3 — Règle de sélection (chemin contrat)
 
-`actionsDuContrat()` (`echecGeneration.ts:198-206`) :
+`actionsDuContrat()` :
 
+0. `categorie === "securite"` (§2.3) → `["retour_accueil"]`, et rien d'autre.
+   Ni `reessayer` (le refus ne bougera pas), ni `modifier_contraintes`
+   (changer de matériel ne lève pas une douleur déclarée).
 1. `code === "missing_goal"` → `["choisir_cycle", "reessayer", "retour_accueil"]`
    (relancer à l'identique sans cycle choisi ne sert à rien : l'action utile
    est de choisir un cycle d'abord).
@@ -189,10 +255,10 @@ type d'erreur : `VALIDATION` → `modifier_contraintes` en tête ; `AUTH` →
 `se_reconnecter` en tête ; les autres → `reessayer` en tête. Toutes se
 terminent par `retour_accueil`.
 
-`decisionApresEchec()` (`echecGeneration.ts:442`) ajoute ensuite
-`reprendre_seance` en **deuxième position** (juste après l'action
-principale, jamais devant) quand une vraie séance déjà persistée peut être
-rouverte (§5.3).
+`decisionApresEchec()` ajoute ensuite `reprendre_seance` en **deuxième
+position** (juste après l'action principale, jamais devant) quand une vraie
+séance déjà persistée peut être rouverte (§5.3) — **sauf** sur un refus de
+sécurité, où aucune séance n'est proposée à la réouverture (§2.3).
 
 ---
 
@@ -232,11 +298,18 @@ séance existait déjà avant la panne.
 ## §6 — Le message est affiché tel quel
 
 Quand le contrat backend est présent (§2), son champ `message` est montré au
-joueur **sans modification** (`EchecGeneration.messageJoueur = corps.message`,
-`echecGeneration.ts:313-323`) — c'est le backend qui rédige le texte définitif
-dans ce cas. `CarteEchecGeneration` l'affiche dans un seul bloc de texte,
-jamais tronqué au-delà de 6 lignes (`numberOfLines={6}`,
-`screens/newSession/ui/CarteEchecGeneration.tsx:66`).
+joueur **sans modification** (`EchecGeneration.messageJoueur = corps.message`)
+— c'est le backend qui rédige le texte définitif dans ce cas.
+`CarteEchecGeneration` l'affiche dans un seul bloc de texte, jamais tronqué
+au-delà de 6 lignes (`numberOfLines={6}`).
+
+**Seule exception, le refus de sécurité (§2.3)** : le `message` backend n'est
+pas remplacé, il est mis **en tête** d'un texte composé (explication + voie de
+sortie + avertissement santé). Ce texte étant plus long, la carte lui accorde
+16 lignes et une couleur de texte pleine, sur un encadré teinté — un message
+de coach, pas un état d'erreur : titre « Pas de séance aujourd'hui » au lieu
+de « On n'a pas pu préparer ta séance », et pas de référence support (rien
+n'est cassé, il n'y a pas d'incident à faire remonter).
 
 Quand il n'y a **pas** de corps contrat (§2.2), le front rédige lui-même le
 texte (`MESSAGES`, `echecGeneration.ts:129-142`) — toujours sur le même

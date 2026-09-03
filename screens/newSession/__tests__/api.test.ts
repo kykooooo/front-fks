@@ -14,6 +14,7 @@ import {
   setSessionCache,
   clearSessionCache,
 } from "../api";
+import { lireEchecGeneration } from "../echecGeneration";
 
 const originalFetch = global.fetch;
 
@@ -360,6 +361,105 @@ describe("fetchV2 — reparation Zod detectee au-dela du seuil (lot 3)", () => {
 
     const { v2 } = await fetchV2({ some: "ctx" });
     expect(v2.title).toBe("Ma vraie séance du jour");
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Transport du refus de sécurité (422) — P0 du 01/09/2026
+ *
+ * Le refus de sécurité voyage dans le CORPS d'une réponse 422. Trois choses
+ * doivent survivre au transport, sinon le message de sécurité n'atteint
+ * jamais le joueur : le corps JSON entier (dont `safety_flags`), le statut,
+ * et l'absence de tout ré-essai automatique — une relance silencieuse
+ * repaierait un appel pour se faire refuser à l'identique.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+describe("fetchV2 — refus de securite en 422 : corps preserve, aucun re-essai", () => {
+  const CORPS_REFUS = {
+    ok: false,
+    code: "safety_no_session",
+    error: "safety_no_session",
+    message: "On ne te propose pas de séance aujourd'hui : tu as signalé une douleur importante.",
+    disclaimer: "Si la douleur persiste, consulte un professionnel de santé.",
+    safety_flags: ["RF1_pain_recent_high"],
+  };
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    jest.restoreAllMocks();
+  });
+
+  test("un 422 n'est PAS retente, et son corps JSON arrive intact jusqu'a l'appelant", async () => {
+    let callCount = 0;
+    global.fetch = jest.fn().mockImplementation(() => {
+      callCount += 1;
+      return Promise.resolve({
+        ok: false,
+        status: 422,
+        statusText: "Unprocessable Entity",
+        headers: { get: () => null },
+        text: async () => JSON.stringify(CORPS_REFUS),
+        json: async () => CORPS_REFUS,
+      });
+    }) as any;
+
+    const onRetry = jest.fn();
+    expect.assertions(6);
+    try {
+      await fetchV2({ some: "ctx" }, { onRetry });
+    } catch (err: any) {
+      // Un seul appel payant : le retry cold start ne couvre que
+      // timeout/réseau, jamais une réponse HTTP qualifiée.
+      expect(callCount).toBe(1);
+      expect(onRetry).not.toHaveBeenCalled();
+      expect(err.status).toBe(422);
+
+      const corps = JSON.parse(err.message);
+      expect(corps.code).toBe("safety_no_session");
+      // Le champ le plus fragile : c'est lui qui décide de l'explication
+      // affichée (douleur / blessure). Rien ne doit l'aplatir en route.
+      expect(corps.safety_flags).toEqual(["RF1_pain_recent_high"]);
+      expect(corps.disclaimer).toBe(CORPS_REFUS.disclaimer);
+    }
+  });
+
+  test("bout en bout : le 422 transporte devient le message de securite du joueur", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 422,
+      statusText: "Unprocessable Entity",
+      headers: { get: () => null },
+      text: async () => JSON.stringify(CORPS_REFUS),
+      json: async () => CORPS_REFUS,
+    }) as any;
+
+    expect.assertions(4);
+    try {
+      await fetchV2({ some: "ctx" });
+    } catch (err: any) {
+      const echec = lireEchecGeneration(err);
+      expect(echec.categorie).toBe("securite");
+      expect(echec.actions).toEqual(["retour_accueil"]);
+      expect(echec.messageJoueur).toContain(
+        "C'est la douleur que tu as indiquée à ton dernier feedback"
+      );
+      expect(echec.messageJoueur.toLowerCase()).not.toContain("indisponible");
+    }
+  });
+
+  test("un refus de securite n'est jamais mis en cache (aucune reponse a cacher)", async () => {
+    await clearSessionCache();
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 422,
+      statusText: "Unprocessable Entity",
+      headers: { get: () => null },
+      text: async () => JSON.stringify(CORPS_REFUS),
+      json: async () => CORPS_REFUS,
+    }) as any;
+
+    await expect(fetchV2({ some: "ctx" })).rejects.toBeTruthy();
+    expect(await getSessionCache({ some: "ctx" })).toBeNull();
   });
 });
 
