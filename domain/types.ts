@@ -275,6 +275,63 @@ export interface InjuryRecord {
   note?: string;
 }
 
+// === Mon corps (espace dedie, lot 1) ===
+//
+// CE QUI REMPLACE `InjuryRecord`, ET POURQUOI.
+// `InjuryRecord` etait un objet UNIQUE range dans `dayStates[jour].feedback`,
+// sans statut : une gene "expirait" toute seule au bout de 7 jours, sans qu'on
+// demande jamais au joueur ou il en etait. `BodyInjury` est une LIGNE d'une
+// liste, elle porte un STATUT, et elle ne disparait que si le joueur le dit.
+//
+// Champs disparus par rapport a `InjuryRecord`, tous verifies morts a l'audit
+// (DESIGN_MON_CORPS.md §T4) : `restrictions` (6 interrupteurs jamais lus),
+// `type` aigu/chronique (jamais lu), `lastConfirm` (remplace par `updatedAt`),
+// `startDate` (remplace par `declaredAt`).
+//
+// `InjuryRecord` reste declare : des `dayStates` historiques en contiennent
+// encore, et la migration (state/migration/migrateInjuries.ts) les lit. Plus
+// rien de neuf ne l'ecrit.
+
+/**
+ * Zone declarable dans « Mon corps ».
+ *
+ * = les 10 zones du referentiel partage front/back (`shared/injuryMapping.ts`)
+ * PLUS « aine » (adducteurs / pubalgie), decision D11. Le jeton backend
+ * `groin_pain` existe deja cote moteur ; c'est la zone FR qui manquait.
+ * Le mapping vit dans `domain/monCorps/zones.ts` — pas dans le fichier
+ * partage, qui doit rester byte-identique au backend.
+ */
+export type BodyArea = InjuryArea | 'aine';
+
+/**
+ * Gravite en 3 crans. Le 0 n'existe plus : « c'est passe » se dit par le
+ * STATUT, pas par une valeur nulle deguisee en severite (§T7).
+ * Les valeurs envoyees au moteur restent 1/2/3 (decision D7 : on change les
+ * mots vus par le joueur, pas les chiffres du contrat backend).
+ */
+export type BodyInjurySeverity = 1 | 2 | 3;
+
+/** active = ca gene aujourd'hui · recovering = en reprise · healed = c'est passe. */
+export type BodyInjuryStatus = 'active' | 'recovering' | 'healed';
+
+/** D'ou vient la declaration. Sert au texte affiche, jamais a un calcul. */
+export type BodyInjurySource = 'feedback' | 'manual' | 'setup';
+
+export interface BodyInjury {
+  /** Identifiant stable, genere a la creation. */
+  id: string;
+  zone: BodyArea;
+  gravite: BodyInjurySeverity;
+  statut: BodyInjuryStatus;
+  source: BodyInjurySource;
+  /** Horodatage ISO de la premiere declaration. */
+  declaredAt: string;
+  /** Horodatage ISO du dernier geste du joueur sur cette gene (sert a la relance). */
+  updatedAt: string;
+  /** Note libre du joueur, reaffichee telle quelle. Absente = absente. */
+  note?: string;
+}
+
 // === Daily State / Feedback ===
 export interface DailyFeedback {
   // 1..5, clamp en store

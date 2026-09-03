@@ -11,6 +11,11 @@ import type {
   AdaptiveFactors,
   InjuryRecord,
   AgeCategory,
+  BodyArea,
+  BodyInjury,
+  BodyInjurySeverity,
+  BodyInjurySource,
+  BodyInjuryStatus,
 } from "../../domain/types";
 import type { FKS_NextSessionV2 } from "../../screens/newSession/types";
 import type { FKS_AiContext } from "../../services/aiContext";
@@ -145,6 +150,31 @@ export type FeedbackState = {
   setDailyFeedback: (dateISO: string, payload: Omit<DailyFeedback, "timestamp">) => void;
   setInjury: (dateISO: string, injury: InjuryRecord | null) => void;
   getAdaptiveFactorsForDate: (dateISO: string) => AdaptiveFactors | null;
+};
+
+// ---------------------------------------------------------------------------
+// Store 8: « Mon corps » — genes et blessures declarees (LOCAL, jamais Firestore)
+// ---------------------------------------------------------------------------
+export type BodyState = {
+  /** Toutes les genes declarees, les plus recentes en tete. Guéries comprises. */
+  bodyInjuries: BodyInjury[];
+  /** Marqueur d'idempotence de la reprise des `dayStates.injury` historiques. */
+  migrationFeedbackAt: string | null;
+
+  // actions
+  ajouterBlessure: (input: {
+    zone: BodyArea;
+    gravite: BodyInjurySeverity;
+    source: BodyInjurySource;
+    note?: string;
+    /** Horloge injectable (tests, horloge virtuelle). Defaut : maintenant. */
+    nowISO?: string;
+  }) => BodyInjury;
+  changerStatut: (id: string, statut: BodyInjuryStatus, nowISO?: string) => void;
+  changerGravite: (id: string, gravite: BodyInjurySeverity, nowISO?: string) => void;
+  supprimerBlessure: (id: string) => void;
+  appliquerMigrationFeedback: (candidats: BodyInjury[], nowISO: string) => void;
+  resetAll: () => void;
 };
 
 // ---------------------------------------------------------------------------

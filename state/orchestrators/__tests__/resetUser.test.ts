@@ -16,7 +16,8 @@ import { useSyncStore, resetWatchGuard, reactivateListeners } from "../../stores
 import { useSessionsStore, getSessionsDefaults } from "../../stores/useSessionsStore";
 import { useLoadStore, getLoadDefaults } from "../../stores/useLoadStore";
 import { useExecutionStore, getExecutionDefaults } from "../../stores/useExecutionStore";
-import type { Session } from "../../../domain/types";
+import { useBodyStore, getBodyDefaults } from "../../stores/useBodyStore";
+import type { BodyInjury, Session } from "../../../domain/types";
 import type { TrackingDecision } from "../../../domain/tracking/types";
 
 const SNAPSHOT_A = "fks-snapshot-v2-uid-A";
@@ -47,8 +48,25 @@ const decisionA: TrackingDecision = {
   mode: "shadow",
 };
 
+const geneA: BodyInjury = {
+  id: "b_genou_A",
+  zone: "genou",
+  gravite: 2,
+  statut: "active",
+  source: "manual",
+  declaredAt: "2026-07-14T18:00:00.000Z",
+  updatedAt: "2026-07-14T18:00:00.000Z",
+};
+
 /** Peuple les stores comme si uid-A était connecté avec de la progression. */
 function seedUserA() {
+  // « Mon corps » : donnée de SANTÉ, locale au téléphone. Elle doit suivre
+  // exactement le même snapshot / reset / restore que les autres stores.
+  useBodyStore.setState({
+    ...getBodyDefaults(),
+    bodyInjuries: [geneA],
+    migrationFeedbackAt: "2026-07-14T18:00:00.000Z",
+  } as any);
   useSessionsStore.setState({
     ...getSessionsDefaults(),
     sessions: [doneSession("sA")],
@@ -81,6 +99,7 @@ beforeEach(async () => {
   useSessionsStore.setState({ ...getSessionsDefaults() } as any);
   useLoadStore.setState({ ...getLoadDefaults() } as any);
   useExecutionStore.setState({ ...getExecutionDefaults() } as any);
+  useBodyStore.setState({ ...getBodyDefaults() } as any);
   useSyncStore.setState({
     _currentUid: null,
     _rehydrating: false,
@@ -195,6 +214,30 @@ describe("resetForUser — déroulés nominaux", () => {
     expect(useSessionsStore.getState().microcycleSessionIndex).toBe(0);
     expect(useExecutionStore.getState().lastDecision).toBeNull();
     expect(useExecutionStore.getState().replacementPreferences).toEqual({});
+  });
+
+  test("FUITE DE DONNÉE DE SANTÉ : les gênes de A ne suivent jamais le compte suivant", async () => {
+    seedUserA();
+
+    // Un joueur B se connecte sur le même téléphone, sans snapshot.
+    await resetForUser("uid-B");
+    expect(useBodyStore.getState().bodyInjuries).toEqual([]);
+
+    // Et celles de A ne sont pas perdues pour autant : elles sont dans SON snapshot.
+    const rawA = await AsyncStorage.getItem(SNAPSHOT_A);
+    expect(JSON.parse(rawA as string).body.bodyInjuries).toEqual([geneA]);
+
+    // Retour de A : il retrouve sa gêne.
+    await resetForUser("uid-A");
+    expect(useBodyStore.getState().bodyInjuries).toEqual([geneA]);
+  });
+
+  test("logout : les gênes sont purgées, jamais laissées visibles déconnecté", async () => {
+    seedUserA();
+
+    await resetForUser(null);
+
+    expect(useBodyStore.getState().bodyInjuries).toEqual([]);
   });
 
   test("changement d'utilisateur : execution store de A sauvegardé, execution de B restauré (Lot 4)", async () => {

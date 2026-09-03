@@ -19,6 +19,7 @@ import { registerForPushNotifications, scheduleAllNotifications, isNotificationP
 import { auth } from "./services/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { applyFeedback } from "./state/orchestrators/applyFeedback";
+import { armerMigrationBlessures } from "./state/migration/migrateInjuries";
 import { navigationRef } from "./navigation/navigationRef";
 import { useNotificationHandler } from "./hooks/useNotificationHandler";
 import type { AppStackParamList } from "./navigation/RootNavigator";
@@ -26,6 +27,12 @@ import type { AppStackParamList } from "./navigation/RootNavigator";
 // Configurer les gestionnaires d'erreurs globales une seule fois
 setupGlobalErrorHandlers();
 initSentry();
+
+// « Mon corps » : reprise unique des blessures declarees a l'ancienne (dans le
+// feedback de fin de seance) vers l'espace dedie. Armee ici parce qu'elle a
+// besoin de DEUX stores hydrates ; elle attend d'elle-meme et ne tourne qu'une
+// fois. Rejouee apres un changement d'utilisateur (resetUser).
+armerMigrationBlessures();
 
 const linking: LinkingOptions<AppStackParamList> = {
   prefixes: ["fks://"],

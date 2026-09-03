@@ -1,6 +1,12 @@
 // state/orchestrators/resetUser.ts
-// Cross-cutting orchestrator: resets all 7 stores when switching users
-// (6 original + useExecutionStore, boucle de suivi Lot 4 -- reliquat assume du Lot 1).
+// Cross-cutting orchestrator: resets all 8 stores when switching users
+// (6 original + useExecutionStore, boucle de suivi Lot 4 -- reliquat assume du
+// Lot 1 -- + useBodyStore, « Mon corps »).
+//
+// POURQUOI useBodyStore EST DANS CETTE LISTE, ET POURQUOI L'OUBLI SERAIT GRAVE :
+// les genes declarees sont une donnee de SANTE, locale au telephone. Un store
+// oublie ici, ce sont les blessures d'un joueur qui suivent le compte suivant
+// sur le meme appareil. Un test dedie le verrouille.
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { useLoadStore, getLoadDefaults } from "../stores/useLoadStore";
@@ -10,6 +16,8 @@ import { useExternalStore, getExternalDefaults } from "../stores/useExternalStor
 import { useSyncStore, getSyncDefaults, deactivateListeners, reactivateListeners, resetWatchGuard, cleanupAllListeners } from "../stores/useSyncStore";
 import { useDebugStore, getDebugDefaults } from "../stores/useDebugStore";
 import { useExecutionStore, getExecutionDefaults } from "../stores/useExecutionStore";
+import { useBodyStore, getBodyDefaults } from "../stores/useBodyStore";
+import { armerMigrationBlessures } from "../migration/migrateInjuries";
 
 const SNAPSHOT_PREFIX = "fks-snapshot-v2-";
 
@@ -24,6 +32,10 @@ type AllStoresSnapshot = {
   // historique local + preferences de remplacement + derniere decision shadow
   // suivent le MEME pattern snapshot/reset que les 6 autres stores ci-dessus.
   execution: Partial<ReturnType<typeof getExecutionDefaults>>;
+  // « Mon corps » : genes et blessures declarees. JAMAIS synchronisees vers
+  // Firestore -- ce snapshot par utilisateur est leur seule persistance quand
+  // deux comptes se partagent un telephone.
+  body: Partial<ReturnType<typeof getBodyDefaults>>;
 };
 
 async function saveSnapshot(uid: string): Promise<void> {
@@ -48,6 +60,7 @@ async function saveSnapshot(uid: string): Promise<void> {
       execution: extractData(useExecutionStore.getState(), [
         "current", "history", "replacementPreferences", "lastDecision",
       ]),
+      body: extractData(useBodyStore.getState(), ["bodyInjuries", "migrationFeedbackAt"]),
     };
     await AsyncStorage.setItem(`${SNAPSHOT_PREFIX}${uid}`, JSON.stringify(snapshot));
   } catch {
@@ -134,6 +147,7 @@ async function performResetForUser(uid: string | null): Promise<void> {
   useExternalStore.setState({ ...getExternalDefaults(), ...(restored?.external ?? {}) });
   useDebugStore.setState({ ...getDebugDefaults(), ...(restored?.debug ?? {}) });
   useExecutionStore.setState({ ...getExecutionDefaults(), ...(restored?.execution ?? {}) });
+  useBodyStore.setState({ ...getBodyDefaults(), ...(restored?.body ?? {}) });
   useSyncStore.setState({
     ...getSyncDefaults(),
     ...(restored?.sync ?? {}),
@@ -160,4 +174,11 @@ async function performResetForUser(uid: string | null): Promise<void> {
   if (uid) {
     useSyncStore.getState().startFirestoreWatch();
   }
+
+  // 8. Reprise des blessures historiques pour CE compte. Un snapshot ecrit
+  // avant « Mon corps » restaure des `dayStates` sans `bodyInjuries` et sans
+  // marqueur de reprise : sans ce rappel, ce joueur-la ne serait jamais migre
+  // (la reprise du demarrage a deja tourne, sur l'etat du compte precedent).
+  // Idempotente : sans rien a reprendre, elle pose simplement le marqueur.
+  armerMigrationBlessures();
 }
