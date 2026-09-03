@@ -17,7 +17,11 @@ import {
   mapAreaToPain,
   type InjuryAreaFR,
 } from "../injuryMapping";
-import { INJURY_AREAS } from "../../constants/injury";
+import {
+  BODY_AREAS,
+  ZONES_PARTAGEES,
+  mapBodyAreaToPain,
+} from "../../domain/monCorps/zones";
 
 const FRONT_FILE = path.resolve(__dirname, "..", "injuryMapping.ts");
 
@@ -74,13 +78,53 @@ describe("shared/injuryMapping.ts — parité front ↔ back", () => {
     }
   });
 
-  it("chaque InjuryArea du front (hors 'autre') a un token backend", () => {
-    for (const area of INJURY_AREAS) {
+  it("chaque zone du référentiel PARTAGÉ (hors 'autre') a un token backend", () => {
+    for (const area of ZONES_PARTAGEES) {
       if (area === "autre") {
         expect(mapAreaToPain(area)).toBeNull();
       } else {
         expect(mapAreaToPain(area)).toEqual(expect.any(String));
       }
+    }
+  });
+
+  // ------------------------------------------------------------------------
+  // « aine » : la zone AJOUTÉE CÔTÉ FRONT SEULEMENT, et pourquoi c'est légitime.
+  //
+  // Décision D11 : la pubalgie / gêne aux adducteurs est la blessure n°1 du
+  // footballeur amateur, et le backend sait DÉJÀ la traiter — `groin_pain` est
+  // dans `BackendPainToken` ci-dessous, dans `Contraindication` côté moteur, et
+  // des exercices sont annotés avec. Ce qui manquait, c'était la zone française
+  // que le joueur peut cocher.
+  //
+  // Le lot 1 est front-only : écrire `aine` DANS ce fichier partagé le ferait
+  // diverger de sa copie backend et casserait la parité byte-à-byte vérifiée
+  // ci-dessus. L'extension vit donc dans `domain/monCorps/zones.ts`, du côté qui
+  // préserve la parité. Le contrat réseau, lui, est inchangé : le backend reçoit
+  // `groin_pain`, un jeton qu'il connaît.
+  //
+  // Ces deux tests figent l'écart, pour qu'il reste un choix documenté et pas
+  // une dérive : `aine` N'EST PAS dans le fichier partagé, elle EST mappée
+  // côté front.
+  // ------------------------------------------------------------------------
+  it("« aine » n'est PAS dans le fichier partagé (front-only tant qu'aucune PR backend jumelle)", () => {
+    expect(mapAreaToPain("aine")).toBeNull();
+    expect(ZONES_PARTAGEES).not.toContain("aine");
+  });
+
+  it("« aine » est bien déclarable côté joueur et produit groin_pain", () => {
+    expect(BODY_AREAS).toContain("aine");
+    expect(mapBodyAreaToPain("aine")).toBe("groin_pain");
+    expect(mapBodyAreaToPain(" Aine ")).toBe("groin_pain");
+  });
+
+  it("le référentiel joueur = le référentiel partagé + « aine », rien d'autre", () => {
+    expect([...BODY_AREAS].sort()).toEqual([...ZONES_PARTAGEES, "aine"].sort());
+  });
+
+  it("hors « aine », le mapping joueur est celui du fichier partagé", () => {
+    for (const zone of ZONES_PARTAGEES) {
+      expect(mapBodyAreaToPain(zone)).toBe(mapAreaToPain(zone));
     }
   });
 
