@@ -277,3 +277,62 @@ describe("useFeedbackSave — passerelle « Mon corps » ne bloque jamais le fee
     expect(navigation.dispatch).toHaveBeenCalled();
   });
 });
+
+// -----------------------------------------------------------------------------
+// P2 (round 2) : la 12e séance ne doit jamais escamoter la passerelle. Avant
+// ce correctif, `shouldPromptCycleEnd` empruntait un `else if` qui rendait
+// `doitProposerMonCorps` inatteignable dès qu'un cycle se terminait le même
+// jour — une douleur ≥3/5 à la séance de fin de cycle n'était JAMAIS proposée.
+// -----------------------------------------------------------------------------
+describe("useFeedbackSave — fin de cycle (12e séance) n'escamote pas Mon corps (P2)", () => {
+  test("douleur 3/5 à la 12e séance : les DEUX cartes apparaissent, aucune n'efface l'autre", async () => {
+    mockApplyFeedback.mockReturnValue({ sessionId: "s1", dateISO: "2026-07-25", rpe: 6, atlDelta: 0, ctlDelta: 0 });
+    useSessionsStore.setState({
+      microcycleGoal: "force",
+      microcycleSessionIndex: 11, // 12e séance (index 0-based) d'un cycle de 12
+      lastAiContext: undefined,
+      activePathwayId: null,
+      activePathwayIndex: 0,
+    } as any);
+    const navigation = { dispatch: jest.fn(), navigate: jest.fn(), goBack: jest.fn() };
+    const getApi = await renderHarness({ ...baseParams, pain: 3, navigation });
+
+    await act(async () => {
+      await getApi().onSave();
+    });
+
+    expect(mockApplyFeedback).toHaveBeenCalledTimes(1);
+    expect(getApi().cyclePromptVisible).toBe(true);
+    expect(getApi().monCorpsPromptVisible).toBe(true);
+    // Pas d'auto-continuation qui ferait disparaître les cartes sans geste du joueur.
+    expect(navigation.dispatch).not.toHaveBeenCalled();
+  });
+
+  test("douleur 1/5 à la 12e séance : seule la carte cycle apparaît (comportement inchangé)", async () => {
+    mockApplyFeedback.mockReturnValue({ sessionId: "s1", dateISO: "2026-07-25", rpe: 6, atlDelta: 0, ctlDelta: 0 });
+    useSessionsStore.setState({
+      microcycleGoal: "force",
+      microcycleSessionIndex: 11,
+      lastAiContext: undefined,
+      activePathwayId: null,
+      activePathwayIndex: 0,
+    } as any);
+    const getApi = await renderHarness({ ...baseParams, pain: 1 });
+
+    await act(async () => {
+      await getApi().onSave();
+    });
+
+    expect(getApi().cyclePromptVisible).toBe(true);
+    expect(getApi().monCorpsPromptVisible).toBe(false);
+
+    // Ce chemin arme le setTimeout(4500ms) d'auto-continuation existant. On le
+    // désarme explicitement (au lieu d'attendre 4,5 s réelles ou de manipuler
+    // l'horloge globale) : `continueAfterFeedback` annule le timer via
+    // `clearAutoContinue()`, exactement comme le ferait le joueur en tapant
+    // « Plus tard » sur la carte cycle.
+    await act(async () => {
+      getApi().continueAfterFeedback();
+    });
+  });
+});

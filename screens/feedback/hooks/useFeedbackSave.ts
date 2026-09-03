@@ -245,6 +245,30 @@ export function useFeedbackSave(params: SaveParams) {
       });
       haptics.success();
 
+      // Calculé UNE FOIS, avant toute branche : la fin de cycle (12e séance)
+      // ne doit jamais escamoter la passerelle « Mon corps » (P2, sentinelle
+      // §4.6bis). Les deux propositions sont indépendantes — l'une ne
+      // remplace pas l'autre.
+      const proposerMonCorps = doitProposerMonCorps(pain0to5);
+
+      /**
+       * Affiche la carte cycle, ET la carte Mon corps si le seuil est
+       * atteint — jamais l'une à la place de l'autre. Quand Mon corps est
+       * proposé, l'auto-continuation (4,5 s) est désactivée : elle
+       * escamoterait une carte qui exige un geste explicite du joueur
+       * (charte INJURY_IA_CHARTER, règle 3). Le choix de cycle, lui, garde
+       * son auto-continuation habituelle quand Mon corps ne s'affiche pas.
+       */
+      const afficherFinDeCycle = () => {
+        setCyclePromptVisible(true);
+        clearAutoContinue();
+        if (proposerMonCorps) {
+          setMonCorpsPromptVisible(true);
+        } else {
+          autoContinueRef.current = setTimeout(continueAfterFeedback, 4500);
+        }
+      };
+
       if (shouldPromptCycleEnd) {
         const pathway = activePathwayId ? getPathwayById(activePathwayId) : null;
         const nextIndex = (activePathwayIndex ?? 0) + 1;
@@ -277,11 +301,17 @@ export function useFeedbackSave(params: SaveParams) {
               message: `${nextCycle.label} démarre automatiquement (${nextIndex + 1}/${pathway.sequence.length}).`,
             });
             haptics.success();
-            continueAfterFeedback();
+            // Bascule automatique (pas de choix à faire) : Mon corps peut
+            // quand même se proposer, il n'y a juste pas de carte cycle en
+            // plus à empiler.
+            if (proposerMonCorps) {
+              setMonCorpsPromptVisible(true);
+              clearAutoContinue();
+            } else {
+              continueAfterFeedback();
+            }
           } catch {
-            setCyclePromptVisible(true);
-            clearAutoContinue();
-            autoContinueRef.current = setTimeout(continueAfterFeedback, 4500);
+            afficherFinDeCycle();
           }
         } else if (pathway) {
           setActivePathway(null);
@@ -311,15 +341,11 @@ export function useFeedbackSave(params: SaveParams) {
             title: 'Parcours terminé !',
             message: `Tu as terminé le parcours "${pathway.label}". Choisis un nouveau parcours ou programme.`,
           });
-          setCyclePromptVisible(true);
-          clearAutoContinue();
-          autoContinueRef.current = setTimeout(continueAfterFeedback, 4500);
+          afficherFinDeCycle();
         } else {
-          setCyclePromptVisible(true);
-          clearAutoContinue();
-          autoContinueRef.current = setTimeout(continueAfterFeedback, 4500);
+          afficherFinDeCycle();
         }
-      } else if (doitProposerMonCorps(pain0to5)) {
+      } else if (proposerMonCorps) {
         // PASSERELLE « MON CORPS » (D3). Le feedback est DÉJÀ enregistré et la
         // charge DÉJÀ appliquée : cette carte ne bloque rien, ne désactive rien,
         // et la refuser n'écrit rien. La règle vit dans `passerelleMonCorps.ts`,
