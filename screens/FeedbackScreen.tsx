@@ -51,6 +51,7 @@ import { MetricsRow } from './feedback/components/MetricsRow';
 import { FatigueRecoveryRow } from './feedback/components/FatigueRecoveryRow';
 import { PainInjuryRow } from './feedback/components/PainInjuryRow';
 import { CyclePrompt } from './feedback/components/CyclePrompt';
+import { MonCorpsPrompt } from './feedback/components/MonCorpsPrompt';
 import { ExecutionSummaryCard } from './feedback/components/ExecutionSummaryCard';
 
 const COLORS = theme.colors;
@@ -146,8 +147,6 @@ function FeedbackScreen() {
   const [fatigue, setFatigue] = useState<number>(day?.feedback?.fatigue ?? 3);
   const [pain, setPain] = useState<number>(day?.feedback?.pain ?? 0);
   const [recovery, setRecovery] = useState<number>(day?.feedback?.recoveryPerceived ?? 3);
-  const [injury, setInjuryLocal] = useState<any>(day?.feedback?.injury ?? null);
-  const [hasPainDetails, setHasPainDetails] = useState<boolean>(!!day?.feedback?.injury);
 
   // Le re-prefill ne doit jamais se battre avec une saisie utilisateur :
   // une fois le champ touché (y compris vidé au focus), on ne re-remplit plus.
@@ -170,8 +169,6 @@ function FeedbackScreen() {
     const painFromFb = typeof fb?.pain === 'number' ? fb.pain : undefined;
     setPain(typeof painFromDay === 'number' ? painFromDay : painFromFb ?? 0);
     setRecovery((fb?.sleep as number) ?? d?.feedback?.recoveryPerceived ?? 3);
-    setInjuryLocal((fb as unknown as Record<string, unknown>)?.injury ?? d?.feedback?.injury ?? null);
-    setHasPainDetails(!!((fb as unknown as Record<string, unknown>)?.injury ?? d?.feedback?.injury));
     setRpe((typeof fb?.rpe === 'number' ? fb?.rpe : targetSession?.rpe) ?? prefillRpe ?? 5);
   }, [todayKey, dayStates, targetSession, prefillRpe]);
 
@@ -194,9 +191,10 @@ function FeedbackScreen() {
     onSave, isSaving, saveDisabled, saveLabel,
     cyclePromptVisible, onChooseNewProgram, continueAfterFeedback,
     estimatedLoad, projectedTsb, projectedDelta,
+    monCorpsPromptVisible, zoneGeneEnCours, ouvrirMonCorps, repondreSurGeneEnCours,
   } = useFeedbackSave({
     targetSessionId, targetSession, sessionDateKey, todayKey, canSaveToday,
-    rpe, fatigue, pain, recovery, injury, hasPainDetails, durationClamped, durationInvalid,
+    rpe, fatigue, pain, recovery, durationClamped, durationInvalid,
     navigation, haptics,
   });
 
@@ -281,11 +279,6 @@ function FeedbackScreen() {
   const onFatigueChange = useCallback((v: number) => { setFatigue(v); haptics.impactLight(); }, [haptics]);
   const onRecoveryChange = useCallback((v: number) => { setRecovery(v); haptics.impactLight(); }, [haptics]);
   const onPainChange = useCallback((v: number) => { setPain(v); haptics.impactLight(); }, [haptics]);
-  const onTogglePainDetails = useCallback((v: boolean) => {
-    setHasPainDetails(v);
-    if (!v) setInjuryLocal(null);
-    haptics.impactLight();
-  }, [haptics]);
 
   // Helper pour animation stagger
   const staggerStyle = (index: number) => ({
@@ -420,15 +413,7 @@ function FeedbackScreen() {
                 </Animated.View>
 
                 <Animated.View style={[styles.metricsRow, staggerStyle(3)]}>
-                  <PainInjuryRow
-                    pain={pain}
-                    hasPainDetails={hasPainDetails}
-                    injury={injury}
-                    onPainChange={onPainChange}
-                    onTogglePainDetails={onTogglePainDetails}
-                    onInjuryChange={setInjuryLocal}
-                    injuryCardAnim={cardAnims[4]}
-                  />
+                  <PainInjuryRow pain={pain} onPainChange={onPainChange} />
                 </Animated.View>
 
                 {__DEV__ && day?.adaptive && (
@@ -446,6 +431,19 @@ function FeedbackScreen() {
               <CyclePrompt
                 onChooseNewProgram={onChooseNewProgram}
                 onLater={continueAfterFeedback}
+              />
+            )}
+
+            {/* Passerelle « Mon corps » (D3) : APRÈS l'enregistrement, jamais
+                avant. Le feedback est déjà appliqué quand cette carte paraît ;
+                « Plus tard » n'écrit rien du tout. */}
+            {monCorpsPromptVisible && (
+              <MonCorpsPrompt
+                zoneEnCours={zoneGeneEnCours}
+                onSituer={() => ouvrirMonCorps(!zoneGeneEnCours)}
+                onToujoursLa={() => repondreSurGeneEnCours('active')}
+                onEnReprise={() => repondreSurGeneEnCours('recovering')}
+                onPlusTard={continueAfterFeedback}
               />
             )}
 

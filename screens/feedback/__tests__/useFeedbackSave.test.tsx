@@ -28,6 +28,8 @@ import { useSessionsStore } from "../../../state/stores/useSessionsStore";
 import { useFeedbackStore } from "../../../state/stores/useFeedbackStore";
 import { useExecutionStore } from "../../../state/stores/useExecutionStore";
 import { getQueue, clearQueue } from "../../../utils/offlineQueue";
+import { useBodyStore } from "../../../state/stores/useBodyStore";
+import { ajouterGene } from "../../../hooks/monCorps/monCorpsActions";
 import type { PrescribedItem, PrescribedSnapshot, SessionExecution } from "../../../domain/tracking/types";
 
 const mockApplyFeedback = applyFeedback as jest.Mock;
@@ -72,8 +74,6 @@ const baseParams = {
   fatigue: 3,
   pain: 0,
   recovery: 3,
-  injury: null,
-  hasPainDetails: false,
   durationClamped: 55,
   durationInvalid: false,
   navigation: { dispatch: jest.fn(), navigate: jest.fn(), goBack: jest.fn() },
@@ -102,6 +102,7 @@ beforeEach(async () => {
   useSessionsStore.setState({ microcycleGoal: null, microcycleSessionIndex: 0, lastAiContext: undefined, activePathwayId: null, activePathwayIndex: 0 } as any);
   useFeedbackStore.setState({ dayStates: {} } as any);
   useExecutionStore.getState().resetAll();
+  useBodyStore.setState({ bodyInjuries: [], migrationFeedbackAt: null } as any);
 });
 
 describe("useFeedbackSave — idempotence dure (Lot 4)", () => {
@@ -184,5 +185,95 @@ describe("useFeedbackSave — executionSummary attache au feedback (Lot 4)", () 
       completionPct: 100, completionStatus: "full", done: 2, adapted: 0, skipped: 0, replaced: 0,
       mainReasons: [], fingerprint: "fp-1",
     });
+  });
+});
+
+// -----------------------------------------------------------------------------
+// Passerelle « Mon corps » (décision D3, sentinelle §4.6 du design) : la
+// proposition ne bloque RIEN — le feedback est déjà enregistré et la charge
+// déjà appliquée quand la carte apparaît — et refuser (« Plus tard ») n'écrit
+// rien. `hooks/__tests__/monCorpsViewModel.test.ts` couvre déjà la règle PURE
+// du seuil ; ce qui manquait, c'est la preuve d'INTÉGRATION : l'ORDRE des
+// opérations dans le hook réel.
+// -----------------------------------------------------------------------------
+describe("useFeedbackSave — passerelle « Mon corps » ne bloque jamais le feedback (D3)", () => {
+  test("douleur 2/5 (sous le seuil) : pas de proposition, on repart tout de suite", async () => {
+    mockApplyFeedback.mockReturnValue({ sessionId: "s1", dateISO: "2026-07-25", rpe: 6, atlDelta: 0, ctlDelta: 0 });
+    const navigation = { dispatch: jest.fn(), navigate: jest.fn(), goBack: jest.fn() };
+    const getApi = await renderHarness({ ...baseParams, pain: 2, navigation });
+
+    await act(async () => {
+      await getApi().onSave();
+    });
+
+    expect(mockApplyFeedback).toHaveBeenCalledTimes(1);
+    expect(getApi().monCorpsPromptVisible).toBe(false);
+    // Pas de carte à refuser : le retour à l'app est immédiat.
+    expect(navigation.dispatch).toHaveBeenCalled();
+  });
+
+  test("douleur 4/5 (au-dessus du seuil) : le feedback est DÉJÀ appliqué quand la carte paraît", async () => {
+    mockApplyFeedback.mockReturnValue({ sessionId: "s1", dateISO: "2026-07-25", rpe: 6, atlDelta: 0, ctlDelta: 0 });
+    const navigation = { dispatch: jest.fn(), navigate: jest.fn(), goBack: jest.fn() };
+    const getApi = await renderHarness({ ...baseParams, pain: 4, navigation });
+
+    await act(async () => {
+      await getApi().onSave();
+    });
+
+    // Le feedback est appliqué...
+    expect(mockApplyFeedback).toHaveBeenCalledTimes(1);
+    // ...et la carte paraît sans qu'on ait déjà quitté l'écran.
+    expect(getApi().monCorpsPromptVisible).toBe(true);
+    expect(navigation.dispatch).not.toHaveBeenCalled();
+  });
+
+  test("« Plus tard » n'écrit RIEN : aucune gêne créée, le feedback déjà enregistré ne bouge pas", async () => {
+    mockApplyFeedback.mockReturnValue({ sessionId: "s1", dateISO: "2026-07-25", rpe: 6, atlDelta: 0, ctlDelta: 0 });
+    const navigation = { dispatch: jest.fn(), navigate: jest.fn(), goBack: jest.fn() };
+    const getApi = await renderHarness({ ...baseParams, pain: 5, navigation });
+
+    await act(async () => {
+      await getApi().onSave();
+    });
+    expect(getApi().monCorpsPromptVisible).toBe(true);
+    expect(useBodyStore.getState().bodyInjuries).toEqual([]);
+
+    // « Plus tard » = continueAfterFeedback, exposé tel quel au bouton.
+    await act(async () => {
+      getApi().continueAfterFeedback();
+    });
+
+    // Une douleur non située reste non située.
+    expect(useBodyStore.getState().bodyInjuries).toEqual([]);
+    // Le feedback lui n'est PAS ré-appliqué par le refus de la carte.
+    expect(mockApplyFeedback).toHaveBeenCalledTimes(1);
+    expect(navigation.dispatch).toHaveBeenCalled();
+  });
+
+  test("une gêne active existe : la carte demande « toujours là ? », et répondre change son statut sans en créer une autre", async () => {
+    mockApplyFeedback.mockReturnValue({ sessionId: "s1", dateISO: "2026-07-25", rpe: 6, atlDelta: 0, ctlDelta: 0 });
+    const gene = ajouterGene({ zone: "genou", gravite: 2, source: "manual" });
+
+    const navigation = { dispatch: jest.fn(), navigate: jest.fn(), goBack: jest.fn() };
+    const getApi = await renderHarness({ ...baseParams, pain: 4, navigation });
+
+    await act(async () => {
+      await getApi().onSave();
+    });
+
+    expect(getApi().monCorpsPromptVisible).toBe(true);
+    expect(getApi().zoneGeneEnCours).toBe("genou");
+
+    await act(async () => {
+      getApi().repondreSurGeneEnCours("recovering");
+    });
+
+    const injuries = useBodyStore.getState().bodyInjuries;
+    expect(injuries).toHaveLength(1);
+    expect(injuries[0].id).toBe(gene.id);
+    expect(injuries[0].statut).toBe("recovering");
+    // Le geste referme la carte et poursuit, comme "Plus tard".
+    expect(navigation.dispatch).toHaveBeenCalled();
   });
 });

@@ -186,38 +186,9 @@ export const plannedSessionSchema = z.object({
 
 export type PlannedSessionParsed = z.infer<typeof plannedSessionSchema>;
 
-// ---------------------------------------------------------------------------
-// 4. Daily Feedback / Injury (embedded in dayStates)
-// ---------------------------------------------------------------------------
-
-const INJURY_AREAS = [
-  "cheville", "genou", "ischio", "quadriceps", "mollet",
-  "hanche", "dos", "épaule", "poignet", "autre",
-] as const;
-
-const injuryRecordSchema = z.object({
-  area: z.string().catch("autre"),
-  severity: z.number().min(0).max(3).catch(0),
-  type: z.enum(["aigu", "chronique"]).catch("aigu"),
-  restrictions: z.object({
-    avoidSprint: z.boolean().optional().catch(false),
-    avoidPlyo: z.boolean().optional().catch(false),
-    avoidHeavyLower: z.boolean().optional().catch(false),
-    avoidHeavyUpper: z.boolean().optional().catch(false),
-    avoidCutsImpacts: z.boolean().optional().catch(false),
-    avoidOverhead: z.boolean().optional().catch(false),
-  }).catch({}),
-  startDate: z.string().catch(""),
-  lastConfirm: z.string().catch(""),
-  note: z.string().nullable().optional().catch(null),
-}).nullable().optional().catch(null);
-
-export const dailyFeedbackSchema = z.object({
-  fatigue: z.number().min(1).max(5).catch(3),
-  pain: z.number().min(0).max(5).catch(0),
-  recoveryPerceived: z.number().min(1).max(5).optional().catch(undefined),
-  injury: injuryRecordSchema,
-  timestamp: z.string().catch(""),
-});
-
-export type DailyFeedbackParsed = z.infer<typeof dailyFeedbackSchema>;
+// La section 4 « Daily Feedback / Injury » vivait ici : un `dailyFeedbackSchema`
+// et un `injuryRecordSchema` prets pour Firestore, appeles NULLE PART depuis
+// leur ecriture (audit DESIGN_MON_CORPS.md §1.3). Ils decrivaient un contrat de
+// synchronisation qui n'a jamais existe -- les `dayStates` ne quittent pas
+// l'appareil. Supprimes avec « Mon corps » : garder un schema mort qui promet
+// une synchro de donnees de sante, c'est pire que de ne rien avoir.

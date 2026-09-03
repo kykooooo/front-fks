@@ -1,6 +1,6 @@
 // screens/feedback/hooks/useFeedbackSave.ts
 // Logique de sauvegarde du feedback post-séance (cycle, pathway, offline)
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { CommonActions } from '@react-navigation/native';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { useLoadStore } from '../../../state/stores/useLoadStore';
@@ -8,7 +8,7 @@ import { useSessionsStore } from '../../../state/stores/useSessionsStore';
 import { useFeedbackStore } from '../../../state/stores/useFeedbackStore';
 import { useExecutionStore } from '../../../state/stores/useExecutionStore';
 import { applyFeedback } from '../../../state/orchestrators/applyFeedback';
-import type { InjuryRecord, Modality, SessionFeedback } from '../../../domain/types';
+import type { Modality, SessionFeedback } from '../../../domain/types';
 import { DEFAULT_MODALITY_WEIGHTS } from '../../../domain/types';
 import { FEEDBACK_LIMITS } from '../../../constants/feedback';
 import { updateTrainingLoad } from '../../../engine/loadModel';
@@ -19,6 +19,10 @@ import { trackEvent } from '../../../services/analytics';
 import { MICROCYCLES, getPathwayById } from '../../../domain/microcycles';
 import { auth, db } from '../../../services/firebase';
 import { clamp, buildSessionFeedback } from '../feedbackScales';
+import { doitProposerMonCorps } from '../passerelleMonCorps';
+import { useBlessures, geneLaPlusMarquante } from '../../../state/selectors/blessures';
+import { changerStatutBlessure } from '../../../hooks/monCorps/monCorpsActions';
+import { LIBELLE_ZONE } from '../../../domain/monCorps/zones';
 
 type SaveParams = {
   targetSessionId: string | undefined;
@@ -30,8 +34,6 @@ type SaveParams = {
   fatigue: number;
   pain: number;
   recovery: number;
-  injury: InjuryRecord | null;
-  hasPainDetails: boolean;
   durationClamped: number | undefined;
   durationInvalid: boolean;
   navigation: any;
@@ -41,7 +43,7 @@ type SaveParams = {
 export function useFeedbackSave(params: SaveParams) {
   const {
     targetSessionId, targetSession, sessionDateKey, todayKey,
-    canSaveToday, rpe, fatigue, pain, recovery, injury, hasPainDetails,
+    canSaveToday, rpe, fatigue, pain, recovery,
     durationClamped, durationInvalid, navigation, haptics,
   } = params;
 
@@ -50,7 +52,6 @@ export function useFeedbackSave(params: SaveParams) {
   const tsb = useLoadStore((s) => s.tsb);
   const addFeedback = applyFeedback;
   const setDailyFeedback = useFeedbackStore((s) => s.setDailyFeedback);
-  const setInjury = useFeedbackStore((s) => s.setInjury);
   const microcycleGoal = useSessionsStore((s) => s.microcycleGoal);
   const microcycleSessionIndex = useSessionsStore((s) => s.microcycleSessionIndex);
   const lastAiContext = useSessionsStore((s) => s.lastAiContext);
@@ -61,6 +62,9 @@ export function useFeedbackSave(params: SaveParams) {
 
   const [isSaving, setIsSaving] = useState(false);
   const [cyclePromptVisible, setCyclePromptVisible] = useState(false);
+  // Passerelle « Mon corps » (D3) : proposée APRÈS l'enregistrement, jamais
+  // avant. Voir `screens/feedback/components/MonCorpsPrompt.tsx`.
+  const [monCorpsPromptVisible, setMonCorpsPromptVisible] = useState(false);
   const autoContinueRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Idempotence dure (Lot 4) : verrou SYNCHRONE, pose avant tout `await` et
   // libere en `finally`. `isSaving` (state React) reste pour l'UI (bouton
@@ -82,6 +86,7 @@ export function useFeedbackSave(params: SaveParams) {
   const continueAfterFeedback = useCallback(() => {
     clearAutoContinue();
     setCyclePromptVisible(false);
+    setMonCorpsPromptVisible(false);
     navigation.dispatch(
       CommonActions.reset({
         index: 0,
@@ -95,6 +100,42 @@ export function useFeedbackSave(params: SaveParams) {
     setCyclePromptVisible(false);
     navigation.navigate('CycleModal', { mode: 'select', origin: 'feedback' });
   }, [clearAutoContinue, navigation]);
+
+  // -- Passerelle « Mon corps » ---------------------------------------------
+  // La gêne déjà en cours, s'il y en a une : la question posée n'est alors plus
+  // « où as-tu mal ? » mais « où en es-tu ? ».
+  const blessures = useBlessures();
+  const geneEnCours = useMemo(() => geneLaPlusMarquante(blessures), [blessures]);
+  const zoneGeneEnCours = geneEnCours ? LIBELLE_ZONE[geneEnCours.zone].toLowerCase() : null;
+
+  /** Ouvre « Mon corps » avec le formulaire d'ajout déjà déplié, source feedback. */
+  const ouvrirMonCorps = useCallback(
+    (ouvrirAjout: boolean) => {
+      clearAutoContinue();
+      setMonCorpsPromptVisible(false);
+      // Un seul dispatch : on remplace la pile par [onglets, Mon corps]. Le
+      // retour renvoie donc sur l'onglet Séance, là où vit la carte d'entrée.
+      navigation.dispatch(
+        CommonActions.reset({
+          index: 1,
+          routes: [
+            { name: 'Tabs', params: { screen: 'NewSession' } },
+            { name: 'MonCorps', params: ouvrirAjout ? { ouvrirAjout: true, source: 'feedback' } : undefined },
+          ],
+        })
+      );
+    },
+    [clearAutoContinue, navigation]
+  );
+
+  /** « Toujours là » / « En reprise » : un geste du joueur, jamais automatique. */
+  const repondreSurGeneEnCours = useCallback(
+    (statut: 'active' | 'recovering') => {
+      if (geneEnCours) changerStatutBlessure(geneEnCours.id, statut);
+      continueAfterFeedback();
+    },
+    [geneEnCours, continueAfterFeedback]
+  );
 
   const modality = (targetSession?.modality ??
     targetSession?.exercises?.[0]?.modality) as Modality | undefined;
@@ -187,7 +228,6 @@ export function useFeedbackSave(params: SaveParams) {
         return;
       }
       setDailyFeedback(dayKeyForSession, dailyPayload);
-      setInjury(dayKeyForSession, hasPainDetails ? injury : null);
 
       const afterLoad = useLoadStore.getState();
       const fmt = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(1)}`;
@@ -279,6 +319,13 @@ export function useFeedbackSave(params: SaveParams) {
           clearAutoContinue();
           autoContinueRef.current = setTimeout(continueAfterFeedback, 4500);
         }
+      } else if (doitProposerMonCorps(pain0to5)) {
+        // PASSERELLE « MON CORPS » (D3). Le feedback est DÉJÀ enregistré et la
+        // charge DÉJÀ appliquée : cette carte ne bloque rien, ne désactive rien,
+        // et la refuser n'écrit rien. La règle vit dans `passerelleMonCorps.ts`,
+        // pure et testée — elle n'invente aucun seuil.
+        setMonCorpsPromptVisible(true);
+        clearAutoContinue();
       } else {
         continueAfterFeedback();
       }
@@ -315,7 +362,7 @@ export function useFeedbackSave(params: SaveParams) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isSaving, targetSessionId, targetSession, canSaveToday, sessionDateKey, todayKey,
-    rpe, fatigue, pain, recovery, injury, hasPainDetails, durationClamped, durationInvalid,
+    rpe, fatigue, pain, recovery, durationClamped, durationInvalid, geneEnCours,
     atl, ctl, tsb, microcycleGoal, microcycleSessionIndex, lastAiContext,
     activePathwayId, activePathwayIndex,
   ]);
@@ -342,5 +389,10 @@ export function useFeedbackSave(params: SaveParams) {
     estimatedLoad,
     projectedTsb,
     projectedDelta,
+    // Passerelle « Mon corps » (D3)
+    monCorpsPromptVisible,
+    zoneGeneEnCours,
+    ouvrirMonCorps,
+    repondreSurGeneEnCours,
   };
 }
