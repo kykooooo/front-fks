@@ -28,7 +28,7 @@ import { SectionHeader } from "../components/ui/SectionHeader";
 import { SessionTimer, type SessionTimerHandle } from "../components/session/SessionTimer";
 import { getBlockLabel } from "../components/session/blockConfig";
 import { readRecoveryTips, readCoachingTips } from "./newSession/helpers";
-import { formatDayFR, toDateKey } from "../utils/dateHelpers";
+import { formatDayFR } from "../utils/dateHelpers";
 import { frIntensity, frFocus, frLocation } from "../utils/frLabels";
 // Source unique du fallback « Repère technique » par bloc (plus de copie locale).
 import { getCoachTip } from "./sessionPreview/sessionPreviewConfig";
