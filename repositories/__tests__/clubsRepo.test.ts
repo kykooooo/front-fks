@@ -237,6 +237,42 @@ describe("createClubAsCoach — le créateur devient PROPRIÉTAIRE, pas coach", 
     // LA ligne qui compte : aucun rôle applicatif n'est posé.
     expect(userDoc?.payload).not.toHaveProperty("role");
   });
+
+  // ─── IDEMPOTENCE (audit d'inscription 2026-09, P1-03) ────────────────────
+  // La création enchaîne TROIS écritures que les règles interdisent de grouper
+  // (l'appartenance propriétaire doit exister AVANT `users/{uid}.clubId` —
+  // firestore.rules:429-434 ; dans un batch, elle serait invisible et la
+  // troisième écriture refusée : erratum 2). Le réessai après un timeout doit
+  // donc réécrire LE MÊME club, jamais en fabriquer un second.
+  test("un identifiant réservé est réutilisé : le réessai réécrit LE MÊME club", async () => {
+    const premier = await createClubAsCoach({ name: "Club Neuf", uid: "coachA", clubId: "reserve-1" });
+    setDocMock.mockClear();
+    const second = await createClubAsCoach({ name: "Club Neuf", uid: "coachA", clubId: "reserve-1" });
+
+    expect(premier.id).toBe("reserve-1");
+    expect(second.id).toBe("reserve-1");
+
+    const chemins = setDocMock.mock.calls.map((c: any[]) => c[0]?.path as string[]);
+    expect(chemins).toContainEqual(["clubs", "reserve-1"]);
+    expect(chemins).toContainEqual(["clubs", "reserve-1", "members", "coachA"]);
+    // Aucun club « autoId » parasite n'est créé au passage.
+    expect(chemins.some((p) => p?.[0] === "clubs" && p[1] !== "reserve-1")).toBe(false);
+  });
+
+  test("sans identifiant réservé, le comportement historique tient : un id auto", async () => {
+    const club = await createClubAsCoach({ name: "Club Neuf", uid: "coachA" });
+    expect(club.id).toBe("autoId1");
+  });
+
+  test("l'ORDRE exigé par les règles est conservé : appartenance AVANT users.clubId", async () => {
+    // Inverser reviendrait à demander aux règles de valider un `clubId` dont
+    // l'appartenance propriétaire n'existe pas encore : refus garanti.
+    await createClubAsCoach({ name: "Club Neuf", uid: "coachA", clubId: "reserve-1" });
+    const chemins = setDocMock.mock.calls.map((c: any[]) => (c[0]?.path as string[]).join("/"));
+    expect(chemins.indexOf("clubs/reserve-1/members/coachA")).toBeLessThan(
+      chemins.indexOf("users/coachA"),
+    );
+  });
 });
 
 describe("fetchClubPlayerSummaries — roster via members → summaries (coach-safe strict)", () => {

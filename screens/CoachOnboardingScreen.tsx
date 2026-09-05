@@ -2,7 +2,7 @@
 // Création d'un club par un coach/staff.
 // Le coach pilote le contexte du club ; il ne génère pas les séances (c'est FKS le prépa).
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, Keyboard, Alert } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
@@ -13,7 +13,8 @@ import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { LoadingOverlay } from "../components/ui/LoadingOverlay";
 import { coachColors, coachRadius } from "../components/coach/coachUi";
-import { createClubAsCoach } from "../repositories/clubsRepo";
+import { createClubAsCoach, nouvelIdentifiantClub } from "../repositories/clubsRepo";
+import { libererIdClub, reserverIdClub } from "../services/reservationClub";
 import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
 import { withTimeout, TimeoutError } from "../utils/errorHandler";
@@ -43,8 +44,25 @@ export default function CoachOnboardingScreen({ onRetourJoueur }: CoachOnboardin
   const [clubName, setClubName] = useState("");
   const [coachName, setCoachName] = useState("");
   const [loading, setLoading] = useState(false);
+  // Verrou d'intention : posé AVANT l'alerte de confirmation, il ferme le
+  // double-tap que `loading` (posé après) laissait passer — deux appuis rapides
+  // ouvraient deux alertes, donc deux clubs (erratum 3 de l'audit).
+  //
+  // DEUX PIÈCES, ET LES DEUX SONT NÉCESSAIRES. La ref est SYNCHRONE : deux taps
+  // dans la même frame partagent la closure du même rendu, et un `useState`
+  // seul les laisserait tous les deux passer (React n'a pas encore re-rendu).
+  // L'état, lui, sert à l'UI — il grise le bouton. Même idiome que le verrou de
+  // génération (screens/newSession/echecGeneration).
+  const verrouCreationRef = useRef(false);
+  const [confirmationOuverte, setConfirmationOuverte] = useState(false);
 
-  const canSubmit = clubName.trim().length >= 2 && !loading;
+  /** Rend la main : le geste est terminé (annulé, échoué, ou abouti). */
+  const relacherVerrou = () => {
+    verrouCreationRef.current = false;
+    setConfirmationOuverte(false);
+  };
+
+  const canSubmit = clubName.trim().length >= 2 && !loading && !confirmationOuverte;
 
   // Un seul geste de sortie affiché, celui qui est VRAI ici : revenir en arrière
   // s'il y a un arrière, renoncer à l'espace coach sinon.
@@ -87,29 +105,61 @@ export default function CoachOnboardingScreen({ onRetourJoueur }: CoachOnboardin
       return;
     }
 
+    // VERROU POSÉ AVANT L'ALERTE, PAS APRÈS (erratum 3 de l'audit
+    // d'inscription : `loading` n'était posé que dans `doCreate`, une fois
+    // l'alerte confirmée). Deux appuis rapides ouvraient DEUX alertes, donc
+    // deux créations — et deux clubs. Le verrou est distinct de `loading` :
+    // celui-ci pilote l'overlay « Création de ton club… », qu'on n'affiche pas
+    // pendant qu'une alerte attend une réponse.
+    if (verrouCreationRef.current) return;
+    verrouCreationRef.current = true;
+    setConfirmationOuverte(true);
     Alert.alert(
       "Créer un espace entraîneur ?",
       "Tu crées un espace ENTRAÎNEUR pour gérer des joueurs. Cette action est définitive sur ce compte.",
       [
-        { text: "Annuler", style: "cancel" },
+        { text: "Annuler", style: "cancel", onPress: relacherVerrou },
         { text: "Créer mon espace entraîneur", onPress: () => void doCreate(user.uid) },
       ],
-      { cancelable: true }
+      // `onDismiss` : sur Android, un tap hors de l'alerte la ferme sans
+      // déclencher « Annuler » — sans ça le bouton restait verrouillé à vie.
+      { cancelable: true, onDismiss: relacherVerrou }
     );
   };
 
+  /**
+   * LA CRÉATION, ET POURQUOI ELLE EST IDEMPOTENTE.
+   *
+   * Trois écritures séquentielles (club, appartenance propriétaire, pointeur
+   * `users/{uid}.clubId`) que les règles Firestore INTERDISENT de grouper : dans
+   * un `writeBatch`, chaque opération est évaluée contre l'état antérieur au
+   * batch, l'appartenance créée dans le même batch reste invisible de
+   * `userClubIdIsLegitimate()` (firestore.rules:429-434), la troisième écriture
+   * est refusée et le batch étant tout-ou-rien PLUS AUCUN coach ne pourrait
+   * créer de club (erratum 2 de l'audit d'inscription 2026-09).
+   *
+   * Faute d'atomicité possible côté client, on réserve l'identifiant AVANT la
+   * première écriture et on le réutilise à chaque réessai : le réessai réécrit
+   * le même club au lieu d'en fabriquer un second (P1-03 — une 4G capricieuse
+   * laissait un club orphelin par appui). Libéré au succès.
+   *
+   * Délai de garde 15 s (P1-27) : hors réseau, l'écriture pend sans fin et
+   * l'overlay gelait à jamais. Au timeout, on ne SAIT pas si l'écriture est
+   * arrivée : le message le dit, et le RootNavigator relit `users/{uid}.clubId`
+   * au démarrage suivant — s'il est là, l'espace coach s'ouvre sans rien
+   * redemander.
+   */
   const doCreate = async (uid: string) => {
     try {
       setLoading(true);
-      // Délai de garde 15 s (P1-27) : hors réseau, l'écriture Firestore pend
-      // sans fin et l'overlay « Création de ton club... » gelait à jamais. Au
-      // timeout : toast honnête, la saisie reste en place. Si l'écriture
-      // atterrit après coup, le RootNavigator dérive l'espace coach tout seul.
+      const clubId = await reserverIdClub(uid, nouvelIdentifiantClub);
       await withTimeout(createClubAsCoach({
         name: clubName.trim(),
         uid,
         coachName: coachName.trim() || null,
+        clubId,
       }), 15000);
+      await libererIdClub(uid);
       haptics.success();
       // Plus de code annoncé ici : il n'est plus créé avec le club. Le coach le
       // génère quand il en a besoin (onglet Semaine), et il ne s'affiche qu'à
@@ -125,10 +175,17 @@ export default function CoachOnboardingScreen({ onRetourJoueur }: CoachOnboardin
     } catch (error) {
       if (error instanceof TimeoutError) {
         haptics.warning();
+        // MESSAGE HONNÊTE : au timeout, on ne SAIT pas si l'écriture est
+        // arrivée — elle a très bien pu atterrir après notre garde de 15 s.
+        // Dire « impossible de créer » serait une affirmation qu'on ne peut pas
+        // tenir. La réservation est CONSERVÉE : le réessai réécrira le même
+        // club, et au prochain démarrage le navigateur relit
+        // `users/{uid}.clubId` — s'il est là, il ouvre l'espace coach sans rien
+        // redemander.
         showToast({
           type: "warn",
-          title: "Impossible de créer le club pour le moment",
-          message: "Vérifie ta connexion. Ta saisie est conservée — réessaie dans un instant.",
+          title: "La création a peut-être abouti, on vérifie",
+          message: "Ta saisie est conservée. Réessaie dans un instant : aucun club en double ne sera créé.",
         });
         return;
       }
@@ -137,6 +194,7 @@ export default function CoachOnboardingScreen({ onRetourJoueur }: CoachOnboardin
       showToast({ type: "error", title: "Erreur", message: "Impossible de créer le club. Réessaie." });
     } finally {
       setLoading(false);
+      relacherVerrou();
     }
   };
 

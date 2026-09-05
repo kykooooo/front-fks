@@ -53,11 +53,34 @@ export type ClubDoc = {
  * `issueClubInviteCode` (services/clubInvites.ts), qui n'en stocke que
  * l'empreinte. Il n'y a plus rien à générer, ni à vérifier, ici.
  */
-export async function createClub(opts: { name: string; ownerUid: string }): Promise<ClubDoc> {
+/**
+ * Un identifiant de club neuf, SANS rien écrire.
+ *
+ * Il existe pour être RÉSERVÉ avant la première écriture, puis réutilisé à
+ * chaque réessai (services/reservationClub) : la création enchaîne trois
+ * écritures que les règles Firestore interdisent de grouper (l'appartenance
+ * propriétaire doit exister AVANT `users/{uid}.clubId` — firestore.rules:429-434
+ * évalue chaque opération d'un batch contre l'état ANTÉRIEUR au batch). Sans
+ * identifiant réservé, chaque réessai après un timeout créait un club de plus
+ * (audit d'inscription 2026-09, P1-03).
+ */
+export function nouvelIdentifiantClub(): string {
+  return doc(collection(db, "clubs")).id;
+}
+
+export async function createClub(opts: {
+  name: string;
+  ownerUid: string;
+  /** Identifiant réservé (réessai idempotent). Absent = un neuf est tiré. */
+  clubId?: string | null;
+}): Promise<ClubDoc> {
   const name = String(opts.name ?? "").trim();
   if (!name) throw new Error("CLUB_NAME_REQUIRED");
 
-  const clubRef = doc(collection(db, "clubs"));
+  const reserve = String(opts.clubId ?? "").trim();
+  // `setDoc … { merge: true }` sur un identifiant déjà écrit : le réessai
+  // réécrit LE MÊME club au lieu d'en créer un second.
+  const clubRef = reserve ? doc(db, "clubs", reserve) : doc(collection(db, "clubs"));
   await setDoc(
     clubRef,
     {
@@ -187,8 +210,21 @@ export async function createClubAsCoach(opts: {
   name: string;
   uid: string;
   coachName?: string | null;
+  /**
+   * Identifiant RÉSERVÉ avant la première écriture, réutilisé à chaque réessai.
+   *
+   * POURQUOI PAS UN `writeBatch` (qui rendrait la question sans objet) : les
+   * règles évaluent chaque opération d'un batch contre l'état ANTÉRIEUR au
+   * batch. L'appartenance propriétaire écrite dans le même batch serait donc
+   * INVISIBLE de `userClubIdIsLegitimate()` (firestore.rules:429-434), la
+   * troisième écriture serait refusée, et le batch étant tout-ou-rien PLUS
+   * AUCUN coach ne pourrait créer de club. L'ordre séquentiel ci-dessous est
+   * exigé par les règles ; l'idempotence est la seule réponse honnête côté
+   * client (l'atomicité vraie demanderait une Cloud Function — lot B).
+   */
+  clubId?: string | null;
 }): Promise<ClubDoc> {
-  const club = await createClub({ name: opts.name, ownerUid: opts.uid });
+  const club = await createClub({ name: opts.name, ownerUid: opts.uid, clubId: opts.clubId });
   await setClubMembership({ clubId: club.id, uid: opts.uid, accessRole: "owner" });
 
   const coachName = String(opts.coachName ?? "").trim();

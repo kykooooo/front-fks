@@ -52,7 +52,10 @@ describe("les deux overlays bloquants passent par le délai de garde (source)", 
   test("création de club : createClubAsCoach est borné, saisie conservée", () => {
     const source = lire("screens/CoachOnboardingScreen.tsx");
     expect(source).toMatch(/withTimeout\(createClubAsCoach\(/);
-    expect(source).toContain("Ta saisie est conservée — réessaie dans un instant.");
+    // Au timeout on ne SAIT pas si l'écriture est arrivée : le message ne
+    // l'affirme plus (audit inscription 2026-09), et la saisie reste en place.
+    expect(source).toContain("La création a peut-être abouti, on vérifie");
+    expect(source).toContain("Ta saisie est conservée.");
     expect(source).toMatch(/error instanceof TimeoutError/);
   });
 });
