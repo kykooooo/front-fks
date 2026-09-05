@@ -441,6 +441,8 @@ export default function RootNavigator() {
   // termine) du `null` de démarrage, où Firebase n'a encore rien restauré et où
   // une intention posée au lancement précédent doit survivre.
   const compteDejaConnecteRef = useRef(false);
+  /** L'identité du compte connecté, ou `null`. Ce qui change vraiment. */
+  const uidCourant = user?.uid ?? null;
   const startFirestoreWatch = useSyncStore((s) => s.startFirestoreWatch);
   const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
   const resetTrainingStore = useSyncStore((s) => s.resetForUser);
@@ -496,11 +498,13 @@ export default function RootNavigator() {
   // répondait « encore posée ») qui aurait fait hériter l'intention d'un compte
   // au suivant sur un téléphone partagé.
   //
-  // `user?.uid` en dépendance : la relecture couvre le moment exact où elle
+  // L'IDENTITÉ DU COMPTE en dépendance, pas l'objet `user` : la relecture couvre le moment exact où elle
   // compte — la connexion/inscription vient d'aboutir, le portillon n'est pas
   // encore monté. C'est ce qui rattrape une intention posée sur l'écran de
   // connexion ou d'inscription (components/auth/CoachEntryLink), et pas
-  // seulement celle posée sur l'accueil.
+  // seulement celle posée sur l'accueil. Dépendre de l'OBJET aurait relancé la
+  // lecture — et rouvert le Splash du portillon — à chaque nouvel instantané
+  // d'authentification portant pourtant le même compte.
   useEffect(() => {
     let vivant = true;
     // La remise à « pas encore lue » est SYNCHRONE et délibérée : entre le
@@ -513,11 +517,11 @@ export default function RootNavigator() {
       // ne l'est plus) : l'intention appartenait à la traversée qui vient de se
       // terminer. Un `null` de DÉMARRAGE, lui, n'efface rien — sinon une
       // intention posée hier serait perdue au premier réveil de Firebase.
-      if (!user && compteDejaConnecteRef.current) {
+      if (!uidCourant && compteDejaConnecteRef.current) {
         compteDejaConnecteRef.current = false;
         await effacerIntentionCoach();
       }
-      if (user) compteDejaConnecteRef.current = true;
+      if (uidCourant) compteDejaConnecteRef.current = true;
       const posee = await lireIntentionCoach();
       if (!vivant) return;
       setIntentionCoach(posee);
@@ -526,7 +530,7 @@ export default function RootNavigator() {
     return () => {
       vivant = false;
     };
-  }, [user]);
+  }, [uidCourant]);
 
   // ── QUAND L'INTENTION N'A PLUS DE SENS, ON L'OUBLIE (ET ON LE DIT) ────────
   // Deux fins de vie, toutes deux vérifiables sur l'état du compte :

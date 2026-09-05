@@ -33,6 +33,12 @@ import { CoachEntryLink } from "../components/auth/CoachEntryLink";
 type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
 const palette = theme.colors;
 
+// Plafond d'agrandissement des titres (cf. MonCorpsScreen) : le gabarit
+// d'en-tête de ces deux écrans est à hauteur fixe, et le cap global de 1,3
+// (config/textScaling) y laissait le titre pousser le formulaire sous le
+// clavier en Dynamic Type XXL (P2-10 de l'audit).
+const PLAFOND_TITRE = 1.2;
+
 const getLoginErrorMessage = (code?: string) => {
   switch (code) {
     case "auth/invalid-email":
@@ -45,6 +51,11 @@ const getLoginErrorMessage = (code?: string) => {
       return "Trop de tentatives. Réessaie dans quelques minutes.";
     case "auth/network-request-failed":
       return "Problème réseau. Vérifie ta connexion.";
+    // Compte désactivé côté console : « Email ou mot de passe incorrect »
+    // envoyait la personne réessayer indéfiniment une saisie juste
+    // (P2-03 de l'audit d'inscription).
+    case "auth/user-disabled":
+      return "Ce compte est désactivé. Écris à kyllian@fks-app.com pour le réactiver.";
     default:
       return "Vérifie tes informations puis réessaie.";
   }
@@ -151,7 +162,7 @@ export default function LoginScreen({ navigation }: Props) {
           <BrandMark size="sm" style={styles.brandMark} />
 
           {/* Header */}
-          <Text style={styles.title}>Content de te revoir</Text>
+          <Text style={styles.title} maxFontSizeMultiplier={PLAFOND_TITRE}>Content de te revoir</Text>
           <Text style={styles.subtitle}>Connecte-toi pour reprendre ta progression.</Text>
 
           {/* Form */}

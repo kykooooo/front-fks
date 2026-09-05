@@ -28,10 +28,17 @@ import { STORAGE_KEYS } from "../constants/storage";
 import { Screen } from "../components/ui/Screen";
 import { Button } from "../components/ui/Button";
 import { BrandMark } from "../components/ui/BrandMark";
+import { forceMotDePasse } from "../domain/passwordStrength";
 import { CoachEntryLink } from "../components/auth/CoachEntryLink";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Register">;
 const palette = theme.colors;
+
+// Plafond d'agrandissement des titres (cf. MonCorpsScreen) : le gabarit
+// d'en-tête de ces deux écrans est à hauteur fixe, et le cap global de 1,3
+// (config/textScaling) y laissait le titre pousser le formulaire sous le
+// clavier en Dynamic Type XXL (P2-10 de l'audit).
+const PLAFOND_TITRE = 1.2;
 
 const getRegisterErrorMessage = (code?: string) => {
   switch (code) {
@@ -45,6 +52,14 @@ const getRegisterErrorMessage = (code?: string) => {
       return "Problème réseau. Vérifie ta connexion.";
     case "auth/too-many-requests":
       return "Trop de tentatives. Réessaie dans quelques minutes.";
+    // Provider email/mot de passe désactivé côté console Firebase. Le message
+    // par défaut (« Vérifie tes infos ») envoyait la personne relire une saisie
+    // parfaitement correcte, indéfiniment (P2-03 de l'audit d'inscription).
+    case "auth/operation-not-allowed":
+      return "L'inscription est momentanément indisponible. Réessaie plus tard ou écris à kyllian@fks-app.com.";
+    // Renvoyé par certains SDK à la place de invalid-email/weak-password.
+    case "auth/invalid-credential":
+      return "Email ou mot de passe refusé. Vérifie ta saisie puis réessaie.";
     default:
       return "Vérifie tes infos et réessaie.";
   }
@@ -152,7 +167,7 @@ export default function RegisterScreen({ navigation }: Props) {
     }
   };
 
-  const pwdStrength = pwd.length === 0 ? 0 : pwd.length < 6 ? 1 : pwd.length < 10 ? 2 : 3;
+  const pwdStrength = forceMotDePasse(pwd);
   const strengthColors = ["transparent", palette.danger, palette.warn, palette.success];
   const strengthLabels = ["", "Faible", "Moyen", "Fort"];
 
@@ -181,7 +196,7 @@ export default function RegisterScreen({ navigation }: Props) {
           </View>
 
           <BrandMark size="sm" style={styles.brandMark} />
-          <Text style={styles.title}>Crée ton compte</Text>
+          <Text style={styles.title} maxFontSizeMultiplier={PLAFOND_TITRE}>Crée ton compte</Text>
           <Text style={styles.subtitle}>Rejoins ton club ou configure ton profil FKS.</Text>
 
           <Animated.View style={[styles.form, { transform: [{ translateX: shake }] }]}>
@@ -192,7 +207,12 @@ export default function RegisterScreen({ navigation }: Props) {
                 placeholderTextColor={palette.muted}
                 value={name}
                 onChangeText={setName}
-                autoComplete="name"
+                // `given-name`, pas `name` : iOS proposait le NOM COMPLET du
+                // contact (« Kyllian Le Bris ») dans un champ Prénom, et cette
+                // valeur devenait `firstName` — affichée telle quelle au coach
+                // dans son effectif (P2-02 de l'audit d'inscription).
+                autoComplete="given-name"
+                textContentType="givenName"
                 returnKeyType="next"
                 onSubmitEditing={() => emailRef.current?.focus()}
                 style={styles.input}

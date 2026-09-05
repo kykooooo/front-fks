@@ -303,7 +303,7 @@ describe("navigation — l'intention choisit un ÉCRAN, jamais un droit", () => 
     // démarrage : Firebase répond `null` avant d'avoir restauré la session, et
     // une intention posée au lancement précédent doit précisément survivre à ce
     // moment-là (c'est tout l'objet de sa persistance, audit 2026-09 P1-02).
-    const ancre = "if (!user && compteDejaConnecteRef.current)";
+    const ancre = "if (!uidCourant && compteDejaConnecteRef.current)";
     const index = navigateur.indexOf(ancre);
     expect(index).toBeGreaterThan(-1);
     const bloc = navigateur.slice(index, index + 400);
@@ -364,7 +364,7 @@ describe("navigation — l'intention choisit un ÉCRAN, jamais un droit", () => 
     //  3. compte joueur déjà configuré — on le dit, on ne casse rien ;
     //  4. renoncement explicite (testé plus bas, création de club).
     for (const chemin of [
-      "if (!user && compteDejaConnecteRef.current)",
+      "if (!uidCourant && compteDejaConnecteRef.current)",
       "if (clubId) {",
       'if (profileCompleted === true && appSpace.space !== "coach")',
       "onRetourJoueur={() => {",

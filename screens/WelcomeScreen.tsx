@@ -24,6 +24,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const palette = theme.colors;
 
+// Plafond d'agrandissement des textes du bloc CTA et des titres de slide : ce
+// bloc est en `position:absolute` avec une réserve FIXE de 216 px (voir
+// `bottomBlock`), et en Dynamic Type XXL ses trois lignes débordaient sur le
+// sous-titre (P2-10 de l'audit). Le cap GLOBAL de l'app est à 1,3
+// (config/textScaling) ; ici on serre d'un cran, comme MonCorpsScreen.
+const PLAFOND_TITRE = 1.2;
+
 /* ─── Slides data ─── */
 const SLIDES = [
   {
@@ -74,7 +81,7 @@ function Slide({ item, width, bottomInset }: { item: SlideData; width: number; b
       <View style={styles.iconCircle}>
         <Ionicons name={item.icon} size={40} color={palette.accent} />
       </View>
-      <Text style={styles.title}>{item.title}</Text>
+      <Text style={styles.title} maxFontSizeMultiplier={PLAFOND_TITRE}>{item.title}</Text>
       <Text style={styles.subtitle}>{item.subtitle}</Text>
     </View>
   );
@@ -175,7 +182,7 @@ export default function WelcomeScreen({ onComplete }: Props) {
         accessibilityRole="button"
         accessibilityLabel="Passer l'introduction"
       >
-        <Text style={styles.skipText}>Passer</Text>
+        <Text style={styles.skipText} maxFontSizeMultiplier={PLAFOND_TITRE}>Passer</Text>
       </Pressable>
 
       {/* Slides */}
@@ -233,7 +240,7 @@ export default function WelcomeScreen({ onComplete }: Props) {
           accessibilityRole="button"
           accessibilityLabel="J'ai déjà un compte, me connecter"
         >
-          <Text style={styles.loginLinkText}>J'ai déjà un compte</Text>
+          <Text style={styles.loginLinkText} maxFontSizeMultiplier={PLAFOND_TITRE}>J'ai déjà un compte</Text>
         </Pressable>
 
         {/* Entrée coach — voir handleCoach. Caption + icône, sous les deux CTA
@@ -246,7 +253,7 @@ export default function WelcomeScreen({ onComplete }: Props) {
           accessibilityLabel="Je suis coach, créer mon club"
         >
           <Ionicons name="people-outline" size={14} color={palette.sub} />
-          <Text style={styles.coachLinkText}>Je suis coach</Text>
+          <Text style={styles.coachLinkText} maxFontSizeMultiplier={PLAFOND_TITRE}>Je suis coach</Text>
         </Pressable>
       </View>
     </Screen>

@@ -24,6 +24,14 @@ export const OBJECTIVE_DISPLAY_LABELS: Record<string, string> = {
   "Etre en forme toute la saison": "Être en forme toute la saison",
   "Gagner en vitesse / explosivite": "Gagner en vitesse / explosivité",
   "Reprendre apres une blessure": "Reprendre après une blessure",
+  // Depuis le 05/09, cet objectif est PERSISTÉ sans accent (P2-05 de l'audit
+  // d'inscription : il était le seul à en porter un, en contradiction avec la
+  // convention rappelée trois lignes plus haut dans le questionnaire).
+  // L'ancienne forme accentuée reste en base pour les profils antérieurs —
+  // aucune migration de masse — et s'affiche telle quelle, sans passer par
+  // cette table : elle est déjà correcte à l'œil.
+  "Mieux encaisser les entrainements et les matchs":
+    "Mieux encaisser les entraînements et les matchs",
 };
 
 const display = (table: Record<string, string>) =>

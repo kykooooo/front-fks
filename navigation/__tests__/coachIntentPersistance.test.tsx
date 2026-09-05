@@ -205,7 +205,7 @@ describe("le navigateur — il attend la réponse du disque avant de router", ()
     // compte (l'inscription vient d'aboutir, le portillon n'est pas monté).
     const index = navigateur.indexOf("setIntentionCoachLue(false)");
     expect(index).toBeGreaterThan(-1);
-    expect(navigateur.slice(index, index + 1200)).toContain("}, [user]);");
+    expect(navigateur.slice(index, index + 1200)).toContain("}, [uidCourant]);");
   });
 
   test("aucun écran d'arrivée n'est choisi tant que la lecture n'a pas répondu", () => {

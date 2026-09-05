@@ -52,6 +52,7 @@ import {
 } from "../domain/parentalConsent";
 import { PRIVACY_POLICY } from "../utils/legalContent";
 import { recommendMicrocycle } from "../domain/recommendMicrocycle";
+import { OBJECTIF_ENCAISSER, normalizeMainObjective } from "../domain/mainObjective";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { showToast } from "../utils/toast";
 import { withTimeout, TimeoutError } from "../utils/errorHandler";
@@ -104,7 +105,10 @@ const dominantFeet = ["Pied droit", "Pied gauche", "Ambidextre"] as const;
 const objectives = [
   "Etre en forme toute la saison",
   "Gagner en vitesse / explosivite",
-  "Mieux encaisser les entraînements et les matchs",
+  // Valeur SANS accent (convention : jamais d'accent dans une valeur
+  // persistée). L'ancienne forme accentuée reste lisible — normalizeMainObjective
+  // la ramène ici — et aucun profil existant n'est migré (domain/mainObjective).
+  OBJECTIF_ENCAISSER,
   "Reprendre apres une blessure",
 ] as const;
 const fksSessionsOptions = ["1", "2", "3", "4"] as const;
@@ -162,6 +166,12 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
   /* ─── Form state ─── */
   const [firstName, setFirstName] = useState("");
+  // Le prénom vient-il de l'inscription (préremplissage) ? Sert UNIQUEMENT à
+  // afficher une phrase d'aide honnête — « déjà renseigné » — au lieu de laisser
+  // croire qu'on redemande la même chose (P2-01 de l'audit). Un état, pas une
+  // ref : l'affichage en dépend, et une ref posée dans le préremplissage
+  // asynchrone ne redéclencherait aucun rendu.
+  const [prenomPrerempli, setPrenomPrerempli] = useState(false);
   const [clubId, setClubId] = useState("");
   const [clubInviteCode, setClubInviteCode] = useState("");
   const [position, setPosition] = useState("");
@@ -233,8 +243,13 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
     getDoc(doc(db, "users", user.uid)).then((snap) => {
       const d = snap.data();
       const docFirstName = d && typeof d.firstName === "string" ? d.firstName.trim() : "";
-      if (docFirstName) setFirstName(docFirstName);
-      else if (fallbackFirstName) setFirstName(fallbackFirstName);
+      if (docFirstName) {
+        setFirstName(docFirstName);
+        setPrenomPrerempli(true);
+      } else if (fallbackFirstName) {
+        setFirstName(fallbackFirstName);
+        setPrenomPrerempli(true);
+      }
       if (!d) return;
       if (typeof d.clubId === "string") setClubId(d.clubId);
       if (typeof d.position === "string") setPosition(d.position);
@@ -253,7 +268,9 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       }
       if (typeof d.level === "string") setLevel(d.level);
       if (typeof d.dominantFoot === "string") setDominantFoot(d.dominantFoot);
-      if (typeof d.mainObjective === "string") setMainObjective(d.mainObjective);
+      // Normalisé à la LECTURE : un profil d'avant le 05/09 porte la forme
+      // accentuée, et sans ça sa carte n'apparaîtrait pas sélectionnée.
+      if (typeof d.mainObjective === "string") setMainObjective(normalizeMainObjective(d.mainObjective) ?? "");
       if (d.targetFksSessionsPerWeek != null) setTargetFksSessionsPerWeek(String(d.targetFksSessionsPerWeek));
       if (typeof d.selfReportedGapDays === "number") {
         const found = SELF_REPORTED_GAP_OPTIONS.find((o) => o.days === d.selfReportedGapDays);
@@ -679,7 +696,18 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
               value={firstName}
               onChangeText={setFirstName}
               autoCapitalize="words"
+              // `given-name` : le champ attend un PRÉNOM. Sans ce jeton, iOS
+              // proposait le nom complet du contact (P2-02).
+              autoComplete="given-name"
+              textContentType="givenName"
             />
+            {/* Prénom déjà donné à l'inscription : on ne le redemande pas, on
+                le montre — et il reste corrigeable d'un tap. */}
+            {prenomPrerempli && !isEditMode ? (
+              <Text style={styles.fieldHelp}>
+                Déjà renseigné à l'inscription. Corrige-le si besoin.
+              </Text>
+            ) : null}
 
             <Text style={styles.fieldLabel}>Code club (optionnel)</Text>
             <TextInput
@@ -690,6 +718,12 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
               onChangeText={setClubInviteCode}
               autoCapitalize="characters"
               autoCorrect={false}
+              // Un code d'invitation n'est ni un nom, ni un email, ni un mot de
+              // passe : aucune suggestion du trousseau n'a de sens ici, et une
+              // valeur autoremplie par erreur consommerait une tentative du
+              // quota serveur (P2-02 de l'audit).
+              autoComplete="off"
+              spellCheck={false}
             />
             {/* Le code n'est vérifié que par le serveur, APRÈS l'enregistrement
                 du profil : rien de ce qui est saisi ici ne peut être perdu à
@@ -1070,7 +1104,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
             {/* ─── Progress section ─── */}
             <View style={styles.progressSection}>
               <View style={styles.progressLabelRow}>
-                <Text style={styles.progressStep}>Étape {step + 1}/{TOTAL_STEPS}</Text>
+                <Text style={styles.progressStep} maxFontSizeMultiplier={PLAFOND_TITRE}>Étape {step + 1}/{TOTAL_STEPS}</Text>
                 <Text style={styles.progressName}>{STEPS[step].label}</Text>
               </View>
               <View style={styles.progressBarBg}>
@@ -1099,7 +1133,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                     <Ionicons name={STEPS[step].icon} size={24} color={palette.accent} />
                   </View>
                   <View>
-                    <Text style={styles.stepTitle}>{STEPS[step].label}</Text>
+                    <Text style={styles.stepTitle} maxFontSizeMultiplier={PLAFOND_TITRE}>{STEPS[step].label}</Text>
                     <Text style={styles.stepSubtitle}>{STEPS[step].subtitle}</Text>
                   </View>
                 </View>

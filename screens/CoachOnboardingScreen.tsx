@@ -21,6 +21,10 @@ import { withTimeout, TimeoutError } from "../utils/errorHandler";
 
 const palette = coachColors;
 
+// Plafond d'agrandissement du titre (cf. MonCorpsScreen). Cap global : 1,3
+// (config/textScaling).
+const PLAFOND_TITRE = 1.2;
+
 type CoachOnboardingScreenProps = {
   /**
    * SORTIE DE SECOURS QUAND CET ÉCRAN EST LE POINT D'ARRIVÉE.
@@ -248,7 +252,7 @@ export default function CoachOnboardingScreen({ onRetourJoueur }: CoachOnboardin
           <View style={styles.iconCircle}>
             <Ionicons name="people" size={26} color={palette.accent} />
           </View>
-          <Text style={styles.title}>Espace coach</Text>
+          <Text style={styles.title} maxFontSizeMultiplier={PLAFOND_TITRE}>Espace coach</Text>
           <Text style={styles.subtitle}>
             Crée ton club, partage le code à tes joueurs, suis leur préparation. FKS construit la prépa, toi tu donnes
             le terrain.
