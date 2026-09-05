@@ -560,16 +560,35 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       // aucune question à poser et le parcours ne change pas d'un pixel.
       if (normalizedInvite) poserRattachementClub(user.uid);
 
-      // Délai de garde 15 s (P1-05) : hors réseau, le setDoc pend sans fin et
-      // l'overlay « Enregistrement… » gelait à jamais — force-kill = tout le
-      // questionnaire perdu. Au timeout : toast honnête, les réponses restent
-      // en place, « Terminer » se retape (setDoc merge idempotent). Si
-      // l'écriture atterrit après coup (réseau revenu), le listener du
-      // RootNavigator voit profileCompleted et bascule tout seul.
-      const attach = await withTimeout(saveProfileThenAttachClub(
+      // DEUX DÉLAIS DE GARDE, UN PAR DÉPENDANCE — PLUS UN SEUL SUR L'ENSEMBLE.
+      //
+      // L'ancienne enveloppe unique, posée AUTOUR de l'appel ci-dessous,
+      // bornait les DEUX écritures avec un seul chronomètre. Conséquence mesurée
+      // (R1 du round 3) : le `setDoc` passe en 12 s, puis la callable
+      // `joinClubWithInviteCode` dépasse les 3 s de reliquat (cold start
+      // Cloud Functions gen2 + réseau lent) — le `TimeoutError` remonte au
+      // catch global, qui baisse le drapeau, fait tomber le portillon, emmène
+      // le joueur sur l'accueil et affiche « Impossible d'enregistrer pour le
+      // moment » ALORS QUE LE PROFIL EST ENREGISTRÉ. Un message faux, et
+      // aucune carte pour dire ce qu'il en est du club.
+      //
+      // Chaque dépendance porte donc SA propre borne :
+      //  - l'écriture du profil, 15 s (P1-05) : hors réseau, le `setDoc` pend
+      //    sans fin et l'overlay « Enregistrement… » gelait à jamais. Un
+      //    dépassement remonte comme avant, et le message est alors JUSTE ;
+      //  - le rattachement, 20 s : un dépassement est rattrapé par le
+      //    try/catch de `saveProfileThenAttachClub`, qui rend
+      //    `status: "failed", nature: "technique"` — donc la carte
+      //    « Impossible de vérifier le code pour l'instant. », le drapeau
+      //    toujours levé, et l'écran qui reste.
+      //
+      // Dans les deux cas l'écriture partie n'est pas annulée : si elle
+      // atterrit après coup (réseau revenu), le listener du RootNavigator voit
+      // `profileCompleted` et bascule tout seul.
+      const attach = await saveProfileThenAttachClub(
         {
           saveProfile: () =>
-            setDoc(doc(db, "users", user.uid), {
+            withTimeout(setDoc(doc(db, "users", user.uid), {
               uid: user.uid,
               firstName: firstName.trim(),
               // `clubId` n'est écrit QUE si on en connaît un. Avant, la clé
@@ -615,11 +634,11 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                   }
                 : {}),
               updatedAt: serverTimestamp(),
-            }, { merge: true }).then(() => undefined),
-          joinClub: joinClubWithInviteCode,
+            }, { merge: true }).then(() => undefined), 15000),
+          joinClub: (code) => withTimeout(joinClubWithInviteCode(code), 20000),
         },
         normalizedInvite,
-      ), 15000);
+      );
 
       if (attach.status !== "skipped") {
         // Mesure du taux d'échec du code club. On ne sait plus POURQUOI un code
@@ -676,12 +695,15 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
       terminer();
     } catch (error) {
-      // ON NE SAIT PAS OÙ ÇA A CASSÉ, DONC ON NE RETIENT RIEN. Un refus de code
-      // ne passe jamais par ici (`saveProfileThenAttachClub` le rend en
-      // `status: "failed"`, avec sa carte) : ce qui arrive ici est un échec
-      // d'écriture, ou le délai de garde de l'ensemble. Dans les deux cas il n'y
-      // a aucune question de club posée à l'écran, et un drapeau resté levé
-      // interdirait l'entrée dans l'application à ce compte.
+      // LE PROFIL N'EST PAS ENREGISTRÉ, DONC ON NE RETIENT RIEN. Ni un refus de
+      // code ni une panne du rattachement ne passent plus par ici : le premier
+      // rend `status: "failed"` avec sa carte, et le second est borné à 20 s
+      // DANS la dépendance, donc rattrapé par le try/catch de
+      // `saveProfileThenAttachClub` (R1 du round 3 — l'ancienne enveloppe
+      // globale l'envoyait ici, drapeau baissé et message faux). Ce qui arrive
+      // ici est un échec de l'ÉCRITURE du profil, ou son délai de garde de
+      // 15 s. Aucune question de club n'est posée à l'écran, et un drapeau
+      // resté levé interdirait l'entrée dans l'application à ce compte.
       leverRattachementClub();
       if (error instanceof TimeoutError) {
         // Rien n'est perdu : le state du questionnaire est intact, l'écran

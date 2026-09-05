@@ -42,11 +42,29 @@ describe("les deux overlays bloquants passent par le délai de garde (source)", 
   const racine = resolve(__dirname, "..", "..");
   const lire = (rel: string) => readFileSync(resolve(racine, rel), "utf8");
 
-  test("setup profil : saveProfileThenAttachClub est borné, réponses conservées", () => {
+  // UNE BORNE PAR DÉPENDANCE, JAMAIS UNE SEULE SUR L'ENSEMBLE (R1 du round 3).
+  // L'enveloppe globale faisait partager UN chronomètre à l'écriture du profil
+  // et à la callable de rattachement : un `setDoc` lent puis une callable lente
+  // (cold start Cloud Functions gen2) sortaient en `TimeoutError`, drapeau
+  // baissé, portillon tombé, accueil — et le toast « Impossible d'enregistrer
+  // pour le moment » alors que le profil ÉTAIT enregistré.
+  test("setup profil : les DEUX dépendances sont bornées séparément", () => {
     const source = lire("screens/ProfileSetupScreen.tsx");
-    expect(source).toMatch(/withTimeout\(saveProfileThenAttachClub\(/);
+    // L'écriture du profil : un dépassement remonte, et le message est juste.
+    expect(source).toMatch(/saveProfile: \(\) =>\s*\n?\s*withTimeout\(setDoc\(/);
+    expect(source).toMatch(/\{ merge: true \}\)\.then\(\(\) => undefined\), 15000\)/);
+    // Le rattachement : un dépassement est rattrapé par le try/catch de
+    // `saveProfileThenAttachClub` → carte « Impossible de vérifier le code ».
+    expect(source).toMatch(
+      /joinClub: \(code\) => withTimeout\(joinClubWithInviteCode\(code\), 20000\)/,
+    );
     expect(source).toContain("Tes réponses sont conservées — réessaie dans un instant.");
     expect(source).toMatch(/error instanceof TimeoutError/);
+  });
+
+  test("setup profil : l'ancienne enveloppe globale est INTERDITE", () => {
+    const source = lire("screens/ProfileSetupScreen.tsx");
+    expect(source).not.toMatch(/withTimeout\(\s*saveProfileThenAttachClub\(/);
   });
 
   test("création de club : createClubAsCoach est borné, saisie conservée", () => {
