@@ -307,7 +307,23 @@ describe("createClubAsCoach — le créateur devient PROPRIÉTAIRE, pas coach", 
     expect(chemins).toEqual(["users/coachA"]);
   });
 
-  test("la reprise rend le MÊME club, avec le nom saisi", async () => {
+  // R2 DU ROUND 3 : la reprise saute l'écriture de `clubs/{clubId}` (une UPDATE
+  // que les règles refuseraient). Un nom corrigé entre deux tentatives ne
+  // partirait donc NULLE PART — et l'ancienne version rendait quand même la
+  // saisie locale, si bien que Firestore gardait « U16 » pendant que toute l'UI
+  // annonçait « U17 ». C'est le nom EN BASE qui fait foi.
+  test("la reprise rend le MÊME club, avec le nom enregistré à la première écriture", async () => {
+    const club = await createClubAsCoach({
+      name: "  Club Corrigé  ", // la saisie de CETTE tentative : sans effet
+      uid: "coachA",
+      clubId: "reserve-1",
+      etapeDejaFaite: 2,
+      nomEnregistre: "  Club Neuf  ",
+    });
+    expect(club).toEqual({ id: "reserve-1", name: "Club Neuf", ownerUid: "coachA" });
+  });
+
+  test("sans nom enregistré (réservation d'avant le lot), la reprise retombe sur la saisie", async () => {
     const club = await createClubAsCoach({
       name: "  Club Neuf  ",
       uid: "coachA",
@@ -315,6 +331,21 @@ describe("createClubAsCoach — le créateur devient PROPRIÉTAIRE, pas coach", 
       etapeDejaFaite: 2,
     });
     expect(club).toEqual({ id: "reserve-1", name: "Club Neuf", ownerUid: "coachA" });
+  });
+
+  test("hors reprise, le nom enregistré n'a rien à dire : c'est la saisie qui est écrite", async () => {
+    // Étape 0 : le club N'EST PAS écrit, la saisie est donc la seule vérité.
+    const club = await createClubAsCoach({
+      name: "Club Neuf",
+      uid: "coachA",
+      clubId: "reserve-1",
+      nomEnregistre: "vieux nom",
+    });
+    expect(club.name).toBe("Club Neuf");
+    const ecritureClub = setDocMock.mock.calls.find(
+      (c: any[]) => (c[0]?.path as string[]).join("/") === "clubs/reserve-1",
+    );
+    expect(ecritureClub?.[1]).toMatchObject({ name: "Club Neuf" });
   });
 
   test("chaque écriture réussie est annoncée, dans l'ordre — c'est ce qui persiste la reprise", async () => {

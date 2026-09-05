@@ -62,7 +62,9 @@ const METRICS: Metrics = {
 // `findAll` rend des nœuds dont les props sont `unknown` : sans ces types,
 // chaque `onPress()` est une erreur `tsc` (R3 de la contre-vérification).
 type NoeudPressable = { props: { onPress: () => void } };
-type NoeudSaisie = { props: { onChangeText: (valeur: string) => void } };
+type NoeudSaisie = {
+  props: { onChangeText: (valeur: string) => void; value?: string; editable?: boolean };
+};
 type BoutonAlerte = { text?: string; onPress?: () => void };
 
 /** Ce que l'écran demande au repository, appel par appel. */
@@ -71,6 +73,7 @@ type AppelCreation = {
   uid: string;
   clubId?: string | null;
   etapeDejaFaite?: number;
+  nomEnregistre?: string | null;
   onEtapeFaite?: (etape: 0 | 1 | 2 | 3) => void | Promise<void>;
 };
 
@@ -270,7 +273,9 @@ describe("le réessai REPREND, il ne rejoue pas (R2)", () => {
     expect(appels()[0].etapeDejaFaite).toBe(0);
     // La réservation a retenu l'étape franchie.
     const brut = await AsyncStorage.getItem(STORAGE_KEYS.CLUB_CREATION_ID("coachA"));
-    expect(JSON.parse(String(brut))).toEqual({ clubId: "club-1", etape: 1 });
+    // Le nom écrit part avec elle : c'est lui qui fera foi à la reprise (R2 du
+    // round 3), le document `clubs/{id}` n'étant plus réécrit.
+    expect(JSON.parse(String(brut))).toEqual({ clubId: "club-1", etape: 1, name: "FC Test" });
 
     // Deuxième essai : MÊME identifiant, et on repart de l'étape 1 — donc ni
     // réécriture du club (que les règles refuseraient), ni club en double.
@@ -325,6 +330,97 @@ describe("le réessai REPREND, il ne rejoue pas (R2)", () => {
 
     await creer();
     expect(await AsyncStorage.getItem(STORAGE_KEYS.CLUB_CREATION_ID("coachA"))).toBeNull();
+  });
+});
+
+// ─── R2 DU ROUND 3 : LE NOM EST GELÉ DÈS QU'IL EST EN BASE ──────────────────
+// À partir de l'étape 1, la reprise saute l'écriture de `clubs/{clubId}` (une
+// UPDATE que les règles refuseraient). Un nom corrigé entre deux tentatives ne
+// partait donc nulle part : Firestore gardait « AS Alpha » pendant que l'écran
+// félicitait le coach pour « AS Beta ». On affiche le vrai, on verrouille, on
+// le dit.
+describe("le nom du club est gelé à la reprise", () => {
+  /** Le texte d'honnêteté affiché sous le champ verrouillé est-il là ? */
+  const noteVerrou = (renderer: TestRenderer.ReactTestRenderer) =>
+    renderer.root.findAll((n) => n.props?.children === "Le nom du club est déjà enregistré.", {
+      deep: true,
+    }).length > 0;
+
+  test("nom A à l'essai 1, saisie B à l'essai 2 : c'est A qui part, et le champ est verrouillé", async () => {
+    // Essai 1 : le club est écrit sous « AS Alpha », puis le délai de garde
+    // rend la main — exactement l'entrelacement d'un timeout.
+    creationMock.mockImplementationOnce(async (opts: AppelCreation) => {
+      await opts.onEtapeFaite?.(1);
+      const { TimeoutError } = require("../../utils/errorHandler");
+      throw new TimeoutError();
+    });
+
+    const alerte = jest
+      .spyOn(Alert, "alert")
+      .mockImplementation((_titre, _message, boutons) => {
+        (boutons ?? []).forEach((b) => {
+          if ((b as BoutonAlerte).text === "Créer mon espace entraîneur") {
+            (b as BoutonAlerte).onPress?.();
+          }
+        });
+      });
+
+    const premier = await rendre();
+    await act(async () => {
+      premier.champ().props.onChangeText("AS Alpha");
+    });
+    // Avant toute écriture, le nom se corrige librement.
+    expect(premier.champ().props.editable).not.toBe(false);
+    expect(noteVerrou(premier.renderer)).toBe(false);
+
+    await act(async () => {
+      premier.bouton().props.onPress();
+    });
+    expect(appels()[0].name).toBe("AS Alpha");
+    // Le nom est parti sur le disque avec l'étape franchie.
+    expect(
+      JSON.parse(String(await AsyncStorage.getItem(STORAGE_KEYS.CLUB_CREATION_ID("coachA")))),
+    ).toEqual({ clubId: "club-1", etape: 1, name: "AS Alpha" });
+
+    // Essai 2, montage neuf (l'app a pu être tuée entre-temps).
+    const second = await rendre();
+    expect(second.champ().props.value).toBe("AS Alpha");
+    expect(second.champ().props.editable).toBe(false);
+    expect(noteVerrou(second.renderer)).toBe(true);
+
+    // Le coach tente de corriger : le champ n'en veut pas.
+    await act(async () => {
+      second.champ().props.onChangeText("AS Beta");
+    });
+    expect(second.champ().props.value).toBe("AS Alpha");
+
+    await act(async () => {
+      second.bouton().props.onPress();
+    });
+    expect(appels()).toHaveLength(2);
+    expect(appels()[1].name).toBe("AS Alpha");
+    expect(appels()[1].nomEnregistre).toBe("AS Alpha");
+    expect(appels()[1].etapeDejaFaite).toBe(1);
+    alerte.mockRestore();
+  });
+
+  test("aucune écriture passée : rien n'est verrouillé, et rien n'est réservé au montage", async () => {
+    const { champ, renderer } = await rendre();
+    expect(champ().props.editable).not.toBe(false);
+    expect(noteVerrou(renderer)).toBe(false);
+    // Le simple affichage de l'écran ne pose PAS de réservation : sans ça, le
+    // club suivant hériterait d'un identifiant tiré pour rien.
+    expect(await AsyncStorage.getItem(STORAGE_KEYS.CLUB_CREATION_ID("coachA"))).toBeNull();
+  });
+
+  test("réservation d'avant ce lot (sans nom) : le champ reste libre", async () => {
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.CLUB_CREATION_ID("coachA"),
+      JSON.stringify({ clubId: "club-1", etape: 1 }),
+    );
+    const { champ } = await rendre();
+    expect(champ().props.editable).not.toBe(false);
+    expect(champ().props.value).toBe("");
   });
 });
 

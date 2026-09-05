@@ -2,7 +2,7 @@
 // Création d'un club par un coach/staff.
 // Le coach pilote le contexte du club ; il ne génère pas les séances (c'est FKS le prépa).
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, Keyboard, Alert } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,6 +23,7 @@ import {
   enregistrerEtapeClub,
   estRefusPermission,
   libererIdClub,
+  lireReservationClub,
   remplacerReservationClub,
   reserverIdClub,
 } from "../services/reservationClub";
@@ -82,6 +83,38 @@ export default function CoachOnboardingScreen({
   // génération (screens/newSession/echecGeneration).
   const verrouCreationRef = useRef(false);
   const [confirmationOuverte, setConfirmationOuverte] = useState(false);
+
+  /**
+   * LE NOM DÉJÀ ÉCRIT EN BASE, quand une création s'est arrêtée après sa
+   * première écriture. `null` le reste du temps.
+   *
+   * À partir de l'étape 1, `clubs/{clubId}` existe et la reprise n'y retouche
+   * pas (ce serait une UPDATE que les règles refusent tant que l'appartenance
+   * n'existe pas). Laisser le champ modifiable était donc un mensonge : le
+   * coach corrigeait « FC Exemple U16 » en « U17 », l'app le félicitait pour
+   * « U17 », et Firestore gardait « U16 » (R2 du round 3). On affiche le vrai
+   * nom, on verrouille le champ, et on le dit.
+   */
+  const [nomVerrouille, setNomVerrouille] = useState<string | null>(null);
+
+  // Une création interrompue peut dater d'un tout autre lancement de l'app :
+  // on relit le disque au montage, sans jamais POSER de réservation au passage
+  // (`lireReservationClub`, pas `reserverIdClub`).
+  useEffect(() => {
+    let vivant = true;
+    const uid = getAuth().currentUser?.uid;
+    if (!uid) return;
+    void lireReservationClub(uid).then((reservation) => {
+      if (!vivant) return;
+      const nom = reservation && reservation.etape >= 1 ? reservation.name : undefined;
+      if (!nom) return;
+      setNomVerrouille(nom);
+      setClubName(nom);
+    });
+    return () => {
+      vivant = false;
+    };
+  }, []);
 
   /** Rend la main : le geste est terminé (annulé, échoué, ou abouti). */
   const relacherVerrou = () => {
@@ -246,15 +279,26 @@ export default function CoachOnboardingScreen({
     try {
       setLoading(true);
       const reservation = await reserverIdClub(uid, nouvelIdentifiantClub);
+      // Le nom déjà en base gagne sur la saisie dès l'étape 1 : le document
+      // n'est plus réécrit, donc la saisie n'irait nulle part (R2 du round 3).
+      // Le champ est verrouillé sur ce nom-là, les deux ne peuvent pas diverger.
+      const nomEnBase = reservation.etape >= 1 ? (reservation.name ?? null) : null;
+      const nomEnvoye = nomEnBase ?? clubName.trim();
+      if (nomEnBase) setNomVerrouille(nomEnBase);
       await withTimeout(createClubAsCoach({
-        name: clubName.trim(),
+        name: nomEnvoye,
         uid,
         coachName: coachName.trim() || null,
         clubId: reservation.clubId,
         etapeDejaFaite: reservation.etape,
+        nomEnregistre: nomEnBase,
         // Notée sur le disque au fur et à mesure : une app tuée entre deux
-        // écritures doit savoir où reprendre, pas repartir de zéro.
-        onEtapeFaite: (etape) => enregistrerEtapeClub(uid, reservation.clubId, etape),
+        // écritures doit savoir où reprendre, pas repartir de zéro. Le nom part
+        // avec : à partir de l'étape 1 c'est LUI qui fait foi, plus la saisie.
+        onEtapeFaite: (etape) => {
+          if (etape === 1) setNomVerrouille(nomEnvoye);
+          return enregistrerEtapeClub(uid, reservation.clubId, etape, nomEnvoye);
+        },
       }), 15000);
       await libererIdClub(uid);
       haptics.success();
@@ -294,6 +338,10 @@ export default function CoachOnboardingScreen({
         // précisément ce qui enfermait le coach. On jette et on repart neuf.
         if (__DEV__) console.warn("[CoachOnboarding] écriture refusée, réservation remplacée");
         await remplacerReservationClub(uid, nouvelIdentifiantClub);
+        // Réservation neuve, étape 0, aucun club écrit sous cet identifiant :
+        // le nom redevient modifiable. Le garder verrouillé enfermerait le
+        // coach sur un nom qui ne correspond plus à rien.
+        setNomVerrouille(null);
         haptics.warning();
         showToast({
           type: "warn",
@@ -371,14 +419,24 @@ export default function CoachOnboardingScreen({
         <Card variant="soft" style={styles.card}>
           <Text style={styles.label}>Nom du club</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, nomVerrouille ? styles.inputVerrouille : null]}
             placeholder="Ex: FC Exemple U17"
             placeholderTextColor={palette.muted}
             value={clubName}
-            onChangeText={setClubName}
+            // Verrouillé, le champ n'accepte plus rien : `editable={false}` le
+            // dit à l'utilisateur, et ce garde-fou le tient pour tout appelant
+            // (les tests pressent `onChangeText` directement).
+            onChangeText={(valeur) => {
+              if (nomVerrouille) return;
+              setClubName(valeur);
+            }}
+            editable={!nomVerrouille}
             autoCapitalize="words"
             maxLength={60}
           />
+          {nomVerrouille ? (
+            <Text style={styles.noteChamp}>Le nom du club est déjà enregistré.</Text>
+          ) : null}
 
           <Text style={styles.label}>Ton nom (optionnel)</Text>
           <TextInput
@@ -480,6 +538,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: palette.text,
     backgroundColor: palette.card,
+  },
+  inputVerrouille: {
+    backgroundColor: palette.accentSoft,
+    color: palette.sub,
+  },
+  noteChamp: {
+    fontSize: 12.5,
+    lineHeight: 17,
+    color: palette.muted,
+    marginTop: 6,
   },
   primaryBtn: {
     backgroundColor: palette.accent,

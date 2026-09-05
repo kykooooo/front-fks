@@ -262,6 +262,20 @@ export async function createClubAsCoach(opts: {
    */
   etapeDejaFaite?: EtapeCreationClub;
   /**
+   * LE NOM DÉJÀ ÉCRIT dans `clubs/{clubId}`, quand l'étape 1 est franchie.
+   *
+   * Il gagne sur `name` en reprise, et c'est le seul honnête : à partir de
+   * l'étape 1 on saute l'écriture du club (une UPDATE que les règles
+   * refuseraient), donc un nom corrigé entre deux tentatives ne partirait
+   * NULLE PART. Sans lui, `createClubAsCoach` rendait un `ClubDoc` portant la
+   * saisie locale pendant que Firestore gardait l'ancien nom, et toute l'UI
+   * annonçait un club qui n'existe pas sous ce nom-là (R2 du round 3).
+   *
+   * Absent (réservation d'avant ce lot, ou étape 0) : on retombe sur `name`,
+   * ce qui est exactement le comportement précédent.
+   */
+  nomEnregistre?: string | null;
+  /**
    * Appelé APRÈS chaque écriture réussie, avec le numéro de l'étape franchie.
    * C'est par là que la progression est persistée — sans quoi une app tuée
    * entre deux écritures repartirait de zéro, et se ferait refuser.
@@ -280,7 +294,10 @@ export async function createClubAsCoach(opts: {
   if (dejaFaite >= 1) {
     // Le club est déjà écrit sous cet identifiant. Y retoucher serait une
     // UPDATE que les règles refuseraient tant que l'appartenance n'existe pas.
-    club = { id: reserve, name, ownerUid: opts.uid };
+    // Donc le nom qu'on rend est CELUI QUI EST EN BASE, pas la saisie de cette
+    // tentative-ci : sans quoi l'app annoncerait un nom que le serveur ignore.
+    const enBase = String(opts.nomEnregistre ?? "").trim();
+    club = { id: reserve, name: enBase || name, ownerUid: opts.uid };
   } else {
     club = await createClub({ name, ownerUid: opts.uid, clubId: opts.clubId });
     await opts.onEtapeFaite?.(1);

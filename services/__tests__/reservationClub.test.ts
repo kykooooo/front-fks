@@ -29,6 +29,7 @@ import {
   enregistrerEtapeClub,
   estRefusPermission,
   libererIdClub,
+  lireReservationClub,
   remplacerReservationClub,
   reserverIdClub,
 } from "../reservationClub";
@@ -149,6 +150,90 @@ describe("enregistrerEtapeClub — la progression, notée au fur et à mesure", 
       clubId: "club-1",
       etape: 0,
     });
+  });
+});
+
+// ─── R2 DU ROUND 3 : LE NOM AUSSI EST UNE PROGRESSION ───────────────────────
+// À partir de l'étape 1, `clubs/{clubId}` EXISTE et la reprise n'y retouche
+// pas. Un nom corrigé entre deux tentatives ne partait donc nulle part :
+// Firestore gardait « FC Exemple U16 » pendant que l'app annonçait « U17 ».
+describe("le nom écrit à la première écriture est retenu, et il fait foi", () => {
+  test("noté avec l'étape 1, relu par le réessai suivant", async () => {
+    await reserverIdClub("coachA", () => "club-1");
+    await enregistrerEtapeClub("coachA", "club-1", 1, "FC Exemple U16");
+    expect(await reserverIdClub("coachA", () => "jamais")).toEqual({
+      clubId: "club-1",
+      etape: 1,
+      name: "FC Exemple U16",
+    });
+  });
+
+  test("une tentative ultérieure ne le réécrit PAS : le premier connu est celui qui est en base", async () => {
+    await reserverIdClub("coachA", () => "club-1");
+    await enregistrerEtapeClub("coachA", "club-1", 1, "FC Exemple U16");
+    await enregistrerEtapeClub("coachA", "club-1", 2, "FC Exemple U17");
+    expect(await reserverIdClub("coachA", () => "jamais")).toEqual({
+      clubId: "club-1",
+      etape: 2,
+      name: "FC Exemple U16",
+    });
+  });
+
+  test("sans nom fourni, la réservation reste EXACTEMENT ce qu'elle était", async () => {
+    // Zéro diff pour tout ce qui n'en passe pas : la clé n'apparaît même pas.
+    await reserverIdClub("coachA", () => "club-1");
+    await enregistrerEtapeClub("coachA", "club-1", 1);
+    expect(await reserverIdClub("coachA", () => "jamais")).toEqual({
+      clubId: "club-1",
+      etape: 1,
+    });
+  });
+
+  test("un nom blanc n'est pas un nom", async () => {
+    await reserverIdClub("coachA", () => "club-1");
+    await enregistrerEtapeClub("coachA", "club-1", 1, "   ");
+    expect((await reserverIdClub("coachA", () => "jamais")).name).toBeUndefined();
+  });
+
+  test("le nom disparaît avec la réservation qu'on remplace après un refus", async () => {
+    await reserverIdClub("coachA", () => "club-1");
+    await enregistrerEtapeClub("coachA", "club-1", 1, "FC Exemple U16");
+    expect(await remplacerReservationClub("coachA", () => "club-2")).toEqual({
+      clubId: "club-2",
+      etape: 0,
+    });
+  });
+});
+
+describe("lireReservationClub — regarder sans rien poser", () => {
+  test("rend `null` quand il n'y a rien, et ne réserve AUCUN identifiant", async () => {
+    const generer = jest.fn(() => "club-jamais-tire");
+    expect(await lireReservationClub("coachA")).toBeNull();
+    expect(generer).not.toHaveBeenCalled();
+    // La preuve : le disque est toujours vide, donc la création SUIVANTE tirera
+    // bien un identifiant neuf.
+    expect(await AsyncStorage.getItem(STORAGE_KEYS.CLUB_CREATION_ID("coachA"))).toBeNull();
+  });
+
+  test("rend la réservation en attente, nom compris", async () => {
+    await reserverIdClub("coachA", () => "club-1");
+    await enregistrerEtapeClub("coachA", "club-1", 1, "FC Exemple U16");
+    expect(await lireReservationClub("coachA")).toEqual({
+      clubId: "club-1",
+      etape: 1,
+      name: "FC Exemple U16",
+    });
+  });
+
+  test("un disque en panne ne fait inventer aucun nom", async () => {
+    const stockage = AsyncStorage as unknown as Record<string, unknown>;
+    const original = stockage.getItem;
+    stockage.getItem = jest.fn().mockRejectedValue(new Error("illisible"));
+    try {
+      expect(await lireReservationClub("coachA")).toBeNull();
+    } finally {
+      stockage.getItem = original;
+    }
   });
 });
 

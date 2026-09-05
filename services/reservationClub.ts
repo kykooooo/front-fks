@@ -50,6 +50,20 @@ export type EtapeCreationClub = 0 | 1 | 2 | 3;
 export type ReservationClub = {
   clubId: string;
   etape: EtapeCreationClub;
+  /**
+   * LE NOM RÉELLEMENT ÉCRIT dans `clubs/{clubId}` à la première écriture.
+   *
+   * Absent tant que l'étape 1 n'est pas franchie : avant, rien n'est écrit, et
+   * le coach peut encore corriger sa saisie autant qu'il veut.
+   *
+   * Après, il ne le peut plus, et c'est CE nom qui fait foi (R2 du round 3) :
+   * la reprise saute l'écriture du club (les règles refuseraient l'UPDATE), donc
+   * un nom corrigé entre deux tentatives ne partirait NULLE PART — Firestore
+   * garderait l'ancien pendant que l'app annoncerait le nouveau. On persiste
+   * donc ce qui est en base, l'écran verrouille le champ, et les deux disent la
+   * même chose.
+   */
+  name?: string;
 };
 
 const ETAPES_VALIDES: readonly EtapeCreationClub[] = [0, 1, 2, 3];
@@ -72,10 +86,13 @@ function decoder(brut: string | null): ReservationClub | null {
   if (!texte) return null;
   if (!texte.startsWith("{")) return { clubId: texte, etape: 0 };
   try {
-    const objet = JSON.parse(texte) as { clubId?: unknown; etape?: unknown };
+    const objet = JSON.parse(texte) as { clubId?: unknown; etape?: unknown; name?: unknown };
     const clubId = typeof objet.clubId === "string" ? objet.clubId.trim() : "";
     if (!clubId) return null;
-    return { clubId, etape: lireEtape(objet.etape) };
+    const name = typeof objet.name === "string" ? objet.name.trim() : "";
+    // La clé n'est POSÉE que s'il y a un nom : une réservation neuve reste
+    // `{ clubId, etape }`, exactement comme avant ce lot.
+    return { clubId, etape: lireEtape(objet.etape), ...(name ? { name } : {}) };
   } catch {
     // Illisible : on ne devine pas un identifiant. Un neuf sera tiré.
     return null;
@@ -118,24 +135,47 @@ export async function reserverIdClub(
 }
 
 /**
+ * LA RÉSERVATION EN ATTENTE, SANS EN CRÉER UNE. Rend `null` s'il n'y en a pas.
+ *
+ * `reserverIdClub` en pose une au passage — ce qu'on ne veut surtout pas au
+ * simple affichage de l'écran de création : une réservation posée par un
+ * montage qui ne crée rien empêcherait le club SUIVANT d'avoir un identifiant
+ * neuf. Cette lecture-ci ne touche à rien.
+ */
+export async function lireReservationClub(uid: string): Promise<ReservationClub | null> {
+  try {
+    return decoder(await AsyncStorage.getItem(STORAGE_KEYS.CLUB_CREATION_ID(uid)));
+  } catch {
+    // Illisible : on ne sait rien, et ne rien savoir n'invente aucun nom.
+    return null;
+  }
+}
+
+/**
  * Note qu'une écriture est passée. Appelé APRÈS chaque écriture réussie, pour
  * qu'un réessai sache où reprendre — y compris après que l'app a été tuée.
  *
  * Jamais en arrière : une note plus ancienne que ce qu'on sait déjà ne peut
  * pas faire régresser la progression (et donc pas faire réécrire un document
  * que les règles refuseraient de laisser réécrire).
+ *
+ * `nom` est celui qui vient d'être écrit dans `clubs/{clubId}`. Il n'est retenu
+ * qu'UNE fois : le premier connu est celui qui est en base, et une tentative
+ * ultérieure ne le réécrit pas (elle ne réécrit pas le document non plus).
  */
 export async function enregistrerEtapeClub(
   uid: string,
   clubId: string,
   etape: EtapeCreationClub,
+  nom?: string | null,
 ): Promise<void> {
   try {
     const existante = decoder(await AsyncStorage.getItem(STORAGE_KEYS.CLUB_CREATION_ID(uid)));
     // Une note qui parle d'un AUTRE club n'a rien à dire sur celui-ci.
     if (existante && existante.clubId !== clubId) return;
     const atteinte = Math.max(existante?.etape ?? 0, etape) as EtapeCreationClub;
-    await ecrire(uid, { clubId, etape: atteinte });
+    const retenu = existante?.name ?? (String(nom ?? "").trim() || undefined);
+    await ecrire(uid, { clubId, etape: atteinte, ...(retenu ? { name: retenu } : {}) });
   } catch {
     // Idem : une progression non notée coûte un réessai depuis le début.
   }
