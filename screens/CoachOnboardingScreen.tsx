@@ -13,7 +13,12 @@ import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { LoadingOverlay } from "../components/ui/LoadingOverlay";
 import { coachColors, coachRadius } from "../components/coach/coachUi";
-import { createClubAsCoach, nouvelIdentifiantClub } from "../repositories/clubsRepo";
+import {
+  createClubAsCoach,
+  lireClubIdDuCompte,
+  nouvelIdentifiantClub,
+} from "../repositories/clubsRepo";
+import { readAppSpaceSwitch } from "../state/appSpaceGate";
 import {
   enregistrerEtapeClub,
   estRefusPermission,
@@ -45,9 +50,21 @@ type CoachOnboardingScreenProps = {
    * « Retour » suffit et reste le comportement d'origine.
    */
   onRetourJoueur?: () => void;
+  /**
+   * LE CLUB QUE CE COMPTE A DÉJÀ, quand l'appelant le sait de source sûre
+   * (le RootNavigator l'a dans son instantané `users/{uid}`).
+   *
+   * Il ne sert qu'à REFUSER une seconde création, jamais à en autoriser une :
+   * absent, l'écran va lire le document lui-même avant d'ouvrir la
+   * confirmation. Voir `clubDejaCree`.
+   */
+  clubIdExistant?: string | null;
 };
 
-export default function CoachOnboardingScreen({ onRetourJoueur }: CoachOnboardingScreenProps = {}) {
+export default function CoachOnboardingScreen({
+  onRetourJoueur,
+  clubIdExistant,
+}: CoachOnboardingScreenProps = {}) {
   const navigation = useNavigation<any>();
   const haptics = useHaptics();
 
@@ -124,12 +141,67 @@ export default function CoachOnboardingScreen({ onRetourJoueur }: CoachOnboardin
     if (verrouCreationRef.current) return;
     verrouCreationRef.current = true;
     setConfirmationOuverte(true);
+    // `catch` plutôt que `void` : si quoi que ce soit d'imprévu levait ici, le
+    // verrou resterait posé et le bouton mort pour toute la session.
+    ouvrirConfirmation(user.uid).catch(() => relacherVerrou());
+  };
+
+  /**
+   * LE CLUB QUE CE COMPTE A DÉJÀ, ou `null` si on n'en connaît aucun.
+   *
+   * Deux sources, dans cet ordre : ce que l'appelant sait déjà (le
+   * RootNavigator lit `users/{uid}` en continu), puis une lecture directe pour
+   * les montages qui n'ont pas cette information — cet écran est aussi
+   * atteignable depuis le questionnaire joueur.
+   *
+   * UNE LECTURE EN ÉCHEC NE BLOQUE PAS. Ne pas savoir n'est pas « il y a un
+   * club » : refuser une création parce qu'un document n'a pas pu être lu
+   * enfermerait dehors un coach parfaitement légitime. Le pire qui reste est
+   * l'ancien comportement, et le serveur, lui, a le dernier mot.
+   */
+  const clubDejaCree = async (uid: string): Promise<string | null> => {
+    const connu = clubIdExistant?.trim();
+    if (connu) return connu;
+    try {
+      return await withTimeout(lireClubIdDuCompte(uid), 8000);
+    } catch (e) {
+      if (__DEV__) console.warn("[CoachOnboarding] lecture du club existant impossible", e);
+      return null;
+    }
+  };
+
+  /**
+   * UN COMPTE, UN CLUB. La garde de complétude joueur (audit P1-04) renvoie au
+   * questionnaire les coachs qui s'entraînent aussi — et l'étape 1 de ce
+   * questionnaire porte le lien « Crée ton club coach ». Sans cette
+   * vérification, ce lien fabriquait un SECOND club et repointait
+   * `users/{uid}.clubId` dessus : le premier club, avec ses joueurs, devenait
+   * introuvable (R4 de la contre-vérification du 05/09).
+   */
+  const ouvrirConfirmation = async (uid: string) => {
+    const dejaUnClub = await clubDejaCree(uid);
+    if (dejaUnClub) {
+      relacherVerrou();
+      haptics.warning();
+      showToast({
+        type: "info",
+        title: "Tu as déjà un club.",
+        message: "On t'emmène à ton espace coach.",
+      });
+      // Le sélecteur d'espace est dérivé du serveur et diffusé par la racine :
+      // s'il est ouvert, ce compte a vraiment les deux espaces. Sinon on ne
+      // force rien — on a au moins évité le second club.
+      const relais = readAppSpaceSwitch();
+      if (relais.peutChoisir) relais.choisir("coach");
+      return;
+    }
+
     Alert.alert(
       "Créer un espace entraîneur ?",
       "Tu crées un espace ENTRAÎNEUR pour gérer des joueurs. Cette action est définitive sur ce compte.",
       [
         { text: "Annuler", style: "cancel", onPress: relacherVerrou },
-        { text: "Créer mon espace entraîneur", onPress: () => void doCreate(user.uid) },
+        { text: "Créer mon espace entraîneur", onPress: () => void doCreate(uid) },
       ],
       // `onDismiss` : sur Android, un tap hors de l'alerte la ferme sans
       // déclencher « Annuler » — sans ça le bouton restait verrouillé à vie.

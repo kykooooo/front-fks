@@ -28,8 +28,9 @@ import { SafeAreaProvider, type Metrics } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import CoachOnboardingScreen from "../CoachOnboardingScreen";
-import { createClubAsCoach } from "../../repositories/clubsRepo";
+import { createClubAsCoach, lireClubIdDuCompte } from "../../repositories/clubsRepo";
 import { STORAGE_KEYS } from "../../constants/storage";
+import { publishAppSpaceSwitch, resetAppSpaceGateForTests } from "../../state/appSpaceGate";
 
 const mockNavigation = { canGoBack: jest.fn(() => false), goBack: jest.fn(), navigate: jest.fn() };
 jest.mock("@react-navigation/native", () => ({
@@ -49,6 +50,7 @@ let mockIdSuivant = 0;
 jest.mock("../../repositories/clubsRepo", () => ({
   createClubAsCoach: jest.fn(async () => ({ id: "club-1", name: "FC Test", ownerUid: "coachA" })),
   nouvelIdentifiantClub: jest.fn(() => `club-${++mockIdSuivant}`),
+  lireClubIdDuCompte: jest.fn(async () => null),
 }));
 
 const METRICS: Metrics = {
@@ -73,6 +75,7 @@ type AppelCreation = {
 };
 
 const creationMock = createClubAsCoach as unknown as jest.Mock;
+const lectureClubMock = lireClubIdDuCompte as unknown as jest.Mock;
 const appels = (): AppelCreation[] =>
   creationMock.mock.calls.map((appel: unknown[]) => appel[0] as AppelCreation);
 
@@ -87,19 +90,22 @@ afterEach(async () => {
 
 beforeEach(() => {
   mockIdSuivant = 0;
+  resetAppSpaceGateForTests();
   creationMock.mockImplementation(async () => ({
     id: "club-1",
     name: "FC Test",
     ownerUid: "coachA",
   }));
+  // Par défaut : ce compte n'a pas de club.
+  lectureClubMock.mockImplementation(async () => null);
 });
 
-async function rendre() {
+async function rendre(props: { clubIdExistant?: string | null } = {}) {
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
     renderer = TestRenderer.create(
       <SafeAreaProvider initialMetrics={METRICS}>
-        <CoachOnboardingScreen />
+        <CoachOnboardingScreen clubIdExistant={props.clubIdExistant} />
       </SafeAreaProvider>,
     );
   });
@@ -319,5 +325,106 @@ describe("le réessai REPREND, il ne rejoue pas (R2)", () => {
 
     await creer();
     expect(await AsyncStorage.getItem(STORAGE_KEYS.CLUB_CREATION_ID("coachA"))).toBeNull();
+  });
+});
+
+describe("un compte, un club (R4)", () => {
+  /** Appuie sur « Créer mon club » et rend les boutons de l'alerte, s'il y en a. */
+  async function appuyer(props: { clubIdExistant?: string | null } = {}) {
+    let boutonsAlerte: BoutonAlerte[] | null = null;
+    const alerte = jest
+      .spyOn(Alert, "alert")
+      .mockImplementation((_titre, _message, boutons) => {
+        boutonsAlerte = (boutons ?? []) as BoutonAlerte[];
+      });
+    const { champ, bouton } = await rendre(props);
+    await act(async () => {
+      champ().props.onChangeText("FC Test");
+    });
+    await act(async () => {
+      bouton().props.onPress();
+    });
+    const appelee = alerte.mock.calls.length > 0;
+    alerte.mockRestore();
+    return { boutonsAlerte, alerteOuverte: appelee };
+  }
+
+  test("le club déjà connu de la racine suffit : ni alerte, ni création", async () => {
+    // Le chemin réel : un coach-joueur renvoyé au questionnaire par la garde de
+    // complétude, qui suit le lien « Crée ton club coach » de l'étape 1. Sans
+    // cette garde, il fabriquait un SECOND club et `users/{uid}.clubId`
+    // repointait dessus — le premier, avec ses joueurs, devenait introuvable.
+    const { alerteOuverte } = await appuyer({ clubIdExistant: "club-deja-la" });
+    expect(alerteOuverte).toBe(false);
+    expect(creationMock).not.toHaveBeenCalled();
+    // Et on n'est même pas allé le relire : la racine le sait déjà.
+    expect(lectureClubMock).not.toHaveBeenCalled();
+  });
+
+  test("sans information de la racine, l'écran lit le document lui-même", async () => {
+    // L'autre montage : ouvert depuis le questionnaire, sans prop.
+    lectureClubMock.mockImplementation(async () => "club-deja-la");
+    const { alerteOuverte } = await appuyer();
+    expect(lectureClubMock).toHaveBeenCalledWith("coachA");
+    expect(alerteOuverte).toBe(false);
+    expect(creationMock).not.toHaveBeenCalled();
+  });
+
+  test("il bascule vers l'espace coach quand ce compte y a droit", async () => {
+    lectureClubMock.mockImplementation(async () => "club-deja-la");
+    const choisir = jest.fn();
+    publishAppSpaceSwitch({
+      peutChoisir: true,
+      espace: "player",
+      suiviJoueur: "actif",
+      choisir,
+    });
+    await appuyer();
+    expect(choisir).toHaveBeenCalledWith("coach");
+  });
+
+  test("s'il n'y a pas droit, on ne force rien — mais aucun second club non plus", async () => {
+    lectureClubMock.mockImplementation(async () => "club-deja-la");
+    const choisir = jest.fn();
+    publishAppSpaceSwitch({
+      peutChoisir: false,
+      espace: "player",
+      suiviJoueur: "inconnu",
+      choisir,
+    });
+    const { alerteOuverte } = await appuyer();
+    expect(choisir).not.toHaveBeenCalled();
+    expect(alerteOuverte).toBe(false);
+    expect(creationMock).not.toHaveBeenCalled();
+  });
+
+  test("le verrou est rendu : on n'enferme pas le bouton après un refus", async () => {
+    lectureClubMock.mockImplementation(async () => "club-deja-la");
+    const alerte = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    const { champ, bouton } = await rendre();
+    await act(async () => {
+      champ().props.onChangeText("FC Test");
+    });
+    await act(async () => {
+      bouton().props.onPress();
+    });
+    // Le club disparaît (le compte a été détaché entre-temps) : le bouton
+    // remarche, il n'est pas resté verrouillé par le refus précédent.
+    lectureClubMock.mockImplementation(async () => null);
+    await act(async () => {
+      bouton().props.onPress();
+    });
+    expect(alerte).toHaveBeenCalledTimes(1);
+    alerte.mockRestore();
+  });
+
+  test("une lecture en ÉCHEC ne bloque pas : ne pas savoir n'est pas « il y a un club »", async () => {
+    // Refuser une création parce qu'un document n'a pas pu être lu enfermerait
+    // dehors un coach parfaitement légitime. Le serveur, lui, a le dernier mot.
+    lectureClubMock.mockImplementation(async () => {
+      throw new Error("offline");
+    });
+    const { alerteOuverte } = await appuyer();
+    expect(alerteOuverte).toBe(true);
   });
 });

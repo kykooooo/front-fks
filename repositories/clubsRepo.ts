@@ -155,6 +155,26 @@ export async function setClubMembership(opts: {
  * l'appartenance (cf. domain/appSpace.ts). Le garder aurait rouvert, pour un
  * futur appelant, exactement le piège que ce lot ferme.
  */
+/**
+ * « CE COMPTE A-T-IL DÉJÀ UN CLUB ? » — lecture unique de `users/{uid}.clubId`.
+ *
+ * Elle existe pour UNE question, posée juste avant de créer un club : celle de
+ * savoir s'il y a déjà quelque chose à ne pas écraser. Un coach-joueur renvoyé
+ * au questionnaire par la garde de complétude y trouve le lien « Crée ton club
+ * coach » ; sans cette lecture, il fabriquait un SECOND club et son propre
+ * `users/{uid}.clubId` repointait dessus — son premier club devenait
+ * introuvable (R4 de la contre-vérification du 05/09).
+ *
+ * Rend `null` quand il n'y a rien. LÈVE quand la lecture échoue : c'est
+ * l'appelant qui décide quoi faire de « je ne sais pas », et il ne doit
+ * surtout pas confondre ça avec « il n'y a pas de club ».
+ */
+export async function lireClubIdDuCompte(uid: string): Promise<string | null> {
+  const snap = await getDoc(doc(db, "users", uid));
+  const brut = (snap.data() as { clubId?: unknown } | undefined)?.clubId;
+  return typeof brut === "string" && brut.trim() ? brut.trim() : null;
+}
+
 export async function attachUserToClub(opts: { uid: string; clubId: string }) {
   const userRef = doc(db, "users", opts.uid);
   await setDoc(

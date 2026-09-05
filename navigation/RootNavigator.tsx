@@ -868,6 +868,10 @@ export default function RootNavigator() {
               // L'écran choisit lui-même lequel des deux afficher, selon qu'il
               // peut revenir en arrière ou non (cf. CoachOnboardingScreen).
               <CoachOnboardingScreen
+                // Ce que la racine SAIT déjà (instantané `users/{uid}`) : un
+                // compte qui a un club n'en crée pas un second. C'est le chemin
+                // du coach-joueur renvoyé ici par la garde de complétude.
+                clubIdExistant={clubId}
                 onRetourJoueur={() => {
                   // Oubliée sur le disque AUSSI : sinon le prochain démarrage
                   // reposerait la personne sur la création de club qu'elle vient

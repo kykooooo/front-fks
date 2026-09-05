@@ -41,6 +41,7 @@ import { EquipmentSelector } from "./newSession/ui/EquipmentSelector";
 import { GenerationActions } from "./newSession/ui/GenerationActions";
 import { CurrentSessionCard } from "./newSession/ui/CurrentSessionCard";
 import { useAiContextLoader, useEnvironmentEquipment } from "./newSession/hooks";
+import { categorieAgeAbsente, TOAST_CATEGORIE_MANQUANTE } from "./newSession/gardeCategorieAge";
 import { palette } from "./newSession/theme";
 import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId, getRecommendedLocation } from "../domain/microcycles";
 import { getMicrocyclePhase } from "../utils/microcycleUtils";
@@ -172,7 +173,7 @@ export default function NewSessionScreen() {
   // synchronisée sur une installation neuve et ferait alors bloquer un joueur
   // parfaitement en règle. Tant que le contexte n'est pas chargé (`null`), on
   // ne conclut RIEN : ne pas savoir n'est pas « absent » (règle 12).
-  const categorieAgeManquante = !!aiContext && !aiContext.profile?.age_category;
+  const categorieAgeManquante = !!aiContext && categorieAgeAbsente(aiContext);
   const [contextLoading, setContextLoading] = useState(false);
   const [environment, setEnvironment] = useState<EnvironmentSelection>([]);
   const [availableEquipment, setAvailableEquipment] = useState<string[]>([]);
@@ -441,11 +442,7 @@ export default function NewSessionScreen() {
       // AVANT TOUT APPEL PAYANT : sans catégorie d'âge, le moteur ne pose aucun
       // plafond (cf. la carte du même nom plus bas). On ne génère pas.
       if (categorieAgeManquante) {
-        showToast({
-          type: "warn",
-          title: "Il manque ta catégorie",
-          message: "Complète ton profil pour des séances adaptées à ta catégorie.",
-        });
+        showToast(TOAST_CATEGORIE_MANQUANTE);
         nav.navigate("ProfileSetup");
         return;
       }
@@ -498,6 +495,26 @@ export default function NewSessionScreen() {
       if (generationIdRef.current !== genId) return; // annulé pendant l'attente
       setAiContext(ctx);
       setContextLoading(false);
+
+      // ── LA GARDE D'ÂGE, REJOUÉE SUR LE CONTEXTE FRAIS ────────────────────
+      // Celle du haut de cette fonction lit `categorieAgeManquante`, qui vaut
+      // faux tant que `aiContext` est `null` — et il l'est chaque fois que le
+      // chargeur d'ouverture n'a pas tourné (aucun cycle actif, ou lecture en
+      // échec). La garde ÉCHOUAIT DONC OUVERTE : la génération partait avec
+      // `age_category: null`, c'est-à-dire, côté moteur, AUCUN plafond d'âge —
+      // ni familles interdites, ni volume, ni contacts plyo, ni sprint, ni
+      // durée (`getAgeCategoryCaps(null)` rend `null`). C'était le trou de la
+      // garde du lot A (R5 de la contre-vérification du 05/09).
+      //
+      // Ici, on ne suppose plus rien : `ctx` VIENT d'être construit, il est
+      // toujours là, et on regarde la valeur elle-même. Avant l'appel payant.
+      if (categorieAgeAbsente(ctx)) {
+        showToast(TOAST_CATEGORIE_MANQUANTE);
+        // `setAiContext(ctx)` juste au-dessus fait apparaître la carte du même
+        // nom : la personne ne repart pas d'un écran muet.
+        nav.navigate("ProfileSetup");
+        return;
+      }
 
       const { context: preparedCtx, location } = prepareBackendContext(
         ctx,

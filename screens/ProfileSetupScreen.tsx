@@ -838,15 +838,25 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
               <Choice key={f} label={f} selected={dominantFoot === f} onPress={() => setDominantFoot(f)} />
             ))}
 
-            <TouchableOpacity
-              style={styles.coachLink}
-              onPress={() => { haptics.impactLight(); navigation.navigate("CoachOnboarding"); }}
-              activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="people-outline" size={16} color={palette.accent} />
-              <Text style={styles.coachLinkText}>Tu fais partie du staff ? Crée ton club coach</Text>
-            </TouchableOpacity>
+            {/* CE LIEN DISPARAÎT DÈS QUE LE COMPTE A UN CLUB. Un coach qui
+                s'entraîne aussi est renvoyé ici par la garde de complétude
+                joueur : lui proposer « crée ton club » à ce moment-là, c'est
+                lui proposer d'en créer un SECOND et de faire repointer
+                `users/{uid}.clubId` dessus — son premier club, avec ses
+                joueurs, deviendrait introuvable (R4 du 05/09). L'écran de
+                création refuse de toute façon, mais un lien qui mène à un
+                refus n'a rien à faire là. */}
+            {clubId?.trim() ? null : (
+              <TouchableOpacity
+                style={styles.coachLink}
+                onPress={() => { haptics.impactLight(); navigation.navigate("CoachOnboarding"); }}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="people-outline" size={16} color={palette.accent} />
+                <Text style={styles.coachLinkText}>Tu fais partie du staff ? Crée ton club coach</Text>
+              </TouchableOpacity>
+            )}
           </>
         );
 

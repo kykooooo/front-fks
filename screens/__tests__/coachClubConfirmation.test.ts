@@ -37,7 +37,10 @@ describe("CoachOnboarding — confirmation obligatoire avant création", () => {
     const blocDoCreate = source.slice(source.indexOf("const doCreate"));
     expect(blocDoCreate).toMatch(/createClubAsCoach\(\{/);
     const invocations = source.match(/[^t] doCreate\(|void doCreate\(/g) ?? [];
-    expect(source).toMatch(/onPress: \(\) => void doCreate\(user\.uid\)/);
+    // `uid` et non plus `user.uid` : la confirmation est ouverte par
+    // `ouvrirConfirmation(uid)`, qui vérifie d'abord que ce compte n'a pas
+    // déjà un club (R4 de la contre-vérification du 05/09).
+    expect(source).toMatch(/onPress: \(\) => void doCreate\(uid\)/);
     expect(invocations).toHaveLength(1); // l'unique invocation = le bouton
   });
 });

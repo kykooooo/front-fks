@@ -18,6 +18,8 @@
 import { readFileSync } from "fs";
 import { resolve } from "path";
 
+import { TOAST_CATEGORIE_MANQUANTE } from "../../screens/newSession/gardeCategorieAge";
+
 const racine = resolve(__dirname, "..", "..");
 const lire = (rel: string) => readFileSync(resolve(racine, rel), "utf8");
 const navigateur = lire("navigation/RootNavigator.tsx");
@@ -86,9 +88,12 @@ describe("la génération refuse de partir sans catégorie d'âge", () => {
   });
 
   test("le message est celui décidé, et il mène au questionnaire", () => {
-    expect(generation).toContain(
+    // Écrit une seule fois, dans screens/newSession/gardeCategorieAge — la
+    // règle est posée à deux endroits de l'écran et doit dire la même chose.
+    expect(TOAST_CATEGORIE_MANQUANTE.message).toBe(
       "Complète ton profil pour des séances adaptées à ta catégorie.",
     );
+    expect(generation).toContain("TOAST_CATEGORIE_MANQUANTE");
     expect(generation).toContain('nav.navigate("ProfileSetup")');
   });
 
@@ -96,15 +101,28 @@ describe("la génération refuse de partir sans catégorie d'âge", () => {
     // Le store peut n'avoir jamais été synchronisé sur une installation neuve :
     // s'y fier bloquerait un joueur parfaitement en règle.
     expect(generation).toContain(
-      "const categorieAgeManquante = !!aiContext && !aiContext.profile?.age_category;",
+      "const categorieAgeManquante = !!aiContext && categorieAgeAbsente(aiContext);",
     );
   });
 
-  test("tant que le contexte n'est pas chargé, on ne conclut RIEN", () => {
+  test("tant que le contexte n'est pas chargé, on ne conclut RIEN à l'affichage", () => {
     // `!!aiContext &&` : ne pas savoir n'est pas « absent » (règle 12).
-    const expression = "!!aiContext && !aiContext.profile?.age_category";
-    expect(generation).toContain(expression);
-    expect(generation).not.toContain("!aiContext?.profile?.age_category;");
+    expect(generation).toContain("!!aiContext && categorieAgeAbsente(aiContext)");
+    expect(generation).not.toContain("categorieAgeAbsente(aiContext);\n");
+  });
+
+  test("mais au moment de payer, on rejoue la garde sur le contexte FRAIS", () => {
+    // La garde du lot A échouait OUVERTE : `aiContext` reste `null` quand le
+    // chargeur d'ouverture n'a pas tourné (aucun cycle actif, ou échec), donc
+    // `categorieAgeManquante` valait faux et la génération partait avec
+    // `age_category: null` — soit AUCUN plafond d'âge côté moteur (R5 de la
+    // contre-vérification du 05/09). Détail dans
+    // screens/newSession/__tests__/gardeCategorieAge.test.ts.
+    const iContexte = generation.indexOf("const ctx = await buildAIPromptContext();");
+    const iGarde = generation.indexOf("if (categorieAgeAbsente(ctx)) {");
+    expect(iContexte).toBeGreaterThan(-1);
+    expect(iGarde).toBeGreaterThan(iContexte);
+    expect(iGarde).toBeLessThan(generation.indexOf("prepareBackendContext("));
   });
 
   test("aucun sélecteur de lieu/matériel ne s'affiche derrière la carte", () => {
