@@ -17,6 +17,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useHaptics } from "../hooks/useHaptics";
 import { theme } from "../constants/theme";
 import { STORAGE_KEYS } from "../constants/storage";
+import { poserIntentionCoach } from "../services/coachIntent";
 import { Screen } from "../components/ui/Screen";
 import { Button } from "../components/ui/Button";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -122,9 +123,16 @@ export default function WelcomeScreen({ onComplete }: Props) {
   // DISCRET, mais TROUVABLE : lien texte sous les deux CTA joueur, jamais un
   // second bouton. Le joueur reste le chemin principal (un seul CTA primaire par
   // écran, règle d'or) ; le coach, lui, sait qu'il est coach et cherche sa porte.
+  //
+  // L'intention est aussi ÉCRITE SUR LE DISQUE (services/coachIntent) : en
+  // mémoire seule, elle mourait avec l'app entre l'inscription et la création
+  // du club, et cet écran-ci — le seul qui la proposait — est inatteignable au
+  // lancement suivant (`WELCOME_DONE` déjà posé). Le coach retombait alors sur
+  // le questionnaire joueur (audit inscription 2026-09, P1-02 + erratum 1).
   const handleCoach = useCallback(async () => {
     haptics.impactLight();
     await AsyncStorage.setItem(STORAGE_KEYS.WELCOME_DONE, "true");
+    await poserIntentionCoach();
     onComplete("register", { intentionCoach: true });
   }, [haptics, onComplete]);
 

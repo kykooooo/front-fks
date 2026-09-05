@@ -1,5 +1,5 @@
 // src/navigation/RootNavigator.tsx
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -47,6 +47,8 @@ import { SwipeTabsWrapper } from "../components/SwipeTabsWrapper";
 import { setAnalyticsUserId } from "../services/analytics";
 import { setSentryUser } from "../services/monitoring";
 import { onWelcomeReset } from "../services/accountDeletion";
+import { effacerIntentionCoach, lireIntentionCoach } from "../services/coachIntent";
+import { showToast } from "../utils/toast";
 import { useAppSpace } from "../hooks/useAppSpace";
 import { resolveClubPointer } from "../domain/coachAuthority";
 import { publishAppSpaceSwitch } from "../state/appSpaceGate";
@@ -414,12 +416,27 @@ export default function RootNavigator() {
   // `clubs/{clubId}/members/{uid}` (cf. domain/appSpace.ts), et cette dérivation
   // est évaluée AVANT ce portillon (branche 6bis plus bas).
   //
-  // POURQUOI EN MÉMOIRE, ET PAS DANS `users/{uid}.role` : ce champ est écrivable
-  // par le client, il ne décide plus de rien depuis le lot « un compte, un
-  // espace », et l'y remettre rouvrirait exactement la faille refermée là-bas.
-  // Une intention n'est pas une autorité : elle vit le temps de la traversée
-  // Welcome → inscription → premier écran, et disparaît avec la session.
+  // POURQUOI PAS DANS `users/{uid}.role` : ce champ est écrivable par le
+  // client, il ne décide plus de rien depuis le lot « un compte, un espace », et
+  // l'y remettre rouvrirait exactement la faille refermée là-bas. Une intention
+  // n'est pas une autorité.
+  //
+  // POURQUOI SUR LE DISQUE (AsyncStorage, services/coachIntent) ET PLUS EN
+  // MÉMOIRE SEULE — audit inscription 2026-09, P1-02 + erratum 1 : en `useState`
+  // elle mourait avec l'app entre l'inscription et la création du club, et
+  // l'écran d'accueil qui la posait est INATTEIGNABLE au lancement suivant
+  // (`fks_welcome_done` est déjà vrai et aucun `navigate("Welcome")` n'existe).
+  // Le coach retombait sur les 4 étapes du questionnaire joueur, sans porte.
+  // `intentionCoachLue` dit si la lecture du disque a répondu : le portillon
+  // attend cette réponse avant de choisir son écran d'arrivée, sinon la course
+  // entre AsyncStorage et le premier instantané Firestore déciderait à sa place.
   const [intentionCoach, setIntentionCoach] = useState(false);
+  const [intentionCoachLue, setIntentionCoachLue] = useState(false);
+  // Vrai dès qu'un compte a été connecté dans CETTE session de l'app : sert à
+  // distinguer un VRAI logout (l'intention doit tomber avec la traversée qui se
+  // termine) du `null` de démarrage, où Firebase n'a encore rien restauré et où
+  // une intention posée au lancement précédent doit survivre.
+  const compteDejaConnecteRef = useRef(false);
   const startFirestoreWatch = useSyncStore((s) => s.startFirestoreWatch);
   const storeHydrated = useSyncStore((s) => s.storeHydrated ?? true);
   const resetTrainingStore = useSyncStore((s) => s.resetForUser);
@@ -463,47 +480,83 @@ export default function RootNavigator() {
     });
   }, [peutChoisirEspace, espaceAffiche, suiviJoueur, choisirEspace]);
 
-  // ── L'INTENTION COACH, CONSOMMÉE UNE SEULE FOIS ───────────────────────────
-  // `initialRouteName` (portillon plus bas, `key="nav-gate"`) n'est lu qu'AU
-  // MONTAGE de ce navigateur — jamais après. Sans remise à zéro ici, l'intention
-  // survivrait à cette première lecture pour TOUTE LA SESSION, prête à ressortir
-  // bien plus tard.
+  /** Oublie l'intention coach, en mémoire ET sur le disque. */
+  const oublierIntentionCoach = useCallback(() => {
+    setIntentionCoach(false);
+    void effacerIntentionCoach();
+  }, []);
+
+  // ── L'INTENTION COACH, RELUE À CHAQUE CHANGEMENT DE COMPTE ────────────────
+  // Un seul effet possède la lecture ET l'effacement de déconnexion : les
+  // séparer laissait une course (l'effacement en vol pendant que la relecture
+  // répondait « encore posée ») qui aurait fait hériter l'intention d'un compte
+  // au suivant sur un téléphone partagé.
   //
-  // Chemin réel qui l'exposait (recette 03/08) : un coach déclare son intention
-  // sur l'accueil, s'inscrit, crée son club — l'appartenance fait basculer
-  // `appSpace.space` sur "coach" (branche 6bis), ce portillon se démonte, plus
-  // personne ne le regarde. Puis il tape « Je m'entraîne aussi »
-  // (hooks/useAppSpace) : l'espace revient à "player" alors que son profil
-  // joueur n'est toujours pas rempli. Ce portillon se REMONTE — pour la
-  // première fois depuis la création du club — et relirait une intention
-  // vieille de l'inscription, reposant un coach déjà membre d'un club sur la
-  // création de club au lieu du questionnaire joueur qu'il vient précisément
-  // de demander.
-  //
-  // La condition ci-dessous est exactement celle qui fait atteindre ce
-  // portillon (`profileCompleted === false` et `appSpace.space !== "coach"`,
-  // seul cas où la branche 6bis n'a pas déjà retourné `<CoachNavigator />`) :
-  // dès qu'on l'atteint avec une intention encore vraie, elle vient de servir.
-  //
-  // POURQUOI UN `useEffect`, ET PAS LE PATTERN « ajuster l'état pendant le
-  // rendu » (cf. ItemActionsSheet, commit 9b93400) : ce pattern-là recalcule
-  // ET COMMIT dans le MÊME passage de rendu — React relance le composant
-  // avant que quoi que ce soit ne soit monté. Ici, ce serait fatal : la remise
-  // à zéro écraserait `intentionCoach` AVANT que `initialRouteName` (plus bas)
-  // n'ait eu l'occasion de lire sa valeur encore vraie, et le portillon
-  // n'atterrirait plus JAMAIS sur `CoachOnboarding` — pas même au premier
-  // passage, le chemin nominal. Un effet, lui, s'exécute APRÈS le commit :
-  // `initialRouteName` a donc déjà capturé la valeur vraie pour CE montage
-  // avant que cette remise à zéro n'ait lieu.
-  // La synchronisation post-commit est ici DÉLIBÉRÉE, pas un oubli du pattern
-  // « pendant le rendu » — même exception assumée que
-  // `hooks/useClubDirective.ts` (remise à zéro sur un événement externe).
+  // `user?.uid` en dépendance : la relecture couvre le moment exact où elle
+  // compte — la connexion/inscription vient d'aboutir, le portillon n'est pas
+  // encore monté. C'est ce qui rattrape une intention posée sur l'écran de
+  // connexion ou d'inscription (components/auth/CoachEntryLink), et pas
+  // seulement celle posée sur l'accueil.
   useEffect(() => {
-    if (profileCompleted === false && appSpace.space !== "coach" && intentionCoach) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIntentionCoach(false);
+    let vivant = true;
+    // La remise à « pas encore lue » est SYNCHRONE et délibérée : entre le
+    // changement de compte et la réponse du disque, le portillon doit attendre
+    // plutôt que router sur une intention qui appartenait au compte précédent.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIntentionCoachLue(false);
+    void (async () => {
+      // Déconnexion CONFIRMÉE (un compte était connecté dans cette session, il
+      // ne l'est plus) : l'intention appartenait à la traversée qui vient de se
+      // terminer. Un `null` de DÉMARRAGE, lui, n'efface rien — sinon une
+      // intention posée hier serait perdue au premier réveil de Firebase.
+      if (!user && compteDejaConnecteRef.current) {
+        compteDejaConnecteRef.current = false;
+        await effacerIntentionCoach();
+      }
+      if (user) compteDejaConnecteRef.current = true;
+      const posee = await lireIntentionCoach();
+      if (!vivant) return;
+      setIntentionCoach(posee);
+      setIntentionCoachLue(true);
+    })();
+    return () => {
+      vivant = false;
+    };
+  }, [user]);
+
+  // ── QUAND L'INTENTION N'A PLUS DE SENS, ON L'OUBLIE (ET ON LE DIT) ────────
+  // Deux fins de vie, toutes deux vérifiables sur l'état du compte :
+  //
+  //  . le compte A DÉJÀ UN CLUB → l'intention a servi. C'est ce qui protège le
+  //    chemin décrit par la recette du 03/08 : un coach qui tape « Je m'entraîne
+  //    aussi » revient dans l'espace joueur avec un profil joueur vide ; le
+  //    portillon se remonte et ne doit PAS le renvoyer créer un second club ;
+  //
+  //  . le compte est un COMPTE JOUEUR DÉJÀ CONFIGURÉ (profil complet, aucun
+  //    club, aucun espace coach) → on ne casse rien et on ne promet rien : il
+  //    n'y a pas de chemin client vers un rôle d'encadrant sur un compte
+  //    existant, et en fabriquer un ici demanderait une Cloud Function et une
+  //    revue sécurité (hors lot). On le dit honnêtement, une fois.
+  useEffect(() => {
+    if (!intentionCoach || !user) return;
+    // Remises à zéro synchrones assumées : elles ne dépendent que de faits
+    // déjà connus (le compte a un club / le profil joueur est complet), et
+    // retarder l’oubli d’un tour ferait router sur une intention périmée.
+    /* eslint-disable react-hooks/set-state-in-effect */
+    if (clubId) {
+      oublierIntentionCoach();
+      return;
     }
-  }, [profileCompleted, appSpace.space, intentionCoach]);
+    if (profileCompleted === true && appSpace.space !== "coach") {
+      oublierIntentionCoach();
+      showToast({
+        type: "info",
+        title: "Compte joueur",
+        message: "Ton compte est un compte joueur. Pour créer un club, utilise un autre compte.",
+      });
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [intentionCoach, user, clubId, profileCompleted, appSpace.space, oublierIntentionCoach]);
 
   // 0) DEV: force welcome screen (déconnecte + reset flag)
   useEffect(() => {
@@ -525,10 +578,10 @@ export default function RootNavigator() {
         // démonte l'abonnement à l'appartenance (cf. useAppSpace), sans quoi
         // l'espace du compte précédent survivrait à sa propre session.
         setClubId(null);
-        // L'intention coach aussi : elle appartenait à la traversée qui vient de
-        // se terminer. La garder ferait atterrir le compte SUIVANT sur la
-        // création de club sans que personne l'ait demandé.
-        setIntentionCoach(false);
+        // L'intention coach, elle, est traitée par l'effet qui la possède (plus
+        // haut) : lui seul sait distinguer une VRAIE déconnexion — où elle doit
+        // tomber avec la traversée qui se termine — du `null` de démarrage, où
+        // une intention posée au lancement précédent doit au contraire survivre.
         setInitializing(false);
       } else {
         // Nouveau user (login/register) → attendre le profile listener Firestore
@@ -650,7 +703,15 @@ export default function RootNavigator() {
         initialRouteName={welcomeDone ? "Login" : "Welcome"}
         onWelcomeComplete={(options) => {
           setWelcomeDone(true);
-          setIntentionCoach(!!options?.intentionCoach);
+          // Les trois boutons de l'accueil sont exclusifs : celui qui vient
+          // d'être choisi FAIT FOI, mémoire et disque. « Je suis coach » a déjà
+          // écrit l'intention (WelcomeScreen) ; les deux autres l'effacent, pour
+          // qu'un aller-retour ne laisse pas une intention orpheline derrière.
+          if (options?.intentionCoach) {
+            setIntentionCoach(true);
+          } else {
+            oublierIntentionCoach();
+          }
         }}
       />
     );
@@ -695,6 +756,13 @@ export default function RootNavigator() {
   // 6) Connecté mais profil non complété → écran profil (joueur)
   //    Le stack inclut CoachOnboarding pour qu'un staff puisse créer son club.
   if (profileCompleted === false) {
+    // L'intention coach vit sur le disque : tant que sa lecture n'a pas répondu,
+    // on ne choisit PAS d'écran d'arrivée. `initialRouteName` n'est lu qu'au
+    // montage de ce navigateur — décider trop tôt, c'est décider faux pour toute
+    // la traversée, et c'est exactement ce qui renvoyait un coach au
+    // questionnaire joueur (audit inscription 2026-09, P1-02).
+    if (!intentionCoachLue) return <Splash label="Chargement…" />;
+
     // Nom de route volontairement distinct du "ProfileSetup" de AppNavigator :
     // ces deux arbres sont échangés conditionnellement, mais le
     // NavigationContainer n'y voit qu'un seul navigateur qui change de contenu et
@@ -703,14 +771,18 @@ export default function RootNavigator() {
     // rapprochement possible.
     return (
       // ROUTE D'ARRIVÉE DÉCIDÉE PAR L'INTENTION, PAS PAR UN RÔLE EN BASE.
-      // Un coach qui a dit « Je suis coach » sur l'accueil atterrit sur la
-      // création de club ; tout le monde d'autre sur le questionnaire joueur.
-      // `initialRouteName` n'est lu qu'au montage de ce navigateur — c'est-à-dire
-      // au moment précis où l'inscription vient de se terminer, l'intention étant
-      // posée bien avant (écran d'accueil).
+      // Un coach qui a dit « Vous êtes coach ? » (accueil, connexion ou
+      // inscription) atterrit sur la création de club ; tout le monde d'autre sur
+      // le questionnaire joueur. `initialRouteName` n'est lu qu'au montage de ce
+      // navigateur — l'intention, elle, a été relue sur le disque juste avant.
+      //
+      // `!clubId` : un compte qui a DÉJÀ un club n'a plus rien à créer. C'est la
+      // ceinture du chemin « Je m'entraîne aussi » (l'effet plus haut oublie
+      // l'intention dès qu'un club apparaît ; ceci est la bretelle, pour la
+      // fraction de seconde où l'effet n'a pas encore couru).
       <AppStack.Navigator
         key="nav-gate"
-        initialRouteName={intentionCoach ? "CoachOnboarding" : "ProfileSetupGate"}
+        initialRouteName={intentionCoach && !clubId ? "CoachOnboarding" : "ProfileSetupGate"}
         screenOptions={{ headerShown: false }}
       >
           <AppStack.Screen name="ProfileSetupGate" options={{ headerShown: false }}>
@@ -733,7 +805,10 @@ export default function RootNavigator() {
               // peut revenir en arrière ou non (cf. CoachOnboardingScreen).
               <CoachOnboardingScreen
                 onRetourJoueur={() => {
-                  setIntentionCoach(false);
+                  // Oubliée sur le disque AUSSI : sinon le prochain démarrage
+                  // reposerait la personne sur la création de club qu'elle vient
+                  // précisément de refuser.
+                  oublierIntentionCoach();
                   props.navigation.reset({ index: 0, routes: [{ name: "ProfileSetupGate" }] });
                 }}
               />

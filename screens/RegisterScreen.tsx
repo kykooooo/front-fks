@@ -28,6 +28,7 @@ import { STORAGE_KEYS } from "../constants/storage";
 import { Screen } from "../components/ui/Screen";
 import { Button } from "../components/ui/Button";
 import { BrandMark } from "../components/ui/BrandMark";
+import { CoachEntryLink } from "../components/auth/CoachEntryLink";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Register">;
 const palette = theme.colors;
@@ -300,6 +301,12 @@ export default function RegisterScreen({ navigation }: Props) {
               accessibilityLabel="Créer mon compte"
             />
           </Animated.View>
+
+          {/* Entrée coach — voir components/auth/CoachEntryLink : elle pose une
+              INTENTION persistée (écran d'arrivée après l'inscription), jamais
+              un droit. L'accueil qui la portait seul devient inatteignable dès
+              le deuxième lancement (audit inscription 2026-09, erratum 1). */}
+          <CoachEntryLink testID="coach-entry-register" />
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>Déjà un compte ?</Text>

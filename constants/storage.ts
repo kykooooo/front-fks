@@ -10,6 +10,18 @@ export const STORAGE_KEYS = {
 
   // Onboarding
   WELCOME_DONE: "fks_welcome_done",
+  // Intention « je suis coach », déclarée AVANT qu'un compte existe (accueil,
+  // connexion, inscription). Elle choisit l'écran d'ARRIVÉE quand le profil
+  // n'est pas encore rempli — création de club plutôt que questionnaire joueur —
+  // et RIEN D'AUTRE : elle n'accorde aucun droit, l'espace coach restant dérivé
+  // de l'appartenance `clubs/{clubId}/members/{uid}` (domain/appSpace.ts).
+  //
+  // POURQUOI PERSISTÉE (audit inscription 2026-09, P1-02) : en mémoire React,
+  // elle mourait dès que l'app était tuée entre l'inscription et la création du
+  // club — et l'écran d'accueil qui la posait est INATTEIGNABLE au relancement
+  // (`WELCOME_DONE` déjà vrai). Le coach retombait sur les 4 étapes du
+  // questionnaire joueur. Voir services/coachIntent.ts.
+  COACH_INTENT: "fks_coach_intent",
   // Timestamp (ms) posé au register_success, consommé par first_session_generated
   // pour mesurer le temps bout-en-bout jusqu'à la première séance.
   ONBOARDING_START_TS: "fks_onboarding_start_ts",
@@ -27,4 +39,15 @@ export const STORAGE_KEYS = {
   // s'ouvre en premier. Elle est effacée avec le compte
   // (services/accountDeletionHelpers.localAccountKeysToPurge).
   APP_SPACE_PREFERENCE: (uid: string) => `fks_app_space_${uid}`,
+
+  // Identifiant de club RÉSERVÉ localement avant la première écriture de la
+  // création de club, et réutilisé à chaque réessai. PAR COMPTE : sans l'uid,
+  // deux comptes sur le même téléphone se disputeraient la même réservation.
+  //
+  // POURQUOI (audit inscription 2026-09, P1-03) : la création enchaîne trois
+  // écritures que les règles Firestore INTERDISENT de grouper en `writeBatch`
+  // (l'appartenance propriétaire doit exister AVANT `users/{uid}.clubId` —
+  // firestore.rules:429-434). Sans identifiant réservé, chaque réessai après un
+  // timeout créait un club de plus. Effacée au succès.
+  CLUB_CREATION_ID: (uid: string) => `fks_club_creation_${uid}`,
 } as const;

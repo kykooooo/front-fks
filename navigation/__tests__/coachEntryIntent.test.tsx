@@ -183,13 +183,17 @@ describe("navigation — l'intention choisit un ÉCRAN, jamais un droit", () => 
   test("elle remonte de l'accueil jusqu'à un état de navigation", () => {
     // L'écran d'accueil la rend ; le navigateur la range dans son propre état.
     expect(navigateur).toContain("const [intentionCoach, setIntentionCoach] = useState(false)");
-    expect(navigateur).toContain("setIntentionCoach(!!options?.intentionCoach)");
     expect(navigateur).toContain("onWelcomeComplete?.(options)");
+    // Les trois boutons de l'accueil sont exclusifs : « Je suis coach » pose,
+    // les deux autres oublient (mémoire ET disque).
+    const brancheAccueil = navigateur.slice(navigateur.indexOf("onWelcomeComplete={(options) => {"));
+    expect(brancheAccueil.slice(0, 800)).toContain("setIntentionCoach(true)");
+    expect(brancheAccueil.slice(0, 800)).toContain("oublierIntentionCoach()");
   });
 
   test("le portillon d'onboarding arrive sur la création de club si elle est posée", () => {
     expect(navigateur).toContain(
-      'initialRouteName={intentionCoach ? "CoachOnboarding" : "ProfileSetupGate"}'
+      'initialRouteName={intentionCoach && !clubId ? "CoachOnboarding" : "ProfileSetupGate"}'
     );
     // Et l'écran de création est bien déclaré dans CE navigateur-là (sinon la
     // route initiale pointerait dans le vide).
@@ -229,7 +233,8 @@ describe("navigation — l'intention choisit un ÉCRAN, jamais un droit", () => 
     ]) {
       expect(lire(chemin)).not.toMatch(/role:\s*"coach"/);
     }
-    // L'écran d'accueil n'écrit rien du tout en base : l'intention vit en mémoire.
+    // L'écran d'accueil n'écrit rien du tout EN BASE : l'intention vit en
+    // mémoire et sur le disque local (AsyncStorage), jamais dans Firestore.
     const accueil = lire("screens/WelcomeScreen.tsx");
     expect(accueil).not.toMatch(/setDoc|updateDoc|firebase\/firestore/);
   });
@@ -295,11 +300,20 @@ describe("navigation — l'intention choisit un ÉCRAN, jamais un droit", () => 
     expect(avecPiege).toBe(sansPiege);
   });
 
-  test("elle meurt avec la session : la déconnexion l'oublie", () => {
-    // Sans ça, le compte SUIVANT atterrirait sur la création de club sans que
-    // personne l'ait demandé.
-    const brancheDeconnexion = navigateur.slice(navigateur.indexOf("if (!u) {"));
-    expect(brancheDeconnexion.slice(0, 900)).toContain("setIntentionCoach(false)");
+  test("elle meurt avec la session : une VRAIE déconnexion l'oublie, le boot non", () => {
+    // Sans l'oubli, le compte SUIVANT atterrirait sur la création de club sans
+    // que personne l'ait demandé. Mais l'oubli ne doit PAS frapper le `null` de
+    // démarrage : Firebase répond `null` avant d'avoir restauré la session, et
+    // une intention posée au lancement précédent doit précisément survivre à ce
+    // moment-là (c'est tout l'objet de sa persistance, audit 2026-09 P1-02).
+    const ancre = "if (!user && compteDejaConnecteRef.current)";
+    const index = navigateur.indexOf(ancre);
+    expect(index).toBeGreaterThan(-1);
+    const bloc = navigateur.slice(index, index + 400);
+    expect(bloc).toContain("await effacerIntentionCoach()");
+    // Un seul effet possède la lecture ET l'effacement : les séparer rouvrirait
+    // la course « effacement en vol pendant que la relecture répond ».
+    expect(bloc).toContain("lireIntentionCoach()");
   });
 
   test("le chemin coach → « Je m'entraîne aussi » : l'intention consommée ne re-route plus", () => {
@@ -316,22 +330,24 @@ describe("navigation — l'intention choisit un ÉCRAN, jamais un droit", () => 
     // il relirait une intention vieille de l'inscription et reposerait ce
     // coach déjà membre d'un club sur la création de club au lieu du
     // questionnaire joueur qu'il vient précisément de demander.
-    // Ancre sur une SEULE ligne physique (pas de `\n` littéral dans le motif
-    // recherché) : ce fichier est en fins de ligne CRLF, et un motif qui
-    // suppose `\n` tout court ne trouverait jamais rien.
-    const ancreEffet = 'if (profileCompleted === false && appSpace.space !== "coach" && intentionCoach)';
+    //
+    // DEPUIS L'AUDIT DU 05/09, la remise à zéro n'est plus câblée sur « on
+    // atteint le portillon » mais sur un FAIT du compte : il a déjà un club.
+    // La différence compte, et elle est la raison du changement — l'ancienne
+    // version consommait l'intention à la SECONDE où le portillon s'affichait,
+    // donc AVANT même que le coach ait tapé « Créer mon club ». App tuée à cet
+    // instant : l'intention était déjà brûlée, et il retombait au questionnaire
+    // joueur. Le club, lui, est un fait durable et vérifiable.
+    const ancreEffet = "if (clubId) {";
     const indexEffet = navigateur.indexOf(ancreEffet);
     expect(indexEffet).toBeGreaterThan(-1);
-    const effet = navigateur.slice(Math.max(0, indexEffet - 60), indexEffet + 300);
+    const effet = navigateur.slice(Math.max(0, indexEffet - 400), indexEffet + 300);
 
-    // Câblé sur exactement ce qui fait atteindre le portillon — profil non
-    // complété, ET un espace qui n'est PAS "coach" (seul cas où la branche
-    // 6bis n'a pas déjà renvoyé `<CoachNavigator />` avant que ce portillon ne
-    // soit atteint) — pas sur un geste utilisateur séparé qu'un coach
-    // pourrait ne jamais déclencher.
     expect(effet).toContain("useEffect(() => {");
-    expect(effet).toContain("setIntentionCoach(false)");
-    expect(effet).toMatch(/\[profileCompleted, appSpace\.space, intentionCoach\]/);
+    expect(effet).toContain("oublierIntentionCoach()");
+    // Et la route d'arrivée porte la même ceinture, pour la fraction de seconde
+    // où l'effet n'a pas encore couru (cf. test du portillon plus haut).
+    expect(navigateur).toContain("intentionCoach && !clubId");
 
     // Déclaré AVANT le premier retour conditionnel du composant : les hooks
     // de React s'exécutent à CHAQUE rendu, quelle que soit la branche JSX
@@ -344,15 +360,26 @@ describe("navigation — l'intention choisit un ÉCRAN, jamais un droit", () => 
     expect(indexPremierRetour).toBeGreaterThan(-1);
     expect(indexEffet).toBeLessThan(indexPremierRetour);
 
-    // Trois remises à zéro, pas une de plus ni de moins : déconnexion (testée
-    // plus haut), consommation au portillon (celle-ci), et renoncement
-    // explicite « Je suis joueur finalement » (testé plus bas, création de
-    // club). Aucune des deux autres ne suffirait seule au chemin coach-joueur :
-    // ni la déconnexion (aucune session ne se termine ici), ni le renoncement
-    // explicite (aucun tap sur « Je suis joueur finalement » dans ce chemin —
-    // l'espace bascule via le sélecteur joueur/coach, pas via cet écran).
-    const occurrences = navigateur.split("setIntentionCoach(false)").length - 1;
-    expect(occurrences).toBe(3);
+    // QUATRE fins de vie, chacune pour un chemin qu'aucune autre ne couvre :
+    //  1. déconnexion (testée plus haut) — aucune session ne se termine ici ;
+    //  2. le compte a un club (celle-ci) — le chemin coach → « Je m'entraîne
+    //     aussi », où personne ne tape « Je suis joueur finalement » ;
+    //  3. compte joueur déjà configuré — on le dit, on ne casse rien ;
+    //  4. renoncement explicite (testé plus bas, création de club).
+    for (const chemin of [
+      "if (!user && compteDejaConnecteRef.current)",
+      "if (clubId) {",
+      'if (profileCompleted === true && appSpace.space !== "coach")',
+      "onRetourJoueur={() => {",
+    ]) {
+      expect(navigateur).toContain(chemin);
+    }
+    // Le message du cas 3 ne promet rien qu'on ne sait pas tenir : aucun chemin
+    // client ne transforme un compte joueur en compte coach (il faudrait une
+    // Cloud Function et une revue sécurité).
+    expect(navigateur).toContain(
+      "Ton compte est un compte joueur. Pour créer un club, utilise un autre compte."
+    );
   });
 });
 
@@ -412,9 +439,10 @@ describe("création de club — jamais un cul-de-sac", () => {
   test("le navigateur fournit la sortie quand cet écran est le point d'arrivée", () => {
     const gate = navigateur.slice(navigateur.indexOf('key="nav-gate"'));
     expect(gate).toContain("onRetourJoueur={() => {");
-    // La sortie OUBLIE l'intention (sinon on y reviendrait) et repose le
-    // questionnaire joueur comme unique écran de la pile.
-    expect(gate).toContain("setIntentionCoach(false)");
+    // La sortie OUBLIE l'intention — mémoire ET disque, sinon le prochain
+    // démarrage reposerait la personne sur la création de club qu'elle vient de
+    // refuser — et repose le questionnaire joueur comme unique écran de la pile.
+    expect(gate).toContain("oublierIntentionCoach()");
     expect(gate).toContain('routes: [{ name: "ProfileSetupGate" }]');
   });
 

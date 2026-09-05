@@ -25,6 +25,10 @@ export function localAccountKeysToPurge(uid: string | null | undefined): string[
     STORAGE_KEYS.WELCOME_DONE,
     STORAGE_KEYS.ONBOARDING_START_TS,
     STORAGE_KEYS.TESTS_V1, // tests terrain, clé legacy sans uid (useTestsStorage)
+    // Intention coach : elle appartenait au compte qui disparaît. La laisser
+    // poserait le PROCHAIN compte créé sur ce téléphone devant la création de
+    // club sans que personne l'ait demandé (services/coachIntent.ts).
+    STORAGE_KEYS.COACH_INTENT,
     ...NOTIF_KEYS,
   ]);
   const cleanUid = typeof uid === "string" ? uid.trim() : "";
@@ -33,6 +37,7 @@ export function localAccountKeysToPurge(uid: string | null | undefined): string[
     keys.add(STORAGE_KEYS.TRAINING_SNAPSHOT(cleanUid)); // ancien format de snapshot
     keys.add(`${STORAGE_KEYS.TESTS_V1}_${cleanUid}`); // tests terrain par uid
     keys.add(STORAGE_KEYS.APP_SPACE_PREFERENCE(cleanUid)); // dernier espace Joueur/Coach
+    keys.add(STORAGE_KEYS.CLUB_CREATION_ID(cleanUid)); // identifiant de club réservé, jamais consommé
   }
   return [...keys];
 }
