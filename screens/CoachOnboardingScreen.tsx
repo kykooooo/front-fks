@@ -14,7 +14,13 @@ import { Button } from "../components/ui/Button";
 import { LoadingOverlay } from "../components/ui/LoadingOverlay";
 import { coachColors, coachRadius } from "../components/coach/coachUi";
 import { createClubAsCoach, nouvelIdentifiantClub } from "../repositories/clubsRepo";
-import { libererIdClub, reserverIdClub } from "../services/reservationClub";
+import {
+  enregistrerEtapeClub,
+  estRefusPermission,
+  libererIdClub,
+  remplacerReservationClub,
+  reserverIdClub,
+} from "../services/reservationClub";
 import { showToast } from "../utils/toast";
 import { useHaptics } from "../hooks/useHaptics";
 import { withTimeout, TimeoutError } from "../utils/errorHandler";
@@ -147,6 +153,17 @@ export default function CoachOnboardingScreen({ onRetourJoueur }: CoachOnboardin
    * le même club au lieu d'en fabriquer un second (P1-03 — une 4G capricieuse
    * laissait un club orphelin par appui). Libéré au succès.
    *
+   * ET LA RÉSERVATION PORTE LA PROGRESSION, pas seulement l'identifiant. Sans
+   * elle, le réessai rejouait la 1ʳᵉ écriture sur un club DÉJÀ écrit : ce n'est
+   * plus une création mais une UPDATE, que les règles refusent tant que
+   * l'appartenance propriétaire n'existe pas (firestore.rules:783 →
+   * `myAccessRole() == "owner"`). Dans l'entrelacement que produit exactement un
+   * timeout — écriture 1 passée, écriture 2 pas passée —, chaque réessai était
+   * donc refusé, la réservation jamais libérée, et le coach BLOQUÉ À VIE sur son
+   * compte (R2 de la contre-vérification du 05/09). On reprend à l'étape
+   * suivante ; et si une écriture est refusée quand même, on jette la
+   * réservation et on repart sur un identifiant neuf plutôt que d'insister.
+   *
    * Délai de garde 15 s (P1-27) : hors réseau, l'écriture pend sans fin et
    * l'overlay gelait à jamais. Au timeout, on ne SAIT pas si l'écriture est
    * arrivée : le message le dit, et le RootNavigator relit `users/{uid}.clubId`
@@ -156,12 +173,16 @@ export default function CoachOnboardingScreen({ onRetourJoueur }: CoachOnboardin
   const doCreate = async (uid: string) => {
     try {
       setLoading(true);
-      const clubId = await reserverIdClub(uid, nouvelIdentifiantClub);
+      const reservation = await reserverIdClub(uid, nouvelIdentifiantClub);
       await withTimeout(createClubAsCoach({
         name: clubName.trim(),
         uid,
         coachName: coachName.trim() || null,
-        clubId,
+        clubId: reservation.clubId,
+        etapeDejaFaite: reservation.etape,
+        // Notée sur le disque au fur et à mesure : une app tuée entre deux
+        // écritures doit savoir où reprendre, pas repartir de zéro.
+        onEtapeFaite: (etape) => enregistrerEtapeClub(uid, reservation.clubId, etape),
       }), 15000);
       await libererIdClub(uid);
       haptics.success();
@@ -189,7 +210,23 @@ export default function CoachOnboardingScreen({ onRetourJoueur }: CoachOnboardin
         showToast({
           type: "warn",
           title: "La création a peut-être abouti, on vérifie",
-          message: "Ta saisie est conservée. Réessaie dans un instant : aucun club en double ne sera créé.",
+          message: "Ta saisie est conservée. Réessaie dans un instant : on reprendra là où ça s'est arrêté.",
+        });
+        return;
+      }
+      if (estRefusPermission(error)) {
+        // REFUS INATTENDU : notre idée de la progression ne correspond plus à
+        // l'état réel du serveur (document déjà écrit d'une façon qu'on n'a pas
+        // notée, appartenance disparue, autre appareil passé par là…).
+        // S'entêter sur le même identifiant ne peut que refaire refuser — c'est
+        // précisément ce qui enfermait le coach. On jette et on repart neuf.
+        if (__DEV__) console.warn("[CoachOnboarding] écriture refusée, réservation remplacée");
+        await remplacerReservationClub(uid, nouvelIdentifiantClub);
+        haptics.warning();
+        showToast({
+          type: "warn",
+          title: "On recommence proprement.",
+          message: "Ta saisie est conservée. Appuie à nouveau sur « Créer mon club ».",
         });
         return;
       }

@@ -273,6 +273,96 @@ describe("createClubAsCoach — le créateur devient PROPRIÉTAIRE, pas coach", 
       chemins.indexOf("users/coachA"),
     );
   });
+
+  // ─── REPRISE PAR ÉTAPE (R2 de la contre-vérification du 05/09) ───────────
+  // Réutiliser l'identifiant ne suffisait pas : réécrire `clubs/{clubId}` sur
+  // un document DÉJÀ écrit n'est plus une création mais une UPDATE, et les
+  // règles exigent alors `isClubOwner(clubId)` (firestore.rules:783 →
+  // `myAccessRole() == "owner"`, `:79-83`), c'est-à-dire une appartenance
+  // propriétaire déjà écrite. Dans l'entrelacement que produit EXACTEMENT un
+  // timeout — écriture 1 passée, écriture 2 pas passée — chaque réessai était
+  // refusé, la réservation jamais libérée, le coach bloqué à vie.
+  test("étape 1 déjà franchie : le club n'est PAS réécrit, on reprend à l'appartenance", async () => {
+    await createClubAsCoach({
+      name: "Club Neuf",
+      uid: "coachA",
+      clubId: "reserve-1",
+      etapeDejaFaite: 1,
+    });
+    const chemins = setDocMock.mock.calls.map((c: any[]) => (c[0]?.path as string[]).join("/"));
+    // L'UPDATE que les règles auraient refusée n'a pas lieu.
+    expect(chemins).not.toContain("clubs/reserve-1");
+    // Les deux écritures restantes, dans l'ordre.
+    expect(chemins).toEqual(["clubs/reserve-1/members/coachA", "users/coachA"]);
+  });
+
+  test("étape 2 déjà franchie : il ne reste que le pointeur users.clubId", async () => {
+    await createClubAsCoach({
+      name: "Club Neuf",
+      uid: "coachA",
+      clubId: "reserve-1",
+      etapeDejaFaite: 2,
+    });
+    const chemins = setDocMock.mock.calls.map((c: any[]) => (c[0]?.path as string[]).join("/"));
+    expect(chemins).toEqual(["users/coachA"]);
+  });
+
+  test("la reprise rend le MÊME club, avec le nom saisi", async () => {
+    const club = await createClubAsCoach({
+      name: "  Club Neuf  ",
+      uid: "coachA",
+      clubId: "reserve-1",
+      etapeDejaFaite: 2,
+    });
+    expect(club).toEqual({ id: "reserve-1", name: "Club Neuf", ownerUid: "coachA" });
+  });
+
+  test("chaque écriture réussie est annoncée, dans l'ordre — c'est ce qui persiste la reprise", async () => {
+    const franchies: number[] = [];
+    await createClubAsCoach({
+      name: "Club Neuf",
+      uid: "coachA",
+      clubId: "reserve-1",
+      onEtapeFaite: (etape) => {
+        franchies.push(etape);
+      },
+    });
+    expect(franchies).toEqual([1, 2, 3]);
+  });
+
+  test("une étape déjà franchie n'est pas réannoncée", async () => {
+    const franchies: number[] = [];
+    await createClubAsCoach({
+      name: "Club Neuf",
+      uid: "coachA",
+      clubId: "reserve-1",
+      etapeDejaFaite: 1,
+      onEtapeFaite: (etape) => {
+        franchies.push(etape);
+      },
+    });
+    expect(franchies).toEqual([2, 3]);
+  });
+
+  test("une progression annoncée SANS identifiant réservé est ignorée", async () => {
+    // Sans réservation, on ne sait pas de quel club on parlerait : reprendre
+    // « à l'étape 2 » sur un identifiant automatique écrirait une appartenance
+    // sur un club qui n'existe pas.
+    await createClubAsCoach({ name: "Club Neuf", uid: "coachA", etapeDejaFaite: 2 });
+    const chemins = setDocMock.mock.calls.map((c: any[]) => (c[0]?.path as string[]).join("/"));
+    expect(chemins).toEqual([
+      "clubs/autoId1",
+      "clubs/autoId1/members/coachA",
+      "users/coachA",
+    ]);
+  });
+
+  test("un nom vide est refusé même quand on reprend (aucun club anonyme, à aucune étape)", async () => {
+    await expect(
+      createClubAsCoach({ name: "   ", uid: "coachA", clubId: "reserve-1", etapeDejaFaite: 2 }),
+    ).rejects.toThrow("CLUB_NAME_REQUIRED");
+    expect(setDocMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("fetchClubPlayerSummaries — roster via members → summaries (coach-safe strict)", () => {

@@ -40,14 +40,22 @@ export const STORAGE_KEYS = {
   // (services/accountDeletionHelpers.localAccountKeysToPurge).
   APP_SPACE_PREFERENCE: (uid: string) => `fks_app_space_${uid}`,
 
-  // Identifiant de club RÉSERVÉ localement avant la première écriture de la
-  // création de club, et réutilisé à chaque réessai. PAR COMPTE : sans l'uid,
-  // deux comptes sur le même téléphone se disputeraient la même réservation.
+  // RÉSERVATION de création de club : l'identifiant retenu avant la première
+  // écriture, ET la dernière écriture réussie. JSON `{ clubId, etape }` —
+  // cf. services/reservationClub. PAR COMPTE : sans l'uid, deux comptes sur le
+  // même téléphone se disputeraient la même réservation.
   //
   // POURQUOI (audit inscription 2026-09, P1-03) : la création enchaîne trois
   // écritures que les règles Firestore INTERDISENT de grouper en `writeBatch`
   // (l'appartenance propriétaire doit exister AVANT `users/{uid}.clubId` —
   // firestore.rules:429-434). Sans identifiant réservé, chaque réessai après un
-  // timeout créait un club de plus. Effacée au succès.
+  // timeout créait un club de plus.
+  //
+  // POURQUOI L'ÉTAPE EN PLUS (R2, 05/09) : réécrire un club déjà écrit est une
+  // UPDATE, que les règles n'acceptent que d'un propriétaire déjà membre
+  // (`firestore.rules:783`). Sans la progression, le réessai après un timeout
+  // survenu entre les écritures 1 et 2 était refusé À CHAQUE FOIS — le coach
+  // était bloqué à vie sur son compte. Une valeur écrite par l'ancien format
+  // (identifiant nu) est relue comme « étape 0 ». Effacée au succès.
   CLUB_CREATION_ID: (uid: string) => `fks_club_creation_${uid}`,
 } as const;

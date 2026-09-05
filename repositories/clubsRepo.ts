@@ -22,6 +22,10 @@ import {
 import { parseCoachPlayerSummary, type CoachPlayerSummary } from "../domain/coachSummary";
 import { isCoachAccessGranted } from "../domain/coachAccess";
 import { isActivePlayerStatus, type ClubAccessRole } from "../domain/clubRoles";
+// Import de TYPE uniquement (effacé à la compilation) : la définition vit avec
+// la réservation qui la persiste, et ce module n'en tire aucune dépendance
+// d'exécution — surtout pas AsyncStorage.
+import type { EtapeCreationClub } from "../services/reservationClub";
 import {
   COACH_NOTES_COLLECTION,
   clampCoachPrivateNote,
@@ -223,9 +227,49 @@ export async function createClubAsCoach(opts: {
    * client (l'atomicité vraie demanderait une Cloud Function — lot B).
    */
   clubId?: string | null;
+  /**
+   * DERNIÈRE ÉCRITURE DÉJÀ RÉUSSIE (services/reservationClub) : on reprend à la
+   * suivante au lieu de tout rejouer.
+   *
+   * CE N'EST PAS UNE OPTIMISATION, C'EST LA CONDITION POUR QUE LE RÉESSAI PASSE.
+   * Réécrire `clubs/{clubId}` sur un document qui existe déjà est une UPDATE, et
+   * les règles exigent alors `isClubOwner(clubId)` (firestore.rules:783 →
+   * `myAccessRole() == "owner"`, `:79-83`) — donc une appartenance propriétaire
+   * déjà écrite. Dans l'entrelacement « écriture 1 passée, écriture 2 pas
+   * passée » (exactement ce qu'un timeout produit), rejouer depuis le début se
+   * faisait refuser en `permission-denied` à chaque tentative : le coach était
+   * bloqué à vie sur son compte (R2 de la contre-vérification du 05/09).
+   */
+  etapeDejaFaite?: EtapeCreationClub;
+  /**
+   * Appelé APRÈS chaque écriture réussie, avec le numéro de l'étape franchie.
+   * C'est par là que la progression est persistée — sans quoi une app tuée
+   * entre deux écritures repartirait de zéro, et se ferait refuser.
+   */
+  onEtapeFaite?: (etape: EtapeCreationClub) => void | Promise<void>;
 }): Promise<ClubDoc> {
-  const club = await createClub({ name: opts.name, ownerUid: opts.uid, clubId: opts.clubId });
-  await setClubMembership({ clubId: club.id, uid: opts.uid, accessRole: "owner" });
+  const name = String(opts.name ?? "").trim();
+  // Même refus que `createClub`, y compris quand on saute cette écriture-là :
+  // un club sans nom ne doit exister à aucune étape du chemin.
+  if (!name) throw new Error("CLUB_NAME_REQUIRED");
+
+  const reserve = String(opts.clubId ?? "").trim();
+  const dejaFaite: EtapeCreationClub = reserve ? (opts.etapeDejaFaite ?? 0) : 0;
+
+  let club: ClubDoc;
+  if (dejaFaite >= 1) {
+    // Le club est déjà écrit sous cet identifiant. Y retoucher serait une
+    // UPDATE que les règles refuseraient tant que l'appartenance n'existe pas.
+    club = { id: reserve, name, ownerUid: opts.uid };
+  } else {
+    club = await createClub({ name, ownerUid: opts.uid, clubId: opts.clubId });
+    await opts.onEtapeFaite?.(1);
+  }
+
+  if (dejaFaite < 2) {
+    await setClubMembership({ clubId: club.id, uid: opts.uid, accessRole: "owner" });
+    await opts.onEtapeFaite?.(2);
+  }
 
   const coachName = String(opts.coachName ?? "").trim();
   await setDoc(
@@ -239,6 +283,7 @@ export async function createClubAsCoach(opts: {
     },
     { merge: true }
   );
+  await opts.onEtapeFaite?.(3);
 
   return club;
 }
