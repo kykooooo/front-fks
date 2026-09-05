@@ -466,6 +466,19 @@ describe("un compte, un club (R4)", () => {
     expect(creationMock).not.toHaveBeenCalled();
   });
 
+  test("le message ne promet AUCUN déplacement qu'on ne fait pas", () => {
+    // `choisir("coach")` MÉMORISE une préférence : dans la pile du portillon il
+    // n'ouvre rien et ne navigue nulle part. « On t'emmène à ton espace coach »
+    // annonçait donc un geste qui n'a pas lieu (P3 encre du round 3).
+    const source = require("fs").readFileSync(
+      require("path").resolve(__dirname, "..", "CoachOnboardingScreen.tsx"),
+      "utf8",
+    ) as string;
+    expect(source).toContain("Tu as déjà un club.");
+    expect(source).toContain("Retrouve-le dans ton espace coach.");
+    expect(source).not.toContain("On t'emmène");
+  });
+
   test("il bascule vers l'espace coach quand ce compte y a droit", async () => {
     lectureClubMock.mockImplementation(async () => "club-deja-la");
     const choisir = jest.fn();

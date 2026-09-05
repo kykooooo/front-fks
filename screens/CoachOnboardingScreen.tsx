@@ -216,14 +216,20 @@ export default function CoachOnboardingScreen({
     if (dejaUnClub) {
       relacherVerrou();
       haptics.warning();
+      // AUCUNE PROMESSE D'ACTION IMMÉDIATE (P3 encre du round 3). « On
+      // t'emmène à ton espace coach » annonçait un déplacement que ce chemin ne
+      // fait pas : dans la pile du portillon, `choisir("coach")` MÉMORISE une
+      // préférence, il n'ouvre rien et ne navigue nulle part. On dit ce qui est
+      // vrai — le club existe — et où le retrouver.
       showToast({
         type: "info",
         title: "Tu as déjà un club.",
-        message: "On t'emmène à ton espace coach.",
+        message: "Retrouve-le dans ton espace coach.",
       });
       // Le sélecteur d'espace est dérivé du serveur et diffusé par la racine :
-      // s'il est ouvert, ce compte a vraiment les deux espaces. Sinon on ne
-      // force rien — on a au moins évité le second club.
+      // s'il est ouvert, ce compte a vraiment les deux espaces, et mémoriser la
+      // préférence évite de le renvoyer côté joueur au prochain démarrage.
+      // Sinon on ne force rien — on a au moins évité le second club.
       const relais = readAppSpaceSwitch();
       if (relais.peutChoisir) relais.choisir("coach");
       return;
@@ -269,6 +275,13 @@ export default function CoachOnboardingScreen({
    * suivante ; et si une écriture est refusée quand même, on jette la
    * réservation et on repart sur un identifiant neuf plutôt que d'insister.
    *
+   * ET LE NOM SUIT LA MÊME LOGIQUE (R2 du round 3). Dès l'étape 1 le document
+   * `clubs/{clubId}` existe et n'est plus réécrit : une saisie corrigée entre
+   * deux tentatives n'irait NULLE PART. C'est donc le nom persisté avec la
+   * réservation qui part (`nomEnregistre`), et le champ est verrouillé dessus —
+   * les deux ne peuvent plus diverger, et on ne félicite personne pour un nom
+   * que le serveur ignore.
+   *
    * Délai de garde 15 s (P1-27) : hors réseau, l'écriture pend sans fin et
    * l'overlay gelait à jamais. Au timeout, on ne SAIT pas si l'écriture est
    * arrivée : le message le dit, et le RootNavigator relit `users/{uid}.clubId`
@@ -279,9 +292,7 @@ export default function CoachOnboardingScreen({
     try {
       setLoading(true);
       const reservation = await reserverIdClub(uid, nouvelIdentifiantClub);
-      // Le nom déjà en base gagne sur la saisie dès l'étape 1 : le document
-      // n'est plus réécrit, donc la saisie n'irait nulle part (R2 du round 3).
-      // Le champ est verrouillé sur ce nom-là, les deux ne peuvent pas diverger.
+      // Le nom en base gagne sur la saisie dès l'étape 1 (cf. en-tête).
       const nomEnBase = reservation.etape >= 1 ? (reservation.name ?? null) : null;
       const nomEnvoye = nomEnBase ?? clubName.trim();
       if (nomEnBase) setNomVerrouille(nomEnBase);
@@ -292,9 +303,8 @@ export default function CoachOnboardingScreen({
         clubId: reservation.clubId,
         etapeDejaFaite: reservation.etape,
         nomEnregistre: nomEnBase,
-        // Notée sur le disque au fur et à mesure : une app tuée entre deux
-        // écritures doit savoir où reprendre, pas repartir de zéro. Le nom part
-        // avec : à partir de l'étape 1 c'est LUI qui fait foi, plus la saisie.
+        // Notée sur le disque au fur et à mesure (le nom avec) : une app tuée
+        // entre deux écritures doit savoir où reprendre, pas repartir de zéro.
         onEtapeFaite: (etape) => {
           if (etape === 1) setNomVerrouille(nomEnvoye);
           return enregistrerEtapeClub(uid, reservation.clubId, etape, nomEnvoye);
