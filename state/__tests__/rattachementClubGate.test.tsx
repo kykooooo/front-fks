@@ -36,18 +36,26 @@ import {
 /** Compte les rendus : c'est ce qui prouve la notification (ou son absence). */
 type Sonde = { rendus: number; dernier: boolean | null };
 
-function Espion({ uid, sonde }: { uid: string | null; sonde: Sonde }) {
+// La sonde est nourrie par un effet, pas par une mutation de props pendant le
+// rendu (`react-hooks/immutability`) — et un effet sans dépendances tourne à
+// CHAQUE rendu, ce qui est exactement le compteur qu'on veut.
+function Espion({ uid, onRendu }: { uid: string | null; onRendu: (v: boolean) => void }) {
   const enCours = useRattachementClubEnCours(uid);
-  sonde.rendus += 1;
-  sonde.dernier = enCours;
+  useEffect(() => {
+    onRendu(enCours);
+  });
   return <Text>{String(enCours)}</Text>;
 }
 
 function monter(uid: string | null) {
   const sonde: Sonde = { rendus: 0, dernier: null };
+  const noter = (valeur: boolean) => {
+    sonde.rendus += 1;
+    sonde.dernier = valeur;
+  };
   let renderer!: TestRenderer.ReactTestRenderer;
   act(() => {
-    renderer = TestRenderer.create(<Espion uid={uid} sonde={sonde} />);
+    renderer = TestRenderer.create(<Espion uid={uid} onRendu={noter} />);
   });
   return { renderer, sonde };
 }

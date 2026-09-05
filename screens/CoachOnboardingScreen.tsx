@@ -104,13 +104,17 @@ export default function CoachOnboardingScreen({
     let vivant = true;
     const uid = getAuth().currentUser?.uid;
     if (!uid) return;
-    void lireReservationClub(uid).then((reservation) => {
-      if (!vivant) return;
-      const nom = reservation && reservation.etape >= 1 ? reservation.name : undefined;
-      if (!nom) return;
-      setNomVerrouille(nom);
-      setClubName(nom);
-    });
+    lireReservationClub(uid)
+      .then((reservation) => {
+        if (!vivant) return;
+        const nom = reservation && reservation.etape >= 1 ? reservation.name : undefined;
+        if (!nom) return;
+        setNomVerrouille(nom);
+        setClubName(nom);
+      })
+      // Ne rien savoir n'invente aucun nom, et ne casse pas l'écran : le champ
+      // reste simplement libre, comme avant ce lot.
+      .catch(() => undefined);
     return () => {
       vivant = false;
     };
