@@ -15,6 +15,8 @@
 //   3. un code refusé produit un message clair, en français, et le joueur
 //      continue — avec ou sans club — sans ressaisir quoi que ce soit.
 
+import type { CoachAccessState } from "../../domain/coachAccess";
+
 export type AttachClubStatus =
   | "skipped" // aucun code saisi : rien à tenter
   | "joined" // rattachement réussi
@@ -26,10 +28,24 @@ export type AttachClubOutcome = {
   clubName: string | null;
   /** Message FR à afficher au joueur quand `status === "failed"`. */
   message: string | null;
+  /**
+   * État d'autorisation d'accès posé par le SERVEUR au rattachement
+   * (services/clubInvites → `coachAccess`). "pending" = le club valide ses
+   * entrées à la main : le joueur est rattaché mais pas encore consultable par
+   * son coach, et on ne doit pas lui annoncer l'inverse. `null` = la réponse ne
+   * le porte pas ; on n'invente alors aucun état.
+   */
+  coachAccess: CoachAccessState | null;
 };
 
 export type JoinAttempt =
-  | { ok: true; clubId: string; clubName: string | null; alreadyMember: boolean }
+  | {
+      ok: true;
+      clubId: string;
+      clubName: string | null;
+      alreadyMember: boolean;
+      coachAccess?: CoachAccessState | null;
+    }
   | { ok: false; reason: string; message: string };
 
 export type SaveProfileThenAttachClubDeps = {
@@ -40,7 +56,7 @@ export type SaveProfileThenAttachClubDeps = {
 };
 
 const FALLBACK_MESSAGE =
-  "Ton profil est enregistré, mais le code club n'a pas pu être vérifié. Tu pourras réessayer depuis Profil.";
+  "Ton profil est enregistré, mais le code club n'a pas pu être vérifié. Tu pourras réessayer depuis Profil → Mon club.";
 
 /**
  * Enregistre le profil PUIS tente le rattachement. Ne lève que si
@@ -55,7 +71,7 @@ export async function saveProfileThenAttachClub(
 
   const code = String(rawCode ?? "").trim();
   if (!code) {
-    return { status: "skipped", clubId: null, clubName: null, message: null };
+    return { status: "skipped", clubId: null, clubName: null, message: null, coachAccess: null };
   }
 
   // 2. Le club ensuite. Toute panne ici est contenue : elle ne peut plus
@@ -64,7 +80,7 @@ export async function saveProfileThenAttachClub(
   try {
     attempt = await deps.joinClub(code);
   } catch {
-    return { status: "failed", clubId: null, clubName: null, message: FALLBACK_MESSAGE };
+    return { status: "failed", clubId: null, clubName: null, message: FALLBACK_MESSAGE, coachAccess: null };
   }
 
   if (attempt.ok) {
@@ -73,6 +89,7 @@ export async function saveProfileThenAttachClub(
       clubId: attempt.clubId,
       clubName: attempt.clubName,
       message: null,
+      coachAccess: attempt.coachAccess ?? null,
     };
   }
 
@@ -81,5 +98,6 @@ export async function saveProfileThenAttachClub(
     clubId: null,
     clubName: null,
     message: attempt.message || FALLBACK_MESSAGE,
+    coachAccess: null,
   };
 }

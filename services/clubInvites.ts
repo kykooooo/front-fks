@@ -23,6 +23,7 @@
 import type { HttpsCallableResult } from "firebase/functions";
 
 import { app } from "./firebase";
+import { normalizeCoachAccess, type CoachAccessState } from "../domain/coachAccess";
 
 /** Région des Cloud Functions — alignée sur functions/src/config.ts (REGION). */
 const FUNCTIONS_REGION = "europe-west4";
@@ -49,7 +50,30 @@ export type InviteFailureReason =
   | "unavailable"; // réseau / fonction indisponible
 
 export type JoinClubOutcome =
-  | { ok: true; clubId: string; clubName: string | null; alreadyMember: boolean }
+  | {
+      ok: true;
+      clubId: string;
+      clubName: string | null;
+      alreadyMember: boolean;
+      /**
+       * ÉTAT D'AUTORISATION D'ACCÈS AU SUIVI, tel que le serveur vient de le
+       * poser (`functions/src/inviteCodes.ts`, champ `coachAccess` de
+       * `JoinResult`). Il vaut "not_required" pour un club en politique par
+       * défaut, "pending" pour un club en `approval_required`.
+       *
+       * POURQUOI LE FRONT LE LIT : sans lui, un joueur d'un club en validation
+       * manuelle lisait « Tu as rejoint {club} » alors que sa fiche est en
+       * attente et qu'il reste INVISIBLE de son coach (P2-07 de l'audit
+       * d'inscription). Le champ ne DÉCIDE rien ici — il est écrit et contrôlé
+       * côté serveur, aucun client ne peut le modifier — il change seulement ce
+       * qu'on ose annoncer.
+       *
+       * `null` quand la réponse ne le porte pas (fonction plus ancienne
+       * déployée, valeur inconnue) : on ne suppose alors RIEN et on garde le
+       * message neutre plutôt que d'inventer un état.
+       */
+      coachAccess: CoachAccessState | null;
+    }
   | { ok: false; reason: InviteFailureReason; message: string };
 
 export type IssueCodeOutcome =
@@ -150,6 +174,7 @@ export async function joinClubWithInviteCode(rawCode: string): Promise<JoinClubO
       clubId?: unknown;
       clubName?: unknown;
       alreadyMember?: unknown;
+      coachAccess?: unknown;
     }>(JOIN_CALLABLE, { code });
 
     const clubId = typeof res.data?.clubId === "string" ? res.data.clubId : "";
@@ -163,6 +188,9 @@ export async function joinClubWithInviteCode(rawCode: string): Promise<JoinClubO
       clubId,
       clubName: typeof res.data?.clubName === "string" ? res.data.clubName : null,
       alreadyMember: res.data?.alreadyMember === true,
+      // `normalizeCoachAccess` rend `null` sur tout ce qui n'est pas un état
+      // connu : une valeur exotique ne devient jamais un état inventé.
+      coachAccess: normalizeCoachAccess(res.data?.coachAccess),
     };
   } catch (err) {
     const reason = readFailureReason(err);

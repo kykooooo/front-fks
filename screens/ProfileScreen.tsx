@@ -16,6 +16,7 @@ import { useLoadStore } from '../state/stores/useLoadStore';
 import { useExternalStore } from '../state/stores/useExternalStore';
 import { useDebugStore } from '../state/stores/useDebugStore';
 import { auth } from '../services/firebase';
+import { useMonClub } from '../hooks/useMonClub';
 import { computeStreakStats } from '../utils/streakStats';
 import { lastNDates } from '../utils/dateHelpers';
 import { toDateKey } from '../utils/dateHelpers';
@@ -97,6 +98,9 @@ const formatDayLabel = (value?: string | null) => {
 /* ══════════════════════════════════════════ */
 export default function ProfileScreen() {
   const nav = useNavigation<any>();
+
+  /* ─── Club (rangée « Mon club », cf. plus bas) ─── */
+  const { clubId, clubName: clubNom, chargement: clubChargement } = useMonClub();
 
   /* ─── Store ─── */
   const sessions = useSessionsStore((s) => s.sessions);
@@ -782,6 +786,45 @@ export default function ProfileScreen() {
             )}
           </Card>
 
+          {/* ─── MON CLUB ───
+              Le seul indicateur PERMANENT d'un rattachement raté. Avant lui, un
+              code club refusé s'annonçait par un toast de 2,2 s pendant la
+              bascule vers l'accueil, puis plus rien nulle part : le joueur se
+              croyait dans l'effectif de son coach, qui ne l'y voyait jamais
+              (P0-01 de l'audit d'inscription du 05/09). La carte qui SAIT
+              rejoindre un club vit dans les Réglages — on y mène, on ne la
+              duplique pas. */}
+          <Card variant="soft" style={styles.clubRowCard}>
+            <View style={styles.clubRowTexte}>
+              <Text style={styles.clubRowTitre}>Mon club</Text>
+              <Text style={styles.clubRowSousTitre} numberOfLines={2}>
+                {clubChargement
+                  ? 'Chargement…'
+                  : !clubId
+                    ? 'Aucun club — rejoindre avec un code'
+                    : clubNom ?? 'Club rejoint'}
+              </Text>
+            </View>
+            <Button
+              label={clubId ? 'Gérer' : 'Rejoindre'}
+              variant={clubId ? 'ghost' : 'secondary'}
+              size="sm"
+              leftAccessory={
+                <Ionicons
+                  name="people-outline"
+                  size={14}
+                  color={clubId ? palette.sub : palette.accent}
+                />
+              }
+              // Vers la carte Club des Réglages (2ᵉ section de l'écran, juste
+              // sous « Compte ») : elle sait déjà tout faire — saisir un code,
+              // afficher l'appartenance, quitter le club. La dupliquer ici
+              // aurait fait deux vérités à tenir synchrones.
+              onPress={() => nav.navigate('Settings')}
+              accessibilityLabel={clubId ? 'Gérer mon club' : 'Rejoindre un club avec un code'}
+            />
+          </Card>
+
           <View style={styles.actionsRow}>
             <Button
               label="Mon profil"
@@ -1076,4 +1119,19 @@ const styles = StyleSheet.create({
   /* Actions */
   actionsRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
   actionBtnStyled: { flex: 1 },
+
+  /* Rangée « Mon club » */
+  clubRowCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    padding: 14,
+    marginTop: 8,
+  },
+  clubRowTexte: { flex: 1, gap: 2 },
+  clubRowTitre: { fontSize: 14, fontWeight: '700', color: palette.text },
+  // minHeight (jamais height) : le nom d'un club vient du serveur, il peut
+  // tenir sur deux lignes (règle d'or, CLAUDE.md).
+  clubRowSousTitre: { fontSize: 12.5, lineHeight: 17, color: palette.sub, minHeight: 17 },
 });

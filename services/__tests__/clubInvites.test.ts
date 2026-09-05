@@ -68,8 +68,25 @@ describe("joinClubWithInviteCode", () => {
 
     const res = await joinClubWithInviteCode(" abcde-fghjk ");
 
-    expect(res).toEqual({ ok: true, clubId: "clubX", clubName: "AS Test", alreadyMember: false });
+    // `coachAccess` absent de la réponse = état INCONNU, jamais inventé.
+    expect(res).toEqual({ ok: true, clubId: "clubX", clubName: "AS Test", alreadyMember: false, coachAccess: null });
     expect(mockCall).toHaveBeenCalledWith({ code: "ABCDEFGHJK" });
+  });
+
+  test("l'état d'accès du serveur est transmis tel quel — et lui seul", async () => {
+    // Club en validation manuelle : le joueur est rattaché, son suivi attend.
+    mockCall.mockResolvedValue({
+      data: { clubId: "clubX", clubName: "AS Test", alreadyMember: false, coachAccess: "pending" },
+    });
+    const enAttente = await joinClubWithInviteCode("ABCDEFGHJK");
+    expect(enAttente).toMatchObject({ ok: true, coachAccess: "pending" });
+
+    // Valeur inconnue du contrat : deny-first, on ne la propage PAS.
+    mockCall.mockResolvedValue({
+      data: { clubId: "clubX", clubName: "AS Test", alreadyMember: false, coachAccess: "peut-etre" },
+    });
+    const exotique = await joinClubWithInviteCode("ABCDEFGHJK");
+    expect(exotique).toMatchObject({ ok: true, coachAccess: null });
   });
 
   test("refus serveur : message FRANÇAIS maison, jamais la phrase Firebase", async () => {

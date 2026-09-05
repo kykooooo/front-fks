@@ -32,6 +32,7 @@ import {
   normalizeInviteCodeInput,
 } from "../services/clubInvites";
 import { saveProfileThenAttachClub } from "./profileSetup/attachClub";
+import { messageRattachementReussi } from "../domain/clubJoinMessages";
 import { ClubDataDisclosure } from "../components/club/ClubDataDisclosure";
 import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
 // Catégories proposées au sélecteur : U13 retirée (décision produit 2026-07, cf.
@@ -73,6 +74,12 @@ import { ajouterGene } from "../hooks/monCorps/monCorpsActions";
 // reste demandé ici : il nourrit le contexte IA + la reco de lieu.
 const TOTAL_STEPS = 4;
 const palette = theme.colors;
+
+// Plafond d'agrandissement des TITRES de cet écran (même valeur que
+// MonCorpsScreen / MonCorpsHubCard). Le cap global de l'app est à 1,3
+// (config/textScaling) ; un titre sur une ou deux lignes, lui, mange la hauteur
+// d'une carte bien avant.
+const PLAFOND_TITRE = 1.2;
 
 // Poids approximatifs de densité par étape, en nombre de zones interactives
 // (DA Polish, direction A) : la barre "Étape n/4" linéaire annonçait 25% à
@@ -197,6 +204,13 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   const [hasHomeEquipment, setHasHomeEquipment] = useState<"oui" | "non" | "">("");
   const [homeEquipment, setHomeEquipment] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  // ÉCHEC DU CODE CLUB, APRÈS UN PROFIL DÉJÀ ENREGISTRÉ. Cet état remplace le
+  // toast de 2,2 s qui disparaissait pendant que l'écran basculait vers
+  // l'accueil : le joueur croyait avoir rejoint son club, le coach ne le voyait
+  // jamais (P0-01 de l'audit d'inscription). Il porte le message du serveur et
+  // le code saisi, pour que « Réessayer » ne reparte pas d'une page blanche.
+  const [echecClub, setEchecClub] = useState<{ message: string; code: string } | null>(null);
+  const [reessaiClubEnCours, setReessaiClubEnCours] = useState(false);
 
 
   const shake = useRef(new Animated.Value(0)).current;
@@ -395,6 +409,58 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
     }
   };
 
+  /**
+   * Sortie de l'écran quand tout est joué. Pont local : bascule immédiate vers
+   * l'app sans attendre le onSnapshot Firestore (le listener du RootNavigator
+   * reste la source durable). En mode édition (ouvert depuis Profil/Réglages),
+   * on referme simplement l'écran.
+   */
+  const terminer = () => {
+    if (onProfileCompleted) {
+      onProfileCompleted();
+    } else if (navigation.canGoBack()) {
+      navigation.goBack();
+    }
+  };
+
+  /**
+   * RÉESSAI DU SEUL CODE CLUB. Le profil est DÉJÀ enregistré à ce stade : on ne
+   * le réécrit pas (ce serait une seconde écriture pour rien, et un second
+   * risque de panne sur un chemin qui vient de réussir). Un seul appel serveur,
+   * celui qui a échoué.
+   */
+  const reessayerCodeClub = async (codeSaisi: string) => {
+    const normalise = normalizeInviteCodeInput(codeSaisi);
+    if (!normalise) {
+      fail("Code manquant", "Saisis le code que ton coach t'a donné.");
+      return;
+    }
+    if (reessaiClubEnCours) return;
+    setReessaiClubEnCours(true);
+    try {
+      const attempt = await withTimeout(joinClubWithInviteCode(normalise), 15000);
+      trackEvent("club_code_checked", { valid: attempt.ok });
+      if (!attempt.ok) {
+        haptics.warning();
+        setEchecClub({ message: attempt.message, code: codeSaisi });
+        return;
+      }
+      haptics.success();
+      showToast(messageRattachementReussi(attempt.clubName, attempt.coachAccess));
+      setEchecClub(null);
+      terminer();
+    } catch (error) {
+      haptics.warning();
+      const message =
+        error instanceof TimeoutError
+          ? "Le serveur ne répond pas. Vérifie ta connexion et réessaie."
+          : "Impossible de vérifier le code pour le moment. Réessaie dans un instant.";
+      setEchecClub({ message, code: codeSaisi });
+    } finally {
+      setReessaiClubEnCours(false);
+    }
+  };
+
   /* ─── Save ─── */
   const handleSave = async () => {
     if (!validateStep()) return;
@@ -514,34 +580,23 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
       haptics.success();
       if (attach.status === "failed") {
-        // Le profil EST enregistré : on le dit d'abord, on explique le club
-        // ensuite, et on laisse entrer. Aucune saisie n'est perdue, le joueur
-        // pourra réessayer depuis Profil → Mon club.
-        showToast({
-          type: "warn",
-          title: "Profil enregistré, club non rejoint",
-          message: attach.message ?? "",
-        });
-      } else if (attach.status === "joined") {
-        showToast({
-          type: "success",
-          title: "Profil enregistré",
-          message: attach.clubName
-            ? `Tu as rejoint ${attach.clubName}.`
-            : "Tu as rejoint ton club.",
-        });
+        // LE PROFIL EST ENREGISTRÉ, LE CLUB NON — ET ÇA NE PEUT PLUS ÊTRE UN
+        // TOAST. Un toast dure 2 200 ms pendant que l'écran bascule vers
+        // l'accueil : la joueuse rangeait son téléphone en croyant avoir rejoint
+        // son club, et le coach ne la voyait jamais dans son effectif (P0-01 de
+        // l'audit d'inscription, reclassé P1-haut). On s'arrête ici, sur un
+        // écran qui reste, avec les deux seuls gestes qui existent : réessayer
+        // le code, ou plus tard.
+        setEchecClub({ message: attach.message ?? "", code: clubInviteCode });
+        return;
+      }
+      if (attach.status === "joined") {
+        showToast(messageRattachementReussi(attach.clubName, attach.coachAccess));
       } else {
         showToast({ type: "success", title: "Profil enregistré", message: "Configuration terminée !" });
       }
 
-      // Pont local : bascule immédiate vers l'app sans attendre le onSnapshot Firestore
-      // (le listener RootNavigator reste la source durable).
-      // En mode édition (ouvert depuis Profil/Réglages), on referme simplement l'écran.
-      if (onProfileCompleted) {
-        onProfileCompleted();
-      } else if (navigation.canGoBack()) {
-        navigation.goBack();
-      }
+      terminer();
     } catch (error) {
       if (error instanceof TimeoutError) {
         // Rien n'est perdu : le state du questionnaire est intact, l'écran
@@ -633,8 +688,12 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
             {/* Le code n'est vérifié que par le serveur, APRÈS l'enregistrement
                 du profil : rien de ce qui est saisi ici ne peut être perdu à
                 cause d'un code refusé. */}
+            {/* Le chemin annoncé est le chemin RÉEL : la rangée « Mon club » de
+                l'onglet Profil (P0-01 de l'audit — l'ancien texte disait
+                « depuis ton profil » alors que l'onglet Profil n'avait aucune
+                trace de club). */}
             <Text style={styles.fieldHelp}>
-              Ton coach te le donne. Tu peux aussi le renseigner plus tard depuis ton profil.
+              Ton coach te le donne. Tu peux aussi le renseigner plus tard depuis Profil → Mon club.
             </Text>
             {/* Divulgation : quelles catégories d'infos le club verra. Elle
                 INFORME, elle ne demande rien et ne bloque rien — ni le champ
@@ -894,6 +953,81 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   // le soft-lockerait ; c'est validateStep qui le bloque sur la catégorie).
   const consentBlocksNext =
     step === 0 && showParentalConsent && isParentalConsentBlocking(ageCategory, parentalConsentChecked);
+
+  // ─── PROFIL ENREGISTRÉ, CLUB NON REJOINT ────────────────────────────────
+  // Un écran qui RESTE, à la place du toast de 2,2 s qui s'évaporait pendant la
+  // bascule vers l'accueil. Le profil est déjà en base : on ne le réécrit pas,
+  // on ne perd rien, et on ne laisse pas croire à un rattachement qui n'a pas eu
+  // lieu (P0-01 de l'audit d'inscription du 05/09).
+  if (echecClub) {
+    return (
+      <Screen style={styles.safeArea}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <ScrollView
+            contentContainerStyle={styles.echecClubScroll}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.echecClubIconCircle}>
+              <Ionicons name="alert-circle-outline" size={26} color={palette.warn} />
+            </View>
+            <Text style={styles.echecClubTitre} maxFontSizeMultiplier={PLAFOND_TITRE}>
+              Ton profil est enregistré.
+            </Text>
+            <Text style={styles.echecClubSousTitre}>Le code club n'a pas été reconnu.</Text>
+            {echecClub.message ? (
+              <Text style={styles.echecClubMessage} numberOfLines={6}>
+                {echecClub.message}
+              </Text>
+            ) : null}
+
+            <Text style={styles.fieldLabel}>Code club</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ex: ABCDE-FGHJK"
+              placeholderTextColor={palette.muted}
+              value={echecClub.code}
+              onChangeText={(valeur) => setEchecClub({ ...echecClub, code: valeur })}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              autoComplete="off"
+              editable={!reessaiClubEnCours}
+            />
+
+            <Button
+              label={reessaiClubEnCours ? "Vérification…" : "Réessayer le code"}
+              onPress={() => void reessayerCodeClub(echecClub.code)}
+              disabled={reessaiClubEnCours}
+              variant="primary"
+              size="lg"
+              fullWidth
+              style={[styles.ctaShadowOff, styles.echecClubCta]}
+              accessibilityLabel="Réessayer le code club"
+            />
+            <TouchableOpacity
+              style={styles.echecClubPlusTard}
+              onPress={() => {
+                haptics.impactLight();
+                setEchecClub(null);
+                terminer();
+              }}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel="Plus tard, continuer sans club"
+            >
+              <Text style={styles.echecClubPlusTardTexte}>Plus tard</Text>
+            </TouchableOpacity>
+            <Text style={styles.echecClubAide}>
+              Sans club, tu gardes toute l'app : seul le suivi par ton coach attend. Tu peux rejoindre
+              ton club quand tu veux depuis Profil → Mon club.
+            </Text>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Screen>
+    );
+  }
 
   return (
     <Screen style={styles.safeArea}>
@@ -1201,6 +1335,57 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   disclosure: {
+    marginTop: 10,
+  },
+
+  /* Profil enregistré, club non rejoint (écran qui RESTE, cf. P0-01) */
+  echecClubScroll: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingHorizontal: theme.spacing.xl2,
+    paddingVertical: theme.spacing.xl,
+  },
+  echecClubIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: theme.radius.pill,
+    backgroundColor: palette.cardSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: theme.spacing.lg,
+  },
+  echecClubTitre: {
+    ...theme.typography.title,
+    color: palette.text,
+  },
+  echecClubSousTitre: {
+    ...theme.typography.body,
+    color: palette.sub,
+    marginTop: 6,
+  },
+  echecClubMessage: {
+    ...theme.typography.caption,
+    color: palette.sub,
+    marginTop: 10,
+    minHeight: 34,
+  },
+  echecClubCta: {
+    marginTop: 16,
+  },
+  echecClubPlusTard: {
+    alignSelf: "center",
+    paddingVertical: 12,
+    marginTop: 4,
+  },
+  echecClubPlusTardTexte: {
+    ...theme.typography.caption,
+    color: palette.sub,
+    fontWeight: "600",
+  },
+  echecClubAide: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: palette.muted,
     marginTop: 10,
   },
 

@@ -13,6 +13,7 @@ import { Badge } from "../ui/Badge";
 import { removeClubMembership } from "../../repositories/clubsRepo";
 import { clubMembershipCopy } from "../../domain/clubRoles";
 import { joinClubWithInviteCode } from "../../services/clubInvites";
+import { messageRattachementReussi } from "../../domain/clubJoinMessages";
 import { showToast } from "../../utils/toast";
 import { ClubDataDisclosure } from "../club/ClubDataDisclosure";
 
@@ -145,13 +146,11 @@ export function ClubManagementCard() {
     // Le clubId du profil est écrit par le serveur ; le listener onSnapshot
     // ci-dessus le reflète. On ne le réécrit pas ici : ce serait une seconde
     // source de vérité, et elle pourrait mentir.
-    showToast({
-      type: "success",
-      title: "Bienvenue !",
-      message: outcome.clubName
-        ? `Tu as rejoint le club "${outcome.clubName}".`
-        : "Tu as rejoint ton club.",
-    });
+    // Un club en validation manuelle (`approval_required`) rattache le joueur
+    // mais laisse son suivi EN ATTENTE : lui dire « Bienvenue » serait faux au
+    // moment qui compte. Le message vient du même endroit que celui de
+    // l'inscription — une seule formulation à tenir (P2-07 de l'audit).
+    showToast(messageRattachementReussi(outcome.clubName, outcome.coachAccess));
     setInputCode("");
   };
 
