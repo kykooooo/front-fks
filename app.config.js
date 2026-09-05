@@ -39,7 +39,16 @@ module.exports = ({ config }) => {
       ...extra,
       // Identifiants publics (non secrets)
       SENTRY_DSN: process.env.EXPO_PUBLIC_SENTRY_DSN ?? extra.SENTRY_DSN ?? "",
-      AMPLITUDE_API_KEY: extra.AMPLITUDE_API_KEY ?? "",
+      // Lue depuis l'environnement, comme SENTRY_DSN juste au-dessus.
+      // AVANT : `extra.AMPLITUDE_API_KEY ?? ""`, et `app.json` porte `""` —
+      // donc la clé était VIDE dans tous les builds, `initAnalytics` sortait
+      // immédiatement et les 14 événements du parcours d'inscription ne
+      // partaient nulle part (audit d'inscription 2026-09, P1-01 : on croyait
+      // mesurer). Aucune clé dans le dépôt : elle vient de `.env.local` en dev
+      // et d'un secret EAS en build cloud
+      // (`eas secret:create --scope project --name EXPO_PUBLIC_AMPLITUDE_API_KEY`).
+      AMPLITUDE_API_KEY:
+        process.env.EXPO_PUBLIC_AMPLITUDE_API_KEY ?? extra.AMPLITUDE_API_KEY ?? "",
       eas: extra.eas,
       // Secrets via env vars
       BACKEND_URL: backendUrl,

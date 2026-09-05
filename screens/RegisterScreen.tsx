@@ -135,6 +135,11 @@ export default function RegisterScreen({ navigation }: Props) {
         });
         return;
       }
+      // Le pendant de `login_failed`, qui manquait (P2-15 de l'audit) : sans
+      // lui, le funnel ne pouvait pas distinguer « personne ne s'inscrit » de
+      // « les inscriptions échouent ». On envoie le CODE d'erreur mappé, jamais
+      // l'email ni la moindre saisie.
+      trackEvent("register_failed", { code: e?.code ?? "unknown" });
       runShake(shake);
       haptics.error();
       showToast({
