@@ -53,6 +53,7 @@ import { isPlayerProfileComplete } from "../domain/playerProfile";
 import { useAppSpace } from "../hooks/useAppSpace";
 import { resolveClubPointer } from "../domain/coachAuthority";
 import { publishAppSpaceSwitch } from "../state/appSpaceGate";
+import { useRattachementClubEnCours } from "../state/rattachementClubGate";
 
 // Firebase
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -461,6 +462,25 @@ export default function RootNavigator() {
   // change côté produit.
   const appSpace = useAppSpace({ uid: user?.uid ?? null, clubId });
 
+  // ── LE RATTACHEMENT AU CLUB N'EST PAS FINI ────────────────────────────────
+  // Le questionnaire enregistre le profil AVANT de tenter le code club (c'est
+  // ce qui empêche un code refusé de faire perdre les quatre étapes, cf.
+  // screens/profileSetup/attachClub). Conséquence : l'instantané `users/{uid}`
+  // arrive — événement LOCAL, immédiat, avant même l'aller-retour serveur —,
+  // `profileCompleted` et `profilJoueurComplet` passent à vrai, la condition
+  // ci-dessous tombe, `<AppNavigator/>` remplace ce stack et la carte « code
+  // club refusé » est DÉMONTÉE. Sans ce drapeau, elle l'était très
+  // probablement avant même d'être affichée, et le joueur atterrissait sur
+  // l'accueil en croyant avoir rejoint son club (R1 de la contre-vérification
+  // du 05/09).
+  //
+  // Le drapeau est posé par l'écran AVANT l'écriture du profil et baissé quand
+  // la personne a répondu (réessai réussi, « Plus tard », ou aucun code saisi).
+  // Il ne fait que RETARDER la bascule : la source durable de la complétude
+  // reste l'instantané Firestore. Par compte, pour qu'il ne se transmette
+  // jamais au suivant sur un téléphone partagé.
+  const rattachementClubEnCours = useRattachementClubEnCours(uidCourant);
+
   // ── LE SÉLECTEUR JOUEUR / COACH, DIFFUSÉ DEPUIS LA RACINE ─────────────────
   // Le droit aux deux espaces est dérivé ICI, une seule fois. Les deux écrans
   // qui affichent le sélecteur (réglages joueur, écran Semaine du coach) vivent
@@ -785,7 +805,12 @@ export default function RootNavigator() {
   //    n'écrit ni `role`, ni `accessRole` (qui vit sur l'appartenance, interdite
   //    au client), ni `clubId` quand il n'en connaît pas (cf. ProfileSetupScreen
   //    — la clé est OMISE, un `merge` ne peut donc pas l'effacer).
-  if (profileCompleted === false || profilJoueurComplet === false) {
+  //    TROISIÈME FAÇON DE N'ÊTRE « PAS PRÊT », ET ELLE NE SE LIT PAS EN BASE :
+  //    le questionnaire est rempli, il est même DÉJÀ écrit, mais la question
+  //    posée à l'écran — « ton code club n'a pas été reconnu, tu réessaies ou
+  //    tu passes ? » — n'a pas de réponse. Laisser le portillon tomber ici, ce
+  //    serait démonter la question pendant qu'elle est à l'écran.
+  if (profileCompleted === false || profilJoueurComplet === false || rattachementClubEnCours) {
     // L'intention coach vit sur le disque : tant que sa lecture n'a pas répondu,
     // on ne choisit PAS d'écran d'arrivée. `initialRouteName` n'est lu qu'au
     // montage de ce navigateur — décider trop tôt, c'est décider faux pour toute

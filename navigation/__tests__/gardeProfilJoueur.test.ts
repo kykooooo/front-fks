@@ -32,14 +32,14 @@ describe("le portillon regarde les CHAMPS, plus seulement le drapeau", () => {
 
   test("un profil « complété » aux champs joueur absents rouvre le questionnaire", () => {
     expect(navigateur).toContain(
-      "if (profileCompleted === false || profilJoueurComplet === false) {",
+      "if (profileCompleted === false || profilJoueurComplet === false || rattachementClubEnCours) {",
     );
   });
 
   test("l'espace coach est tranché AVANT : un encadrant n'est jamais renvoyé au questionnaire", () => {
     const indexCoach = navigateur.indexOf('if (appSpace.space === "coach")');
     const indexPortillon = navigateur.indexOf(
-      "if (profileCompleted === false || profilJoueurComplet === false) {",
+      "if (profileCompleted === false || profilJoueurComplet === false || rattachementClubEnCours) {",
     );
     expect(indexCoach).toBeGreaterThan(-1);
     expect(indexPortillon).toBeGreaterThan(indexCoach);

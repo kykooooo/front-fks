@@ -244,11 +244,14 @@ describe("navigation — l'intention choisit un ÉCRAN, jamais un droit", () => 
     // intention ; et une intention ne peut pas ouvrir cet espace, puisque la
     // branche qui le décide est évaluée AVANT le portillon d'onboarding.
     const indexEspaceCoach = navigateur.indexOf('appSpace.space === "coach"');
-    // Ancre : le retour conditionnel du portillon lui-même. Depuis la garde
-    // de complétude joueur (audit 2026-09, P1-04), il teste DEUX conditions —
-    // le drapeau, et les champs de dosage réellement présents.
+    // Ancre : le retour conditionnel du portillon lui-même. Il teste TROIS
+    // conditions — le drapeau `profileCompleted`, les champs de dosage
+    // réellement présents (garde de complétude joueur, audit 2026-09 P1-04), et
+    // le rattachement au club encore en suspens (R1 de la contre-vérification
+    // du 05/09 : sans lui, la carte « code club refusé » était démontée par
+    // l'instantané que la sauvegarde du profil venait de déclencher).
     const indexPortillon = navigateur.indexOf(
-      "if (profileCompleted === false || profilJoueurComplet === false)"
+      "if (profileCompleted === false || profilJoueurComplet === false || rattachementClubEnCours)"
     );
     expect(indexEspaceCoach).toBeGreaterThan(-1);
     expect(indexPortillon).toBeGreaterThan(-1);

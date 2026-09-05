@@ -33,6 +33,7 @@ import {
 } from "../services/clubInvites";
 import { saveProfileThenAttachClub } from "./profileSetup/attachClub";
 import { messageRattachementReussi } from "../domain/clubJoinMessages";
+import { leverRattachementClub, poserRattachementClub } from "../state/rattachementClubGate";
 import { ClubDataDisclosure } from "../components/club/ClubDataDisclosure";
 import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
 // Catégories proposées au sélecteur : U13 retirée (décision produit 2026-07, cf.
@@ -221,6 +222,15 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   // le code saisi, pour que « Réessayer » ne reparte pas d'une page blanche.
   const [echecClub, setEchecClub] = useState<{ message: string; code: string } | null>(null);
   const [reessaiClubEnCours, setReessaiClubEnCours] = useState(false);
+
+  // FILET DE SÉCURITÉ, PAS UNE POLITESSE. Le drapeau de rattachement est ce qui
+  // retient le portillon du RootNavigator (state/rattachementClubGate) : s'il
+  // restait levé après que cet écran a disparu — écran démonté par une
+  // déconnexion, par un crash de rendu, par n'importe quel chemin qu'on n'a pas
+  // prévu —, plus personne ne pourrait entrer dans l'application. Le nettoyage
+  // au démontage rend cet état impossible : le drapeau ne peut pas survivre à
+  // l'écran qui le porte.
+  useEffect(() => leverRattachementClub, []);
 
 
   const shake = useRef(new Animated.Value(0)).current;
@@ -465,6 +475,8 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       haptics.success();
       showToast(messageRattachementReussi(attempt.clubName, attempt.coachAccess));
       setEchecClub(null);
+      // La question a trouvé sa réponse : le portillon reprend son cours.
+      leverRattachementClub();
       terminer();
     } catch (error) {
       haptics.warning();
@@ -521,6 +533,15 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       // nouveau rattachement, lui, est écrit par le serveur (Cloud Function),
       // APRÈS l'enregistrement du profil — voir screens/profileSetup/attachClub.
       const existingClubId: string | null = clubId?.trim() ? clubId.trim() : null;
+
+      // DRAPEAU LEVÉ AVANT L'ÉCRITURE DU PROFIL, PAS APRÈS. C'est ce `setDoc`
+      // qui déclenche l'instantané `users/{uid}` — événement LOCAL, immédiat,
+      // avant même l'aller-retour serveur — qui ferait tomber le portillon du
+      // RootNavigator et démonterait cet écran, carte « code club refusé »
+      // comprise, avant même qu'elle existe (R1 de la contre-vérification du
+      // 05/09). Levé UNIQUEMENT quand un code est saisi : sans code, il n'y a
+      // aucune question à poser et le parcours ne change pas d'un pixel.
+      if (normalizedInvite) poserRattachementClub(user.uid);
 
       // Délai de garde 15 s (P1-05) : hors réseau, le setDoc pend sans fin et
       // l'overlay « Enregistrement… » gelait à jamais — force-kill = tout le
@@ -610,9 +631,22 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
         // l'audit d'inscription, reclassé P1-haut). On s'arrête ici, sur un
         // écran qui reste, avec les deux seuls gestes qui existent : réessayer
         // le code, ou plus tard.
+        //
+        // LE TOAST REVIENT EN FILET, EN PLUS DE LA CARTE. Le lot A l'avait
+        // retiré au motif que la carte le remplaçait ; si la carte manquait son
+        // affichage pour une raison qu'on n'a pas prévue, le joueur n'avait plus
+        // AUCUN message — moins bien qu'avant le lot. Deux canaux valent mieux
+        // qu'un quand le pire des deux échecs est le silence.
+        showToast({
+          type: "warn",
+          title: "Club non rejoint",
+          message: "Ton profil est enregistré. Le code club, lui, n'est pas passé.",
+        });
         setEchecClub({ message: attach.message ?? "", code: clubInviteCode });
         return;
       }
+      // La question est réglée : le portillon peut reprendre son cours normal.
+      leverRattachementClub();
       if (attach.status === "joined") {
         showToast(messageRattachementReussi(attach.clubName, attach.coachAccess));
       } else {
@@ -621,6 +655,13 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
       terminer();
     } catch (error) {
+      // ON NE SAIT PAS OÙ ÇA A CASSÉ, DONC ON NE RETIENT RIEN. Un refus de code
+      // ne passe jamais par ici (`saveProfileThenAttachClub` le rend en
+      // `status: "failed"`, avec sa carte) : ce qui arrive ici est un échec
+      // d'écriture, ou le délai de garde de l'ensemble. Dans les deux cas il n'y
+      // a aucune question de club posée à l'écran, et un drapeau resté levé
+      // interdirait l'entrée dans l'application à ce compte.
+      leverRattachementClub();
       if (error instanceof TimeoutError) {
         // Rien n'est perdu : le state du questionnaire est intact, l'écran
         // reste ouvert, et l'écriture partie peut encore atterrir toute seule.
@@ -1050,6 +1091,9 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
               onPress={() => {
                 haptics.impactLight();
                 setEchecClub(null);
+                // « Plus tard » EST une réponse : on baisse le drapeau qui
+                // retenait le portillon, et l'application s'ouvre.
+                leverRattachementClub();
                 terminer();
               }}
               activeOpacity={0.7}

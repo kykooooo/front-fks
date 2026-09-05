@@ -99,7 +99,13 @@ describe("l'écran s'arrête, et l'app garde la trace", () => {
     const depuisEchec = setup.slice(setup.indexOf('if (attach.status === "failed")'));
     const bloc = depuisEchec.slice(0, depuisEchec.indexOf("return;"));
     expect(bloc).toContain("setEchecClub(");
-    expect(bloc).not.toContain("showToast(");
+    // CE QUI EST INTERDIT, C'EST DE LAISSER PARTIR L'ÉCRAN — pas le toast.
+    // Le lot A avait supprimé le toast au motif que la carte le remplaçait ;
+    // le jour où la carte manquait son affichage, le joueur n'avait plus
+    // AUCUN message, donc moins bien qu'avant le lot (R1 de la
+    // contre-vérification du 05/09). Il revient EN PLUS, jamais À LA PLACE.
+    expect(bloc).toContain("showToast(");
+    expect(bloc).not.toContain("terminer()");
     // Les textes exacts de la carte.
     expect(setup).toContain("Ton profil est enregistré.");
     expect(setup).toContain("Le code club n'a pas été reconnu.");
