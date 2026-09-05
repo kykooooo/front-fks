@@ -517,7 +517,13 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
             setDoc(doc(db, "users", user.uid), {
               uid: user.uid,
               firstName: firstName.trim(),
-              clubId: existingClubId,
+              // `clubId` n'est écrit QUE si on en connaît un. Avant, la clé
+              // partait à `null` quand le préremplissage n'avait pas (encore)
+              // répondu — et un `merge` avec `null` EFFACE. Sur le chemin neuf
+              // du coach qui remplit son profil joueur (garde de complétude,
+              // audit P1-04), c'était son rattachement à son propre club qui
+              // sautait. Omettre la clé, c'est ne toucher à rien.
+              ...(existingClubId ? { clubId: existingClubId } : {}),
               position, ageCategory, level, dominantFoot, mainObjective,
               targetFksSessionsPerWeek: targetFksSessions,
               // Reprise (optionnel) -- null tant que non repondu, jamais de valeur inventee.

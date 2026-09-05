@@ -244,15 +244,12 @@ describe("navigation — l'intention choisit un ÉCRAN, jamais un droit", () => 
     // intention ; et une intention ne peut pas ouvrir cet espace, puisque la
     // branche qui le décide est évaluée AVANT le portillon d'onboarding.
     const indexEspaceCoach = navigateur.indexOf('appSpace.space === "coach"');
-    // Ancre précise : `"profileCompleted === false"` seul, sans le `if (...)`
-    // qui l'entoure, correspondrait AUSSI à la condition de l'effet de
-    // consommation de l'intention (plus haut dans le fichier, cf. test
-    // "le chemin coach → « Je m'entraîne aussi »") — décalant `indexPortillon`
-    // avant `indexEspaceCoach` et faisant échouer ce test pour une mauvaise
-    // raison. Le `)` immédiatement après `false` cible la seule occurrence qui
-    // est un retour conditionnel du portillon lui-même : l'effet, lui, enchaîne
-    // sur `&& appSpace.space`, jamais sur `)`.
-    const indexPortillon = navigateur.indexOf("if (profileCompleted === false)");
+    // Ancre : le retour conditionnel du portillon lui-même. Depuis la garde
+    // de complétude joueur (audit 2026-09, P1-04), il teste DEUX conditions —
+    // le drapeau, et les champs de dosage réellement présents.
+    const indexPortillon = navigateur.indexOf(
+      "if (profileCompleted === false || profilJoueurComplet === false)"
+    );
     expect(indexEspaceCoach).toBeGreaterThan(-1);
     expect(indexPortillon).toBeGreaterThan(-1);
     expect(indexEspaceCoach).toBeLessThan(indexPortillon);

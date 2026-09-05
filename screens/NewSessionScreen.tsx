@@ -110,6 +110,8 @@ type RootStackParamList = {
   };
   CycleModal: { mode?: "select" | "manage"; origin?: "home" | "profile" | "newSession" | "feedback" } | undefined;
   MonCorps: { ouvrirAjout?: boolean; source?: "feedback" | "manual" | "setup" } | undefined;
+  /** Questionnaire profil en édition — cible de la garde « catégorie manquante ». */
+  ProfileSetup: undefined;
 };
 
 /** Funnel analytics : mesure Register → 1ère séance générée (fire once, timestamp consommé). */
@@ -164,6 +166,13 @@ export default function NewSessionScreen() {
 
   // Contexte IA & matériel / environnement
   const [aiContext, setAiContext] = useState<any | null>(null);
+  // ── CATÉGORIE D'ÂGE MANQUANTE ────────────────────────────────────────────
+  // Source : le contexte IA, qui vient d'un `getDoc` FRAIS de `users/{uid}`
+  // (services/aiContext) — pas du store, dont la valeur peut n'avoir jamais été
+  // synchronisée sur une installation neuve et ferait alors bloquer un joueur
+  // parfaitement en règle. Tant que le contexte n'est pas chargé (`null`), on
+  // ne conclut RIEN : ne pas savoir n'est pas « absent » (règle 12).
+  const categorieAgeManquante = !!aiContext && !aiContext.profile?.age_category;
   const [contextLoading, setContextLoading] = useState(false);
   const [environment, setEnvironment] = useState<EnvironmentSelection>([]);
   const [availableEquipment, setAvailableEquipment] = useState<string[]>([]);
@@ -401,11 +410,15 @@ export default function NewSessionScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!storeHydrated) return;
+      // Catégorie manquante : la carte qui le dit reste seule à l'écran. Ouvrir
+      // le choix de cycle par-dessus ferait choisir un objectif à quelqu'un qui
+      // ne pourra de toute façon pas générer.
+      if (categorieAgeManquante) return;
       if (cycleId && !cycleCompleted) return;
       if (cyclePickerAutoOpened.current) return;
       cyclePickerAutoOpened.current = true;
       nav.navigate("CycleModal", { mode: "select", origin: "newSession" });
-    }, [storeHydrated, cycleId, cycleCompleted, nav])
+    }, [storeHydrated, cycleId, cycleCompleted, categorieAgeManquante, nav])
   );
 
   // Reset le flag quand un cycle devient actif (pour permettre un re-trigger si le cycle change)
@@ -425,6 +438,17 @@ export default function NewSessionScreen() {
     setRequeteEnVol(true);
     setEchec(null);
     try {
+      // AVANT TOUT APPEL PAYANT : sans catégorie d'âge, le moteur ne pose aucun
+      // plafond (cf. la carte du même nom plus bas). On ne génère pas.
+      if (categorieAgeManquante) {
+        showToast({
+          type: "warn",
+          title: "Il manque ta catégorie",
+          message: "Complète ton profil pour des séances adaptées à ta catégorie.",
+        });
+        nav.navigate("ProfileSetup");
+        return;
+      }
       if (!cycleId) {
         showToast({ type: "warn", title: "Choisir un cycle", message: "Choisis ton cycle avant de générer des séances." });
         nav.navigate("CycleModal", { mode: "select", origin: "newSession" });
@@ -776,7 +800,29 @@ export default function NewSessionScreen() {
 	        </Text>
 	      </View>
 
-        {!cycleId ? (
+        {categorieAgeManquante ? (
+          /* PAS DE CATÉGORIE D'ÂGE = PAS DE SÉANCE.
+             Sans elle, le moteur n'applique AUCUN plafond d'âge : ni familles
+             interdites, ni volume, ni contacts pliométriques, ni sprint, ni
+             durée (`getAgeCategoryCaps(null)` rend `null` côté backend). Une
+             séance sortirait quand même, dosée pour personne — c'est le trou
+             qu'ouvrait le coach « Je m'entraîne aussi » avec son profil vide
+             (audit d'inscription 2026-09, P1-04 + erratum 4). On s'arrête ici
+             AVANT le moindre appel payant. */
+          <View style={[styles.card, styles.cycleGateCard]}>
+            <Text style={styles.cardTitle}>Il manque ta catégorie</Text>
+            <Text style={styles.cardSubtitle}>
+              Complète ton profil pour des séances adaptées à ta catégorie.
+            </Text>
+            <Button
+              label="Compléter mon profil"
+              onPress={() => nav.navigate("ProfileSetup")}
+              fullWidth
+              style={styles.ctaBlue}
+              accessibilityLabel="Compléter mon profil"
+            />
+          </View>
+        ) : !cycleId ? (
           <View style={[styles.card, styles.cycleGateCard]}>
             <Text style={styles.cardTitle}>Choisis ton objectif de cycle</Text>
             <Text style={styles.cardSubtitle}>
@@ -874,8 +920,11 @@ export default function NewSessionScreen() {
         ) : null}
 
 	      {/* SI PAS DE SÉANCE EN COURS */}
+	      {/* `!categorieAgeManquante` : inutile de faire choisir un lieu et du
+	          matériel à quelqu'un dont la séance ne partira pas — la carte
+	          « Il manque ta catégorie » plus haut est le seul geste utile. */}
 	      {!current ? (
-	        cycleId && !cycleCompleted ? (
+	        !categorieAgeManquante && cycleId && !cycleCompleted ? (
             <>
 	          <View style={styles.card}>
 	            <EnvironmentSelector

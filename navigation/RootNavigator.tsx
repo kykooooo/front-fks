@@ -49,6 +49,7 @@ import { setSentryUser } from "../services/monitoring";
 import { onWelcomeReset } from "../services/accountDeletion";
 import { effacerIntentionCoach, lireIntentionCoach } from "../services/coachIntent";
 import { showToast } from "../utils/toast";
+import { isPlayerProfileComplete } from "../domain/playerProfile";
 import { useAppSpace } from "../hooks/useAppSpace";
 import { resolveClubPointer } from "../domain/coachAuthority";
 import { publishAppSpaceSwitch } from "../state/appSpaceGate";
@@ -404,6 +405,9 @@ export default function RootNavigator() {
   // Distinct de `initializing` (qui repasse à true pendant l'attente du profil).
   const [authResolved, setAuthResolved] = useState(false);
   const [profileCompleted, setProfileCompleted] = useState<boolean | null>(null);
+  // Les trois champs de dosage (catégorie / poste / niveau), constatés dans
+  // l'instantané du profil — cf. domain/playerProfile. `null` = pas encore lu.
+  const [profilJoueurComplet, setProfilJoueurComplet] = useState<boolean | null>(null);
   // `users/{uid}.clubId` : OÙ regarder, jamais QUI on est. L'espace affiché est
   // dérivé de l'appartenance elle-même (cf. hooks/useAppSpace).
   const [clubId, setClubId] = useState<string | null>(null);
@@ -644,6 +648,14 @@ export default function RootNavigator() {
         setProfilIllisibleHorsLigne(false);
         const data = snap.data();
         setProfileCompleted(!!data?.profileCompleted);
+        // LA COMPLÉTUDE JOUEUR, LUE À PART DU DRAPEAU `profileCompleted`.
+        // Ce drapeau dit deux choses depuis l'espace coach (« questionnaire
+        // rempli » ET « coach installé ») : `createClubAsCoach` le pose à vrai
+        // sans écrire un seul champ joueur. Un coach qui bascule ensuite en
+        // « Je m'entraîne aussi » entrait donc dans l'app joueur avec un profil
+        // vide, et le moteur dosait sans aucun plafond d'âge (audit 2026-09,
+        // P1-04 + erratum 4). On constate les champs eux-mêmes.
+        setProfilJoueurComplet(isPlayerProfileComplete(data));
         // OÙ regarder, jamais QUI on est. Le jour où plusieurs clubs deviendront
         // possibles, `resolveClubPointer` REFUSE explicitement plutôt que de
         // prendre le premier de la liste : un choix implicite ouvrirait l'espace
@@ -657,6 +669,7 @@ export default function RootNavigator() {
           console.warn("Erreur lors du check profil:", err);
         }
         setProfileCompleted(false);
+        setProfilJoueurComplet(false);
         setClubId(null);
         setInitializing(false);
       }
@@ -755,7 +768,20 @@ export default function RootNavigator() {
 
   // 6) Connecté mais profil non complété → écran profil (joueur)
   //    Le stack inclut CoachOnboarding pour qu'un staff puisse créer son club.
-  if (profileCompleted === false) {
+  //
+  //    DEUX FAÇONS D'ÊTRE « PAS PRÊT », ET LA SECONDE EST NEUVE (audit 2026-09,
+  //    P1-04). Le drapeau `profileCompleted` ne suffit plus : la création de
+  //    club le pose à vrai sans écrire un seul champ joueur, si bien qu'un coach
+  //    qui active « Je m'entraîne aussi » entrait dans l'app joueur avec ni
+  //    catégorie, ni poste, ni niveau — et le moteur dosait alors SANS AUCUN
+  //    plafond d'âge. On regarde donc aussi les champs eux-mêmes.
+  //
+  //    Ce chemin ne touche RIEN de l'espace coach : la branche 6bis a déjà
+  //    renvoyé `<CoachNavigator />` pour un encadrant, et le questionnaire
+  //    n'écrit ni `role`, ni `accessRole` (qui vit sur l'appartenance, interdite
+  //    au client), ni `clubId` quand il n'en connaît pas (cf. ProfileSetupScreen
+  //    — la clé est OMISE, un `merge` ne peut donc pas l'effacer).
+  if (profileCompleted === false || profilJoueurComplet === false) {
     // L'intention coach vit sur le disque : tant que sa lecture n'a pas répondu,
     // on ne choisit PAS d'écran d'arrivée. `initialRouteName` n'est lu qu'au
     // montage de ce navigateur — décider trop tôt, c'est décider faux pour toute
@@ -787,7 +813,16 @@ export default function RootNavigator() {
       >
           <AppStack.Screen name="ProfileSetupGate" options={{ headerShown: false }}>
             {() => (
-              <ProfileSetupScreen onProfileCompleted={() => setProfileCompleted(true)} />
+              <ProfileSetupScreen
+                onProfileCompleted={() => {
+                  // Pont local, les DEUX conditions du portillon : sans la
+                  // seconde, un profil qui vient d'être rempli resterait bloqué
+                  // sur le questionnaire jusqu'à ce que l'instantané Firestore
+                  // revienne. Le listener reste la source durable.
+                  setProfileCompleted(true);
+                  setProfilJoueurComplet(true);
+                }}
+              />
             )}
           </AppStack.Screen>
           <AppStack.Screen
