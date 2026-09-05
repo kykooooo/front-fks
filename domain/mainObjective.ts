@@ -16,6 +16,20 @@
 // documents de tous les joueurs pour un champ dont plus rien ne dépend
 // caractère par caractère (`recommendMicrocycle` cherche « encaisser », qui est
 // identique dans les deux formes).
+//
+// OÙ CETTE NORMALISATION S'APPLIQUE, EXACTEMENT : au préremplissage du
+// questionnaire (`screens/ProfileSetupScreen`), et NULLE PART AILLEURS. Elle y
+// sert à une seule chose — qu'un profil d'avant le 05/09 voie sa carte
+// d'objectif apparaître SÉLECTIONNÉE, ce que la comparaison stricte avec la
+// nouvelle valeur ne donnait plus.
+//
+// Partout ailleurs, la valeur en base est lue telle quelle, et c'est sans
+// conséquence : la recommandation de cycle cherche la sous-chaîne
+// « encaisser », identique dans les deux formes ; l'affichage du profil rend le
+// texte du champ, qui se lit pareil à l'œil ; le contexte IA le transmet au
+// moteur, dont aucune allowlist ne porte sur cet objectif (vérifié côté
+// Functions et rules). Autrement dit : ne pas normaliser ailleurs ne change
+// RIEN pour personne — c'est pourquoi on ne le fait pas.
 
 /** Valeur canonique, celle qu'on ÉCRIT depuis le 05/09. */
 export const OBJECTIF_ENCAISSER = "Mieux encaisser les entrainements et les matchs";

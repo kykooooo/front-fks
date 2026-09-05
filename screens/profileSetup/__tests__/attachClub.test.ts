@@ -86,7 +86,15 @@ describe("saveProfileThenAttachClub — le profil ne dépend jamais du club", ()
     );
 
     expect(joinClub).not.toHaveBeenCalled();
-    expect(outcome).toEqual({ status: "skipped", clubId: null, clubName: null, message: null, coachAccess: null });
+    expect(outcome).toEqual({
+      status: "skipped",
+      clubId: null,
+      clubName: null,
+      message: null,
+      coachAccess: null,
+      // Pas d'échec, donc pas de nature d'échec (R6).
+      nature: null,
+    });
   });
 
   test("ÉCHEC D'ÉCRITURE DU PROFIL : là, et seulement là, l'erreur remonte", async () => {

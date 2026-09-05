@@ -32,7 +32,12 @@ import {
   normalizeInviteCodeInput,
 } from "../services/clubInvites";
 import { saveProfileThenAttachClub } from "./profileSetup/attachClub";
-import { messageRattachementReussi } from "../domain/clubJoinMessages";
+import {
+  messageRattachementReussi,
+  natureEchecRattachement,
+  titreEchecRattachement,
+  type NatureEchecRattachement,
+} from "../domain/clubJoinMessages";
 import { leverRattachementClub, poserRattachementClub } from "../state/rattachementClubGate";
 import { ClubDataDisclosure } from "../components/club/ClubDataDisclosure";
 import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
@@ -220,7 +225,12 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   // l'accueil : le joueur croyait avoir rejoint son club, le coach ne le voyait
   // jamais (P0-01 de l'audit d'inscription). Il porte le message du serveur et
   // le code saisi, pour que « Réessayer » ne reparte pas d'une page blanche.
-  const [echecClub, setEchecClub] = useState<{ message: string; code: string } | null>(null);
+  const [echecClub, setEchecClub] = useState<{
+    message: string;
+    code: string;
+    /** Refus du code, ou panne : la carte ne raconte pas la même chose. */
+    nature: NatureEchecRattachement;
+  } | null>(null);
   const [reessaiClubEnCours, setReessaiClubEnCours] = useState(false);
 
   // FILET DE SÉCURITÉ, PAS UNE POLITESSE. Le drapeau de rattachement est ce qui
@@ -469,7 +479,11 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       trackEvent("club_code_checked", { valid: attempt.ok });
       if (!attempt.ok) {
         haptics.warning();
-        setEchecClub({ message: attempt.message, code: codeSaisi });
+        setEchecClub({
+          message: attempt.message,
+          code: codeSaisi,
+          nature: natureEchecRattachement(attempt.reason),
+        });
         return;
       }
       haptics.success();
@@ -484,7 +498,10 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
         error instanceof TimeoutError
           ? "Le serveur ne répond pas. Vérifie ta connexion et réessaie."
           : "Impossible de vérifier le code pour le moment. Réessaie dans un instant.";
-      setEchecClub({ message, code: codeSaisi });
+      // Panne, pas refus : le titre de la carte doit dire la même chose que ce
+      // message-là. « Le code n'a pas été reconnu » sous « le serveur ne répond
+      // pas » envoyait le joueur redemander un code parfaitement valide.
+      setEchecClub({ message, code: codeSaisi, nature: "technique" });
     } finally {
       setReessaiClubEnCours(false);
     }
@@ -642,7 +659,11 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
           title: "Club non rejoint",
           message: "Ton profil est enregistré. Le code club, lui, n'est pas passé.",
         });
-        setEchecClub({ message: attach.message ?? "", code: clubInviteCode });
+        setEchecClub({
+          message: attach.message ?? "",
+          code: clubInviteCode,
+          nature: attach.nature ?? "technique",
+        });
         return;
       }
       // La question est réglée : le portillon peut reprendre son cours normal.
@@ -1066,7 +1087,13 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
             <Text style={styles.echecClubTitre} maxFontSizeMultiplier={PLAFOND_TITRE}>
               Ton profil est enregistré.
             </Text>
-            <Text style={styles.echecClubSousTitre}>Le code club n'a pas été reconnu.</Text>
+            {/* DEUX ÉCHECS, DEUX PHRASES. Le titre suivait autrefois un
+                message qui pouvait dire « Le serveur ne répond pas » : le
+                joueur comprenait que SON code était mauvais et allait en
+                redemander un (R6 du 05/09). */}
+            <Text style={styles.echecClubSousTitre}>
+              {titreEchecRattachement(echecClub.nature)}
+            </Text>
             {echecClub.message ? (
               <Text style={styles.echecClubMessage} numberOfLines={6}>
                 {echecClub.message}

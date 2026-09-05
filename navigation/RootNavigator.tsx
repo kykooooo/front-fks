@@ -826,7 +826,7 @@ export default function RootNavigator() {
     // rapprochement possible.
     return (
       // ROUTE D'ARRIVÉE DÉCIDÉE PAR L'INTENTION, PAS PAR UN RÔLE EN BASE.
-      // Un coach qui a dit « Vous êtes coach ? » (accueil, connexion ou
+      // Un coach qui a dit « Tu es coach ? » (accueil, connexion ou
       // inscription) atterrit sur la création de club ; tout le monde d'autre sur
       // le questionnaire joueur. `initialRouteName` n'est lu qu'au montage de ce
       // navigateur — l'intention, elle, a été relue sur le disque juste avant.

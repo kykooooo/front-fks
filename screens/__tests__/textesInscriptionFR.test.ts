@@ -63,9 +63,10 @@ describe("aucun code interne ne fuit vers le joueur", () => {
 
 describe("les textes décidés sont bien là, mot pour mot", () => {
   const attendus: Array<[string, string]> = [
-    ["components/auth/CoachEntryLink.tsx", "Vous êtes coach ?"],
+    ["components/auth/CoachEntryLink.tsx", "Tu es coach ?"],
     ["screens/ProfileSetupScreen.tsx", "Ton profil est enregistré."],
-    ["screens/ProfileSetupScreen.tsx", "Le code club n'a pas été reconnu."],
+    ["domain/clubJoinMessages.ts", "Le code club n'a pas été reconnu."],
+    ["domain/clubJoinMessages.ts", "Impossible de vérifier le code pour l'instant."],
     ["screens/ProfileSetupScreen.tsx", "Réessayer le code"],
     ["screens/ProfileSetupScreen.tsx", "Plus tard"],
     ["screens/ProfileScreen.tsx", "Aucun club — rejoindre avec un code"],

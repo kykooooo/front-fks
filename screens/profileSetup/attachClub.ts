@@ -16,6 +16,10 @@
 //      continue — avec ou sans club — sans ressaisir quoi que ce soit.
 
 import type { CoachAccessState } from "../../domain/coachAccess";
+import {
+  natureEchecRattachement,
+  type NatureEchecRattachement,
+} from "../../domain/clubJoinMessages";
 
 export type AttachClubStatus =
   | "skipped" // aucun code saisi : rien à tenter
@@ -28,6 +32,14 @@ export type AttachClubOutcome = {
   clubName: string | null;
   /** Message FR à afficher au joueur quand `status === "failed"`. */
   message: string | null;
+  /**
+   * QUEL ÉCHEC, quand il y en a un : le serveur a refusé le code, ou il n'a pas
+   * pu répondre. Les deux méritent des mots différents — annoncer « le code
+   * n'a pas été reconnu » sur une panne réseau envoie le joueur redemander à
+   * son coach un code parfaitement valide (R6 de la contre-vérification du
+   * 05/09). `null` quand il n'y a pas d'échec.
+   */
+  nature: NatureEchecRattachement | null;
   /**
    * État d'autorisation d'accès posé par le SERVEUR au rattachement
    * (services/clubInvites → `coachAccess`). "pending" = le club valide ses
@@ -71,7 +83,14 @@ export async function saveProfileThenAttachClub(
 
   const code = String(rawCode ?? "").trim();
   if (!code) {
-    return { status: "skipped", clubId: null, clubName: null, message: null, coachAccess: null };
+    return {
+      status: "skipped",
+      clubId: null,
+      clubName: null,
+      message: null,
+      coachAccess: null,
+      nature: null,
+    };
   }
 
   // 2. Le club ensuite. Toute panne ici est contenue : elle ne peut plus
@@ -80,7 +99,16 @@ export async function saveProfileThenAttachClub(
   try {
     attempt = await deps.joinClub(code);
   } catch {
-    return { status: "failed", clubId: null, clubName: null, message: FALLBACK_MESSAGE, coachAccess: null };
+    // Une exception ici n'a rien appris sur le code : c'est le service qui n'a
+    // pas répondu (il ne lève jamais autrement, cf. services/clubInvites).
+    return {
+      status: "failed",
+      clubId: null,
+      clubName: null,
+      message: FALLBACK_MESSAGE,
+      coachAccess: null,
+      nature: "technique",
+    };
   }
 
   if (attempt.ok) {
@@ -90,6 +118,7 @@ export async function saveProfileThenAttachClub(
       clubName: attempt.clubName,
       message: null,
       coachAccess: attempt.coachAccess ?? null,
+      nature: null,
     };
   }
 
@@ -99,5 +128,6 @@ export async function saveProfileThenAttachClub(
     clubName: null,
     message: attempt.message || FALLBACK_MESSAGE,
     coachAccess: null,
+    nature: natureEchecRattachement(attempt.reason),
   };
 }

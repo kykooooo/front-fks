@@ -21,7 +21,11 @@ import { readFileSync } from "fs";
 import { resolve } from "path";
 
 import { saveProfileThenAttachClub, type JoinAttempt } from "../attachClub";
-import { messageRattachementReussi } from "../../../domain/clubJoinMessages";
+import {
+  messageRattachementReussi,
+  natureEchecRattachement,
+  titreEchecRattachement,
+} from "../../../domain/clubJoinMessages";
 
 const racine = resolve(__dirname, "..", "..", "..");
 const lire = (rel: string) => readFileSync(resolve(racine, rel), "utf8");
@@ -106,9 +110,10 @@ describe("l'écran s'arrête, et l'app garde la trace", () => {
     // contre-vérification du 05/09). Il revient EN PLUS, jamais À LA PLACE.
     expect(bloc).toContain("showToast(");
     expect(bloc).not.toContain("terminer()");
-    // Les textes exacts de la carte.
+    // Les textes exacts de la carte. Le sous-titre, lui, dépend de la nature
+    // de l'échec (voir le describe R6 plus bas) et vit dans le domaine.
     expect(setup).toContain("Ton profil est enregistré.");
-    expect(setup).toContain("Le code club n'a pas été reconnu.");
+    expect(setup).toContain("titreEchecRattachement(echecClub.nature)");
     expect(setup).toContain("Réessayer le code");
     expect(setup).toContain("Plus tard");
   });
@@ -152,5 +157,96 @@ describe("l'écran s'arrête, et l'app garde la trace", () => {
       .flatMap((c) => [c.title, c.message])
       .join(" ");
     expect(textes).not.toMatch(/\b(pending|approved|club joined|welcome|error|failed)\b/i);
+  });
+});
+
+// ─── R6 : DEUX ÉCHECS, DEUX PHRASES ─────────────────────────────────────────
+// La carte titrait « Le code club n'a pas été reconnu. » quoi qu'il arrive, y
+// compris au-dessus d'un message qui disait « Le serveur ne répond pas ». Le
+// titre contredisait le corps, et c'est le titre qu'on lit : le joueur en
+// concluait que SON code était mauvais et allait en redemander un à son coach,
+// alors que le code était bon et que c'était le réseau.
+describe("la carte dit quel échec c'est vraiment", () => {
+  const setup = lire("screens/ProfileSetupScreen.tsx");
+
+  test("un refus du serveur parle du code", () => {
+    expect(titreEchecRattachement("code-refuse")).toBe("Le code club n'a pas été reconnu.");
+  });
+
+  test("une panne ne parle PAS du code", () => {
+    expect(titreEchecRattachement("technique")).toBe(
+      "Impossible de vérifier le code pour l'instant.",
+    );
+  });
+
+  test("le serveur a répondu et refuse : c'est le code", () => {
+    expect(natureEchecRattachement("rejected")).toBe("code-refuse");
+    // « Ce club est introuvable » parle bien de ce que le code désigne.
+    expect(natureEchecRattachement("notFound")).toBe("code-refuse");
+  });
+
+  test("tout ce qui ne parle pas du code est technique", () => {
+    for (const raison of ["unavailable", "rateLimited", "unauthenticated", "forbidden"]) {
+      expect(natureEchecRattachement(raison)).toBe("technique");
+    }
+    // Une raison inconnue ne devient jamais une accusation contre le code.
+    expect(natureEchecRattachement(undefined)).toBe("technique");
+    expect(natureEchecRattachement("quelque chose de neuf")).toBe("technique");
+  });
+
+  test("le rattachement transporte la nature de l'échec jusqu'à l'écran", async () => {
+    const refus = await saveProfileThenAttachClub(
+      {
+        saveProfile: async () => undefined,
+        joinClub: async () => ({ ok: false, reason: "rejected", message: "Code refusé." }),
+      },
+      "ABCDE",
+    );
+    expect(refus).toMatchObject({ status: "failed", nature: "code-refuse" });
+
+    const panne = await saveProfileThenAttachClub(
+      {
+        saveProfile: async () => undefined,
+        joinClub: async () => ({ ok: false, reason: "unavailable", message: "Serveur muet." }),
+      },
+      "ABCDE",
+    );
+    expect(panne).toMatchObject({ status: "failed", nature: "technique" });
+
+    // Le service ne lève jamais, mais s'il le faisait, ça ne dirait rien du code.
+    const leve = await saveProfileThenAttachClub(
+      {
+        saveProfile: async () => undefined,
+        joinClub: async () => {
+          throw new Error("boom");
+        },
+      },
+      "ABCDE",
+    );
+    expect(leve).toMatchObject({ status: "failed", nature: "technique" });
+  });
+
+  test("un rattachement réussi ou sauté ne porte aucune nature d'échec", async () => {
+    const saute = await saveProfileThenAttachClub(
+      { saveProfile: async () => undefined, joinClub: async () => joinOk() },
+      "",
+    );
+    expect(saute).toMatchObject({ status: "skipped", nature: null });
+
+    const rejoint = await saveProfileThenAttachClub(
+      { saveProfile: async () => undefined, joinClub: async () => joinOk() },
+      "ABCDE",
+    );
+    expect(rejoint).toMatchObject({ status: "joined", nature: null });
+  });
+
+  test("le réessai en panne réseau titre « technique », pas « code refusé »", () => {
+    // C'est LE cas de R6 : le message parle du serveur, le titre doit suivre.
+    const bloc = setup.slice(setup.indexOf("const reessayerCodeClub"));
+    const corps = bloc.slice(0, 2200);
+    expect(corps).toContain("Le serveur ne répond pas.");
+    expect(corps).toContain('nature: "technique"');
+    // Et le refus, lui, se lit sur la raison rendue par le serveur.
+    expect(corps).toContain("nature: natureEchecRattachement(attempt.reason)");
   });
 });

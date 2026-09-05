@@ -2,7 +2,7 @@
 //
 // L'INTENTION COACH, ET CE QU'ELLE N'EST PAS.
 //
-// Déclarée par un geste explicite (« Vous êtes coach ? » sur l'accueil, la
+// Déclarée par un geste explicite (« Tu es coach ? » sur l'accueil, la
 // connexion ou l'inscription), elle sert à UNE chose : choisir l'écran
 // d'ARRIVÉE quand le profil n'est pas encore rempli — création de club plutôt
 // que questionnaire joueur. Elle n'accorde AUCUN droit et n'ouvre AUCUN espace :

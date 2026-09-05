@@ -35,7 +35,7 @@ const palette = theme.colors;
 /** Plafond d'agrandissement : ce bloc vit sous un formulaire, en bas d'écran. */
 const PLAFOND_TITRE = 1.2;
 
-export const TEXTE_LIEN_COACH = "Vous êtes coach ?";
+export const TEXTE_LIEN_COACH = "Tu es coach ?";
 export const TEXTE_INTENTION_POSEE = "Compte coach — tu créeras ton club juste après";
 export const TEXTE_ANNULER = "Finalement, je suis joueur";
 
@@ -93,7 +93,7 @@ export function CoachEntryLink({ testID }: Props) {
         accessibilityLabel={
           intention
             ? "Espace coach activé, revenir au parcours joueur"
-            : "Vous êtes coach, créer votre club"
+            : "Tu es coach — tu créeras ton club juste après"
         }
       >
         <Ionicons
