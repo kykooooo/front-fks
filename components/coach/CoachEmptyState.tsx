@@ -54,7 +54,7 @@ const EMPTY_COPY: Record<CoachEmptyVariant, EmptyCopy> = {
     icon: "people-outline",
     title: "Aucun joueur dans l'effectif",
     body:
-      "Personne n'a encore rejoint le club. Générez un code d'invitation, partagez-le, et l'effectif se remplit au fur et à mesure des inscriptions.",
+      "Personne n'a encore rejoint le club. Génère un code d'invitation, partage-le, et l'effectif se remplit au fur et à mesure des inscriptions.",
     level: "unknown",
     actionLabel: "Générer un code d'invitation",
   },

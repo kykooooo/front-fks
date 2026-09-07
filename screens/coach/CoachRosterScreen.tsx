@@ -179,7 +179,7 @@ const VIDE_PAR_FILTRE: Record<CoachRosterFilter, VideCopy> = {
     icone: "checkmark-done-outline",
     titre: "Aucune séance en attente dans ce filtre",
     corps:
-      "Ce filtre reste vide aussi bien quand les séances préparées ont été suivies d'une séance terminée que lorsqu'aucune séance préparée ne remonte. Pour savoir de qui l'app n'a aucune nouvelle, ouvrez « Sans donnée récente ».",
+      "Ce filtre reste vide aussi bien quand les séances préparées ont été suivies d'une séance terminée que lorsqu'aucune séance préparée ne remonte. Pour savoir de qui l'app n'a aucune nouvelle, ouvre « Sans donnée récente ».",
   },
   seance_adaptee: {
     icone: "options-outline",

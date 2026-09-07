@@ -61,7 +61,7 @@ describe("CoachEmptyState — chaque vide est nommé et expliqué", () => {
     clubWithoutPlayers: {
       titre: "Aucun joueur dans l'effectif",
       corps:
-        "Personne n'a encore rejoint le club. Générez un code d'invitation, partagez-le, et l'effectif se remplit au fur et à mesure des inscriptions.",
+        "Personne n'a encore rejoint le club. Génère un code d'invitation, partage-le, et l'effectif se remplit au fur et à mesure des inscriptions.",
     },
     clubWithoutPlayersElsewhere: {
       titre: "Aucun joueur pour l'instant.",

@@ -986,7 +986,7 @@ const GESTE_COPY: Record<ClubMemberGeste, GesteCopy> = {
     hint: "Retire ce membre du club : suivi et encadrement. Le compte FKS du joueur n'est pas supprimé.",
     titre: (nom) => `Retirer ${nom} de l'effectif ?`,
     fait: (nom) =>
-      `Ce que fait ce retrait : ${nom} ne fait plus partie de l'effectif de ce club, ni comme joueur ni comme encadrant. Vous ne verrez plus son suivi, et il ne verra plus le cadre de la semaine ni la directive.`,
+      `Ce que fait ce retrait : ${nom} ne fait plus partie de l'effectif de ce club, ni comme joueur ni comme encadrant. Tu ne verras plus son suivi, et il ne verra plus le cadre de la semaine ni la directive.`,
     // La phrase que le produit doit tenir, mot pour mot.
     conserve: () =>
       "Le retrait du club ne supprime JAMAIS le compte FKS du joueur. Son compte, ses séances et son historique personnel lui appartiennent et restent intacts.",

@@ -285,7 +285,7 @@ export function buildTodayCoverageNotes(
       niveau: "watch",
       titre: `${pluriel(nonLus, "profil")} non lu${nonLus > 1 ? "s" : ""}`,
       pourquoi:
-        "Leur lecture a échoué : cette liste peut être incomplète. Tirez vers le bas pour réessayer.",
+        "Leur lecture a échoué : cette liste peut être incomplète. Tire vers le bas pour réessayer.",
     });
   }
 
@@ -296,7 +296,7 @@ export function buildTodayCoverageNotes(
       niveau: "unknown",
       titre: `${pluriel(enPreparation, "profil")} en cours de préparation`,
       pourquoi:
-        "Leurs données arrivent d'elles-mêmes dès qu'elles sont prêtes, sans rien faire de votre côté.",
+        "Leurs données arrivent d'elles-mêmes dès qu'elles sont prêtes, sans rien faire de ton côté.",
     });
   }
 
