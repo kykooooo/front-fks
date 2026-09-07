@@ -349,13 +349,23 @@ export default function CoachTodayScreen({
     // Club vide : la sortie utile est d'inviter, et l'invitation se génère dans
     // l'écran Semaine. On y emmène le coach au lieu d'afficher un code qu'on
     // n'a plus le droit de relire.
+    //
+    // RETOUR TERRAIN 07/09 : « quand on arrive sur l'écran coach, il n'y a rien
+    // qui s'affiche puisqu'il n'y a pas de joueurs ». Deux corrections, et
+    // seulement deux :
+    //  1. cet écran n'est plus l'atterrissage d'un club vide (cf.
+    //     `navigation/CoachTabs.tsx` et `domain/coachView/landing.ts`) ;
+    //  2. quand le coach y revient quand même, la carte ne lui dit plus
+    //     « Générez un code » comme si le bouton était ici : elle dit où il est.
+    //     Le bouton, lui, ne fait qu'ouvrir l'onglet — il n'émet rien, donc il ne
+    //     peut pas échouer.
     return screen(
       <View style={styles.blockCard}>
         <CoachEmptyState
-          variant="clubWithoutPlayers"
+          variant="clubWithoutPlayersElsewhere"
           action={
             club.clubId
-              ? { onPress: openWeek, accessibilityHint: "Ouvre l'écran Semaine pour générer un code" }
+              ? { onPress: openWeek, accessibilityHint: "Ouvre l'onglet Semaine, où le code d'invitation se génère" }
               : null
           }
           testID="coach-today-empty-club"

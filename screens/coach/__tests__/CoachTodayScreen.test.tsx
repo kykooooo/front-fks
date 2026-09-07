@@ -403,14 +403,52 @@ describe("États — un vide n'est pas une panne", () => {
     expect(texte).not.toContain("Aujourd'hui dans le groupe");
   });
 
-  test("club sans joueur : on renvoie vers la génération du code, sans jamais l'afficher ici", async () => {
+  // RETOUR TERRAIN 07/09. « Quand on arrive sur l'écran coach, il n'y a rien qui
+  // s'affiche puisqu'il n'y a pas de joueurs. » Cet écran n'est plus
+  // l'atterrissage d'un club vide (cf. navigation/__tests__/coachTabsAtterrissage),
+  // mais le coach peut toujours y revenir : la carte doit alors NOMMER le vide,
+  // dire où se trouve le code, et ne rien promettre d'autre.
+  test("club sans joueur : le vide est nommé et le code est situé, sans jamais l'afficher ici", async () => {
     // Le code n'est plus relisible : le dupliquer sur cet écran obligerait à en
     // émettre un second, qui révoquerait le premier. On oriente, on n'affiche pas.
     mockRoster.value = rosterReady([]);
     const texte = await renderText();
-    expect(texte).toContain("Aucun joueur dans l'effectif");
-    expect(texte).toContain("Générer un code d'invitation");
+    expect(texte).toContain("Aucun joueur pour l'instant.");
+    expect(texte).toContain("Ouvrir l'onglet Semaine");
     expect(texte).not.toContain("Code d'invitation :");
+    // L'impératif « Générez un code » désignait un bouton absent de CET écran :
+    // il appartient à l'écran Semaine, celui qui porte réellement l'émission.
+    expect(texte).not.toContain("Générer un code d'invitation");
+  });
+
+  test("club sans joueur : le bouton ouvre l'onglet Semaine, il n'émet aucun code", async () => {
+    mockRoster.value = rosterReady([]);
+    const onOpenWeek = jest.fn();
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <SafeAreaProvider initialMetrics={METRICS}>
+          <CoachTodayScreen
+            now={now}
+            onOpenPlayer={jest.fn()}
+            onOpenRoster={jest.fn()}
+            onOpenWeek={onOpenWeek}
+          />
+        </SafeAreaProvider>
+      );
+    });
+    mounted.push(renderer);
+
+    const bouton = renderer.root.find(
+      (n) =>
+        n.props?.accessibilityRole === "button" &&
+        n.props?.accessibilityLabel === "Ouvrir l'onglet Semaine"
+    );
+    const onPress = bouton.props.onPress as () => void;
+    await act(async () => {
+      onPress();
+    });
+    expect(onOpenWeek).toHaveBeenCalledWith("club-1");
   });
 });
 

@@ -23,7 +23,8 @@ import type { CoachIconName, CoachStatusLevel } from "./coachTheme";
 
 export const COACH_EMPTY_VARIANTS = [
   "firstLogin", // première connexion : le club existe, il est vide
-  "clubWithoutPlayers", // personne n'a rejoint l'effectif
+  "clubWithoutPlayers", // personne n'a rejoint l'effectif — écran QUI PORTE le code
+  "clubWithoutPlayersElsewhere", // idem, mais le code se génère sur un AUTRE écran
   "playerWithoutSession", // joueur inscrit, aucune séance terminée
   "noRecentData", // rien sur la période affichée (l'historique existe peut-être)
   "syncPending", // projections en cours de préparation côté serveur
@@ -59,6 +60,25 @@ const EMPTY_COPY: Record<CoachEmptyVariant, EmptyCopy> = {
       "Personne n'a encore rejoint le club. Générez un code d'invitation, partagez-le, et l'effectif se remplit au fur et à mesure des inscriptions.",
     level: "unknown",
     actionLabel: "Générer un code d'invitation",
+  },
+  // MÊME VIDE, AUTRE ÉCRAN — et donc autre phrase.
+  //
+  // `clubWithoutPlayers` est écrit pour l'écran Semaine, le seul qui porte le
+  // bouton d'émission : son « Générez un code d'invitation » y désigne un bouton
+  // qui est là, sous les yeux du coach. Recopié ailleurs, le même impératif
+  // devient une consigne sans objet — le coach cherche un bouton qui n'existe
+  // pas sur cet écran.
+  //
+  // Cette variante dit donc la même chose au mode DESCRIPTIF, et nomme l'endroit
+  // où le code se génère. Elle ne promet aucune émission : son action ne fait
+  // qu'ouvrir l'onglet Semaine, un déplacement qui ne peut pas échouer.
+  clubWithoutPlayersElsewhere: {
+    icon: "people-outline",
+    title: "Aucun joueur pour l'instant.",
+    body:
+      "Personne n'a encore rejoint le club. Chaque joueur y entre avec ton code d'invitation, qui se génère dans l'onglet Semaine.",
+    level: "unknown",
+    actionLabel: "Ouvrir l'onglet Semaine",
   },
   playerWithoutSession: {
     icon: "calendar-outline",
