@@ -576,6 +576,22 @@ describe("états", () => {
     const r = await render();
     expect(texte(r)).toContain("Aucun club rattaché");
   });
+
+  // LE CHEMIN INDIQUÉ DOIT EXISTER. « Crée ton club depuis l'accueil » désignait
+  // un accueil que l'espace coach n'a pas : ses trois onglets sont Aujourd'hui,
+  // Effectif et Semaine, et `CoachOnboarding` — le seul écran qui crée un club —
+  // vit dans la pile joueur, hors de portée d'ici. On décrit donc le seul chemin
+  // réel : le lien « Tu es coach ? » de la connexion, dont la persistance et
+  // l'arrivée sur CoachOnboarding sont testées dans coachEntryIntent.test.tsx.
+  test("un coach sans club reçoit un chemin qui existe, pas un accueil imaginaire", async () => {
+    mockClub.mockReturnValue(clubReady({ status: "notInClub", clubId: null }));
+    const r = await render();
+    const t = texte(r);
+    expect(t).toContain(
+      "Ton compte n'est rattaché à aucun club. Déconnecte-toi puis choisis « Tu es coach ? » à la connexion pour en créer un.",
+    );
+    expect(t).not.toContain("depuis l'accueil");
+  });
 });
 
 // ── Autorité du club incohérente ────────────────────────────────────────────

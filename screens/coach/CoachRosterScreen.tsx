@@ -635,13 +635,31 @@ export default function CoachRosterScreen({ filtreInitial = null }: CoachRosterS
   // ── États de premier rang, dans l'ordre où ils priment ──────────────────────
 
   // Coach sans club : ce n'est ni un vide ni une erreur, c'est un état produit.
+  //
+  // CE QUE CET ÉCRAN NE DOIT PLUS DIRE : « Crée ton club depuis l'accueil ».
+  // L'espace coach n'a pas d'accueil qui crée un club. Ses trois onglets sont
+  // « Aujourd'hui », « Effectif », « Semaine », et son stack
+  // (`CoachStackParamList`, navigation/RootNavigator) ne déclare que
+  // `CoachHome`, `CoachPlayerDetail`, `DeleteAccount`, `LegalNotice` et
+  // `PrivacyPolicy` : `CoachOnboarding` — le seul écran qui crée un club — vit
+  // dans la pile JOUEUR et n'est atteignable d'ici par AUCUNE route. Envoyer le
+  // coach vers un « accueil » inexistant, c'est le faire tourner en rond.
+  //
+  // CE QU'IL DIT MAINTENANT, ET POURQUOI C'EST VRAI. Le chemin décrit existe et
+  // il est testé ailleurs (navigation/__tests__/coachEntryIntent.test.tsx) : la
+  // connexion porte le lien « Tu es coach ? » (components/auth/CoachEntryLink),
+  // qui pose une intention PERSISTÉE ; au démarrage suivant, un compte porteur
+  // de cette intention et sans club arrive sur `CoachOnboarding`
+  // (`initialRouteName={intentionCoach && !clubId ? "CoachOnboarding" : …}`).
+  // Aucun bouton ici : cet écran ne sait pas déconnecter, et un bouton qui
+  // n'agirait pas serait exactement le défaut qu'on corrige.
   if (club.status === "notInClub") {
     return (
       <CoachScreen testID="coach-roster">
         <CoachStateBlock
           icon="shield-outline"
           title="Aucun club rattaché"
-          body="Ton compte n'est rattaché à aucun club. Crée ton club depuis l'accueil, puis partage son code d'invitation à tes joueurs."
+          body="Ton compte n'est rattaché à aucun club. Déconnecte-toi puis choisis « Tu es coach ? » à la connexion pour en créer un."
           testID="coach-roster-no-club"
         />
       </CoachScreen>
