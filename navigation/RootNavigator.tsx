@@ -48,6 +48,7 @@ import { setAnalyticsUserId } from "../services/analytics";
 import { setSentryUser } from "../services/monitoring";
 import { onWelcomeReset } from "../services/accountDeletion";
 import { effacerIntentionCoach, lireIntentionCoach } from "../services/coachIntent";
+import { oublierEffectifCoach } from "../services/memoireEffectifCoach";
 import { showToast } from "../utils/toast";
 import { isPlayerProfileComplete } from "../domain/playerProfile";
 import { useAppSpace } from "../hooks/useAppSpace";
@@ -437,11 +438,16 @@ export default function RootNavigator() {
   // entre AsyncStorage et le premier instantané Firestore déciderait à sa place.
   const [intentionCoach, setIntentionCoach] = useState(false);
   const [intentionCoachLue, setIntentionCoachLue] = useState(false);
-  // Vrai dès qu'un compte a été connecté dans CETTE session de l'app : sert à
-  // distinguer un VRAI logout (l'intention doit tomber avec la traversée qui se
-  // termine) du `null` de démarrage, où Firebase n'a encore rien restauré et où
-  // une intention posée au lancement précédent doit survivre.
-  const compteDejaConnecteRef = useRef(false);
+  // L'IDENTITÉ du dernier compte connecté dans CETTE session de l'app, ou `null`.
+  // Elle sert à distinguer un VRAI logout (l'intention doit tomber avec la
+  // traversée qui se termine) du `null` de démarrage, où Firebase n'a encore
+  // rien restauré et où une intention posée au lancement précédent doit survivre.
+  //
+  // C'est l'uid, et non un simple booléen : les données locales à effacer à la
+  // déconnexion sont nommées PAR COMPTE (la mémoire d'effectif coach en est
+  // une), et à l'instant où l'on constate le logout, `uidCourant` vaut déjà
+  // `null` — sans cette mémoire, on ne saurait plus quelle clé effacer.
+  const compteDejaConnecteRef = useRef<string | null>(null);
   /** L'identité du compte connecté, ou `null`. Ce qui change vraiment. */
   const uidCourant = user?.uid ?? null;
   const startFirestoreWatch = useSyncStore((s) => s.startFirestoreWatch);
@@ -537,11 +543,17 @@ export default function RootNavigator() {
       // ne l'est plus) : l'intention appartenait à la traversée qui vient de se
       // terminer. Un `null` de DÉMARRAGE, lui, n'efface rien — sinon une
       // intention posée hier serait perdue au premier réveil de Firebase.
+      //
+      // La dernière taille d'effectif connue (services/memoireEffectifCoach)
+      // part avec elle : elle ne peut rien ouvrir, mais la laisser ferait
+      // atterrir la session suivante sur une photo d'avant la déconnexion.
       if (!uidCourant && compteDejaConnecteRef.current) {
-        compteDejaConnecteRef.current = false;
+        const comptePrecedent = compteDejaConnecteRef.current;
+        compteDejaConnecteRef.current = null;
         await effacerIntentionCoach();
+        await oublierEffectifCoach(comptePrecedent);
       }
-      if (uidCourant) compteDejaConnecteRef.current = true;
+      if (uidCourant) compteDejaConnecteRef.current = uidCourant;
       const posee = await lireIntentionCoach();
       if (!vivant) return;
       setIntentionCoach(posee);

@@ -38,6 +38,7 @@ export function localAccountKeysToPurge(uid: string | null | undefined): string[
     keys.add(`${STORAGE_KEYS.TESTS_V1}_${cleanUid}`); // tests terrain par uid
     keys.add(STORAGE_KEYS.APP_SPACE_PREFERENCE(cleanUid)); // dernier espace Joueur/Coach
     keys.add(STORAGE_KEYS.CLUB_CREATION_ID(cleanUid)); // identifiant de club réservé, jamais consommé
+    keys.add(STORAGE_KEYS.COACH_ROSTER_SIZE(cleanUid)); // dernière taille d'effectif connue (atterrissage coach)
   }
   return [...keys];
 }

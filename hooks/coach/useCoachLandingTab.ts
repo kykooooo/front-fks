@@ -7,37 +7,89 @@
 // exactement la même source de vérité que les trois écrans coach. Ce hook ne
 // fait que brancher l'une sur l'autre, et ajouter un délai de garde.
 //
-// POURQUOI UNE LECTURE DE PLUS, ET POURQUOI C'EST ASSUMÉ.
-// `initialRouteName` n'est lu qu'UNE fois, au montage du navigateur : la réponse
-// doit donc être connue AVANT que les onglets existent. Or chaque écran coach
-// appelle déjà `useCoachRoster` pour son propre compte (Aujourd'hui, Effectif et
-// Semaine en font chacun une lecture) — ce hook n'introduit donc pas une classe
-// nouvelle de duplication, il en ajoute une occurrence. Et dans le cas qui a
-// motivé le correctif (club vide), l'onglet Aujourd'hui n'est jamais monté :
-// cette lecture REMPLACE la sienne au lieu de s'y ajouter.
+// ─── LA MÉMOIRE LOCALE PASSE AVANT LE RÉSEAU (contre-vérification 07/09) ────
+// Décider demandait jusque-là une lecture d'effectif : une requête sur les
+// membres PLUS une par joueur. Sur 25 joueurs, 26 lectures — et pendant tout ce
+// temps, un squelette à la place de la barre d'onglets, pour TOUS les coachs, y
+// compris ceux dont le club est plein et qui atterrissaient de toute façon sur
+// l'onglet historique. C'était échanger un défaut d'affichage contre un défaut
+// de latence, et le second frappait le cas majoritaire.
 //
-// LE DÉLAI DE GARDE. Tant que la décision n'est pas prise, l'appelant affiche un
-// squelette : sans butée, une lecture qui ne reviendrait jamais laisserait
-// l'espace coach inaccessible. Passé le délai, on ouvre sur l'onglet historique.
+// Donc : si la dernière taille d'effectif connue POUR CE CLUB est mémorisée
+// (services/memoireEffectifCoach, écrite par `useCoachRoster` à chaque lecture
+// aboutie), on tranche avec elle, et on ne demande PAS l'effectif du tout —
+// `useCoachRoster(null)` ne lit rien. Seule la toute première ouverture attend
+// encore le réseau.
+//
+// LE DÉLAI DE GARDE, RAMENÉ DE 8 s À 3 s. Il ne couvre plus que cette première
+// ouverture : une seule, jamais répétée, et suivie d'un écran qui fonctionne.
+// Huit secondes de squelette avant la moindre barre d'onglets étaient un écran
+// mort ; trois secondes, c'est une attente qu'on peut regarder.
 
 import { useEffect, useState } from "react";
 
 import { useCoachClub } from "./useCoachClub";
 import { useCoachRoster } from "./useCoachRoster";
+import { auth } from "../../services/firebase";
+import { lireEffectifMemorise } from "../../services/memoireEffectifCoach";
 import { chooseCoachLandingTab, type CoachLandingTab } from "../../domain/coachView/landing";
 
 /**
  * Au-delà de ce délai, on n'attend plus la réponse de l'effectif et on ouvre
- * l'espace sur l'onglet historique. Large exprès : une lecture froide (Firestore
- * réveillé, réseau de stade) est lente, et se replier trop tôt ferait
- * réapparaître le défaut qu'on corrige.
+ * l'espace sur l'onglet historique.
+ *
+ * Il ne s'applique QU'À la première ouverture d'un club (ensuite la mémoire
+ * locale tranche immédiatement), ce qui permet de le tenir court : au-delà de
+ * trois secondes, un coach devant un squelette croit que l'app est bloquée.
  */
-export const COACH_LANDING_TIMEOUT_MS = 8000;
+export const COACH_LANDING_TIMEOUT_MS = 3000;
 
 export type UseCoachLandingTabOptions = {
   /** Délai de garde. Injectable pour les tests. */
   timeoutMs?: number;
 };
+
+/** Ce que la mémoire locale a répondu, et pour quel couple compte + club. */
+type MemoireLue = { cle: string; taille: number | null };
+
+const cleMemoire = (uid: string | null, clubId: string | null): string | null =>
+  uid && clubId ? `${uid} ${clubId}` : null;
+
+/**
+ * Taille d'effectif mémorisée pour le compte courant et ce club :
+ *  - `"en-attente"` : le disque n'a pas encore répondu (ou il n'y a pas encore
+ *    de club à interroger) — on ne conclut rien, et on ne lit rien non plus ;
+ *  - `number`       : on sait, sans réseau ;
+ *  - `null`         : rien de mémorisé pour ce couple. Il faut lire l'effectif.
+ *
+ * DÉRIVATION PENDANT LE RENDU, comme `useAppSpacePreference` : tant que ce qu'on
+ * détient ne parle pas du couple courant, la réponse est « en attente » — jamais
+ * la valeur d'avant. C'est ce qui rend impossible d'appliquer à un club la
+ * mémoire d'un autre.
+ */
+function useEffectifMemorise(clubId: string | null): number | null | "en-attente" {
+  const uid = auth.currentUser?.uid ?? null;
+  const [lu, setLu] = useState<MemoireLue | null>(null);
+  const cle = cleMemoire(uid, clubId);
+
+  useEffect(() => {
+    const cleCourante = cleMemoire(uid, clubId);
+    if (!cleCourante) return undefined;
+    let annule = false;
+    void (async () => {
+      // `lireEffectifMemorise` ne lève jamais : une panne de stockage vaut
+      // « rien de mémorisé », donc on retombe sur la lecture réseau.
+      const taille = await lireEffectifMemorise(uid, clubId);
+      if (!annule) setLu({ cle: cleCourante, taille });
+    })();
+    return () => {
+      annule = true;
+    };
+  }, [uid, clubId]);
+
+  if (cle === null) return "en-attente";
+  return lu?.cle === cle ? lu.taille : "en-attente";
+}
 
 /**
  * Onglet sur lequel ouvrir l'espace coach, ou `null` tant qu'on ne sait pas.
@@ -47,7 +99,14 @@ export type UseCoachLandingTabOptions = {
  */
 export function useCoachLandingTab(options?: UseCoachLandingTabOptions): CoachLandingTab | null {
   const club = useCoachClub();
-  const roster = useCoachRoster(club.clubId);
+  const memoire = useEffectifMemorise(club.clubId);
+
+  // LA SEULE CONDITION QUI DÉCLENCHE UNE LECTURE D'EFFECTIF : la mémoire a
+  // répondu, et elle ne sait rien. Tant qu'elle n'a pas répondu (`en-attente`)
+  // ou qu'elle sait (`number`), on passe `null` — et `useCoachRoster` n'émet
+  // alors AUCUNE requête, ni au montage ni au focus.
+  const besoinDeLireEffectif = memoire === null;
+  const roster = useCoachRoster(besoinDeLireEffectif ? club.clubId : null);
 
   const timeoutMs = options?.timeoutMs ?? COACH_LANDING_TIMEOUT_MS;
   const [timedOut, setTimedOut] = useState(false);
@@ -68,6 +127,7 @@ export function useCoachLandingTab(options?: UseCoachLandingTabOptions): CoachLa
     // demandé se lirait comme « club vide ».
     rosterAnswered: roster.fetchedAt !== null,
     memberCount: roster.memberCount,
+    tailleEffectifMemorisee: typeof memoire === "number" ? memoire : null,
     timedOut,
   });
 }

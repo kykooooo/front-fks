@@ -36,6 +36,21 @@ describe("localAccountKeysToPurge", () => {
     );
   });
 
+  // Toute donnée locale nommée PAR COMPTE doit figurer ici : ce qui reste après
+  // une suppression de compte est ce dont le compte suivant hérite sur ce
+  // téléphone. La mémoire d'effectif coach (atterrissage de l'espace coach) en
+  // fait partie depuis le 07/09.
+  it("avec uid : purge aussi les clés par compte de l'espace coach et de la création de club", () => {
+    const keys = localAccountKeysToPurge("uid-42");
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        "fks_app_space_uid-42",
+        "fks_club_creation_uid-42",
+        "fks_coach_roster_size_uid-42",
+      ]),
+    );
+  });
+
   it("trim l'uid et ignore un uid blanc", () => {
     expect(localAccountKeysToPurge("  uid-42  ")).toEqual(
       expect.arrayContaining(["fks-snapshot-v2-uid-42"]),

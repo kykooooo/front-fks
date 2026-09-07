@@ -28,9 +28,25 @@ jest.mock("../../../repositories/clubsRepo", () => ({
   fetchClubPlayerSummaries: jest.fn(),
 }));
 
+// Compte connecté : la mémoire locale de la taille d'effectif est nommée par uid.
+// Getter et non valeur figée : la fabrique de `jest.mock` est évaluée avant
+// l'initialisation des constantes de ce fichier.
+jest.mock("../../../services/firebase", () => ({
+  auth: {
+    get currentUser() {
+      return mockUid.value ? { uid: mockUid.value } : null;
+    },
+  },
+  db: {},
+}));
+
+const mockUid: { value: string | null } = { value: "coach-1" };
 const mockFocus: { cb: null | (() => void | (() => void)) } = { cb: null };
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 import { fetchClubPlayerSummaries } from "../../../repositories/clubsRepo";
+import { lireEffectifMemorise } from "../../../services/memoireEffectifCoach";
 import { useCoachRoster } from "../useCoachRoster";
 import type { CoachPlayerSummary } from "../../../domain/coachSummary";
 
@@ -66,8 +82,10 @@ const result = (over: Partial<Awaited<ReturnType<typeof fetchClubPlayerSummaries
 let clock = 0;
 const now = () => clock;
 
-beforeEach(() => {
+beforeEach(async () => {
   jest.clearAllMocks();
+  await AsyncStorage.clear();
+  mockUid.value = "coach-1";
   mockFocus.cb = null;
   clock = 1_000_000;
 });
@@ -267,6 +285,67 @@ describe("useCoachRoster — fraîcheur", () => {
     expect(h.current.isStale).toBe(true);
     expect(h.current.fetchedAt).toBe(1_000);
     expect(h.current.isRefreshing).toBe(false);
+    await h.unmount();
+  });
+});
+
+// ─── MÉMOIRE LOCALE DE LA TAILLE D'EFFECTIF ─────────────────────────────────
+// Elle sert au portillon d'atterrissage (navigation/CoachTabs) à choisir son
+// onglet sans relire l'effectif. Elle s'écrit ICI, dans la couche de lecture,
+// pour que les trois écrans coach l'entretiennent en passant.
+//
+// LE PIÈGE QUE CES TESTS FERMENT : mémoriser un effectif qu'on n'a PAS lu.
+// « 0 joueur » et « on n'a pas su lire » donneraient la même valeur, et le
+// portillon ouvrirait ensuite un club plein sur Semaine.
+describe("useCoachRoster — mémoire locale de la taille d'effectif", () => {
+  test("une lecture aboutie mémorise l'effectif réel, pas le seul nombre de fiches", async () => {
+    fetchMock.mockResolvedValue(
+      result({
+        summaries: [summary("p1", "Anna")],
+        restrictedCount: 3,
+        pendingCount: 1,
+        unreadableCount: 2,
+      }),
+    );
+    const h = await renderHook(() => useCoachRoster("clubX", { now }));
+    await flush();
+    // Exactement `memberCount` — la seule implémentation, recopiée telle quelle.
+    expect(h.current.memberCount).toBe(7);
+    expect(await lireEffectifMemorise("coach-1", "clubX")).toBe(7);
+    await h.unmount();
+  });
+
+  test("un club sans joueur mémorise bien zéro : c'est une mesure", async () => {
+    fetchMock.mockResolvedValue(result({ summaries: [] }));
+    const h = await renderHook(() => useCoachRoster("clubX", { now }));
+    await flush();
+    expect(await lireEffectifMemorise("coach-1", "clubX")).toBe(0);
+    await h.unmount();
+  });
+
+  test("un effectif ILLISIBLE ne mémorise rien : on n'écrit pas un zéro qu'on n'a pas lu", async () => {
+    fetchMock.mockResolvedValue(result({ unavailable: true }));
+    const h = await renderHook(() => useCoachRoster("clubX", { now }));
+    await flush();
+    expect(h.current.status).toBe("unavailable");
+    expect(await lireEffectifMemorise("coach-1", "clubX")).toBeNull();
+    await h.unmount();
+  });
+
+  test("sans club, rien n'est lu et rien n'est mémorisé", async () => {
+    const h = await renderHook(() => useCoachRoster(null, { now }));
+    await flush();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await lireEffectifMemorise("coach-1", "clubX")).toBeNull();
+    await h.unmount();
+  });
+
+  test("sans compte connecté, rien n'est mémorisé (la clé porte l'uid)", async () => {
+    mockUid.value = null;
+    fetchMock.mockResolvedValue(result({ summaries: [summary("p1", "Anna")] }));
+    const h = await renderHook(() => useCoachRoster("clubX", { now }));
+    await flush();
+    expect(await lireEffectifMemorise("coach-1", "clubX")).toBeNull();
     await h.unmount();
   });
 });

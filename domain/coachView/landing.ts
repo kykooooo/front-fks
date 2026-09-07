@@ -60,6 +60,18 @@ export type CoachLandingInput = {
   /** `useCoachRoster().memberCount` — l'effectif réel, source de vérité unique. */
   memberCount: number;
   /**
+   * Taille d'effectif MÉMORISÉE localement pour ce compte ET ce club
+   * (services/memoireEffectifCoach), ou `null` si l'on n'a rien de tel.
+   *
+   * Ce n'est pas une source concurrente : c'est la valeur de `memberCount`
+   * elle-même, recopiée lors de la dernière lecture aboutie. Elle existe pour
+   * qu'un coach n'attende pas 26 requêtes avant de voir une barre d'onglets.
+   *
+   * Elle est déjà filtrée par club en amont : une valeur écrite pour un autre
+   * club arrive ici en `null`, jamais comme un effectif à croire.
+   */
+  tailleEffectifMemorisee?: number | null;
+  /**
    * Délai de garde écoulé. Filet de sécurité de l'appelant : sans lui, une
    * lecture qui ne répondrait jamais laisserait l'espace coach sur un squelette
    * définitif. Il ne fait que forcer le repli, il ne décide de rien.
@@ -75,6 +87,20 @@ export type CoachLandingInput = {
  * onglet.
  */
 export function chooseCoachLandingTab(input: CoachLandingInput): CoachLandingTab | null {
+  // 0. MÉMOIRE LOCALE : on a déjà lu cet effectif, pour CE club, lors d'une
+  //    session précédente. On tranche donc sans attendre quoi que ce soit du
+  //    réseau — c'est le seul moyen d'éviter des secondes de squelette au cas
+  //    MAJORITAIRE, celui du coach dont le club est plein.
+  //
+  //    CE QUE ÇA COÛTE, ET POURQUOI C'EST ACCEPTABLE. Un club qui vient de
+  //    passer de 0 à 1 joueur (ou l'inverse) ouvre une fois de plus sur l'onglet
+  //    d'avant. Le prix est un onglet — pas un chiffre faux, pas une donnée
+  //    inventée : cette valeur ne s'affiche nulle part. Et la première lecture
+  //    réelle de la session la corrige pour la fois suivante.
+  if (input.tailleEffectifMemorisee != null) {
+    return input.tailleEffectifMemorisee === 0 ? "CoachWeek" : COACH_LANDING_DEFAULT_TAB;
+  }
+
   // 1. Le seul cas où l'on SAIT : club résolu + effectif lu et abouti.
   const decidable =
     input.clubStatus === "ready" && input.rosterStatus === "ready" && input.rosterAnswered;

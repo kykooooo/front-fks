@@ -25,6 +25,8 @@ import {
   currentCoachAuthorityToken,
 } from "../../state/coachAuthorityGate";
 import { useCoachDataPurge } from "./useCoachDataPurge";
+import { auth } from "../../services/firebase";
+import { memoriserEffectifCoach } from "../../services/memoireEffectifCoach";
 import { fetchClubPlayerSummaries } from "../../repositories/clubsRepo";
 import type { CoachPlayerSummary } from "../../domain/coachSummary";
 import { toCoachPlayerViews } from "../../domain/coachView/fromSummary";
@@ -309,6 +311,32 @@ export function useCoachRoster(
       ? "unavailable"
       : "ready";
 
+  const memberCount =
+    views.length + snapshot.restrictedCount + snapshot.pendingCount + snapshot.unreadableCount;
+
+  // ── MÉMOIRE LOCALE DE LA TAILLE DE L'EFFECTIF ─────────────────────────────
+  // Elle sert au portillon d'atterrissage (navigation/CoachTabs) à choisir son
+  // onglet d'ouverture SANS relire l'effectif. Voir services/memoireEffectifCoach.
+  //
+  // Ce n'est PAS un nouveau compteur : on recopie `memberCount`, la seule
+  // implémentation, telle quelle. Et c'est ici que ça s'écrit — dans la couche
+  // de lecture — pour que les trois écrans coach l'entretiennent en passant,
+  // sans qu'aucun ait à y penser.
+  //
+  // CONDITION STRICTE : une lecture ABOUTIE de CE club. Un effectif indisponible
+  // (`unavailable`) ou jamais lu (`fetchedAt === null`) mémoriserait « 0 joueur »
+  // là où la vérité est « on n'a pas su lire » — et le portillon ouvrirait
+  // ensuite un club plein sur Semaine.
+  //
+  // Pas besoin de vérifier en plus que le snapshot parle bien de `clubId` : un
+  // changement de club le remet à `EMPTY_SNAPSHOT` (donc `fetchedAt: null`), et
+  // le seul chemin qui conserve un snapshot précédent exige déjà le même club.
+  useEffect(() => {
+    if (!clubId) return;
+    if (snapshot.unavailable || snapshot.fetchedAt === null) return;
+    void memoriserEffectifCoach(auth.currentUser?.uid ?? null, clubId, memberCount);
+  }, [clubId, snapshot.unavailable, snapshot.fetchedAt, memberCount]);
+
   return {
     views,
     status,
@@ -316,8 +344,7 @@ export function useCoachRoster(
     restrictedCount: snapshot.restrictedCount,
     pendingCount: snapshot.pendingCount,
     unreadableCount: snapshot.unreadableCount,
-    memberCount:
-      views.length + snapshot.restrictedCount + snapshot.pendingCount + snapshot.unreadableCount,
+    memberCount,
     fetchedAt: snapshot.fetchedAt,
     isStale,
     isRefreshing,

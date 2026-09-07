@@ -85,6 +85,47 @@ describe("onglet d'atterrissage coach", () => {
     });
   });
 
+  // ── MÉMOIRE LOCALE : DÉCIDER SANS ATTENDRE LE RÉSEAU ──────────────────────
+  // Sans elle, chaque ouverture de l'espace coach attendait une lecture
+  // d'effectif (1 requête + une par joueur) avant d'afficher la moindre barre
+  // d'onglets — y compris pour le cas majoritaire, le club plein, qui ouvre de
+  // toute façon sur l'onglet historique.
+  describe("mémoire locale de la taille d'effectif", () => {
+    /** Rien n'a répondu : sans mémoire, cet état ne décide rien. */
+    const rienDeLu = base({
+      clubStatus: "loading",
+      rosterStatus: "loading",
+      rosterAnswered: false,
+      memberCount: 0,
+    });
+
+    test("une taille mémorisée à zéro ouvre Semaine, sans aucune lecture", () => {
+      expect(chooseCoachLandingTab(rienDeLu)).toBeNull();
+      expect(chooseCoachLandingTab({ ...rienDeLu, tailleEffectifMemorisee: 0 })).toBe("CoachWeek");
+    });
+
+    test("une taille mémorisée non nulle ouvre Aujourd'hui, sans aucune lecture", () => {
+      expect(chooseCoachLandingTab({ ...rienDeLu, tailleEffectifMemorisee: 1 })).toBe("CoachToday");
+      expect(chooseCoachLandingTab({ ...rienDeLu, tailleEffectifMemorisee: 25 })).toBe("CoachToday");
+    });
+
+    // `null` et `undefined` disent la même chose : on n'a rien de mémorisé pour
+    // CE club (jamais écrit, illisible, ou écrit pour un autre club). On ne
+    // décide donc pas — surtout pas « 0 par défaut ».
+    test("aucune mémoire : on ne décide pas pour autant", () => {
+      expect(chooseCoachLandingTab({ ...rienDeLu, tailleEffectifMemorisee: null })).toBeNull();
+      expect(chooseCoachLandingTab({ ...rienDeLu, tailleEffectifMemorisee: undefined })).toBeNull();
+    });
+
+    test("une lecture réelle qui contredit la mémoire n'a pas à être attendue pour rien", () => {
+      // La mémoire tranche en premier ; la lecture réelle, quand elle arrive,
+      // met la mémoire à jour côté hook — pas ici. Ce test fige juste l'ordre.
+      expect(
+        chooseCoachLandingTab(base({ memberCount: 0, tailleEffectifMemorisee: 12 })),
+      ).toBe("CoachToday");
+    });
+  });
+
   describe("délai de garde", () => {
     test("il débloque l'attente sur le comportement actuel", () => {
       const enAttente = base({ clubStatus: "loading", rosterAnswered: false, memberCount: 0 });

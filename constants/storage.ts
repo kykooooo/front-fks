@@ -58,4 +58,26 @@ export const STORAGE_KEYS = {
   // était bloqué à vie sur son compte. Une valeur écrite par l'ancien format
   // (identifiant nu) est relue comme « étape 0 ». Effacée au succès.
   CLUB_CREATION_ID: (uid: string) => `fks_club_creation_${uid}`,
+
+  // DERNIÈRE TAILLE D'EFFECTIF CONNUE, pour le portillon d'atterrissage coach
+  // (navigation/CoachTabs). JSON `{ clubId, memberCount }` —
+  // cf. services/memoireEffectifCoach.
+  //
+  // POURQUOI (contre-vérification du 07/09) : le portillon choisit l'onglet
+  // d'ouverture selon que le club a des joueurs ou non. Sans mémoire, il devait
+  // ATTENDRE une lecture d'effectif (1 requête + une par joueur) avant d'afficher
+  // la moindre barre d'onglets — jusqu'à plusieurs secondes de squelette pour
+  // TOUS les coachs, y compris ceux dont l'effectif est plein. Avec elle, la
+  // deuxième ouverture et les suivantes tranchent sans lire l'effectif.
+  //
+  // PAR COMPTE (l'uid dans la clé) : sur un téléphone partagé, l'effectif d'un
+  // compte ne décide pas de l'écran d'un autre. LE CLUB EST DANS LA VALEUR, pas
+  // dans la clé : un club changé rend la valeur mémorisée inutilisable au lieu
+  // de laisser derrière elle une clé qu'aucune purge ne saurait énumérer.
+  //
+  // Cette clé ne DONNE aucun accès et ne montre aucune donnée : la falsifier ne
+  // peut qu'ouvrir l'espace coach sur l'un des deux onglets qu'il ouvre déjà.
+  // Elle est effacée à la déconnexion et avec le compte
+  // (services/accountDeletionHelpers.localAccountKeysToPurge).
+  COACH_ROSTER_SIZE: (uid: string) => `fks_coach_roster_size_${uid}`,
 } as const;

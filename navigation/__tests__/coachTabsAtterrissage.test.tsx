@@ -15,6 +15,8 @@
 // son `initialRouteName` — la seule prop qui nous intéresse.
 
 import React from "react";
+import { readFileSync } from "fs";
+import { resolve } from "path";
 import TestRenderer, { act } from "react-test-renderer";
 import { SafeAreaProvider, type Metrics } from "react-native-safe-area-context";
 
@@ -96,5 +98,24 @@ describe("atterrissage de l'espace coach", () => {
     mockOnglet.value = "CoachToday";
     const renderer = await rendu();
     expect(flatText(renderer.toJSON())).toContain("initialRouteName=CoachToday");
+  });
+});
+
+// ─── LA MÉMOIRE D'ATTERRISSAGE TOMBE AVEC LE COMPTE ─────────────────────────
+// Elle ne peut rien ouvrir (elle choisit entre deux onglets déjà autorisés),
+// mais elle est nommée PAR COMPTE : la laisser en place à la déconnexion ferait
+// atterrir la session suivante sur une photo d'avant. Lecture de source, comme
+// les autres invariants du navigateur (coachIntentPersistance).
+describe("la mémoire d'atterrissage tombe avec le compte", () => {
+  const navigateur = readFileSync(resolve(__dirname, "..", "RootNavigator.tsx"), "utf8");
+
+  test("une déconnexion CONFIRMÉE efface la mémoire du compte qui part", () => {
+    expect(navigateur).toContain("oublierEffectifCoach(comptePrecedent)");
+  });
+
+  test("le repère de session porte l'IDENTITÉ du compte, pas un simple booléen", () => {
+    // À l'instant où l'on constate le logout, `uidCourant` vaut déjà `null` :
+    // sans l'uid gardé, on ne saurait plus quelle clé effacer.
+    expect(navigateur).toContain("const compteDejaConnecteRef = useRef<string | null>(null);");
   });
 });

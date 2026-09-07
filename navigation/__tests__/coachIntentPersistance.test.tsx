@@ -205,7 +205,10 @@ describe("le navigateur — il attend la réponse du disque avant de router", ()
     // compte (l'inscription vient d'aboutir, le portillon n'est pas monté).
     const index = navigateur.indexOf("setIntentionCoachLue(false)");
     expect(index).toBeGreaterThan(-1);
-    expect(navigateur.slice(index, index + 1200)).toContain("}, [uidCourant]);");
+    // Fenêtre élargie le 07/09 : le même effet efface désormais AUSSI la mémoire
+    // d'atterrissage coach (services/memoireEffectifCoach), commentaire compris.
+    // Ce qu'on éprouve reste le même — la dépendance de l'effet.
+    expect(navigateur.slice(index, index + 2200)).toContain("}, [uidCourant]);");
   });
 
   test("aucun écran d'arrivée n'est choisi tant que la lecture n'a pas répondu", () => {
