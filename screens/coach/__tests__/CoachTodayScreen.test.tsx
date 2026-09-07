@@ -18,10 +18,14 @@ import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
 import { SafeAreaProvider, type Metrics } from "react-native-safe-area-context";
 
-// Navigation : l'écran n'en a besoin que pour ses actions par défaut, et les
-// tests injectent leurs propres callbacks. On neutralise le module entier.
+// Navigation : la plupart des tests injectent leurs propres callbacks, mais
+// `navigate` est OBSERVÉ — c'est le chemin réellement emprunté en production,
+// où aucune prop n'est passée à l'écran (navigation/CoachTabs le monte nu).
+// Un espion partagé, et non un `jest.fn()` créé à chaque appel du hook : sinon
+// l'espion sur lequel on porte l'assertion n'est jamais celui qui a été appelé.
+const mockNavigate = jest.fn();
 jest.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: jest.fn() }),
+  useNavigation: () => ({ navigate: mockNavigate }),
   useFocusEffect: () => {},
 }));
 
@@ -169,6 +173,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  mockNavigate.mockClear();
   mockClub.value = clubReady();
   mockRoster.value = rosterReady([]);
 });
@@ -458,6 +463,37 @@ describe("États — un vide n'est pas une panne", () => {
       onPress();
     });
     expect(onOpenWeek).toHaveBeenCalledWith("club-1");
+  });
+
+  // LE CHEMIN RÉELLEMENT EMPRUNTÉ EN PRODUCTION.
+  // Le test au-dessus injecte `onOpenWeek` : il prouve que le bouton appelle sa
+  // prop, pas qu'il mène quelque part. Or `navigation/CoachTabs` monte cet écran
+  // NU — aucune prop. Sans le test ci-dessous, le nom de route pouvait dériver
+  // (il est passé en chaîne de caractères, donc invisible au compilateur) et
+  // le seul symptôme aurait été, sous le doigt du coach, un toast « Écran
+  // indisponible » : le `go()` de l'écran rattrape l'exception. C'est exactement
+  // la garde que l'écran Effectif possède déjà.
+  test("sans prop, le bouton du club vide navigue vraiment vers l'onglet Semaine", async () => {
+    mockRoster.value = rosterReady([]);
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <SafeAreaProvider initialMetrics={METRICS}>
+          <CoachTodayScreen now={now} />
+        </SafeAreaProvider>
+      );
+    });
+    mounted.push(renderer);
+
+    const bouton = renderer.root.find(
+      (n) =>
+        n.props?.accessibilityRole === "button" &&
+        n.props?.accessibilityLabel === "Ouvrir l'onglet Semaine"
+    );
+    await act(async () => {
+      (bouton.props.onPress as () => void)();
+    });
+    expect(mockNavigate).toHaveBeenCalledWith("CoachWeek", { clubId: "club-1" });
   });
 });
 
