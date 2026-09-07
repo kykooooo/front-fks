@@ -58,6 +58,11 @@ describe("CoachEmptyState — chaque vide est nommé et expliqué", () => {
   // coach lit dans un moment où il ne sait pas quoi faire : elle ne doit pas
   // pouvoir changer par accident. Ce tableau est le contrat.
   const TEXTES: Record<(typeof COACH_EMPTY_VARIANTS)[number], { titre: string; corps: string }> = {
+    accountWithoutClub: {
+      titre: "Aucun club rattaché",
+      corps:
+        "Ton compte n'est rattaché à aucun club. Déconnecte-toi puis choisis « Tu es coach ? » à la connexion pour en créer un.",
+    },
     clubWithoutPlayers: {
       titre: "Aucun joueur dans l'effectif",
       corps:
@@ -130,6 +135,25 @@ describe("CoachEmptyState — chaque variante est réellement rendue par un écr
 
   test.each(COACH_EMPTY_VARIANTS)("la variante %s est citée par un écran coach", (v) => {
     expect(sources).toContain(`"${v}"`);
+  });
+
+  // ── UNE SEULE PHRASE POUR « CE COMPTE N'A PAS DE CLUB » ────────────────────
+  // Les trois onglets coach affichaient cet état avec trois textes écrits
+  // séparément, et deux d'entre eux décrivaient une création de club
+  // INATTEIGNABLE depuis l'espace coach (« Crée ton club pour ouvrir ton
+  // espace », « Crée ton club, ou demande à FKS de te rattacher »). Ce test
+  // interdit qu'une quatrième version réapparaisse dans un écran.
+  test("les trois onglets coach affichent la MÊME phrase, celle de la variante", () => {
+    const ecrans = ["CoachTodayScreen.tsx", "CoachWeekScreen.tsx", "CoachRosterScreen.tsx"];
+    for (const nom of ecrans) {
+      const src = readFileSync(resolve(dossierEcrans, nom), "utf8");
+      expect(src).toContain('variant="accountWithoutClub"');
+    }
+    // Les anciennes formulations ne survivent nulle part dans du code rendu.
+    // (`sources` inclut les commentaires : on ne cherche donc que la partie de
+    // phrase qui n'a jamais été citée dans une explication.)
+    expect(sources).not.toContain("Ce compte n'est associé à aucun club.");
+    expect(sources).not.toContain("le suivi de la semaine s'affichera ensuite ici");
   });
 });
 

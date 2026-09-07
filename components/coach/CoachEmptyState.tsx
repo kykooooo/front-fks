@@ -29,6 +29,7 @@ import type { CoachIconName, CoachStatusLevel } from "./coachTheme";
 // variantes que seul le test de couverture rendait encore. Un test de ce
 // fichier vérifie désormais que chaque variante est bien citée par un écran.
 export const COACH_EMPTY_VARIANTS = [
+  "accountWithoutClub", // le compte connecté n'est rattaché à aucun club
   "clubWithoutPlayers", // personne n'a rejoint l'effectif — écran QUI PORTE le code
   "clubWithoutPlayersElsewhere", // idem, mais le code se génère sur un AUTRE écran
   "playerWithoutSession", // joueur inscrit, aucune séance terminée
@@ -47,6 +48,36 @@ type EmptyCopy = {
 };
 
 const EMPTY_COPY: Record<CoachEmptyVariant, EmptyCopy> = {
+  // ── LE COMPTE N'A PAS DE CLUB ───────────────────────────────────────────────
+  //
+  // POURQUOI UNE VARIANTE, ALORS QUE LES TROIS ÉCRANS COMPOSAIENT DÉJÀ LE BLOC.
+  // Ils le composaient chacun à sa façon, et les trois phrases avaient divergé :
+  //   . Aujourd'hui : « Crée ton club pour ouvrir ton espace, ou contacte FKS… »
+  //   . Semaine     : « Crée ton club, ou demande à FKS de te rattacher au tien… »
+  //   . Effectif    : « Déconnecte-toi puis choisis « Tu es coach ? »… »
+  // Les deux premières décrivent une création de club QUI N'EXISTE PAS depuis
+  // l'espace coach : `CoachOnboarding`, le seul écran qui crée un club, vit dans
+  // la pile JOUEUR et aucune route de `CoachStackParamList` ne l'atteint. La
+  // troisième décrit le chemin réel, et elle est testée ailleurs
+  // (navigation/__tests__/coachEntryIntent.test.tsx). C'est donc elle qu'on garde,
+  // à un seul endroit — trois copies d'une même phrase, c'est trois occasions
+  // qu'une seule dérive.
+  //
+  // CET ÉTAT EST QUASI INATTEIGNABLE, ET C'EST VOULU. `useAppSpace` n'ouvre
+  // l'espace coach qu'à partir d'une appartenance `clubs/{clubId}/members/{uid}` :
+  // un coach sans `clubId` est envoyé côté joueur, il n'arrive jamais ici. Il
+  // reste une fenêtre de course (le pointeur disparaît pendant la session) et un
+  // RÉSIDU : un `clubId` qui désigne un club supprimé, dont l'appartenance
+  // orpheline continue d'ouvrir l'espace. Ce résidu n'a AUCUN chemin de sortie
+  // propre à ce jour — la phrase ci-dessous est ce qu'on sait dire de mieux, et
+  // elle ne promet rien qu'on ne puisse tenir.
+  accountWithoutClub: {
+    icon: "people-circle-outline",
+    title: "Aucun club rattaché",
+    body:
+      "Ton compte n'est rattaché à aucun club. Déconnecte-toi puis choisis « Tu es coach ? » à la connexion pour en créer un.",
+    level: "unknown",
+  },
   // NB : le libellé d'action ne dit plus « partager le code », mais
   // « générer » — un code n'existe plus tant que le coach ne l'a pas demandé,
   // et il n'est affiché qu'à ce moment-là.

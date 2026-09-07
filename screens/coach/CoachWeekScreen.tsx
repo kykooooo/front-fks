@@ -46,7 +46,6 @@ import { CoachMetric } from "../../components/coach/CoachMetric";
 import { CoachSkeleton } from "../../components/coach/CoachSkeleton";
 import { CoachEmptyState } from "../../components/coach/CoachEmptyState";
 import { CoachErrorState } from "../../components/coach/CoachErrorState";
-import { CoachStateBlock } from "../../components/coach/CoachStateBlock";
 import { CoachStatusPill } from "../../components/coach/CoachStatusPill";
 import { CoachSignalRow } from "../../components/coach/CoachSignalRow";
 import { CoachLegalFooter } from "../../components/coach/CoachLegalFooter";
@@ -704,12 +703,12 @@ export default function CoachWeekScreen() {
     return (
       <CoachScreen testID="coach-week-screen">
         <View style={styles.page}>
-          <CoachStateBlock
-            icon="people-circle-outline"
-            title="Aucun club rattaché"
-            body="Ton compte n'est rattaché à aucun club. Crée ton club, ou demande à FKS de te rattacher au tien : le suivi de la semaine s'affichera ensuite ici."
-            level="unknown"
-          />
+          {/* UNE SEULE PHRASE POUR LES TROIS ONGLETS (variante
+              `accountWithoutClub`). Celle qui vivait ici promettait « Crée ton
+              club, ou demande à FKS de te rattacher » — une création
+              inatteignable depuis l'espace coach, et un rattachement dont
+              personne ici ne connaît le chemin. Voir CoachEmptyState.tsx. */}
+          <CoachEmptyState variant="accountWithoutClub" testID="coach-week-no-club" />
           <CoachLegalFooter />
         </View>
       </CoachScreen>

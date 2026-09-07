@@ -924,6 +924,14 @@ describe("CoachWeekScreen — états globaux", () => {
     const texte = flatText(renderer.toJSON());
 
     expect(texte).toContain("Aucun club rattaché");
+    // LA MÊME PHRASE QUE LES DEUX AUTRES ONGLETS (variante `accountWithoutClub`).
+    // Celle qui vivait ici promettait « Crée ton club, ou demande à FKS de te
+    // rattacher » : la création est inatteignable depuis l'espace coach, et le
+    // rattachement n'a aucun chemin que cet écran sache décrire.
+    expect(texte).toContain(
+      "Ton compte n'est rattaché à aucun club. Déconnecte-toi puis choisis « Tu es coach ? » à la connexion pour en créer un.",
+    );
+    expect(texte).not.toContain("Crée ton club");
     expect(texte).not.toContain("Ton cadre de la semaine");
     expect(texte).not.toContain("Code club");
   });

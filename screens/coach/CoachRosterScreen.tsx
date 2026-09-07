@@ -653,15 +653,15 @@ export default function CoachRosterScreen({ filtreInitial = null }: CoachRosterS
   // (`initialRouteName={intentionCoach && !clubId ? "CoachOnboarding" : …}`).
   // Aucun bouton ici : cet écran ne sait pas déconnecter, et un bouton qui
   // n'agirait pas serait exactement le défaut qu'on corrige.
+  //
+  // La phrase elle-même vit désormais dans la variante `accountWithoutClub` de
+  // `CoachEmptyState` : les trois onglets coach affichaient ce même état avec
+  // trois textes différents, dont deux décrivaient une création de club
+  // inatteignable. Une source, trois écrans.
   if (club.status === "notInClub") {
     return (
       <CoachScreen testID="coach-roster">
-        <CoachStateBlock
-          icon="shield-outline"
-          title="Aucun club rattaché"
-          body="Ton compte n'est rattaché à aucun club. Déconnecte-toi puis choisis « Tu es coach ? » à la connexion pour en créer un."
-          testID="coach-roster-no-club"
-        />
+        <CoachEmptyState variant="accountWithoutClub" testID="coach-roster-no-club" />
       </CoachScreen>
     );
   }

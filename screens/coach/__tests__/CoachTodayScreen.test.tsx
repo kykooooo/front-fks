@@ -379,10 +379,19 @@ describe("États — un vide n'est pas une panne", () => {
     expect(texte).not.toContain("Aujourd'hui dans le groupe");
   });
 
+  // LA MÊME PHRASE QUE LES DEUX AUTRES ONGLETS (variante `accountWithoutClub`).
+  // Celle qui vivait ici disait « Crée ton club pour ouvrir ton espace » : la
+  // création de club n'est atteignable par AUCUNE route de l'espace coach, donc
+  // cette phrase envoyait le coach chercher un écran qui n'existe pas d'ici.
   test("compte sans club : état produit à part entière, pas une erreur", async () => {
     mockClub.value = clubReady({ status: "notInClub", clubId: null, clubName: null });
     const texte = await renderText();
-    expect(texte).toContain("Aucun club rattaché à ce compte");
+    expect(texte).toContain("Aucun club rattaché");
+    expect(texte).toContain(
+      "Ton compte n'est rattaché à aucun club. Déconnecte-toi puis choisis « Tu es coach ? » à la connexion pour en créer un.",
+    );
+    // Le chemin promis doit EXISTER : plus de création de club depuis ici.
+    expect(texte).not.toContain("Crée ton club");
     // Ce n'est pas une panne : aucune formulation d'échec de chargement.
     expect(texte).not.toContain("Chargement impossible");
     expect(texte).not.toContain("Réessayer");

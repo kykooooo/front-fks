@@ -34,7 +34,6 @@ import { CoachPlayerRow } from "../../components/coach/CoachPlayerRow";
 import { CoachSectionCard } from "../../components/coach/CoachSectionCard";
 import { CoachSignalRow } from "../../components/coach/CoachSignalRow";
 import { CoachSkeleton } from "../../components/coach/CoachSkeleton";
-import { CoachStateBlock } from "../../components/coach/CoachStateBlock";
 import {
   coachColors,
   coachLayout,
@@ -302,17 +301,14 @@ export default function CoachTodayScreen({
   }
 
   if (club.status === "notInClub") {
-    // Aucune variante de `CoachEmptyState` ne couvre "compte sans club" : ce
-    // n'est ni un club vide ni une erreur. On compose donc directement le bloc.
+    // UNE SEULE PHRASE POUR LES TROIS ONGLETS (variante `accountWithoutClub`).
+    // Celle qui vivait ici disait « Crée ton club pour ouvrir ton espace » : la
+    // création de club n'est atteignable par AUCUNE route de l'espace coach.
+    // Voir components/coach/CoachEmptyState.tsx pour le chemin réel, et pour
+    // pourquoi cet état est de toute façon quasi inatteignable.
     return screen(
       <View style={styles.blockCard}>
-        <CoachStateBlock
-          icon="people-circle-outline"
-          title="Aucun club rattaché à ce compte"
-          body="Ce compte n'est associé à aucun club. Crée ton club pour ouvrir ton espace, ou contacte FKS si tu penses qu'il s'agit d'une erreur."
-          level="unknown"
-          testID="coach-today-no-club"
-        />
+        <CoachEmptyState variant="accountWithoutClub" testID="coach-today-no-club" />
       </View>,
     );
   }
