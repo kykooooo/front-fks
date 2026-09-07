@@ -443,7 +443,7 @@ describe("liste vide", () => {
     mockRoster.mockReturnValue(rosterReady([]));
     const r = await render();
     const t = texte(r);
-    expect(t).toContain("Aucun joueur pour l'instant.");
+    expect(t).toContain("Aucun joueur pour l'instant");
     expect(t).toContain(
       "Personne n'a encore rejoint le club. Chaque joueur y entre avec ton code d'invitation, qui se génère dans l'onglet Semaine.",
     );

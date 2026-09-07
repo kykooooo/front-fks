@@ -64,7 +64,7 @@ describe("CoachEmptyState — chaque vide est nommé et expliqué", () => {
         "Personne n'a encore rejoint le club. Génère un code d'invitation, partage-le, et l'effectif se remplit au fur et à mesure des inscriptions.",
     },
     clubWithoutPlayersElsewhere: {
-      titre: "Aucun joueur pour l'instant.",
+      titre: "Aucun joueur pour l'instant",
       corps:
         "Personne n'a encore rejoint le club. Chaque joueur y entre avec ton code d'invitation, qui se génère dans l'onglet Semaine.",
     },
@@ -89,6 +89,18 @@ describe("CoachEmptyState — chaque vide est nommé et expliqué", () => {
     const texte = await renderText(<CoachEmptyState variant={v} />);
     expect(texte).toContain(TEXTES[v].titre);
     expect(texte).toContain(TEXTES[v].corps);
+  });
+
+  // UN TITRE N'EST PAS UNE PHRASE. Les cinq titres sont des groupes nominaux
+  // ("Aucune séance pour l'instant", "Suivi non accessible") : aucun ne porte de
+  // point final. `clubWithoutPlayersElsewhere` en avait un, hérité d'une
+  // relecture — un détail invisible seul, une incohérence visible dès qu'on
+  // enchaîne deux états vides. Ce test l'empêche de revenir sur n'importe
+  // laquelle des variantes, y compris celles qu'on ajoutera après.
+  test("aucun titre de variante ne se termine par un point", () => {
+    for (const v of COACH_EMPTY_VARIANTS) {
+      expect(TEXTES[v].titre.endsWith(".")).toBe(false);
+    }
   });
 
   test("l'action n'apparaît que si l'écran en fournit une", async () => {

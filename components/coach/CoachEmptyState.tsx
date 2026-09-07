@@ -71,7 +71,7 @@ const EMPTY_COPY: Record<CoachEmptyVariant, EmptyCopy> = {
   // qu'ouvrir l'onglet Semaine, un déplacement qui ne peut pas échouer.
   clubWithoutPlayersElsewhere: {
     icon: "people-outline",
-    title: "Aucun joueur pour l'instant.",
+    title: "Aucun joueur pour l'instant",
     body:
       "Personne n'a encore rejoint le club. Chaque joueur y entre avec ton code d'invitation, qui se génère dans l'onglet Semaine.",
     level: "unknown",

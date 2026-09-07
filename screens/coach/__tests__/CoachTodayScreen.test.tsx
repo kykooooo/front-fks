@@ -413,7 +413,7 @@ describe("États — un vide n'est pas une panne", () => {
     // émettre un second, qui révoquerait le premier. On oriente, on n'affiche pas.
     mockRoster.value = rosterReady([]);
     const texte = await renderText();
-    expect(texte).toContain("Aucun joueur pour l'instant.");
+    expect(texte).toContain("Aucun joueur pour l'instant");
     expect(texte).toContain("Ouvrir l'onglet Semaine");
     expect(texte).not.toContain("Code d'invitation :");
     // L'impératif « Générez un code » désignait un bouton absent de CET écran :
