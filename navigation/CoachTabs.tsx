@@ -28,8 +28,14 @@
 // passe de sa variante contour à sa variante pleine, et le libellé reste écrit.
 // Chaque onglet porte un `accessibilityLabel` explicite (le libellé court
 // « Semaine » ne suffit pas à un lecteur d'écran hors contexte).
+//
+// ONGLET D'ATTERRISSAGE : IL N'EST PLUS FIXE (correctif du 07/09).
+// « Aujourd'hui » reste l'atterrissage par défaut, mais un club SANS AUCUN
+// JOUEUR ouvre sur « Semaine » — voir `domain/coachView/landing.ts` pour le
+// pourquoi, et le composant de portillon en bas de ce fichier pour le comment.
 
 import React from "react";
+import { StyleSheet, View } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -37,7 +43,11 @@ import CoachTodayScreen from "../screens/coach/CoachTodayScreen";
 import CoachRosterScreen from "../screens/coach/CoachRosterScreen";
 import CoachWeekScreen from "../screens/coach/CoachWeekScreen";
 import { SwipeTabsWrapper } from "../components/SwipeTabsWrapper";
-import { coachColors } from "../components/coach/coachTheme";
+import { CoachScreen } from "../components/coach/CoachScreen";
+import { CoachSkeleton } from "../components/coach/CoachSkeleton";
+import { coachColors, coachSpacing } from "../components/coach/coachTheme";
+import { useCoachLandingTab } from "../hooks/coach/useCoachLandingTab";
+import type { CoachLandingTab } from "../domain/coachView/landing";
 import type { CoachRosterFilter } from "../domain/coachView/roster";
 
 /**
@@ -115,10 +125,21 @@ function renduIcone(name: keyof CoachTabsParamList) {
   return Icone;
 }
 
-export default function CoachTabs() {
+/**
+ * La tab bar elle-même. Elle ne DÉCIDE de rien : on lui dit sur quel onglet
+ * ouvrir, elle l'applique. `initialRouteName` n'est lu qu'une fois, au montage
+ * du navigateur — c'est précisément pour ça que la décision doit être prise
+ * avant, par le portillon ci-dessous, et pas par un `navigate()` d'après-coup
+ * qui ferait clignoter l'écran.
+ */
+export function CoachTabsNavigator({
+  initialRouteName,
+}: {
+  initialRouteName: CoachLandingTab;
+}) {
   return (
     <Tabs.Navigator
-      initialRouteName="CoachToday"
+      initialRouteName={initialRouteName}
       screenOptions={({ route }) => {
         const name = route.name as keyof CoachTabsParamList;
         return {
@@ -164,3 +185,43 @@ export default function CoachTabs() {
     </Tabs.Navigator>
   );
 }
+
+/**
+ * PORTILLON D'ATTERRISSAGE.
+ *
+ * Il lit l'effectif (via `useCoachLandingTab`, qui délègue à la même couche que
+ * les écrans), attend la réponse, PUIS monte la tab bar sur le bon onglet.
+ *
+ * POURQUOI ATTENDRE PLUTÔT QUE CORRIGER APRÈS COUP. Monter « Aujourd'hui » puis
+ * sauter sur « Semaine » afficherait un dixième de seconde d'écran vide avant de
+ * basculer : le coach verrait une app qui hésite. Ici la tab bar naît déjà au
+ * bon endroit, et ne bouge plus.
+ *
+ * CE QUE LE SQUELETTE DIT, ET CE QU'IL NE DIT PAS. Il annonce « du contenu
+ * arrive », rien d'autre : aucun compteur, aucun zéro, aucun titre d'onglet —
+ * on ne connaît pas encore la réponse, on ne fait pas semblant.
+ *
+ * Le portillon ne monte la tab bar qu'une fois, tant que le club ne change pas :
+ * `useCoachLandingTab` ne retombe sur « pas décidable » qu'en cas de changement
+ * de club, où re-décider est justement ce qu'on veut.
+ */
+export default function CoachTabs() {
+  const onglet = useCoachLandingTab();
+
+  if (onglet === null) {
+    return (
+      <CoachScreen testID="coach-tabs-landing">
+        <View style={styles.landing}>
+          <CoachSkeleton variant="card" />
+          <CoachSkeleton variant="list" rows={4} />
+        </View>
+      </CoachScreen>
+    );
+  }
+
+  return <CoachTabsNavigator initialRouteName={onglet} />;
+}
+
+const styles = StyleSheet.create({
+  landing: { padding: coachSpacing.md, gap: coachSpacing.md },
+});

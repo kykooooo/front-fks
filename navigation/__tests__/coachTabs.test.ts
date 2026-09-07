@@ -21,8 +21,10 @@ describe("câblage des onglets coach", () => {
   });
 
   test("trois onglets, dans l'ordre Aujourd'hui / Effectif / Semaine", () => {
-    // L'ordre porte du sens : c'est aussi celui du balayage latéral, et
-    // « Aujourd'hui » doit rester l'écran d'atterrissage (premier onglet).
+    // L'ordre porte du sens : c'est celui du balayage latéral, et celui de
+    // lecture de la tab bar. Il ne dit PLUS où l'espace atterrit : depuis le
+    // 07/09, l'onglet d'ouverture se décide sur l'effectif
+    // (`domain/coachView/landing.ts`, testé dans coachTabsAtterrissage).
     expect(COACH_TAB_ORDER).toEqual(["CoachToday", "CoachRoster", "CoachWeek"]);
   });
 
