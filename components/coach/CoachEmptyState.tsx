@@ -21,12 +21,17 @@ import { type StyleProp, type ViewStyle } from "react-native";
 import { CoachStateBlock, type CoachStateAction } from "./CoachStateBlock";
 import type { CoachIconName, CoachStatusLevel } from "./coachTheme";
 
+// UNE VARIANTE = UN ÉCRAN QUI LA REND. Il n'y a pas de « copie de réserve »
+// ici : une variante que personne n'affiche n'est pas relue, personne ne la
+// corrige, et elle finit par promettre un bouton qui n'existe plus nulle part.
+// C'est ce qui était arrivé à `firstLogin` (elle proposait « Générer un code
+// d'invitation ») et à `noRecentData` (« Voir tout l'historique ») : deux
+// variantes que seul le test de couverture rendait encore. Un test de ce
+// fichier vérifie désormais que chaque variante est bien citée par un écran.
 export const COACH_EMPTY_VARIANTS = [
-  "firstLogin", // première connexion : le club existe, il est vide
   "clubWithoutPlayers", // personne n'a rejoint l'effectif — écran QUI PORTE le code
   "clubWithoutPlayersElsewhere", // idem, mais le code se génère sur un AUTRE écran
   "playerWithoutSession", // joueur inscrit, aucune séance terminée
-  "noRecentData", // rien sur la période affichée (l'historique existe peut-être)
   "syncPending", // projections en cours de préparation côté serveur
   "accessRestricted", // le serveur n'autorise pas l'accès au suivi de ce joueur
 ] as const;
@@ -45,14 +50,6 @@ const EMPTY_COPY: Record<CoachEmptyVariant, EmptyCopy> = {
   // NB : le libellé d'action ne dit plus « partager le code », mais
   // « générer » — un code n'existe plus tant que le coach ne l'a pas demandé,
   // et il n'est affiché qu'à ce moment-là.
-  firstLogin: {
-    icon: "clipboard-outline",
-    title: "Bienvenue dans ton espace",
-    body:
-      "Ton club est créé. Génère un code d'invitation et partage-le à tes joueurs : dès qu'ils rejoignent et terminent une séance, leur suivi apparaît ici.",
-    level: "unknown",
-    actionLabel: "Générer un code d'invitation",
-  },
   clubWithoutPlayers: {
     icon: "people-outline",
     title: "Aucun joueur dans l'effectif",
@@ -86,14 +83,6 @@ const EMPTY_COPY: Record<CoachEmptyVariant, EmptyCopy> = {
     body:
       "Ce joueur a rejoint le club mais n'a pas encore terminé de séance FKS. Il n'y a donc rien à lire : ce n'est pas un problème technique.",
     level: "unknown",
-  },
-  noRecentData: {
-    icon: "time-outline",
-    title: "Rien de récent à afficher",
-    body:
-      "Aucune séance terminée sur la période affichée. Les séances plus anciennes restent visibles dans la fiche de chaque joueur.",
-    level: "unknown",
-    actionLabel: "Voir tout l'historique",
   },
   syncPending: {
     icon: "sync-outline",
@@ -145,7 +134,13 @@ export function CoachEmptyState({
   style,
   testID,
 }: CoachEmptyStateProps) {
-  const copy = EMPTY_COPY[variant] ?? EMPTY_COPY.noRecentData;
+  // AUCUN REPLI SILENCIEUX. L'ancien `?? EMPTY_COPY.noRecentData` désignait une
+  // variante qui n'existe plus, et surtout il rendait la PHRASE D'UN AUTRE VIDE
+  // en cas de variante inconnue — un texte faux vaut moins qu'une erreur visible
+  // au développeur. `CoachEmptyVariant` est une union fermée, et les quatre
+  // écrans qui montent ce composant passent tous un littéral : le compilateur
+  // couvre entièrement le cas.
+  const copy = EMPTY_COPY[variant];
   const label = action?.label ?? copy.actionLabel;
 
   return (

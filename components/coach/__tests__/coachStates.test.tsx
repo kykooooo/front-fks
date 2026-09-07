@@ -6,6 +6,8 @@
 // donnée" générique recyclé partout), et aucune ne laisse le coach sans phrase.
 
 import React from "react";
+import { readFileSync, readdirSync } from "fs";
+import { resolve } from "path";
 import TestRenderer, { act } from "react-test-renderer";
 
 import { CoachEmptyState, COACH_EMPTY_VARIANTS } from "../CoachEmptyState";
@@ -52,6 +54,43 @@ describe("CoachEmptyState — chaque vide est nommé et expliqué", () => {
     }
   });
 
+  // LES TEXTES, MOT POUR MOT. Une variante d'état vide est une PHRASE que le
+  // coach lit dans un moment où il ne sait pas quoi faire : elle ne doit pas
+  // pouvoir changer par accident. Ce tableau est le contrat.
+  const TEXTES: Record<(typeof COACH_EMPTY_VARIANTS)[number], { titre: string; corps: string }> = {
+    clubWithoutPlayers: {
+      titre: "Aucun joueur dans l'effectif",
+      corps:
+        "Personne n'a encore rejoint le club. Générez un code d'invitation, partagez-le, et l'effectif se remplit au fur et à mesure des inscriptions.",
+    },
+    clubWithoutPlayersElsewhere: {
+      titre: "Aucun joueur pour l'instant.",
+      corps:
+        "Personne n'a encore rejoint le club. Chaque joueur y entre avec ton code d'invitation, qui se génère dans l'onglet Semaine.",
+    },
+    playerWithoutSession: {
+      titre: "Aucune séance pour l'instant",
+      corps:
+        "Ce joueur a rejoint le club mais n'a pas encore terminé de séance FKS. Il n'y a donc rien à lire : ce n'est pas un problème technique.",
+    },
+    syncPending: {
+      titre: "Synchronisation en cours",
+      corps:
+        "Les données de certains joueurs sont en cours de préparation. Elles apparaissent d'elles-mêmes dès qu'elles sont prêtes, sans rien faire de ton côté.",
+    },
+    accessRestricted: {
+      titre: "Suivi non accessible",
+      corps:
+        "Une étape reste à faire avant que le suivi de ce joueur soit consultable. Il fait partie de l'effectif et peut s'entraîner normalement : seul l'affichage de ses données est en attente.",
+    },
+  };
+
+  test.each(COACH_EMPTY_VARIANTS)("la variante %s affiche SES textes, mot pour mot", async (v) => {
+    const texte = await renderText(<CoachEmptyState variant={v} />);
+    expect(texte).toContain(TEXTES[v].titre);
+    expect(texte).toContain(TEXTES[v].corps);
+  });
+
   test("l'action n'apparaît que si l'écran en fournit une", async () => {
     const sans = await renderText(<CoachEmptyState variant="syncPending" />);
     expect(sans).not.toContain("Actualiser");
@@ -60,6 +99,25 @@ describe("CoachEmptyState — chaque vide est nommé et expliqué", () => {
       <CoachEmptyState variant="syncPending" action={{ onPress: () => {} }} />
     );
     expect(avec).toContain("Actualiser");
+  });
+});
+
+// ─── AUCUNE COPIE MORTE ──────────────────────────────────────────────────────
+// `firstLogin` et `noRecentData` ont vécu ici sans qu'AUCUN écran ne les rende :
+// seul le test de couverture ci-dessus les affichait encore. Une copie que
+// personne ne montre n'est relue par personne — `firstLogin` promettait
+// « Générer un code d'invitation » sur un écran qui n'en émet aucun, et
+// `noRecentData` un « Voir tout l'historique » qui n'existe nulle part. Elles
+// sont supprimées ; ce test empêche la situation de revenir.
+describe("CoachEmptyState — chaque variante est réellement rendue par un écran", () => {
+  const dossierEcrans = resolve(__dirname, "..", "..", "..", "screens", "coach");
+  const sources = readdirSync(dossierEcrans)
+    .filter((f) => f.endsWith(".tsx"))
+    .map((f) => readFileSync(resolve(dossierEcrans, f), "utf8"))
+    .join("\n");
+
+  test.each(COACH_EMPTY_VARIANTS)("la variante %s est citée par un écran coach", (v) => {
+    expect(sources).toContain(`"${v}"`);
   });
 });
 
