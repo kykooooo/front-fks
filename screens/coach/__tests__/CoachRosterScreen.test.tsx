@@ -443,8 +443,31 @@ describe("liste vide", () => {
     mockRoster.mockReturnValue(rosterReady([]));
     const r = await render();
     const t = texte(r);
-    expect(t).toContain("Aucun joueur dans l'effectif");
+    expect(t).toContain("Aucun joueur pour l'instant.");
+    expect(t).toContain(
+      "Personne n'a encore rejoint le club. Chaque joueur y entre avec ton code d'invitation, qui se génère dans l'onglet Semaine.",
+    );
     expect(t.toLowerCase()).not.toContain("erreur");
+  });
+
+  // L'IMPÉRATIF « GÉNÉREZ UN CODE » DÉSIGNAIT UN BOUTON ABSENT DE CET ÉCRAN.
+  // Il appartient à « Semaine », le seul écran qui porte l'émission. Recopié
+  // ici, il envoyait le coach chercher un bouton qui n'existe pas — et il était
+  // au passage le dernier vouvoiement de l'espace coach.
+  test("le vide du club ne commande plus une émission que cet écran ne porte pas", async () => {
+    mockRoster.mockReturnValue(rosterReady([]));
+    const r = await render();
+    const t = texte(r);
+    expect(t).not.toContain("Aucun joueur dans l'effectif");
+    expect(t).not.toContain("Générer un code d'invitation");
+    expect(t).not.toContain("Générez");
+  });
+
+  test("le bouton du club vide ouvre l'onglet Semaine, il n'émet aucun code", async () => {
+    mockRoster.mockReturnValue(rosterReady([]));
+    const r = await render();
+    await pressLabel(r, "Ouvrir l'onglet Semaine");
+    expect(mockNavigate).toHaveBeenCalledWith("CoachWeek", { clubId: "club-1" });
   });
 
   test("des projections en préparation proposent d'actualiser", async () => {

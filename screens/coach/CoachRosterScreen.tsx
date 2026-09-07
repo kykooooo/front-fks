@@ -43,6 +43,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
+import type { CompositeNavigationProp } from "@react-navigation/native";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { CoachScreen } from "../../components/coach/CoachScreen";
@@ -84,6 +86,9 @@ import { useCoachClub } from "../../hooks/coach/useCoachClub";
 import { useCoachRoster } from "../../hooks/coach/useCoachRoster";
 import { useHaptics } from "../../hooks/useHaptics";
 import type { CoachStackParamList } from "../../navigation/RootNavigator";
+// Type SEULEMENT : `import type` est effacé à la compilation, il n'y a donc
+// aucun cycle d'exécution avec `navigation/CoachTabs`, qui monte cet écran.
+import type { CoachTabsParamList } from "../../navigation/CoachTabs";
 
 /**
  * Plafond de lecture de l'effectif. Ce n'est PAS une copie : c'est la constante
@@ -120,7 +125,16 @@ const VOILE_TRANSPARENT = "rgba(246, 245, 242, 0)";
 /** Tolérance de mesure : sous 1 pt, la rangée est considérée en butée. */
 const BUTEE_TOLERANCE = 1;
 
-type CoachNavigation = NativeStackNavigationProp<CoachStackParamList>;
+/**
+ * Navigation de cet écran : il vit DANS la tab bar coach, elle-même posée dans
+ * le stack coach. Les deux niveaux sont donc déclarés — c'est ce qui rend
+ * `navigate("CoachWeek")` (un onglet frère) aussi typé que
+ * `navigate("CoachPlayerDetail")` (un écran du stack au-dessus).
+ */
+type CoachNavigation = CompositeNavigationProp<
+  BottomTabNavigationProp<CoachTabsParamList, "CoachRoster">,
+  NativeStackNavigationProp<CoachStackParamList>
+>;
 
 // ─── Copie des vides EXPLICATIFS ─────────────────────────────────────────────
 // Un filtre qui ne renvoie rien n'est pas une panne. Mais ce n'est pas non plus
@@ -353,6 +367,17 @@ export default function CoachRosterScreen({ filtreInitial = null }: CoachRosterS
     },
     [club.clubId, haptics, navigation],
   );
+
+  /**
+   * Ouvre l'onglet « Semaine ». Rien d'autre : c'est là qu'un code d'invitation
+   * s'émet, et cet écran-ci n'en émet AUCUN. Un déplacement d'onglet ne peut pas
+   * échouer — contrairement à une émission de code, qui peut être refusée.
+   */
+  const onOpenWeek = useCallback(() => {
+    if (!club.clubId) return;
+    haptics.impactLight();
+    navigation.navigate("CoachWeek", { clubId: club.clubId });
+  }, [club.clubId, haptics, navigation]);
 
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<CoachPlayerView>) => (
@@ -703,11 +728,29 @@ export default function CoachRosterScreen({ filtreInitial = null }: CoachRosterS
         </CoachScreen>
       );
     }
+    //
+    // LE VIDE DU CLUB SE DIT ICI AU MODE DESCRIPTIF, ET PAS À L'IMPÉRATIF.
+    // « Générez un code d'invitation » est la phrase de l'écran Semaine, le seul
+    // qui porte le bouton d'émission : là-bas, elle désigne un bouton présent
+    // sous les yeux du coach. Recopiée sur « Effectif », elle devient une
+    // consigne sans objet — le coach cherche un bouton qui n'existe pas sur cet
+    // écran. La variante « ailleurs » nomme donc l'endroit au lieu de commander,
+    // et son bouton ne fait qu'ouvrir l'onglet : il n'émet rien, donc il ne peut
+    // pas échouer.
     return (
       <CoachScreen testID="coach-roster">
         <CoachEmptyState
-          variant={roster.pendingCount > 0 ? "syncPending" : "clubWithoutPlayers"}
-          action={roster.pendingCount > 0 ? { onPress: roster.refresh } : null}
+          variant={roster.pendingCount > 0 ? "syncPending" : "clubWithoutPlayersElsewhere"}
+          action={
+            roster.pendingCount > 0
+              ? { onPress: roster.refresh }
+              : club.clubId
+                ? {
+                    onPress: onOpenWeek,
+                    accessibilityHint: "Ouvre l'onglet Semaine, où le code d'invitation se génère",
+                  }
+                : null
+          }
           testID="coach-roster-empty-club"
         />
       </CoachScreen>
