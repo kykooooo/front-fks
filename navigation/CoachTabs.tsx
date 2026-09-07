@@ -34,7 +34,7 @@
 // JOUEUR ouvre sur « Semaine » — voir `domain/coachView/landing.ts` pour le
 // pourquoi, et le composant de portillon en bas de ce fichier pour le comment.
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
@@ -187,10 +187,44 @@ export function CoachTabsNavigator({
 }
 
 /**
+ * LA SONDE D'ATTERRISSAGE : elle décide, elle le dit, elle disparaît.
+ *
+ * Elle ne rend RIEN. Son unique rôle est de porter `useCoachLandingTab` — donc
+ * la lecture d'effectif — pendant le temps de la décision, et pas une seconde
+ * de plus.
+ *
+ * POURQUOI UN COMPOSANT À PART, ET PAS LE HOOK DANS LE PORTILLON.
+ * `useCoachRoster` se relit AU FOCUS de l'écran (c'est sa fraîcheur, et elle est
+ * juste pour les trois écrans coach qui l'utilisent). Portée par le portillon,
+ * elle aurait vécu toute la session : chaque retour d'une fiche joueuse passé
+ * l'anti-rebond aurait relancé l'effectif ENTIER — une requête plus une par
+ * joueur, 26 lectures sur un effectif de 25 — pour un booléen déjà consommé,
+ * dont plus personne ne regardait le résultat.
+ *
+ * Ici, dès que la décision tombe, le portillon rend la tab bar À LA PLACE de la
+ * sonde. React démonte la sonde, donc le hook, donc son abonnement au focus. Il
+ * ne reste rien à relire. C'est vérifié : un test observe qu'aucun abonné au
+ * focus ne subsiste après la décision (navigation/__tests__/coachTabsSonde).
+ */
+function SondeAtterrissage({
+  onDecision,
+}: {
+  onDecision: (onglet: CoachLandingTab) => void;
+}) {
+  const onglet = useCoachLandingTab();
+
+  useEffect(() => {
+    if (onglet !== null) onDecision(onglet);
+  }, [onglet, onDecision]);
+
+  return null;
+}
+
+/**
  * PORTILLON D'ATTERRISSAGE.
  *
- * Il lit l'effectif (via `useCoachLandingTab`, qui délègue à la même couche que
- * les écrans), attend la réponse, PUIS monte la tab bar sur le bon onglet.
+ * Il fait décider la sonde, attend sa réponse, PUIS monte la tab bar sur le bon
+ * onglet — et la sonde disparaît avec le squelette.
  *
  * POURQUOI ATTENDRE PLUTÔT QUE CORRIGER APRÈS COUP. Monter « Aujourd'hui » puis
  * sauter sur « Semaine » afficherait un dixième de seconde d'écran vide avant de
@@ -199,18 +233,26 @@ export function CoachTabsNavigator({
  *
  * CE QUE LE SQUELETTE DIT, ET CE QU'IL NE DIT PAS. Il annonce « du contenu
  * arrive », rien d'autre : aucun compteur, aucun zéro, aucun titre d'onglet —
- * on ne connaît pas encore la réponse, on ne fait pas semblant.
+ * on ne connaît pas encore la réponse, on ne fait pas semblant. Et il est
+ * désormais bref : la taille d'effectif est mémorisée localement d'une session à
+ * l'autre, seule la toute première ouverture attend le réseau
+ * (services/memoireEffectifCoach).
  *
- * Le portillon ne monte la tab bar qu'une fois, tant que le club ne change pas :
- * `useCoachLandingTab` ne retombe sur « pas décidable » qu'en cas de changement
- * de club, où re-décider est justement ce qu'on veut.
+ * LA DÉCISION NE SE REJOUE PAS. Elle est gardée dans l'état du portillon : une
+ * fois prise, la sonde n'existe plus pour la remettre en cause, et
+ * `initialRouteName` — qui n'est lu qu'au montage du navigateur — ne peut plus
+ * être contredit. Un changement de club, lui, démonte tout l'espace coach en
+ * amont (`useAppSpace`), donc ce portillon repart de zéro.
  */
 export default function CoachTabs() {
-  const onglet = useCoachLandingTab();
+  const [onglet, setOnglet] = useState<CoachLandingTab | null>(null);
 
   if (onglet === null) {
     return (
       <CoachScreen testID="coach-tabs-landing">
+        {/* `setOnglet` vient de `useState` : son identité ne change jamais, la
+            sonde ne se réabonne donc pas à chaque rendu. */}
+        <SondeAtterrissage onDecision={setOnglet} />
         <View style={styles.landing}>
           <CoachSkeleton variant="card" />
           <CoachSkeleton variant="list" rows={4} />
