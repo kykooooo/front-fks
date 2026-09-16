@@ -58,9 +58,14 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
   - `expo-notifications` integre, service dans `services/notifications.ts`.
   - Rappels seance, streak, veille de match, recap hebdo.
   - Toggles dans Settings avec rollback UI.
-- **Accueil vNext + Progression refondue** (integration du prototype Home) :
-  - L'onglet Accueil monte `screens/homeVNext/` ; l'ancien `HomeScreen.tsx` reste
-    en repli derriere `HOME_FEATURES.VNEXT` (`config/homeFeatures.ts`).
+- **Accueil : l'ANCIEN `HomeScreen.tsx` est l'ecran actif** (bascule A du 16/08/2026,
+  commit 3722be2 : `HOME_FEATURES.VNEXT = false` dans `config/homeFeatures.ts`).
+  `screens/homeVNext/` reste dans le code, derriere le drapeau, et n'est PAS ce que
+  le joueur voit. L'ancien Home a ete enrichi sur place (carte « Ma progression »,
+  briques unifiees sur les predicats canoniques). *(Corrige 2026-09-16 : ce fichier
+  affirmait l'inverse.)*
+  - Les paragraphes ci-dessous decrivent le vNext tel qu'il a ete construit ; ils
+    restent vrais pour la page Progression et le ViewModel partage.
   - Page Progression rebatie sur le MEME ViewModel que la carte du Home : plus de
     hero forme amorce a ATL0/CTL0, plus de milestones deduits, plus de « record de
     streak ». Portee ecrite sous la courbe (« seances FKS uniquement »).
@@ -183,8 +188,8 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
     RootNavigator.tsx        # Auth flow + App flow + modals (transparentModal)
 
   /screens
-    HomeScreen.tsx            # ANCIEN accueil — repli seulement (HOME_FEATURES.VNEXT = false)
-    /homeVNext                # L'ACCUEIL REEL du joueur
+    HomeScreen.tsx            # L'ACCUEIL ACTIF du joueur depuis le 16/08 (HOME_FEATURES.VNEXT = false)
+    /homeVNext                # Accueil vNext, derriere le drapeau, PAS monte en prod
       HomeVNextContainer.tsx  # Ce que RootNavigator monte (lit les stores, cable les actions)
       HomeVNextScreen.tsx     # Le rendu pur (aucun store, recoit un ViewModel)
       viewModel.ts            # Contrat du Home : ce que l'ecran a le DROIT d'afficher
@@ -276,7 +281,8 @@ Application mobile de preparation physique personnalisee pour footballeurs, pilo
 Welcome -> Login/Register -> Setup profil (poste, niveau, pied fort, objectif, charge club/match, materiel, code club) -> Onboarding slides
 
 ### App (100% mode joueur, mode coach retire)
-- **Home (vNext)** : en-tete -> UN SEUL CTA (+ le « pourquoi » et le cycle) -> Ma semaine -> Ta forme -> Carte progression -> conseil -> sortie. Nouveau joueur : bloc « Premiere mission » a la place, qui disparait des la 1re seance terminee.
+- **Home actif = ancien `HomeScreen.tsx` enrichi** (depuis le 16/08, drapeau `VNEXT` a false). Le descriptif vNext ci-dessous ne s'applique que si le drapeau repasse a true.
+- **Home (vNext, derriere drapeau)** : en-tete -> UN SEUL CTA (+ le « pourquoi » et le cycle) -> Ma semaine -> Ta forme -> Carte progression -> conseil -> sortie. Nouveau joueur : bloc « Premiere mission » a la place, qui disparait des la 1re seance terminee.
   - Ce que le Home ne fait plus, et par decision : pas de pastille d'etat globale, pas de second CTA, pas de compteur de jours consecutifs (« Serie »), pas de courbe amorcee a ATL0/CTL0. Une donnee absente s'affiche comme absente — jamais un 0 de remplissage.
   - Le compteur hebdomadaire de seances FKS vit ICI et nulle part ailleurs (`domain/resumeCanonique.ts`).
 - **Cycles** : 1 seul cycle actif, choix/gestion via modal, recommandation basee sur objectif + tests
