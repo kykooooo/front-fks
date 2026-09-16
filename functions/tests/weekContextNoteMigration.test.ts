@@ -17,19 +17,17 @@
 //  8. aucun contenu de note dans la sortie ;
 //  9. si la suppression echoue, la copie n'est PAS conservee (tout ou rien) ;
 // 10. l'audit final prouve qu'il ne reste rien de lisible par un joueur ;
-// 11. VERROU MECANIQUE : WEEK_CONTEXT_CONTRACT_FIELDS colle exactement aux
-//     cles reellement ecrites par repositories/clubsRepo.saveClubWeekContext
-//     (front) — lu en PARSANT son source avec le compilateur TypeScript
-//     (`ts.createSourceFile`), jamais recopie a la main, et plus jamais par
-//     scan de texte. Fail-closed : l'en-tete de la section 11 donne son
-//     MODELE DE MENACE, ses trois gardes (G1/G2/G3) et les limites qui
-//     restent reelles — a lire avant de lui faire confiance ;
+// 11. VERROU : WEEK_CONTEXT_CONTRACT_FIELDS est GELE sur le schema historique
+//     (l'espace club a ete retire de l'application le 2026-09 : plus aucun
+//     client n'ecrit `weekContexts`), et un test verifie qu'aucun source de
+//     l'application ne nomme plus cette collection. L'ancien verrou AST sur
+//     repositories/clubsRepo.saveClubWeekContext vit dans l'historique git de
+//     la section 11 et doit revenir avec tout nouveau client qui ecrirait ;
 // 12. un champ HERITE CONNU (`createdAt`) est archive comme le reste mais
 //     n'est JAMAIS promu note visible : une date ISO n'est pas une note.
 
-import { readFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync } from "fs";
 import { join } from "path";
-import ts from "typescript";
 import {
   auditWeekContextNotes,
   CHAMPS_HERITES_CONNUS,
@@ -542,780 +540,107 @@ describe("l'outil reste un outil : aucune route reseau", () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// 11. VERROU — le contrat colle aux cles REELLEMENT ecrites par le front
+// 11. VERROU — le contrat est GELE, et plus aucun client ne l'ecrit
 // ════════════════════════════════════════════════════════════════════════════
 //
-// WEEK_CONTEXT_CONTRACT_FIELDS est une recopie a la main de ce qu'ecrit
-// repositories/clubsRepo.saveClubWeekContext (front). Une recopie a la main
-// derive en silence : c'est exactement comme ca que `createdAt` s'est retrouve
-// dans le contrat alors que saveClubWeekContext ne l'a JAMAIS ecrit (corrige le
-// 2026-07-31). Cette section lit le VRAI source de clubsRepo.ts et compare.
+// CE QUE CETTE SECTION ETAIT. WEEK_CONTEXT_CONTRACT_FIELDS etait une recopie a
+// la main de ce qu'ecrivait le front (repositories/clubsRepo.saveClubWeekContext).
+// Une recopie derive en silence (c'est comme ca que `createdAt` s'est retrouve
+// dans le contrat sans jamais etre ecrit, corrige le 2026-07-31) : cette
+// section PARSAIT donc le source de clubsRepo.ts avec le compilateur TypeScript
+// et comparait les cles ecrites au contrat, champ par champ, fail-closed.
 //
-// ── MODELE DE MENACE (a lire AVANT de faire confiance a ce verrou) ──────────
-// Ce verrou attrape la derive ACCIDENTELLE et les refactors ordinaires : on
-// ajoute un champ au payload, on renomme une cle, on deplace une ecriture, on
-// passe par un helper — et le contrat cote functions ne suit pas. C'est CA
-// qu'il protege, et c'est tout ce qu'il pretend proteger.
-// Un contributeur activement MALVEILLANT peut contourner n'importe quel test
-// qu'il peut editer (il edite le test, ou le contrat, ou les deux) : ce n'est
-// pas le sujet, et aucune analyse statique ne changera ca. Ce qui protege de
-// ce cas-la, ce sont les regles Firestore et la revue de code, pas ce fichier.
+// CE QUI A CHANGE (2026-09). L'espace club/coach a ete retire de l'application
+// joueur : `repositories/clubsRepo.ts` n'existe plus, et avec lui le SEUL
+// client qui ecrivait `clubs/{clubId}/weekContexts/{weekKey}`. Il n'y a plus
+// de source a verrouiller — et un verrou qui lit un fichier absent n'est pas un
+// verrou rouge, c'est une suite qui ne s'execute plus du tout (ENOENT avant le
+// premier test), ce qui aurait aussi eteint les sections 1 a 10 et 12.
 //
-// ── COMMENT (AST, plus aucun scan de texte) ─────────────────────────────────
-// Le source est PARSE par le compilateur TypeScript (`ts.createSourceFile`) et
-// toute l'analyse se fait sur l'AST. Cinq passes de regex ont perdu la course
-// contre la syntaxe JS : un leurre `function saveClubWeekContext(` glisse dans
-// un COMMENTAIRE, `(0, alias)(...)`, `ns["setDoc"](...)`, un tagged template,
-// et — dans l'autre sens — un FAUX POSITIF sur une simple apostrophe francaise
-// dans un commentaire. Un parseur ne se fait avoir par aucun des cinq : un
-// commentaire n'est pas un noeud, une apostrophe dans un commentaire n'existe
-// pas, et une forme d'appel exotique est un noeud d'un TYPE precis — donc
-// refusable explicitement plutot qu'ignoree en silence.
+// CE QUE LE VERROU GARDE DESORMAIS — deux faits, tous deux verifiables ici :
 //
-// Trois gardes, tous FAIL-CLOSED (en cas de doute le test TOMBE ; il ne
-// « passe » jamais en ayant vu MOINS que la realite) :
+//  V1. LE CONTRAT EST GELE. Les documents `weekContexts` qui existent en base
+//      sont HISTORIQUES : ils ont ete ecrits par l'ancien client avec exactement
+//      ces sept cles (relevees sur son payload reel avant sa suppression, cf.
+//      l'historique git de ce fichier). La migration et l'audit des sections
+//      1 a 10 continuent de les traiter ; le contrat qu'ils utilisent ne doit
+//      plus bouger, sinon un ancien document passerait pour porter un texte
+//      hors contrat (fausse alerte) — ou l'inverse (vraie note manquee).
 //
-//  G1. LA FONCTION EST TROUVEE DANS L'AST, jamais par `indexOf`. Une
-//      declaration commentee, ou son nom dans une chaine, ne sont pas des
-//      noeuds : invisibles. Zero declaration trouvee = echec (le verrou ne
-//      verrouille plus rien) ; plusieurs = echec aussi (il ne sait pas
-//      laquelle est la vraie).
+//  V2. PLUS AUCUN CODE DE L'APPLICATION N'ECRIT `weekContexts`. Si un client
+//      reapparait, ce test le voit et exige que le verrou AST d'origine revienne
+//      avec lui (il est dans l'historique git, section 11, avant 2026-09).
 //
-//  G2. LISTE BLANCHE FERMEE DES APPELS. Chaque `CallExpression` et chaque
-//      `TaggedTemplateExpression` du corps est examine, dans l'ordre du source :
-//        - callee = identifiant simple present dans `APPELS_AUTORISES` → tolere ;
-//        - callee = identifiant simple ABSENT de la liste → echec
-//          « appel non whitelisté » (helper local, alias d'import, `addDoc`,
-//          `writeBatch`, `runTransaction`…) ;
-//        - TOUTE autre forme de callee → echec « forme d'appel non
-//          analysable ». Par construction `(0, setDoc)(...)` (parenthesee),
-//          `ns["setDoc"](...)` (calculee), `batch.set(...)` (membre),
-//          `Object.assign(...)` (membre) et un tagged template tombent tous
-//          ici : le verrou ne pretend pas les comprendre, il les refuse.
-//
-//  G3. LE PAYLOAD EST L'ARGUMENT D'INDEX 1, ET C'EST UN OBJET LITTERAL.
-//      Pour chaque `setDoc`/`updateDoc`, `arguments[1]` DOIT etre un
-//      `ObjectLiteralExpression` — une variable, un ternaire, un `{...} as X`,
-//      un appel : echec. C'est ce qui ferme le bug de conception d'origine
-//      (localiser le payload par « la premiere accolade » faisait lire
-//      `{ merge: true }`, donc comparer le contrat a la cle `merge`).
-//      Les cles sont ensuite lues sur l'AST :
-//        - `PropertyAssignment` a nom identifiant OU chaine litterale — les
-//          DEUX sont parfaitement lisibles ici (`"champ-quote": v` est extrait
-//          et compare au contrat, la ou le scan de texte le rejetait) ;
-//        - `ShorthandPropertyAssignment` (`champCourt,`) ;
-//        - `SpreadAssignment` dont l'expression est un objet litteral :
-//          recursion, ses cles fusionnent au niveau du dessus comme a
-//          l'execution.
-//      Une cle CALCULEE (`[k]: v`) ou un spread d'expression NON litterale
-//      (`...opts.extra`, `...(cond ? {} : {})`) : echec explicite, jamais un
-//      silence — ils peuvent nommer n'importe quel champ.
-//      Une cle dont la valeur est `deleteField()` compte comme SUPPRIMEE, pas
-//      comme un champ du contrat (c'est le cas de `note`).
-//
-// ── LES LIMITES QUI RESTENT, ET ELLES SONT REELLES ──────────────────────────
-//  L1. PORTEE. Le verrou lit `saveClubWeekContext` et ELLE SEULE. Une ecriture
-//      dans `clubs/{clubId}/weekContexts/{weekKey}` faite depuis une autre
-//      fonction, un autre fichier, un script, ou l'Admin SDK cote serveur,
-//      n'est pas vue par ce test.
-//  L2. INTRA-PROCEDURAL. Le verrou ne suit pas ce que FAIT une fonction
-//      appelee ; G2 la refuse, il ne la comprend pas. Consequence directe :
-//      toute evolution legitime du code oblige a relire `APPELS_AUTORISES` a
-//      la main (le temoin `textesAppels` est la pour rendre ca visible).
-//  L3. CLES, PAS DONNEES. Ce verrou compare des NOMS DE CHAMPS. Ce qui est
-//      reellement stocke depend des valeurs a l'execution ; il ne dit rien de
-//      leur contenu.
-describe("11. VERROU — WEEK_CONTEXT_CONTRACT_FIELDS == cles ecrites par saveClubWeekContext", () => {
-  const CLUBS_REPO_PATH = join(__dirname, "..", "..", "repositories", "clubsRepo.ts");
-  const CLUBS_REPO_SOURCE = readFileSync(CLUBS_REPO_PATH, "utf8");
-  const NOM_FONCTION = "saveClubWeekContext";
+// ── LES LIMITES, ET ELLES SONT REELLES ─────────────────────────────────────
+//  L1. V2 cherche le nom de la collection dans les sources de l'application
+//      (fichiers .ts/.tsx hors tests, hors node_modules, hors ce dossier
+//      functions/ et hors firestore-tests/). Un chemin construit par
+//      concatenation ("week" + "Contexts") ou depuis un script hors depot lui
+//      echapperait. Ce qui protege de ce cas-la, ce sont les regles Firestore
+//      (aucun client ne peut ecrire cette collection depuis 2026-09 sans
+//      appartenance coach, elle-meme non fabricable cote client) et la revue.
+//  L2. V1 compare une LISTE, pas des donnees : ce qui est reellement stocke
+//      depend des documents en base, il ne dit rien de leur contenu.
+describe("11. VERROU — contrat GELE, plus aucun client n'ecrit weekContexts (espace club retire, 2026-09)", () => {
+  const RACINE_APP = join(__dirname, "..", "..");
 
   /**
-   * Les SEULS appels de fonction toleres dans le corps de
-   * `saveClubWeekContext`. Liste relevee sur le corps REEL (`doc`, `setDoc`,
-   * `deleteField`, `serverTimestamp`) puis figee, plus `updateDoc` qui est
-   * l'autre ecriture dont G3 sait lire le payload. Tout le reste fait tomber
-   * le test (cf. G2 / limite L2).
+   * Le schema HISTORIQUE, tel qu'ecrit par le dernier client (payload de
+   * saveClubWeekContext avant sa suppression) : `note` en deleteField(), donc
+   * jamais une cle ecrite ; `createdAt` jamais ecrit (2026-07-31).
    */
-  const APPELS_AUTORISES = new Set(["doc", "setDoc", "deleteField", "serverTimestamp", "updateDoc"]);
+  const CONTRAT_GELE = ["weekKey", "clubId", "createdBy", "trainingIntensity", "weekGoal", "matchThisWeekend", "updatedAt"];
 
-  /** Les deux appels dont le 2e argument EST le payload de donnees. */
-  const APPELS_ECRITURE = new Set(["setDoc", "updateDoc"]);
+  /** Dossiers de l'application a parcourir : tout sauf ce qui n'est pas du code client. */
+  const DOSSIERS_EXCLUS = new Set(["node_modules", ".claude", ".git", ".expo", "functions", "firestore-tests", "docs", "__tests__", "assets", "scripts", "plugins"]);
 
-  type ClesEcriture = { ecrites: string[]; supprimees: string[] };
-
-  /** Fonction analysable : declaration classique, ou fonction affectee a un const. */
-  type NoeudFonction = ts.FunctionDeclaration | ts.FunctionExpression | ts.ArrowFunction;
-
-  /** Ce dont toute l'analyse a besoin : l'arbre, la fonction, son corps. */
-  type CibleAnalyse = { sf: ts.SourceFile; fn: NoeudFonction; corps: ts.Node };
-
-  /** Extrait borne, pour garder les messages d'erreur lisibles. */
-  function extraitCourt(texte: string): string {
-    const plat = texte.replace(/\s+/g, " ").trim();
-    return plat.length > 160 ? `${plat.slice(0, 160)}…` : plat;
-  }
-
-  /**
-   * G1 — la fonction ciblee, retrouvee DANS L'AST du source fourni.
-   *
-   * `ts.createSourceFile` suffit : on n'a besoin d'aucune resolution de type,
-   * seulement de la forme syntaxique exacte. Les erreurs de syntaxe sont
-   * verifiees parce qu'un source a moitie parse produit un arbre a moitie vrai
-   * — et un verrou a moitie vrai est un verrou vert a tort.
-   */
-  function cible(source: string, nom = NOM_FONCTION): CibleAnalyse {
-    const sf = ts.createSourceFile("clubsRepo.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-    const diagnostics = (sf as unknown as { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics ?? [];
-    if (diagnostics.length > 0) {
-      throw new Error(
-        `clubsRepo.ts n'est pas parsable (${diagnostics.length} erreur(s) de syntaxe) : ` +
-          `le verrou refuse d'analyser un arbre incomplet`,
-      );
-    }
-
-    const trouves: NoeudFonction[] = [];
-    const visiter = (n: ts.Node): void => {
-      if (ts.isFunctionDeclaration(n) && n.name?.text === nom) trouves.push(n);
-      if (
-        ts.isVariableDeclaration(n) &&
-        ts.isIdentifier(n.name) &&
-        n.name.text === nom &&
-        n.initializer &&
-        (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer))
-      ) {
-        trouves.push(n.initializer);
-      }
-      ts.forEachChild(n, visiter);
-    };
-    visiter(sf);
-
-    if (trouves.length === 0) {
-      throw new Error(
-        `fonction ${nom} introuvable dans l'AST de clubsRepo.ts — ` +
-          `un nom en commentaire ou dans une chaine n'est PAS une declaration`,
-      );
-    }
-    if (trouves.length > 1) {
-      throw new Error(
-        `${trouves.length} declarations de ${nom} dans l'AST : le verrou ne sait pas laquelle verrouiller`,
-      );
-    }
-    const fn = trouves[0];
-    const corps = fn.body;
-    if (!corps) throw new Error(`la declaration de ${nom} n'a pas de corps`);
-    return { sf, fn, corps };
-  }
-
-  /**
-   * G2 — parcourt TOUS les appels du corps dans l'ordre du source et appelle
-   * `surAppel(nom)` pour chacun.
-   *
-   * FAIL-CLOSED sur la FORME : toute construction d'appel dont le callee n'est
-   * pas un identifiant simple leve immediatement. On ne peut pas confronter a
-   * une liste blanche ce qu'on ne sait pas nommer — `(0, setDoc)(...)`,
-   * `ns["setDoc"](...)`, `batch.set(...)` et les tagged templates sont donc
-   * refuses PAR CONSTRUCTION, sans avoir a les enumerer un par un (c'est
-   * exactement ce qu'une liste de motifs regex n'arrivait pas a faire).
-   *
-   * Le callee est examine AVANT de descendre dans les arguments : sur
-   * `runTransaction(db, async (tx) => tx.set(...))`, c'est `runTransaction`
-   * qui est signale, pas le `tx.set` interieur.
-   */
-  function parcourirAppels({ sf, corps }: CibleAnalyse, surAppel: (nom: string) => void): void {
-    const visiter = (n: ts.Node): void => {
-      if (ts.isTaggedTemplateExpression(n)) {
-        throw new Error(
-          `forme d'appel non analysable dans ${NOM_FONCTION} : ${extraitCourt(n.getText(sf))} ` +
-            `(tagged template : il appelle sa fonction sans parenthese)`,
-        );
-      }
-      if (ts.isCallExpression(n)) {
-        if (!ts.isIdentifier(n.expression)) {
-          throw new Error(
-            `forme d'appel non analysable dans ${NOM_FONCTION} : ${extraitCourt(n.expression.getText(sf))} — ` +
-              `seul un appel a un identifiant simple peut etre confronte a la liste blanche`,
-          );
-        }
-        surAppel(n.expression.text);
-      }
-      ts.forEachChild(n, visiter);
-    };
-    visiter(corps);
-  }
-
-  /** G2 — un seul appel hors liste blanche fait tomber le test. */
-  function verifierAppelsWhitelistes(c: CibleAnalyse): void {
-    parcourirAppels(c, (callee) => {
-      if (APPELS_AUTORISES.has(callee)) return;
-      throw new Error(
-        `appel non whitelisté dans ${NOM_FONCTION} : ${callee} — un helper ou un alias peut cacher une écriture`,
-      );
-    });
-  }
-
-  /**
-   * G3 — les objets litteraux passes en 2e ARGUMENT de chaque `setDoc`/
-   * `updateDoc` du corps, dans l'ordre. Une fonction peut ecrire plusieurs
-   * documents, ou le meme en plusieurs appels : ne regarder que le PREMIER
-   * laissait toute ecriture suivante hors radar.
-   */
-  function payloadsEcriture({ sf, corps }: CibleAnalyse): ts.ObjectLiteralExpression[] {
-    const payloads: ts.ObjectLiteralExpression[] = [];
-    const visiter = (n: ts.Node): void => {
-      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && APPELS_ECRITURE.has(n.expression.text)) {
-        const nomAppel = n.expression.text;
-        if (n.arguments.length < 2) {
-          throw new Error(
-            `${nomAppel}(...) : moins de 2 arguments, aucun payload en 2e position — "${extraitCourt(n.getText(sf))}"`,
-          );
-        }
-        const argument = n.arguments[1];
-        if (!ts.isObjectLiteralExpression(argument)) {
-          throw new Error(
-            `${nomAppel}(...) : le 2e argument n'est pas un objet litteral "{ ... }" ` +
-              `(${ts.SyntaxKind[argument.kind]}) — le verrou ne sait pas lire ce payload statiquement : ` +
-              `"${extraitCourt(argument.getText(sf))}"`,
-          );
-        }
-        payloads.push(argument);
-      }
-      ts.forEachChild(n, visiter);
-    };
-    visiter(corps);
-    return payloads;
-  }
-
-  /** Nom d'une cle de propriete, ou `null` si elle est CALCULEE (donc illisible ici). */
-  function nomDeCle(nom: ts.PropertyName): string | null {
-    if (ts.isIdentifier(nom)) return nom.text;
-    if (ts.isStringLiteral(nom) || ts.isNoSubstitutionTemplateLiteral(nom)) return nom.text;
-    if (ts.isNumericLiteral(nom)) return nom.text;
-    return null;
-  }
-
-  /** `deleteField()` — une SUPPRESSION de champ, pas un champ du contrat. */
-  function estDeleteField(expr: ts.Expression): boolean {
-    return (
-      ts.isCallExpression(expr) &&
-      ts.isIdentifier(expr.expression) &&
-      expr.expression.text === "deleteField" &&
-      expr.arguments.length === 0
-    );
-  }
-
-  function deparenthese(expr: ts.Expression): ts.Expression {
-    let courant = expr;
-    while (ts.isParenthesizedExpression(courant)) courant = courant.expression;
-    return courant;
-  }
-
-  /**
-   * G3 — cles portees par un objet litteral. `ecrites` porte une vraie valeur,
-   * `supprimees` porte un `deleteField()`.
-   *
-   * Toute propriete dont le nom ou la forme n'est pas lisible statiquement fait
-   * TOMBER l'extraction : rester vert en ayant vu moins de cles que le payload
-   * n'en ecrit vraiment est exactement le mode de defaillance que ce verrou
-   * doit rendre impossible.
-   */
-  function clesObjetLitteral(obj: ts.ObjectLiteralExpression, sf: ts.SourceFile): ClesEcriture {
-    const ecrites: string[] = [];
-    const supprimees: string[] = [];
-    for (const prop of obj.properties) {
-      if (ts.isPropertyAssignment(prop)) {
-        const cle = nomDeCle(prop.name);
-        if (cle === null) {
-          throw new Error(
-            `cle non lisible statiquement dans le payload de ${NOM_FONCTION} : ${extraitCourt(prop.getText(sf))} — ` +
-              `une cle calculee peut nommer n'importe quel champ`,
-          );
-        }
-        if (estDeleteField(prop.initializer)) supprimees.push(cle);
-        else ecrites.push(cle);
+  function fichiersSourcesApp(dossier: string, acc: string[] = []): string[] {
+    for (const entree of readdirSync(dossier, { withFileTypes: true })) {
+      if (entree.isDirectory()) {
+        if (DOSSIERS_EXCLUS.has(entree.name)) continue;
+        fichiersSourcesApp(join(dossier, entree.name), acc);
         continue;
       }
-      if (ts.isShorthandPropertyAssignment(prop)) {
-        ecrites.push(prop.name.text);
-        continue;
+      if (/\.(ts|tsx)$/.test(entree.name) && !/\.test\.tsx?$/.test(entree.name) && !/\.d\.ts$/.test(entree.name)) {
+        acc.push(join(dossier, entree.name));
       }
-      if (ts.isSpreadAssignment(prop)) {
-        const expression = deparenthese(prop.expression);
-        if (!ts.isObjectLiteralExpression(expression)) {
-          throw new Error(
-            `spread non lisible statiquement dans le payload de ${NOM_FONCTION} : ` +
-              `${extraitCourt(prop.getText(sf))} — seul un spread d'objet litteral revele ses cles`,
-          );
-        }
-        const trouve = clesObjetLitteral(expression, sf);
-        ecrites.push(...trouve.ecrites);
-        supprimees.push(...trouve.supprimees);
-        continue;
-      }
-      throw new Error(
-        `forme de propriete non reconnue dans le payload de ${NOM_FONCTION} : ${extraitCourt(prop.getText(sf))}`,
-      );
     }
-    return { ecrites: [...new Set(ecrites)], supprimees: [...new Set(supprimees)] };
+    return acc;
   }
 
-  /**
-   * Union des cles ECRITES et SUPPRIMEES par toutes les ecritures de
-   * `saveClubWeekContext`, lue dans le SOURCE fourni (le vrai fichier, ou une
-   * copie mutee en memoire).
-   *
-   * Fail-closed en quatre temps : G1 (fonction introuvable, ambigue, ou source
-   * non parsable), G2 (appel non whitelisté / forme non analysable), G3
-   * (payload ou cle non lisible), puis « aucune ecriture trouvee » — une
-   * fonction censee ecrire qui n'ecrit visiblement rien n'est pas un verrou qui
-   * passe, c'est un verrou qui ne verrouille plus rien.
-   */
-  function clesEcritesParSaveClubWeekContext(source: string): ClesEcriture {
-    const c = cible(source);
-    verifierAppelsWhitelistes(c);
-    const payloads = payloadsEcriture(c);
-    if (payloads.length === 0) {
-      throw new Error(`Aucune ecriture setDoc/updateDoc trouvee dans ${NOM_FONCTION}`);
-    }
-    const ecrites = new Set<string>();
-    const supprimees = new Set<string>();
-    for (const payload of payloads) {
-      const trouve = clesObjetLitteral(payload, c.sf);
-      trouve.ecrites.forEach((k) => ecrites.add(k));
-      trouve.supprimees.forEach((k) => supprimees.add(k));
-    }
-    return { ecrites: [...ecrites], supprimees: [...supprimees] };
+  /** Retire commentaires de ligne et de bloc : un commentaire qui cite la collection n'est pas une ecriture. */
+  function sansCommentaires(source: string): string {
+    return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:\\])\/\/.*$/gm, "$1");
   }
 
-  /** Texte des payloads d'ecriture — sonde de test, pour montrer CE QUI est lu. */
-  function textesPayloads(source: string): string[] {
-    const c = cible(source);
-    return payloadsEcriture(c).map((p) => p.getText(c.sf));
-  }
-
-  /** Noms des appels du corps, dans l'ordre — temoin de test de la liste blanche. */
-  function textesAppels(source: string): string[] {
-    const noms: string[] = [];
-    parcourirAppels(cible(source), (nom) => noms.push(nom));
-    return noms;
-  }
-
-  /** Message d'erreur leve par `fn`, ou "" si `fn` n'a rien leve. */
-  function messageLeve(fn: () => unknown): string {
-    try {
-      fn();
-      return "";
-    } catch (e) {
-      return (e as Error).message;
-    }
-  }
-
-  // ── OUTILLAGE DE MUTATION ────────────────────────────────────────────────
-  // Les preuves ci-dessous ne touchent JAMAIS le fichier sur disque : elles
-  // mutent une COPIE en memoire du texte source, puis relancent exactement la
-  // meme analyse. Les bornes de la fonction sont lues sur l'AST, donc une
-  // mutation atterrit toujours DANS `saveClubWeekContext` et nulle part
-  // ailleurs.
-
-  /**
-   * Applique `muter` au TEXTE de `saveClubWeekContext` et recolle le resultat
-   * dans une copie du source. Jette si la mutation est inoperante : une preuve
-   * par mutation qui n'a rien mute ne prouve rien (le fichier est en CRLF, un
-   * `\n` en dur dans un motif ne matcherait rien).
-   */
-  function muterFonction(source: string, muter: (texteFonction: string) => string): string {
-    const { sf, fn } = cible(source);
-    const debut = fn.getStart(sf);
-    const fin = fn.getEnd();
-    const avant = source.slice(debut, fin);
-    const apres = muter(avant);
-    if (apres === avant) {
-      throw new Error("mutation de test inoperante : le motif cible n'a pas matche dans saveClubWeekContext");
-    }
-    return source.slice(0, debut) + apres + source.slice(fin);
-  }
-
-  /** Fin de l'appel `setDoc` reel — point d'insertion d'une instruction supplementaire. */
-  const RE_FIN_APPEL_SETDOC = /\{ merge: true \}\r?\n\s*\);/;
-
-  /** Le payload REEL du `setDoc` (objet litteral, 2e argument), pour le remplacer. */
-  const RE_PAYLOAD_SETDOC = /(await setDoc\(\s*ref,\s*)(\{[\s\S]*?\},)(\s*\{ merge: true \})/;
-
-  /** Remplace le PAYLOAD du setDoc reel par autre chose, sur une copie en memoire. */
-  function remplacerPayload(source: string, remplacement: string): string {
-    return muterFonction(source, (texte) =>
-      texte.replace(RE_PAYLOAD_SETDOC, (_m, avant, _payload, apres) => `${avant}${remplacement}${apres}`),
-    );
-  }
-
-  /** Ajoute une instruction juste apres l'appel `setDoc` reel. */
-  function ajouterApresSetDoc(source: string, instruction: string): string {
-    return muterFonction(source, (texte) => texte.replace(RE_FIN_APPEL_SETDOC, (m) => `${m}\n  ${instruction}`));
-  }
-
-  /** Remplace la ligne `clubId: opts.clubId,` du payload reel par `texteInsere`. */
-  function insererDansPayload(source: string, texteInsere: string): string {
-    return muterFonction(source, (texte) => texte.replace("clubId: opts.clubId,", () => texteInsere));
-  }
-
-  /**
-   * Insere du texte JUSTE AVANT la vraie declaration (donc hors de la
-   * fonction). Le point d'insertion est lu sur l'AST, pas par `indexOf` sur le
-   * nom : sinon un leurre en commentaire — precisement ce que ces mutations
-   * fabriquent — capterait l'ancre et l'insertion atterrirait DANS le
-   * commentaire.
-   */
-  function insererAvantLaFonction(source: string, texteInsere: string): string {
-    const { sf, fn } = cible(source);
-    const debut = fn.getStart(sf);
-    return source.slice(0, debut) + texteInsere + source.slice(debut);
-  }
-
-  /**
-   * Echange les DEUX PREMIERES cles du payload reel, bornes lues sur l'AST.
-   * Volontairement independant des noms de champs : un reformatage doit rester
-   * vert quel que soit l'ordre dans lequel le fichier se trouve deja.
-   */
-  function reordonnerDeuxPremieresCles(source: string): string {
-    const c = cible(source);
-    const payload = payloadsEcriture(c)[0];
-    const [p1, p2] = payload.properties;
-    if (!p1 || !p2) throw new Error("mutation de test inoperante : moins de 2 cles dans le payload");
-    const d1 = p1.getStart(c.sf);
-    const d2 = p2.getStart(c.sf);
-    return (
-      source.slice(0, d1) +
-      source.slice(d2, p2.getEnd()) +
-      source.slice(p1.getEnd(), d2) +
-      source.slice(d1, p1.getEnd()) +
-      source.slice(p2.getEnd())
-    );
-  }
-
-  // ── LE CONTRAT, SUR LE FICHIER REEL ──────────────────────────────────────
-
-  test("G1 : saveClubWeekContext est une VRAIE declaration dans l'AST (sinon le verrou ne verrouille rien)", () => {
-    expect(() => cible(CLUBS_REPO_SOURCE)).not.toThrow();
+  test("V1 : WEEK_CONTEXT_CONTRACT_FIELDS est exactement le schema historique gele", () => {
+    expect([...WEEK_CONTEXT_CONTRACT_FIELDS].sort()).toEqual([...CONTRAT_GELE].sort());
   });
 
-  test("`note` est une SUPPRESSION (deleteField()), jamais une cle ecrite", () => {
-    const { ecrites, supprimees } = clesEcritesParSaveClubWeekContext(CLUBS_REPO_SOURCE);
-    expect(supprimees).toEqual(["note"]);
-    expect(ecrites).not.toContain("note");
-  });
-
-  test("LE VERROU : les cles ecrites == WEEK_CONTEXT_CONTRACT_FIELDS, exactement", () => {
-    const { ecrites } = clesEcritesParSaveClubWeekContext(CLUBS_REPO_SOURCE);
-    expect([...ecrites].sort()).toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
-  });
-
-  test("`createdAt` n'est plus dans le contrat — il n'a jamais ete ecrit par le code", () => {
-    // Le bug reel corrige ici : `createdAt` vivait dans le contrat sans jamais
-    // etre pose par saveClubWeekContext. Sans lui, un vieux document qui porte
-    // encore un `createdAt` d'une autre origine (ex: Admin SDK) n'est plus pris
-    // pour un champ legitime.
+  test("V1 : `note` et `createdAt` ne sont pas des cles du contrat (l'une est chassee, l'autre n'a jamais ete ecrite)", () => {
+    expect(WEEK_CONTEXT_CONTRACT_FIELDS).not.toContain("note");
     expect(WEEK_CONTEXT_CONTRACT_FIELDS).not.toContain("createdAt");
-    const { ecrites } = clesEcritesParSaveClubWeekContext(CLUBS_REPO_SOURCE);
-    expect(ecrites).not.toContain("createdAt");
   });
 
-  test("mord si le CONTRAT porte une cle que le code n'ecrit jamais (le bug `createdAt` reproduit)", () => {
-    // Reproduit l'incident sur une COPIE : le tableau reel exporte par le
-    // module n'est jamais modifie.
-    const contratAvecFantome = [...WEEK_CONTEXT_CONTRACT_FIELDS, "createdAt"];
-    const { ecrites } = clesEcritesParSaveClubWeekContext(CLUBS_REPO_SOURCE);
-    expect([...ecrites].sort()).not.toEqual([...contratAvecFantome].sort());
+  test("V2 : l'ancien client (repositories/clubsRepo.ts) n'existe plus dans l'application", () => {
+    // S'il revient, ce test rougit : c'est le signal de restaurer le verrou AST
+    // d'origine (historique git de cette section) avant tout merge.
+    expect(existsSync(join(RACINE_APP, "repositories", "clubsRepo.ts"))).toBe(false);
   });
 
-  test("temoin positif : chaque champ du contrat est bien ecrit, et rien de plus", () => {
-    // Sans ce temoin, un verrou trop strict pourrait rougir sur un simple
-    // reformatage du code sans qu'aucune derive reelle n'existe.
-    const { ecrites } = clesEcritesParSaveClubWeekContext(CLUBS_REPO_SOURCE);
-    for (const champ of WEEK_CONTEXT_CONTRACT_FIELDS) {
-      expect(ecrites).toContain(champ);
-    }
-    expect(ecrites.length).toBe(WEEK_CONTEXT_CONTRACT_FIELDS.length);
+  test("V2 : aucun source de l'application ne nomme plus la collection `weekContexts` hors commentaire", () => {
+    const fichiers = fichiersSourcesApp(RACINE_APP);
+    // Fail-closed : un parcours qui ne trouve rien n'a rien verifie.
+    expect(fichiers.length).toBeGreaterThan(100);
+    const fautifs = fichiers.filter((f) => /weekContexts/.test(sansCommentaires(readFileSync(f, "utf8"))));
+    expect(fautifs.map((f) => f.slice(RACINE_APP.length + 1))).toEqual([]);
   });
 
-  test("G3 temoin : le payload lu est bien le 2e argument, JAMAIS `{ merge: true }`", () => {
-    const c = cible(CLUBS_REPO_SOURCE);
-    const payloads = payloadsEcriture(c);
-    expect(payloads).toHaveLength(1);
-
-    const { ecrites } = clesObjetLitteral(payloads[0], c.sf);
-    expect(ecrites).toContain("weekKey");
-    expect(ecrites).toContain("trainingIntensity");
-    // La sonde : `merge` appartient au 3e argument (les options de setDoc). La
-    // verification porte sur les CLES EXTRAITES, pas sur le texte du payload —
-    // un commentaire qui contient le mot « merge » n'est pas une derive de
-    // contrat, et ne doit pas faire rougir le verrou.
-    expect(ecrites).not.toContain("merge");
-  });
-
-  test("G2 temoin : le corps reel n'appelle QUE des fonctions de la liste blanche", () => {
-    // La liste blanche est figee a la main : ce temoin la rend auditable et
-    // oblige a la relire si le code evolue (limite L2).
-    expect(textesAppels(CLUBS_REPO_SOURCE)).toEqual(["doc", "setDoc", "deleteField", "serverTimestamp"]);
-    for (const callee of textesAppels(CLUBS_REPO_SOURCE)) {
-      expect(APPELS_AUTORISES.has(callee)).toBe(true);
-    }
-  });
-
-  // ── LE VERROU MORD : DERIVE DE CLES ──────────────────────────────────────
-
-  test("mord si le CODE ecrit une cle absente du contrat (ex: futur champFantome)", () => {
-    const mute = insererDansPayload(CLUBS_REPO_SOURCE, "clubId: opts.clubId,\n      champFantome: opts.uid,");
-    const { ecrites } = clesEcritesParSaveClubWeekContext(mute);
-    expect(ecrites).toContain("champFantome");
-    expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
-  });
-
-  test("mord si une DEUXIEME ecriture (setDoc) ajoute une cle hors contrat", () => {
-    // `saveClubWeekContext` n'a aujourd'hui qu'une seule ecriture : cette
-    // mutation simule un futur ou elle en aurait deux.
-    const mute = ajouterApresSetDoc(
-      CLUBS_REPO_SOURCE,
-      "await setDoc(ref, { champFantomeDeuxiemeEcriture: opts.uid });",
-    );
-    const { ecrites } = clesEcritesParSaveClubWeekContext(mute);
-    expect(ecrites).toContain("champFantomeDeuxiemeEcriture");
-    expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
-  });
-
-  test("mord si une ecriture updateDoc ajoute une cle hors contrat", () => {
-    const mute = ajouterApresSetDoc(CLUBS_REPO_SOURCE, "await updateDoc(ref, { champFantomeUpdateDoc: opts.uid });");
-    const { ecrites } = clesEcritesParSaveClubWeekContext(mute);
-    expect(ecrites).toContain("champFantomeUpdateDoc");
-    expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
-  });
-
-  test("une cle QUOTEE est LUE et comparee au contrat (l'AST sait la lire, le scan de texte la rejetait)", () => {
-    // Progres net sur le scan de texte : `"champ-quote": v` n'est plus une
-    // « forme non reconnue » qui faisait rougir le verrou pour la mauvaise
-    // raison — c'est une cle, elle est extraite, et elle sort du contrat.
-    const mute = insererDansPayload(CLUBS_REPO_SOURCE, 'clubId: opts.clubId,\n      "champ-quote": opts.uid,');
-    const { ecrites } = clesEcritesParSaveClubWeekContext(mute);
-    expect(ecrites).toContain("champ-quote");
-    expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
-  });
-
-  test("une cle SHORTHAND (`champCourt,`) est lue comme une cle ecrite", () => {
-    const mute = muterFonction(CLUBS_REPO_SOURCE, (texte) =>
-      texte
-        .replace("const ref = doc(", () => "const champCourt = opts.uid;\n  const ref = doc(")
-        .replace("clubId: opts.clubId,", () => "clubId: opts.clubId,\n      champCourt,"),
-    );
-    const { ecrites } = clesEcritesParSaveClubWeekContext(mute);
-    expect(ecrites).toContain("champCourt");
-    expect([...ecrites].sort()).not.toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
-  });
-
-  test("un SPREAD d'objet litteral est deroule : ses cles et ses deleteField() remontent", () => {
-    const mute = insererDansPayload(
-      CLUBS_REPO_SOURCE,
-      "clubId: opts.clubId,\n      ...{ champSpreadLitteral: opts.uid, ancienChamp: deleteField() },",
-    );
-    const { ecrites, supprimees } = clesEcritesParSaveClubWeekContext(mute);
-    expect(ecrites).toContain("champSpreadLitteral");
-    expect([...supprimees].sort()).toEqual(["ancienChamp", "note"]);
-  });
-
-  // ── LE VERROU MORD : FORMES NON LISIBLES (FAIL-CLOSED) ───────────────────
-
-  test("fail-closed : une cle CALCULEE (`[expr]: v`) fait tomber le test, elle peut nommer n'importe quoi", () => {
-    const mute = insererDansPayload(CLUBS_REPO_SOURCE, "clubId: opts.clubId,\n      [opts.uid]: true,");
-    expect(messageLeve(() => clesEcritesParSaveClubWeekContext(mute))).toMatch(/cle non lisible statiquement/);
-  });
-
-  test("fail-closed : un SPREAD CONDITIONNEL n'est pas litteral, donc refuse (jamais ignore en silence)", () => {
-    // `...(opts.uid ? { champSpread: opts.uid } : {})` ajoute un champ tout
-    // aussi bien qu'un `cle: valeur`. Le scan de texte tentait de deviner les
-    // deux branches ; l'AST refuse net, parce qu'une branche non litterale
-    // rendrait l'extraction incomplete sans que personne ne le sache.
-    const mute = insererDansPayload(
-      CLUBS_REPO_SOURCE,
-      "clubId: opts.clubId,\n      ...(opts.uid ? { champSpread: opts.uid } : {}),",
-    );
-    const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
-    expect(message).toMatch(/spread non lisible statiquement/);
-    expect(message).toContain("champSpread");
-  });
-
-  test("fail-closed : le payload est un TERNAIRE (aucune des deux branches n'est lue en douce)", () => {
-    const mute = remplacerPayload(
-      CLUBS_REPO_SOURCE,
-      "opts.uid ? { champTernaireA: opts.uid } : { champTernaireB: opts.uid },",
-    );
-    const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
-    expect(message).toMatch(/le 2e argument n'est pas un objet litteral/);
-    expect(message).toContain("champTernaireA"); // le segment fautif est dans le message
-  });
-
-  test("fail-closed : le payload est une VARIABLE — et le message nomme la variable, pas `merge`", () => {
-    // LE cas qui prouve la correction du bug de conception d'origine : en
-    // localisant le payload par « la premiere accolade », ce corps mute donnait
-    // `ecrites === ["merge"]` sans rien lever, le verrou comparant le contrat
-    // aux OPTIONS de setDoc.
-    const mute = muterFonction(CLUBS_REPO_SOURCE, (texte) =>
-      texte
-        .replace(RE_PAYLOAD_SETDOC, (_m, avant, _payload, apres) => `${avant}payloadCache,${apres}`)
-        .replace("await setDoc(", () => "const payloadCache = { champCache: opts.uid };\n  await setDoc("),
-    );
-    const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
-    expect(message).toMatch(/le 2e argument n'est pas un objet litteral/);
-    expect(message).toContain("payloadCache");
-    expect(message).not.toContain("merge");
-  });
-
-  test("fail-closed : le payload est un `{...} as Record<string, unknown>`", () => {
-    const mute = remplacerPayload(CLUBS_REPO_SOURCE, "{ champCaste: opts.uid } as Record<string, unknown>,");
-    const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
-    expect(message).toMatch(/le 2e argument n'est pas un objet litteral/);
-    expect(message).toContain("champCaste");
-  });
-
-  test("fail-closed : un appel d'ecriture sans 2e argument du tout", () => {
-    const mute = ajouterApresSetDoc(CLUBS_REPO_SOURCE, "await updateDoc(ref);");
-    expect(messageLeve(() => clesEcritesParSaveClubWeekContext(mute))).toMatch(
-      /updateDoc\(\.\.\.\) : moins de 2 arguments/,
-    );
-  });
-
-  // ── LE VERROU MORD : APPELS (G2) ─────────────────────────────────────────
-
-  test("G2 mord si un HELPER LOCAL est appele (il pourrait ecrire sans qu'on le voie)", () => {
-    const mute = ajouterApresSetDoc(CLUBS_REPO_SOURCE, "await ecrireCadreHelper(ref, opts);");
-    // Le payload du vrai setDoc reste parfaitement lisible : sans G2, la suite
-    // resterait VERTE alors qu'une ecriture entiere est passee par le helper.
-    expect(() => textesPayloads(mute)).not.toThrow();
-    expect(messageLeve(() => clesEcritesParSaveClubWeekContext(mute))).toMatch(
-      /appel non whitelisté dans saveClubWeekContext : ecrireCadreHelper — un helper ou un alias peut cacher une écriture/,
-    );
-  });
-
-  test("G2 mord si setDoc est importe sous un ALIAS (`import { setDoc as ecrireDoc }`)", () => {
-    const mute = muterFonction(CLUBS_REPO_SOURCE, (texte) => texte.replace("await setDoc(", () => "await ecrireDoc("));
-    expect(messageLeve(() => clesEcritesParSaveClubWeekContext(mute))).toMatch(
-      /appel non whitelisté dans saveClubWeekContext : ecrireDoc/,
-    );
-  });
-
-  test("G2 mord sur addDoc / writeBatch / runTransaction (autres API d'ecriture Firestore)", () => {
-    for (const [instruction, attendu] of [
-      ['await addDoc(collection(db, "clubs"), { champAddDoc: opts.uid });', /addDoc/],
-      ["const batch = writeBatch(db);", /writeBatch/],
-      ["await runTransaction(db, async (tx) => { tx.set(ref, { x: 1 }); });", /runTransaction/],
-    ] as const) {
-      const mute = ajouterApresSetDoc(CLUBS_REPO_SOURCE, instruction);
-      const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
-      expect(message).toMatch(/appel non whitelisté/);
-      expect(message).toMatch(attendu);
-    }
-  });
-
-  test("G2 mord sur un appel de MEMBRE (`batch.set(...)`, `Object.assign(...)`) : forme non analysable", () => {
-    for (const [instruction, attendu] of [
-      ["batch.set(ref, { champBatch: opts.uid });", "batch.set"],
-      ["Object.assign(ref, { champAssign: opts.uid });", "Object.assign"],
-    ] as const) {
-      const mute = ajouterApresSetDoc(CLUBS_REPO_SOURCE, instruction);
-      const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
-      expect(message).toMatch(/forme d'appel non analysable dans saveClubWeekContext/);
-      expect(message).toContain(attendu);
-    }
-  });
-
-  // ── LES QUATRE PIEGES QUI AVAIENT BATTU LE SCAN DE TEXTE ─────────────────
-
-  test("PIEGE 1 — un LEURRE en commentaire ne deplace plus l'analyse (un commentaire n'est pas un noeud)", () => {
-    // La regex localisait la fonction par `indexOf("function saveClubWeekContext(")`
-    // : ce commentaire, place AVANT la vraie declaration, lui faisait analyser
-    // un faux corps. Pour un parseur il n'existe pas — le verrou reste VERT sur
-    // le vrai payload, et c'est le bon verdict.
-    const mute = insererAvantLaFonction(
-      CLUBS_REPO_SOURCE,
-      "// export async function saveClubWeekContext(opts: any) {\n" +
-        "//   await setDoc(ref, { champLeurre: opts.uid }, { merge: true });\n" +
-        "// }\n",
-    );
-    expect(mute).not.toBe(CLUBS_REPO_SOURCE);
-
-    const { ecrites, supprimees } = clesEcritesParSaveClubWeekContext(mute);
-    expect([...ecrites].sort()).toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
-    expect(supprimees).toEqual(["note"]);
-    expect(ecrites).not.toContain("champLeurre");
-  });
-
-  test("PIEGE 1bis — un VRAI doublon de declaration, lui, fait tomber le test (G1)", () => {
-    // Le pendant du leurre : si le nom apparait deux fois pour de vrai, le
-    // verrou ne choisit pas au hasard, il refuse.
-    const mute = insererAvantLaFonction(
-      CLUBS_REPO_SOURCE,
-      "export async function saveClubWeekContext(o: { uid: string }): Promise<void> {\n" +
-        "  await setDoc(doc(db), { champDoublon: o.uid }, { merge: true });\n" +
-        "}\n",
-    );
-    expect(messageLeve(() => clesEcritesParSaveClubWeekContext(mute))).toMatch(
-      /2 declarations de saveClubWeekContext dans l'AST/,
-    );
-  });
-
-  test("PIEGE 2 — `(0, alias)(...)` : callee parenthese, forme non analysable", () => {
-    // L'astuce classique pour appeler une fonction en cassant toute detection
-    // par nom. En AST le callee est une `ParenthesizedExpression` : refuse.
-    const mute = muterFonction(CLUBS_REPO_SOURCE, (texte) =>
-      texte.replace("await setDoc(", () => "await (0, setDoc)("),
-    );
-    const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
-    expect(message).toMatch(/forme d'appel non analysable dans saveClubWeekContext/);
-    expect(message).toContain("(0, setDoc)");
-  });
-
-  test('PIEGE 3 — `ns["setDoc"](...)` : callee calcule, forme non analysable', () => {
-    const mute = muterFonction(CLUBS_REPO_SOURCE, (texte) =>
-      texte.replace("await setDoc(", () => 'await ns["setDoc"]('),
-    );
-    const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
-    expect(message).toMatch(/forme d'appel non analysable dans saveClubWeekContext/);
-    expect(message).toContain('ns["setDoc"]');
-  });
-
-  test("PIEGE 4 — un TAGGED TEMPLATE appelle sa fonction sans parenthese : refuse aussi", () => {
-    const mute = ajouterApresSetDoc(CLUBS_REPO_SOURCE, "await ecrireCadre`setDoc ${ref}`;");
-    const message = messageLeve(() => clesEcritesParSaveClubWeekContext(mute));
-    expect(message).toMatch(/forme d'appel non analysable dans saveClubWeekContext/);
-    expect(message).toMatch(/tagged template/);
-  });
-
-  // ── LES DEUX ANTI-FAUX-POSITIFS ──────────────────────────────────────────
-  // Un verrou qui rougit pour la mauvaise raison finit desactive. Ces deux
-  // temoins fixent ce qui doit rester VERT.
-
-  test("ANTI-FAUX-POSITIF 1 — des commentaires francais (apostrophes comprises) ne changent RIEN", () => {
-    // La derniere passe de regex tombait sur l'apostrophe de « l'ecran » : elle
-    // la prenait pour une ouverture de chaine et avalait tout le reste du
-    // fichier. Un parseur ne lit meme pas l'interieur d'un commentaire.
-    const mute = insererDansPayload(
-      CLUBS_REPO_SOURCE,
-      "// on n'ecrit plus la note ici : c'est l'ecran coach qui s'en charge,\n" +
-        "      // et l'audit d'apres-coup n'en trouve plus rien qu'un joueur puisse lire\n" +
-        "      /* rappel : le merge conserve ce qu'on n'ecrit pas — d'ou le deleteField() */\n" +
-        "      clubId: opts.clubId, // idem, en fin de ligne, avec l'apostrophe qui va bien",
-    );
-
-    const { ecrites, supprimees } = clesEcritesParSaveClubWeekContext(mute);
-    expect([...ecrites].sort()).toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
-    expect(supprimees).toEqual(["note"]);
-    expect(textesAppels(mute)).toEqual(["doc", "setDoc", "deleteField", "serverTimestamp"]);
-  });
-
-  test("ANTI-FAUX-POSITIF 2 — reordonner les cles du payload reel ne change RIEN", () => {
-    // Le verrou compare des ENSEMBLES de cles : un reformatage n'est pas une
-    // derive de contrat, il ne doit pas rougir.
-    const mute = reordonnerDeuxPremieresCles(CLUBS_REPO_SOURCE);
-    expect(mute).not.toBe(CLUBS_REPO_SOURCE);
-    const { ecrites, supprimees } = clesEcritesParSaveClubWeekContext(mute);
-    expect([...ecrites].sort()).toEqual([...WEEK_CONTEXT_CONTRACT_FIELDS].sort());
-    expect(supprimees).toEqual(["note"]);
+  test("V2 : le code serveur de cette migration ne fabrique pas de nouveau document weekContexts (lecture, copie coach-only, suppression de champ seulement)", () => {
+    // Temoin sur l'API du module : aucune fonction de creation/ecriture de
+    // cadre de semaine n'est exposee — la migration deplace une note, elle
+    // n'ecrit jamais un cadre.
+    const api = Object.keys(require("../src/weekContextNoteMigration"));
+    expect(api.filter((k) => /save|create|write|upsert/i.test(k))).toEqual([]);
   });
 });

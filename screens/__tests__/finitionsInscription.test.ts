@@ -4,8 +4,7 @@
 //
 // Chacune est minuscule et chacune trompe quelqu'un :
 //  . `autoComplete="name"` sur un champ Prénom → iOS propose le NOM COMPLET du
-//    contact, la valeur devient `firstName` et le coach lit « Kyllian Le Bris »
-//    dans son effectif (P2-02) ;
+//    contact, la valeur devient `firstName` (P2-02) ;
 //  . trois codes Firebase non traités → un message par défaut qui envoie relire
 //    une saisie parfaitement juste, indéfiniment (P2-03) ;
 //  . `aaaaaaaaaa` affiché « Fort » (P2-04) ;
@@ -39,13 +38,11 @@ describe("champs de saisie — le bon jeton d'autoremplissage", () => {
     expect(lire("screens/RegisterScreen.tsx")).not.toContain('autoComplete="name"');
   });
 
-  test("le code club ne reçoit aucune suggestion du trousseau", () => {
+  test("le questionnaire ne demande plus aucun code club (espace club retiré, 2026-09)", () => {
     const setup = lire("screens/ProfileSetupScreen.tsx");
-    const champ = setup.slice(setup.indexOf('placeholder="Ex: ABCDE-FGHJK"'));
-    const bloc = champ.slice(0, 700);
-    expect(bloc).toContain('autoComplete="off"');
-    expect(bloc).toContain('autoCapitalize="characters"');
-    expect(bloc).toContain("autoCorrect={false}");
+    expect(setup).not.toContain('placeholder="Ex: ABCDE-FGHJK"');
+    expect(setup).not.toContain("Code club");
+    expect(setup).not.toContain("clubInviteCode");
   });
 
   test("le prénom déjà donné à l'inscription est annoncé comme tel, et reste corrigeable", () => {
@@ -162,13 +159,12 @@ describe("objectif « encaisser » — désaccentué à l'écriture, reconnu à 
 });
 
 describe("agrandissement du texte — les blocs à réserve fixe sont bornés", () => {
-  test("les cinq écrans du parcours posent un plafond sur leurs textes contraints", () => {
+  test("les quatre écrans du parcours posent un plafond sur leurs textes contraints", () => {
     for (const chemin of [
       "screens/WelcomeScreen.tsx",
       "screens/LoginScreen.tsx",
       "screens/RegisterScreen.tsx",
       "screens/ProfileSetupScreen.tsx",
-      "screens/CoachOnboardingScreen.tsx",
     ]) {
       const source = lire(chemin);
       expect(source).toContain("const PLAFOND_TITRE = 1.2;");

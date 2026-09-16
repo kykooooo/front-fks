@@ -19,14 +19,13 @@ import { resolve } from "path";
 const racine = resolve(__dirname, "..", "..");
 const lire = (rel: string) => readFileSync(resolve(racine, rel), "utf8");
 
+// Les écrans et messages de l'espace club/coach (création de club, entrée
+// coach, messages de rattachement) sont partis avec lui (2026-09).
 const ECRANS = [
   "screens/WelcomeScreen.tsx",
   "screens/LoginScreen.tsx",
   "screens/RegisterScreen.tsx",
   "screens/ProfileSetupScreen.tsx",
-  "screens/CoachOnboardingScreen.tsx",
-  "components/auth/CoachEntryLink.tsx",
-  "domain/clubJoinMessages.ts",
 ];
 
 /** Les valeurs `title:` / `message:` des toasts, telles qu'elles s'affichent. */
@@ -63,43 +62,40 @@ describe("aucun code interne ne fuit vers le joueur", () => {
 
 describe("les textes décidés sont bien là, mot pour mot", () => {
   const attendus: Array<[string, string]> = [
-    ["components/auth/CoachEntryLink.tsx", "Tu es coach ?"],
-    ["screens/ProfileSetupScreen.tsx", "Ton profil est enregistré."],
-    ["domain/clubJoinMessages.ts", "Le code club n'a pas été reconnu."],
-    ["domain/clubJoinMessages.ts", "Impossible de vérifier le code pour l'instant."],
-    ["screens/ProfileSetupScreen.tsx", "Réessayer le code"],
-    ["screens/ProfileSetupScreen.tsx", "Plus tard"],
-    ["screens/ProfileScreen.tsx", "Aucun club — rejoindre avec un code"],
-    ["domain/clubJoinMessages.ts", "En attente de validation du coach."],
+    ["screens/ProfileSetupScreen.tsx", "Profil enregistré"],
+    ["screens/RegisterScreen.tsx", "Configure ton profil et lance ta première séance."],
     [
       "screens/NewSessionScreen.tsx",
       "Complète ton profil pour des séances adaptées à ta catégorie.",
-    ],
-    ["screens/CoachOnboardingScreen.tsx", "La création a peut-être abouti, on vérifie"],
-    [
-      "navigation/RootNavigator.tsx",
-      "Ton compte est un compte joueur. Pour créer un club, utilise un autre compte.",
     ],
   ];
 
   test.each(attendus)("%s contient « %s »", (chemin, texte) => {
     expect(lire(chemin)).toContain(texte);
   });
+
+  // L'ESPACE CLUB / COACH EST RETIRÉ DU PARCOURS (2026-09) : aucun écran de
+  // l'inscription ne parle plus de code club, de rôle ou de rattachement.
+  const interdits: Array<[string, string]> = [
+    ["screens/WelcomeScreen.tsx", "Je suis coach"],
+    ["screens/LoginScreen.tsx", "Tu es coach"],
+    ["screens/RegisterScreen.tsx", "Tu es coach"],
+    ["screens/RegisterScreen.tsx", "Rejoins ton club"],
+    ["screens/ProfileSetupScreen.tsx", "Code club"],
+    ["screens/ProfileSetupScreen.tsx", "Crée ton club"],
+    ["screens/ProfileScreen.tsx", "Mon club"],
+    ["screens/SettingsScreen.tsx", "Passer en espace coach"],
+  ];
+
+  test.each(interdits)("%s ne contient plus « %s »", (chemin, texte) => {
+    expect(lire(chemin)).not.toContain(texte);
+  });
 });
 
 describe("conventions du projet sur ces écrans", () => {
   test("les notifications passent par showToast, jamais par Alert.alert", () => {
     for (const chemin of ECRANS) {
-      const source = lire(chemin);
-      if (chemin.endsWith("CoachOnboardingScreen.tsx")) {
-        // SEULE exception assumée : la CONFIRMATION avant création de club
-        // (décision Kyllian 15/08) — un choix bloquant à deux boutons, ce
-        // qu'un toast ne sait pas faire.
-        const alertes = source.match(/Alert\.alert\(/g) ?? [];
-        expect(alertes).toHaveLength(1);
-        continue;
-      }
-      expect(source).not.toContain("Alert.alert(");
+      expect(lire(chemin)).not.toContain("Alert.alert(");
     }
   });
 

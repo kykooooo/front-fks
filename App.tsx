@@ -11,11 +11,11 @@ import { setThemeMode } from "./constants/theme";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { setupGlobalErrorHandlers } from "./utils/globalErrorHandler";
 import { initSentry } from "./services/monitoring";
-import { initAnalytics } from "./services/analytics";
+import { initAnalytics, setAnalyticsEnabled } from "./services/analytics";
 import { ToastHost } from "./components/ui/ToastHost";
 import { OfflineBanner } from "./components/OfflineBanner";
 import { setupAutoSync, teardownAutoSync } from "./utils/offlineQueue";
-import { registerForPushNotifications, scheduleAllNotifications, isNotificationPermissionGranted } from "./services/notifications";
+import { createNotificationSync, installNotificationSync } from "./services/notificationSync";
 import { auth } from "./services/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { applyFeedback } from "./state/orchestrators/applyFeedback";
@@ -58,6 +58,8 @@ const linking: LinkingOptions<AppStackParamList> = {
 export default function App() {
   const themeMode = useSettingsStore((s) => s.themeMode);
   const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
+  const sessionReminders = useSettingsStore((s) => s.sessionReminders);
+  const privacyAnalytics = useSettingsStore((s) => s.privacyAnalytics);
   const hydrated = useSettingsStore((s) => s._hydrated);
   const [Navigator, setNavigator] = useState<React.ComponentType | null>(null);
 
@@ -84,32 +86,68 @@ export default function App() {
   // activées ». On suit l'état auth réel : l'effet rejoue quand l'utilisateur
   // se connecte.
   const [authUid, setAuthUid] = useState<string | null>(auth.currentUser?.uid ?? null);
-  useEffect(() => onAuthStateChanged(auth, (u) => setAuthUid(u?.uid ?? null)), []);
+  // `authResolved` : Firebase a répondu au moins une fois. Avant, `null` veut
+  // dire « on ne sait pas encore », pas « déconnecté » — on n'annule rien dessus.
+  const [authResolved, setAuthResolved] = useState(false);
+  useEffect(
+    () =>
+      onAuthStateChanged(auth, (u) => {
+        setAuthUid(u?.uid ?? null);
+        setAuthResolved(true);
+      }),
+    [],
+  );
+
+  // ── RAPPELS : UNE SEULE COORDINATION, QUI RELIT L'ÉTAT COURANT ──────────
+  // Le contexte est lu par référence (jamais capturé) : une opération lancée
+  // avant une déconnexion ou une bascule OFF se voit périmée et n'écrit rien
+  // (cf. services/notificationSync). Le token push est lancé à côté, jamais
+  // attendu.
+  // Le contexte est PUBLIÉ à la coordination après chaque rendu (jamais lu
+  // pendant), avant l'effet de réconciliation : les opérations en vol relisent
+  // l'état du moment, jamais celui capturé à leur départ.
+  const [sync] = useState(() => createNotificationSync());
+  useEffect(() => {
+    sync.setContext({ authResolved, uid: authUid, notificationsEnabled, sessionReminders });
+  });
+  useEffect(() => {
+    installNotificationSync(sync);
+  }, [sync]);
+
+  useEffect(() => {
+    if (!hydrated || !authResolved) return;
+    // Réconciliation à CHAQUE changement pertinent, état OFF et déconnexion
+    // compris : des rappels programmés par une ancienne version ou une session
+    // précédente ne survivent pas à un démarrage où ils ne sont plus voulus.
+    // À la connexion avec la préférence ON, la permission est demandée si elle
+    // ne l'a jamais été (jamais avant qu'un compte soit connecté).
+    void sync.reconcile({
+      requestPermission: Boolean(authUid && notificationsEnabled),
+      onPermissionDenied: () => {
+        // Permission refusée : refléter l'état réel dans Réglages plutôt que
+        // d'afficher « Notifications » ON pour des rappels qui ne partiront
+        // jamais. Un OFF→ON manuel depuis Réglages redemandera la permission.
+        useSettingsStore.getState().updateSettings({ notificationsEnabled: false });
+      },
+    });
+  }, [sync, hydrated, authResolved, authUid, notificationsEnabled, sessionReminders]);
+
+  // ANALYTICS — jamais avant l'hydratation des préférences, et toujours avec la
+  // préférence RESTAURÉE : un joueur qui a refusé les statistiques ne voit pas
+  // le SDK démarrer « par défaut » pendant la seconde où le disque répond.
+  // Un changement ultérieur (Réglages) est répercuté sans réinitialiser.
+  useEffect(() => {
+    if (!hydrated) return;
+    initAnalytics({ enabled: privacyAnalytics });
+    setAnalyticsEnabled(privacyAnalytics);
+  }, [hydrated, privacyAnalytics]);
 
   useEffect(() => {
     if (!hydrated) return;
     setThemeMode(themeMode);
     const Root = require("./navigation/RootNavigator").default;
     setNavigator(() => Root);
-    initAnalytics();
-    if (authUid && notificationsEnabled) {
-      // Ne pas afficher la popup permissions avant connexion utilisateur.
-      registerForPushNotifications().then(async () => {
-        // Le token push peut être null pour d'autres raisons (web, projectId
-        // absent) : c'est la PERMISSION qui décide des rappels locaux.
-        const granted = await isNotificationPermissionGranted();
-        if (granted === true) {
-          scheduleAllNotifications();
-        } else if (granted === false) {
-          // Permission refusée : refléter l'état réel dans Réglages plutôt
-          // que d'afficher « Notifs activées » pour des notifications qui ne
-          // partiront jamais. Un OFF→ON manuel depuis Réglages redemandera
-          // la permission (chemin déjà géré là-bas).
-          useSettingsStore.getState().updateSettings({ notificationsEnabled: false });
-        }
-      });
-    }
-  }, [hydrated, themeMode, notificationsEnabled, authUid]);
+  }, [hydrated, themeMode]);
 
   if (!hydrated || !Navigator) {
     return (

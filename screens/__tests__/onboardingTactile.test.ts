@@ -27,9 +27,10 @@ import { resolve } from "path";
 const racine = resolve(__dirname, "..", "..");
 const lire = (rel: string) => readFileSync(resolve(racine, rel), "utf8");
 
+// L'écran « création de club » (CoachOnboardingScreen) est parti avec l'espace
+// coach (2026-09) : il ne reste qu'un écran d'onboarding, le setup joueur.
 const ECRANS = {
   "setup joueur": "screens/ProfileSetupScreen.tsx",
-  "création de club": "screens/CoachOnboardingScreen.tsx",
 } as const;
 
 describe("plus aucun wrapper n'avale les taps", () => {
@@ -106,7 +107,7 @@ describe("couverture haptique — tout ce qui se tape répond au doigt", () => {
   test("setup joueur : les commandes hors briques vibrent aussi", () => {
     const source = lire(ECRANS["setup joueur"]);
     // Chacune ouvre ou ferme quelque chose de plein écran ; aucune n'avait de
-    // retour au doigt avant ce lot (sauf le lien coach, déjà couvert).
+    // retour au doigt avant ce lot.
     const commandes: Array<[string, string]> = [
       ["cycle (Gérer / Choisir)", 'navigation.navigate("CycleModal"'],
       ["politique de confidentialité", "setPrivacyVisible(true)"],
@@ -115,7 +116,6 @@ describe("couverture haptique — tout ce qui se tape répond au doigt", () => {
       // modale (bouton retour matériel Android). Celui-là n'a volontairement pas
       // de retour haptique — ce n'est pas un tap sur l'écran.
       ["fermeture de la modale", 'accessibilityLabel="Fermer"'],
-      ["lien coach", 'navigation.navigate("CoachOnboarding")'],
     ];
     for (const [nom, ancre] of commandes) {
       const index = source.indexOf(ancre);
@@ -127,37 +127,12 @@ describe("couverture haptique — tout ce qui se tape répond au doigt", () => {
     }
   });
 
-  test("création de club : le geste de sortie vibre, et le bouton principal aussi", () => {
-    const source = lire(ECRANS["création de club"]);
-    const bloc = source.slice(source.indexOf("const handleSortie = () => {"));
-    expect(bloc.slice(0, 200)).toContain("haptics.impactLight()");
-    // Le bouton « Créer mon club » passe par <Button>, qui porte son propre
+  test("setup joueur : le bouton principal vibre via <Button>", () => {
+    // « Terminer » / « Suivant » passent par <Button>, qui porte son propre
     // impactLight (components/ui/Button.tsx) — on le vérifie plutôt que de le
     // dupliquer ici.
-    expect(source).toContain("<Button");
+    expect(lire(ECRANS["setup joueur"])).toContain("<Button");
     expect(lire("components/ui/Button.tsx")).toContain("haptics.impactLight()");
-  });
-
-  test("création de club : la déconnexion et l'échec de création restent audibles", () => {
-    // `handleCreate` n'est plus async : depuis la confirmation obligatoire
-    // (décision 15/08), il ouvre l'Alert et c'est `doCreate` qui porte l'appel
-    // réseau — et donc les haptics succès/échec.
-    const source = lire(ECRANS["création de club"]);
-    for (const handler of ["const handleLogout = async", "const handleCreate = ", "const doCreate = async"]) {
-      expect(source.indexOf(handler)).toBeGreaterThanOrEqual(0);
-      const bloc = source.slice(source.indexOf(handler));
-      expect(bloc.slice(0, 1200)).toMatch(/haptics\.(impactLight|success|error)\(\)/);
-    }
-  });
-});
-
-describe("cibles tactiles — la zone tapable dépasse le pixel du glyphe", () => {
-  test("création de club : les deux commandes d'en-tête ont un hitSlop", () => {
-    // Deux icônes 18-20px dans une barre : sans hitSlop, la cible réelle est très
-    // en-dessous des 44pt recommandés.
-    const source = lire(ECRANS["création de club"]);
-    const entete = source.slice(source.indexOf("styles.headerRow"), source.indexOf("styles.header}"));
-    expect((entete.match(/hitSlop=/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 });
 

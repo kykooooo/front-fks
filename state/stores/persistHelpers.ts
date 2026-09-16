@@ -9,7 +9,7 @@ import type { Session } from "../../domain/types";
 // Le front applique quelques ajustements côté planification (proximité club,
 // charge élevée). On émet des TOKENS STABLES (pas de texte lisible, JAMAIS de
 // "TSB ...") pour que la persistance reste propre et traduisible par
-// domain/coachLabels.ts. Pur → testable sans firebase.
+// functions/src/coachLabels.ts (projection serveur). Pur → testable sans firebase.
 
 export type PlannedGuardrailInput = {
   clubToday: boolean;

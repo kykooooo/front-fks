@@ -1,10 +1,11 @@
 // utils/__tests__/withTimeout.test.ts
 //
-// LE DÉLAI DE GARDE DES OVERLAYS BLOQUANTS (P1-05 / P1-27 inventaire clubs).
+// LE DÉLAI DE GARDE DE L'OVERLAY BLOQUANT DU SETUP (P1-05).
 // Firestore hors-ligne laisse `setDoc` PENDANT indéfiniment (ack serveur
-// requis, jamais de reject) : « Terminer » du setup et « Créer mon club »
-// gelaient leur overlay à jamais. withTimeout borne l'attente sans annuler
-// l'écriture (elle peut atterrir après coup, latency compensation — voulu).
+// requis, jamais de reject) : « Terminer » du setup gelait son overlay à
+// jamais. withTimeout borne l'attente sans annuler l'écriture (elle peut
+// atterrir après coup, latency compensation — voulu). L'autre overlay borné
+// (« Créer mon club ») est parti avec l'espace coach (2026-09).
 
 import { readFileSync } from "fs";
 import { resolve } from "path";
@@ -38,42 +39,24 @@ describe("withTimeout — exécuté", () => {
   });
 });
 
-describe("les deux overlays bloquants passent par le délai de garde (source)", () => {
+describe("l'overlay bloquant du setup passe par le délai de garde (source)", () => {
   const racine = resolve(__dirname, "..", "..");
   const lire = (rel: string) => readFileSync(resolve(racine, rel), "utf8");
 
-  // UNE BORNE PAR DÉPENDANCE, JAMAIS UNE SEULE SUR L'ENSEMBLE (R1 du round 3).
-  // L'enveloppe globale faisait partager UN chronomètre à l'écriture du profil
-  // et à la callable de rattachement : un `setDoc` lent puis une callable lente
-  // (cold start Cloud Functions gen2) sortaient en `TimeoutError`, drapeau
-  // baissé, portillon tombé, accueil — et le toast « Impossible d'enregistrer
-  // pour le moment » alors que le profil ÉTAIT enregistré.
-  test("setup profil : les DEUX dépendances sont bornées séparément", () => {
+  test("setup profil : l'écriture du profil est bornée à 15 s, la saisie conservée", () => {
     const source = lire("screens/ProfileSetupScreen.tsx");
     // L'écriture du profil : un dépassement remonte, et le message est juste.
-    expect(source).toMatch(/saveProfile: \(\) =>\s*\n?\s*withTimeout\(setDoc\(/);
+    expect(source).toMatch(/await withTimeout\(setDoc\(/);
     expect(source).toMatch(/\{ merge: true \}\)\.then\(\(\) => undefined\), 15000\)/);
-    // Le rattachement : un dépassement est rattrapé par le try/catch de
-    // `saveProfileThenAttachClub` → carte « Impossible de vérifier le code ».
-    expect(source).toMatch(
-      /joinClub: \(code\) => withTimeout\(joinClubWithInviteCode\(code\), 20000\)/,
-    );
     expect(source).toContain("Tes réponses sont conservées — réessaie dans un instant.");
     expect(source).toMatch(/error instanceof TimeoutError/);
   });
 
-  test("setup profil : l'ancienne enveloppe globale est INTERDITE", () => {
+  test("setup profil : plus aucun rattachement club n'est enchaîné à l'écriture", () => {
+    // L'espace club est retiré (2026-09) : une seule dépendance réseau, une
+    // seule borne. Aucune callable de rattachement ne peut plus geler l'écran.
     const source = lire("screens/ProfileSetupScreen.tsx");
-    expect(source).not.toMatch(/withTimeout\(\s*saveProfileThenAttachClub\(/);
-  });
-
-  test("création de club : createClubAsCoach est borné, saisie conservée", () => {
-    const source = lire("screens/CoachOnboardingScreen.tsx");
-    expect(source).toMatch(/withTimeout\(createClubAsCoach\(/);
-    // Au timeout on ne SAIT pas si l'écriture est arrivée : le message ne
-    // l'affirme plus (audit inscription 2026-09), et la saisie reste en place.
-    expect(source).toContain("La création a peut-être abouti, on vérifie");
-    expect(source).toContain("Ta saisie est conservée.");
-    expect(source).toMatch(/error instanceof TimeoutError/);
+    expect(source).not.toContain("saveProfileThenAttachClub");
+    expect(source).not.toContain("joinClubWithInviteCode");
   });
 });

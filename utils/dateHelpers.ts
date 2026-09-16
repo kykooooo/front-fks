@@ -97,7 +97,7 @@ const isWithinFeedbackWindow = (
 
 /**
  * Clé de semaine STABLE = date-key "YYYY-MM-DD" du LUNDI de la semaine.
- * Sert d'identifiant pour `clubs/{clubId}/weekContexts/{weekKey}`.
+ * Servait d'identifiant de semaine au cadre club (espace club retire en 2026-09) ; reste la cle de semaine a lundi fixe.
  * Le coach et le joueur calculent la même clé pour la semaine courante.
  */
 const weekKeyOf = (value?: string | Date | null): string => {

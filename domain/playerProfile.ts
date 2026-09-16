@@ -3,11 +3,11 @@
 // « CE PROFIL PEUT-IL FAIRE TOURNER LE MOTEUR ? » — une seule implémentation.
 //
 // POURQUOI CE FICHIER EXISTE. `users/{uid}.profileCompleted` veut dire DEUX
-// choses depuis la création de l'espace coach : « le questionnaire joueur est
-// rempli » ET « ce coach est installé ». `createClubAsCoach` le pose à `true`
-// sans écrire le moindre champ joueur (repositories/clubsRepo). Conséquence
-// mesurée par l'audit d'inscription du 05/09 (P1-04) : un coach qui active
-// « Je m'entraîne aussi » bascule dans l'app joueur avec `position`,
+// choses depuis l'ancien espace coach (retiré en 2026-09) : « le questionnaire
+// joueur est rempli » ET « ce coach est installé ». La création de club le
+// posait à `true` sans écrire le moindre champ joueur. Ces comptes existent
+// encore en base. Conséquence mesurée par l'audit d'inscription du 05/09
+// (P1-04) : un tel compte entrerait dans l'app joueur avec `position`,
 // `ageCategory` et `level` ABSENTS, sans jamais voir le questionnaire — et le
 // moteur dose alors sans aucun plafond d'âge (`getAgeCategoryCaps(null)` rend
 // `null` côté backend : ni familles interdites, ni volume, ni contacts plyo, ni

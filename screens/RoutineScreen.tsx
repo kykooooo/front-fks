@@ -23,19 +23,11 @@ import { useDebugStore } from "../state/stores/useDebugStore";
 import { useSettingsStore } from "../state/settingsStore";
 import { compterSeancesFksSurJours, resoudreObjectifHebdo } from "../domain/resumeCanonique";
 import { toDateKey } from "../utils/dateHelpers";
+import { SESSION_REMINDER_TIME } from "../services/notifications";
+
+const HEURE_RAPPEL = `${SESSION_REMINDER_TIME.hour}h${String(SESSION_REMINDER_TIME.minute).padStart(2, "0")}`;
 
 const palette = theme.colors;
-const REMINDER_LABELS: Record<string, string> = {
-  prev_evening: "Veille 20h",
-  same_morning: "Jour 9h",
-  two_hours: "2h avant",
-};
-const REMINDER_HINTS: Record<string, string> = {
-  prev_evening: "La veille à 20h pour préparer la séance.",
-  same_morning: "Le matin même à 9h pour lancer la journée.",
-  two_hours: "Deux heures avant la séance planifiée.",
-};
-
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() &&
   a.getMonth() === b.getMonth() &&
@@ -67,8 +59,6 @@ export default function RoutineScreen() {
     resoudreObjectifHebdo({ targetFksSessionsPerWeek, weeklyGoalReglage }) ?? 2;
   const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
   const sessionReminders = useSettingsStore((s) => s.sessionReminders);
-  const reminderStrategy = useSettingsStore((s) => s.reminderStrategy);
-  const updateSettings = useSettingsStore((s) => s.updateSettings);
 
   const weekStartIndex = weekStart === "sun" ? 0 : 1;
   const weekDays = useMemo(() => {
@@ -263,24 +253,12 @@ export default function RoutineScreen() {
     if (!notificationsEnabled || !sessionReminders) {
       return "Active les notifications pour recevoir tes rappels.";
     }
-    if (reminderStrategy === "two_hours") {
-      return `${nextPlannedLabel ?? "Séance"} · 2h avant`;
-    }
-    const baseDate =
-      reminderStrategy === "prev_evening"
-        ? subDays(parseISO(nextPlannedDay.key), 1)
-        : parseISO(nextPlannedDay.key);
-    const dayLabel = format(baseDate, "EEEE", { locale: fr });
-    const dayCapitalized = dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1);
-    const hour = reminderStrategy === "prev_evening" ? "20h" : "9h";
-    return `${dayCapitalized} à ${hour}`;
-  }, [
-    nextPlannedDay,
-    reminderStrategy,
-    notificationsEnabled,
-    sessionReminders,
-    nextPlannedLabel,
-  ]);
+    // Ce que le service programme VRAIMENT : un rappel quotidien à heure fixe
+    // (SESSION_REMINDER_TIME). Aucune stratégie « veille / matin / 2h avant »
+    // n'existe côté planificateur — l'ancien sélecteur qui le laissait croire
+    // a été retiré (2026-09).
+    return `Tous les jours à ${HEURE_RAPPEL}`;
+  }, [nextPlannedDay, notificationsEnabled, sessionReminders]);
 
   const routineChallenges = useMemo(() => {
     const targetGoal = Math.max(1, Math.min(6, Math.round(weeklyGoal)));
@@ -499,10 +477,10 @@ export default function RoutineScreen() {
           <Card variant="soft" style={styles.reminderCard}>
             <View style={styles.reminderRow}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.reminderTitle}>Rappels intelligents</Text>
+                <Text style={styles.reminderTitle}>Rappel de séance</Text>
                 <Text style={styles.reminderSubtitle}>
                   {notificationsEnabled && sessionReminders
-                    ? "Rappels actifs avant tes séances planifiées."
+                    ? "Un rappel quotidien pour ta séance."
                     : "Active les rappels pour rester régulier."}
                 </Text>
                 <Text style={styles.reminderDetail}>{reminderDetail}</Text>
@@ -516,36 +494,6 @@ export default function RoutineScreen() {
                 }
               />
             </View>
-            <View style={styles.reminderOptions}>
-              {(Object.keys(REMINDER_LABELS) as Array<keyof typeof REMINDER_LABELS>).map(
-                (key) => (
-                  <TouchableOpacity
-                    key={key}
-                    onPress={() =>
-                      updateSettings({ reminderStrategy: key as "prev_evening" | "same_morning" | "two_hours" })
-                    }
-                    style={[
-                      styles.reminderOption,
-                      reminderStrategy === key && styles.reminderOptionActive,
-                    ]}
-                    activeOpacity={0.85}
-                  >
-                    <Text
-                      style={[
-                        styles.reminderOptionText,
-                        reminderStrategy === key &&
-                          styles.reminderOptionTextActive,
-                      ]}
-                    >
-                      {REMINDER_LABELS[key]}
-                    </Text>
-                  </TouchableOpacity>
-                )
-              )}
-            </View>
-            <Text style={styles.reminderHint}>
-              {REMINDER_HINTS[reminderStrategy] ?? ""}
-            </Text>
             <TouchableOpacity
               onPress={() => nav.navigate("Settings")}
               style={styles.reminderCta}
@@ -703,22 +651,6 @@ const styles = StyleSheet.create({
   reminderTitle: { fontSize: 13, fontWeight: "700", color: palette.text },
   reminderSubtitle: { fontSize: 11, color: palette.sub, marginTop: 4 },
   reminderDetail: { fontSize: 11, color: palette.text, marginTop: 6 },
-  reminderOptions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  reminderOption: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: theme.radius.pill,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    backgroundColor: palette.card,
-  },
-  reminderOptionActive: {
-    borderColor: palette.accent,
-    backgroundColor: palette.accentSoft,
-  },
-  reminderOptionText: { fontSize: 11, color: palette.sub, fontWeight: "600" },
-  reminderOptionTextActive: { color: palette.accent },
-  reminderHint: { fontSize: 11, color: palette.sub },
   reminderCta: {
     alignSelf: "flex-start",
     paddingHorizontal: 12,

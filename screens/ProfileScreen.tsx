@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Animated, TouchableOpacity,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Screen } from '../components/ui/Screen';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
@@ -16,7 +16,6 @@ import { useLoadStore } from '../state/stores/useLoadStore';
 import { useExternalStore } from '../state/stores/useExternalStore';
 import { useDebugStore } from '../state/stores/useDebugStore';
 import { auth } from '../services/firebase';
-import { useMonClub } from '../hooks/useMonClub';
 import { computeStreakStats } from '../utils/streakStats';
 import { lastNDates } from '../utils/dateHelpers';
 import { toDateKey } from '../utils/dateHelpers';
@@ -38,7 +37,7 @@ import { frFocus, frIntensity } from '../utils/frLabels';
 
 const palette = theme.colors;
 const TESTS_RECENCY_DAYS = 30;
-const SECTION_COUNT = 9;
+const SECTION_COUNT = 8;
 
 /* ─── Badge config ─── */
 const BADGE_ICONS: Record<string, { icon: string; tint: string }> = {
@@ -73,7 +72,6 @@ const daysBetween = (a: number, b: number) => Math.floor(Math.max(0, b - a) / 86
 
 type BadgeTier = 'none' | 'bronze' | 'silver' | 'gold';
 type BadgeThresholds = { bronze: number; silver: number; gold: number };
-type TagTone = 'default' | 'ok' | 'warn' | 'danger';
 
 const tierLabelMap: Record<BadgeTier, string> = { none: 'Base', bronze: 'Bronze', silver: 'Argent', gold: 'Or' };
 
@@ -99,16 +97,10 @@ const formatDayLabel = (value?: string | null) => {
 export default function ProfileScreen() {
   const nav = useNavigation<any>();
 
-  /* ─── Club (rangée « Mon club », cf. plus bas) ─── */
-  const { clubId, clubName: clubNom, chargement: clubChargement } = useMonClub();
-
   /* ─── Store ─── */
   const sessions = useSessionsStore((s) => s.sessions);
   const phase = useSessionsStore((s) => s.phase);
   const tsb = useLoadStore((s) => s.tsb);
-  const atl = useLoadStore((s) => s.atl);
-  const ctl = useLoadStore((s) => s.ctl);
-  const tsbHistory = useLoadStore((s) => s.tsbHistory ?? []);
   const dailyApplied = useLoadStore((s) => s.dailyApplied ?? {});
   const clubDays = useExternalStore((s) => s.clubTrainingDays ?? []);
   const matchDays = useExternalStore((s) => s.matchDays ?? []);
@@ -241,21 +233,6 @@ export default function ProfileScreen() {
   const tsbLabel = hasFormData ? footballStatus.label : '—';
   const tsbColor = hasFormData ? footballStatus.color : palette.borderStrong;
 
-  // Tendance TSB sur la fenêtre dispo (jusqu'à 7 jours) : diff > 0 = TSB qui remonte (forme qui revient),
-  // diff < 0 = TSB qui descend (charge récente plus dense). Libellés neutres, factuels, sans jugement.
-  const tsbTrend = useMemo(() => {
-    const vals = [...tsbHistory].slice(0, 7);
-    if (vals.length < 2) return 'stable';
-    const diff = vals[0] - vals[vals.length - 1];
-    return diff > 2 ? 'ça repart' : diff < -2 ? 'charge qui monte' : 'stable';
-  }, [tsbHistory]);
-  // Une tendance ne s'affirme que si elle repose sur ≥ 2 relevés réels : avant
-  // ça, « Stable » serait un verdict fabriqué sur du vide.
-  const showTrend = hasFormData && tsbHistory.length >= 2;
-  // P0-4 : uniquement les relevés RÉELS du store — plus jamais `?? tsb` pour
-  // boucher les trous (7 barres identiques fabriquées sur un compte neuf).
-  const formBars = useMemo(() => tsbHistory.slice(0, 7), [tsbHistory]);
-
   const todayKey = useMemo(() => toDateKey(devNowISO ?? new Date()), [devNowISO]);
   const last7Keys = useMemo(() => lastNDates(todayKey, 7), [todayKey]);
 
@@ -263,17 +240,6 @@ export default function ProfileScreen() {
     () => last7Keys.map((k) => { const v = Number(dailyApplied?.[k] ?? 0); return Number.isFinite(v) ? Math.max(0, v) : 0; }),
     [last7Keys, dailyApplied],
   );
-  const loadMax = useMemo(() => Math.max(0, ...loadHistory), [loadHistory]);
-  const loadScaleMax = useMemo(() => Math.max(10, loadMax || 0), [loadMax]);
-  const loadAvg = useMemo(() => {
-    if (!loadHistory.length) return 0;
-    return loadHistory.reduce((s, v) => s + v, 0) / loadHistory.length;
-  }, [loadHistory]);
-
-  const fatigueTone: TagTone = tsb <= -15 ? 'danger' : tsb <= -8 ? 'warn' : 'ok';
-  const riskTone: TagTone = tsb <= -12 ? 'danger' : tsb < -5 ? 'warn' : 'ok';
-  const trendTone: TagTone = tsbTrend === 'charge qui monte' ? 'warn' : tsbTrend === 'ça repart' ? 'ok' : 'default';
-
   /* ─── Cycle ─── */
   const cycleId = isMicrocycleId(microcycleGoal) ? microcycleGoal : null;
   const cycleLabel = cycleId ? MICROCYCLES[cycleId].label : null;
@@ -332,11 +298,10 @@ export default function ProfileScreen() {
   }, [last7Completed, weeklyThresholds, streaks, streakThresholds, loadDays, loadThresholds, vmaThresholds, monthlyTestsCount]);
 
   const earnedBadges = badgeItems.filter((b) => b.earned).length;
-  const barLbl = (i: number) => (i === 0 ? 'J' : `J-${i}`);
 
   /* ══════════ RENDER ══════════ */
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <Screen style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
 
         {/* ─── HERO SHELL (Premium DA) ─── */}
@@ -416,9 +381,60 @@ export default function ProfileScreen() {
           </View>
         </Animated.View>
 
+        {/* ─── ACTIONS PRINCIPALES ─── */}
+        {/* Juste sous l'identité : modifier le profil et ouvrir les paramètres
+            sans parcourir toute la page (audit Profil / Paramètres 2026-09). */}
+        <Animated.View style={[styles.section, aStyle(1)]}>
+          <View style={styles.actionsRow}>
+            <Button
+              label="Modifier mon profil"
+              variant="outline"
+              size="sm"
+              style={styles.actionBtnStyled}
+              leftAccessory={<Ionicons name="create-outline" size={14} color={palette.accent} />}
+              onPress={() => nav.navigate('ProfileSetup')}
+              accessibilityLabel="Modifier mon profil"
+            />
+            <Button
+              label="Paramètres"
+              variant="ghost"
+              size="sm"
+              style={styles.actionBtnStyled}
+              leftAccessory={<Ionicons name="settings-outline" size={14} color={palette.sub} />}
+              onPress={() => nav.navigate('Settings')}
+              accessibilityLabel="Ouvrir les paramètres"
+            />
+          </View>
+          {/* Le suivi détaillé (forme, régularité, historique) vit sur ses
+              propres pages : on y mène, on ne le recopie plus ici. */}
+          <Card variant="soft" style={styles.linksCard}>
+            {([
+              { key: 'progression', label: 'Ma progression', icon: 'trending-up-outline' as const, go: () => nav.navigate('Progression') },
+              { key: 'history', label: 'Historique des séances', icon: 'time-outline' as const, go: () => nav.navigate('SessionHistory') },
+              { key: 'tests', label: 'Tests terrain', icon: 'clipboard-outline' as const, go: () => nav.navigate('Tests', { initialPlaylist: cycleId ?? recommendedId }) },
+              { key: 'body', label: 'Mon corps', icon: 'body-outline' as const, go: () => nav.navigate('MonCorps', { source: 'manual' }) },
+            ]).map((item, idx, arr) => (
+              <React.Fragment key={item.key}>
+                <TouchableOpacity
+                  style={styles.linkRow}
+                  onPress={item.go}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.label}
+                >
+                  <Ionicons name={item.icon} size={16} color={palette.accent} />
+                  <Text style={styles.linkLabel}>{item.label}</Text>
+                  <Ionicons name="chevron-forward" size={16} color={palette.sub} />
+                </TouchableOpacity>
+                {idx < arr.length - 1 ? <View style={styles.linkDiv} /> : null}
+              </React.Fragment>
+            ))}
+          </Card>
+        </Animated.View>
+
         {/* ─── PARCOURS ─── */}
         {pathway ? (
-          <Animated.View style={[styles.section, aStyle(1)]}>
+          <Animated.View style={[styles.section, aStyle(2)]}>
             <SectionHeader title="Parcours" right={<Badge label={pathway.label} />} />
             <Card variant="surface" style={styles.pathwayCard}>
               <View style={styles.pathwayStepper}>
@@ -467,7 +483,7 @@ export default function ProfileScreen() {
         ) : null}
 
         {/* ─── STATS ─── */}
-        <Animated.View style={[styles.section, aStyle(2)]}>
+        <Animated.View style={[styles.section, aStyle(3)]}>
           <SectionHeader title="Mon rythme" right={phase ? <Badge label={`Phase ${phase}`} /> : undefined} />
           <View style={styles.statsRow}>
             {([
@@ -501,7 +517,7 @@ export default function ProfileScreen() {
         </Animated.View>
 
         {/* ─── CYCLE ─── */}
-        <Animated.View style={[styles.section, aStyle(3)]}>
+        <Animated.View style={[styles.section, aStyle(4)]}>
           <SectionHeader
             title="Programme"
             right={cycleLabel ? <Badge label={cycleLabel} tone={cycleDone ? 'ok' : 'default'} /> : <Badge label="Aucun" tone="warn" />}
@@ -565,125 +581,8 @@ export default function ProfileScreen() {
           ) : null}
         </Animated.View>
 
-        {/* ─── MOMENTUM ─── */}
-        <Animated.View style={[styles.section, aStyle(4)]}>
-          {/* Le badge de tendance de FORME qui coiffait cette section était un
-              mislabel (il parlait du TSB, pas de la régularité) — il vit
-              désormais uniquement sur « Ta forme », et seulement s'il repose
-              sur des relevés réels. */}
-          <SectionHeader title="Ta régularité" />
-          <Card variant="soft" style={styles.momentumCard}>
-            {([
-              { label: 'Semaines FKS', value: streaks.weeksFks, unit: 'sem', icon: 'flame-outline' as const, tint: '#ef4444' },
-              { label: 'Club / match', value: streaks.weeksClubMatch, unit: 'sem', icon: 'shield-outline' as const, tint: palette.info },
-              { label: 'Tests ce mois', value: monthlyTestsCount, unit: 'tests', icon: 'speedometer-outline' as const, tint: '#8b5cf6' },
-            ]).map((item, idx) => (
-              <React.Fragment key={item.label}>
-                <View style={styles.momentumRow}>
-                  <View style={[styles.momentumIcon, { backgroundColor: `${item.tint}14` }]}>
-                    <Ionicons name={item.icon} size={16} color={item.tint} />
-                  </View>
-                  <Text style={styles.momentumLbl}>{item.label}</Text>
-                  <Badge label={`${item.value} ${item.unit}`} />
-                </View>
-                {idx < 2 ? <View style={styles.momentumDiv} /> : null}
-              </React.Fragment>
-            ))}
-          </Card>
-        </Animated.View>
-
-        {/* ─── CHARGE & FORME ─── */}
-        <Animated.View style={[styles.section, aStyle(5)]}>
-          <SectionHeader
-            title="Ta forme"
-            right={showTrend ? <Badge label={`Tendance : ${tsbTrend}`} tone={trendTone} /> : undefined}
-          />
-          <Card variant="soft" style={styles.chargeCard}>
-            {hasFormData ? (
-              <>
-                <View style={styles.chargeStatusRow}>
-                  <View style={[styles.chargeStatusDot, { backgroundColor: tsbColor }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.chargeStatusLabel, { color: tsbColor }]}>{tsbLabel}</Text>
-                    <Text style={styles.chargeStatusMsg}>{footballStatus.message}</Text>
-                  </View>
-                </View>
-                <View style={styles.tagRow}>
-                  <Badge label={tsb <= -15 ? 'Jambes lourdes' : tsb <= -8 ? 'Un peu de fatigue' : 'Frais'} tone={fatigueTone} />
-                  <Badge label={tsb <= -12 ? 'Attention blessure' : tsb < -5 ? 'Chargé' : 'C\'est bon'} tone={riskTone} />
-                </View>
-
-                {/* Relevés RÉELS uniquement. Les anciennes étiquettes J…J-6
-                    mentaient deux fois : barres manquantes bouchées avec le TSB
-                    du jour, et série par ÉVÉNEMENT présentée comme des jours
-                    calendaires. Tant que la série n'est pas reconstruite par
-                    jour (refonte Profil), on affiche ce qu'elle est vraiment :
-                    les derniers relevés, du plus récent au plus ancien. */}
-                <Text style={styles.chartTitle}>Ta forme — derniers relevés</Text>
-                {formBars.length >= 2 ? (
-                  <View style={styles.chartRow}>
-                    {formBars.map((val, idx) => {
-                      const h = Math.max(8, Math.min(60, Math.abs(val) * 2));
-                      const c = val >= 5 ? palette.success : val >= 0 ? '#34d399' : val >= -8 ? palette.warn : palette.danger;
-                      const isLatest = idx === 0;
-                      return (
-                        <View key={idx} style={styles.barCol}>
-                          <Text style={[styles.barVal, isLatest && { fontWeight: '700', color: palette.text }]}>{val.toFixed(0)}</Text>
-                          <View style={[styles.bar, { height: h, backgroundColor: c, opacity: isLatest ? 1 : 0.7 }]} />
-                          <Text style={[styles.barLbl, isLatest && { fontWeight: '700', color: palette.text }]}>
-                            {isLatest ? 'Dernier' : ''}
-                          </Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                ) : (
-                  <Text style={styles.chartEmptyText}>
-                    Encore trop peu de relevés pour tracer une tendance.
-                  </Text>
-                )}
-              </>
-            ) : (
-              <View style={styles.chargeStatusRow}>
-                <View style={[styles.chargeStatusDot, { backgroundColor: palette.borderStrong }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.chargeStatusLabel}>Pas encore de données</Text>
-                  <Text style={styles.chargeStatusMsg}>
-                    Ta forme se calcule sur tes séances validées. Termine ta première séance pour la voir ici.
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            <View style={styles.chartSep} />
-
-            <View style={styles.chartHeaderRow}>
-              <Text style={styles.chartTitle}>Intensité 7 jours</Text>
-              <View style={styles.chartMetaRow}>
-                <Badge label={`Moy ${Math.round(loadAvg)}`} />
-                <Badge label={`Max ${Math.round(loadMax)}`} />
-              </View>
-            </View>
-            <View style={styles.chartRow}>
-              {loadHistory.map((val, idx) => {
-                const h = Math.max(6, Math.round((val / loadScaleMax) * 60));
-                const ratio = loadMax > 0 ? val / loadMax : 0;
-                const c = ratio > 0.8 ? palette.accent : ratio > 0.5 ? palette.info : '#60a5fa';
-                const isToday = idx === 0;
-                return (
-                  <View key={`l${idx}`} style={styles.barCol}>
-                    <Text style={[styles.barVal, isToday && { fontWeight: '700', color: palette.text }]}>{Math.round(val)}</Text>
-                    <View style={[styles.bar, { height: h, backgroundColor: c, opacity: isToday ? 1 : 0.7 }]} />
-                    <Text style={[styles.barLbl, isToday && { fontWeight: '700', color: palette.text }]}>{barLbl(idx)}</Text>
-                  </View>
-                );
-              })}
-            </View>
-          </Card>
-        </Animated.View>
-
         {/* ─── BADGES ─── */}
-        <Animated.View style={[styles.section, aStyle(6)]}>
+        <Animated.View style={[styles.section, aStyle(5)]}>
           <SectionHeader title="Trophées" right={<Badge label={`${earnedBadges}/${badgeItems.length}`} />} />
           <View style={styles.badgeGrid}>
             {badgeItems.map((b) => {
@@ -718,7 +617,7 @@ export default function ProfileScreen() {
         </Animated.View>
 
         {/* ─── SEMAINE TYPE ─── */}
-        <Animated.View style={[styles.section, aStyle(7)]}>
+        <Animated.View style={[styles.section, aStyle(6)]}>
           <SectionHeader title="Ta semaine" />
           <Card variant="soft" style={styles.calCard}>
             <View style={styles.calRow}>
@@ -753,8 +652,20 @@ export default function ProfileScreen() {
         </Animated.View>
 
         {/* ─── RECENT + ACTIONS ─── */}
-        <Animated.View style={[styles.section, aStyle(8)]}>
-          <SectionHeader title="Dernières séances" />
+        <Animated.View style={[styles.section, aStyle(7)]}>
+          <SectionHeader
+            title="Dernières séances"
+            right={
+              <TouchableOpacity
+                onPress={() => nav.navigate('SessionHistory')}
+                accessibilityRole="button"
+                accessibilityLabel="Voir tout l'historique"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.linkAll}>Tout voir</Text>
+              </TouchableOpacity>
+            }
+          />
           <Card variant="soft" style={styles.recentCard}>
             {recentSessions.length === 0 ? (
               <Text style={styles.recentEmpty}>Pas encore de séance terminée.</Text>
@@ -786,75 +697,10 @@ export default function ProfileScreen() {
             )}
           </Card>
 
-          {/* ─── MON CLUB ───
-              Le seul indicateur PERMANENT d'un rattachement raté. Avant lui, un
-              code club refusé s'annonçait par un toast de 2,2 s pendant la
-              bascule vers l'accueil, puis plus rien nulle part : le joueur se
-              croyait dans l'effectif de son coach, qui ne l'y voyait jamais
-              (P0-01 de l'audit d'inscription du 05/09). La carte qui SAIT
-              rejoindre un club vit dans les Réglages — on y mène, on ne la
-              duplique pas. */}
-          <Card variant="soft" style={styles.clubRowCard}>
-            <View style={styles.clubRowTexte}>
-              <Text style={styles.clubRowTitre}>Mon club</Text>
-              <Text style={styles.clubRowSousTitre} numberOfLines={2}>
-                {clubChargement
-                  ? 'Chargement…'
-                  : !clubId
-                    ? 'Aucun club — rejoindre avec un code'
-                    : clubNom ?? 'Club rejoint'}
-              </Text>
-            </View>
-            <Button
-              label={clubId ? 'Gérer' : 'Rejoindre'}
-              variant={clubId ? 'ghost' : 'secondary'}
-              size="sm"
-              leftAccessory={
-                <Ionicons
-                  name="people-outline"
-                  size={14}
-                  color={clubId ? palette.sub : palette.accent}
-                />
-              }
-              // Vers la carte Club des Réglages (2ᵉ section de l'écran, juste
-              // sous « Compte ») : elle sait déjà tout faire — saisir un code,
-              // afficher l'appartenance, quitter le club. La dupliquer ici
-              // aurait fait deux vérités à tenir synchrones.
-              onPress={() => nav.navigate('Settings')}
-              accessibilityLabel={clubId ? 'Gérer mon club' : 'Rejoindre un club avec un code'}
-            />
-          </Card>
-
-          <View style={styles.actionsRow}>
-            <Button
-              label="Mon profil"
-              variant="outline"
-              size="sm"
-              style={styles.actionBtnStyled}
-              leftAccessory={<Ionicons name="create-outline" size={14} color={palette.accent} />}
-              onPress={() => nav.navigate('ProfileSetup')}
-            />
-            <Button
-              label="Paramètres"
-              variant="ghost"
-              size="sm"
-              style={styles.actionBtnStyled}
-              leftAccessory={<Ionicons name="settings-outline" size={14} color={palette.sub} />}
-              onPress={() => nav.navigate('Settings')}
-            />
-            <Button
-              label="Historique"
-              variant="ghost"
-              size="sm"
-              style={styles.actionBtnStyled}
-              leftAccessory={<Ionicons name="time-outline" size={14} color={palette.sub} />}
-              onPress={() => nav.navigate('SessionHistory')}
-            />
-          </View>
         </Animated.View>
 
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 
@@ -1117,21 +963,11 @@ const styles = StyleSheet.create({
   tlTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
 
   /* Actions */
-  actionsRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  actionsRow: { flexDirection: 'row', gap: 8 },
   actionBtnStyled: { flex: 1 },
-
-  /* Rangée « Mon club » */
-  clubRowCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    padding: 14,
-    marginTop: 8,
-  },
-  clubRowTexte: { flex: 1, gap: 2 },
-  clubRowTitre: { fontSize: 14, fontWeight: '700', color: palette.text },
-  // minHeight (jamais height) : le nom d'un club vient du serveur, il peut
-  // tenir sur deux lignes (règle d'or, CLAUDE.md).
-  clubRowSousTitre: { fontSize: 12.5, lineHeight: 17, color: palette.sub, minHeight: 17 },
+  linksCard: { padding: 6 },
+  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44, paddingHorizontal: 10 },
+  linkLabel: { flex: 1, fontSize: 13, fontWeight: '600', color: palette.text },
+  linkDiv: { height: 1, backgroundColor: palette.borderSoft, marginHorizontal: 10 },
+  linkAll: { fontSize: 12, fontWeight: '700', color: palette.accent },
 });

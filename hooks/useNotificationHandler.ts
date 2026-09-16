@@ -18,8 +18,9 @@ function navigateFromPayload(data: Record<string, unknown> | undefined): void {
   if (!data?.type) return;
   if (!navigationRef.isReady()) return;
 
-  // Guard : si l'utilisateur est déconnecté (Auth stack) ou en espace coach,
-  // les routes joueur n'existent pas dans le navigator racine → no-op.
+  // Guard : si l'utilisateur est déconnecté (Auth stack) ou bloqué sur le
+  // questionnaire de profil, les routes joueur n'existent pas dans le
+  // navigator racine → no-op.
   let rootRouteNames: string[] = [];
   try {
     rootRouteNames = navigationRef.getRootState()?.routeNames ?? [];

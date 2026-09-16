@@ -5,13 +5,10 @@ import { doc, getDoc } from "firebase/firestore";
 import { useLoadStore } from "../state/stores/useLoadStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useDebugStore } from "../state/stores/useDebugStore";
-import { toDateKey } from "../utils/dateHelpers";
 import type { Session, AgeCategory } from "../domain/types";
-import { normalizeAgeCategory, normalizeTeamGender } from "../domain/types";
+import { normalizeAgeCategory } from "../domain/types";
 import { canonicalizeMicrocycleGoal } from "../domain/microcycles";
-import { CLUB_DIRECTIVES_COLLECTION, CLUB_DIRECTIVE_CURRENT_ID } from "../domain/clubDirective";
 import { userProfileSchema, logValidationIssues } from "../schemas/firestoreSchemas";
-import { weekKeyOf } from "../utils/dateHelpers";
 import { readTestsRaw } from "../screens/tests/hooks/useTestsStorage";
 import { resolveTrackingModes } from "../domain/tracking/modes";
 import { applyDecisionToContext } from "../domain/tracking/apply";
@@ -29,9 +26,7 @@ import {
   RECENT_FKS_SESSION_LIMIT,
   buildRecentByFocus,
   buildRecentFksSessionsPayload,
-  buildClubContextPayload,
   buildFieldTestsPayload,
-  type ClubContextPayload,
   type FKS_FieldTestEntry,
 } from "./aiContextHelpers";
 import { contraintesDouleurCourantes } from "../state/selectors/blessures";
@@ -108,7 +103,6 @@ export interface FKS_AiContext {
   recent_fks_badges?: string[];
   recent_by_focus?: Record<string, string[]>;
   equipment_available: string[];
-  club_context?: ClubContextPayload | null;
   /** Tests terrain recents (derniere valeur par type, <= 90 j). Absent si aucun test valide. */
   field_tests?: FKS_FieldTestEntry[];
 }
@@ -195,57 +189,12 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
 
   const debugState = useDebugStore.getState();
   const nowISO = debugState.devNowISO ?? new Date().toISOString();
-  const todayKey = toDateKey(nowISO);
   // Gênes déclarées dans « Mon corps » → tokens backend.
   // Plus de fenêtre glissante : c'est le STATUT posé par le joueur qui décide
   // (active → transmise avec sa gravité, en reprise → gravité 1, guérie →
   // absente). Voir collectActivePainConstraints dans aiContextHelpers, et
   // state/selectors/blessures.ts pour l'unique lecture du store.
   const { pains, injuryMaxSeverity } = contraintesDouleurCourantes();
-
-  // Contexte de semaine club (FKS Club) : si le joueur a un clubId, on lit le
-  // weekContext de la semaine courante. Lecture best-effort : toute erreur est
-  // loggée en dev mais ne bloque jamais la génération (fallback silencieux).
-  //
-  // LA NOTE DU COACH N'ENTRE PLUS ICI. Elle est devenue privée (document
-  // coach-only, cf. domain/clubCoachNote.ts) et n'est ni lue ni envoyée : une
-  // note écrite pour le staff ne doit pas modifier la séance d'un joueur. Ce
-  // qui aura le droit de peser sur la préparation est désormais un objet dédié
-  // — la DIRECTIVE — lue ci-dessous, et que le joueur peut lire lui aussi.
-  // Elle est transmise ; elle n'est PAS encore appliquée par le moteur
-  // (cf. domain/clubDirective.ts) — aucun écran ne prétend le contraire.
-  let clubContext: ClubContextPayload | null = null;
-  const clubId = typeof (rawProfile as any)?.clubId === "string" ? (rawProfile as any).clubId.trim() : "";
-  if (clubId) {
-    try {
-      const weekKey = weekKeyOf(nowISO);
-      // weekContext (intensité/objectif) + teamGender (club doc) + directive.
-      const [wcSnap, clubSnap, directiveSnap] = await Promise.all([
-        getDoc(doc(db, "clubs", clubId, "weekContexts", weekKey)),
-        getDoc(doc(db, "clubs", clubId)),
-        getDoc(doc(db, "clubs", clubId, CLUB_DIRECTIVES_COLLECTION, CLUB_DIRECTIVE_CURRENT_ID)),
-      ]);
-      const directiveRaw = directiveSnap.exists()
-        ? (directiveSnap.data() as Record<string, unknown>)
-        : null;
-      const base = buildClubContextPayload(
-        wcSnap.exists() ? (wcSnap.data() as Record<string, unknown>) : null,
-        weekKey,
-        // La fenêtre de validité est évaluée avec le JOUR du joueur (horloge
-        // virtuelle comprise en dev) : une directive expirée ne part pas.
-        { directive: directiveRaw, todayKey },
-      );
-      const teamGender = clubSnap.exists() ? normalizeTeamGender((clubSnap.data() as any)?.teamGender) : null;
-      if (base || teamGender) {
-        clubContext = {
-          ...(base ?? {}),
-          ...(teamGender ? { team_gender: teamGender } : {}),
-        };
-      }
-    } catch (err) {
-      if (__DEV__) console.warn("[aiContext] lecture contexte club échouée:", err);
-    }
-  }
 
   // 2) Récup état charge / phase depuis ton store FKS
   const phase: FKS_PhaseId =
@@ -363,7 +312,6 @@ export async function buildAIPromptContext(): Promise<FKS_AiContext> {
     recent_fks_badges,
     recent_by_focus: buildRecentByFocus(sessions, 3),
     equipment_available,
-    ...(clubContext ? { club_context: clubContext } : {}),
     ...(field_tests.length > 0 ? { field_tests } : {}),
   };
 
