@@ -28,6 +28,10 @@ sa suppression.
 - **Q1. Physique ces deux dernieres semaines hors club** :
 - **Q2. Ce qui l'a fait commencer, ou ce qui l'empeche** :
 - **Q3. Ce qu'il paie deja** : salle / appli / coach / rien — combien
+- **Q4. Quand il s'entraine seul, il fait quoi** : du physique, du ballon, les deux, rien
+  (question de comportement, pas d'opinion : ne jamais demander « tu voudrais du ballon
+  dans l'appli ? ». B42 melange athletique et ballon ; FKS est zero ballon par decision.
+  On veut savoir ce que les joueurs FONT, pas ce qu'ils disent vouloir.)
 - **Pour un coach : programme de reprise** : ce qu'il envoie, sous quelle forme, qui le fait vraiment
 - **Phrase a retenir, mot pour mot** :
 - **Partant pour tester ?** oui / non / peut-etre
