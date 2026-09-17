@@ -13,6 +13,7 @@ import { getFunctions, httpsCallable } from "firebase/functions";
 
 import { app, auth } from "./firebase";
 import { purgeNotifications } from "./notificationSync";
+import { setupDraft } from "./setupDraft";
 import { localAccountKeysToPurge } from "./accountDeletionHelpers";
 import { useSyncStore } from "../state/stores/useSyncStore";
 
@@ -91,6 +92,11 @@ export async function finalizeLocalAccountDeletion(uid: string | null): Promise<
   } catch {
     // Best effort — les stores persistés seront de toute façon réécrits aux défauts.
   }
+
+  // Brouillon du questionnaire : suppression COORDONNÉE d'abord (elle passe
+  // après toute sauvegarde encore en vol et neutralise celles en attente), le
+  // retrait direct de la clé ci-dessous n'est plus qu'une ceinture. Ne jette jamais.
+  await setupDraft.clear(uid);
 
   try {
     await AsyncStorage.multiRemove(localAccountKeysToPurge(uid));

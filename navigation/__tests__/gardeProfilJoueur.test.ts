@@ -21,6 +21,7 @@ import { readFileSync } from "fs";
 import { resolve } from "path";
 
 import { TOAST_CATEGORIE_MANQUANTE } from "../../screens/newSession/gardeCategorieAge";
+import { finaliserQuestionnaire } from "../../services/finalizeSetup";
 
 const racine = resolve(__dirname, "..", "..");
 // Fins de ligne NORMALISÉES à la lecture : le même fichier arrive en CRLF sur un
@@ -68,24 +69,56 @@ describe("le portillon regarde les CHAMPS, plus seulement le drapeau", () => {
 });
 
 describe("le questionnaire ne doit rien casser de ce qui n'est pas à lui", () => {
-  const payload = setup.slice(
-    setup.indexOf("await withTimeout(setDoc(doc(db, \"users\", user.uid), {"),
-    setup.indexOf("{ merge: true }"),
-  );
+  // Le profil écrit est celui que produit la finalisation RÉELLEMENT appelée par
+  // l'écran (services/finalizeSetup) : on l'exécute et on lit ses clés.
+  async function profilEcrit(): Promise<Record<string, unknown>> {
+    let ecrit: Record<string, unknown> = {};
+    await finaliserQuestionnaire(
+      {
+        ecrireGene: () => undefined,
+        onGeneEcrite: () => undefined,
+        ecrireProfil: async (_uid, data) => { ecrit = data; },
+        effacerBrouillon: async () => undefined,
+        serverTimestamp: () => "TS",
+      },
+      {
+        uid: "uid-1",
+        reponses: {
+          firstName: "Lina", position: "Milieu", ageCategory: "U17", level: "Regional",
+          dominantFoot: "Pied droit", mainObjective: "Etre en forme toute la saison",
+          targetFksSessionsPerWeek: "2", selfReportedGapOption: "", hasClubTrainings: "non",
+          clubTrainingDays: [], matchDays: [], hasGymAccess: "non", geneSetup: "non",
+          geneZone: null, geneGravite: null, parentalConsentChecked: false,
+        },
+        storedParentalConsent: null,
+        passthrough: { gymEquipment: [], hasHomeEquipment: false, homeEquipment: [] },
+        autoCycleId: "fondation",
+        geneDejaEcrite: false,
+      },
+    );
+    return ecrit;
+  }
 
-  test("`clubId` n'est JAMAIS écrit : un rattachement historique reste intact (merge sans la clé)", () => {
+  test("l'écran passe bien par cette finalisation", () => {
+    expect(setup).toContain("await finaliserQuestionnaire(");
+    expect(setup).toContain("setDoc(doc(db, \"users\", uid), data, { merge: true })");
+  });
+
+  test("`clubId` n'est JAMAIS écrit : un rattachement historique reste intact (merge sans la clé)", async () => {
     // Un `merge` avec `null` EFFACE ; omettre la clé ne touche à rien. Un
     // joueur rattaché à un club par une ancienne version garde sa donnée en
     // base, et elle ne pèse plus sur la navigation.
-    expect(payload.length).toBeGreaterThan(200);
-    expect(payload).not.toMatch(/\bclubId\s*:/);
+    const ecrit = await profilEcrit();
+    expect(Object.keys(ecrit).length).toBeGreaterThan(10);
+    expect("clubId" in ecrit).toBe(false);
   });
 
-  test("il n'écrit ni `role` ni `accessRole`", () => {
+  test("il n'écrit ni `role` ni `accessRole`", async () => {
     // `accessRole` vit sur l'appartenance, interdite au client par les règles ;
     // `role` ne décide plus rien depuis « un compte, un espace ».
-    expect(payload).not.toMatch(/\brole\s*:/);
-    expect(payload).not.toMatch(/accessRole/);
+    const ecrit = await profilEcrit();
+    expect("role" in ecrit).toBe(false);
+    expect("accessRole" in ecrit).toBe(false);
   });
 });
 

@@ -115,16 +115,20 @@ describe("objectif « encaisser » — désaccentué à l'écriture, reconnu à 
     expect(OBJECTIF_ENCAISSER).toBe("Mieux encaisser les entrainements et les matchs");
     expect(OBJECTIF_ENCAISSER).not.toMatch(/[éèêàçîôû]/i);
     // Et c'est bien elle que le questionnaire propose.
-    expect(lire("screens/ProfileSetupScreen.tsx")).toContain("OBJECTIF_ENCAISSER,");
+    // La liste des objectifs vit avec la validation (domain/setupValidation),
+    // et c'est elle que l'écran importe.
+    expect(lire("domain/setupValidation.ts")).toContain("OBJECTIF_ENCAISSER,");
+    expect(lire("screens/ProfileSetupScreen.tsx")).toContain("SETUP_OBJECTIVES as objectives");
   });
 
   test("un profil d'avant le 05/09 est reconnu, sans migration", () => {
     expect(normalizeMainObjective(OBJECTIF_ENCAISSER_LEGACY)).toBe(OBJECTIF_ENCAISSER);
     // Le questionnaire normalise à la lecture : sinon la carte d'un ancien
     // profil n'apparaîtrait pas sélectionnée.
-    expect(lire("screens/ProfileSetupScreen.tsx")).toContain(
-      "normalizeMainObjective(d.mainObjective)",
-    );
+    // La lecture du document vit désormais dans domain/setupPrefill (pure,
+    // testée en exécution dans domain/__tests__/setupPrefill.test.ts).
+    expect(lire("domain/setupPrefill.ts")).toContain("normalizeMainObjective(d.mainObjective)");
+    expect(lire("screens/ProfileSetupScreen.tsx")).toContain("resoudrePrefill(");
   });
 
   test("aucune autre valeur n'est touchée, et rien n'est inventé", () => {

@@ -46,7 +46,9 @@ describe("l'overlay bloquant du setup passe par le délai de garde (source)", ()
   test("setup profil : l'écriture du profil est bornée à 15 s, la saisie conservée", () => {
     const source = lire("screens/ProfileSetupScreen.tsx");
     // L'écriture du profil : un dépassement remonte, et le message est juste.
-    expect(source).toMatch(/await withTimeout\(setDoc\(/);
+    // L'écriture est passée à la finalisation (services/finalizeSetup) sous
+    // forme de dépendance — toujours enveloppée par le délai de garde.
+    expect(source).toMatch(/withTimeout\(setDoc\(/);
     expect(source).toMatch(/\{ merge: true \}\)\.then\(\(\) => undefined\), 15000\)/);
     expect(source).toContain("Tes réponses sont conservées — réessaie dans un instant.");
     expect(source).toMatch(/error instanceof TimeoutError/);

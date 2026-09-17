@@ -59,7 +59,8 @@ describe("register_failed — le pendant manquant de login_failed", () => {
   const register = lire("screens/RegisterScreen.tsx");
 
   test("l'événement est posé sur le chemin d'échec, avec le code d'erreur", () => {
-    expect(register).toContain('trackEvent("register_failed", { code: e?.code ?? "unknown" })');
+    // Le code vient du service (services/registerAccount), qui ne rend QUE lui.
+    expect(register).toContain('trackEvent("register_failed", { code: issue.code })');
   });
 
   test("aucune donnée personnelle dans la charge utile", () => {
@@ -72,11 +73,16 @@ describe("register_failed — le pendant manquant de login_failed", () => {
     }
   });
 
-  test("il vit dans le catch, pas sur le chemin heureux", () => {
-    const indexSucces = register.indexOf('trackEvent("register_success")');
+  test("il vit sur la branche « compte non créé », qui sort AVANT le succès", () => {
+    const indexBranche = register.indexOf('if (issue.status === "failed") {');
     const indexEchec = register.indexOf('trackEvent("register_failed"');
-    expect(indexSucces).toBeGreaterThan(-1);
-    expect(indexEchec).toBeGreaterThan(indexSucces);
-    expect(register.slice(indexEchec, indexEchec + 400)).toContain("Inscription échouée");
+    const indexSucces = register.indexOf('trackEvent("register_success")');
+    expect(indexBranche).toBeGreaterThan(-1);
+    expect(indexEchec).toBeGreaterThan(indexBranche);
+    // La branche d'échec se termine par un return avant tout register_success.
+    const branche = register.slice(indexEchec, indexSucces);
+    expect(branche).toContain("Compte non créé");
+    expect(branche).toContain("return;");
+    expect(indexSucces).toBeGreaterThan(indexEchec);
   });
 });

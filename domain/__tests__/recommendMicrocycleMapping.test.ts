@@ -18,6 +18,7 @@ import { readFileSync } from "fs";
 import { resolve } from "path";
 import { recommendMicrocycle } from "../recommendMicrocycle";
 import { OBJECTIF_ENCAISSER, OBJECTIF_ENCAISSER_LEGACY } from "../mainObjective";
+import { SETUP_OBJECTIVES } from "../setupValidation";
 
 // Les 4 valeurs EXACTES persistées par l'étape Objectif du setup.
 const OBJECTIFS_SETUP: Array<[string, string]> = [
@@ -38,17 +39,16 @@ describe("mapping objectif setup → cycle (décision 15/08)", () => {
   });
 
   test("le wording du setup n'a pas dérivé sans mise à jour de ce test", () => {
+    // La liste des objectifs proposés vit désormais dans domain/setupValidation
+    // (la même source que la validation) et l'écran l'importe : on compare les
+    // VALEURS réelles, plus un motif dans un fichier.
     const source = readFileSync(
       resolve(__dirname, "..", "..", "screens", "ProfileSetupScreen.tsx"),
       "utf8"
     );
-    const domaine = readFileSync(resolve(__dirname, "..", "mainObjective.ts"), "utf8");
-    for (const [objectif] of OBJECTIFS_SETUP) {
-      // L'objectif « encaisser » a quitté la liste littérale du questionnaire
-      // pour domain/mainObjective (une seule implémentation de la valeur ET de
-      // sa forme historique accentuée) : on le cherche là où il vit désormais.
-      expect(source.includes(`"${objectif}"`) || domaine.includes(`"${objectif}"`)).toBe(true);
-    }
+    expect(source).toContain("SETUP_OBJECTIVES as objectives");
+    const figes = OBJECTIFS_SETUP.map(([objectif]) => objectif).filter((o) => o !== OBJECTIF_ENCAISSER_LEGACY);
+    expect([...SETUP_OBJECTIVES].sort()).toEqual([...figes].sort());
   });
 
   test("un objectif explicitement maintien/saison va toujours vers saison", () => {
