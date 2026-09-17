@@ -40,12 +40,10 @@ import {
   isParentalConsentBlocking,
   consentCheckedAfterCategoryChange,
   isStoredParentalConsent,
-  buildParentalConsent,
   type ParentalConsent,
 } from "../domain/parentalConsent";
 import { PRIVACY_POLICY } from "../utils/legalContent";
 import { recommendMicrocycle } from "../domain/recommendMicrocycle";
-import { OBJECTIF_ENCAISSER, normalizeMainObjective } from "../domain/mainObjective";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { showToast } from "../utils/toast";
 import { withTimeout, TimeoutError } from "../utils/errorHandler";
@@ -60,6 +58,19 @@ import { trackEvent } from "../services/analytics";
 import { BODY_AREAS, LIBELLE_GRAVITE, LIBELLE_ZONE } from "../domain/monCorps/zones";
 import type { BodyArea, BodyInjurySeverity } from "../domain/types";
 import { ajouterGene } from "../hooks/monCorps/monCorpsActions";
+import { setupDraft } from "../services/setupDraft";
+import { createSubmitGuard } from "../services/registerAccount";
+import { finaliserQuestionnaire } from "../services/finalizeSetup";
+import {
+  SETUP_DOMINANT_FEET as dominantFeet,
+  SETUP_FKS_SESSIONS as fksSessionsOptions,
+  SETUP_LEVELS as levels,
+  SETUP_OBJECTIVES as objectives,
+  SETUP_POSITIONS as positions,
+  validerEtape,
+  type ReponsesAValider,
+} from "../domain/setupValidation";
+import { resoudrePrefill, type SetupAnswers } from "../domain/setupPrefill";
 
 // 5 → 4 étapes (mai 2026) : le matériel (29 cases, ≥1 obligatoire) sort du
 // setup — cf. docs/onboarding-design.md §4.6/§4.3 (design validé par le
@@ -85,26 +96,19 @@ const STEP_DENSITY_TOTAL = STEP_DENSITY_WEIGHTS.reduce((sum, w) => sum + w, 0);
 
 /* ─── Steps config ─── */
 const STEPS: { label: string; icon: keyof typeof Ionicons.glyphMap; subtitle: string }[] = [
-  { label: "Identité", icon: "person-outline", subtitle: "Dis-nous qui tu es" },
-  { label: "Objectif", icon: "flag-outline", subtitle: "Quel est ton but ?" },
-  { label: "Club", icon: "people-outline", subtitle: "Tes entraînements & matchs" },
-  { label: "Salle", icon: "barbell-outline", subtitle: "Ton accès salle" },
+  // Libellés JOUEUR (2026-09) : l'étape 3 parle de SA semaine (entraînements
+  // collectifs et matchs qu'il déclare), pas d'un club dans l'app ; l'étape 4
+  // porte aussi la gêne du moment, son titre le dit. Chaque sous-titre donne le
+  // POURQUOI : ces réponses règlent le dosage, ce n'est pas un formulaire.
+  { label: "Ton profil", icon: "person-outline", subtitle: "Poste, âge et niveau règlent le dosage de tes séances." },
+  { label: "Ton objectif", icon: "flag-outline", subtitle: "Il détermine le programme qu'on te propose." },
+  { label: "Ta semaine", icon: "calendar-outline", subtitle: "Entraînements collectifs et matchs : on place tes séances autour." },
+  { label: "Salle et état du moment", icon: "barbell-outline", subtitle: "Pour choisir le lieu et ménager une zone sensible." },
 ];
 
 /* ─── Constants ─── */
-const positions = ["Gardien", "Defenseur", "Milieu", "Attaquant"] as const;
-const levels = ["Amateur", "Regional", "National", "Semi-pro", "Pro"] as const;
-const dominantFeet = ["Pied droit", "Pied gauche", "Ambidextre"] as const;
-const objectives = [
-  "Etre en forme toute la saison",
-  "Gagner en vitesse / explosivite",
-  // Valeur SANS accent (convention : jamais d'accent dans une valeur
-  // persistée). L'ancienne forme accentuée reste lisible — normalizeMainObjective
-  // la ramène ici — et aucun profil existant n'est migré (domain/mainObjective).
-  OBJECTIF_ENCAISSER,
-  "Reprendre apres une blessure",
-] as const;
-const fksSessionsOptions = ["1", "2", "3", "4"] as const;
+// Les listes de valeurs (postes, niveaux, pieds, objectifs, séances) vivent dans
+// domain/setupValidation — la même source que la validation.
 
 // Question optionnelle "reprise" (boucle de suivi joueur, Lot 6) : jours estimes
 // depuis le dernier entrainement regulier, en jours ESTIMES pour rester simple
@@ -206,6 +210,28 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   const [homeEquipment, setHomeEquipment] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // ── SOURCES DU FORMULAIRE (cf. domain/setupPrefill) ──────────────────────
+  // Un champ TOUCHÉ par le joueur n'est plus jamais réécrit par une source
+  // tardive (document Firestore lent, brouillon). `undefined` = pas encore reçu.
+  const touchedRef = useRef(new Set<string>());
+  // Clés PRÉSENTES dans le brouillon relu : elles restent « explicites » même si
+  // le joueur n'y retouche pas (absent ≠ vidé, cf. services/setupDraft).
+  const clesBrouillonRef = useRef(new Set<string>());
+  const aNavigueRef = useRef(false);
+  const serverDocRef = useRef<Record<string, unknown> | null | undefined>(undefined);
+  const draftRef = useRef<{ step: number; answers: SetupAnswers } | null | undefined>(undefined);
+  // Le compte de CE montage : le brouillon n'est lu et écrit que pour lui.
+  const uidRef = useRef<string | null>(getAuth().currentUser?.uid ?? null);
+  // Le brouillon a été lu (ou n'existe pas) : avant, on n'écrit rien — sinon
+  // un formulaire encore vide écraserait le brouillon qu'on est en train de lire.
+  const [sourcesPretes, setSourcesPretes] = useState(false);
+  const finaliseRef = useRef(false);
+  const [saveGuard] = useState(() => createSubmitGuard());
+  const saisir = (champ: string, action: () => void) => {
+    touchedRef.current.add(champ);
+    action();
+  };
+
   const shake = useRef(new Animated.Value(0)).current;
   const stepFade = useRef(new Animated.Value(1)).current;
   // Départ du chrono setup (funnel analytics), consommé par profile_completed.
@@ -215,32 +241,86 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   const cycleLabel = cycleId ? MICROCYCLES[cycleId].label : null;
   const cycleProgress = Math.min(MICROCYCLE_TOTAL_SESSIONS_DEFAULT, Math.max(0, Math.trunc(microcycleSessionIndex ?? 0)));
 
-  /* ─── Prefill ─── */
+  /* ─── Sources : saisie en cours > brouillon du compte > document distant ─── */
   useEffect(() => {
-    const auth = getAuth();
-    const user = auth.currentUser;
-    if (!user) return;
-    // Fallback si le doc Firestore n'a pas (encore) de prénom : le setDoc du Register
-    // peut arriver après ce getDoc one-shot (course), on récupère le displayName auth.
+    const user = getAuth().currentUser;
+    if (!user) return undefined;
+    let vivant = true;
+    // Fallback si le doc Firestore n'a pas (encore) de prénom : l'écriture de
+    // l'inscription peut arriver après cette lecture, on prend le displayName auth.
     const fallbackFirstName = user.displayName?.trim() ?? "";
-    getDoc(doc(db, "users", user.uid)).then((snap) => {
-      const d = snap.data();
-      const docFirstName = d && typeof d.firstName === "string" ? d.firstName.trim() : "";
-      if (docFirstName) {
-        setFirstName(docFirstName);
-        setPrenomPrerempli(true);
-      } else if (fallbackFirstName) {
-        setFirstName(fallbackFirstName);
-        setPrenomPrerempli(true);
+
+    const appliquer = () => {
+      if (!vivant) return;
+      const res = resoudrePrefill({
+        edition: isEditMode,
+        serverDoc: serverDocRef.current ?? null,
+        fallbackFirstName,
+        draft: draftRef.current ?? null,
+        touched: touchedRef.current,
+        aNavigue: aNavigueRef.current,
+      });
+      const p = res.patch;
+      if (p.firstName !== undefined) setFirstName(p.firstName);
+      if (res.prenomDepuisSource) setPrenomPrerempli(true);
+      if (p.position !== undefined) setPosition(p.position);
+      if (p.ageCategory !== undefined) setAgeCategory(p.ageCategory);
+      if (p.level !== undefined) setLevel(p.level);
+      if (p.dominantFoot !== undefined) setDominantFoot(p.dominantFoot);
+      if (p.mainObjective !== undefined) setMainObjective(p.mainObjective);
+      if (p.targetFksSessionsPerWeek !== undefined) setTargetFksSessionsPerWeek(p.targetFksSessionsPerWeek);
+      if (p.selfReportedGapOption !== undefined) {
+        const option = SELF_REPORTED_GAP_OPTIONS.find((o) => o.id === p.selfReportedGapOption);
+        setSelfReportedGapOption(option ? option.id : "");
       }
+      if (p.hasClubTrainings !== undefined) setHasClubTrainings(p.hasClubTrainings);
+      if (p.clubTrainingDays !== undefined) setClubTrainingDays(p.clubTrainingDays);
+      if (p.matchDays !== undefined) setMatchDays(p.matchDays);
+      if (p.hasGymAccess !== undefined) setHasGymAccess(p.hasGymAccess);
+      if (p.geneSetup !== undefined) setGeneSetup(p.geneSetup);
+      if (p.geneZone !== undefined) {
+        setGeneZone((BODY_AREAS as readonly string[]).includes(p.geneZone) ? (p.geneZone as BodyArea) : null);
+      }
+      if (p.geneGravite !== undefined) setGeneGravite(p.geneGravite);
+      if (res.step !== null) setStep(res.step);
+      if (res.supprimerBrouillon) {
+        // Profil déjà finalisé : le vieux brouillon ne s'applique pas ET disparaît.
+        draftRef.current = null;
+        void setupDraft.clear(user.uid);
+      }
+    };
+
+    if (isEditMode) {
+      // Édition d'un profil EXISTANT : aucun brouillon n'est lu ni écrit, et un
+      // reliquat d'inscription (écriture tardive après délai de garde) est retiré.
+      draftRef.current = null;
+      void setupDraft.clear(user.uid);
+    } else {
+      setupDraft.load(user.uid).then((brouillon) => {
+        if (!vivant) return;
+        draftRef.current = brouillon ? { step: brouillon.step, answers: brouillon.answers } : null;
+        clesBrouillonRef.current = new Set(brouillon ? Object.keys(brouillon.answers) : []);
+        appliquer();
+        setSourcesPretes(true);
+        if (brouillon && Object.keys(brouillon.answers).length > 1) {
+          showToast({ type: "info", title: "On reprend où tu en étais", message: "Tes réponses précédentes sont là. Vérifie-les et continue." });
+        }
+      });
+    }
+
+    getDoc(doc(db, "users", user.uid)).then((snap) => {
+      if (!vivant) return;
+      const d = (snap.data() ?? null) as Record<string, unknown> | null;
+      serverDocRef.current = d;
+      appliquer();
       if (!d) return;
-      if (typeof d.position === "string") setPosition(d.position);
-      if (typeof d.ageCategory === "string") setAgeCategory(d.ageCategory);
+      // Ce qui n'est PAS une réponse du questionnaire : repassé tel quel au save.
       // Consentement parental déjà donné (édition d'un profil U15 existant) :
       // on pré-coche pour ne pas redemander, et on garde la preuve d'origine.
       if (isStoredParentalConsent(d.parentalConsent)) {
         storedParentalConsentRef.current = d.parentalConsent;
         if (
+          !touchedRef.current.has("parentalConsent") &&
           typeof d.ageCategory === "string" &&
           requiresParentalConsent(d.ageCategory) &&
           d.parentalConsent.ageCategoryAtConsent === d.ageCategory
@@ -248,36 +328,63 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
           setParentalConsentChecked(true);
         }
       }
-      if (typeof d.level === "string") setLevel(d.level);
-      if (typeof d.dominantFoot === "string") setDominantFoot(d.dominantFoot);
-      // Normalisé à la LECTURE : un profil d'avant le 05/09 porte la forme
-      // accentuée, et sans ça sa carte n'apparaîtrait pas sélectionnée.
-      if (typeof d.mainObjective === "string") setMainObjective(normalizeMainObjective(d.mainObjective) ?? "");
-      if (d.targetFksSessionsPerWeek != null) setTargetFksSessionsPerWeek(String(d.targetFksSessionsPerWeek));
-      if (typeof d.selfReportedGapDays === "number") {
-        const found = SELF_REPORTED_GAP_OPTIONS.find((o) => o.days === d.selfReportedGapDays);
-        if (found) setSelfReportedGapOption(found.id);
-      }
-      // clubTrainingsPerWeek/matchesPerWeek ne sont plus prefillés depuis leur
-      // valeur en base : ils sont redérivés de clubTrainingDays/matchDays
-      // (prefillés juste après) à chaque save.
-      if (typeof d.hasClubTrainings === "string") {
-        setHasClubTrainings(d.hasClubTrainings === "oui" ? "oui" : d.hasClubTrainings === "non" ? "non" : "");
-      }
-      if (Array.isArray(d.clubTrainingDays)) setClubTrainingDays(d.clubTrainingDays);
-      if (Array.isArray(d.matchDays)) setMatchDays(d.matchDays);
-      if (typeof d.matchDay === "string" && (!d.matchDays || !d.matchDays.length)) setMatchDays([d.matchDay]);
-      if (typeof d.hasGymAccess === "string") {
-        setHasGymAccess(d.hasGymAccess === "regular" ? "oui" : d.hasGymAccess === "occasional" ? "occasionnel" : "non");
-      }
-      if (Array.isArray(d.gymEquipment)) setGymEquipment(d.gymEquipment);
+      if (Array.isArray(d.gymEquipment)) setGymEquipment(d.gymEquipment as string[]);
       if (typeof d.hasHomeEquipment === "boolean") setHasHomeEquipment(d.hasHomeEquipment ? "oui" : "non");
-      if (Array.isArray(d.homeEquipment)) setHomeEquipment(d.homeEquipment);
+      if (Array.isArray(d.homeEquipment)) setHomeEquipment(d.homeEquipment as string[]);
     }).catch((err) => {
       if (__DEV__) console.error("[ProfileSetup] Failed to prefill profile:", err);
-      showToast({ type: "warn", title: "Profil", message: "Impossible de charger ton profil. Vérifie ta connexion et réessaie." });
+      // Inscription initiale : rien à charger n'est pas une panne (compte neuf,
+      // réseau lent) — le brouillon et la saisie suffisent. En édition, on le dit.
+      if (isEditMode) {
+        showToast({ type: "warn", title: "Profil", message: "Impossible de charger ton profil. Vérifie ta connexion et réessaie." });
+      }
     });
+    return () => {
+      vivant = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* ─── Brouillon : écrit à chaque changement (inscription initiale seulement) ─── */
+  // SEULS LES CHAMPS EXPLICITES entrent dans le brouillon : ceux que le joueur a
+  // touchés dans cette session, et ceux qu'un brouillon précédent portait déjà.
+  // Un champ jamais approché reste ABSENT (le profil distant peut le remplir) ;
+  // un champ vidé volontairement reste PRÉSENT et vide (il ne revient pas).
+  const reponsesCourantes = (): SetupAnswers => {
+    const toutes: Record<string, unknown> = {
+      firstName, position, ageCategory, level, dominantFoot, mainObjective,
+      targetFksSessionsPerWeek, selfReportedGapOption, hasClubTrainings, clubTrainingDays,
+      matchDays, hasGymAccess, geneSetup, geneZone: geneZone ?? "", geneGravite,
+    };
+    const explicites = new Set([...touchedRef.current, ...clesBrouillonRef.current]);
+    // Décocher « entraînements collectifs » vide aussi les jours : les deux vont ensemble.
+    if (explicites.has("hasClubTrainings")) explicites.add("clubTrainingDays");
+    if (explicites.has("geneSetup")) { explicites.add("geneZone"); explicites.add("geneGravite"); }
+    const out: Record<string, unknown> = {};
+    for (const cle of explicites) if (cle in toutes) out[cle] = toutes[cle];
+    return out as SetupAnswers;
+  };
+
+  const ecrireBrouillon = (etape: number) => {
+    const uid = uidRef.current;
+    if (isEditMode || !sourcesPretes || finaliseRef.current || !uid) return Promise.resolve(false);
+    // Le compte a changé sous l'écran (déconnexion en vol) : on n'écrit rien.
+    if (getAuth().currentUser?.uid !== uid) return Promise.resolve(false);
+    return setupDraft.save(uid, { step: etape, answers: reponsesCourantes() });
+  };
+
+  useEffect(() => {
+    if (isEditMode || !sourcesPretes) return undefined;
+    const minuteur = setTimeout(() => {
+      void ecrireBrouillon(step);
+    }, 400);
+    return () => clearTimeout(minuteur);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    sourcesPretes, step, firstName, position, ageCategory, level, dominantFoot, mainObjective,
+    targetFksSessionsPerWeek, selfReportedGapOption, hasClubTrainings, clubTrainingDays, matchDays,
+    hasGymAccess, geneSetup, geneZone, geneGravite,
+  ]);
 
   useEffect(() => {
     // Non → jours club masqués et vidés ; clubTrainingsPerWeek dérivé
@@ -332,42 +439,19 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   };
 
   /* ─── Validation per step ─── */
+  const reponsesAValider = (): ReponsesAValider => ({
+    firstName, position, ageCategory, level, dominantFoot, mainObjective, targetFksSessionsPerWeek,
+    hasClubTrainings, clubTrainingDays, hasGymAccess, geneSetup, geneZone, geneGravite,
+    // L'état RÉEL de la case : jamais déduit de la catégorie ni du brouillon.
+    parentalConsentChecked,
+  });
+
+  /** Validation de l'étape AFFICHÉE (bouton « Suivant ») — domain/setupValidation. */
   const validateStep = (): boolean => {
-    switch (step) {
-      case 0:
-        if (!firstName.trim()) { fail("Champs manquants", "Merci d'indiquer ton prénom."); return false; }
-        if (!positions.includes(position as any)) { fail("Champs manquants", "Choisis ton poste."); return false; }
-        // Chemin de décision unique, ordonné : (1) catégorie sélectionnable
-        // (un profil legacy U13 échoue ici → il doit repick), (2) seulement
-        // ensuite, consentement parental si la catégorie choisie est < 15 ans.
-        if (!SELECTABLE_AGE_CATEGORIES.includes(ageCategory as any)) { fail("Champs manquants", "Choisis ta catégorie."); return false; }
-        if (isParentalConsentBlocking(ageCategory, parentalConsentChecked)) {
-          fail("Accord parental requis", "Coche la case pour confirmer l'accord de ton parent ou responsable légal.");
-          return false;
-        }
-        if (!levels.includes(level as any)) { fail("Champs manquants", "Indique ton niveau."); return false; }
-        if (!dominantFeet.includes(dominantFoot as any)) { fail("Champs manquants", "Choisis ton pied fort."); return false; }
-        return true;
-      case 1:
-        if (!objectives.includes(mainObjective as any)) { fail("Champs manquants", "Choisis ton objectif principal."); return false; }
-        if (!fksSessionsOptions.includes(targetFksSessionsPerWeek as any)) { fail("Champs manquants", "Indique tes séances FKS / semaine."); return false; }
-        return true;
-      case 2: {
-        // clubTrainingsPerWeek/matchesPerWeek n'existent plus en saisie : ils
-        // sont dérivés des jours cochés (clubTrainingDays/matchDays), donc
-        // plus rien à valider côté nombre ici.
-        if (!hasClubTrainings) { fail("Champs manquants", "Indique si tu as des entraînements club."); return false; }
-        if (hasClubTrainings === "oui" && clubTrainingDays.length === 0) { fail("Champs manquants", "Précise les jours d'entraînement club."); return false; }
-        return true;
-      }
-      case 3:
-        // Plus de validation matériel (docs/onboarding-design.md §4.6) : le
-        // matériel se choisit à la première génération, jamais un blocage ici.
-        if (!hasGymAccess) { fail("Champs manquants", "Indique si tu as accès à une salle."); return false; }
-        return true;
-      default:
-        return true;
-    }
+    const verdict = validerEtape(step, reponsesAValider());
+    if (verdict.ok) return true;
+    fail(verdict.title, verdict.message);
+    return false;
   };
 
   const goNext = () => {
@@ -376,11 +460,16 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       trackEvent("profile_step_completed", { step: step + 1, stepLabel: STEPS[step].label, totalSteps: TOTAL_STEPS });
     }
     haptics.impactMedium();
-    if (step < TOTAL_STEPS - 1) animateTransition(step + 1);
+    aNavigueRef.current = true;
+    if (step < TOTAL_STEPS - 1) {
+      void ecrireBrouillon(step + 1);
+      animateTransition(step + 1);
+    }
   };
 
   const goBack = () => {
     haptics.impactLight();
+    aNavigueRef.current = true;
     if (step > 0) animateTransition(step - 1);
   };
 
@@ -400,6 +489,13 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   const handleLogout = async () => {
     haptics.impactLight();
     try {
+      // POLITIQUE DE DÉCONNEXION : la saisie n'est pas détruite. Le brouillon
+      // reste CHIFFRÉ sur ce téléphone, lié à ce compte, et ne se recharge
+      // qu'après une nouvelle connexion au même compte (services/setupDraft).
+      const garde = await ecrireBrouillon(step);
+      if (garde) {
+        showToast({ type: "info", title: "Réponses gardées", message: "Elles t'attendent sur ce téléphone, pour ce compte uniquement." });
+      }
       await signOut(firebaseAuth);
       // Le listener auth du RootNavigator renvoie automatiquement vers la connexion.
     } catch (e) {
@@ -423,31 +519,17 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   };
 
   const handleSave = async () => {
-    if (!validateStep()) return;
-    if (!isEditMode) {
-      trackEvent("profile_step_completed", { step: step + 1, stepLabel: STEPS[step].label, totalSteps: TOTAL_STEPS });
-    }
-    const targetFksSessions = Number(targetFksSessionsPerWeek);
-    // Dérivé des jours cochés (plus de saisie numérique séparée — double
-    // emploi corrigé sur ordre du fondateur) : mêmes noms/types en base,
-    // aucun changement de contrat côté backend.
-    const trainings = clubTrainingDays.length;
-    const matches = matchDays.length;
+    // DOUBLE APPUI : `loading` est un état asynchrone ; la garde, elle, est
+    // synchrone — une seule écriture de profil (et une seule gêne) par appui.
+    await saveGuard.run(enregistrerProfil);
+  };
 
+  const enregistrerProfil = async () => {
     // Auto-assign : si aucun cycle actif, on applique la reco basée sur l'objectif
     // pour que le joueur atterrisse sur l'accueil avec un cycle prêt (zéro étape morte).
     const autoCycleId = isMicrocycleId(activeCycleGoal)
       ? null
       : recommendMicrocycle({ mainObjective, lastTestPlaylist: null }).id;
-
-    // Gêne déclarée au setup (D6) -> « Mon corps », source `setup`.
-    // Écrite AVANT l'enregistrement Firestore parce qu'elle est locale et
-    // instantanée : elle ne dépend pas du réseau, et si le profil échoue, le
-    // joueur retape « Terminer » — la garde ci-dessous évite le doublon.
-    if (geneSetup === "oui" && geneZone && geneGravite && !geneEcriteRef.current) {
-      ajouterGene({ zone: geneZone, gravite: geneGravite, source: "setup" });
-      geneEcriteRef.current = true;
-    }
 
     try {
       setLoading(true);
@@ -455,54 +537,48 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       const user = auth.currentUser;
       if (!user) { fail("Connexion requise", "Connecte-toi pour enregistrer ton profil."); return; }
 
-      // DÉLAI DE GARDE (P1-05) : hors réseau, le `setDoc` pend sans fin et
-      // l'overlay « Enregistrement… » gelait à jamais. Un dépassement remonte
-      // au catch ci-dessous ; l'écriture partie n'est pas annulée — si elle
-      // atterrit après coup (réseau revenu), le listener du RootNavigator voit
-      // `profileCompleted` et bascule tout seul.
-      await withTimeout(setDoc(doc(db, "users", user.uid), {
+      // TOUTE la finalisation vit dans services/finalizeSetup (testée en
+      // exécution) : validation de TOUTES les étapes AVANT la moindre écriture
+      // — gêne locale comprise —, puis profil, puis suppression du brouillon.
+      const issue = await finaliserQuestionnaire(
+        {
+          ecrireGene: (g) => ajouterGene({ zone: g.zone as BodyArea, gravite: g.gravite as BodyInjurySeverity, source: "setup" }),
+          onGeneEcrite: () => { geneEcriteRef.current = true; },
+          // DÉLAI DE GARDE (P1-05) : hors réseau, le `setDoc` pend sans fin. Un
+          // dépassement remonte au catch ci-dessous ; l'écriture partie n'est pas
+          // annulée — si elle atterrit après coup, le listener du RootNavigator
+          // voit `profileCompleted` et bascule tout seul.
+          ecrireProfil: (uid, data) =>
+            withTimeout(setDoc(doc(db, "users", uid), data, { merge: true }).then(() => undefined), 15000),
+          effacerBrouillon: async (uid) => {
+            // `finaliseRef` empêche une écriture différée (minuteur) de recréer le brouillon.
+            finaliseRef.current = true;
+            await setupDraft.clear(uid);
+          },
+          serverTimestamp,
+        },
+        {
           uid: user.uid,
-          firstName: firstName.trim(),
-          // `clubId` n'est JAMAIS écrit ici : un rattachement historique
-          // (ancien espace club, retiré en 2026-09) reste intact en base,
-          // un `merge` sans la clé n'y touche pas.
-          position, ageCategory, level, dominantFoot, mainObjective,
-          targetFksSessionsPerWeek: targetFksSessions,
-          // Reprise (optionnel) -- null tant que non repondu, jamais de valeur inventee.
-          selfReportedGapDays: selfReportedGapOption
-            ? (SELF_REPORTED_GAP_OPTIONS.find((o) => o.id === selfReportedGapOption)?.days ?? null)
-            : null,
-          clubTrainingsPerWeek: trainings,
-          matchesPerWeek: matches,
-          hasClubTrainings, clubTrainingDays,
-          matchDay: matchDays[0] ?? null, matchDays,
-          hasGymAccess: hasGymAccess === "oui" ? "regular" : hasGymAccess === "occasionnel" ? "occasional" : "none",
-          // Repasse tel quel (pas d'UI ici pour les modifier) : [] / false pour
-          // un nouveau profil, valeur prefillée inchangée pour un profil édité
-          // — jamais undefined, jamais de perte silencieuse de données existantes.
-          gymEquipment,
-          hasHomeEquipment: hasHomeEquipment === "oui",
-          homeEquipment,
-          // Preuve de consentement parental (RGPD < 15 ans). Hors catégories
-          // mineures, le champ n'est pas touché : une preuve historique éventuelle
-          // reste en base (accountability), merge:true ne l'efface pas.
-          ...(requiresParentalConsent(ageCategory)
-            ? { parentalConsent: buildParentalConsent(ageCategory, storedParentalConsentRef.current) }
-            : {}),
-          profileCompleted: true,
-          ...(autoCycleId
-            ? {
-                microcycleGoal: autoCycleId,
-                goal: autoCycleId,
-                programGoal: autoCycleId,
-                microcycleStatus: "active",
-                microcycleTotalSessions: MICROCYCLE_TOTAL_SESSIONS_DEFAULT,
-                microcycleSessionIndex: 0,
-                microcycleStartedAt: serverTimestamp(),
-              }
-            : {}),
-          updatedAt: serverTimestamp(),
-        }, { merge: true }).then(() => undefined), 15000);
+          reponses: { ...reponsesAValider(), selfReportedGapOption, matchDays },
+          storedParentalConsent: storedParentalConsentRef.current,
+          passthrough: { gymEquipment, hasHomeEquipment: hasHomeEquipment === "oui", homeEquipment },
+          autoCycleId,
+          geneDejaEcrite: geneEcriteRef.current,
+        },
+      );
+
+      if (issue.status === "invalid") {
+        // Rien n'a été écrit. On ramène le joueur à la PREMIÈRE étape invalide
+        // (brouillon repris plus loin, profil ancien incomplet…) et on dit quoi.
+        if (issue.step !== step) animateTransition(issue.step);
+        fail(issue.title, issue.message);
+        return;
+      }
+
+      if (!isEditMode) {
+        trackEvent("profile_step_completed", { step: step + 1, stepLabel: STEPS[step].label, totalSteps: TOTAL_STEPS });
+      }
+
 
       if (autoCycleId) {
         setMicrocycleGoal(autoCycleId);
@@ -517,7 +593,18 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
 
       haptics.success();
-      showToast({ type: "success", title: "Profil enregistré", message: "Configuration terminée !" });
+      const programme = autoCycleId ? MICROCYCLES[autoCycleId].label : cycleLabel;
+      showToast(
+        isEditMode
+          ? { type: "success", title: "Profil enregistré", message: "Tes prochaines séances en tiennent compte." }
+          : {
+              type: "success",
+              title: "Profil enregistré",
+              message: programme
+                ? `Programme ${programme} prêt. Lance ta première séance depuis l'accueil.`
+                : "Choisis ton programme depuis l'accueil pour lancer ta première séance.",
+            },
+      );
 
       terminer();
     } catch (error) {
@@ -537,7 +624,12 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       if (__DEV__) console.error("Erreur sauvegarde profil:", error);
       runShake(shake);
       haptics.error();
-      showToast({ type: "error", title: "Erreur", message: "Impossible d'enregistrer le profil." });
+      // Le COMPTE existe, c'est le PROFIL qui n'est pas passé — et rien n'est perdu.
+      showToast({
+        type: "error",
+        title: "Profil non enregistré",
+        message: "Ton compte existe et tes réponses sont conservées. Réessaie dans un instant.",
+      });
     } finally {
       setLoading(false);
     }
@@ -590,13 +682,16 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       case 0:
         return (
           <>
+            <Text style={styles.fieldHelp}>
+              Tout est nécessaire pour régler tes séances, sauf les questions marquées « facultatif ».
+            </Text>
             <Text style={styles.fieldLabel}>Prénom</Text>
             <TextInput
               style={styles.input}
               placeholder="Ex: Kylian"
               placeholderTextColor={palette.muted}
               value={firstName}
-              onChangeText={setFirstName}
+              onChangeText={(v) => saisir("firstName", () => setFirstName(v))}
               autoCapitalize="words"
               // `given-name` : le champ attend un PRÉNOM. Sans ce jeton, iOS
               // proposait le nom complet du contact (P2-02).
@@ -613,12 +708,13 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
             <Text style={styles.fieldLabel}>Poste</Text>
             {positions.map((p) => (
-              <Choice key={p} label={POSITION_DISPLAY_LABELS[p] ?? p} selected={position === p} onPress={() => setPosition(p)} />
+              <Choice key={p} label={POSITION_DISPLAY_LABELS[p] ?? p} selected={position === p} onPress={() => saisir("position", () => setPosition(p))} />
             ))}
 
-            <Text style={styles.fieldLabel}>Catégorie</Text>
+            <Text style={styles.fieldLabel}>Catégorie d'âge</Text>
+            <Text style={styles.fieldHelp}>Elle fixe les plafonds de charge adaptés à ton âge.</Text>
             {SELECTABLE_AGE_CATEGORIES.map((c) => (
-              <Choice key={c} label={c} selected={ageCategory === c} onPress={() => setAgeCategory(c)} />
+              <Choice key={c} label={c} selected={ageCategory === c} onPress={() => saisir("ageCategory", () => setAgeCategory(c))} />
             ))}
 
             {/* Consentement parental — affiché uniquement pour une catégorie
@@ -632,7 +728,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                 </Text>
                 <View style={styles.consentBox}>
                   <Pressable
-                    onPress={() => { hapticSelect(); setParentalConsentChecked(!parentalConsentChecked); }}
+                    onPress={() => { hapticSelect(); saisir("parentalConsent", () => setParentalConsentChecked(!parentalConsentChecked)); }}
                     style={styles.consentCheckbox}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     accessibilityRole="checkbox"
@@ -660,12 +756,12 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
 
             <Text style={styles.fieldLabel}>Niveau</Text>
             {levels.map((l) => (
-              <Choice key={l} label={LEVEL_DISPLAY_LABELS[l] ?? l} selected={level === l} onPress={() => setLevel(l)} />
+              <Choice key={l} label={LEVEL_DISPLAY_LABELS[l] ?? l} selected={level === l} onPress={() => saisir("level", () => setLevel(l))} />
             ))}
 
             <Text style={styles.fieldLabel}>Pied fort</Text>
             {dominantFeet.map((f) => (
-              <Choice key={f} label={f} selected={dominantFoot === f} onPress={() => setDominantFoot(f)} />
+              <Choice key={f} label={f} selected={dominantFoot === f} onPress={() => saisir("dominantFoot", () => setDominantFoot(f))} />
             ))}
 
           </>
@@ -674,6 +770,14 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       case 1:
         return (
           <>
+            {/* INSCRIPTION INITIALE : la carte « Aucun cycle actif — Choisir » posait
+                une question que l'app règle toute seule (programme recommandé à la
+                fin, d'après l'objectif). Elle ne reste qu'en édition de profil. */}
+            {!isEditMode ? (
+              <Text style={styles.fieldHelp}>
+                À la fin, on te propose le programme adapté à cet objectif. Tu pourras en changer quand tu veux.
+              </Text>
+            ) : (
             <View style={styles.cycleCard}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.cycleLabel}>
@@ -701,27 +805,29 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                 <Text style={styles.cycleButtonText}>{cycleLabel ? "Gérer" : "Choisir"}</Text>
               </TouchableOpacity>
             </View>
+            )}
 
             <Text style={styles.fieldLabel}>Objectif principal avec FKS</Text>
             {objectives.map((o) => (
-              <Choice key={o} label={OBJECTIVE_DISPLAY_LABELS[o] ?? o} selected={mainObjective === o} onPress={() => setMainObjective(o)} />
+              <Choice key={o} label={OBJECTIVE_DISPLAY_LABELS[o] ?? o} selected={mainObjective === o} onPress={() => saisir("mainObjective", () => setMainObjective(o))} />
             ))}
 
-            <Text style={styles.fieldLabel}>Séances FKS / semaine (hors club)</Text>
+            <Text style={styles.fieldLabel}>Séances FKS par semaine, en plus de tes entraînements</Text>
             <View style={styles.chipRow}>
               {fksSessionsOptions.map((o) => (
-                <Chip key={o} label={o} selected={targetFksSessionsPerWeek === o} onPress={() => setTargetFksSessionsPerWeek(o)} />
+                <Chip key={o} label={o} selected={targetFksSessionsPerWeek === o} onPress={() => saisir("targetFksSessionsPerWeek", () => setTargetFksSessionsPerWeek(o))} />
               ))}
             </View>
 
-            <Text style={styles.fieldLabel}>Depuis quand n'as-tu pas eu d'entraînement régulier ? (optionnel)</Text>
+            <Text style={styles.fieldLabel}>Depuis quand n'as-tu pas eu d'entraînement régulier ? (facultatif)</Text>
+            <Text style={styles.fieldHelp}>Après une coupure, on redémarre plus doucement.</Text>
             <View style={styles.chipRowWrap}>
               {SELF_REPORTED_GAP_OPTIONS.map((o) => (
                 <Chip
                   key={o.id}
                   label={o.label}
                   selected={selfReportedGapOption === o.id}
-                  onPress={() => setSelfReportedGapOption((cur) => (cur === o.id ? "" : o.id))}
+                  onPress={() => saisir("selfReportedGapOption", () => setSelfReportedGapOption((cur) => (cur === o.id ? "" : o.id)))}
                 />
               ))}
             </View>
@@ -731,36 +837,36 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       case 2:
         return (
           <>
-            <Text style={styles.fieldLabel}>As-tu des entraînements club ?</Text>
+            <Text style={styles.fieldLabel}>As-tu des entraînements collectifs (club, équipe) ?</Text>
             <View style={styles.chipRow}>
-              <Chip label="Oui" selected={hasClubTrainings === "oui"} onPress={() => setHasClubTrainings("oui")} />
-              <Chip label="Non" selected={hasClubTrainings === "non"} onPress={() => setHasClubTrainings("non")} />
+              <Chip label="Oui" selected={hasClubTrainings === "oui"} onPress={() => saisir("hasClubTrainings", () => setHasClubTrainings("oui"))} />
+              <Chip label="Non" selected={hasClubTrainings === "non"} onPress={() => saisir("hasClubTrainings", () => setHasClubTrainings("non"))} />
             </View>
 
             {hasClubTrainings === "oui" ? (
               <>
-                <Text style={styles.fieldLabel}>Quels jours t'entraînes-tu avec ton club ?</Text>
+                <Text style={styles.fieldLabel}>Quels jours t'entraînes-tu avec ton équipe ?</Text>
                 <View style={styles.chipRowWrap}>
                   {daysOfWeek.map((d) => (
                     <Chip key={d.id} label={d.label} selected={clubTrainingDays.includes(d.id)}
-                      onPress={() => toggleInList(d.id, clubTrainingDays, setClubTrainingDays)} />
+                      onPress={() => saisir("clubTrainingDays", () => toggleInList(d.id, clubTrainingDays, setClubTrainingDays))} />
                   ))}
                 </View>
-                <Text style={styles.hintText}>On calcule ta charge club à partir de tes jours.</Text>
+                <Text style={styles.hintText}>Ces jours comptent dans ta charge : on évite de te surcharger autour.</Text>
               </>
             ) : hasClubTrainings === "non" ? (
-              <Text style={styles.hintText}>Aucun entraînement club pris en compte.</Text>
+              <Text style={styles.hintText}>Aucun entraînement collectif pris en compte.</Text>
             ) : null}
 
-            <Text style={styles.fieldLabel}>Quel(s) jour(s) as-tu match habituellement ?</Text>
+            <Text style={styles.fieldLabel}>Tes jours de match habituels (facultatif)</Text>
             <View style={styles.chipRowWrap}>
               {daysOfWeek.map((d) => (
                 <Chip key={`m${d.id}`} label={d.label} selected={matchDays.includes(d.id)}
-                  onPress={() => toggleInList(d.id, matchDays, setMatchDays)} />
+                  onPress={() => saisir("matchDays", () => toggleInList(d.id, matchDays, setMatchDays))} />
               ))}
             </View>
             {matchDays.length === 0 && (
-              <Text style={styles.hintText}>Aucun match sélectionné.</Text>
+              <Text style={styles.hintText}>Pas de match régulier ? Ne coche rien. Sinon, on allège la veille et le jour même.</Text>
             )}
 
           </>
@@ -771,9 +877,9 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
           <>
             <Text style={styles.fieldLabel}>Accès à une salle de musculation ?</Text>
             <View style={styles.chipRow}>
-              <Chip label="Oui régulièrement" selected={hasGymAccess === "oui"} onPress={() => setHasGymAccess("oui")} />
-              <Chip label="De temps en temps" selected={hasGymAccess === "occasionnel"} onPress={() => setHasGymAccess("occasionnel")} />
-              <Chip label="Non" selected={hasGymAccess === "non"} onPress={() => setHasGymAccess("non")} />
+              <Chip label="Oui régulièrement" selected={hasGymAccess === "oui"} onPress={() => saisir("hasGymAccess", () => setHasGymAccess("oui"))} />
+              <Chip label="De temps en temps" selected={hasGymAccess === "occasionnel"} onPress={() => saisir("hasGymAccess", () => setHasGymAccess("occasionnel"))} />
+              <Chip label="Non" selected={hasGymAccess === "non"} onPress={() => saisir("hasGymAccess", () => setHasGymAccess("non"))} />
             </View>
 
             {/* Plus de grille de matériel dans le setup : elle se choisit à la
@@ -794,17 +900,18 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                 divergerait dès la première mise à jour.
                 Elle est FACULTATIVE et ne bloque jamais « Terminer » : le setup
                 doit rester sous trois minutes. */}
-            <Text style={styles.fieldLabel}>Une gêne ou une blessure en ce moment ?</Text>
+            <Text style={styles.fieldLabel}>Une gêne ou une blessure en ce moment ? (facultatif)</Text>
+            <Text style={styles.fieldHelp}>Elle reste sur ton téléphone et sert à ménager la zone dès ta première séance.</Text>
             <View style={styles.chipRow}>
               <Chip
                 label="Non, rien"
                 selected={geneSetup === "non"}
-                onPress={() => setGeneSetup("non")}
+                onPress={() => saisir("geneSetup", () => setGeneSetup("non"))}
               />
               <Chip
                 label="Oui"
                 selected={geneSetup === "oui"}
-                onPress={() => setGeneSetup("oui")}
+                onPress={() => saisir("geneSetup", () => setGeneSetup("oui"))}
               />
             </View>
 
@@ -817,7 +924,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                       key={z}
                       label={LIBELLE_ZONE[z]}
                       selected={geneZone === z}
-                      onPress={() => setGeneZone(z)}
+                      onPress={() => saisir("geneZone", () => setGeneZone(z))}
                     />
                   ))}
                 </View>
@@ -828,7 +935,7 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
                       key={g}
                       label={LIBELLE_GRAVITE[g]}
                       selected={geneGravite === g}
-                      onPress={() => setGeneGravite(g)}
+                      onPress={() => saisir("geneGravite", () => setGeneGravite(g))}
                     />
                   ))}
                 </View>

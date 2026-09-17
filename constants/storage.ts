@@ -14,6 +14,11 @@ export const STORAGE_KEYS = {
   // pour mesurer le temps bout-en-bout jusqu'à la première séance.
   ONBOARDING_START_TS: "fks_onboarding_start_ts",
 
+  // Brouillon du questionnaire initial — PAR COMPTE, valeur CHIFFRÉE
+  // (services/setupDraft.ts via services/encryptedStorage). Effacé à la
+  // finalisation, à la suppression du compte, et à l'expiration (30 j).
+  SETUP_DRAFT: (uid: string) => `fks_setup_draft_${uid}`,
+
   // Training store per-user snapshots
   TRAINING_SNAPSHOT: (uid: string) => `training-store-snapshot-${uid}`,
 

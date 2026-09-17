@@ -16,7 +16,8 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AuthStackParamList } from "../navigation/RootNavigator";
 import { Ionicons } from "@expo/vector-icons";
-import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile , type User } from "firebase/auth";
+import { createSubmitGuard, registerAccount } from "../services/registerAccount";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db } from "../services/firebase";
 import { showToast } from "../utils/toast";
@@ -72,6 +73,7 @@ export default function RegisterScreen({ navigation }: Props) {
   const [showPwd, setShowPwd] = useState(false);
   const [consentAccepted, setConsentAccepted] = useState(false);
   const haptics = useHaptics();
+  const [submitGuard] = useState(() => createSubmitGuard());
   const shake = useRef(new Animated.Value(0)).current;
   const emailRef = useRef<TextInput>(null);
   const pwdRef = useRef<TextInput>(null);
@@ -103,67 +105,64 @@ export default function RegisterScreen({ navigation }: Props) {
       fail("Consentement requis", "Accepte la politique de confidentialité pour continuer.");
       return;
     }
-    setLoading(true);
-    let accountCreated = false;
-    try {
-      const cleanName = name.trim();
-      const cred = await createUserWithEmailAndPassword(auth, emailTrimmed, pwd);
-      accountCreated = true;
-      trackEvent("register_success");
-      // Départ du chrono funnel (Register → 1ère séance générée), consommé par
-      // first_session_generated dans NewSessionScreen — aucune donnée perso.
-      await AsyncStorage.setItem(STORAGE_KEYS.ONBOARDING_START_TS, String(Date.now()));
-      if (cleanName) {
-        await updateProfile(cred.user, { displayName: cleanName });
+    // DOUBLE APPUI : `loading` est un état (asynchrone) — deux taps dans la même
+    // frame passaient tous les deux. La garde est synchrone : un seul
+    // `createUserWithEmailAndPassword` par soumission.
+    await submitGuard.run(async () => {
+      setLoading(true);
+      try {
+        const issue = await registerAccount(
+          {
+            createUser: async (mail, motDePasse) => {
+              const cred = await createUserWithEmailAndPassword(auth, mail, motDePasse);
+              return { uid: cred.user.uid, email: cred.user.email, raw: cred.user };
+            },
+            updateDisplayName: (user, displayName) => updateProfile(user as User, { displayName }),
+            writeStartDoc: (uid, data) => setDoc(doc(db, "users", uid), data, { merge: true }),
+            // Départ du chrono funnel (Register → 1ère séance générée), consommé par
+            // first_session_generated dans NewSessionScreen — aucune donnée perso.
+            markOnboardingStart: () => AsyncStorage.setItem(STORAGE_KEYS.ONBOARDING_START_TS, String(Date.now())),
+            serverTimestamp,
+          },
+          { email: emailTrimmed, password: pwd, firstName: name },
+        );
+
+        if (issue.status === "failed") {
+          if (__DEV__) console.warn("[register]", issue.code);
+          // Le pendant de `login_failed` (P2-15 de l'audit) : on envoie le CODE
+          // d'erreur, jamais l'email ni la moindre saisie.
+          trackEvent("register_failed", { code: issue.code });
+          runShake(shake);
+          haptics.error();
+          // LE COMPTE N'EXISTE PAS : rien n'a été créé, la saisie reste en place.
+          showToast({
+            type: "error",
+            title: "Compte non créé",
+            message: getRegisterErrorMessage(issue.code),
+          });
+          return;
+        }
+
+        trackEvent("register_success");
+        if (issue.status === "created-degraded") {
+          // LE COMPTE EXISTE (seule une opération secondaire a échoué) : le
+          // RootNavigator bascule déjà vers le questionnaire, qui rattrape — ne
+          // jamais annoncer un échec d'inscription ici.
+          showToast({
+            type: "warn",
+            title: "Compte créé",
+            message: "Ton compte existe. Un détail n'a pas pu être enregistré : complète ton profil pour finaliser.",
+          });
+          return;
+        }
+        // Pas de signOut : l'utilisateur reste connecté, le RootNavigator bascule
+        // automatiquement vers le questionnaire. Zéro re-login.
+        haptics.success();
+        showToast({ type: "success", title: "Compte créé", message: "Encore 4 étapes courtes pour régler tes séances." });
+      } finally {
+        setLoading(false);
       }
-      await setDoc(
-        doc(db, "users", cred.user.uid),
-        {
-          email: cred.user.email ?? emailTrimmed,
-          // Prénom absent = null, JAMAIS la partie locale de l'email (règle 12).
-          // L'ancien repli écrivait « kyky76700 » en base : re-préaffiché au
-          // setup ET montré au coach dans son effectif (P1-04 inventaire
-          // clubs). Le setup exige un prénom à l'étape 1 — c'est LÀ qu'il
-          // arrive ; CoachPlayerRow sait afficher un état « sans prénom ».
-          displayName: cleanName || null,
-          firstName: cleanName || null,
-          profileCompleted: false,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-      // Pas de signOut : l'utilisateur reste connecté, le RootNavigator bascule
-      // automatiquement vers le setup profil (profileCompleted: false). Zéro re-login.
-      haptics.success();
-      showToast({ type: "success", title: "Compte créé", message: "On configure ton profil." });
-    } catch (e: any) {
-      if (__DEV__) console.warn("[register]", e?.code ?? e);
-      if (accountCreated) {
-        // Le compte EST créé (seul updateProfile/setDoc a échoué) : le RootNavigator
-        // bascule déjà vers le setup profil — ne pas afficher un faux échec.
-        showToast({
-          type: "warn",
-          title: "Compte créé",
-          message: "Petit souci réseau — complète ton profil pour finaliser.",
-        });
-        return;
-      }
-      // Le pendant de `login_failed`, qui manquait (P2-15 de l'audit) : sans
-      // lui, le funnel ne pouvait pas distinguer « personne ne s'inscrit » de
-      // « les inscriptions échouent ». On envoie le CODE d'erreur mappé, jamais
-      // l'email ni la moindre saisie.
-      trackEvent("register_failed", { code: e?.code ?? "unknown" });
-      runShake(shake);
-      haptics.error();
-      showToast({
-        type: "error",
-        title: "Inscription échouée",
-        message: getRegisterErrorMessage(e?.code),
-      });
-    } finally {
-      setLoading(false);
-    }
+    });
   };
 
   const pwdStrength = forceMotDePasse(pwd);

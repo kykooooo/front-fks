@@ -35,6 +35,7 @@ export function localAccountKeysToPurge(uid: string | null | undefined): string[
     keys.add(`${SNAPSHOT_PREFIX}${cleanUid}`); // snapshot cross-stores du compte supprimé
     keys.add(STORAGE_KEYS.TRAINING_SNAPSHOT(cleanUid)); // ancien format de snapshot
     keys.add(`${STORAGE_KEYS.TESTS_V1}_${cleanUid}`); // tests terrain par uid
+    keys.add(STORAGE_KEYS.SETUP_DRAFT(cleanUid)); // brouillon chiffré du questionnaire initial
     // Clés héritées de l'ancien espace club/coach (retiré en 2026-09), écrites
     // par d'anciennes versions : purgées avec le compte, jamais relues.
     keys.add(STORAGE_KEYS.LEGACY_APP_SPACE_PREFERENCE(cleanUid));
