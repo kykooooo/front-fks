@@ -249,16 +249,17 @@ export default function RoutineScreen() {
   }, [nextPlannedDay]);
 
   const reminderDetail = useMemo(() => {
-    if (!nextPlannedDay) return "Planifie une séance pour activer un rappel.";
     if (!notificationsEnabled || !sessionReminders) {
       return "Active les notifications pour recevoir tes rappels.";
     }
     // Ce que le service programme VRAIMENT : un rappel quotidien à heure fixe
-    // (SESSION_REMINDER_TIME). Aucune stratégie « veille / matin / 2h avant »
-    // n'existe côté planificateur — l'ancien sélecteur qui le laissait croire
-    // a été retiré (2026-09).
+    // (SESSION_REMINDER_TIME), qu'une séance soit planifiée ou non. Aucune
+    // stratégie « veille / matin / 2h avant » n'existe côté planificateur —
+    // l'ancien sélecteur qui le laissait croire a été retiré (2026-09), et
+    // l'ancien « Planifie une séance pour activer un rappel » avec lui : le
+    // rappel ne dépend pas du planning.
     return `Tous les jours à ${HEURE_RAPPEL}`;
-  }, [nextPlannedDay, notificationsEnabled, sessionReminders]);
+  }, [notificationsEnabled, sessionReminders]);
 
   const routineChallenges = useMemo(() => {
     const targetGoal = Math.max(1, Math.min(6, Math.round(weeklyGoal)));

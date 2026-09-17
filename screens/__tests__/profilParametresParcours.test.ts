@@ -132,5 +132,6 @@ describe("Routine — le rappel affiché est celui que le service programme", ()
     expect(routine).toContain('from "../services/notifications"');
     expect(routine).toContain("SESSION_REMINDER_TIME");
     expect(routine).toContain("Tous les jours à ${HEURE_RAPPEL}");
+    expect(routine).not.toContain("Planifie une séance pour activer un rappel");
   });
 });

@@ -68,9 +68,55 @@ export const setAnalyticsEnabled = (enabled: boolean) => {
 /** Ce que le service croit appliquer — pour les écrans et les tests, jamais une promesse au joueur. */
 export const isAnalyticsEnabled = () => analyticsReady && collecteActive;
 
+// ─── « JAMAIS TES DOULEURS » — LA PROMESSE EST TENUE ICI ────────────────────
+// Le libellé des Réglages l'écrit au joueur ; la politique de confidentialité
+// dit que douleur et fatigue ne sont lues que par FKS. Ce fichier étant le seul
+// passage vers Amplitude, c'est ICI que la règle s'applique — pour tous les
+// événements, ceux d'aujourd'hui et ceux qu'on écrira demain sans y penser.
+//
+// Quatre fuites existaient (2026-09) : la note de douleur et de fatigue du
+// ressenti (`feedback_submitted`), la raison « douleur/fatigue » d'un exercice
+// sauté ou adapté (`live_exercise_marked`), l'abandon de cycle pour « gêne
+// physique » (`cycle_abandoned`), et la décision de suivi « pas d'augmentation
+// pour cause de douleur » (`tracking_decision_shadow`).
+//
+// MÊME DOCTRINE QUE LA PROJECTION COACH (functions/src/coachLabels.ts) : rien ne
+// doit être déductible par élimination.
+//  - une CLÉ de santé est retirée ;
+//  - une RAISON de santé devient "other", valeur qui existe déjà pour de vraies
+//    raisons « autre » — impossible de distinguer les deux à l'arrivée ;
+//  - toute autre propriété portant une valeur de santé (ex. `kind`) n'a pas de
+//    « autre » légitime où se fondre : l'événement entier n'est pas envoyé.
+const CLES_SANTE: ReadonlySet<string> = new Set(["pain", "fatigue"]);
+const VALEURS_SANTE: ReadonlySet<string> = new Set(["pain", "fatigue", "injury", "block_increase_pain"]);
+const RAISON_NEUTRE = "other";
+
+/**
+ * Les propriétés d'un événement TELLES QU'ELLES ONT LE DROIT de partir.
+ * `null` = l'événement ne doit pas partir du tout.
+ */
+export const sansDonneesDeSante = (
+  props?: Record<string, any>,
+): Record<string, any> | undefined | null => {
+  if (!props) return props;
+  const propres: Record<string, any> = {};
+  for (const [cle, valeur] of Object.entries(props)) {
+    if (CLES_SANTE.has(cle)) continue;
+    if (typeof valeur === "string" && VALEURS_SANTE.has(valeur)) {
+      if (cle !== "reason") return null;
+      propres[cle] = RAISON_NEUTRE;
+      continue;
+    }
+    propres[cle] = valeur;
+  }
+  return propres;
+};
+
 export const trackEvent = (name: string, props?: Record<string, any>) => {
   if (!analyticsReady || !collecteActive) return;
-  track(name, props);
+  const propres = sansDonneesDeSante(props);
+  if (propres === null) return;
+  track(name, propres);
 };
 
 export const setAnalyticsUserId = (uid: string | null) => {

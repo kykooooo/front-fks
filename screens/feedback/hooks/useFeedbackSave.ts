@@ -231,11 +231,12 @@ export function useFeedbackSave(params: SaveParams) {
 
       const afterLoad = useLoadStore.getState();
       const fmt = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(1)}`;
+      // Ni la douleur ni la fatigue ne partent en statistiques (promesse des
+      // Réglages, tenue dans services/analytics.ts qui les retirerait de toute
+      // façon) : elles restent avec la séance, dans Firestore.
       trackEvent('feedback_submitted', {
         cycleId: activeGoal ?? 'none',
         rpe: fb.rpe,
-        fatigue: fb.fatigue,
-        pain: fb.pain,
         durationMin: durationClamped ?? null,
       });
       showToast({
