@@ -29,7 +29,6 @@ import { Screen } from "../components/ui/Screen";
 import { Button } from "../components/ui/Button";
 import { BrandMark } from "../components/ui/BrandMark";
 import { forceMotDePasse } from "../domain/passwordStrength";
-import { CoachEntryLink } from "../components/auth/CoachEntryLink";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Register">;
 const palette = theme.colors;
@@ -197,7 +196,7 @@ export default function RegisterScreen({ navigation }: Props) {
 
           <BrandMark size="sm" style={styles.brandMark} />
           <Text style={styles.title} maxFontSizeMultiplier={PLAFOND_TITRE}>Crée ton compte</Text>
-          <Text style={styles.subtitle}>Rejoins ton club ou configure ton profil FKS.</Text>
+          <Text style={styles.subtitle}>Configure ton profil et lance ta première séance.</Text>
 
           <Animated.View style={[styles.form, { transform: [{ translateX: shake }] }]}>
             <View style={styles.inputWrap}>
@@ -209,8 +208,7 @@ export default function RegisterScreen({ navigation }: Props) {
                 onChangeText={setName}
                 // `given-name`, pas `name` : iOS proposait le NOM COMPLET du
                 // contact (« Kyllian Le Bris ») dans un champ Prénom, et cette
-                // valeur devenait `firstName` — affichée telle quelle au coach
-                // dans son effectif (P2-02 de l'audit d'inscription).
+                // valeur devenait `firstName` (P2-02 de l'audit d'inscription).
                 autoComplete="given-name"
                 textContentType="givenName"
                 returnKeyType="next"
@@ -326,12 +324,6 @@ export default function RegisterScreen({ navigation }: Props) {
               accessibilityLabel="Créer mon compte"
             />
           </Animated.View>
-
-          {/* Entrée coach — voir components/auth/CoachEntryLink : elle pose une
-              INTENTION persistée (écran d'arrivée après l'inscription), jamais
-              un droit. L'accueil qui la portait seul devient inatteignable dès
-              le deuxième lancement (audit inscription 2026-09, erratum 1). */}
-          <CoachEntryLink testID="coach-entry-register" />
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>Déjà un compte ?</Text>

@@ -398,3 +398,80 @@ describe("buildAIPromptContext — mode Application (boucle de suivi, Lot 6)", (
     expect(ctx.available_time_min).toBe(60);
   });
 });
+
+// -----------------------------------------------------------------------------
+// Espace club retiré (2026-09) — ce que le contexte construit CONTIENT ENCORE
+// et ce qu'il ne lit PLUS, pour un ancien joueur rattaché à un club.
+//
+// Le profil ci-dessous est celui d'un compte créé AVANT le retrait : il porte
+// un `clubId`. La génération doit (1) continuer de transmettre tout ce qui est
+// personnel — planning collectif, matchs, catégorie d'âge, matériel, douleurs —
+// et (2) ne plus faire AUCUNE lecture `clubs/*` ni envoyer de `club_context`.
+// -----------------------------------------------------------------------------
+import { doc as mockedDoc, getDoc as mockedGetDoc } from "firebase/firestore";
+import { useBodyStore } from "../../state/stores/useBodyStore";
+
+describe("buildAIPromptContext — ancien joueur rattaché à un club (espace club retiré)", () => {
+  beforeEach(() => {
+    mockUserProfile = {
+      available_time_min: 45,
+      clubId: "club-historique",
+      ageCategory: "U17",
+      level: "Regional",
+      position: "Milieu",
+      // Clés de jour telles que le profil les persiste (schéma Zod `dowString`).
+      clubTrainingDays: ["tue", "thu"],
+      matchDays: ["sat"],
+      clubTrainingsPerWeek: 2,
+      matchesPerWeek: 1,
+      hasGymAccess: "regular",
+      gymEquipment: ["dumbbells"],
+      homeEquipment: [],
+    };
+    useFeedbackStore.setState({ dayStates: {} } as any);
+    useLoadStore.setState({ atl: 50, ctl: 60, tsb: 10 } as any);
+    useSessionsStore.setState({ sessions: [], microcycleGoal: "fondation", microcycleSessionIndex: 0 } as any);
+    useDebugStore.setState({ devNowISO: null } as any);
+    useExecutionStore.setState({ lastDecision: null } as any);
+    useBodyStore.setState({
+      bodyInjuries: [
+        {
+          id: "g1",
+          zone: "genou",
+          gravite: 2,
+          statut: "active",
+          source: "manual",
+          declaredAt: "2026-09-10T10:00:00.000Z",
+          updatedAt: "2026-09-10T10:00:00.000Z",
+        },
+      ],
+    } as any);
+    (mockedDoc as jest.Mock).mockClear();
+    (mockedGetDoc as jest.Mock).mockClear();
+  });
+
+  test("les contraintes personnelles indépendantes du club partent toujours", async () => {
+    const ctx = await buildAIPromptContext();
+    // Planning collectif et matchs déclarés par le joueur : données sportives
+    // personnelles, pas une organisation de club.
+    expect(ctx.profile.club_training_days).toEqual(["tue", "thu"]);
+    expect(ctx.profile.match_days).toEqual(["sat"]);
+    expect(ctx.profile.club_trainings_per_week).toBe(2);
+    expect(ctx.profile.matches_per_week).toBe(1);
+    // Âge, matériel, douleurs.
+    expect(ctx.profile.age_category).toBe("U17");
+    expect(ctx.constraints?.equipment).toEqual(expect.arrayContaining(["dumbbells", "gym_access"]));
+    expect(ctx.constraints?.pains).toEqual(expect.arrayContaining(["knee_pain"]));
+    expect(ctx.constraints?.injury_max_severity).toBe(2);
+    expect(ctx.available_time_min).toBe(45);
+  });
+
+  test("aucun club_context n'est envoyé, et aucune lecture clubs/* n'est faite", async () => {
+    const ctx = await buildAIPromptContext();
+    expect("club_context" in ctx).toBe(false);
+    // Une seule lecture Firestore : le profil du joueur. Jamais `clubs/...`.
+    expect((mockedGetDoc as jest.Mock).mock.calls).toHaveLength(1);
+    const chemins = (mockedDoc as jest.Mock).mock.calls.map((args: unknown[]) => args.slice(1).join("/"));
+    expect(chemins).toEqual(["users/test-user"]);
+  });
+});

@@ -22,9 +22,8 @@ interface LoadingOverlayProps {
   /** Libellé du bouton d'annulation (défaut: "Annuler") */
   cancelLabel?: string;
   /**
-   * DA Polish : ce composant est partagé avec NewSessionScreen/FeedbackScreen/
-   * CoachOnboardingScreen (dark, hors périmètre) — défaut "dark" = zéro diff
-   * ailleurs. ProfileSetupScreen (seul écran clair du parcours) passe "light"
+   * DA Polish : ce composant est partagé avec NewSessionScreen/FeedbackScreen
+   * (dark, hors périmètre) — défaut "dark" = zéro diff ailleurs. ProfileSetupScreen (seul écran clair du parcours) passe "light"
    * explicitement pour ne plus être une île noire dans une app blanche.
    */
   variant?: "dark" | "light";
@@ -392,7 +391,7 @@ const styles = StyleSheet.create({
 // DA Polish : variante "light" pour ProfileSetupScreen (seul appelant clair
 // du parcours). Le variant "dark" ci-dessous est un NO-OP volontaire — un
 // objet vide par clé ne change rien au style de base (`styles` ci-dessus),
-// donc les 3 autres écrans (NewSession/Feedback/CoachOnboarding) gardent un
+// donc les autres écrans (NewSession/Feedback) gardent un
 // rendu strictement identique à avant ce changement.
 const variantStyles = {
   dark: {

@@ -40,7 +40,7 @@
 // bascule des CIBLES (qui, elle, se voit) appartient aux lots d'ecran.
 //
 // IL NE TOUCHE PAS `weekKeyOf`. Cette fonction est l'identifiant de
-// `clubs/{clubId}/weekContexts/{weekKey}` : la rendre dependante du reglage
+// l'ancien cadre de semaine club (retire en 2026-09) : la rendre dependante du reglage
 // `weekStart` ferait diverger les semaines du coach et du joueur EN BASE.
 // =============================================================================
 

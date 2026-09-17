@@ -32,7 +32,7 @@
 //     seance ouverte en live puis abandonnee. `Session.completed` est un booleen.
 //   - `generationError` : `screens/newSession/` affiche un toast et oublie ;
 //     aucun store ne conserve l'echec.
-//   - `clubDirective` : `clubs/{clubId}/weekContexts/{weekKey}` n'est lu qu'a la
+//   - `clubDirective` : plus aucune source depuis le retrait de l'espace club (2026-09) ; avant, le cadre de semaine n'etait lu qu'a la
 //     generation (`services/aiContext.ts`) et n'est stocke nulle part.
 //   - `chargesClubCapturees` : rien ne capture les seances club REALISEES. Les
 //     cases cochees au profil injectent une charge SUPPOSEE, ce qui n'est pas

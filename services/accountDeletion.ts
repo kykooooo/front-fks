@@ -12,7 +12,7 @@ import { EmailAuthProvider, reauthenticateWithCredential, signOut } from "fireba
 import { getFunctions, httpsCallable } from "firebase/functions";
 
 import { app, auth } from "./firebase";
-import { cancelAllScheduled } from "./notifications";
+import { purgeNotifications } from "./notificationSync";
 import { localAccountKeysToPurge } from "./accountDeletionHelpers";
 import { useSyncStore } from "../state/stores/useSyncStore";
 
@@ -64,17 +64,22 @@ export async function requestServerAccountDeletion(): Promise<void> {
  * Purge locale complète APRÈS succès serveur, puis bascule sur le flux auth.
  * `uid` doit être capturé AVANT l'appel (auth.currentUser devient null).
  * Ordre voulu :
+ *   0. purge des rappels (services/notificationSync) — AVANT le signOut : elle
+ *      périme toute programmation en vol, attend les écritures engagées
+ *      (appel natif compris) puis annule. Rien d'antérieur ne peut réapparaître ;
  *   1. signOut → RootNavigator bascule sur le flux auth (flux logout existant) ;
  *   2. resetForUser(null) → wipe des 6 stores (il sauvegarde au passage un
  *      snapshot du uid sortant, purgé à l'étape 3) ;
  *   3. purge AsyncStorage (snapshots per-user, tests terrain, file offline,
  *      flags onboarding/welcome) ;
- *   4. annulation des notifications locales planifiées (rappels séance/streak) ;
- *   5. événement Welcome → retour à l'écran d'accueil sans redémarrage.
+ *   4. événement Welcome → retour à l'écran d'accueil sans redémarrage.
  * Chaque étape est tolérante : le compte serveur est déjà supprimé, on ne
  * bloque jamais l'utilisateur sur un nettoyage local.
  */
 export async function finalizeLocalAccountDeletion(uid: string | null): Promise<void> {
+  // Ne rejette jamais (résultat en valeur) : on n'enveloppe pas.
+  await purgeNotifications();
+
   try {
     await signOut(auth);
   } catch {
@@ -89,12 +94,6 @@ export async function finalizeLocalAccountDeletion(uid: string | null): Promise<
 
   try {
     await AsyncStorage.multiRemove(localAccountKeysToPurge(uid));
-  } catch {
-    // Best effort.
-  }
-
-  try {
-    await cancelAllScheduled();
   } catch {
     // Best effort.
   }

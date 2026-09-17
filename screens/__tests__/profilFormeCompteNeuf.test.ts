@@ -36,38 +36,26 @@ describe("Profil — la forme n'existe qu'après une séance validée (règle 12
     expect(source).toMatch(/const tsbColor = hasFormData \? footballStatus\.color :/);
   });
 
-  test("l'état vide est un état à part entière, pas un zéro déguisé", () => {
-    expect(source).toContain("Pas encore de données");
-    expect(source).toContain(
-      "Ta forme se calcule sur tes séances validées. Termine ta première séance pour la voir ici."
-    );
+  test("la puce ÉTAT d'un compte neuf affiche « — », jamais un verdict", () => {
+    // Le texte d'état vide de l'ancienne carte « Ta forme » est parti avec
+    // elle ; la porte reste sur la seule lecture du TSB qui subsiste (le héro).
+    expect(source).toMatch(/\{tsbLabel\}/);
+    // Aucun libellé de forme n'est écrit en dur dans l'écran : tout vient de
+    // getFootballLabel, derrière la porte.
+    expect(source).not.toMatch(/label: ['"]En forme/);
   });
 });
 
-describe("Profil — le graphe de forme ne fabrique plus de barres", () => {
-  test("le motif `tsbHistory[idx] ?? tsb` a disparu", () => {
-    // C'était LA ligne qui inventait une semaine d'historique (P0-2).
+describe("Profil — le graphe de forme n'y vit plus (2026-09)", () => {
+  test("le motif `tsbHistory[idx] ?? tsb` a disparu, et le graphe avec lui", () => {
+    // C'était LA ligne qui inventait une semaine d'historique (P0-2). La carte
+    // « Ta forme » (TSB + intensité 7 jours) faisait doublon avec la page
+    // Progression, qui porte la seule courbe honnête : le Profil y mène.
     expect(source).not.toMatch(/tsbHistory\[\w+\]\s*\?\?\s*tsb/);
-  });
-
-  test("les barres viennent des relevés réels du store", () => {
-    expect(source).toMatch(/const formBars = useMemo\(\(\) => tsbHistory\.slice\(0, 7\)/);
-    expect(source).toMatch(/formBars\.length >= 2/);
-    expect(source).toContain("Encore trop peu de relevés pour tracer une tendance.");
-  });
-
-  test("plus d'étiquettes calendaires J…J-6 sur une série par événement", () => {
-    // barLbl reste légitime sur « Intensité 7 jours » (série par jour réel,
-    // zéros vrais) — mais le graphe de FORME ne doit plus s'en servir.
-    const blocForme = source.match(/Ta forme — derniers relevés[\s\S]*?<\/View>\s*\)\s*:/);
-    expect(blocForme).not.toBeNull();
-    expect(blocForme![0]).not.toContain("barLbl(");
-  });
-
-  test("une tendance exige au moins 2 relevés réels", () => {
-    expect(source).toMatch(/const showTrend = hasFormData && tsbHistory\.length >= 2/);
-    // Le badge de tendance ne coiffe plus « Ta régularité » (mislabel) :
-    // il ne vit que sur « Ta forme », derrière showTrend.
-    expect(source).toMatch(/<SectionHeader title="Ta régularité" \/>/);
+    expect(source).not.toContain("tsbHistory");
+    expect(source).not.toContain("formBars");
+    expect(source).not.toContain('title="Ta forme"');
+    expect(source).not.toContain('title="Ta régularité"');
+    expect(source).toContain("nav.navigate('Progression')");
   });
 });

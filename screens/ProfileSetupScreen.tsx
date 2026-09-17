@@ -27,19 +27,6 @@ import { useHaptics } from "../hooks/useHaptics";
 import { auth as firebaseAuth, db } from "../services/firebase";
 import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { LoadingOverlay } from "../components/ui/LoadingOverlay";
-import {
-  joinClubWithInviteCode,
-  normalizeInviteCodeInput,
-} from "../services/clubInvites";
-import { saveProfileThenAttachClub } from "./profileSetup/attachClub";
-import {
-  messageRattachementReussi,
-  natureEchecRattachement,
-  titreEchecRattachement,
-  type NatureEchecRattachement,
-} from "../domain/clubJoinMessages";
-import { leverRattachementClub, poserRattachementClub } from "../state/rattachementClubGate";
-import { ClubDataDisclosure } from "../components/club/ClubDataDisclosure";
 import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId } from "../domain/microcycles";
 // Catégories proposées au sélecteur : U13 retirée (décision produit 2026-07, cf.
 // domain/types.ts). Un profil déjà en 'U13' n'apparaît sélectionné dans aucun
@@ -178,8 +165,6 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   // ref : l'affichage en dépend, et une ref posée dans le préremplissage
   // asynchrone ne redéclencherait aucun rendu.
   const [prenomPrerempli, setPrenomPrerempli] = useState(false);
-  const [clubId, setClubId] = useState("");
-  const [clubInviteCode, setClubInviteCode] = useState("");
   const [position, setPosition] = useState("");
   const [ageCategory, setAgeCategory] = useState("");
   // Consentement parental (RGPD < 15 ans) : case cochée dans l'UI + modal politique.
@@ -220,28 +205,6 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   const [hasHomeEquipment, setHasHomeEquipment] = useState<"oui" | "non" | "">("");
   const [homeEquipment, setHomeEquipment] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  // ÉCHEC DU CODE CLUB, APRÈS UN PROFIL DÉJÀ ENREGISTRÉ. Cet état remplace le
-  // toast de 2,2 s qui disparaissait pendant que l'écran basculait vers
-  // l'accueil : le joueur croyait avoir rejoint son club, le coach ne le voyait
-  // jamais (P0-01 de l'audit d'inscription). Il porte le message du serveur et
-  // le code saisi, pour que « Réessayer » ne reparte pas d'une page blanche.
-  const [echecClub, setEchecClub] = useState<{
-    message: string;
-    code: string;
-    /** Refus du code, ou panne : la carte ne raconte pas la même chose. */
-    nature: NatureEchecRattachement;
-  } | null>(null);
-  const [reessaiClubEnCours, setReessaiClubEnCours] = useState(false);
-
-  // FILET DE SÉCURITÉ, PAS UNE POLITESSE. Le drapeau de rattachement est ce qui
-  // retient le portillon du RootNavigator (state/rattachementClubGate) : s'il
-  // restait levé après que cet écran a disparu — écran démonté par une
-  // déconnexion, par un crash de rendu, par n'importe quel chemin qu'on n'a pas
-  // prévu —, plus personne ne pourrait entrer dans l'application. Le nettoyage
-  // au démontage rend cet état impossible : le drapeau ne peut pas survivre à
-  // l'écran qui le porte.
-  useEffect(() => leverRattachementClub, []);
-
 
   const shake = useRef(new Animated.Value(0)).current;
   const stepFade = useRef(new Animated.Value(1)).current;
@@ -271,7 +234,6 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
         setPrenomPrerempli(true);
       }
       if (!d) return;
-      if (typeof d.clubId === "string") setClubId(d.clubId);
       if (typeof d.position === "string") setPosition(d.position);
       if (typeof d.ageCategory === "string") setAgeCategory(d.ageCategory);
       // Consentement parental déjà donné (édition d'un profil U15 existant) :
@@ -460,54 +422,6 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
     }
   };
 
-  /**
-   * RÉESSAI DU SEUL CODE CLUB. Le profil est DÉJÀ enregistré à ce stade : on ne
-   * le réécrit pas (ce serait une seconde écriture pour rien, et un second
-   * risque de panne sur un chemin qui vient de réussir). Un seul appel serveur,
-   * celui qui a échoué.
-   */
-  const reessayerCodeClub = async (codeSaisi: string) => {
-    const normalise = normalizeInviteCodeInput(codeSaisi);
-    if (!normalise) {
-      fail("Code manquant", "Saisis le code que ton coach t'a donné.");
-      return;
-    }
-    if (reessaiClubEnCours) return;
-    setReessaiClubEnCours(true);
-    try {
-      const attempt = await withTimeout(joinClubWithInviteCode(normalise), 15000);
-      trackEvent("club_code_checked", { valid: attempt.ok });
-      if (!attempt.ok) {
-        haptics.warning();
-        setEchecClub({
-          message: attempt.message,
-          code: codeSaisi,
-          nature: natureEchecRattachement(attempt.reason),
-        });
-        return;
-      }
-      haptics.success();
-      showToast(messageRattachementReussi(attempt.clubName, attempt.coachAccess));
-      setEchecClub(null);
-      // La question a trouvé sa réponse : le portillon reprend son cours.
-      leverRattachementClub();
-      terminer();
-    } catch (error) {
-      haptics.warning();
-      const message =
-        error instanceof TimeoutError
-          ? "Le serveur ne répond pas. Vérifie ta connexion et réessaie."
-          : "Impossible de vérifier le code pour le moment. Réessaie dans un instant.";
-      // Panne, pas refus : le titre de la carte doit dire la même chose que ce
-      // message-là. « Le code n'a pas été reconnu » sous « le serveur ne répond
-      // pas » envoyait le joueur redemander un code parfaitement valide.
-      setEchecClub({ message, code: codeSaisi, nature: "technique" });
-    } finally {
-      setReessaiClubEnCours(false);
-    }
-  };
-
-  /* ─── Save ─── */
   const handleSave = async () => {
     if (!validateStep()) return;
     if (!isEditMode) {
@@ -519,11 +433,6 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
     // aucun changement de contrat côté backend.
     const trainings = clubTrainingDays.length;
     const matches = matchDays.length;
-    // Rattachement club = parcours COACH (Cloud Function joinClubWithInviteCode).
-    // normalizeInviteCodeInput vient de services/clubInvites (coach) ; le
-    // normalizeInviteCode de da-polish tape sur repositories/clubsRepo, dont la
-    // lecture directe de inviteCodes/* est FERMEE par les regles coach (§7.3).
-    const normalizedInvite = normalizeInviteCodeInput(clubInviteCode);
 
     // Auto-assign : si aucun cycle actif, on applique la reco basée sur l'objectif
     // pour que le joueur atterrisse sur l'accueil avec un cycle prêt (zéro étape morte).
@@ -546,106 +455,54 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
       const user = auth.currentUser;
       if (!user) { fail("Connexion requise", "Connecte-toi pour enregistrer ton profil."); return; }
 
-      // Club DÉJÀ rattaché (édition de profil) : on le repasse tel quel. Un
-      // nouveau rattachement, lui, est écrit par le serveur (Cloud Function),
-      // APRÈS l'enregistrement du profil — voir screens/profileSetup/attachClub.
-      const existingClubId: string | null = clubId?.trim() ? clubId.trim() : null;
-
-      // DRAPEAU LEVÉ AVANT L'ÉCRITURE DU PROFIL, PAS APRÈS. C'est ce `setDoc`
-      // qui déclenche l'instantané `users/{uid}` — événement LOCAL, immédiat,
-      // avant même l'aller-retour serveur — qui ferait tomber le portillon du
-      // RootNavigator et démonterait cet écran, carte « code club refusé »
-      // comprise, avant même qu'elle existe (R1 de la contre-vérification du
-      // 05/09). Levé UNIQUEMENT quand un code est saisi : sans code, il n'y a
-      // aucune question à poser et le parcours ne change pas d'un pixel.
-      if (normalizedInvite) poserRattachementClub(user.uid);
-
-      // DEUX DÉLAIS DE GARDE, UN PAR DÉPENDANCE — PLUS UN SEUL SUR L'ENSEMBLE.
-      //
-      // L'ancienne enveloppe unique, posée AUTOUR de l'appel ci-dessous,
-      // bornait les DEUX écritures avec un seul chronomètre. Conséquence mesurée
-      // (R1 du round 3) : le `setDoc` passe en 12 s, puis la callable
-      // `joinClubWithInviteCode` dépasse les 3 s de reliquat (cold start
-      // Cloud Functions gen2 + réseau lent) — le `TimeoutError` remonte au
-      // catch global, qui baisse le drapeau, fait tomber le portillon, emmène
-      // le joueur sur l'accueil et affiche « Impossible d'enregistrer pour le
-      // moment » ALORS QUE LE PROFIL EST ENREGISTRÉ. Un message faux, et
-      // aucune carte pour dire ce qu'il en est du club.
-      //
-      // Chaque dépendance porte donc SA propre borne :
-      //  - l'écriture du profil, 15 s (P1-05) : hors réseau, le `setDoc` pend
-      //    sans fin et l'overlay « Enregistrement… » gelait à jamais. Un
-      //    dépassement remonte comme avant, et le message est alors JUSTE ;
-      //  - le rattachement, 20 s : un dépassement est rattrapé par le
-      //    try/catch de `saveProfileThenAttachClub`, qui rend
-      //    `status: "failed", nature: "technique"` — donc la carte
-      //    « Impossible de vérifier le code pour l'instant. », le drapeau
-      //    toujours levé, et l'écran qui reste.
-      //
-      // Dans les deux cas l'écriture partie n'est pas annulée : si elle
+      // DÉLAI DE GARDE (P1-05) : hors réseau, le `setDoc` pend sans fin et
+      // l'overlay « Enregistrement… » gelait à jamais. Un dépassement remonte
+      // au catch ci-dessous ; l'écriture partie n'est pas annulée — si elle
       // atterrit après coup (réseau revenu), le listener du RootNavigator voit
       // `profileCompleted` et bascule tout seul.
-      const attach = await saveProfileThenAttachClub(
-        {
-          saveProfile: () =>
-            withTimeout(setDoc(doc(db, "users", user.uid), {
-              uid: user.uid,
-              firstName: firstName.trim(),
-              // `clubId` n'est écrit QUE si on en connaît un. Avant, la clé
-              // partait à `null` quand le préremplissage n'avait pas (encore)
-              // répondu — et un `merge` avec `null` EFFACE. Sur le chemin neuf
-              // du coach qui remplit son profil joueur (garde de complétude,
-              // audit P1-04), c'était son rattachement à son propre club qui
-              // sautait. Omettre la clé, c'est ne toucher à rien.
-              ...(existingClubId ? { clubId: existingClubId } : {}),
-              position, ageCategory, level, dominantFoot, mainObjective,
-              targetFksSessionsPerWeek: targetFksSessions,
-              // Reprise (optionnel) -- null tant que non repondu, jamais de valeur inventee.
-              selfReportedGapDays: selfReportedGapOption
-                ? (SELF_REPORTED_GAP_OPTIONS.find((o) => o.id === selfReportedGapOption)?.days ?? null)
-                : null,
-              clubTrainingsPerWeek: trainings,
-              matchesPerWeek: matches,
-              hasClubTrainings, clubTrainingDays,
-              matchDay: matchDays[0] ?? null, matchDays,
-              hasGymAccess: hasGymAccess === "oui" ? "regular" : hasGymAccess === "occasionnel" ? "occasional" : "none",
-              // Repasse tel quel (pas d'UI ici pour les modifier) : [] / false pour
-              // un nouveau profil, valeur prefillée inchangée pour un profil édité
-              // — jamais undefined, jamais de perte silencieuse de données existantes.
-              gymEquipment,
-              hasHomeEquipment: hasHomeEquipment === "oui",
-              homeEquipment,
-              // Preuve de consentement parental (RGPD < 15 ans). Hors catégories
-              // mineures, le champ n'est pas touché : une preuve historique éventuelle
-              // reste en base (accountability), merge:true ne l'efface pas.
-              ...(requiresParentalConsent(ageCategory)
-                ? { parentalConsent: buildParentalConsent(ageCategory, storedParentalConsentRef.current) }
-                : {}),
-              profileCompleted: true,
-              ...(autoCycleId
-                ? {
-                    microcycleGoal: autoCycleId,
-                    goal: autoCycleId,
-                    programGoal: autoCycleId,
-                    microcycleStatus: "active",
-                    microcycleTotalSessions: MICROCYCLE_TOTAL_SESSIONS_DEFAULT,
-                    microcycleSessionIndex: 0,
-                    microcycleStartedAt: serverTimestamp(),
-                  }
-                : {}),
-              updatedAt: serverTimestamp(),
-            }, { merge: true }).then(() => undefined), 15000),
-          joinClub: (code) => withTimeout(joinClubWithInviteCode(code), 20000),
-        },
-        normalizedInvite,
-      );
-
-      if (attach.status !== "skipped") {
-        // Mesure du taux d'échec du code club. On ne sait plus POURQUOI un code
-        // est refusé (le serveur ne le dit pas, par conception) : l'événement ne
-        // porte donc qu'un booléen, jamais une cause inventée.
-        trackEvent("club_code_checked", { valid: attach.status === "joined" });
-      }
+      await withTimeout(setDoc(doc(db, "users", user.uid), {
+          uid: user.uid,
+          firstName: firstName.trim(),
+          // `clubId` n'est JAMAIS écrit ici : un rattachement historique
+          // (ancien espace club, retiré en 2026-09) reste intact en base,
+          // un `merge` sans la clé n'y touche pas.
+          position, ageCategory, level, dominantFoot, mainObjective,
+          targetFksSessionsPerWeek: targetFksSessions,
+          // Reprise (optionnel) -- null tant que non repondu, jamais de valeur inventee.
+          selfReportedGapDays: selfReportedGapOption
+            ? (SELF_REPORTED_GAP_OPTIONS.find((o) => o.id === selfReportedGapOption)?.days ?? null)
+            : null,
+          clubTrainingsPerWeek: trainings,
+          matchesPerWeek: matches,
+          hasClubTrainings, clubTrainingDays,
+          matchDay: matchDays[0] ?? null, matchDays,
+          hasGymAccess: hasGymAccess === "oui" ? "regular" : hasGymAccess === "occasionnel" ? "occasional" : "none",
+          // Repasse tel quel (pas d'UI ici pour les modifier) : [] / false pour
+          // un nouveau profil, valeur prefillée inchangée pour un profil édité
+          // — jamais undefined, jamais de perte silencieuse de données existantes.
+          gymEquipment,
+          hasHomeEquipment: hasHomeEquipment === "oui",
+          homeEquipment,
+          // Preuve de consentement parental (RGPD < 15 ans). Hors catégories
+          // mineures, le champ n'est pas touché : une preuve historique éventuelle
+          // reste en base (accountability), merge:true ne l'efface pas.
+          ...(requiresParentalConsent(ageCategory)
+            ? { parentalConsent: buildParentalConsent(ageCategory, storedParentalConsentRef.current) }
+            : {}),
+          profileCompleted: true,
+          ...(autoCycleId
+            ? {
+                microcycleGoal: autoCycleId,
+                goal: autoCycleId,
+                programGoal: autoCycleId,
+                microcycleStatus: "active",
+                microcycleTotalSessions: MICROCYCLE_TOTAL_SESSIONS_DEFAULT,
+                microcycleSessionIndex: 0,
+                microcycleStartedAt: serverTimestamp(),
+              }
+            : {}),
+          updatedAt: serverTimestamp(),
+        }, { merge: true }).then(() => undefined), 15000);
 
       if (autoCycleId) {
         setMicrocycleGoal(autoCycleId);
@@ -658,53 +515,14 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
         });
       }
 
+
       haptics.success();
-      if (attach.status === "failed") {
-        // LE PROFIL EST ENREGISTRÉ, LE CLUB NON — ET ÇA NE PEUT PLUS ÊTRE UN
-        // TOAST. Un toast dure 2 200 ms pendant que l'écran bascule vers
-        // l'accueil : la joueuse rangeait son téléphone en croyant avoir rejoint
-        // son club, et le coach ne la voyait jamais dans son effectif (P0-01 de
-        // l'audit d'inscription, reclassé P1-haut). On s'arrête ici, sur un
-        // écran qui reste, avec les deux seuls gestes qui existent : réessayer
-        // le code, ou plus tard.
-        //
-        // LE TOAST REVIENT EN FILET, EN PLUS DE LA CARTE. Le lot A l'avait
-        // retiré au motif que la carte le remplaçait ; si la carte manquait son
-        // affichage pour une raison qu'on n'a pas prévue, le joueur n'avait plus
-        // AUCUN message — moins bien qu'avant le lot. Deux canaux valent mieux
-        // qu'un quand le pire des deux échecs est le silence.
-        showToast({
-          type: "warn",
-          title: "Club non rejoint",
-          message: "Ton profil est enregistré. Le code club, lui, n'est pas passé.",
-        });
-        setEchecClub({
-          message: attach.message ?? "",
-          code: clubInviteCode,
-          nature: attach.nature ?? "technique",
-        });
-        return;
-      }
-      // La question est réglée : le portillon peut reprendre son cours normal.
-      leverRattachementClub();
-      if (attach.status === "joined") {
-        showToast(messageRattachementReussi(attach.clubName, attach.coachAccess));
-      } else {
-        showToast({ type: "success", title: "Profil enregistré", message: "Configuration terminée !" });
-      }
+      showToast({ type: "success", title: "Profil enregistré", message: "Configuration terminée !" });
 
       terminer();
     } catch (error) {
-      // LE PROFIL N'EST PAS ENREGISTRÉ, DONC ON NE RETIENT RIEN. Ni un refus de
-      // code ni une panne du rattachement ne passent plus par ici : le premier
-      // rend `status: "failed"` avec sa carte, et le second est borné à 20 s
-      // DANS la dépendance, donc rattrapé par le try/catch de
-      // `saveProfileThenAttachClub` (R1 du round 3 — l'ancienne enveloppe
-      // globale l'envoyait ici, drapeau baissé et message faux). Ce qui arrive
-      // ici est un échec de l'ÉCRITURE du profil, ou son délai de garde de
-      // 15 s. Aucune question de club n'est posée à l'écran, et un drapeau
-      // resté levé interdirait l'entrée dans l'application à ce compte.
-      leverRattachementClub();
+      // LE PROFIL N'EST PAS ENREGISTRÉ, DONC ON NE RETIENT RIEN. Ce qui arrive
+      // ici est un échec de l'ÉCRITURE du profil, ou son délai de garde de 15 s.
       if (error instanceof TimeoutError) {
         // Rien n'est perdu : le state du questionnaire est intact, l'écran
         // reste ouvert, et l'écriture partie peut encore atterrir toute seule.
@@ -793,37 +611,6 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
               </Text>
             ) : null}
 
-            <Text style={styles.fieldLabel}>Code club (optionnel)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ex: ABCDE-FGHJK"
-              placeholderTextColor={palette.muted}
-              value={clubInviteCode}
-              onChangeText={setClubInviteCode}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              // Un code d'invitation n'est ni un nom, ni un email, ni un mot de
-              // passe : aucune suggestion du trousseau n'a de sens ici, et une
-              // valeur autoremplie par erreur consommerait une tentative du
-              // quota serveur (P2-02 de l'audit).
-              autoComplete="off"
-              spellCheck={false}
-            />
-            {/* Le code n'est vérifié que par le serveur, APRÈS l'enregistrement
-                du profil : rien de ce qui est saisi ici ne peut être perdu à
-                cause d'un code refusé. */}
-            {/* Le chemin annoncé est le chemin RÉEL : la rangée « Mon club » de
-                l'onglet Profil (P0-01 de l'audit — l'ancien texte disait
-                « depuis ton profil » alors que l'onglet Profil n'avait aucune
-                trace de club). */}
-            <Text style={styles.fieldHelp}>
-              Ton coach te le donne. Tu peux aussi le renseigner plus tard depuis Profil → Mon club.
-            </Text>
-            {/* Divulgation : quelles catégories d'infos le club verra. Elle
-                INFORME, elle ne demande rien et ne bloque rien — ni le champ
-                ci-dessus, ni le bouton « Continuer ». */}
-            <ClubDataDisclosure style={styles.disclosure} />
-
             <Text style={styles.fieldLabel}>Poste</Text>
             {positions.map((p) => (
               <Choice key={p} label={POSITION_DISPLAY_LABELS[p] ?? p} selected={position === p} onPress={() => setPosition(p)} />
@@ -881,25 +668,6 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
               <Choice key={f} label={f} selected={dominantFoot === f} onPress={() => setDominantFoot(f)} />
             ))}
 
-            {/* CE LIEN DISPARAÎT DÈS QUE LE COMPTE A UN CLUB. Un coach qui
-                s'entraîne aussi est renvoyé ici par la garde de complétude
-                joueur : lui proposer « crée ton club » à ce moment-là, c'est
-                lui proposer d'en créer un SECOND et de faire repointer
-                `users/{uid}.clubId` dessus — son premier club, avec ses
-                joueurs, deviendrait introuvable (R4 du 05/09). L'écran de
-                création refuse de toute façon, mais un lien qui mène à un
-                refus n'a rien à faire là. */}
-            {clubId?.trim() ? null : (
-              <TouchableOpacity
-                style={styles.coachLink}
-                onPress={() => { haptics.impactLight(); navigation.navigate("CoachOnboarding"); }}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name="people-outline" size={16} color={palette.accent} />
-                <Text style={styles.coachLinkText}>Tu fais partie du staff ? Crée ton club coach</Text>
-              </TouchableOpacity>
-            )}
           </>
         );
 
@@ -1087,90 +855,6 @@ export default function ProfileSetupScreen({ onProfileCompleted }: ProfileSetupS
   // le soft-lockerait ; c'est validateStep qui le bloque sur la catégorie).
   const consentBlocksNext =
     step === 0 && showParentalConsent && isParentalConsentBlocking(ageCategory, parentalConsentChecked);
-
-  // ─── PROFIL ENREGISTRÉ, CLUB NON REJOINT ────────────────────────────────
-  // Un écran qui RESTE, à la place du toast de 2,2 s qui s'évaporait pendant la
-  // bascule vers l'accueil. Le profil est déjà en base : on ne le réécrit pas,
-  // on ne perd rien, et on ne laisse pas croire à un rattachement qui n'a pas eu
-  // lieu (P0-01 de l'audit d'inscription du 05/09).
-  if (echecClub) {
-    return (
-      <Screen style={styles.safeArea}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-          <ScrollView
-            contentContainerStyle={styles.echecClubScroll}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.echecClubIconCircle}>
-              <Ionicons name="alert-circle-outline" size={26} color={palette.warn} />
-            </View>
-            <Text style={styles.echecClubTitre} maxFontSizeMultiplier={PLAFOND_TITRE}>
-              Ton profil est enregistré.
-            </Text>
-            {/* DEUX ÉCHECS, DEUX PHRASES. Le titre suivait autrefois un
-                message qui pouvait dire « Le serveur ne répond pas » : le
-                joueur comprenait que SON code était mauvais et allait en
-                redemander un (R6 du 05/09). */}
-            <Text style={styles.echecClubSousTitre}>
-              {titreEchecRattachement(echecClub.nature)}
-            </Text>
-            {echecClub.message ? (
-              <Text style={styles.echecClubMessage} numberOfLines={6}>
-                {echecClub.message}
-              </Text>
-            ) : null}
-
-            <Text style={styles.fieldLabel}>Code club</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ex: ABCDE-FGHJK"
-              placeholderTextColor={palette.muted}
-              value={echecClub.code}
-              onChangeText={(valeur) => setEchecClub({ ...echecClub, code: valeur })}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              autoComplete="off"
-              editable={!reessaiClubEnCours}
-            />
-
-            <Button
-              label={reessaiClubEnCours ? "Vérification…" : "Réessayer le code"}
-              onPress={() => void reessayerCodeClub(echecClub.code)}
-              disabled={reessaiClubEnCours}
-              variant="primary"
-              size="lg"
-              fullWidth
-              style={[styles.ctaShadowOff, styles.echecClubCta]}
-              accessibilityLabel="Réessayer le code club"
-            />
-            <TouchableOpacity
-              style={styles.echecClubPlusTard}
-              onPress={() => {
-                haptics.impactLight();
-                setEchecClub(null);
-                // « Plus tard » EST une réponse : on baisse le drapeau qui
-                // retenait le portillon, et l'application s'ouvre.
-                leverRattachementClub();
-                terminer();
-              }}
-              activeOpacity={0.7}
-              hitSlop={{ top: 10, bottom: 10, left: 12, right: 12 }}
-              accessibilityRole="button"
-              accessibilityLabel="Plus tard, continuer sans club"
-            >
-              <Text style={styles.echecClubPlusTardTexte}>Plus tard</Text>
-            </TouchableOpacity>
-            <Text style={styles.echecClubAide}>
-              Sans club, tu gardes toute l'app : seul le suivi par ton coach attend. Tu peux rejoindre
-              ton club quand tu veux depuis Profil → Mon club.
-            </Text>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </Screen>
-    );
-  }
 
   return (
     <Screen style={styles.safeArea}>
@@ -1477,60 +1161,6 @@ const styles = StyleSheet.create({
     color: palette.muted,
     marginTop: 6,
   },
-  disclosure: {
-    marginTop: 10,
-  },
-
-  /* Profil enregistré, club non rejoint (écran qui RESTE, cf. P0-01) */
-  echecClubScroll: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: theme.spacing.xl2,
-    paddingVertical: theme.spacing.xl,
-  },
-  echecClubIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: theme.radius.pill,
-    backgroundColor: palette.cardSoft,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: theme.spacing.lg,
-  },
-  echecClubTitre: {
-    ...theme.typography.title,
-    color: palette.text,
-  },
-  echecClubSousTitre: {
-    ...theme.typography.body,
-    color: palette.sub,
-    marginTop: 6,
-  },
-  echecClubMessage: {
-    ...theme.typography.caption,
-    color: palette.sub,
-    marginTop: 10,
-    minHeight: 34,
-  },
-  echecClubCta: {
-    marginTop: 16,
-  },
-  echecClubPlusTard: {
-    alignSelf: "center",
-    paddingVertical: 12,
-    marginTop: 4,
-  },
-  echecClubPlusTardTexte: {
-    ...theme.typography.caption,
-    color: palette.sub,
-    fontWeight: "600",
-  },
-  echecClubAide: {
-    fontSize: 12,
-    lineHeight: 17,
-    color: palette.muted,
-    marginTop: 10,
-  },
 
   /* Choice */
   choice: {
@@ -1705,22 +1335,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: palette.sub,
     lineHeight: 19,
-  },
-
-  /* Lien coach */
-  coachLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginTop: 18,
-    paddingVertical: 10,
-  },
-  // Descend en pied de carte, dépriorisé en caption (DA Polish §1.5) : ce
-  // lien concurrençait visuellement "Suivant" à 13/700.
-  coachLinkText: {
-    ...theme.typography.caption,
-    color: palette.accent,
   },
 
   /* Footer */

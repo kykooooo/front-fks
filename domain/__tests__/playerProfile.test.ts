@@ -3,10 +3,10 @@
 // « CE PROFIL PEUT-IL FAIRE TOURNER LE MOTEUR ? »
 //
 // Le drapeau `profileCompleted` ne répond plus à cette question depuis qu'il
-// veut dire deux choses : `createClubAsCoach` le pose à `true` sans écrire un
-// seul champ joueur (repositories/clubsRepo). Un coach qui active « Je
-// m'entraîne aussi » entrait donc dans l'app joueur avec ni catégorie, ni
-// poste, ni niveau — et le moteur dosait SANS AUCUN plafond d'âge
+// veut dire deux choses : l'ancien espace coach (retiré en 2026-09) le posait
+// à `true` sans écrire un seul champ joueur. Un ancien compte coach entrait
+// donc dans l'app joueur avec ni catégorie, ni poste, ni niveau — et le
+// moteur dosait SANS AUCUN plafond d'âge
 // (`getAgeCategoryCaps(null)` rend `null` côté backend : audit d'inscription
 // 2026-09, P1-04 + erratum 4).
 
@@ -29,7 +29,7 @@ describe("isPlayerProfileComplete", () => {
   });
 
   test("le compte fraîchement créé par la création de club n'est PAS complet", () => {
-    // Exactement ce que `createClubAsCoach` écrit : le drapeau, et rien du
+    // Exactement ce que l'ancienne création de club écrivait : le drapeau, et rien du
     // joueur. C'est le cas qui a motivé cette fonction.
     expect(
       isPlayerProfileComplete({ uid: "u1", clubId: "c1", profileCompleted: true }),

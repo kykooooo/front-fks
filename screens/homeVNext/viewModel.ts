@@ -554,9 +554,10 @@ export type HomeVNextInput = {
 
   /**
    * Directive club de la semaine.
-   * PAS ENCORE BRANCHE cote Home : aujourd'hui `clubs/{clubId}/weekContexts/{weekKey}`
-   * n'est lu QU'AU MOMENT DE LA GENERATION, dans `services/aiContext.ts`, et
-   * n'est stocke dans aucun store. Aucun selecteur ne l'expose a un ecran joueur.
+   * SANS SOURCE depuis le retrait de l'espace club (2026-09) : plus rien ne
+   * lit ni ne stocke un cadre de semaine club. Le champ reste dans le contrat
+   * (toujours `null`) pour ne pas refondre le Home ; aucun selecteur ne
+   * l'expose a un ecran joueur.
    */
   clubDirective: HomeVNextClubDirective | null;
 
@@ -1296,7 +1297,7 @@ export function buildHomeVNextViewModel(
   }
   if (input.clubDirective) {
     protoWarnings.push(
-      `Non branche : la directive club (semaine ${input.clubDirective.weekKey}) n'a aucune source cote Home — clubs/{clubId}/weekContexts n'est lu qu'au moment de la generation (services/aiContext.ts) et n'est stocke dans aucun store.`
+      `Non branche : la directive club (semaine ${input.clubDirective.weekKey}) n'a aucune source — l'espace club a ete retire de l'application (2026-09), plus rien ne lit ni ne stocke un cadre de semaine club.`
     );
     if (!input.clubDirective.appliedToPrescription) {
       protoWarnings.push(

@@ -28,7 +28,6 @@ import { theme } from "../constants/theme";
 import { Screen } from "../components/ui/Screen";
 import { Button } from "../components/ui/Button";
 import { BrandMark } from "../components/ui/BrandMark";
-import { CoachEntryLink } from "../components/auth/CoachEntryLink";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
 const palette = theme.colors;
@@ -245,12 +244,6 @@ export default function LoginScreen({ navigation }: Props) {
               </Text>
             </Pressable>
           </Animated.View>
-
-          {/* Entrée coach — l'accueil qui la portait devient inatteignable dès
-              le deuxième lancement (audit inscription 2026-09, erratum 1). Elle
-              pose une INTENTION persistée, jamais un droit : l'espace coach
-              reste dérivé de l'appartenance au club. */}
-          <CoachEntryLink testID="coach-entry-login" />
 
           {/* Footer */}
           <View style={styles.footer}>

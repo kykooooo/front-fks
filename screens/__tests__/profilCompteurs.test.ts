@@ -44,8 +44,10 @@ describe("« Club / match » — câblé sur les charges réelles", () => {
 });
 
 describe("« Tests ce mois » — la vraie source, pas l'heuristique course", () => {
-  test("la ligne et le trophée lisent monthlyTestsCount (relevés de tests)", () => {
-    expect(source).toMatch(/label: 'Tests ce mois', value: monthlyTestsCount/);
+  test("le trophée lit monthlyTestsCount (relevés de tests)", () => {
+    // La ligne « Tests ce mois » de l'ancien bloc « Ta régularité » a disparu
+    // avec lui (doublon de Progression, 2026-09) ; le trophée reste la seule
+    // lecture, et elle vient toujours des relevés réels.
     expect(source).toMatch(/make\('vma', 'Tests du mois', monthlyTestsCount/);
     // L'heuristique « VMA-like » ne pilote plus aucun affichage du Profil.
     expect(source).not.toMatch(/streaks\.monthlyVmaCount/);

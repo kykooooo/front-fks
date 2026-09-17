@@ -1,5 +1,28 @@
 // screens/SettingsScreen.tsx
-import React, { useCallback, useMemo, useState } from "react";
+//
+// PARAMÈTRES — chaque ligne visible produit l'effet qu'elle annonce.
+//
+// Cinq groupes, dans l'ordre où un joueur les cherche :
+//   Mon compte · Notifications · Préférences de l'application ·
+//   Données et confidentialité · Aide et informations.
+//
+// Ce qui a été RETIRÉ de l'écran (2026-09), et pourquoi :
+//   - « Mode privé », « Distance km/mi », « Poids kg/lb » : aucun consommateur,
+//     aucune conversion — des interrupteurs qui ne faisaient rien. Les valeurs
+//     persistées restent dans le store (dépréciées), rien n'est effacé.
+//   - le badge « Vérifié » : il dépendait d'un `displayName`, pas d'une
+//     vérification de compte.
+//   - « Sons » en natif : le bip de repos n'existe que sur le web (AudioContext),
+//     la ligne n'apparaît donc que là.
+//   - la carte d'en-tête décorative et ses badges d'état (« Local », etc.).
+//
+// RÉGLAGES DU JOUEUR vs RÉGLAGES DE L'APPAREIL : l'objectif hebdo est une donnée
+// du joueur (Firestore, via services/objectifHebdo) et vit sous « Mon compte » ;
+// tout le reste est une préférence de CE téléphone (store de réglages, non lié
+// au compte) — « Réinitialiser » ne touche que ces dernières, et jamais la
+// préférence de collecte (cf. RESET_PRESERVED_KEYS).
+
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -8,57 +31,58 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
-  DevSettings,
+  Linking,
 } from "react-native";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
+import * as Updates from "expo-updates";
 import Constants from "expo-constants";
+import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { signOut } from "firebase/auth";
 import { auth } from "../services/firebase";
 import { theme } from "../constants/theme";
 import { Card } from "../components/ui/Card";
-import { Badge } from "../components/ui/Badge";
-import { Button } from "../components/ui/Button";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { ScreenContainer } from "../components/ui/ScreenContainer";
 import { useLoadStore } from "../state/stores/useLoadStore";
 import { useSessionsStore } from "../state/stores/useSessionsStore";
 import { useFeedbackStore } from "../state/stores/useFeedbackStore";
 import { useExternalStore } from "../state/stores/useExternalStore";
+import { lireBlessures } from "../state/selectors/blessures";
 import { useSyncStore } from "../state/stores/useSyncStore";
-import { useDebugStore } from "../state/stores/useDebugStore";
 import { useSettingsStore, type SettingsState } from "../state/settingsStore";
 import { resoudreObjectifHebdo } from "../domain/resumeCanonique";
 import { enregistrerObjectifHebdo } from "../services/objectifHebdo";
+import { setAnalyticsEnabled } from "../services/analytics";
 import { DEV_FLAGS } from "../config/devFlags";
-import { ClubManagementCard } from "../components/settings/ClubManagementCard";
-import { AppSpaceSwitch } from "../components/AppSpaceSwitch";
 import { showToast } from "../utils/toast";
-import {
-  saveNotifPrefs,
-  scheduleAllNotifications,
-  cancelAllScheduled,
-  registerForPushNotifications,
-} from "../services/notifications";
+import { buildLocalExport, nomFichierExport } from "../utils/exportLocal";
+import { SESSION_REMINDER_TIME } from "../services/notifications";
+import { purgeNotifications, reconcileNotifications } from "../services/notificationSync";
 
 const palette = theme.colors;
-type SegmentedOption = {
-  value: string;
-  label: string;
-};
+
+/** Adresse déjà utilisée par les écrans d'inscription et de suppression de compte. */
+export const SUPPORT_EMAIL = "kyllian@fks-app.com";
+
+const heureRappel = `${SESSION_REMINDER_TIME.hour}h${String(SESSION_REMINDER_TIME.minute).padStart(2, "0")}`;
+
+type SegmentedOption = { value: string; label: string };
 
 function SegmentedControl({
   value,
   options,
   onChange,
+  accessibilityLabel,
 }: {
   value: string;
   options: SegmentedOption[];
   onChange: (next: string) => void;
+  accessibilityLabel: string;
 }) {
   return (
-    <View style={styles.segmentRow}>
+    <View style={styles.segmentRow} accessibilityRole="radiogroup" accessibilityLabel={accessibilityLabel}>
       {options.map((option) => {
         const selected = option.value === value;
         return (
@@ -67,10 +91,12 @@ function SegmentedControl({
             onPress={() => onChange(option.value)}
             style={[styles.segmentChip, selected && styles.segmentChipActive]}
             activeOpacity={0.85}
+            accessibilityRole="radio"
+            accessibilityState={{ selected, checked: selected }}
+            accessibilityLabel={option.label}
+            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
           >
-            <Text
-              style={[styles.segmentText, selected && styles.segmentTextActive]}
-            >
+            <Text style={[styles.segmentText, selected && styles.segmentTextActive]} maxFontSizeMultiplier={1.4}>
               {option.label}
             </Text>
           </TouchableOpacity>
@@ -80,28 +106,89 @@ function SegmentedControl({
   );
 }
 
+/**
+ * Une ligne de réglage. Avec `onPress`, TOUTE la ligne est tapable (chevron à
+ * droite) : pas de petit bouton « Voir » à viser.
+ */
 function SettingRow({
   title,
   subtitle,
   right,
+  onPress,
+  danger = false,
   showDivider = true,
+  accessibilityLabel,
+  testID,
 }: {
   title: string;
   subtitle?: string;
   right?: React.ReactNode;
+  onPress?: () => void;
+  danger?: boolean;
   showDivider?: boolean;
+  accessibilityLabel?: string;
+  testID?: string;
 }) {
+  const contenu = (
+    <View style={styles.settingRow}>
+      <View style={styles.settingText}>
+        <Text style={[styles.settingTitle, danger && styles.settingTitleDanger]} maxFontSizeMultiplier={1.6}>
+          {title}
+        </Text>
+        {subtitle ? (
+          <Text style={styles.settingSubtitle} maxFontSizeMultiplier={1.6}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+      {right ? <View style={styles.settingRight}>{right}</View> : null}
+      {onPress ? (
+        <Ionicons name="chevron-forward" size={18} color={danger ? palette.danger : palette.sub} />
+      ) : null}
+    </View>
+  );
   return (
     <View>
-      <View style={styles.settingRow}>
-        <View style={styles.settingText}>
-          <Text style={styles.settingTitle}>{title}</Text>
-          {subtitle ? <Text style={styles.settingSubtitle}>{subtitle}</Text> : null}
-        </View>
-        {right ? <View style={styles.settingRight}>{right}</View> : null}
-      </View>
+      {onPress ? (
+        <TouchableOpacity
+          onPress={onPress}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={accessibilityLabel ?? title}
+          accessibilityHint={subtitle}
+          testID={testID}
+          style={styles.settingTouch}
+        >
+          {contenu}
+        </TouchableOpacity>
+      ) : (
+        <View testID={testID}>{contenu}</View>
+      )}
       {showDivider ? <View style={styles.rowDivider} /> : null}
     </View>
+  );
+}
+
+function Toggle({
+  value,
+  onValueChange,
+  disabled,
+  accessibilityLabel,
+}: {
+  value: boolean;
+  onValueChange: (v: boolean) => void;
+  disabled?: boolean;
+  accessibilityLabel: string;
+}) {
+  return (
+    <Switch
+      value={value}
+      onValueChange={onValueChange}
+      disabled={disabled}
+      trackColor={{ false: palette.borderSoft, true: palette.accentSoft }}
+      thumbColor={value ? palette.accent : palette.textMuted}
+      accessibilityLabel={accessibilityLabel}
+    />
   );
 }
 
@@ -117,18 +204,16 @@ export default function SettingsScreen() {
   const updateSettings = useSettingsStore((s) => s.updateSettings);
   const resetSettings = useSettingsStore((s) => s.resetSettings);
 
+  // ─── Notifications : ce que le téléphone a répondu la dernière fois ───
+  // `denied` n'est posé que sur un refus RÉEL du système (jamais sur un token
+  // absent) : c'est ce qui change le sous-titre de la ligne.
+  const [permissionRefusee, setPermissionRefusee] = useState(false);
+
   // ───────────────────────────────────────────────────────────────────────────
   // L'OBJECTIF HEBDO — LE CHAMP CANONIQUE, PAS LE REGLAGE LOCAL
   //
-  // Ce curseur ecrivait `useSettingsStore.weeklyGoal`, un reglage purement local
-  // que plus rien ne lit en premier : le resume canonique resout l'objectif en
-  // essayant d'abord `targetFksSessionsPerWeek`, le rythme declare au setup.
-  // Pour tout joueur ayant fait son setup — c'est-a-dire tous, le champ y est
-  // obligatoire — le curseur etait donc devenu un bouton mort : il bougeait,
-  // le compteur de l'accueil ne bougeait pas.
-  //
-  // Il edite desormais le champ canonique, lecture ET ecriture, avec la meme
-  // persistance `users/{uid}` que le setup. Voir services/objectifHebdo.ts.
+  // Ce curseur edite `users/{uid}.targetFksSessionsPerWeek`, lecture ET
+  // ecriture, avec la meme persistance que le setup. Voir services/objectifHebdo.ts.
   // ───────────────────────────────────────────────────────────────────────────
   const targetFksSessionsPerWeek = useExternalStore((s) => s.targetFksSessionsPerWeek);
   const objectifHebdo = resoudreObjectifHebdo({
@@ -139,47 +224,107 @@ export default function SettingsScreen() {
   const changerObjectifHebdo = useCallback(async (valeur: string) => {
     const issue = await enregistrerObjectifHebdo(Number(valeur));
     if (issue === "refuse") {
-      showToast({
-        type: "error",
-        title: "Objectif non enregistré",
-        message: "Réessaie dans un instant.",
-      });
+      showToast({ type: "error", title: "Objectif non enregistré", message: "Réessaie dans un instant." });
     } else if (issue === "hors-ligne") {
-      showToast({
-        type: "info",
-        title: "Objectif enregistré",
-        message: "Il sera synchronisé à la reconnexion.",
-      });
+      showToast({ type: "info", title: "Objectif enregistré", message: "Il sera synchronisé à la reconnexion." });
     }
   }, []);
 
-  const initials = useMemo(() => {
-    const name =
-      auth.currentUser?.displayName ||
-      auth.currentUser?.email ||
-      "Utilisateur";
-    return name
-      .split(" ")
-      .map((part: string) => part[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  }, []);
+  // ─── Notifications ───
+  const handleNotificationsToggle = useCallback(
+    async (value: boolean) => {
+      const previous = {
+        notificationsEnabled: settings.notificationsEnabled,
+        sessionReminders: settings.sessionReminders,
+      };
+      updateSettings({ notificationsEnabled: value });
+      try {
+        // Une seule coordination (services/notificationSync) : elle relit le
+        // store et le compte courants, périme toute opération en vol, et ne
+        // demande la permission que pour une bascule ON.
+        const result = await reconcileNotifications({ requestPermission: value });
+        if (result.status === "failed") throw result.error;
+        if (result.status === "cancelled" && result.reason === "permission-denied") {
+          // Le joueur veut, le téléphone refuse : on ne laisse pas un
+          // interrupteur ON sur des notifications qui ne partiront jamais.
+          updateSettings({ notificationsEnabled: false });
+          setPermissionRefusee(true);
+          showToast({
+            type: "warn",
+            title: "Notifications bloquées",
+            message: "Autorise FKS dans les réglages de ton téléphone, puis réactive-les ici.",
+          });
+          return;
+        }
+        if (value) setPermissionRefusee(false);
+      } catch {
+        updateSettings(previous);
+        showToast({ type: "error", title: "Notifications", message: "Impossible de mettre à jour les notifications." });
+      }
+    },
+    [settings.notificationsEnabled, settings.sessionReminders, updateSettings],
+  );
 
+  const handleSessionReminderToggle = useCallback(
+    async (value: boolean) => {
+      updateSettings({ sessionReminders: value });
+      try {
+        const result = await reconcileNotifications();
+        if (result.status === "failed") throw result.error;
+      } catch {
+        updateSettings({ sessionReminders: !value });
+        showToast({ type: "error", title: "Rappel de séance", message: "Impossible de mettre à jour le rappel." });
+      }
+    },
+    [updateSettings],
+  );
+
+  // ─── Statistiques d'utilisation ───
+  const handleAnalyticsToggle = useCallback(
+    (value: boolean) => {
+      updateSettings({ privacyAnalytics: value });
+      // Appliqué tout de suite au SDK (opt-out), pas seulement au prochain démarrage.
+      setAnalyticsEnabled(value);
+    },
+    [updateSettings],
+  );
+
+  // ─── Réinitialiser les préférences de l'appareil ───
   const handleReset = useCallback(() => {
     Alert.alert(
       "Réinitialiser les préférences",
-      "Tu veux revenir aux réglages par défaut ?",
+      "Revenir aux réglages par défaut de l'application sur ce téléphone ? Ton compte, ton profil, tes séances et ton choix sur les statistiques d'utilisation ne bougent pas.",
       [
         { text: "Annuler", style: "cancel" },
         {
-          text: "Oui, reset",
+          text: "Réinitialiser",
           style: "destructive",
-          onPress: () => resetSettings(),
+          onPress: async () => {
+            resetSettings();
+            // Les rappels suivent la préférence remise par défaut (ON) — mais
+            // seulement si le téléphone l'autorise. Sinon le réglage repasse à
+            // OFF tout de suite : jamais un interrupteur ON pour rien.
+            try {
+              const result = await reconcileNotifications({
+                onPermissionDenied: () => {
+                  updateSettings({ notificationsEnabled: false });
+                  setPermissionRefusee(true);
+                },
+              });
+              if (result.status === "failed") throw result.error;
+              showToast({ type: "success", title: "Préférences réinitialisées", message: "Réglages de l'appareil remis par défaut." });
+            } catch {
+              showToast({
+                type: "warn",
+                title: "Préférences réinitialisées",
+                message: "Les rappels n'ont pas pu être reprogrammés. Ouvre Notifications pour vérifier.",
+              });
+            }
+          },
         },
-      ]
+      ],
     );
-  }, [resetSettings]);
+  }, [resetSettings, updateSettings]);
 
   const handleResetLoad = useCallback(() => {
     Alert.alert(
@@ -187,60 +332,56 @@ export default function SettingsScreen() {
       "Remet ATL/CTL/TSB à zéro et efface les charges externes locales.",
       [
         { text: "Annuler", style: "cancel" },
-        {
-          text: "Oui, reset",
-          style: "destructive",
-          onPress: () => resetLoadMetrics(),
-        },
-      ]
+        { text: "Réinitialiser", style: "destructive", onPress: () => resetLoadMetrics() },
+      ],
     );
   }, [resetLoadMetrics]);
 
+  // ─── Export des données locales ───
   const [exporting, setExporting] = useState(false);
   const handleExport = useCallback(async () => {
     if (exporting) return;
     setExporting(true);
     try {
-      const data = {
-        exportedAt: new Date().toISOString(),
-        load: (() => {
-          const { setManualLoad, resetLoadMetrics, setIgnoreFatigueCap, getResilience, computeLoadDeltas, advanceDays, restUntil, ...rest } = useLoadStore.getState();
-          return rest;
-        })(),
-        sessions: (() => {
-          const { pushSession, setPhase, updateWeekly, getSessionById, latestSessionId, setMicrocycleGoal, setMicrocycleSessionIndex, setActivePathway, setLastAiContext, setLastAiSessionV2, completeSession, ...rest } = useSessionsStore.getState();
-          return rest;
-        })(),
-        feedback: (() => {
-          const { getPrevFatigueSmoothed, setDailyFeedback, getAdaptiveFactorsForDate, ...rest } = useFeedbackStore.getState();
-          return rest;
-        })(),
-        external: (() => {
-          const { addCompletedRoutine, toggleFavoriteExercise, addRecentExercise, setClubTrainingDays, setMatchDays, setAutoExternalEnabled, ...rest } = useExternalStore.getState();
-          return rest;
-        })(),
-        settings: useSettingsStore.getState(),
-      };
+      const exportedAtISO = new Date().toISOString();
+      const data = buildLocalExport({
+        exportedAtISO,
+        appVersion: Constants.expoConfig?.version ?? null,
+        stores: {
+          load: useLoadStore.getState() as unknown as Record<string, unknown>,
+          sessions: useSessionsStore.getState() as unknown as Record<string, unknown>,
+          feedback: useFeedbackStore.getState() as unknown as Record<string, unknown>,
+          external: useExternalStore.getState() as unknown as Record<string, unknown>,
+          // « Mon corps » passe par SA lecture unique (state/selectors/blessures).
+          body: { bodyInjuries: lireBlessures() },
+          settings: useSettingsStore.getState() as unknown as Record<string, unknown>,
+        },
+      });
       const json = JSON.stringify(data, null, 2);
-      const fileName = `fks-export-${new Date().toISOString().slice(0, 10)}.json`;
-      const file = new File(Paths.cache, fileName);
+      const file = new File(Paths.cache, nomFichierExport(exportedAtISO));
       file.write(json);
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {
-        await Sharing.shareAsync(file.uri, { mimeType: "application/json", dialogTitle: "Exporter mes données FKS" });
+        await Sharing.shareAsync(file.uri, { mimeType: "application/json", dialogTitle: "Exporter mes données locales FKS" });
       } else {
-        showToast({ type: "warn", title: "Export", message: "Le partage n'est pas disponible sur cet appareil." });
+        showToast({ type: "warn", title: "Export impossible", message: "Le partage de fichier n'est pas disponible sur cet appareil." });
       }
     } catch (err) {
       if (__DEV__) console.warn("[Settings] Export error:", err);
-      showToast({ type: "error", title: "Export", message: "Échec de l'export. Réessaie." });
+      showToast({ type: "error", title: "Export échoué", message: "Le fichier n'a pas pu être créé. Réessaie." });
     } finally {
       setExporting(false);
     }
   }, [exporting]);
 
+  // ─── Compte ───
   const performLogout = useCallback(async () => {
     try {
+      // Nettoyage terminal AVANT de couper la session : périme toute
+      // programmation en vol, attend les écritures engagées, puis annule. Rien
+      // de plus ancien ne peut reposer un rappel ; la prochaine connexion
+      // réconcilie (App.tsx suit l'état auth).
+      await purgeNotifications();
       await signOut(auth);
       resetTrainingStore(null);
     } catch {
@@ -249,30 +390,38 @@ export default function SettingsScreen() {
   }, [resetTrainingStore]);
 
   const handleLogout = useCallback(() => {
-    Alert.alert(
-      "Déconnexion",
-      "Tu veux vraiment te déconnecter ?",
-      [
-        { text: "Annuler", style: "cancel" },
-        {
-          text: "Se déconnecter",
-          style: "destructive",
-          onPress: () => performLogout(),
-        },
-      ]
-    );
+    Alert.alert("Déconnexion", "Tu veux vraiment te déconnecter ?", [
+      { text: "Annuler", style: "cancel" },
+      { text: "Se déconnecter", style: "destructive", onPress: () => performLogout() },
+    ]);
   }, [performLogout]);
 
-  const triggerReload = useCallback(() => {
+  const handleContact = useCallback(async () => {
+    const sujet = encodeURIComponent(`FKS — question (v${Constants.expoConfig?.version ?? "?"})`);
+    const url = `mailto:${SUPPORT_EMAIL}?subject=${sujet}`;
+    try {
+      // Ouvre un BROUILLON dans l'app mail du téléphone : rien n'est envoyé d'ici.
+      await Linking.openURL(url);
+    } catch {
+      showToast({ type: "info", title: "Nous écrire", message: `Écris-nous à ${SUPPORT_EMAIL}.` });
+    }
+  }, []);
+
+  // ─── Thème ───
+  // La palette est appliquée au démarrage (`setThemeMode` dans App.tsx) : les
+  // feuilles de style sont figées au chargement des écrans, un redémarrage est
+  // donc nécessaire. En production, `Updates.reloadAsync` relance l'app ;
+  // s'il n'est pas disponible (Expo Go, web), on le dit au lieu de faire semblant.
+  const triggerReload = useCallback(async () => {
     if (Platform.OS === "web" && typeof window !== "undefined") {
       window.location.reload();
       return;
     }
-    if (DevSettings?.reload) {
-      DevSettings.reload();
-      return;
+    try {
+      await Updates.reloadAsync();
+    } catch {
+      showToast({ type: "info", title: "Redémarrage nécessaire", message: "Ferme et rouvre l'app pour voir le nouveau thème." });
     }
-    showToast({ type: "info", title: "Redémarrage requis", message: "Ferme et rouvre l'app pour appliquer le thème." });
   }, []);
 
   const handleThemeChange = useCallback(
@@ -280,514 +429,297 @@ export default function SettingsScreen() {
       if (nextMode === settings.themeMode) return;
       updateSettings({ themeMode: nextMode });
       Alert.alert(
-        "Appliquer le thème",
-        "Le thème clair/sombre nécessite un redémarrage pour être appliqué partout.",
+        "Thème enregistré",
+        "Il s'appliquera au prochain démarrage de l'app. Redémarrer maintenant ?",
         [
           { text: "Plus tard", style: "cancel" },
-          {
-            text: "Appliquer maintenant",
-            onPress: () => triggerReload(),
-          },
-        ]
+          { text: "Redémarrer", onPress: () => void triggerReload() },
+        ],
       );
     },
-    [settings.themeMode, updateSettings, triggerReload]
+    [settings.themeMode, updateSettings, triggerReload],
   );
 
-  const handleNotificationsToggle = useCallback(
-    async (value: boolean) => {
-      // Capture l'état AVANT le toggle : couper les notifs force aussi
-      // sessionReminders=false dans le store, il faut restaurer les deux.
-      const previous = {
-        notificationsEnabled: settings.notificationsEnabled,
-        sessionReminders: settings.sessionReminders,
-      };
-      updateSettings({ notificationsEnabled: value });
-      try {
-        if (value) {
-          const token = await registerForPushNotifications();
-          if (token === null && Platform.OS !== "web") {
-            // Permission OS refusée : rollback complet du toggle
-            updateSettings(previous);
-            showToast({
-              type: "warn",
-              title: "Notifications",
-              message: "Active les notifications dans les réglages du téléphone.",
-            });
-            return;
-          }
-          await saveNotifPrefs({ enabled: true });
-          await scheduleAllNotifications();
-        } else {
-          await saveNotifPrefs({ enabled: false });
-          await cancelAllScheduled();
-        }
-      } catch {
-        updateSettings(previous);
-        showToast({ type: "error", title: "Notifications", message: "Impossible de mettre à jour les notifications." });
-      }
-    },
-    [settings.notificationsEnabled, settings.sessionReminders, updateSettings]
-  );
-
-  const handleSessionReminderToggle = useCallback(
-    async (value: boolean) => {
-      updateSettings({ sessionReminders: value });
-      try {
-        await saveNotifPrefs({ sessionReminder: value });
-        await scheduleAllNotifications();
-      } catch {
-        updateSettings({ sessionReminders: !value });
-        showToast({ type: "error", title: "Rappel séance", message: "Impossible de mettre à jour les rappels." });
-      }
-    },
-    [updateSettings]
-  );
+  const sousTitreNotifications = !settings.notificationsEnabled
+    ? permissionRefusee
+      ? "Bloquées par le téléphone. Autorise FKS dans ses réglages, puis réactive ici."
+      : "Aucune notification ne sera envoyée."
+    : "Rappel de séance et récap du dimanche soir.";
 
   return (
     <ScreenContainer contentContainerStyle={styles.container}>
-        <Card variant="surface" style={styles.heroCard}>
-          <View style={styles.heroGlow} />
-          <View style={styles.heroRow}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{initials}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.heroTitle}>Paramètres</Text>
-              <Text style={styles.heroSubtitle}>
-                Personnalise ton expérience FKS
-              </Text>
-            </View>
-            <Badge label="Local" />
-          </View>
-          <View style={styles.heroQuick}>
-            <Badge
-              label={settings.notificationsEnabled ? "Notifs activées" : "Notifs coupées"}
-              tone={settings.notificationsEnabled ? "ok" : "default"}
-            />
-            <Badge
-              label={settings.hapticsEnabled ? "Vibrations actives" : "Vibrations coupées"}
-              tone={settings.hapticsEnabled ? "ok" : "default"}
-            />
-            <Badge
-              label={settings.soundsEnabled ? "Sons actifs" : "Sons coupés"}
-              tone={settings.soundsEnabled ? "ok" : "default"}
-            />
-          </View>
+      {/* ─── MON COMPTE ─── */}
+      <View style={styles.section}>
+        <SectionHeader title="Mon compte" />
+        <Card variant="soft" style={styles.sectionCard}>
+          <SettingRow title="Connecté avec" subtitle={auth.currentUser?.email ?? "Compte FKS"} />
+          <SettingRow
+            title="Modifier mon profil"
+            subtitle="Poste, niveau, objectif, entraînements club et matchs, accès salle"
+            onPress={() => nav.navigate("ProfileSetup")}
+            testID="settings-edit-profile"
+          />
+          <SettingRow
+            title="Séances FKS par semaine"
+            subtitle="Ton objectif, enregistré sur ton compte"
+            right={
+              <SegmentedControl
+                value={objectifHebdo === null ? "" : String(objectifHebdo)}
+                options={[
+                  { value: "1", label: "1" },
+                  { value: "2", label: "2" },
+                  { value: "3", label: "3" },
+                  { value: "4", label: "4" },
+                ]}
+                onChange={changerObjectifHebdo}
+                accessibilityLabel="Nombre de séances FKS par semaine"
+              />
+            }
+          />
+          <SettingRow
+            title="Se déconnecter"
+            subtitle="Tes données restent sur ton compte"
+            onPress={handleLogout}
+            showDivider={false}
+            testID="settings-logout"
+          />
         </Card>
+      </View>
 
-        <View style={styles.section}>
-          <SectionHeader title="Compte" />
-          <Card variant="soft" style={styles.sectionCard}>
-            <SettingRow
-              title="Identité"
-              subtitle={auth.currentUser?.email ?? "Compte FKS"}
-              right={<Badge label={auth.currentUser?.displayName ? "Vérifié" : "Standard"} />}
-            />
-            <SettingRow
-              title="Profil joueur"
-              subtitle="Poste, niveau, objectif, équipements"
-              right={
-                <Button
-                  label="Modifier"
-                  size="sm"
-                  variant="secondary"
-                  onPress={() => nav.navigate("ProfileSetup")}
-                />
-              }
-            />
-            <SettingRow
-              title="Déconnexion"
-              subtitle="Se déconnecter de l'application"
-              right={
-                <Button
-                  label="Se déconnecter"
-                  size="sm"
-                  variant="ghost"
-                  onPress={handleLogout}
-                />
-              }
-              showDivider={false}
-            />
-          </Card>
-        </View>
+      {/* ─── NOTIFICATIONS ─── */}
+      <View style={styles.section}>
+        <SectionHeader title="Notifications" />
+        <Card variant="soft" style={styles.sectionCard}>
+          <SettingRow
+            title="Notifications"
+            subtitle={sousTitreNotifications}
+            right={
+              <Toggle
+                value={settings.notificationsEnabled}
+                onValueChange={handleNotificationsToggle}
+                accessibilityLabel="Activer les notifications"
+              />
+            }
+          />
+          <SettingRow
+            title="Rappel de séance"
+            subtitle={
+              settings.notificationsEnabled
+                ? `Tous les jours à ${heureRappel}`
+                : "Active les notifications pour le recevoir."
+            }
+            right={
+              <Toggle
+                value={settings.sessionReminders}
+                onValueChange={handleSessionReminderToggle}
+                disabled={!settings.notificationsEnabled}
+                accessibilityLabel="Rappel quotidien de séance"
+              />
+            }
+            showDivider={false}
+          />
+        </Card>
+      </View>
 
-        <View style={styles.section}>
-          <SectionHeader title="Club" />
-          <ClubManagementCard />
-          {/* Sélecteur Joueur / Coach. Ne s'affiche QUE pour un entraîneur-joueur
-              (droit serveur aux deux espaces) — il rend `null` pour tous les
-              autres, donc aucune section vide ici. */}
-          <AppSpaceSwitch variant="joueur" testID="app-space-switch-settings" />
-        </View>
-
-        <View style={styles.section}>
-          <SectionHeader title="Préférences" />
-          <Card variant="soft" style={styles.sectionCard}>
-            <SettingRow
-              title="Charges externes auto"
-              subtitle="Ajoute club/match automatiquement"
-              right={
-                <Switch
-                  value={autoExternalEnabled}
-                  onValueChange={(value) => setAutoExternalEnabled(value)}
-                  trackColor={{ false: palette.borderSoft, true: palette.accentSoft }}
-                  thumbColor={autoExternalEnabled ? palette.accent : palette.textMuted}
-                />
-              }
-            />
-            <SettingRow
-              title="Notifications"
-              subtitle="Activer les alertes et rappels"
-              right={
-                <Switch
-                  value={settings.notificationsEnabled}
-                  onValueChange={handleNotificationsToggle}
-                  trackColor={{ false: palette.borderSoft, true: palette.accentSoft }}
-                  thumbColor={settings.notificationsEnabled ? palette.accent : palette.textMuted}
-                />
-              }
-            />
-            <SettingRow
-              title="Rappel séance"
-              subtitle={
-                settings.notificationsEnabled
-                  ? "Push auto avant la séance du jour"
-                  : "Active les notifications pour déverrouiller."
-              }
-              right={
-                <Switch
-                  value={settings.sessionReminders}
-                  onValueChange={handleSessionReminderToggle}
-                  trackColor={{ false: palette.borderSoft, true: palette.accentSoft }}
-                  thumbColor={settings.sessionReminders ? palette.accent : palette.textMuted}
-                  disabled={!settings.notificationsEnabled}
-                />
-              }
-            />
-            {/* "Stratégie rappel" masquée : reminderStrategy n'est câblé nulle part côté
-                notifications.ts (scheduleSessionReminder ne prend qu'une heure fixe), il ne
-                sert qu'à un libellé cosmétique dans RoutineScreen. Contrôle trompeur tant que
-                le É2 du planning hebdo (voir PLANNING_HEBDO_DESIGN.md §notifications) ne le
-                branche pas réellement. Ne pas réafficher sans le câbler. */}
+      {/* ─── PRÉFÉRENCES DE L'APPLICATION ─── */}
+      <View style={styles.section}>
+        <SectionHeader title="Préférences de l'application" />
+        <Card variant="soft" style={styles.sectionCard}>
+          <SettingRow
+            title="Charges club et match automatiques"
+            subtitle="Ajoute la charge de tes entraînements club et de tes matchs déclarés"
+            right={
+              <Toggle
+                value={autoExternalEnabled}
+                onValueChange={(value) => setAutoExternalEnabled(value)}
+                accessibilityLabel="Charges club et match automatiques"
+              />
+            }
+          />
+          <SettingRow
+            title="Ressenti en fin de séance"
+            subtitle="Ouvre le questionnaire dès que la séance est terminée"
+            right={
+              <Toggle
+                value={settings.autoFeedbackEnabled}
+                onValueChange={(value) => updateSettings({ autoFeedbackEnabled: value })}
+                accessibilityLabel="Ouvrir le ressenti en fin de séance"
+              />
+            }
+          />
+          <SettingRow
+            title="Vibrations"
+            subtitle="Fin de repos, transitions et boutons"
+            right={
+              <Toggle
+                value={settings.hapticsEnabled}
+                onValueChange={(value) => updateSettings({ hapticsEnabled: value })}
+                accessibilityLabel="Vibrations"
+              />
+            }
+          />
+          {Platform.OS === "web" ? (
+            // Le bip de repos n'existe QUE sur le web (AudioContext) : la ligne
+            // n'apparaît pas sur un téléphone, où elle ne ferait rien.
             <SettingRow
               title="Sons"
-              subtitle="Bips et signaux audio en séance"
+              subtitle="Bip à la fin d'un repos"
               right={
-                <Switch
+                <Toggle
                   value={settings.soundsEnabled}
                   onValueChange={(value) => updateSettings({ soundsEnabled: value })}
-                  trackColor={{ false: palette.borderSoft, true: palette.accentSoft }}
-                  thumbColor={settings.soundsEnabled ? palette.accent : palette.textMuted}
+                  accessibilityLabel="Sons de séance"
                 />
               }
             />
-            <SettingRow
-              title="Vibrations"
-              subtitle="Haptics sur fin de repos et transitions"
-              right={
-                <Switch
-                  value={settings.hapticsEnabled}
-                  onValueChange={(value) => updateSettings({ hapticsEnabled: value })}
-                  trackColor={{ false: palette.borderSoft, true: palette.accentSoft }}
-                  thumbColor={settings.hapticsEnabled ? palette.accent : palette.textMuted}
-                />
-              }
-            />
-            <SettingRow
-              title="Objectif FKS hebdo"
-              subtitle="Nombre de séances FKS par semaine"
-              right={
-                <SegmentedControl
-                  value={objectifHebdo === null ? "" : String(objectifHebdo)}
-                  options={[
-                    { value: "1", label: "1" },
-                    { value: "2", label: "2" },
-                    { value: "3", label: "3" },
-                    { value: "4", label: "4" },
-                  ]}
-                  onChange={changerObjectifHebdo}
-                />
-              }
-            />
-            <SettingRow
-              title="Feedback auto"
-              subtitle="Ouvrir le feedback en fin de séance"
-              right={
-                <Switch
-                  value={settings.autoFeedbackEnabled}
-                  onValueChange={(value) =>
-                    updateSettings({ autoFeedbackEnabled: value })
-                  }
-                  trackColor={{ false: palette.borderSoft, true: palette.accentSoft }}
-                  thumbColor={settings.autoFeedbackEnabled ? palette.accent : palette.textMuted}
-                />
-              }
-              showDivider={false}
-            />
-          </Card>
-        </View>
-
-        <View style={styles.section}>
-          <SectionHeader title="Apparence" />
-          <Card variant="soft" style={styles.sectionCard}>
-            <SettingRow
-              title="Thème"
-              subtitle="Clair ou sombre"
-              right={
-                <SegmentedControl
-                  value={settings.themeMode}
-                  options={[
-                    { value: "light", label: "Clair" },
-                    { value: "dark", label: "Sombre" },
-                  ]}
-                  onChange={(value) =>
-                    handleThemeChange(value as SettingsState["themeMode"])
-                  }
-                />
-              }
-              showDivider={false}
-            />
-          </Card>
-        </View>
-
-        <View style={styles.section}>
-          <SectionHeader title="Unités & formats" />
-          <Card variant="soft" style={styles.sectionCard}>
-            <SettingRow
-              title="Distance"
-              subtitle="Km ou miles"
-              right={
-                <SegmentedControl
-                  value={settings.distanceUnit}
-                  options={[
-                    { value: "km", label: "km" },
-                    { value: "mi", label: "mi" },
-                  ]}
-                  onChange={(value) =>
-                    updateSettings({ distanceUnit: value as SettingsState["distanceUnit"] })
-                  }
-                />
-              }
-            />
-            <SettingRow
-              title="Poids"
-              subtitle="Kg ou livres"
-              right={
-                <SegmentedControl
-                  value={settings.weightUnit}
-                  options={[
-                    { value: "kg", label: "kg" },
-                    { value: "lb", label: "lb" },
-                  ]}
-                  onChange={(value) =>
-                    updateSettings({ weightUnit: value as SettingsState["weightUnit"] })
-                  }
-                />
-              }
-            />
-            <SettingRow
-              title="Semaine"
-              subtitle="Jour de début"
-              right={
-                <SegmentedControl
-                  value={settings.weekStart}
-                  options={[
-                    { value: "mon", label: "Lun" },
-                    { value: "sun", label: "Dim" },
-                  ]}
-                  onChange={(value) =>
-                    updateSettings({ weekStart: value as SettingsState["weekStart"] })
-                  }
-                />
-              }
-              showDivider={false}
-            />
-          </Card>
-        </View>
-
-        <View style={styles.section}>
-          <SectionHeader title="Confidentialité" />
-          <Card variant="soft" style={styles.sectionCard}>
-            <SettingRow
-              title="Mode privé"
-              subtitle="Masquer le nom et les infos visibles"
-              right={
-                <Switch
-                  value={settings.privateMode}
-                  onValueChange={(value) => updateSettings({ privateMode: value })}
-                  trackColor={{ false: palette.borderSoft, true: palette.accentSoft }}
-                  thumbColor={settings.privateMode ? palette.accent : palette.textMuted}
-                />
-              }
-            />
-            <SettingRow
-              title="Données anonymisées"
-              subtitle="Aider à améliorer FKS"
-              right={
-                <Switch
-                  value={settings.privacyAnalytics}
-                  onValueChange={(value) => updateSettings({ privacyAnalytics: value })}
-                  trackColor={{ false: palette.borderSoft, true: palette.accentSoft }}
-                  thumbColor={settings.privacyAnalytics ? palette.accent : palette.textMuted}
-                />
-              }
-            />
-            <SettingRow
-              title="Mentions légales"
-              subtitle="Éditeur, hébergement, contact"
-              right={
-                <Button
-                  label="Voir"
-                  size="sm"
-                  variant="secondary"
-                  onPress={() => nav.navigate("LegalNotice")}
-                />
-              }
-            />
-            <SettingRow
-              title="Politique de confidentialité"
-              subtitle="Données collectées, usage, droits"
-              right={
-                <Button
-                  label="Voir"
-                  size="sm"
-                  variant="secondary"
-                  onPress={() => nav.navigate("PrivacyPolicy")}
-                />
-              }
-            />
-            <SettingRow
-              title="Supprimer mon compte"
-              subtitle="Effacer définitivement toutes tes données"
-              right={
-                <Button
-                  label="Supprimer"
-                  size="sm"
-                  variant="ghost"
-                  textStyle={{ color: palette.danger }}
-                  onPress={() => nav.navigate("DeleteAccount")}
-                />
-              }
-              showDivider={false}
-            />
-          </Card>
-        </View>
-
-        {DEV_FLAGS.ENABLED && (
-          <View style={styles.section}>
-            <SectionHeader title="Debug" />
-            <Card variant="soft" style={styles.sectionCard}>
-              <SettingRow
-                title="Ignorer fatigue (debug)"
-                subtitle="Désactive le cap fatigue côté backend"
-                right={
-                  <Switch
-                    value={ignoreFatigueCap}
-                    onValueChange={(value) => setIgnoreFatigueCap(value)}
-                    trackColor={{ false: palette.borderSoft, true: palette.accentSoft }}
-                    thumbColor={ignoreFatigueCap ? palette.accent : palette.textMuted}
-                  />
-                }
+          ) : null}
+          <SettingRow
+            title="Début de semaine"
+            subtitle="Pour le compteur et les calendriers"
+            right={
+              <SegmentedControl
+                value={settings.weekStart}
+                options={[
+                  { value: "mon", label: "Lundi" },
+                  { value: "sun", label: "Dimanche" },
+                ]}
+                onChange={(value) => updateSettings({ weekStart: value as SettingsState["weekStart"] })}
+                accessibilityLabel="Jour de début de semaine"
               />
-              <SettingRow
-                title="Reset charge"
-                subtitle="ATL/CTL/TSB + charges externes"
-                right={
-                  <Button
-                    label="Reset"
-                    size="sm"
-                    variant="ghost"
-                    onPress={handleResetLoad}
-                  />
-                }
-                showDivider={false}
+            }
+          />
+          <SettingRow
+            title="Thème"
+            subtitle="Appliqué au prochain démarrage"
+            right={
+              <SegmentedControl
+                value={settings.themeMode}
+                options={[
+                  { value: "light", label: "Clair" },
+                  { value: "dark", label: "Sombre" },
+                ]}
+                onChange={(value) => handleThemeChange(value as SettingsState["themeMode"])}
+                accessibilityLabel="Thème de l'application"
               />
-            </Card>
-          </View>
-        )}
+            }
+            showDivider={false}
+          />
+        </Card>
+      </View>
 
+      {/* ─── DONNÉES ET CONFIDENTIALITÉ ─── */}
+      <View style={styles.section}>
+        <SectionHeader title="Données et confidentialité" />
+        <Card variant="soft" style={styles.sectionCard}>
+          <SettingRow
+            title="Statistiques d'utilisation"
+            subtitle="Envoie à FKS les écrans utilisés et les actions faites, associés à ton compte, pour améliorer l'app. Jamais tes douleurs."
+            right={
+              <Toggle
+                value={settings.privacyAnalytics}
+                onValueChange={handleAnalyticsToggle}
+                accessibilityLabel="Statistiques d'utilisation"
+              />
+            }
+          />
+          <SettingRow
+            title={exporting ? "Préparation du fichier…" : "Exporter mes données locales"}
+            subtitle="Fichier JSON de ce qui est enregistré sur ce téléphone : séances, charges, ressentis, planning, « Mon corps ». Pas une sauvegarde restaurable."
+            onPress={exporting ? undefined : handleExport}
+            testID="settings-export"
+          />
+          <SettingRow
+            title="Réinitialiser les préférences"
+            subtitle="Réglages de l'appareil uniquement. Ne touche ni ton compte, ni ton profil, ni ton choix sur les statistiques."
+            onPress={handleReset}
+          />
+          <SettingRow
+            title="Politique de confidentialité"
+            subtitle="Données collectées, usage, droits"
+            onPress={() => nav.navigate("PrivacyPolicy")}
+            testID="settings-privacy"
+          />
+          <SettingRow
+            title="Supprimer mon compte"
+            subtitle="Définitif : compte, profil, séances et historique"
+            onPress={() => nav.navigate("DeleteAccount")}
+            danger
+            showDivider={false}
+            testID="settings-delete-account"
+          />
+        </Card>
+      </View>
+
+      {/* ─── AIDE ET INFORMATIONS ─── */}
+      <View style={styles.section}>
+        <SectionHeader title="Aide et informations" />
+        <Card variant="soft" style={styles.sectionCard}>
+          <SettingRow
+            title="Nous écrire"
+            subtitle={`Ouvre un brouillon vers ${SUPPORT_EMAIL}`}
+            onPress={handleContact}
+            testID="settings-contact"
+          />
+          <SettingRow
+            title="Mentions légales"
+            subtitle="Éditeur, hébergement, contact"
+            onPress={() => nav.navigate("LegalNotice")}
+            testID="settings-legal"
+          />
+          <SettingRow
+            title="Version"
+            subtitle={`FKS ${Constants.expoConfig?.version ?? "1.0.0"}`}
+            showDivider={false}
+          />
+        </Card>
+      </View>
+
+      {DEV_FLAGS.ENABLED && (
         <View style={styles.section}>
-          <SectionHeader title="Données & support" />
+          <SectionHeader title="Outils de développement" />
           <Card variant="soft" style={styles.sectionCard}>
             <SettingRow
-              title="Exporter mes données"
-              subtitle="Fichier JSON de toutes tes données"
+              title="Ignorer le plafond de fatigue"
+              subtitle="Désactive le cap fatigue côté backend"
               right={
-                <Button
-                  label="Exporter"
-                  size="sm"
-                  variant="secondary"
-                  onPress={handleExport}
+                <Toggle
+                  value={ignoreFatigueCap}
+                  onValueChange={(value) => setIgnoreFatigueCap(value)}
+                  accessibilityLabel="Ignorer le plafond de fatigue"
                 />
               }
             />
             <SettingRow
-              title="Réinitialiser préférences"
-              subtitle="Revenir aux réglages par défaut"
-              right={
-                <Button
-                  label="Reset"
-                  size="sm"
-                  variant="ghost"
-                  onPress={handleReset}
-                />
-              }
+              title="Réinitialiser la charge"
+              subtitle="ATL/CTL/TSB + charges externes"
+              onPress={handleResetLoad}
               showDivider={false}
             />
           </Card>
         </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>FKS · v{Constants.expoConfig?.version ?? "1.0.0"}</Text>
-        </View>
-      </ScreenContainer>
+      )}
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: palette.bg },
   container: { padding: 16, gap: 16 },
   section: { gap: 8 },
   sectionCard: { padding: 14, gap: 6 },
 
-  heroCard: { padding: 16, gap: 12, overflow: "hidden" },
-  heroGlow: {
-    position: "absolute",
-    top: -50,
-    right: -60,
-    width: 200,
-    height: 200,
-    borderRadius: 999,
-    backgroundColor: palette.accentSoft,
-    opacity: 0.9,
-  },
-  heroRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: palette.bgSoft,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-  },
-  avatarText: { color: palette.text, fontSize: 18, fontWeight: "800" },
-  heroTitle: { color: palette.text, fontSize: 18, fontWeight: "800" },
-  heroSubtitle: { color: palette.sub, fontSize: 12, marginTop: 2 },
-  heroQuick: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-
+  settingTouch: { minHeight: 44, justifyContent: "center" },
   settingRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
+    minHeight: 32,
   },
-  settingText: { flex: 1 },
-  settingTitle: { color: palette.text, fontSize: 13, fontWeight: "600" },
-  settingSubtitle: { color: palette.sub, fontSize: 11, marginTop: 2 },
-  settingRight: { alignItems: "flex-end" },
+  settingText: { flex: 1, minWidth: 0 },
+  settingTitle: { color: palette.text, fontSize: 14, fontWeight: "600" },
+  settingTitleDanger: { color: palette.danger },
+  settingSubtitle: { color: palette.sub, fontSize: 12, lineHeight: 16, marginTop: 2 },
+  settingRight: { alignItems: "flex-end", flexShrink: 0 },
   rowDivider: {
     height: 1,
     backgroundColor: palette.borderSoft,
@@ -798,22 +730,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 6,
     flexWrap: "wrap",
+    justifyContent: "flex-end",
   },
   segmentChip: {
+    minHeight: 34,
     paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     borderRadius: theme.radius.pill,
     borderWidth: 1,
     borderColor: palette.borderSoft,
     backgroundColor: palette.card,
+    justifyContent: "center",
   },
   segmentChipActive: {
     borderColor: palette.accent,
     backgroundColor: palette.accentSoft,
   },
-  segmentText: { color: palette.sub, fontSize: 11, fontWeight: "600" },
+  segmentText: { color: palette.sub, fontSize: 12, fontWeight: "600" },
   segmentTextActive: { color: palette.accent },
-
-  footer: { alignItems: "center", paddingBottom: 12 },
-  footerText: { color: palette.sub, fontSize: 11 },
 });

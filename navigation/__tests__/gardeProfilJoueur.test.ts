@@ -1,14 +1,16 @@
 // navigation/__tests__/gardeProfilJoueur.test.ts
 //
-// LE COACH QUI « S'ENTRAÎNE AUSSI » NE DOIT PLUS ENTRER AVEC UN PROFIL VIDE.
+// UN COMPTE AU PROFIL JOUEUR VIDE NE DOIT PAS ENTRER DANS L'APP.
 //
-// Chemin réel (audit d'inscription 2026-09, P1-04) : la création de club pose
-// `profileCompleted: true` sans écrire un seul champ joueur ; le coach active
-// « Je m'entraîne aussi », l'espace revient à "player", le navigateur voit un
-// profil « complété » et ouvre l'app joueur. Poste, catégorie, niveau : absents.
-// Le questionnaire n'était JAMAIS proposé, et le moteur dosait sans aucun
-// plafond d'âge (erratum 4 : `getAgeCategoryCaps(null)` rend `null`, donc ni
-// familles interdites, ni volume, ni contacts plyo, ni sprint, ni durée).
+// Chemin réel (audit d'inscription 2026-09, P1-04) : l'ancien espace coach
+// (retiré en 2026-09) posait `profileCompleted: true` sans écrire un seul champ
+// joueur. Ces comptes existent encore en base : le navigateur verrait un
+// profil « complété » et ouvrirait l'app joueur. Poste, catégorie, niveau :
+// absents. Le questionnaire ne serait JAMAIS proposé, et le moteur doserait
+// sans aucun plafond d'âge (erratum 4 : `getAgeCategoryCaps(null)` rend `null`,
+// donc ni familles interdites, ni volume, ni contacts plyo, ni sprint, ni durée).
+// Un ancien compte coach doit donc être renvoyé compléter son profil joueur —
+// sans qu'aucune donnée ne soit inventée pour lui.
 //
 // Deux gardes, à deux étages, parce qu'aucune ne couvre l'autre :
 //   . le PORTILLON, qui ramène au questionnaire ;
@@ -34,17 +36,17 @@ describe("le portillon regarde les CHAMPS, plus seulement le drapeau", () => {
 
   test("un profil « complété » aux champs joueur absents rouvre le questionnaire", () => {
     expect(navigateur).toContain(
-      "if (profileCompleted === false || profilJoueurComplet === false || rattachementClubEnCours) {",
+      "if (profileCompleted === false || profilJoueurComplet === false) {",
     );
   });
 
-  test("l'espace coach est tranché AVANT : un encadrant n'est jamais renvoyé au questionnaire", () => {
-    const indexCoach = navigateur.indexOf('if (appSpace.space === "coach")');
-    const indexPortillon = navigateur.indexOf(
-      "if (profileCompleted === false || profilJoueurComplet === false || rattachementClubEnCours) {",
-    );
-    expect(indexCoach).toBeGreaterThan(-1);
-    expect(indexPortillon).toBeGreaterThan(indexCoach);
+  test("plus aucun espace coach, aucune intention coach, aucun rattachement club dans la racine", () => {
+    // L'espace club/coach est retiré du parcours (2026-09). Un ancien rôle, une
+    // préférence d'espace ou un cache local ne peuvent plus rediriger vers un
+    // écran qui n'existe plus : la racine ne les lit pas.
+    for (const motif of ["useAppSpace", "CoachNavigator", "CoachOnboarding", "intentionCoach", "rattachementClub", "clubId"]) {
+      expect(navigateur).not.toContain(motif);
+    }
   });
 
   test("une lecture de profil en échec ne conclut pas « complet »", () => {
@@ -62,18 +64,22 @@ describe("le portillon regarde les CHAMPS, plus seulement le drapeau", () => {
 });
 
 describe("le questionnaire ne doit rien casser de ce qui n'est pas à lui", () => {
-  test("`clubId` n'est jamais écrit à null : la clé est OMISE quand on n'en connaît pas", () => {
-    // Un `merge` avec `null` EFFACE. Le préremplissage est asynchrone : sur le
-    // chemin neuf (un coach qui remplit son profil joueur), écrire `null` aurait
-    // détaché le coach de son propre club.
-    expect(setup).toContain("...(existingClubId ? { clubId: existingClubId } : {})");
-    expect(setup).not.toContain("clubId: existingClubId,");
+  const payload = setup.slice(
+    setup.indexOf("await withTimeout(setDoc(doc(db, \"users\", user.uid), {"),
+    setup.indexOf("{ merge: true }"),
+  );
+
+  test("`clubId` n'est JAMAIS écrit : un rattachement historique reste intact (merge sans la clé)", () => {
+    // Un `merge` avec `null` EFFACE ; omettre la clé ne touche à rien. Un
+    // joueur rattaché à un club par une ancienne version garde sa donnée en
+    // base, et elle ne pèse plus sur la navigation.
+    expect(payload.length).toBeGreaterThan(200);
+    expect(payload).not.toMatch(/\bclubId\s*:/);
   });
 
   test("il n'écrit ni `role` ni `accessRole`", () => {
     // `accessRole` vit sur l'appartenance, interdite au client par les règles ;
     // `role` ne décide plus rien depuis « un compte, un espace ».
-    const payload = setup.slice(setup.indexOf("saveProfile: () =>"), setup.indexOf("joinClub:"));
     expect(payload).not.toMatch(/\brole\s*:/);
     expect(payload).not.toMatch(/accessRole/);
   });

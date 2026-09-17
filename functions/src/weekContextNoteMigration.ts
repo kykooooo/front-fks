@@ -48,14 +48,19 @@
 
 /**
  * LE CONTRAT du cadre de semaine : tout ce qu'un document `weekContexts/{k}`
- * a le droit de porter. Recopie de repositories/clubsRepo.saveClubWeekContext
- * (front) — les deux doivent rester d'accord.
+ * a le droit de porter. C'etait la recopie de ce qu'ecrivait le front
+ * (repositories/clubsRepo.saveClubWeekContext).
  *
- * Verrouille MECANIQUEMENT (functions/tests/weekContextNoteMigration.test.ts,
- * section VERROU) : un test lit le source de clubsRepo.ts, extrait les cles
- * reellement ecrites par saveClubWeekContext et les compare a cette liste
- * champ par champ. Ne JAMAIS ajouter un champ ici sans l'ajouter aussi au
- * payload de saveClubWeekContext (et inversement) : le test rougit sinon.
+ * GELE DEPUIS LE 2026-09 : l'espace club/coach a ete retire de l'application,
+ * et avec lui le SEUL client qui ecrivait ces documents. Plus personne n'en
+ * cree ; ceux qui existent sont des documents HISTORIQUES que cette migration
+ * et l'audit continuent de traiter. Cette liste decrit donc le schema tel
+ * qu'il a ete ecrit jusqu'a cette date — elle ne doit plus bouger, sauf a
+ * reintroduire un client qui ecrit (auquel cas le verrou AST d'origine, visible
+ * dans l'historique git de functions/tests/weekContextNoteMigration.test.ts
+ * section 11, doit revenir avec lui). Le test verifie aujourd'hui (1) que la
+ * liste est exactement ce gel, et (2) qu'aucun code de l'application n'ecrit
+ * plus `weekContexts`.
  * `createdAt` a ete retire le 2026-07-31 — le champ n'a jamais ete ecrit par
  * saveClubWeekContext, il n'aurait donc jamais du figurer dans ce contrat.
  *
