@@ -9,15 +9,30 @@ Pas de nom de famille, pas de numero ici : les contacts restent dans le telephon
 |---|---|---|---|---|---|
 | 20/09 | ESMGO, stade Maurice Baquet | | | | |
 
-## Critere espace coach (fixe le 16/09, avant les entretiens)
+## Critere espace coach (fixe le 16/09, revise le 17/09 avant les entretiens)
 
-Si au moins 2 coachs sur 3 disent qu'ils distribueraient eux-memes le programme et
-veulent voir qui l'a fait : on garde l'espace coach et on le simplifie. Sinon : on merge
-sa suppression.
+Retour terrain rapporte par Kyllian le 17/09 : les coachs n'ont pas le temps de prescrire
+ni de regler quoi que ce soit, ce ne sont pas des preparateurs physiques, c'est le travail
+de l'appli. Ils veulent seulement un visuel : qui fait, qui ne fait pas. Pas de controle.
 
-| Coach | Distribuerait lui-meme ? | Veut voir qui l'a fait ? | Ses mots |
-|---|---|---|---|
-| | | | |
+Trois issues possibles, a departager avec les reponses :
+
+- **A. Rien pour le coach** : on merge la suppression du 14/09. Si les coachs disent
+  « je n'ai pas besoin de savoir ».
+- **B. L'espace coach actuel** (3 onglets, cadre de semaine a remplir) : seulement si un
+  coach dit qu'il VEUT regler des choses. Le retour du 17/09 dit que non.
+- **C. Un visuel en lecture seule** : fait / pas fait par joueur, jamais les douleurs ni la
+  fatigue. Version zero code pendant le pilote : un message le lundi, fabrique a la main
+  depuis Firestore (= le « tableau du lundi » de la decision marketing D10). Seule brique
+  a garder dans l'app : le rattachement joueur -> club par code.
+
+Hypothese de travail au 17/09 : **C**. On la confirme si au moins 2 coachs sur 3 repondent
+« oui » a « tu voudrais savoir qui l'a fait ? » et preferent recevoir un message plutot
+qu'ouvrir une appli.
+
+| Coach | Veut regler / prescrire ? | Veut savoir qui l'a fait ? | Appli ou message du lundi ? | Ses mots |
+|---|---|---|---|---|
+| | | | | |
 
 ## Fiche type
 
@@ -37,6 +52,8 @@ sa suppression.
   « Le physique, tu le fais sur ton temps de seance ? Si tes joueurs le faisaient chez eux,
   serieusement, tu recupererais combien de temps de ballon ? » Noter le chiffre et ses mots.
   Puis : « Et comment tu saurais qu'ils l'ont fait ? »
+  Puis : « Tu prefererais ouvrir une appli pour le voir, ou recevoir un message le lundi
+  avec la liste de ceux qui ont bosse ? »
 - **Phrase a retenir, mot pour mot** :
 - **Partant pour tester ?** oui / non / peut-etre
 - **Suite** : rappeler le … / passer a l'entrainement du … / rien
