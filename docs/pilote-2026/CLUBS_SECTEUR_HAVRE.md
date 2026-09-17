@@ -52,5 +52,10 @@ Le Havre AC 2 (R1) est exclu : reserve d'un club pro, staff complet, pas une cib
   Football »), HCS (« Havre Caucriauville Sportif Hcs ») et ESMGA (lieu « ESMGA - Mont
   Gaillard »). Chercher le nom complet du club dans la recherche Instagram, les
   identifiants exacts ne sont pas indexes par les moteurs.
-- **Sites** : esmgofootball.com ; sportingcluboctevillais.fr ; asmontivilliersfootball.com ;
-  cssm-foot-lehavre.footeo.com ; esmga.footeo.com ; facebook.com/olympiquehavraisTN.
+- **Sites et pages** : esmgofootball.com ; sportingcluboctevillais.fr ;
+  facebook.com/MUNICIPAUXLEHAVRE ; facebook.com/olympiquehavraisTN ; facebook.com/esmga.
+  Les sites footeo du CSSM et de l'ESMGA sont a l'abandon depuis 2021. Ne PAS utiliser
+  asmontivilliersfootball.com : le domaine a ete repris par un site de paris (verifie 17/09).
+- **CSSM Le Havre** : se presente comme la plus grande section sportive du Havre en licencies
+  hors HAC, equipes de ligue dans toutes les categories de jeunes, historique de sections
+  sportives scolaires. A garder en tete pour une future vague jeunes.
