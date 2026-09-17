@@ -21,7 +21,11 @@ import { resolve } from "path";
 import { TOAST_CATEGORIE_MANQUANTE } from "../../screens/newSession/gardeCategorieAge";
 
 const racine = resolve(__dirname, "..", "..");
-const lire = (rel: string) => readFileSync(resolve(racine, rel), "utf8");
+// Fins de ligne NORMALISÉES à la lecture : le même fichier arrive en CRLF sur un
+// PC Windows (`core.autocrlf=true`) et en LF partout ailleurs (Mac, CI Linux).
+// Un test de source doit rendre le même verdict sur les deux — sinon il mesure
+// la machine, pas le code (c'est arrivé : voir « on ne conclut RIEN à l'affichage »).
+const lire = (rel: string) => readFileSync(resolve(racine, rel), "utf8").replace(/\r\n/g, "\n");
 const navigateur = lire("navigation/RootNavigator.tsx");
 const generation = lire("screens/NewSessionScreen.tsx");
 const setup = lire("screens/ProfileSetupScreen.tsx");
@@ -107,8 +111,18 @@ describe("la génération refuse de partir sans catégorie d'âge", () => {
 
   test("tant que le contexte n'est pas chargé, on ne conclut RIEN à l'affichage", () => {
     // `!!aiContext &&` : ne pas savoir n'est pas « absent » (règle 12).
-    expect(generation).toContain("!!aiContext && categorieAgeAbsente(aiContext)");
-    expect(generation).not.toContain("categorieAgeAbsente(aiContext);\n");
+    // Aucun appel NU sur `aiContext` : on COMPTE, et chaque appel doit être
+    // couvert. (La garde rejouée sur le contexte frais, `categorieAgeAbsente(ctx)`,
+    // n'est pas visée : `ctx` vient d'être construit, il n'est jamais `null`.)
+    //
+    // L'ancienne forme — `not.toContain("categorieAgeAbsente(aiContext);\n")` —
+    // visait en réalité la ligne LÉGITIME, qui se termine exactement ainsi. Elle
+    // ne passait que sur un fichier en CRLF (Windows) et échouait en LF (Mac, CI).
+    const compter = (motif: RegExp) => (generation.match(motif) ?? []).length;
+    const appels = compter(/categorieAgeAbsente\(aiContext\)/g);
+    const appelsCouverts = compter(/!!aiContext\s*&&\s*categorieAgeAbsente\(aiContext\)/g);
+    expect(appels).toBeGreaterThan(0);
+    expect(appelsCouverts).toBe(appels);
   });
 
   test("mais au moment de payer, on rejoue la garde sur le contexte FRAIS", () => {
