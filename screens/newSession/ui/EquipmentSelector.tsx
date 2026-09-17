@@ -1,8 +1,17 @@
-import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Switch } from "react-native";
+// screens/newSession/ui/EquipmentSelector.tsx
+//
+// Restylage DA joueur (SPEC_DA_ACCUEIL_SEANCE.md §3.6) : MÊMES ids, MÊMES
+// libellés, MÊMES conditions d'affichage que la version d'origine — seul le
+// gabarit visuel change (jetons `da`, DaRowGroup/DaCheckRow, groupe
+// repliable). Le bouton "Valider le contexte" a disparu (fusion 3.6, décidée
+// et faite dans NewSessionScreen.tsx) : ce composant n'écrit plus jamais
+// `setupDone`.
+import React, { useState } from "react";
+import { View, Text, Pressable, ActivityIndicator, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { palette } from "../theme";
-import { showToast } from "../../../utils/toast";
+import { da, PLAFOND_TITRE, PLAFOND_TEXTE } from "../../../constants/daJoueur";
+import { DaCheckRow } from "../../../components/ui/da/DaCheckRow";
+import { DaRowGroup } from "../../../components/ui/da/DaRowGroup";
 import type { EnvironmentSelection } from "../types";
 
 type CatalogItem = { id: string; label: string; source: "gym" | "pitch" | "home" | "both" };
@@ -13,10 +22,20 @@ type CatalogItem = { id: string; label: string; source: "gym" | "pitch" | "home"
 // coordination). Le toggle "landmine" a été retiré : aucun équipement backend
 // ne porte cet id (le landmine press est gaté par "barbell", déjà couvert par
 // gym_full envoyé d'office en salle).
-const GYM_SPECIAL_EQUIPMENT = [
-  { id: "power_sled", label: "Traîneau / Sled", icon: "navigate", description: "Pour sprints résistés" },
-  { id: "trap_bar", label: "Trap bar / Hex bar", icon: "git-commit", description: "Deadlifts, shrugs" },
-  { id: "cable_machine", label: "Poulie / Cable", icon: "swap-vertical", description: "Tirage, rotations" },
+// Icônes filaires (-outline) : le reste de l'écran (tuiles de lieu, chevrons,
+// icône "poids du corps") est entièrement filaire — les pleines d'origine
+// juraient (finitions orchestrateur G3). Ids/libellés/descriptions intacts.
+export const GYM_SPECIAL_EQUIPMENT = [
+  { id: "power_sled", label: "Traîneau / Sled", icon: "navigate-outline" as const, description: "Pour sprints résistés" },
+  { id: "trap_bar", label: "Trap bar / Hex bar", icon: "git-commit-outline" as const, description: "Deadlifts, shrugs" },
+  { id: "cable_machine", label: "Poulie / Cable", icon: "swap-vertical-outline" as const, description: "Tirage, rotations" },
+];
+
+export const HOME_EQUIPMENT = [
+  { id: "home_small", label: "Petit matériel", icon: "fitness-outline" as const, description: "Tapis, bandes élastiques" },
+  { id: "backpack", label: "Sac à dos chargé", icon: "bag-outline" as const, description: "Pour squats, RDL, rows" },
+  { id: "water_bottles", label: "Bouteilles d'eau", icon: "water-outline" as const, description: "Poids légers polyvalents" },
+  { id: "chair", label: "Chaise / Banc", icon: "square-outline" as const, description: "Step-ups, dips, bulgarians" },
 ];
 
 type Props = {
@@ -24,47 +43,43 @@ type Props = {
   environment: EnvironmentSelection;
   availableEquipment: string[];
   selectedEquipment: string[];
-  contextLoading: boolean;
   onSelect: (next: string[]) => void;
-  onValidateContext: () => void;
-  setupDone: boolean;
+  /** `contextLoading` du store, déjà combiné avec `!generating` par l'appelant
+   *  (spec §3.8 : "contextLoading SANS generating") — ce composant n'a pas
+   *  besoin de connaître `generating` pour ça. */
+  contextLoading?: boolean;
+  /** Toujours false en pratique aujourd'hui (aucun contrôle ne la fait passer
+   *  à true) : formule conservée à l'identique pour ne pas changer la
+   *  condition d'affichage de "Équipement supplémentaire" (spec §3.6). */
   gymMachinesEnabled?: boolean;
-  onToggleGymMachines?: (next: boolean) => void;
   pitchSmallGearEnabled?: boolean;
   onTogglePitchSmallGear?: (next: boolean) => void;
 };
-
-// Equipment categories with icons
-const HOME_EQUIPMENT = [
-  { id: "home_small", label: "Petit matériel", icon: "fitness", description: "Tapis, bandes élastiques" },
-  { id: "backpack", label: "Sac à dos chargé", icon: "bag", description: "Pour squats, RDL, rows" },
-  { id: "water_bottles", label: "Bouteilles d'eau", icon: "water", description: "Poids légers polyvalents" },
-  { id: "chair", label: "Chaise / Banc", icon: "square", description: "Step-ups, dips, bulgarians" },
-];
 
 export function EquipmentSelector({
   catalog,
   environment,
   availableEquipment,
   selectedEquipment,
-  contextLoading,
   onSelect,
-  onValidateContext,
-  setupDone,
+  contextLoading = false,
   gymMachinesEnabled = false,
-  onToggleGymMachines,
   pitchSmallGearEnabled = false,
   onTogglePitchSmallGear,
 }: Props) {
   const isHome = environment.includes("home");
   const isGym = environment.includes("gym");
   const isPitch = environment.includes("pitch");
+  const mixte = environment.length > 1;
 
   const filtered = catalog.filter((item) => {
     if (availableEquipment.length > 0 && !availableEquipment.includes(item.id)) return false;
     if (item.source === "both") return true;
     return environment.includes(item.source as any);
   });
+  const supplementaires = filtered.filter(
+    (item) => !HOME_EQUIPMENT.some((h) => h.id === item.id)
+  );
 
   // "Sans matériel" est un choix assumé (poids du corps), pas un oubli :
   // on l'affiche dès que rien ne vient compléter le poids du corps
@@ -80,535 +95,225 @@ export function EquipmentSelector({
     );
   };
 
-  const handleValidate = () => {
-    if (environment.length === 0) {
-      showToast({ type: "warn", title: "Lieu requis", message: "Choisis un lieu avant de valider." });
-      return;
-    }
-    // Aucun blocage matériel : terrain sans petit matériel = OK (course/appuis
-    // au poids du corps), maison sans coche = OK (poids du corps). Le moteur
-    // gère nativement le bodyweight, donc "sans matériel" est un choix
-    // assumé, jamais un blocage.
-    onValidateContext();
-  };
+  // MÊME condition d'affichage qu'à l'origine (spec §3.6) : le groupe
+  // repliable disparaît entièrement dans les mêmes cas qu'avant.
+  const afficherSupplementaires =
+    supplementaires.length > 0 &&
+    !((isGym && gymMachinesEnabled && environment.length === 1) || (isPitch && pitchSmallGearEnabled && environment.length === 1));
+
+  const [ouvert, setOuvert] = useState(() => supplementaires.length <= 5);
+  const nombreCoches = supplementaires.filter((item) => selectedEquipment.includes(item.id)).length;
 
   if (environment.length === 0) {
     return (
-      <View style={styles.emptyContainer}>
-        <View style={styles.emptyIcon}>
-          <Ionicons name="cube-outline" size={28} color={palette.sub} />
-        </View>
-        <Text style={styles.emptyTitle}>Matériel</Text>
-        <Text style={styles.emptySubtitle}>
-          Choisis d'abord un lieu pour voir le matériel disponible
-        </Text>
+      <View style={styles.container}>
+        <Text style={styles.titre} maxFontSizeMultiplier={PLAFOND_TITRE}>Ton matériel</Text>
+        <Text style={styles.sousTexte} maxFontSizeMultiplier={PLAFOND_TEXTE}>Choisis d'abord un lieu.</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerIcon}>
-          <Ionicons name="cube" size={18} color={palette.accent} />
-        </View>
-        <View style={styles.headerText}>
-          <Text style={styles.title}>Matériel disponible</Text>
-          <Text style={styles.subtitle}>
-            FKS adapte les exercices selon ton équipement
+      <Text style={styles.titre} maxFontSizeMultiplier={PLAFOND_TITRE}>Ton matériel</Text>
+      <Text style={styles.sousTexte} maxFontSizeMultiplier={PLAFOND_TEXTE}>
+        Sélectionne ce que tu as avec toi.
+      </Text>
+
+      {contextLoading ? (
+        <View style={styles.chargement}>
+          <ActivityIndicator size="small" color={da.colors.sub} />
+          <Text style={styles.sousTexte} maxFontSizeMultiplier={PLAFOND_TEXTE}>
+            Chargement de ton matériel…
           </Text>
         </View>
-      </View>
+      ) : null}
 
-      {/* Gym Section */}
-      {isGym && (
-        <View style={[styles.locationSection, { borderLeftColor: "#8b5cf6" }]}>
-          <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIconWrap, { backgroundColor: "rgba(139, 92, 246, 0.12)" }]}>
-              <Ionicons name="barbell" size={18} color="#8b5cf6" />
+      {isGym ? (
+        <View style={styles.groupe}>
+          {mixte ? <GroupHeader icon="barbell-outline" label="Salle" /> : null}
+          <DaRowGroup>
+            <View style={styles.ligneStandard}>
+              <Ionicons name="checkmark-circle" size={22} color={da.colors.successText} />
+              <View style={styles.texteStandard}>
+                <Text style={styles.libelleStandard} maxFontSizeMultiplier={PLAFOND_TEXTE}>
+                  Équipement standard inclus
+                </Text>
+                <Text style={styles.descriptionStandard} maxFontSizeMultiplier={PLAFOND_TEXTE}>
+                  Haltères • Barres • Bancs • Machines guidées • Poids libres
+                </Text>
+              </View>
             </View>
-            <View style={styles.sectionHeaderText}>
-              <Text style={styles.sectionTitle}>Salle de sport</Text>
-              <Text style={styles.sectionSubtitle}>Équipement standard inclus par défaut</Text>
-            </View>
-          </View>
-
-          {/* Standard equipment - always included */}
-          <View style={[styles.standardEquipmentBadge, { backgroundColor: "rgba(139, 92, 246, 0.08)" }]}>
-            <View style={styles.standardEquipmentHeader}>
-              <Ionicons name="checkmark-circle" size={16} color="#8b5cf6" />
-              <Text style={[styles.standardEquipmentTitle, { color: "#8b5cf6" }]}>Inclus</Text>
-            </View>
-            <Text style={styles.standardEquipmentList}>
-              Haltères • Barres • Bancs • Machines guidées • Poids libres
-            </Text>
-          </View>
-
-          {/* Special equipment toggles */}
-          <View style={styles.specialEquipmentSection}>
-            <Text style={styles.specialEquipmentLabel}>Équipement spécial disponible ?</Text>
-            <View style={styles.equipmentGrid}>
-              {GYM_SPECIAL_EQUIPMENT.map((item) => {
-                const enabled = selectedEquipment.includes(item.id);
-                return (
-                  <TouchableOpacity
-                    key={item.id}
-                    onPress={() => toggle(item.id)}
-                    activeOpacity={0.85}
-                    style={[
-                      styles.equipmentCard,
-                      enabled && styles.equipmentCardEnabledGym,
-                    ]}
-                  >
-                    <View style={[
-                      styles.equipmentIconWrap,
-                      { backgroundColor: enabled ? "rgba(139, 92, 246, 0.15)" : palette.cardSoft }
-                    ]}>
-                      <Ionicons
-                        name={item.icon as any}
-                        size={20}
-                        color={enabled ? "#8b5cf6" : palette.sub}
-                      />
-                    </View>
-                    <View style={styles.equipmentInfo}>
-                      <Text style={[
-                        styles.equipmentLabel,
-                        enabled && { color: "#8b5cf6" }
-                      ]}>
-                        {item.label}
-                      </Text>
-                      <Text style={styles.equipmentDescription}>
-                        {item.description}
-                      </Text>
-                    </View>
-                    {enabled && (
-                      <Ionicons name="checkmark-circle" size={20} color="#8b5cf6" />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
+            {GYM_SPECIAL_EQUIPMENT.map((item) => (
+              <DaCheckRow
+                key={item.id}
+                label={item.label}
+                description={item.description}
+                icon={item.icon}
+                checked={selectedEquipment.includes(item.id)}
+                onToggle={() => toggle(item.id)}
+              />
+            ))}
+          </DaRowGroup>
         </View>
-      )}
+      ) : null}
 
-      {/* Pitch Section */}
-      {isPitch && (
-        <View style={[styles.locationSection, { borderLeftColor: "#22c55e" }]}>
-          <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIconWrap, { backgroundColor: "rgba(34, 197, 94, 0.12)" }]}>
-              <Ionicons name="football" size={18} color="#22c55e" />
-            </View>
-            <View style={styles.sectionHeaderText}>
-              <Text style={styles.sectionTitle}>Terrain</Text>
-              <Text style={styles.sectionSubtitle}>Petit matériel pour les drills et la vitesse</Text>
-            </View>
-          </View>
-
-          <View style={styles.quickToggle}>
-            <View style={styles.quickToggleInfo}>
-              <Ionicons name="checkmark-done" size={18} color="#22c55e" />
-              <Text style={styles.quickToggleLabel}>Petit matériel dispo</Text>
-            </View>
-            <Switch
-              value={pitchSmallGearEnabled}
-              onValueChange={(next) => onTogglePitchSmallGear?.(next)}
-              trackColor={{ false: palette.borderSoft, true: "rgba(34, 197, 94, 0.4)" }}
-              thumbColor={pitchSmallGearEnabled ? "#22c55e" : palette.textMuted}
+      {isPitch ? (
+        <View style={styles.groupe}>
+          {mixte ? <GroupHeader icon="football-outline" label="Terrain" /> : null}
+          <DaRowGroup>
+            <DaCheckRow
+              label="Petit matériel dispo"
+              description="Cônes, plots, bandes élastiques"
+              icon="checkmark-done-outline"
+              checked={pitchSmallGearEnabled}
+              onToggle={() => onTogglePitchSmallGear?.(!pitchSmallGearEnabled)}
             />
-          </View>
-
-          {pitchSmallGearEnabled && (
-            <View style={[styles.activeBadge, { backgroundColor: "rgba(34, 197, 94, 0.1)" }]}>
-              <Ionicons name="checkmark-circle" size={14} color="#22c55e" />
-              <Text style={[styles.activeBadgeText, { color: "#22c55e" }]}>
-                Cônes, plots, bandes élastiques
-              </Text>
-            </View>
-          )}
+          </DaRowGroup>
         </View>
-      )}
+      ) : null}
 
-      {/* Home Section */}
-      {isHome && (
-        <View style={[styles.locationSection, { borderLeftColor: "#f59e0b" }]}>
-          <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIconWrap, { backgroundColor: "rgba(245, 158, 11, 0.12)" }]}>
-              <Ionicons name="home" size={18} color="#f59e0b" />
-            </View>
-            <View style={styles.sectionHeaderText}>
-              <Text style={styles.sectionTitle}>Maison</Text>
-              <Text style={styles.sectionSubtitle}>Coche ce que tu as pour des séances plus variées</Text>
-            </View>
-          </View>
+      {isHome ? (
+        <View style={styles.groupe}>
+          {mixte ? <GroupHeader icon="home-outline" label="Maison" /> : null}
+          <DaRowGroup>
+            {HOME_EQUIPMENT.map((item) => (
+              <DaCheckRow
+                key={item.id}
+                label={item.label}
+                description={item.description}
+                icon={item.icon}
+                checked={selectedEquipment.includes(item.id)}
+                onToggle={() => toggle(item.id)}
+              />
+            ))}
+          </DaRowGroup>
+        </View>
+      ) : null}
 
-          <View style={styles.equipmentGrid}>
-            {HOME_EQUIPMENT.map((item) => {
-              const enabled = selectedEquipment.includes(item.id);
-              return (
-                <TouchableOpacity
+      {afficherSupplementaires ? (
+        <View style={styles.groupe}>
+          <Pressable
+            onPress={() => setOuvert((v) => !v)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: ouvert }}
+            style={styles.enteteRepliable}
+          >
+            <Text style={styles.libelleRepliable} maxFontSizeMultiplier={PLAFOND_TEXTE}>
+              Équipement supplémentaire · {nombreCoches} coché{nombreCoches > 1 ? "s" : ""}
+            </Text>
+            <Ionicons
+              name={ouvert ? "chevron-up" : "chevron-down"}
+              size={20}
+              color={da.colors.sub}
+            />
+          </Pressable>
+          {ouvert ? (
+            <DaRowGroup>
+              {supplementaires.map((item) => (
+                <DaCheckRow
                   key={item.id}
-                  onPress={() => toggle(item.id)}
-                  activeOpacity={0.85}
-                  style={[
-                    styles.equipmentCard,
-                    enabled && styles.equipmentCardEnabled,
-                  ]}
-                >
-                  <View style={[
-                    styles.equipmentIconWrap,
-                    { backgroundColor: enabled ? "rgba(245, 158, 11, 0.15)" : palette.cardSoft }
-                  ]}>
-                    <Ionicons
-                      name={item.icon as any}
-                      size={20}
-                      color={enabled ? "#f59e0b" : palette.sub}
-                    />
-                  </View>
-                  <View style={styles.equipmentInfo}>
-                    <Text style={[
-                      styles.equipmentLabel,
-                      enabled && { color: "#f59e0b" }
-                    ]}>
-                      {item.label}
-                    </Text>
-                    <Text style={styles.equipmentDescription}>
-                      {item.description}
-                    </Text>
-                  </View>
-                  {enabled && (
-                    <Ionicons name="checkmark-circle" size={20} color="#f59e0b" />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+                  label={item.label}
+                  checked={selectedEquipment.includes(item.id)}
+                  onToggle={() => toggle(item.id)}
+                />
+              ))}
+            </DaRowGroup>
+          ) : null}
         </View>
-      )}
+      ) : null}
 
-      {/* Additional equipment chips (if not using quick toggles) */}
-      {filtered.length > 0 && !((isGym && gymMachinesEnabled && environment.length === 1) || (isPitch && pitchSmallGearEnabled && environment.length === 1)) && (
-        <View style={styles.chipsSection}>
-          <Text style={styles.chipsTitle}>Équipement supplémentaire</Text>
-          <View style={styles.chipsWrap}>
-            {filtered.map((item) => {
-              const selected = selectedEquipment.includes(item.id);
-              // Skip items already shown in home section
-              if (HOME_EQUIPMENT.some(h => h.id === item.id)) return null;
-              return (
-                <TouchableOpacity
-                  key={item.id}
-                  onPress={() => toggle(item.id)}
-                  style={[styles.chip, selected && styles.chipSelected]}
-                  activeOpacity={0.85}
-                  hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-                >
-                  {selected && <Ionicons name="checkmark" size={14} color={palette.accent} />}
-                  <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                    {item.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      )}
-
-      {/* "Sans matériel" assumé, pas oublié */}
-      {showBodyweightHint && (
+      {showBodyweightHint ? (
         <View style={styles.bodyweightHint}>
-          <Ionicons name="body" size={16} color={palette.sub} />
-          <Text style={styles.bodyweightHintText}>
+          <Ionicons name="body-outline" size={16} color={da.colors.sub} />
+          <Text style={styles.bodyweightHintText} maxFontSizeMultiplier={PLAFOND_TEXTE}>
             Aucun matériel ? La séance sera au poids du corps.
           </Text>
         </View>
-      )}
+      ) : null}
+    </View>
+  );
+}
 
-      {/* Validation button */}
-      <TouchableOpacity
-        style={[
-          styles.validateButton,
-          setupDone && styles.validateButtonDone,
-        ]}
-        onPress={handleValidate}
-        activeOpacity={0.85}
-      >
-        <Ionicons
-          name={setupDone ? "checkmark-circle" : "arrow-forward"}
-          size={20}
-          color="#fff"
-        />
-        <Text style={styles.validateButtonText}>
-          {setupDone ? "Contexte validé" : "Valider le contexte"}
-        </Text>
-      </TouchableOpacity>
+/** En-tête discret d'un groupe, affiché seulement en séance mixte (§3.6). */
+function GroupHeader({ icon, label }: { icon: keyof typeof Ionicons.glyphMap; label: string }) {
+  return (
+    <View style={styles.groupHeader}>
+      <Ionicons name={icon} size={18} color={da.colors.text} />
+      <Text style={styles.groupHeaderLabel} maxFontSizeMultiplier={PLAFOND_TEXTE}>{label}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    gap: 16,
+    gap: da.spacing.md,
   },
-  emptyContainer: {
-    alignItems: "center",
-    padding: 24,
-    gap: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    borderStyle: "dashed",
-    backgroundColor: palette.cardSoft,
+  titre: {
+    ...da.typography.section,
+    color: da.colors.text,
   },
-  emptyIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: palette.card,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 4,
+  sousTexte: {
+    ...da.typography.secondary,
+    color: da.colors.sub,
   },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: palette.text,
-  },
-  emptySubtitle: {
-    fontSize: 13,
-    color: palette.sub,
-    textAlign: "center",
-  },
-  header: {
+  chargement: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: da.spacing.xs,
   },
-  headerIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "rgba(37, 99, 235, 0.12)",
-    alignItems: "center",
-    justifyContent: "center",
+  groupe: {
+    gap: da.spacing.xs,
   },
-  headerText: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: palette.text,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: palette.sub,
-    marginTop: 2,
-  },
-  locationSection: {
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    borderLeftWidth: 4,
-    backgroundColor: palette.card,
-    gap: 14,
-  },
-  sectionHeader: {
+  groupHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: da.spacing.xs,
   },
-  sectionIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+  groupHeaderLabel: {
+    ...da.typography.bodyStrong,
+    color: da.colors.text,
+  },
+  ligneStandard: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: da.spacing.sm,
+    paddingVertical: da.spacing.sm,
+    paddingHorizontal: da.spacing.md,
+    minHeight: 56,
   },
-  sectionHeaderText: {
+  texteStandard: {
     flex: 1,
+    gap: 2,
   },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: palette.text,
+  libelleStandard: {
+    ...da.typography.bodyStrong,
+    color: da.colors.text,
   },
-  sectionSubtitle: {
-    fontSize: 12,
-    color: palette.sub,
-    marginTop: 2,
+  descriptionStandard: {
+    ...da.typography.secondary,
+    color: da.colors.sub,
   },
-  quickToggle: {
+  enteteRepliable: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    backgroundColor: palette.cardSoft,
+    minHeight: 44,
+    paddingVertical: da.spacing.xs,
   },
-  quickToggleInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  quickToggleLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: palette.text,
-  },
-  activeBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-  },
-  activeBadgeText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  equipmentGrid: {
-    gap: 10,
-  },
-  standardEquipmentBadge: {
-    padding: 12,
-    borderRadius: 12,
-    gap: 6,
-  },
-  standardEquipmentHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  standardEquipmentTitle: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  standardEquipmentList: {
-    fontSize: 13,
-    color: palette.sub,
-    lineHeight: 18,
-  },
-  specialEquipmentSection: {
-    gap: 10,
-  },
-  specialEquipmentLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: palette.sub,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  equipmentCardEnabledGym: {
-    borderColor: "#8b5cf6",
-    backgroundColor: "rgba(139, 92, 246, 0.06)",
-  },
-  equipmentCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: palette.cardSoft,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-  },
-  equipmentCardEnabled: {
-    borderColor: "#f59e0b",
-    backgroundColor: "rgba(245, 158, 11, 0.06)",
-  },
-  equipmentIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  equipmentInfo: {
+  libelleRepliable: {
+    ...da.typography.bodyStrong,
+    color: da.colors.text,
     flex: 1,
-  },
-  equipmentLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: palette.text,
-  },
-  equipmentDescription: {
-    fontSize: 11,
-    color: palette.sub,
-    marginTop: 2,
-  },
-  chipsSection: {
-    gap: 10,
-  },
-  chipsTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: palette.sub,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  chipsWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: palette.borderSoft,
-    backgroundColor: palette.card,
-  },
-  chipSelected: {
-    borderColor: palette.accent,
-    backgroundColor: "rgba(37, 99, 235, 0.08)",
-  },
-  chipText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: palette.sub,
-  },
-  chipTextSelected: {
-    color: palette.accent,
   },
   bodyweightHint: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    backgroundColor: palette.cardSoft,
+    gap: da.spacing.xs,
   },
   bodyweightHintText: {
     flex: 1,
-    fontSize: 12,
-    color: palette.sub,
-    lineHeight: 16,
-  },
-  validateButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    paddingVertical: 16,
-    borderRadius: 14,
-    backgroundColor: palette.accent,
-  },
-  validateButtonDone: {
-    backgroundColor: "#22c55e",
-  },
-  validateButtonText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#fff",
+    ...da.typography.secondary,
+    color: da.colors.sub,
   },
 });

@@ -17,14 +17,27 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { theme } from "../../constants/theme";
+import { da, PLAFOND_TEXTE as DA_PLAFOND_TEXTE, TOUCHE_MIN } from "../../constants/daJoueur";
 import { useHaptics } from "../../hooks/useHaptics";
 import { changerStatutBlessure } from "../../hooks/monCorps/monCorpsActions";
 import { useMonCorpsViewModel } from "../../hooks/monCorps/useMonCorpsViewModel";
+import { DaNavRow, DaNotice, DaTextButton } from "../ui/da";
 
 const C = theme.colors;
 const PLAFOND_TITRE = 1.2;
 
-export function MonCorpsHubCard({ onPress }: { onPress: () => void }) {
+type Props = {
+  onPress: () => void;
+  /**
+   * `"hub"` (défaut) : rendu ACTUEL strictement inchangé — c'est l'onglet
+   * Séance, hors périmètre du chantier DA Accueil. `"accueil"` : habillage
+   * `da` (SPEC_DA_ACCUEIL_SEANCE.md §2.5), MÊMES textes, MÊMES trois réponses,
+   * MÊME action `changerStatutBlessure`.
+   */
+  variant?: "hub" | "accueil";
+};
+
+export function MonCorpsHubCard({ onPress, variant = "hub" }: Props) {
   const vm = useMonCorpsViewModel();
   const haptics = useHaptics();
   const aRelancer = vm.aRelancer[0] ?? null;
@@ -34,6 +47,72 @@ export function MonCorpsHubCard({ onPress }: { onPress: () => void }) {
     haptics.impactLight();
     changerStatutBlessure(aRelancer.id, statut);
   };
+
+  const resume = vm.enCours.length
+    ? vm.enCours.map((l) => `${l.zoneLabel.toLowerCase()} — ${l.graviteLabelCourt.toLowerCase()}`).join(" · ")
+    : "Une gêne à signaler ?";
+
+  if (variant === "accueil") {
+    if (aRelancer) {
+      return (
+        <View style={styles.carteAccueilRelance}>
+          <DaNotice
+            tone="warn"
+            icon="body-outline"
+            title="Mon corps"
+            message={`Ta gêne (${aRelancer.zoneLabel.toLowerCase()}) est toujours gênante ?`}
+          >
+            <View style={styles.rangeeAccueil}>
+              <TouchableOpacity
+                style={styles.puceAccueil}
+                onPress={() => repondre("active")}
+                accessibilityRole="button"
+                accessibilityLabel={`Marquer la gêne ${aRelancer.zoneLabel} comme toujours là`}
+              >
+                <Text style={styles.puceAccueilTexte} maxFontSizeMultiplier={DA_PLAFOND_TEXTE}>
+                  Toujours là
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.puceAccueil}
+                onPress={() => repondre("recovering")}
+                accessibilityRole="button"
+                accessibilityLabel={`Marquer la gêne ${aRelancer.zoneLabel} comme en reprise`}
+              >
+                <Text style={styles.puceAccueilTexte} maxFontSizeMultiplier={DA_PLAFOND_TEXTE}>
+                  En reprise
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.puceAccueil}
+                onPress={() => repondre("healed")}
+                accessibilityRole="button"
+                accessibilityLabel={`Marquer la gêne ${aRelancer.zoneLabel} comme guérie`}
+              >
+                <Text style={styles.puceAccueilTexte} maxFontSizeMultiplier={DA_PLAFOND_TEXTE}>
+                  C'est guéri
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <DaTextButton label="Ouvrir Mon corps" onPress={onPress} icon="chevron-forward" />
+          </DaNotice>
+        </View>
+      );
+    }
+
+    return (
+      <DaNavRow
+        icon="body-outline"
+        title="Mon corps"
+        subtitle={resume}
+        onPress={() => {
+          haptics.impactLight();
+          onPress();
+        }}
+        accessibilityLabel={`Mon corps. ${resume}. Ouvrir.`}
+      />
+    );
+  }
 
   if (aRelancer) {
     return (
@@ -86,7 +165,7 @@ export function MonCorpsHubCard({ onPress }: { onPress: () => void }) {
     );
   }
 
-  const resume = vm.enCours.length
+  const resumeHub = vm.enCours.length
     ? vm.enCours.map((l) => `${l.zoneLabel.toLowerCase()} — ${l.graviteLabelCourt.toLowerCase()}`).join(" · ")
     : "Rien de signalé";
 
@@ -99,7 +178,7 @@ export function MonCorpsHubCard({ onPress }: { onPress: () => void }) {
       }}
       activeOpacity={0.85}
       accessibilityRole="button"
-      accessibilityLabel={`Mon corps. ${resume}. Ouvrir.`}
+      accessibilityLabel={`Mon corps. ${resumeHub}. Ouvrir.`}
     >
       <View style={styles.enTete}>
         <Ionicons name="body-outline" size={18} color={C.accent} />
@@ -109,7 +188,7 @@ export function MonCorpsHubCard({ onPress }: { onPress: () => void }) {
         <Ionicons name="chevron-forward" size={18} color={C.sub} />
       </View>
       <Text style={styles.resume} numberOfLines={2}>
-        {resume}
+        {resumeHub}
       </Text>
     </TouchableOpacity>
   );
@@ -150,4 +229,27 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   lienTexte: { fontSize: 13, fontWeight: "600", color: C.sub },
+  // ── Variante "accueil" (jetons `da`, SPEC_DA_ACCUEIL_SEANCE.md §2.5) ──
+  carteAccueilRelance: {
+    gap: da.spacing.sm,
+  },
+  rangeeAccueil: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: da.spacing.xs,
+  },
+  puceAccueil: {
+    minHeight: TOUCHE_MIN,
+    justifyContent: "center",
+    paddingHorizontal: da.spacing.md,
+    borderRadius: da.radius.pill,
+    borderWidth: 1.5,
+    borderColor: da.colors.controlBorder,
+    backgroundColor: da.colors.card,
+  },
+  puceAccueilTexte: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: da.colors.text,
+  },
 });

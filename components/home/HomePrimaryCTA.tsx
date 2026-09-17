@@ -1,56 +1,47 @@
-import React, { useEffect, useRef } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Animated } from "react-native";
+// components/home/HomePrimaryCTA.tsx
+// Bouton principal de l'accueil (SPEC_DA_ACCUEIL_SEANCE.md §2.3) — même
+// gabarit que `DaPrimaryButton` (56 de haut, rayon 16, libellé à gauche,
+// flèche à droite), mais gardé comme composant distinct pour porter le pulse
+// en boucle (scale 1 → 1.015) que `DaPrimaryButton` n'a pas. Plus de
+// `subLabel` ni de ton "warn" ambré : l'état d'attention est désormais porté
+// par une `DaNotice` à côté du bouton, jamais par le bouton lui-même.
+import React, { useEffect, useState } from "react";
+import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../../constants/theme";
+
+import { da, PLAFOND_TITRE, TOUCHE_MIN } from "../../constants/daJoueur";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useReduceMotion } from "../../hooks/useReduceMotion";
 
-const palette = theme.colors;
-
-// Contraste WCAG AA (H6) — teinte d'action reprise du prototype VNext
-// (homeVNextTokens.ts, ACTION_ORANGE) : même teinte orange que palette.cta,
-// assombrie. Blanc plein sur #B4530C = 5.02:1 (vs 2.88:1 sur #F2741B).
-// Portée locale : le CTA du Home uniquement — theme.colors.cta ne bouge pas.
-const CTA_ACTION_BG = "#B4530C";
-// Texte du tone "warn" : amber-800 (même famille que palette.warn #D97706).
-// #92400E sur le fond composite rgb(245,233,212) = 5.89:1 (palette.warn n'y
-// faisait que 2.65:1 ; l'amber-700 #B45309 échoue à 4.17:1, d'où ce palier).
-const CTA_WARN_TEXT = "#92400E";
-
 type Props = {
   label: string;
-  subLabel?: string;
-  tone?: "primary" | "warn" | "disabled";
   onPress?: () => void;
   disabled?: boolean;
 };
 
-function HomePrimaryCTAInner({
-  label,
-  subLabel,
-  tone = "primary",
-  onPress,
-  disabled = false,
-}: Props) {
+function HomePrimaryCTAInner({ label, onPress, disabled = false }: Props) {
   if (__DEV__) console.log("[RENDER] HomePrimaryCTA");
-  const isDisabled = disabled || tone === "disabled";
   const haptics = useHaptics();
   const reduceMotion = useReduceMotion();
-  const pulse = useRef(new Animated.Value(0)).current;
-  const press = useRef(new Animated.Value(0)).current;
+  // `Animated.Value` créée une seule fois — jamais `useRef(...).current` lu
+  // pendant le rendu (règle react-hooks/refs du chantier).
+  const [pulse] = useState(() => new Animated.Value(0));
+  const [press] = useState(() => new Animated.Value(0));
 
   const onPressIn = () => {
     haptics.impactLight();
-    Animated.timing(press, { toValue: 1, duration: 150, useNativeDriver: true }).start();
+    if (reduceMotion) return;
+    Animated.timing(press, { toValue: 1, duration: 120, useNativeDriver: true }).start();
   };
   const onPressOut = () => {
+    if (reduceMotion) return;
     Animated.timing(press, { toValue: 0, duration: 100, useNativeDriver: true }).start();
   };
-  const pressScale = press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.96] });
 
   useEffect(() => {
-    // Réduire les animations (OS) : pas de pulsation en boucle, bouton figé à l'échelle 1.
-    if (isDisabled || reduceMotion) {
+    // Réduire les animations (OS) ou bouton désactivé : pas de pulsation en
+    // boucle, bouton figé à l'échelle 1.
+    if (disabled || reduceMotion) {
       pulse.setValue(0);
       return;
     }
@@ -65,71 +56,58 @@ function HomePrimaryCTAInner({
       loop.stop();
       pulse.setValue(0);
     };
-  }, [isDisabled, reduceMotion, pulse]);
+  }, [disabled, reduceMotion, pulse]);
 
-  const scale = pulse.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 1.015],
-  });
-  // CTA primaire = action clé → aplat d'action foncé + texte blanc PLEIN
-  // (règle prototype : sur l'aplat, tout texte est blanc à 100 % — la hiérarchie
-  // label/sous-titre passe par taille et graisse, pas par l'opacité).
-  const bg =
-    tone === "warn" ? "rgba(245,158,11,0.16)" : tone === "disabled" ? palette.cardSoft : CTA_ACTION_BG;
-  const border =
-    tone === "warn" ? palette.warn : tone === "disabled" ? palette.borderSoft : CTA_ACTION_BG;
-  const textColor =
-    tone === "warn" ? CTA_WARN_TEXT : tone === "disabled" ? palette.sub : "#ffffff";
-  const subColor =
-    tone === "disabled" ? palette.sub : tone === "warn" ? CTA_WARN_TEXT : "#FFFFFF";
+  const pulseScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.015] });
+  const pressScale = press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.98] });
+  const animatedStyle = { transform: [{ scale: pulseScale }, { scale: pressScale }] };
+  const backgroundStyle = { backgroundColor: disabled ? da.colors.disabledBg : da.colors.action };
+  const labelColor = disabled ? da.colors.disabledText : da.colors.onAction;
+  const labelColorStyle = { color: labelColor };
+  const interactionCoupee = disabled;
 
   return (
-    <Animated.View style={{ transform: [{ scale }, { scale: pressScale }] }}>
-      <TouchableOpacity
-        onPress={onPress}
-        onPressIn={onPressIn}
-        onPressOut={onPressOut}
-        disabled={isDisabled}
-        activeOpacity={0.9}
-        style={[styles.wrap, { backgroundColor: bg, borderColor: border, opacity: isDisabled ? 0.7 : 1 }]}
+    <Animated.View style={animatedStyle}>
+      <Pressable
+        onPress={interactionCoupee ? undefined : onPress}
+        onPressIn={interactionCoupee ? undefined : onPressIn}
+        onPressOut={interactionCoupee ? undefined : onPressOut}
+        disabled={interactionCoupee}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ disabled: interactionCoupee }}
+        style={[styles.base, backgroundStyle]}
       >
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.label, { color: textColor }]}>{label}</Text>
-        {subLabel ? <Text style={[styles.sub, { color: subColor }]}>{subLabel}</Text> : null}
-      </View>
-      <View style={[styles.iconWrap, { borderColor: textColor }]}>
-        <Ionicons name="arrow-forward" size={18} color={textColor} />
-      </View>
-      </TouchableOpacity>
+        <Text style={[styles.label, labelColorStyle]} maxFontSizeMultiplier={PLAFOND_TITRE}>
+          {label}
+        </Text>
+        <View style={styles.iconWrap}>
+          <Ionicons name="arrow-forward" size={22} color={labelColor} />
+        </View>
+      </Pressable>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: {
-    borderRadius: 22,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderWidth: 1,
+  base: {
+    minHeight: 56,
+    borderRadius: da.radius.button,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     gap: 12,
   },
   label: {
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  sub: {
-    marginTop: 4,
-    fontSize: 12,
-    color: palette.sub,
+    ...da.typography.button,
+    flex: 1,
+    textAlign: "left",
   },
   iconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 999,
-    borderWidth: 1,
-    alignItems: "center",
+    minWidth: TOUCHE_MIN - 24,
+    alignItems: "flex-end",
     justifyContent: "center",
   },
 });

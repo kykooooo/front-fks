@@ -8,11 +8,11 @@ import React from "react";
 import { Text, StyleSheet, type StyleProp, type TextStyle } from "react-native";
 import { theme } from "../../constants/theme";
 
-type BrandMarkSize = "sm";
+type BrandMarkSize = "sm" | "md";
 
 type BrandMarkProps = {
-  /** Une seule taille pour l'instant (direction A). Réservé pour une future
-   * déclinaison "lg" (direction B, cf. doc de direction §3). */
+  /** "sm" = parcours d'inscription (direction A, inchangé). "md" = DA joueur
+   * Accueil + Création de séance (SPEC_DA_ACCUEIL_SEANCE.md §1.2, 17/09/2026). */
   size?: BrandMarkSize;
   style?: StyleProp<TextStyle>;
 };
@@ -22,6 +22,12 @@ const SIZE_STYLES: Record<BrandMarkSize, TextStyle> = {
     fontSize: 17,
     fontWeight: "700",
     letterSpacing: 3,
+    color: theme.colors.text,
+  },
+  md: {
+    fontSize: 22,
+    fontWeight: "800",
+    letterSpacing: 2,
     color: theme.colors.text,
   },
 };

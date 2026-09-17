@@ -1,12 +1,10 @@
 import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, LayoutChangeEvent } from "react-native";
 import Svg, { Line, Path, Circle } from "react-native-svg";
-import { theme } from "../../constants/theme";
-import { Card } from "../ui/Card";
+import { da, PLAFOND_TEXTE } from "../../constants/daJoueur";
+import { DaCard, DaKicker } from "../ui/da";
 import { getFootballLabel } from "../../config/trainingDefaults";
 import { POINTS_MIN_POUR_COURBE } from "../../hooks/home/useRealLoadData";
-
-const palette = theme.colors;
 
 type Props = {
   tsb: number;
@@ -67,6 +65,12 @@ function HomeReadinessHeroInner({
   // Use football labels for player-friendly display
   const football = getFootballLabel(tsb);
   const lineColor = football.color;
+  // Valeurs réellement dynamiques : construites hors du littéral JSX (même
+  // motif que DaCard/DaPrimaryButton) pour ne pas déclencher
+  // react-native/no-inline-styles.
+  const dotColorStyle = { backgroundColor: football.color };
+  const refZeroPositionStyle = { top: toY(0) - 8 };
+  const refDixPositionStyle = { top: toY(-10) - 8 };
 
   const handleLayout = (e: LayoutChangeEvent) => {
     const w = e.nativeEvent.layout.width;
@@ -79,30 +83,38 @@ function HomeReadinessHeroInner({
   // pastille (c'est un jugement), pas de courbe, pas de repères.
   if (!hasRealLoadData) {
     return (
-      <Card variant="surface" style={styles.card}>
+      <DaCard style={styles.carte}>
         <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.kicker}>TON ÉTAT</Text>
-            <Text style={styles.title}>Ta tendance se construit</Text>
-            <Text style={styles.sub}>
+          <View style={styles.headerTexte}>
+            <DaKicker>TA FORME</DaKicker>
+            <Text style={styles.title} maxFontSizeMultiplier={PLAFOND_TEXTE} numberOfLines={2}>
+              Ta tendance se construit
+            </Text>
+            <Text style={styles.sub} maxFontSizeMultiplier={PLAFOND_TEXTE} numberOfLines={3}>
               Termine quelques séances et partage ton ressenti pour obtenir un repère plus utile.
             </Text>
           </View>
         </View>
-      </Card>
+      </DaCard>
     );
   }
 
   return (
-    <Card variant="surface" style={styles.card}>
+    <DaCard style={styles.carte}>
       <View style={styles.headerRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.kicker}>TON ÉTAT</Text>
-          <Text style={styles.title}>{football.label}</Text>
-          <Text style={styles.sub}>{football.message}</Text>
+        <View style={styles.headerTexte}>
+          <DaKicker>TA FORME</DaKicker>
+          <Text style={styles.title} maxFontSizeMultiplier={PLAFOND_TEXTE} numberOfLines={2}>
+            {football.label}
+          </Text>
+          <Text style={styles.sub} maxFontSizeMultiplier={PLAFOND_TEXTE} numberOfLines={2}>
+            {football.message}
+          </Text>
         </View>
+        {/* Couleur d'état conservée UNIQUEMENT ici et sur la courbe : c'est son sens
+            (SPEC_DA_ACCUEIL_SEANCE.md §2.7), pas un badge décoratif. */}
         <View style={styles.valuePill}>
-          <View style={[styles.statusDot, { backgroundColor: football.color }]} />
+          <View style={[styles.statusDot, dotColorStyle]} />
         </View>
       </View>
 
@@ -111,7 +123,7 @@ function HomeReadinessHeroInner({
         // points font un segment, pas une tendance). Même chartWrap (minHeight 90)
         // pour la stabilité du gabarit ; texte validé, pas de repères 0/-10.
         <View style={styles.chartWrap}>
-          <Text style={styles.sub}>
+          <Text style={styles.sub} maxFontSizeMultiplier={PLAFOND_TEXTE} numberOfLines={3}>
             Termine quelques séances et partage ton ressenti pour obtenir un repère plus utile.
           </Text>
         </View>
@@ -123,7 +135,7 @@ function HomeReadinessHeroInner({
               <Line x1={padLeft} y1={toY(5)} x2={chartWidth - padRight} y2={toY(5)} stroke="rgba(34, 197, 94, 0.2)" strokeWidth={1} strokeDasharray="4,4" />
               <Line x1={padLeft} y1={toY(-5)} x2={chartWidth - padRight} y2={toY(-5)} stroke="rgba(34, 197, 94, 0.2)" strokeWidth={1} strokeDasharray="4,4" />
               {/* Zero line */}
-              <Line x1={padLeft} y1={toY(0)} x2={chartWidth - padRight} y2={toY(0)} stroke={palette.borderSoft} strokeWidth={1} />
+              <Line x1={padLeft} y1={toY(0)} x2={chartWidth - padRight} y2={toY(0)} stroke={da.colors.border} strokeWidth={1} />
               {/* Overreaching threshold */}
               <Line x1={padLeft} y1={toY(-10)} x2={chartWidth - padRight} y2={toY(-10)} stroke="rgba(245, 158, 11, 0.3)" strokeWidth={1} />
               {/* TSB curve */}
@@ -132,50 +144,51 @@ function HomeReadinessHeroInner({
                 <Circle key={`dot_${idx}`} cx={p.x} cy={p.y} r={idx === points.length - 1 ? 5 : 3} fill={lineColor} />
               ))}
             </Svg>
-            <Text style={[styles.refLabel, { top: toY(0) - 8 }]}>0</Text>
-            <Text style={[styles.refLabel, { top: toY(-10) - 8, color: "#f59e0b" }]}>-10</Text>
+            <Text style={[styles.refLabel, refZeroPositionStyle]} maxFontSizeMultiplier={PLAFOND_TEXTE}>
+              0
+            </Text>
+            <Text
+              style={[styles.refLabel, styles.refLabelWarn, refDixPositionStyle]}
+              maxFontSizeMultiplier={PLAFOND_TEXTE}
+            >
+              -10
+            </Text>
           </View>
 
           <View style={styles.chartLabelRow}>
             {/* Points = jours d'activité calculés par le modèle (pas 7 jours
                 calendaires) : "Ta forme sur 7 jours" mentirait. */}
-            <Text style={styles.chartLabel}>Ta tendance récente</Text>
+            <Text style={styles.chartLabel} maxFontSizeMultiplier={PLAFOND_TEXTE} numberOfLines={1}>
+              Ta tendance récente
+            </Text>
           </View>
         </>
       )}
-    </Card>
+    </DaCard>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    padding: 16,
-    borderRadius: 26,
-    gap: 10,
-    overflow: "hidden",
+  carte: {
+    gap: da.spacing.sm,
   },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     gap: 10,
   },
-  kicker: {
-    fontSize: 10,
-    letterSpacing: 1.4,
-    color: palette.sub,
-    textTransform: "uppercase",
-    fontWeight: "800",
+  headerTexte: {
+    flex: 1,
   },
   title: {
-    marginTop: 4,
-    fontSize: 20,
-    fontWeight: "900",
-    color: palette.text,
+    ...da.typography.section,
+    marginTop: da.spacing.xxs,
+    color: da.colors.text,
   },
   sub: {
+    ...da.typography.secondary,
     marginTop: 4,
-    fontSize: 12,
-    color: palette.sub,
+    color: da.colors.sub,
   },
   valuePill: {
     alignItems: "center",
@@ -194,14 +207,17 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     fontSize: 10,
-    color: palette.sub,
+    color: da.colors.sub,
+  },
+  refLabelWarn: {
+    color: da.colors.warnText,
   },
   chartLabelRow: {
     paddingTop: 2,
   },
   chartLabel: {
     fontSize: 11,
-    color: palette.sub,
+    color: da.colors.sub,
     fontWeight: "600",
   },
 });

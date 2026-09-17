@@ -1,38 +1,53 @@
+// screens/newSession/ui/GenerationActions.tsx
+//
+// Pied collant de création de séance (SPEC_DA_ACCUEIL_SEANCE.md §3.7) : ligne
+// récapitulative (helper pur `resumerContexte`), UN bouton principal, sous-
+// texte, et l'outil d'horloge dev. Le conseil contextuel (`advice`) est SORTI
+// d'ici : l'écran le rend maintenant dans le ScrollView (DaNotice).
 import React from "react";
-import { View, Text, TouchableOpacity, ActivityIndicator } from "react-native";
+import { View, Text, Pressable, StyleSheet, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { palette } from "../theme";
-import type { Advice } from "../../../domain/adviceRules";
+import { da, PLAFOND_TEXTE } from "../../../constants/daJoueur";
+import { DaPrimaryButton } from "../../../components/ui/da/DaPrimaryButton";
+import { resumerContexte, type LibellesEquipement } from "../resumeContexte";
+import type { EnvironmentSelection } from "../types";
 
 type Props = {
   disabled: boolean;
   generating: boolean;
-  label: string;
+  environment: EnvironmentSelection;
+  selectedEquipment: string[];
+  libelles: LibellesEquipement;
   onGenerate: () => void;
   onAdvanceDay: () => void;
   storeHydrated: boolean;
   alreadyAppliedToday: boolean;
-  advice?: Advice | null;
-};
-
-const TONE_CONFIG: Record<string, { bg: string; border: string; text: string; icon: string }> = {
-  info: { bg: "rgba(37, 99, 235, 0.08)", border: "#3b82f6", text: "#2563eb", icon: "#3b82f6" },
-  warn: { bg: "rgba(245, 158, 11, 0.10)", border: "#f59e0b", text: "#d97706", icon: "#f59e0b" },
-  danger: { bg: "rgba(239, 68, 68, 0.10)", border: "#ef4444", text: "#dc2626", icon: "#ef4444" },
-  success: { bg: "rgba(22, 163, 74, 0.08)", border: "#22c55e", text: "#16a34a", icon: "#22c55e" },
 };
 
 export function GenerationActions({
   disabled,
   generating,
-  label,
+  environment,
+  selectedEquipment,
+  libelles,
   onGenerate,
   onAdvanceDay,
   storeHydrated,
   alreadyAppliedToday,
-  advice,
 }: Props) {
-  const toneConfig = advice ? TONE_CONFIG[advice.tone] ?? TONE_CONFIG.info : null;
+  const resume = resumerContexte({ environment, selectedEquipment, libelles });
+
+  // Petit écran (320×568 mesuré) : le pied mangeait ~1/3 de l'écran. La
+  // légende décorative disparaît sous 700 de haut ; la note
+  // "déjà validé aujourd'hui" reste — c'est une information, pas une déco.
+  const { height } = useWindowDimensions();
+  const ecranBas = height < 700;
+
+  const label = !storeHydrated
+    ? "Chargement de ton historique…"
+    : alreadyAppliedToday
+    ? "Créer ma séance pour demain"
+    : "Créer ma séance";
 
   // Un double-tap accidentel sur "Jour OFF" avancerait le calendrier de 2 jours en silence.
   const lastPressRef = React.useRef(0);
@@ -44,159 +59,84 @@ export function GenerationActions({
   };
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>Lancer la génération</Text>
-      <Text style={styles.cardSubtitle}>
-        FKS tient compte de ta forme, du lieu et du matériel pour construire ta séance.
-      </Text>
-
-      {/* Conseil contextuel avant génération */}
-      {advice && toneConfig && (
-        <View
-          style={[
-            styles.adviceBanner,
-            { backgroundColor: toneConfig.bg, borderLeftColor: toneConfig.border },
-          ]}
+    <View style={styles.pied}>
+      <View style={styles.recap}>
+        <Ionicons name="location-outline" size={16} color={da.colors.sub} />
+        <Text
+          style={styles.recapTexte}
+          maxFontSizeMultiplier={PLAFOND_TEXTE}
+          numberOfLines={2}
         >
-          <View style={[styles.adviceIconWrap, { backgroundColor: toneConfig.bg }]}>
-            <Ionicons name={advice.icon as any} size={18} color={toneConfig.icon} />
-          </View>
-          <View style={styles.adviceTextWrap}>
-            <Text style={[styles.adviceTitle, { color: toneConfig.text }]}>{advice.title}</Text>
-            <Text style={styles.adviceMessage}>{advice.message}</Text>
-          </View>
-        </View>
-      )}
-
-      <View style={styles.buttonRow}>
-        <TouchableOpacity
-          style={[styles.cta, styles.ctaPrimary, disabled && { opacity: 0.5 }]}
-          onPress={onGenerate}
-          disabled={disabled}
-          activeOpacity={0.85}
-        >
-          {generating ? (
-            <ActivityIndicator color={palette.bg} />
-          ) : (
-            <Text style={styles.ctaPrimaryText}>{label}</Text>
-          )}
-        </TouchableOpacity>
+          {resume}
+        </Text>
       </View>
+
+      <DaPrimaryButton
+        label={label}
+        onPress={onGenerate}
+        disabled={disabled}
+        loading={generating}
+        accessibilityHint="Lance la génération de ta séance"
+      />
+
+      {alreadyAppliedToday ? (
+        <Text style={styles.sousTexte} maxFontSizeMultiplier={PLAFOND_TEXTE}>
+          Tu as déjà validé une séance aujourd’hui — la prochaine sera planifiée pour demain.
+        </Text>
+      ) : !ecranBas ? (
+        <Text style={styles.sousTexte} maxFontSizeMultiplier={PLAFOND_TEXTE}>
+          Ta séance sera adaptée à tes choix.
+        </Text>
+      ) : null}
 
       {/* « Jour OFF (+1j) » = outil d'HORLOGE DEV (avance lastLoadDayKey et
           décaye ATL/CTL sans retour visuel). Gaté __DEV__ (P1-10 inventaire
           clubs) : dans le binaire des clubs, il corrompait la charge de la
           session en cours en silence. */}
       {__DEV__ ? (
-        <View style={[styles.buttonRow, { marginTop: 10 }]}>
-          <TouchableOpacity
-            style={[styles.cta, styles.ctaSecondaryGreen, generating && { opacity: 0.5 }]}
-            onPress={() => guardedPress(onAdvanceDay)}
-            disabled={generating}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.ctaSecondaryGreenText}>Jour OFF (+1j)</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-
-      {!storeHydrated ? (
-        <Text style={styles.helper}>Chargement de ton historique...</Text>
-      ) : null}
-
-      {alreadyAppliedToday ? (
-        <Text style={[styles.helper, { marginTop: 4 }]}>
-          Info : tu as déjà validé une séance aujourd’hui — la prochaine sera planifiée pour demain.
-        </Text>
+        <Pressable
+          onPress={() => guardedPress(onAdvanceDay)}
+          disabled={generating}
+          accessibilityRole="button"
+          style={styles.devButton}
+        >
+          <Text style={styles.devButtonText} maxFontSizeMultiplier={PLAFOND_TEXTE}>
+            Jour OFF (+1j)
+          </Text>
+        </Pressable>
       ) : null}
     </View>
   );
 }
 
-const styles = {
-  card: {
-    padding: 16,
-    borderWidth: 1,
-    borderColor: palette.border,
-    borderRadius: 18,
-    backgroundColor: palette.card,
-    marginBottom: 12,
+const styles = StyleSheet.create({
+  pied: {
+    gap: da.spacing.xs,
   },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: "700" as const,
-    color: palette.text,
+  recap: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
   },
-  cardSubtitle: {
-    fontSize: 13,
-    marginTop: 4,
-    color: palette.sub,
-  },
-  buttonRow: {
-    flexDirection: "row" as const,
-    gap: 10,
-    marginTop: 14,
-  },
-  cta: {
+  recapTexte: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: palette.border,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
+    ...da.typography.secondary,
+    color: da.colors.sub,
   },
-  ctaPrimary: {
-    backgroundColor: palette.cta,
-    borderColor: palette.cta,
+  sousTexte: {
+    ...da.typography.secondary,
+    color: da.colors.sub,
+    textAlign: "center",
   },
-  ctaPrimaryText: {
-    color: palette.bg,
-    fontWeight: "800" as const,
-    textTransform: "uppercase" as const,
-    fontSize: 13,
+  devButton: {
+    alignSelf: "center",
+    minHeight: 32,
+    paddingHorizontal: da.spacing.sm,
+    justifyContent: "center",
   },
-  ctaSecondaryGreen: {
-    backgroundColor: palette.cardSoft,
-    borderColor: palette.borderSoft,
-  },
-  ctaSecondaryGreenText: {
-    color: palette.text,
-    fontWeight: "700" as const,
+  devButtonText: {
     fontSize: 12,
+    fontWeight: "600",
+    color: da.colors.sub,
   },
-  helper: {
-    marginTop: 8,
-    fontSize: 12,
-    color: palette.sub,
-  },
-  adviceBanner: {
-    flexDirection: "row" as const,
-    alignItems: "flex-start" as const,
-    gap: 10,
-    marginTop: 14,
-    padding: 12,
-    borderRadius: 12,
-    borderLeftWidth: 3,
-  },
-  adviceIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-  },
-  adviceTextWrap: {
-    flex: 1,
-    gap: 2,
-  },
-  adviceTitle: {
-    fontSize: 13,
-    fontWeight: "700" as const,
-  },
-  adviceMessage: {
-    fontSize: 12,
-    color: palette.sub,
-    lineHeight: 16,
-  },
-};
+});

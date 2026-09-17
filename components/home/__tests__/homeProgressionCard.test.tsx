@@ -355,11 +355,19 @@ describe("HomeProgressionCard — regle d'or et typo A", () => {
 describe("HomeScreen — la carte enrichie est bien greffee sur place", () => {
   const home = readFileSync(resolve(__dirname, "../../../screens/HomeScreen.tsx"), "utf8");
 
-  test("le cadre et la position n'ont pas bouge : HomeProgressionCard vit DANS le HomeCarouselCard Progression", () => {
+  // ADAPTATION 17/09/2026 (SPEC_DA_ACCUEIL_SEANCE.md §2.6) : la direction
+  // visuelle validée remplace le cadre `HomeCarouselCard` (Card soft, titre
+  // "Progression" + sous-titre "Régularité & forme") par un `DaCard` à
+  // en-tête propre (icône `stats-chart` + "Ta progression") — décision du
+  // 17/09 qui succède à celle du 15/08 ("Enrichir sur place"). `HomeCarouselCard`
+  // n'a plus aucun consommateur (grep fait) et a été supprimé avec
+  // `HomeNextSessionCard`. Les AUTRES assertions de ce fichier (import de
+  // HomeProgressionCard, seule `progression` consommée, ligne série disparue)
+  // restent vraies au caractère près et ne bougent pas.
+  test("le cadre et la position : HomeProgressionCard vit DANS le DaCard « Ta progression »", () => {
     expect(home).toMatch(/import HomeProgressionCard from "\.\.\/components\/home\/HomeProgressionCard"/);
-    expect(home).toMatch(
-      /<HomeCarouselCard title="Progression" subtitle="Régularité & forme">\s*<HomeProgressionCard vm=\{progression\} onVoirProgression=\{goToProgression\} \/>/
-    );
+    expect(home).not.toMatch(/HomeCarouselCard/);
+    expect(home).toMatch(/<DaCard style=\{styles\.progressionCarte\}>[\s\S]*?Ta progression[\s\S]*?<HomeProgressionCard vm=\{progression\} onVoirProgression=\{goToProgression\} \/>[\s\S]*?<\/DaCard>/);
   });
 
   test("seule `progression` est consommee du pipeline vNext (jamais vm.demarrage)", () => {
