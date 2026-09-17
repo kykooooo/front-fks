@@ -31,22 +31,20 @@
 // par le ViewModel (decisionDetail, §7), jamais ici. `affiche` ne vaut `true`
 // qu'en "ready" aujourd'hui.
 //
-// TYPO : celle de l'ancien Home uniquement (progressText 13/700 palette.text,
-// famille statLabel/sub 11-12 palette.sub, lien accent). AUCUN import de
-// homeVNextTokens. Couleurs NEUTRES sur la comparaison de test : un recul
-// s'affiche comme un progres (esprit R9 — le VM pre-formate, la carte ne juge
-// pas).
+// TYPO (17/09/2026, SPEC_DA_ACCUEIL_SEANCE.md §2.6) : jetons `da` — tailles
+// 14-16, couleurs `da.colors.*`, lien en `actionText`, cible tactile 44.
+// AUCUN import de homeVNextTokens. Couleurs NEUTRES sur la comparaison de
+// test : un recul s'affiche comme un progres (esprit R9 — le VM pre-formate,
+// la carte ne juge pas).
 // =============================================================================
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 
-import { theme } from "../../constants/theme";
+import { da, PLAFOND_TEXTE, TOUCHE_MIN } from "../../constants/daJoueur";
 import type {
   ProgressionFait,
   ProgressionViewModel,
 } from "../../screens/homeVNext/progressionViewModel";
-
-const palette = theme.colors;
 
 type Props = {
   vm: ProgressionViewModel;
@@ -57,10 +55,10 @@ type Props = {
 function FaitRow({ fait }: { fait: ProgressionFait }) {
   return (
     <View style={styles.faitRow}>
-      <Text style={styles.faitValeur} numberOfLines={1}>
+      <Text style={styles.faitValeur} maxFontSizeMultiplier={PLAFOND_TEXTE} numberOfLines={1}>
         {fait.valeur}
       </Text>
-      <Text style={styles.faitLibelle} numberOfLines={2}>
+      <Text style={styles.faitLibelle} maxFontSizeMultiplier={PLAFOND_TEXTE} numberOfLines={2}>
         {fait.libelle}
       </Text>
     </View>
@@ -72,20 +70,20 @@ export default function HomeProgressionCard({ vm, onVoirProgression }: Props) {
     <>
       {vm.state === "empty" ? (
         <>
-          <Text style={styles.titre} numberOfLines={2}>
+          <Text style={styles.titre} maxFontSizeMultiplier={PLAFOND_TEXTE} numberOfLines={2}>
             {vm.titre}
           </Text>
           {vm.reperes.map((repere) => (
             <View key={repere.numero} style={styles.repereRow}>
-              <Text style={styles.repereNumero} numberOfLines={1}>
+              <Text style={styles.repereNumero} maxFontSizeMultiplier={PLAFOND_TEXTE} numberOfLines={1}>
                 {repere.numero}.
               </Text>
-              <Text style={styles.repereTexte} numberOfLines={2}>
+              <Text style={styles.repereTexte} maxFontSizeMultiplier={PLAFOND_TEXTE} numberOfLines={2}>
                 {repere.texte}
               </Text>
             </View>
           ))}
-          <Text style={styles.mention} numberOfLines={3}>
+          <Text style={styles.mention} maxFontSizeMultiplier={PLAFOND_TEXTE} numberOfLines={3}>
             {vm.mention}
           </Text>
         </>
@@ -102,7 +100,7 @@ export default function HomeProgressionCard({ vm, onVoirProgression }: Props) {
               que tes charges seront enregistrées sur assez de jours. ») tient en
               2 lignes sur 320 px, la 3e est une marge — tronquer un message
               d'honnetete en couperait le sens. */}
-          <Text style={styles.mention} numberOfLines={3}>
+          <Text style={styles.mention} maxFontSizeMultiplier={PLAFOND_TEXTE} numberOfLines={3}>
             {vm.tendanceIndisponible.explication}
           </Text>
         </>
@@ -113,10 +111,10 @@ export default function HomeProgressionCard({ vm, onVoirProgression }: Props) {
           <FaitRow fait={vm.resume} />
           {vm.repereTest ? (
             <View style={styles.testRow}>
-              <Text style={styles.testLabel} numberOfLines={1}>
+              <Text style={styles.testLabel} maxFontSizeMultiplier={PLAFOND_TEXTE} numberOfLines={1}>
                 {vm.repereTest.comparaison.label}
               </Text>
-              <Text style={styles.testValeurs} numberOfLines={1}>
+              <Text style={styles.testValeurs} maxFontSizeMultiplier={PLAFOND_TEXTE} numberOfLines={1}>
                 {vm.repereTest.comparaison.avantAffiche} →{" "}
                 {vm.repereTest.comparaison.apresAffiche} (
                 {vm.repereTest.comparaison.ecartAffiche})
@@ -127,11 +125,11 @@ export default function HomeProgressionCard({ vm, onVoirProgression }: Props) {
       ) : null}
 
       {vm.detail.affiche && vm.detail.label ? (
-        <TouchableOpacity onPress={onVoirProgression} style={styles.link}>
-          <Text style={styles.linkText} numberOfLines={1}>
+        <TouchableOpacity onPress={onVoirProgression} style={styles.link} accessibilityRole="button">
+          <Text style={styles.linkText} maxFontSizeMultiplier={PLAFOND_TEXTE} numberOfLines={1}>
             {vm.detail.label}
           </Text>
-          <Text style={styles.linkArrow} numberOfLines={1}>
+          <Text style={styles.linkArrow} maxFontSizeMultiplier={PLAFOND_TEXTE} numberOfLines={1}>
             →
           </Text>
         </TouchableOpacity>
@@ -141,11 +139,16 @@ export default function HomeProgressionCard({ vm, onVoirProgression }: Props) {
 }
 
 const styles = StyleSheet.create({
-  // Ligne de tete de l'etat vide — meme gabarit que l'ancien progressText.
+  // Ligne de tete de l'etat vide — habillee en petit libelle (F4) : vm.titre
+  // arrive deja en CAPITALES depuis le VM (texte canonique, on n'y touche
+  // pas) ; un second style 15/700 sous l'en-tete "Ta progression" ferait deux
+  // titres qui crient, d'ou le passage a kicker/sub. `textTransform: "none"`
+  // ANNULE l'uppercase de da.typography.kicker : le texte est deja tel que
+  // voulu par le VM, on ne le retransforme pas.
   titre: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: palette.text,
+    ...da.typography.kicker,
+    textTransform: "none",
+    color: da.colors.sub,
   },
   repereRow: {
     flexDirection: "row",
@@ -153,20 +156,20 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   repereNumero: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: "700",
-    color: palette.sub,
+    color: da.colors.sub,
   },
   repereTexte: {
     flex: 1,
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: "600",
-    color: palette.sub,
+    color: da.colors.sub,
   },
-  // Mention honnete / phrase « encore N » — famille sub de l'ancien Home.
+  // Mention honnete / phrase « encore N ».
   mention: {
-    fontSize: 12,
-    color: palette.sub,
+    fontSize: 14,
+    color: da.colors.sub,
   },
   faitRow: {
     flexDirection: "row",
@@ -174,14 +177,14 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   faitValeur: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: "700",
-    color: palette.text,
+    color: da.colors.text,
   },
   faitLibelle: {
     flexShrink: 1,
-    fontSize: 12,
-    color: palette.sub,
+    fontSize: 14,
+    color: da.colors.sub,
   },
   testRow: {
     flexDirection: "row",
@@ -191,31 +194,31 @@ const styles = StyleSheet.create({
   },
   testLabel: {
     flexShrink: 1,
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: "600",
-    color: palette.sub,
+    color: da.colors.sub,
   },
   // Couleur neutre voulue (esprit R9) : jamais de vert/rouge selon le sens.
   testValeurs: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: "700",
-    color: palette.text,
+    color: da.colors.text,
   },
-  // Lien — clone exact du pied de l'ancienne carte (HomeScreen styles.link*).
+  // Lien — cible tactile 44, texte en actionText (orange).
   link: {
+    minHeight: TOUCHE_MIN,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
     alignSelf: "flex-start",
-    paddingVertical: 6,
   },
   linkText: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: "700",
-    color: palette.accent,
+    color: da.colors.actionText,
   },
   linkArrow: {
-    fontSize: 14,
-    color: palette.accent,
+    fontSize: 16,
+    color: da.colors.actionText,
   },
 });

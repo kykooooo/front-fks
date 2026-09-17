@@ -202,4 +202,22 @@ export function setThemeMode(mode: ThemeMode) {
   Object.assign(theme.colors, nextColors);
   Object.assign(theme.shadow.soft, nextShadow.soft);
   Object.assign(theme.shadow.accent, nextShadow.accent);
+  currentThemeMode = mode;
+}
+
+// ---------------------------------------------------------------------------
+// Suivi du mode courant (ajout DA joueur, 2026-09) — AJOUT PUR, aucune valeur
+// existante ci-dessus n'est modifiée.
+//
+// `setThemeMode` mutait déjà `theme.colors`/`theme.shadow` en place sans
+// jamais exposer le MODE lui-même (seulement les couleurs qui en résultent).
+// `constants/daJoueur.ts` a besoin de choisir sa palette (claire/sombre) à
+// l'évaluation du module, donc a besoin de lire ce mode une seule fois, tôt.
+// `currentThemeMode` est alimenté par le seul appelant de `setThemeMode`
+// (App.tsx) et lu via `getThemeMode()`.
+// ---------------------------------------------------------------------------
+let currentThemeMode: ThemeMode = "light";
+
+export function getThemeMode(): ThemeMode {
+  return currentThemeMode;
 }

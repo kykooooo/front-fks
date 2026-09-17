@@ -40,6 +40,83 @@ type Params = {
   devNowISO?: string;
 };
 
+/**
+ * Discriminant pur du CTA (SPEC_DA_ACCUEIL_SEANCE.md §2.3) — AJOUT PUR : les 6
+ * branches ci-dessous et leurs libellés/onPress ne changent pas d'une ligne,
+ * `kind` ne fait que NOMMER la branche déjà choisie pour que la carte
+ * d'accueil sache quel gabarit rendre sans redupliquer la logique.
+ */
+export type PrimaryCtaKind =
+  | "recovery"
+  | "start_today"
+  | "start_pending"
+  | "day_off"
+  | "choose_cycle"
+  | "prepare";
+
+type PrimaryCtaKindInputs = {
+  tsb: number;
+  isPendingToday: boolean;
+  hasPendingSession: boolean;
+  hasAppliedToday: boolean;
+  devModeEnabled: boolean;
+  microcycleGoal: string | null;
+  microcycleSessionIndex?: number | null;
+};
+
+/**
+ * Calcule `kind` en PREMIER, à partir des mêmes 5 conditions et dans le même
+ * ordre de priorité que la chaîne if/else historique de `primaryCta`
+ * ci-dessous — celle-ci ne fait plus que BRANCHER sur ce résultat (switch),
+ * elle ne réévalue rien. Une seule implémentation des conditions : `kind` ne
+ * peut donc jamais désigner une branche différente de celle réellement
+ * choisie. Exportée pure pour les tests (même méthode que
+ * `computeNeedsCycleChoice` : pas de renderer de hook dans le dépôt).
+ */
+export function computePrimaryCtaKind(inputs: PrimaryCtaKindInputs): PrimaryCtaKind {
+  if (inputs.tsb <= -15) return "recovery";
+  if (inputs.isPendingToday) return "start_today";
+  if (inputs.hasPendingSession) return "start_pending";
+  if (inputs.hasAppliedToday && !inputs.devModeEnabled) return "day_off";
+  if (computeNeedsCycleChoice(inputs.microcycleGoal, inputs.microcycleSessionIndex)) {
+    return "choose_cycle";
+  }
+  return "prepare";
+}
+
+/**
+ * Description PURE d'une séance en attente, scindée en `titre` (nom de la
+ * séance ou repli générique) et `meta` (« focus · intensité · durée », ou
+ * `null` si rien à ajouter). `upcomingSessionLabel` est la concaténation
+ * exacte de ces deux morceaux via `joindreTitreMeta` — la chaîne produite
+ * reste identique au caractère près à l'ancienne implémentation à bloc
+ * unique (test à l'appui : hooks/home/__tests__/decrireSeanceEnAttente.test.ts).
+ */
+export function decrireSeanceEnAttente(
+  pendingSession: Session | null | undefined
+): { titre: string; meta: string | null } {
+  if (!pendingSession) return { titre: "Pas de séance prévue", meta: null };
+  const v2 = pendingSession.aiV2 ?? pendingSession.ai;
+  if (v2) {
+    const titre = String(v2.title ?? "") || "Séance FKS";
+    const focusVal = v2.focusPrimary ?? v2.focus_primary;
+    const focus = focusVal ? frFocus(String(focusVal)) : "";
+    const intens = v2.intensity ? frIntensity(String(v2.intensity)) : "";
+    const durVal = v2.durationMin ?? v2.duration_min;
+    const dur = typeof durVal === "number" ? `${Math.round(durVal)} min` : "";
+    const parts = [focus, intens, dur].filter((p) => p.length > 0);
+    return { titre, meta: parts.length ? parts.join(" · ") : null };
+  }
+  const focus = frFocus(pendingSession.focus ?? pendingSession.modality) || "-";
+  const intens = frIntensity(pendingSession.intensity) || "-";
+  return { titre: "Séance prévue", meta: `${intens} · ${focus}` };
+}
+
+/** Recompose la chaîne unique historique à partir de `decrireSeanceEnAttente`. */
+export function joindreTitreMeta(titre: string, meta: string | null): string {
+  return meta ? `${titre} · ${meta}` : titre;
+}
+
 export function usePrimaryCta({
   nav,
   sessions,
@@ -65,21 +142,8 @@ export function usePrimaryCta({
   );
 
   const upcomingSessionLabel = useMemo(() => {
-    if (!pendingSession) return "Pas de séance prévue";
-    const v2 = pendingSession.aiV2 ?? pendingSession.ai;
-    if (v2) {
-      const title = v2.title || "Séance FKS";
-      const focusVal = v2.focusPrimary ?? v2.focus_primary;
-      const focus = focusVal ? ` · ${frFocus(String(focusVal))}` : "";
-      const intens = v2.intensity ? ` · ${frIntensity(String(v2.intensity))}` : "";
-      const durVal = v2.durationMin ?? v2.duration_min;
-      const dur =
-        typeof durVal === "number" ? ` · ${Math.round(durVal)} min` : "";
-      return `${title}${focus}${intens}${dur}`;
-    }
-    const focus = frFocus(pendingSession.focus ?? pendingSession.modality) || "-";
-    const intens = frIntensity(pendingSession.intensity) || "-";
-    return `Séance prévue · ${intens} · ${focus}`;
+    const { titre, meta } = decrireSeanceEnAttente(pendingSession);
+    return joindreTitreMeta(titre, meta);
   }, [pendingSession]);
 
   const pendingDateKey = toDateKey(
@@ -217,60 +281,79 @@ export function usePrimaryCta({
   }, [nav, guardNav]);
 
   const primaryCta = useMemo(() => {
-    if (tsb <= -15) {
-      return {
-        label: "Journée récup",
-        sub: "Ton corps a besoin de souffler. Fais une séance légère.",
-        tone: "warn" as const,
-        disabled: false,
-        onPress: goToRecovery,
-      };
+    // Une seule évaluation des conditions (computePrimaryCtaKind) ; le switch
+    // ci-dessous ne fait que construire le libellé/onPress de la branche déjà
+    // désignée — mêmes 6 résultats, mêmes textes, mêmes actions qu'avant
+    // l'ajout de `kind`.
+    const kind = computePrimaryCtaKind({
+      tsb,
+      isPendingToday: Boolean(isPendingToday),
+      hasPendingSession: Boolean(pendingSession),
+      hasAppliedToday,
+      devModeEnabled: DEV_FLAGS.ENABLED,
+      microcycleGoal,
+      microcycleSessionIndex,
+    });
+
+    switch (kind) {
+      case "recovery":
+        return {
+          label: "Journée récup",
+          sub: "Ton corps a besoin de souffler. Fais une séance légère.",
+          tone: "warn" as const,
+          kind,
+          disabled: false,
+          onPress: goToRecovery,
+        };
+      case "start_today":
+        return {
+          label: "C'est parti !",
+          sub: upcomingSessionLabel,
+          tone: "primary" as const,
+          kind,
+          disabled: false,
+          onPress: startPendingSession,
+        };
+      case "start_pending":
+        return {
+          label: "Ma séance est prête",
+          sub: upcomingSessionLabel,
+          tone: "primary" as const,
+          kind,
+          disabled: false,
+          onPress: startPendingSession,
+        };
+      case "day_off":
+        return {
+          label: "Journée off",
+          sub: "Tu as déjà fait ta séance aujourd'hui.",
+          tone: "disabled" as const,
+          kind,
+          disabled: true,
+          onPress: undefined,
+        };
+      case "choose_cycle":
+        // Quand la vraie cible de onPressNew est CycleModal (pas la génération),
+        // le CTA doit le dire — même calcul que onPressNew pour ne jamais diverger.
+        return {
+          label: "Choisir mon cycle",
+          sub: `${Object.keys(MICROCYCLES).length} cycles, ${MICROCYCLE_TOTAL_SESSIONS_DEFAULT} séances chacun.`,
+          tone: "primary" as const,
+          kind,
+          disabled: false,
+          onPress: onPressNew,
+        };
+      case "prepare":
+      default:
+        return {
+          label: "Préparer ma séance",
+          sub: "On te prépare un programme adapté en 2 min.",
+          tone: "primary" as const,
+          kind,
+          disabled: false,
+          onPress: onPressNew,
+        };
     }
-    if (isPendingToday) {
-      return {
-        label: "C'est parti !",
-        sub: upcomingSessionLabel,
-        tone: "primary" as const,
-        disabled: false,
-        onPress: startPendingSession,
-      };
-    }
-    if (pendingSession) {
-      return {
-        label: "Ma séance est prête",
-        sub: upcomingSessionLabel,
-        tone: "primary" as const,
-        disabled: false,
-        onPress: startPendingSession,
-      };
-    }
-    if (hasAppliedToday && !DEV_FLAGS.ENABLED) {
-      return {
-        label: "Journée off",
-        sub: "Tu as déjà fait ta séance aujourd'hui.",
-        tone: "disabled" as const,
-        disabled: true,
-        onPress: undefined,
-      };
-    }
-    // Quand la vraie cible de onPressNew est CycleModal (pas la génération),
-    // le CTA doit le dire — même calcul que onPressNew pour ne jamais diverger.
-    if (computeNeedsCycleChoice(microcycleGoal, microcycleSessionIndex)) {
-      return {
-        label: "Choisir mon cycle",
-        sub: `${Object.keys(MICROCYCLES).length} cycles, ${MICROCYCLE_TOTAL_SESSIONS_DEFAULT} séances chacun.`,
-        tone: "primary" as const,
-        disabled: false,
-        onPress: onPressNew,
-      };
-    }
-    return {
-      label: "Préparer ma séance",
-      sub: "On te prépare un programme adapté en 2 min.",
-      tone: "primary" as const,
-      disabled: false,
-      onPress: onPressNew,
-    };
   }, [
     tsb,
     isPendingToday,

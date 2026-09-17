@@ -1,6 +1,6 @@
 import React, { useRef } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
-import { palette } from "./theme";
+import { da } from "../../constants/daJoueur";
 import type { ResetVariant } from "./types";
 import type { ResetExplain } from "./resetExplain";
 
@@ -91,11 +91,11 @@ const styles = StyleSheet.create({
   },
   resetModal: {
     width: "100%",
-    borderRadius: 16,
+    borderRadius: da.radius.card,
     borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.card,
-    padding: 16,
+    borderColor: da.colors.border,
+    backgroundColor: da.colors.card,
+    padding: da.spacing.md,
     gap: 10,
     maxHeight: "88%",
   },
@@ -103,52 +103,51 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   resetTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: palette.text,
+    ...da.typography.title,
+    color: da.colors.text,
   },
   resetSubtitle: {
-    fontSize: 13,
-    color: palette.sub,
+    ...da.typography.secondary,
+    color: da.colors.sub,
     marginBottom: 4,
   },
   resetCard: {
-    padding: 12,
-    borderRadius: 12,
+    padding: da.spacing.sm,
+    borderRadius: da.radius.tile,
     borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.cardSoft,
+    borderColor: da.colors.border,
+    backgroundColor: da.colors.bg,
     marginTop: 6,
   },
   resetCardTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: palette.text,
+    ...da.typography.bodyStrong,
+    color: da.colors.text,
   },
   resetCardSubtitle: {
+    ...da.typography.secondary,
     fontSize: 12,
-    color: palette.sub,
+    color: da.colors.sub,
     marginTop: 2,
   },
   explainBlock: {
     padding: 10,
-    borderRadius: 12,
+    borderRadius: da.radius.tile,
     borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.cardSoft,
+    borderColor: da.colors.border,
+    backgroundColor: da.colors.bg,
     gap: 8,
   },
   explainTitle: {
-    color: palette.text,
+    color: da.colors.text,
     fontSize: 14,
     fontWeight: "800",
   },
   explainSubtitle: {
-    color: palette.sub,
+    color: da.colors.sub,
     fontSize: 12,
   },
   explainLabel: {
-    color: palette.text,
+    color: da.colors.text,
     fontSize: 12,
     fontWeight: "700",
   },
@@ -161,14 +160,14 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   bullet: {
-    color: palette.accent,
+    color: da.colors.actionText,
     fontSize: 12,
     marginTop: 1,
   },
   bulletText: {
     flex: 1,
     fontSize: 12,
-    color: palette.text,
+    color: da.colors.text,
   },
   resetCancel: {
     marginTop: 8,
@@ -177,7 +176,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   resetCancelText: {
-    color: palette.sub,
+    color: da.colors.sub,
     fontSize: 13,
   },
 });

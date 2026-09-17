@@ -33,6 +33,12 @@ import RoutineScreen from "../screens/RoutineScreen";
 import CycleModalScreen from "../screens/CycleModalScreen";
 import ProgressScreen from "../screens/ProgressScreen";
 import { theme } from "../constants/theme";
+// Direction visuelle 17/09/2026 (SPEC_DA_ACCUEIL_SEANCE.md §2.10) : la barre
+// d'onglets et l'en-tête natif de GenerateSession passent aux jetons `da`.
+// SANS DANGER ICI : RootNavigator est chargé par le `require` tardif
+// d'App.tsx, APRÈS `setThemeMode` — voir l'avertissement en tête de
+// constants/daJoueur.ts. Aucune autre route de ce fichier n'importe `da`.
+import { da } from "../constants/daJoueur";
 import { STORAGE_KEYS } from "../constants/storage";
 import { DEV_FLAGS } from "../config/devFlags";
 import { HOME_FEATURES } from "../config/homeFeatures";
@@ -126,16 +132,28 @@ function MainTabs() {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
+        // Direction visuelle 17/09/2026 (SPEC_DA_ACCUEIL_SEANCE.md §2.10) :
+        // jetons `da` — importés ici seulement (RootNavigator est chargé par
+        // le `require` tardif d'App.tsx, APRÈS `setThemeMode`, voir
+        // constants/daJoueur.ts en tête de fichier).
         tabBarStyle: {
-          backgroundColor: theme.colors.background,
-          borderTopColor: theme.colors.border,
+          backgroundColor: da.colors.card,
+          borderTopColor: da.colors.border,
         },
-        tabBarActiveTintColor: theme.colors.accent,
-        tabBarInactiveTintColor: theme.colors.sub,
-        tabBarIcon: ({ color, size }) => {
-          if (route.name === "Home") return <Ionicons name="home" size={size} color={color} />;
-          if (route.name === "NewSession") return <Ionicons name="flash" size={size} color={color} />;
-          if (route.name === "Profile") return <Ionicons name="person" size={size} color={color} />;
+        tabBarActiveTintColor: da.colors.action,
+        tabBarInactiveTintColor: da.colors.sub,
+        tabBarIcon: ({ focused, color, size }) => {
+          if (route.name === "Home") {
+            return <Ionicons name={focused ? "home" : "home-outline"} size={size} color={color} />;
+          }
+          if (route.name === "NewSession") {
+            return (
+              <Ionicons name={focused ? "calendar" : "calendar-outline"} size={size} color={color} />
+            );
+          }
+          if (route.name === "Profile") {
+            return <Ionicons name={focused ? "person" : "person-outline"} size={size} color={color} />;
+          }
           return null;
         },
       })}
@@ -162,7 +180,7 @@ function MainTabs() {
           </SwipeTabsWrapper>
         )}
       </Tab.Screen>
-      <Tab.Screen name="NewSession" options={{ title: "Séance" }}>
+      <Tab.Screen name="NewSession" options={{ title: "Séances" }}>
         {() => (
           <SwipeTabsWrapper currentTab="NewSession" tabOrder={tabOrder}>
             <SessionHubScreen />
@@ -220,7 +238,18 @@ function AppNavigator() {
       <AppStack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={{ headerShown: true, title: "Confidentialité" }} />
       <AppStack.Screen name="Routine" component={RoutineScreen} options={{ headerShown: true, title: "Routine" }} />
       <AppStack.Screen name="Progression" component={ProgressScreen} options={{ headerShown: true, title: "Progression" }} />
-      <AppStack.Screen name="GenerateSession" component={NewSessionScreen} options={{ headerShown: true, title: "Créer une séance" }} />
+      <AppStack.Screen
+        name="GenerateSession"
+        component={NewSessionScreen}
+        options={{
+          headerShown: true,
+          title: "",
+          headerBackTitle: "Retour",
+          headerShadowVisible: false,
+          headerStyle: { backgroundColor: da.colors.bg },
+          headerTintColor: da.colors.text,
+        }}
+      />
       <AppStack.Screen name="SessionHistory" component={SessionHistoryScreen} options={{ headerShown: true, title: "Historique" }} />
       <AppStack.Screen name="PrebuiltSessions" component={PrebuiltSessionsScreen} options={{ headerShown: true, title: "Séances pré-construites" }} />
       <AppStack.Screen name="PrebuiltSessionDetail" component={PrebuiltSessionDetailScreen} options={{ headerShown: true, title: "Détails séance" }} />

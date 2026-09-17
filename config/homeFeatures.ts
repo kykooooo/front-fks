@@ -68,13 +68,16 @@
 //
 //   1. `navigation/RootNavigator.tsx` : rendre `<HomeVNextContainer />` sans
 //      ternaire, retirer les deux imports (`HomeScreen`, `HOME_FEATURES`).
-//   2. Supprimer `screens/HomeScreen.tsx` (523 l.) — SEUL consommateur de tout
-//      ce qui suit.
-//   3. Supprimer `components/home/` en entier (5 fichiers, 732 l.) :
-//      HomeReadinessHero, HomePrimaryCTA, HomeCarouselCard, HomeNextSessionCard,
-//      HomeAdviceCard.
-//   4. Supprimer dans `hooks/home/` (479 l.) : useLoadSeries, useMatchSoon,
-//      useWeekDays, useWeekSummary, useActivityStreak, usePrimaryCta.
+//   2. Supprimer `screens/HomeScreen.tsx` — SEUL consommateur de tout ce qui suit.
+//   3. MISE A JOUR 17/09 (chantier DA Accueil, SPEC_DA_ACCUEIL_SEANCE.md) :
+//      `HomeCarouselCard` et `HomeNextSessionCard` sont partis CE JOUR-LA (plus
+//      aucun consommateur — fusionnés dans `HomeSessionCard`). Supprimer
+//      `components/home/` en entier : HomeHeader, HomeSessionCard,
+//      HomePitchIllustration, HomeWeekStrip, HomeReadinessHero, HomePrimaryCTA,
+//      HomeProgressionCard, HomeAdviceCard.
+//   4. Supprimer dans `hooks/home/` : useLoadSeries (déjà parti), useMatchSoon,
+//      useWeekDays, useWeekSummary, useActivityStreak, usePrimaryCta,
+//      homePresentation.ts.
 //      GARDER `useContextualAdvice.ts` : `screens/NewSessionScreen.tsx` l'importe.
 //
 //      ATTENTION, CONTRADICTION DOCUMENTAIRE : le dossier d'integration

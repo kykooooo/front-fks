@@ -37,15 +37,19 @@ import { showToast } from "../utils/toast";
 import { LoadingOverlay } from "../components/ui/LoadingOverlay";
 import { ResetVariantModal } from "./newSession/ResetVariantModal";
 import { EnvironmentSelector } from "./newSession/ui/EnvironmentSelector";
-import { EquipmentSelector } from "./newSession/ui/EquipmentSelector";
+import { EquipmentSelector, HOME_EQUIPMENT, GYM_SPECIAL_EQUIPMENT } from "./newSession/ui/EquipmentSelector";
 import { GenerationActions } from "./newSession/ui/GenerationActions";
 import { CurrentSessionCard } from "./newSession/ui/CurrentSessionCard";
 import { useAiContextLoader, useEnvironmentEquipment } from "./newSession/hooks";
 import { categorieAgeAbsente, TOAST_CATEGORIE_MANQUANTE } from "./newSession/gardeCategorieAge";
-import { palette } from "./newSession/theme";
+import { construireLibelles } from "./newSession/resumeContexte";
+import { da, PLAFOND_TITRE, PLAFOND_TEXTE } from "../constants/daJoueur";
+import { DaCard } from "../components/ui/da/DaCard";
+import { DaPrimaryButton } from "../components/ui/da/DaPrimaryButton";
+import { DaTextButton } from "../components/ui/da/DaTextButton";
+import { DaNotice } from "../components/ui/da/DaNotice";
 import { MICROCYCLES, MICROCYCLE_TOTAL_SESSIONS_DEFAULT, isMicrocycleId, getRecommendedLocation } from "../domain/microcycles";
 import { getMicrocyclePhase } from "../utils/microcycleUtils";
-import { Button } from "../components/ui/Button";
 import { trackEvent } from "../services/analytics";
 import { STORAGE_KEYS } from "../constants/storage";
 import { buildResetExplain } from "./newSession/resetExplain";
@@ -54,7 +58,7 @@ import { toDateKey, formatDayFR } from "../utils/dateHelpers";
 import { selectPendingSession } from "../utils/sessionHelpers";
 
 /** Catalogue matériel (ids alignés avec le profil) */
-const EQUIPMENT_CATALOG = [
+export const EQUIPMENT_CATALOG = [
   // Salle (reprend ProfileSetup)
   { id: "barbell", label: "Barre + poids libres", source: "gym" },
   { id: "squat_rack", label: "Rack à squat", source: "gym" },
@@ -178,9 +182,7 @@ export default function NewSessionScreen() {
   const [environment, setEnvironment] = useState<EnvironmentSelection>([]);
   const [availableEquipment, setAvailableEquipment] = useState<string[]>([]);
   const [selectedEquipment, setSelectedEquipment] = useState<string[]>([]);
-  const [gymMachinesEnabled, setGymMachinesEnabled] = useState(false);
   const [pitchSmallGearEnabled, setPitchSmallGearEnabled] = useState(false);
-  const [setupDone, setSetupDone] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [wakingServer, setWakingServer] = useState(false);
   // Rejeu d'enregistrement (reessayerEnregistrement) : contrairement a
@@ -203,6 +205,14 @@ export default function NewSessionScreen() {
     ageMin: number;
   } | null>(null);
 
+  // Table id -> libellé, pour le récap du pied collant (resumerContexte).
+  const libellesEquipement = useMemo(
+    () => construireLibelles(EQUIPMENT_CATALOG, HOME_EQUIPMENT, GYM_SPECIAL_EQUIPMENT),
+    []
+  );
+
+  const scrollRef = useRef<ScrollView>(null);
+
   useEffect(() => {
     setEnvironment((prev) => {
       const next = prev.filter((loc) => allowedLocations.includes(loc));
@@ -223,11 +233,18 @@ export default function NewSessionScreen() {
   }, [cycleId]);
 
   useEffect(() => {
-    setSetupDone(false);
     setCachePrompt(null);
     // Le joueur a changé son contexte : l'échec précédent ne le décrit plus.
     setEchec(null);
   }, [environment.join("|"), selectedEquipment.join("|")]);
+
+  // Défilement jusqu'à la carte d'échec ou de cache à leur apparition (spec
+  // §3.8) : sans ça, un joueur qui a beaucoup scrollé ne les voit jamais.
+  useEffect(() => {
+    if (echec || cachePrompt) {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [echec, cachePrompt]);
 
   // Même fenêtre que FeedbackScreen (aujourd'hui, J-1, J-2, demain) : une
   // séance zombie hors fenêtre ne bloque plus la génération.
@@ -362,7 +379,7 @@ export default function NewSessionScreen() {
     availableEquipment,
     EQUIPMENT_CATALOG,
     setSelectedEquipment,
-    { gymMachinesEnabled, pitchSmallGearEnabled }
+    { pitchSmallGearEnabled }
   );
 
   // Block back navigation while generating (prevents setState on unmounted component)
@@ -473,11 +490,6 @@ export default function NewSessionScreen() {
       // rester bloquée faute de coche matériel).
       if (!equipmentForGeneration.length) {
         equipmentForGeneration = ["bodyweight"];
-      }
-
-      if (!setupDone) {
-        showToast({ type: "warn", title: "Contexte incomplet", message: "Valide d'abord ton lieu et ton matériel." });
-        return;
       }
 
       trackEvent("session_generate_start", {
@@ -773,21 +785,11 @@ export default function NewSessionScreen() {
   /** ------------------------------------------------------------------
    *  RENDER
    * ------------------------------------------------------------------ */
-  const generateLabel =
-    !storeHydrated
-      ? "Chargement de ton historique..."
-      : environment.includes("gym")
-      ? "Générer une séance pour la salle"
-      : environment.includes("pitch")
-      ? "Générer une séance sur terrain"
-      : environment.includes("home")
-      ? "Générer une séance chez toi"
-      : alreadyAppliedToday
-      ? "Générer une séance (planifiée demain)"
-      : "Générer une séance";
+  const afficherFormulaire = !categorieAgeManquante && cycleId && !cycleCompleted;
+  const afficherPied = !current && afficherFormulaire && !cachePrompt && !echec;
 
   return (
-    <Screen style={{ flex: 1, backgroundColor: palette.bg }}>
+    <Screen style={styles.ecran}>
       {resetChoice && (
         <ResetVariantModal
           variants={resetChoice.variants}
@@ -805,17 +807,22 @@ export default function NewSessionScreen() {
         />
       )}
       <ScrollView
+        ref={scrollRef}
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-      {/* HEADER SIMPLE */}
-	      <View style={{ marginBottom: 8 }}>
-	        <Text style={styles.headerTitle}>Nouvelle séance FKS</Text>
-	        <Text style={styles.headerSubtitle}>
-	          Choisis ton contexte et ton matériel, FKS s’occupe du reste.
-	        </Text>
-	      </View>
+        <Text style={styles.titre} accessibilityRole="header" maxFontSizeMultiplier={PLAFOND_TITRE}>
+          Prépare ta séance
+        </Text>
+        {/* Sous-titre affiché UNIQUEMENT quand il y a vraiment un lieu/matériel
+            à choisir : sinon il mentirait (porte catégorie/cycle, séance déjà
+            générée) — finitions orchestrateur G5. */}
+        {!current && afficherFormulaire ? (
+          <Text style={styles.sousTitre} maxFontSizeMultiplier={PLAFOND_TEXTE}>
+            Choisis ton lieu et ton matériel.
+          </Text>
+        ) : null}
 
         {categorieAgeManquante ? (
           /* PAS DE CATÉGORIE D'ÂGE = PAS DE SÉANCE.
@@ -826,85 +833,125 @@ export default function NewSessionScreen() {
              qu'ouvrait le coach « Je m'entraîne aussi » avec son profil vide
              (audit d'inscription 2026-09, P1-04 + erratum 4). On s'arrête ici
              AVANT le moindre appel payant. */
-          <View style={[styles.card, styles.cycleGateCard]}>
-            <Text style={styles.cardTitle}>Il manque ta catégorie</Text>
-            <Text style={styles.cardSubtitle}>
-              Complète ton profil pour des séances adaptées à ta catégorie.
-            </Text>
-            <Button
-              label="Compléter mon profil"
-              onPress={() => nav.navigate("ProfileSetup")}
-              fullWidth
-              style={styles.ctaBlue}
-              accessibilityLabel="Compléter mon profil"
-            />
-          </View>
+          <PorteCard
+            titre="Il manque ta catégorie"
+            texte="Complète ton profil pour des séances adaptées à ta catégorie."
+            labelPrincipal="Compléter mon profil"
+            onPressPrincipal={() => nav.navigate("ProfileSetup")}
+          />
         ) : !cycleId ? (
-          <View style={[styles.card, styles.cycleGateCard]}>
-            <Text style={styles.cardTitle}>Choisis ton objectif de cycle</Text>
-            <Text style={styles.cardSubtitle}>
-              Avant de créer une séance, FKS a besoin de savoir ce que tu veux travailler sur les prochaines semaines.
-            </Text>
-            <View style={styles.gateBenefits}>
-              {["Séances plus cohérentes", "Progression suivie", "Charge mieux cadrée"].map((b) => (
-                <View key={b} style={styles.gateBenefitRow}>
-                  <View style={styles.gateBenefitDot} />
-                  <Text style={styles.gateBenefitText}>{b}</Text>
-                </View>
-              ))}
-            </View>
-            <Button
-              label="Voir les cycles"
-              onPress={() => nav.navigate("CycleModal", { mode: "select", origin: "newSession" })}
-              fullWidth
-              style={styles.ctaBlue}
-            />
-            <Button
-              label="Me recommander un cycle"
-              variant="ghost"
-              onPress={() => nav.navigate("CycleModal", { mode: "select", origin: "newSession" })}
-              fullWidth
-            />
-          </View>
+          <PorteCard
+            titre="Choisis ton objectif de cycle"
+            texte="Avant de créer une séance, FKS a besoin de savoir ce que tu veux travailler sur les prochaines semaines."
+            textesSecondaires={["Séances plus cohérentes", "Progression suivie", "Charge mieux cadrée"]}
+            labelPrincipal="Voir les cycles"
+            onPressPrincipal={() => nav.navigate("CycleModal", { mode: "select", origin: "newSession" })}
+            labelSecondaire="Me recommander un cycle"
+            onPressSecondaire={() => nav.navigate("CycleModal", { mode: "select", origin: "newSession" })}
+          />
         ) : cycleCompleted ? (
-          <View style={[styles.card, styles.cycleGateCard]}>
-            <Text style={styles.cardTitle}>Cycle terminé</Text>
-            <Text style={styles.cardSubtitle}>
-              {cycleDef?.label ?? "Ton cycle"} est complété ({MICROCYCLE_TOTAL_SESSIONS_DEFAULT}/{MICROCYCLE_TOTAL_SESSIONS_DEFAULT}). Choisis un nouveau cycle pour continuer.
-            </Text>
-            <Button
-              label="Choisir un nouveau cycle"
-              onPress={() => nav.navigate("CycleModal", { mode: "select", origin: "newSession" })}
-              fullWidth
-              style={styles.ctaBlue}
-            />
-            <Button
-              label="Voir mon cycle"
-              variant="ghost"
-              onPress={() => nav.navigate("CycleModal", { mode: "manage", origin: "newSession" } as any)}
-              fullWidth
-            />
-          </View>
+          <PorteCard
+            titre="Cycle terminé"
+            texte={`${cycleDef?.label ?? "Ton cycle"} est complété (${MICROCYCLE_TOTAL_SESSIONS_DEFAULT}/${MICROCYCLE_TOTAL_SESSIONS_DEFAULT}). Choisis un nouveau cycle pour continuer.`}
+            labelPrincipal="Choisir un nouveau cycle"
+            onPressPrincipal={() => nav.navigate("CycleModal", { mode: "select", origin: "newSession" })}
+            labelSecondaire="Voir mon cycle"
+            onPressSecondaire={() => nav.navigate("CycleModal", { mode: "manage", origin: "newSession" } as any)}
+          />
         ) : (
-          <View style={[styles.card, styles.cycleMiniCard]}>
-            <View style={styles.cycleMiniRow}>
-              <Text style={styles.cycleMiniText}>
-                Cycle : <Text style={{ fontWeight: "800" }}>{cycleDef?.label ?? "—"}</Text>
+          <View style={styles.ligneContexte}>
+            <View style={styles.ligneContexteTexte}>
+              <Text style={styles.ligneContexteTitre} maxFontSizeMultiplier={PLAFOND_TEXTE}>
+                {cycleDef?.label ?? "—"}
               </Text>
-              <Button
-                label="Gérer"
-                variant="ghost"
-                size="sm"
-                onPress={() => nav.navigate("CycleModal", { mode: "manage", origin: "newSession" } as any)}
-              />
+              {cyclePhase ? (
+                <Text style={styles.ligneContexteMeta} maxFontSizeMultiplier={PLAFOND_TEXTE}>
+                  Séance {cyclePhase.sessionNumber} sur {cyclePhase.total} · {cyclePhase.label}
+                </Text>
+              ) : null}
             </View>
+            <DaTextButton
+              label="Modifier"
+              onPress={() => nav.navigate("CycleModal", { mode: "manage", origin: "newSession" } as any)}
+            />
           </View>
+        )}
+
+        {/* SI PAS DE SÉANCE EN COURS */}
+        {/* `!categorieAgeManquante` : inutile de faire choisir un lieu et du
+            matériel à quelqu'un dont la séance ne partira pas — la carte
+            « Il manque ta catégorie » plus haut est le seul geste utile. */}
+        {!current ? (
+          !categorieAgeManquante && cycleId && !cycleCompleted ? (
+            <>
+              <View style={styles.section}>
+                <EnvironmentSelector
+                  environment={environment}
+                  setEnvironment={setEnvironment}
+                  allowed={allowedLocations}
+                  currentCycleId={cycleId}
+                />
+              </View>
+
+              <View style={styles.section}>
+                <EquipmentSelector
+                  catalog={EQUIPMENT_CATALOG as any}
+                  environment={environment}
+                  availableEquipment={availableEquipment}
+                  selectedEquipment={selectedEquipment}
+                  contextLoading={contextLoading && !generating}
+                  onSelect={setSelectedEquipment}
+                  pitchSmallGearEnabled={pitchSmallGearEnabled}
+                  onTogglePitchSmallGear={(next) => {
+                    setPitchSmallGearEnabled(next);
+                  }}
+                />
+              </View>
+
+              {advice ? (
+                <DaNotice
+                  tone={advice.tone}
+                  icon={advice.icon as any}
+                  title={advice.title}
+                  message={advice.message}
+                />
+              ) : null}
+
+              {cachePrompt ? (
+                <DaCard>
+                  <Text style={styles.cardTitle} maxFontSizeMultiplier={PLAFOND_TEXTE}>
+                    Séance récente en cache
+                  </Text>
+                  <Text style={styles.cardSubtitle} maxFontSizeMultiplier={PLAFOND_TEXTE}>
+                    Une séance a été générée il y a {cachePrompt.ageMin} min avec les mêmes paramètres.
+                  </Text>
+                  <View style={styles.cacheActions}>
+                    <DaPrimaryButton label="Utiliser cette séance" onPress={useCachedSession} arrow={false} />
+                    <DaTextButton label="Générer une nouvelle" onPress={regenerateIgnoringCache} />
+                  </View>
+                </DaCard>
+              ) : null}
+            </>
+          ) : null
+        ) : (
+          // SI UNE SÉANCE EST DÉJÀ EN COURS
+          <CurrentSessionCard
+            current={current}
+            phaseLabel={cyclePhase?.label ?? null}
+            phaseMeaning={cyclePhase?.meaning ?? null}
+            alreadyAppliedToday={alreadyAppliedToday}
+            onFeedback={goFeedback}
+            onAdvanceDay={() => advanceDays(1)}
+          />
         )}
 
         {/* ÉCHEC DE GÉNÉRATION — état d'erreur, jamais une séance de secours.
             Rendu hors des branches "séance en cours / pas de séance" pour
             rester visible dans tous les cas, y compris quand une vraie séance
-            existe déjà et peut être rouverte. */}
+            existe déjà et peut être rouverte. EN BAS du contenu (spec §3.3 et
+            §3.8) : juste au-dessus de la zone d'action, là où le défilement
+            automatique (`scrollToEnd`, voir l'effet plus haut) amène le
+            joueur — sinon l'écran défile en s'éloignant de la carte. */}
         {echec ? (
           <CarteEchecGeneration
             echec={echec.echec}
@@ -914,7 +961,7 @@ export default function NewSessionScreen() {
             onReessayerEnregistrement={reessayerEnregistrement}
             onModifierContraintes={() => {
               setEchec(null);
-              setSetupDone(false);
+              scrollRef.current?.scrollTo({ y: 0, animated: true });
             }}
             onChoisirCycle={() => {
               setEchec(null);
@@ -936,116 +983,37 @@ export default function NewSessionScreen() {
           />
         ) : null}
 
-	      {/* SI PAS DE SÉANCE EN COURS */}
-	      {/* `!categorieAgeManquante` : inutile de faire choisir un lieu et du
-	          matériel à quelqu'un dont la séance ne partira pas — la carte
-	          « Il manque ta catégorie » plus haut est le seul geste utile. */}
-	      {!current ? (
-	        !categorieAgeManquante && cycleId && !cycleCompleted ? (
-            <>
-	          <View style={styles.card}>
-	            <EnvironmentSelector
-                environment={environment}
-                setEnvironment={setEnvironment}
-                allowed={allowedLocations}
-                currentCycleId={cycleId}
-              />
-	          </View>
-
-          <View style={styles.card}>
-            <EquipmentSelector
-              catalog={EQUIPMENT_CATALOG as any}
-              environment={environment}
-              availableEquipment={availableEquipment}
-              selectedEquipment={selectedEquipment}
-              contextLoading={contextLoading}
-              onSelect={setSelectedEquipment}
-              gymMachinesEnabled={gymMachinesEnabled}
-              onToggleGymMachines={(next) => {
-                setGymMachinesEnabled(next);
-                setSetupDone(false);
-              }}
-              pitchSmallGearEnabled={pitchSmallGearEnabled}
-              onTogglePitchSmallGear={(next) => {
-                setPitchSmallGearEnabled(next);
-                setSetupDone(false);
-              }}
-              onValidateContext={() => {
-                setSetupDone(true);
-                showToast({ type: "success", title: "Contexte validé", message: "Tu peux lancer la génération." });
-              }}
-              setupDone={setupDone}
-            />
-          </View>
-
-          {/* Cache prompt */}
-          {cachePrompt && setupDone ? (
-            <View style={[styles.card, { gap: 10 }]}>
-              <Text style={styles.cardTitle}>Séance récente en cache</Text>
-              <Text style={styles.cardSubtitle}>
-                Une séance a été générée il y a {cachePrompt.ageMin} min avec les mêmes paramètres.
+        {/* Bloc debug replié — dev only */}
+        {__DEV__ && debugAgent && (
+          <View style={styles.cardDebug}>
+            <TouchableOpacity onPress={() => setShowDebug((v) => !v)} style={styles.debugHeader}>
+              <Text style={styles.cardTitle}>Debug backend (optionnel)</Text>
+              <Text style={styles.debugToggle}>{showDebug ? "Masquer" : "Afficher"}</Text>
+            </TouchableOpacity>
+            {showDebug && (
+              <Text style={styles.debugText}>
+                {JSON.stringify(debugAgent, null, 2)}
               </Text>
-              <Button
-                label="Utiliser cette séance"
-                onPress={useCachedSession}
-                fullWidth
-              />
-              <Button
-                label="Générer une nouvelle"
-                variant="ghost"
-                onPress={regenerateIgnoringCache}
-                fullWidth
-              />
-            </View>
-          ) : null}
-
-          {/* Étape 2 : CTA Génération (affiché après validation) */}
-	          {setupDone && !cachePrompt && !echec ? (
-	            <GenerationActions
-	              disabled={contextLoading || generating || requeteEnVol || !storeHydrated || !!current}
-	              generating={generating}
-	              label={generateLabel}
-	              onGenerate={handleGenerate}
-	              onAdvanceDay={() => advanceDays(1)}
-	              storeHydrated={storeHydrated}
-	              alreadyAppliedToday={alreadyAppliedToday}
-	              advice={advice}
-	            />
-		          ) : null}
-		        </>
-	          ) : null
-		      ) : (
-	        // SI UNE SÉANCE EST DÉJÀ EN COURS
-	        <CurrentSessionCard
-	          current={current}
-          phaseLabel={cyclePhase?.label ?? null}
-          phaseMeaning={cyclePhase?.meaning ?? null}
-          alreadyAppliedToday={alreadyAppliedToday}
-          onFeedback={goFeedback}
-          onAdvanceDay={() => advanceDays(1)}
-        />
-      )}
-
-      {/* Bloc debug replié — dev only */}
-      {__DEV__ && debugAgent && (
-        <View style={[styles.card, { marginTop: 12 }]}>
-          <TouchableOpacity
-            onPress={() => setShowDebug((v) => !v)}
-            style={{ flexDirection: "row", justifyContent: "space-between" }}
-          >
-            <Text style={styles.cardTitle}>Debug backend (optionnel)</Text>
-            <Text style={{ color: palette.accentSoft, fontSize: 12 }}>
-              {showDebug ? "Masquer" : "Afficher"}
-            </Text>
-          </TouchableOpacity>
-          {showDebug && (
-            <Text style={styles.debugText}>
-              {JSON.stringify(debugAgent, null, 2)}
-            </Text>
-          )}
-        </View>
-      )}
+            )}
+          </View>
+        )}
       </ScrollView>
+
+      {afficherPied ? (
+        <View style={styles.piedCollant}>
+          <GenerationActions
+            disabled={contextLoading || generating || requeteEnVol || !storeHydrated || !!current}
+            generating={generating}
+            environment={environment}
+            selectedEquipment={selectedEquipment}
+            libelles={libellesEquipement}
+            onGenerate={handleGenerate}
+            onAdvanceDay={() => advanceDays(1)}
+            storeHydrated={storeHydrated}
+            alreadyAppliedToday={alreadyAppliedToday}
+          />
+        </View>
+      ) : null}
 
       <LoadingOverlay
         visible={generating}
@@ -1073,90 +1041,159 @@ export default function NewSessionScreen() {
   );
 }
 
+/** ------------------------------------------------------------------
+ *  CARTE DE PORTE — catégorie manquante / aucun cycle / cycle terminé.
+ *  Module-level (jamais déclaré dans le rendu de NewSessionScreen) :
+ *  spec §1.2 + règle CLAUDE.md, aucun composant interactif recréé à
+ *  chaque rendu du parent.
+ * ------------------------------------------------------------------ */
+function PorteCard({
+  titre,
+  texte,
+  textesSecondaires,
+  labelPrincipal,
+  onPressPrincipal,
+  labelSecondaire,
+  onPressSecondaire,
+}: {
+  titre: string;
+  texte: string;
+  textesSecondaires?: string[];
+  labelPrincipal: string;
+  onPressPrincipal: () => void;
+  labelSecondaire?: string;
+  onPressSecondaire?: () => void;
+}) {
+  return (
+    <DaCard style={stylesPorte.carte}>
+      <Text style={stylesPorte.titre} maxFontSizeMultiplier={PLAFOND_TITRE}>
+        {titre}
+      </Text>
+      <Text style={stylesPorte.texte} maxFontSizeMultiplier={PLAFOND_TEXTE}>
+        {texte}
+      </Text>
+      {textesSecondaires?.map((t) => (
+        <Text key={t} style={stylesPorte.texteSecondaire} maxFontSizeMultiplier={PLAFOND_TEXTE}>
+          {t}
+        </Text>
+      ))}
+      <DaPrimaryButton label={labelPrincipal} onPress={onPressPrincipal} arrow={false} />
+      {labelSecondaire && onPressSecondaire ? (
+        <DaTextButton label={labelSecondaire} onPress={onPressSecondaire} />
+      ) : null}
+    </DaCard>
+  );
+}
+
 /** =====================================================================
  *  STYLES
  * ===================================================================== */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: palette.bg },
+  ecran: {
+    flex: 1,
+    backgroundColor: da.colors.bg,
+  },
+  container: { flex: 1 },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 32,
+    padding: da.gutter,
+    paddingBottom: da.spacing.xl,
+    gap: da.spacing.md,
   },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: palette.text,
-    letterSpacing: 0.4,
+  titre: {
+    ...da.typography.display,
+    color: da.colors.text,
   },
-  headerSubtitle: {
-    fontSize: 13,
-    color: palette.sub,
-    marginTop: 4,
+  sousTitre: {
+    ...da.typography.body,
+    color: da.colors.sub,
+    marginTop: -da.spacing.xs,
   },
-  card: {
-    padding: 16,
-    borderWidth: 1,
-    borderColor: palette.border,
-    borderRadius: 18,
-    backgroundColor: palette.card,
-    marginBottom: 12,
+  section: {
+    gap: da.spacing.sm,
   },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: palette.text,
-  },
-  cardSubtitle: {
-    fontSize: 13,
-    marginTop: 4,
-    color: palette.sub,
-  },
-  cycleGateCard: {
-    gap: 12,
-  },
-  gateBenefits: {
-    gap: 8,
-    marginTop: 2,
-    marginBottom: 4,
-  },
-  gateBenefitRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  gateBenefitDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: palette.accent,
-  },
-  gateBenefitText: {
-    fontSize: 13,
-    color: palette.text,
-    fontWeight: "600",
-  },
-  ctaBlue: {
-    backgroundColor: palette.accent,
-    borderColor: palette.accent,
-    shadowColor: palette.accent,
-  },
-  cycleMiniCard: {
-    paddingVertical: 12,
-  },
-  cycleMiniRow: {
+  ligneContexte: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 12,
+    gap: da.spacing.sm,
+    minHeight: 56,
+    paddingHorizontal: da.spacing.md,
+    paddingVertical: da.spacing.sm,
+    borderRadius: da.radius.tile,
+    borderWidth: 1,
+    borderColor: da.colors.border,
+    backgroundColor: da.colors.card,
   },
-  cycleMiniText: {
+  ligneContexteTexte: {
     flex: 1,
-    fontSize: 13,
-    color: palette.text,
+  },
+  ligneContexteTitre: {
+    ...da.typography.bodyStrong,
+    color: da.colors.text,
+  },
+  ligneContexteMeta: {
+    ...da.typography.secondary,
+    color: da.colors.sub,
+    marginTop: 2,
+  },
+  cacheActions: {
+    gap: da.spacing.xs,
+    marginTop: da.spacing.xs,
+  },
+  piedCollant: {
+    borderTopWidth: 1,
+    borderTopColor: da.colors.border,
+    backgroundColor: da.colors.bg,
+    paddingHorizontal: da.gutter,
+    paddingVertical: da.spacing.sm,
+  },
+  // Bloc debug (dev only) — gabarit simple, non prioritaire visuellement.
+  cardDebug: {
+    padding: da.spacing.md,
+    borderWidth: 1,
+    borderColor: da.colors.border,
+    borderRadius: da.radius.tile,
+    backgroundColor: da.colors.card,
+    marginTop: da.spacing.sm,
+  },
+  cardTitle: {
+    ...da.typography.bodyStrong,
+    color: da.colors.text,
+  },
+  cardSubtitle: {
+    ...da.typography.secondary,
+    color: da.colors.sub,
+    marginTop: da.spacing.xxs,
+  },
+  debugHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  debugToggle: {
+    color: da.colors.actionText,
+    fontSize: 12,
   },
   debugText: {
-    marginTop: 8,
+    marginTop: da.spacing.xs,
     fontSize: 11,
-    color: palette.sub,
+    color: da.colors.sub,
+  },
+});
+
+const stylesPorte = StyleSheet.create({
+  carte: {
+    gap: da.spacing.sm,
+  },
+  titre: {
+    ...da.typography.section,
+    color: da.colors.text,
+  },
+  texte: {
+    ...da.typography.body,
+    color: da.colors.sub,
+  },
+  texteSecondaire: {
+    ...da.typography.secondary,
+    color: da.colors.sub,
   },
 });

@@ -1,9 +1,24 @@
+// screens/newSession/ui/EnvironmentSelector.tsx
+//
+// Restylage DA joueur (SPEC_DA_ACCUEIL_SEANCE.md §3.5) : MÊME règle de
+// sélection (1 ou 2 lieux, `[...prev, key].slice(0, 2)`, filtrée par
+// `allowedLocations`) — seul le gabarit visuel change. Les tuiles sont des
+// cases à cocher accessibles (accessibilityRole="checkbox"), pas des boutons
+// radio : la sélection multiple (séance mixte) est le comportement réel.
 import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, Pressable, StyleSheet, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { palette } from "../theme";
+import { da, PLAFOND_TITRE, PLAFOND_TEXTE } from "../../../constants/daJoueur";
+import { showToast } from "../../../utils/toast";
 import type { EnvironmentSelection } from "../types";
 import { MICROCYCLES, isMicrocycleId, getRecommendedLocation, type MicrocycleId } from "../../../domain/microcycles";
+
+type LocKey = "gym" | "pitch" | "home";
+
+/** Ordre canonique d'affichage (celui de la maquette : Salle, Terrain,
+ *  Maison) — INDÉPENDANT de l'ordre de `allowedLocations` du cycle, qui varie
+ *  d'un cycle à l'autre et n'a jamais été un ordre d'affichage. */
+const ORDRE_CANONIQUE: LocKey[] = ["gym", "pitch", "home"];
 
 type Props = {
   environment: EnvironmentSelection;
@@ -12,341 +27,231 @@ type Props = {
   currentCycleId?: MicrocycleId | string | null;
 };
 
-type LocationConfig = {
-  id: "gym" | "pitch" | "home";
-  label: string;
-  icon: string;
-  color: string;
-  bgColor: string;
-  defaultDescription: string;
-  features: string[];
+const LOCATION_META: Record<LocKey, { label: string; icon: keyof typeof Ionicons.glyphMap }> = {
+  gym: { label: "Salle", icon: "barbell-outline" },
+  pitch: { label: "Terrain", icon: "football-outline" },
+  home: { label: "Maison", icon: "home-outline" },
 };
 
-const LOCATIONS: LocationConfig[] = [
-  {
-    id: "gym",
-    label: "Salle",
-    icon: "barbell",
-    color: "#8b5cf6",
-    bgColor: "rgba(139, 92, 246, 0.12)",
-    defaultDescription: "Machines, charges lourdes, haltères",
-    features: ["Force max", "Machines guidées", "Charges progressives"],
-  },
-  {
-    id: "pitch",
-    label: "Terrain",
-    icon: "football",
-    color: "#22c55e",
-    bgColor: "rgba(34, 197, 94, 0.12)",
-    defaultDescription: "Gazon, synthé, stabilisé",
-    features: ["Sprints", "Appuis", "Travail spécifique"],
-  },
-  {
-    id: "home",
-    label: "Maison",
-    icon: "home",
-    color: "#f59e0b",
-    bgColor: "rgba(245, 158, 11, 0.12)",
-    defaultDescription: "Salon, jardin, peu de matériel",
-    features: ["Poids de corps", "Core", "Mobilité"],
-  },
-];
+/** Description par défaut (hors cycle) — mêmes textes que l'ancienne version. */
+const DESCRIPTION_DEFAUT: Record<LocKey, string> = {
+  gym: "Machines, charges lourdes, haltères",
+  pitch: "Gazon, synthé, stabilisé",
+  home: "Salon, jardin, peu de matériel",
+};
 
-export function EnvironmentSelector({
-  environment,
-  setEnvironment,
-  allowed,
-  currentCycleId,
-}: Props) {
-  const allowedSet = new Set(allowed ?? ["gym", "pitch", "home"]);
+export function EnvironmentSelector({ environment, setEnvironment, allowed, currentCycleId }: Props) {
+  const { width, fontScale } = useWindowDimensions();
+  const empile = width < 340 || fontScale > 1.15;
 
-  // Get cycle-specific descriptions if available
-  const cycle = currentCycleId && isMicrocycleId(currentCycleId)
-    ? MICROCYCLES[currentCycleId]
-    : null;
-  // Lieu conseillé pour le cycle actif (non bloquant, purement informatif).
+  const allowedList = (allowed ?? ["gym", "pitch", "home"]) as LocKey[];
+  const locationsAffichees = ORDRE_CANONIQUE.filter((key) => allowedList.includes(key));
+
+  const cycle = currentCycleId && isMicrocycleId(currentCycleId) ? MICROCYCLES[currentCycleId] : null;
   const recommended = cycle ? getRecommendedLocation(cycle.id) : null;
 
-  const toggle = (key: "gym" | "pitch" | "home") => {
-    if (!allowedSet.has(key)) return;
+  const toggle = (key: LocKey) => {
+    if (!allowedList.includes(key)) return;
+    // Décision AVANT `setEnvironment`, sur la prop `environment` : une
+    // fonction de mise à jour doit rester pure (React peut l'invoquer deux
+    // fois, StrictMode en dev) — le toast est un effet de bord, il ne peut
+    // pas vivre dedans.
+    if (!environment.includes(key) && environment.length >= 2) {
+      // Règle inchangée (slice(0, 2) aurait de toute façon ignoré ce 3e
+      // lieu) : on informe seulement le joueur pourquoi rien ne s'est passé.
+      showToast({
+        type: "info",
+        title: "Deux lieux maximum",
+        message: "Retire un lieu pour en choisir un autre.",
+      });
+      return;
+    }
     setEnvironment((prev) => {
       const has = prev.includes(key);
-      const next = has
+      return has
         ? prev.filter((e) => e !== key)
         : ([...prev, key].slice(0, 2) as EnvironmentSelection);
-      return next;
     });
   };
 
-  const filteredLocations = LOCATIONS.filter((loc) => allowedSet.has(loc.id));
+  const descriptionPour = (key: LocKey) => cycle?.locationDescriptions?.[key] ?? DESCRIPTION_DEFAUT[key];
+
+  const aide =
+    environment.length === 1
+      ? descriptionPour(environment[0] as LocKey)
+      : environment.length === 2
+      ? environment.map((key) => `${LOCATION_META[key as LocKey].label} : ${descriptionPour(key as LocKey)}`).join("\n")
+      : null;
+
+  const conseilNonChoisi =
+    recommended && allowedList.includes(recommended.location) && !environment.includes(recommended.location)
+      ? `Conseillé pour ce cycle : ${LOCATION_META[recommended.location].label}.${recommended.reason ? ` ${recommended.reason}` : ""}`
+      : null;
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.headerIcon}>
-          <Ionicons name="location" size={18} color={palette.accent} />
-        </View>
-        <View style={styles.headerText}>
-          <Text style={styles.title}>Où t'entraînes-tu ?</Text>
-          <Text style={styles.subtitle}>
-            Choisis ton lieu pour adapter la séance
-          </Text>
-        </View>
-      </View>
+      <Text style={styles.titre} maxFontSizeMultiplier={PLAFOND_TITRE}>Où t'entraînes-tu ?</Text>
 
-      <View style={styles.locationsGrid}>
-        {filteredLocations.map((location) => {
-          const selected = environment.includes(location.id);
-          const cycleDescription = cycle?.locationDescriptions?.[location.id];
-          const isRecommended = recommended?.location === location.id;
+      <View style={empile ? styles.listeEmpilee : styles.ligneTuiles}>
+        {locationsAffichees.map((key) => {
+          const meta = LOCATION_META[key];
+          const selected = environment.includes(key);
+          const isRecommended = recommended?.location === key;
+          const couleurIcone = selected ? da.colors.action : da.colors.text;
 
           return (
-            <TouchableOpacity
-              key={location.id}
-              onPress={() => toggle(location.id)}
-              activeOpacity={0.85}
+            <Pressable
+              key={key}
+              onPress={() => toggle(key)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: selected }}
+              accessibilityLabel={meta.label}
+              accessibilityHint={selected ? "Sélectionné" : undefined}
               style={[
-                styles.locationCard,
-                selected && styles.locationCardSelected,
-                selected && { borderColor: location.color },
+                empile ? styles.tuileEmpilee : styles.tuile,
+                selected && styles.tuileSelectionnee,
               ]}
             >
-              {/* Header with icon and label */}
-              <View style={styles.locationHeader}>
-                <View
-                  style={[
-                    styles.locationIconWrap,
-                    { backgroundColor: selected ? location.bgColor : palette.cardSoft },
-                  ]}
-                >
-                  <Ionicons
-                    name={location.icon as any}
-                    size={22}
-                    color={selected ? location.color : palette.sub}
-                  />
-                </View>
-                <View style={styles.locationLabelWrap}>
-                  <Text
-                    style={[
-                      styles.locationLabel,
-                      selected && { color: location.color },
-                    ]}
-                  >
-                    {location.label}
-                  </Text>
-                  {selected && (
-                    <View style={[styles.selectedBadge, { backgroundColor: location.bgColor }]}>
-                      <Ionicons name="checkmark" size={10} color={location.color} />
+              {empile ? (
+                <>
+                  <Ionicons name={meta.icon} size={28} color={couleurIcone} />
+                  <View style={styles.texteEmpile}>
+                    <Text style={styles.libelleEmpile} maxFontSizeMultiplier={PLAFOND_TEXTE}>{meta.label}</Text>
+                    {isRecommended ? (
+                      <Text style={styles.conseille} maxFontSizeMultiplier={PLAFOND_TEXTE}>Conseillé</Text>
+                    ) : null}
+                  </View>
+                  {selected ? (
+                    <View style={styles.pastille}>
+                      <Ionicons name="checkmark" size={14} color={da.colors.onAction} />
                     </View>
-                  )}
-                </View>
-              </View>
-
-              {/* Recommandation de lieu selon le cycle actif (non bloquant) */}
-              {isRecommended && (
-                <View style={styles.recommendedRow}>
-                  <View style={[styles.recommendedBadge, { backgroundColor: location.bgColor }]}>
-                    <Ionicons name="star" size={11} color={location.color} />
-                    <Text style={[styles.recommendedBadgeText, { color: location.color }]}>
-                      Recommandé
-                    </Text>
-                  </View>
-                  {recommended?.reason && (
-                    <Text style={styles.recommendedReason}>{recommended.reason}</Text>
-                  )}
-                </View>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  {selected ? (
+                    <View style={styles.pastilleCoin}>
+                      <Ionicons name="checkmark" size={14} color={da.colors.onAction} />
+                    </View>
+                  ) : null}
+                  <Ionicons name={meta.icon} size={28} color={couleurIcone} />
+                  <Text style={styles.libelleGrille} maxFontSizeMultiplier={PLAFOND_TEXTE}>{meta.label}</Text>
+                  {isRecommended ? (
+                    <Text style={styles.conseille} maxFontSizeMultiplier={PLAFOND_TEXTE}>Conseillé</Text>
+                  ) : null}
+                </>
               )}
-
-              {/* Cycle-specific focus (if available) */}
-              {cycleDescription && (
-                <View style={[styles.focusBadge, { backgroundColor: location.bgColor }]}>
-                  <Ionicons name="flash" size={12} color={location.color} />
-                  <Text style={[styles.focusText, { color: location.color }]}>
-                    {cycleDescription}
-                  </Text>
-                </View>
-              )}
-
-              {/* Features */}
-              <View style={styles.featuresWrap}>
-                {location.features.map((feature, idx) => (
-                  <View key={idx} style={styles.featureRow}>
-                    <View
-                      style={[
-                        styles.featureDot,
-                        { backgroundColor: selected ? location.color : palette.borderSoft },
-                      ]}
-                    />
-                    <Text
-                      style={[
-                        styles.featureText,
-                        selected && { color: palette.text },
-                      ]}
-                    >
-                      {feature}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            </TouchableOpacity>
+            </Pressable>
           );
         })}
       </View>
 
-      {environment.length > 0 && (
-        <View style={styles.selectionSummary}>
-          <Ionicons name="checkmark-circle" size={16} color={palette.accent} />
-          <Text style={styles.selectionText}>
-            {environment.length === 1
-              ? `Séance ${environment[0] === "gym" ? "salle" : environment[0] === "pitch" ? "terrain" : "maison"}`
-              : `Séance mixte (${environment.map(e => e === "gym" ? "salle" : e === "pitch" ? "terrain" : "maison").join(" + ")})`}
-          </Text>
-        </View>
-      )}
+      {/* Ordre voulu par la maquette : d'abord l'aide du/des lieu(x) choisi(s)
+          (juste sous les tuiles), puis la phrase mixte, puis l'éventuel
+          "Conseillé pour ce cycle". */}
+      {aide ? <Text style={styles.aide} maxFontSizeMultiplier={PLAFOND_TEXTE}>{aide}</Text> : null}
+
+      <Text style={styles.mixteHelp} maxFontSizeMultiplier={PLAFOND_TEXTE}>
+        {environment.length === 2
+          ? `Séance mixte : ${environment.map((k) => LOCATION_META[k as LocKey].label).join(" + ")}.`
+          : "Tu peux combiner deux lieux pour une séance mixte."}
+      </Text>
+
+      {conseilNonChoisi ? (
+        <Text style={styles.aide} maxFontSizeMultiplier={PLAFOND_TEXTE}>{conseilNonChoisi}</Text>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    gap: 16,
+    gap: da.spacing.sm,
   },
-  header: {
+  titre: {
+    ...da.typography.section,
+    color: da.colors.text,
+  },
+  ligneTuiles: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
+    gap: da.spacing.sm,
   },
-  headerIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "rgba(37, 99, 235, 0.12)",
-    alignItems: "center",
-    justifyContent: "center",
+  listeEmpilee: {
+    gap: da.spacing.xs,
   },
-  headerText: {
+  tuile: {
     flex: 1,
-  },
-  title: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: palette.text,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: palette.sub,
-    marginTop: 2,
-  },
-  locationsGrid: {
-    gap: 12,
-  },
-  locationCard: {
-    padding: 16,
-    borderRadius: 16,
+    minHeight: 96,
+    borderRadius: da.radius.tile,
+    // Bordure 2 px AU REPOS DÉJÀ (couleur neutre) : la sélection ne change
+    // que la couleur, jamais l'épaisseur — sinon le contenu saute d'1 px
+    // (le padding/gap ne compense pas un changement de borderWidth).
     borderWidth: 2,
-    borderColor: palette.borderSoft,
-    backgroundColor: palette.card,
-    gap: 12,
-  },
-  locationCardSelected: {
-    backgroundColor: palette.cardSoft,
-  },
-  locationHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  locationIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    borderColor: da.colors.border,
+    backgroundColor: da.colors.card,
     alignItems: "center",
     justifyContent: "center",
+    gap: 4,
+    padding: da.spacing.sm,
   },
-  locationLabelWrap: {
+  tuileEmpilee: {
+    minHeight: 56,
+    borderRadius: da.radius.tile,
+    borderWidth: 2,
+    borderColor: da.colors.border,
+    backgroundColor: da.colors.card,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: da.spacing.sm,
+    paddingHorizontal: da.spacing.md,
+  },
+  tuileSelectionnee: {
+    borderColor: da.colors.action,
+    backgroundColor: da.colors.actionSoft,
+  },
+  texteEmpile: {
     flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
   },
-  locationLabel: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: palette.text,
+  libelleGrille: {
+    ...da.typography.bodyStrong,
+    color: da.colors.text,
+    textAlign: "center",
   },
-  selectedBadge: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+  libelleEmpile: {
+    ...da.typography.bodyStrong,
+    color: da.colors.text,
+  },
+  conseille: {
+    ...da.typography.secondary,
+    fontSize: 12,
+    lineHeight: 16,
+    color: da.colors.sub,
+  },
+  pastille: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: da.colors.action,
     alignItems: "center",
     justifyContent: "center",
   },
-  recommendedRow: {
-    gap: 4,
-  },
-  recommendedBadge: {
-    flexDirection: "row",
+  pastilleCoin: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: da.colors.action,
     alignItems: "center",
-    gap: 4,
-    alignSelf: "flex-start",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    justifyContent: "center",
   },
-  recommendedBadgeText: {
-    fontSize: 11,
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
+  mixteHelp: {
+    ...da.typography.secondary,
+    color: da.colors.sub,
   },
-  recommendedReason: {
-    fontSize: 12,
-    color: palette.sub,
-    lineHeight: 16,
-  },
-  focusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  focusText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  featuresWrap: {
-    gap: 6,
-    paddingLeft: 4,
-  },
-  featureRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  featureDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-  },
-  featureText: {
-    fontSize: 13,
-    color: palette.sub,
-  },
-  selectionSummary: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    backgroundColor: "rgba(37, 99, 235, 0.08)",
-  },
-  selectionText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: palette.accent,
+  aide: {
+    ...da.typography.secondary,
+    color: da.colors.sub,
   },
 });
