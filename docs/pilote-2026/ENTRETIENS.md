@@ -33,6 +33,10 @@ sa suppression.
   dans l'appli ? ». B42 melange athletique et ballon ; FKS est zero ballon par decision.
   On veut savoir ce que les joueurs FONT, pas ce qu'ils disent vouloir.)
 - **Pour un coach : programme de reprise** : ce qu'il envoie, sous quelle forme, qui le fait vraiment
+- **Pour un coach : le postulat fondateur** (le coach garde le ballon, FKS prend le physique) :
+  « Le physique, tu le fais sur ton temps de seance ? Si tes joueurs le faisaient chez eux,
+  serieusement, tu recupererais combien de temps de ballon ? » Noter le chiffre et ses mots.
+  Puis : « Et comment tu saurais qu'ils l'ont fait ? »
 - **Phrase a retenir, mot pour mot** :
 - **Partant pour tester ?** oui / non / peut-etre
 - **Suite** : rappeler le … / passer a l'entrainement du … / rien
