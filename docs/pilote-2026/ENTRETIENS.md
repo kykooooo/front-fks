@@ -26,6 +26,11 @@ Trois issues possibles, a departager avec les reponses :
   depuis Firestore (= le « tableau du lundi » de la decision marketing D10). Seule brique
   a garder dans l'app : le rattachement joueur -> club par code.
 
+**Mise a jour du 21/09** : le retrait de l'espace coach a ete merge dans main le 17/09
+(17f7697). Les issues A et B sont donc tranchees par les faits : il n'y a plus d'espace coach
+dans l'app. Il reste a tester C dans sa version zero code, le message du lundi fabrique a la
+main. Les questions aux coachs ne changent pas.
+
 Hypothese de travail au 17/09 : **C**. On la confirme si au moins 2 coachs sur 3 repondent
 « oui » a « tu voudrais savoir qui l'a fait ? » et preferent recevoir un message plutot
 qu'ouvrir une appli.
