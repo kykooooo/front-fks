@@ -9,6 +9,12 @@
 //   eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_API_KEY --value "..."
 
 const appJson = require("./app.json");
+const { chargerEnvLocalSiEasLaSaute, sansValeursVides } = require("./config/envLocalPourEas");
+
+// eas-cli 18 évalue ce fichier avec EXPO_NO_DOTENV=1 : sans ceci, le manifeste
+// OTA portait des chaînes vides (panne « pas de connexion » du 22/09/2026).
+// N'agit que dans ce cas précis, et seulement sur les EXPO_PUBLIC_* absentes.
+chargerEnvLocalSiEasLaSaute({ dossier: __dirname });
 
 module.exports = ({ config }) => {
   const base = appJson.expo ?? {};
@@ -34,7 +40,8 @@ module.exports = ({ config }) => {
         ITSAppUsesNonExemptEncryption: false,
       },
     },
-    extra: {
+    // `sansValeursVides` : une clé absente reste ABSENTE dans le manifeste (jamais "").
+    extra: sansValeursVides({
       // Toutes les clés extra d'app.json passent (feature flags, etc.)
       ...extra,
       // Identifiants publics (non secrets)
@@ -54,7 +61,7 @@ module.exports = ({ config }) => {
       BACKEND_URL: backendUrl,
       BACKEND_API_KEY: backendApiKey,
       FIREBASE_API_KEY: firebaseApiKey,
-    },
+    }),
     plugins: [
       ...(base.plugins ?? []),
       "expo-secure-store",
