@@ -105,26 +105,52 @@ Appel au club le 22/09 : l'interlocuteur a donne le numero de Hamzaoui ET consei
 **ecrire** plutot que d'appeler. On suit ce conseil : c'est un homme du club qui dit comment
 on joint cet homme-la. Un message respecte aussi son temps, la ou un appel l'interrompt.
 
-Cinq choses que le message doit faire, dans cet ordre :
+**Arbitrage du 22/09 : la visite d'il y a un an NE VA PAS dans le message.** Premiere
+version ecrite par Claude : elle rappelait l'engagement « revenez quand ce sera pret ».
+Kyllian a propose l'inverse, garder cette carte pour la rencontre. Son raisonnement est le
+bon, retenu :
+
+- Par ecrit, un rappel d'engagement se lit comme un levier : « vous aviez dit, donc vous me
+  devez ». En face, la meme phrase est un moment de reconnaissance.
+- S'il ne se souvient pas, il doit resoudre la dissonance seul devant son telephone. En
+  face, ca passe en cinq secondes avec un sourire.
+- Le message n'a qu'UN objectif : obtenir dix minutes. Tout ce qui ne sert pas ce oui est
+  du poids. La visite d'il y a un an sert la CONVERSATION, pas le oui.
+- La legitimite est deja apportee par l'intro chaude (« c'est X qui m'a conseille de vous
+  ecrire »). La carte d'il y a un an est donc redondante pour le oui, et risquee.
+
+**Le seul point non negociable, contre la version la plus courte** : le message doit dire
+qu'il y a un outil en developpement. « Je viens juste poser des questions sur le club »,
+puis reveler l'appli sur place, c'est se faire passer pour ce qu'on n'est pas. Dans une
+ville ou tout le monde se connait, c'est le seul geste qui grille definitivement.
+Doctrine APPROCHE_CLUBS.md : la mission d'abord, jamais la mission seule.
+
+Quatre choses que le message doit faire, dans cet ordre :
 
 1. Dire d'ou vient le numero, des la premiere ligne (sinon : « qui est-ce et comment il a
    mon numero ? »).
-2. Donner un point d'accroche pour se souvenir : quand, ou, de quoi on avait parle.
-3. Le dedouaner de ne pas se souvenir. Sans ca, un homme qui controle peut se sentir
-   coince par un engagement qu'on lui rappelle.
-4. Dire que la version est prete, et tout de suite apres qu'on ne vient PAS faire une demo.
-5. Une demande minuscule, et c'est lui qui choisit le moment.
+2. Dire honnetement qu'il y a un projet ET un outil, en une phrase, sans le decrire.
+3. Demander son avis sur SON terrain : comment ca se passe dans un club comme le sien.
+4. Une demande minuscule, et c'est lui qui choisit le moment.
 
 > Bonjour Monsieur Hamzaoui, je m'appelle Kyllian Le Bris, j'habite Gonfreville. C'est [prénom de la personne au téléphone] qui m'a donné votre numéro et m'a conseillé de vous écrire.
 >
-> Je suis passé vous voir au stade il y a environ un an pour vous parler d'un projet de préparation physique pour les joueurs amateurs. Vous ne vous en souvenez peut-être pas, c'était rapide. Vous m'aviez dit de revenir quand j'aurais une version prête.
+> Je travaille sur un projet pour rendre la préparation physique accessible aux clubs amateurs, avec un outil que je développe. Avant d'aller plus loin, j'aimerais comprendre comment ça se passe vraiment dans un club comme le nôtre, et j'aurais besoin de votre avis.
 >
-> Elle est prête, et je m'en sers. Mais avant de vous montrer quoi que ce soit, ce qui m'intéresse c'est de comprendre comment vous gérez le physique avec votre groupe, et ce qui aiderait vraiment un club comme le nôtre.
+> Est-ce que je pourrais passer vous voir dix minutes dans les prochains jours, après un entraînement ou quand ça vous arrange ? Je ne viens rien vous vendre, juste écouter.
 >
-> Est-ce que je pourrais passer vous voir dans les prochains jours ? Dix minutes après un entraînement, ou quand ça vous arrange. Je ne viens rien vous vendre, juste écouter.
->
-> Merci d'avance, et beau début de saison.
+> Merci, et beau début de saison.
 > Kyllian Le Bris
+
+**La carte d'il y a un an se joue en face, dans les trente premieres secondes** :
+
+> « Je suis deja passe vous voir il y a un an avec ce projet, vous ne vous en souvenez
+> peut-etre pas. Vous m'aviez dit de revenir quand ce serait pret. C'est pour ca que je
+> reviens. »
+
+Dite en face, cette phrase n'est plus un rappel a l'ordre : elle explique sa presence et
+elle dit qu'il a suivi le conseil du coach. S'il se souvient, il y a un vrai moment.
+S'il ne se souvient pas, ca glisse.
 
 Par SMS, pas par WhatsApp : tout le monde lit ses SMS, et l'accuse de lecture de WhatsApp
 met une pression inutile. Envoyer en journee, jamais entre 19h et 21h (entrainement).
