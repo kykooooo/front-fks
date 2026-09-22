@@ -159,8 +159,26 @@ met une pression inutile. Envoyer en journee, jamais entre 19h et 21h (entrainem
 Nom complet, sans le titre. Hamzaoui sait qui est son president : lui expliquer serait
 maladroit, et le nom seul porte deja tout le poids.
 
-**Apres l'envoi** : une seule relance, courte, a J+5 s'il n'y a rien. Jamais deux. S'il
-repond sec (« rappelez-moi le mois prochain »), on prend au mot et on n'insiste pas.
+**Envoye le mardi 22/09 a 16h46.** Aucune reponse le soir meme, ce qui n'a aucune valeur :
+le mardi est un des deux soirs d'entrainement du secteur, qui demarrent entre 18h et 18h30.
+Le message est arrive pile avant son creneau le plus occupe.
+
+**La relance, revue le 22/09.** On ne fait PAS de relance seche a J+5. Relancer un homme qui
+controle tout et qui n'a pas repondu, c'est insister, et insister ferme la porte. A la place,
+si rien n'est venu d'ici la fin de la semaine, un message unique qui n'est plus une relance
+mais une information, et qui lui laisse toute sa liberte :
+
+> Bonjour, je me permets juste un mot : je serai au match samedi 3 octobre contre Sottevillais.
+> Si vous avez cinq minutes apres, avec plaisir. Sinon aucun souci, bonne semaine.
+
+Il transforme l'attente en rendez-vous, il ne reclame rien, et il tient meme s'il ne repond
+jamais : le match est public et Kyllian y va de toute facon.
+
+**Le filet de securite** : Timothe Correa, le president, a lui-meme conseille d'ecrire a
+Hamzaoui. Si le silence dure au-dela du 3 octobre, c'est a lui qu'on redemande, pas a
+Hamzaoui une deuxieme fois.
+
+S'il repond sec (« rappelez-moi le mois prochain »), on prend au mot et on n'insiste pas.
 
 ### Ne pas laisser retomber le president
 
