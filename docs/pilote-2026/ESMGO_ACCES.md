@@ -99,6 +99,39 @@ La demo se merite dans un deuxieme temps, s'il la demande.
 - « Les clubs amateurs n'ont rien physiquement. » Il entend : vous faites mal votre travail.
 - Un chiffre ou une promesse qu'on ne peut pas tenir. Il verifiera.
 
+### Le message d'approche (SMS, 22/09)
+
+Appel au club le 22/09 : l'interlocuteur a donne le numero de Hamzaoui ET conseille de lui
+**ecrire** plutot que d'appeler. On suit ce conseil : c'est un homme du club qui dit comment
+on joint cet homme-la. Un message respecte aussi son temps, la ou un appel l'interrompt.
+
+Cinq choses que le message doit faire, dans cet ordre :
+
+1. Dire d'ou vient le numero, des la premiere ligne (sinon : « qui est-ce et comment il a
+   mon numero ? »).
+2. Donner un point d'accroche pour se souvenir : quand, ou, de quoi on avait parle.
+3. Le dedouaner de ne pas se souvenir. Sans ca, un homme qui controle peut se sentir
+   coince par un engagement qu'on lui rappelle.
+4. Dire que la version est prete, et tout de suite apres qu'on ne vient PAS faire une demo.
+5. Une demande minuscule, et c'est lui qui choisit le moment.
+
+> Bonjour Monsieur Hamzaoui, je m'appelle Kyllian Le Bris, j'habite Gonfreville. C'est [prénom de la personne au téléphone] qui m'a donné votre numéro et m'a conseillé de vous écrire.
+>
+> Je suis passé vous voir au stade il y a environ un an pour vous parler d'un projet de préparation physique pour les joueurs amateurs. Vous ne vous en souvenez peut-être pas, c'était rapide. Vous m'aviez dit de revenir quand j'aurais une version prête.
+>
+> Elle est prête, et je m'en sers. Mais avant de vous montrer quoi que ce soit, ce qui m'intéresse c'est de comprendre comment vous gérez le physique avec votre groupe, et ce qui aiderait vraiment un club comme le nôtre.
+>
+> Est-ce que je pourrais passer vous voir dans les prochains jours ? Dix minutes après un entraînement, ou quand ça vous arrange. Je ne viens rien vous vendre, juste écouter.
+>
+> Merci d'avance, et beau début de saison.
+> Kyllian Le Bris
+
+Par SMS, pas par WhatsApp : tout le monde lit ses SMS, et l'accuse de lecture de WhatsApp
+met une pression inutile. Envoyer en journee, jamais entre 19h et 21h (entrainement).
+
+**Apres l'envoi** : une seule relance, courte, a J+5 s'il n'y a rien. Jamais deux. S'il
+repond sec (« rappelez-moi le mois prochain »), on prend au mot et on n'insiste pas.
+
 ### La question qui vaut le deplacement
 
 Aujourd'hui l'app decide seule, a partir de ce que le joueur declare (charge, materiel,
