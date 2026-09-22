@@ -129,7 +129,17 @@ export function useEnvironmentEquipment(
     setSelectedEquipment((prev) => {
       const filtered = filterOutBallEquipment(prev).filter((id) => allowedSafe.includes(id));
       if (filtered.length > 0) return filtered;
-      return allowedSafe.length > 0 ? [allowedSafe[0]] : [];
+      // RIEN DE COCHÉ = RIEN DE DÉCLARÉ (22/09/2026). AVANT : `[allowedSafe[0]]`,
+      // le premier élément du catalogue était déclaré à la place du joueur :
+      // « barbell » en salle (la liste n'étant plus vide, handleGenerate n'envoyait
+      // plus l'équipement standard promis à l'écran), « indoor_small » à la maison
+      // (jamais affiché, et élargi par le moteur en élastiques + haltères) — alors
+      // que l'écran promettait « au poids du corps ». Une sélection vide laisse
+      // handleGenerate dire la vérité : poids du corps, ou équipement standard
+      // en salle. Seule exception : le terrain lui-même sur « Terrain », sans
+      // lequel le moteur retire tous les sprints, courses et jeux réduits.
+      // Verrou : __tests__/materielSansChoix.
+      return environment.includes("pitch") && allowedSafe.includes("field") ? ["field"] : [];
     });
   }, [
     environment,
