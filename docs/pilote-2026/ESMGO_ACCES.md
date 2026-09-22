@@ -15,6 +15,7 @@ Un panneau affiche sur la porte du local liste les contacts du club par fonction
 | Fonction | Interet pour nous |
 |---|---|
 | Secretariat | LE premier appel : c'est son role de repondre et d'orienter |
+| ↳ **Timothe Correa, aujourd'hui PRESIDENT du club** | Le panneau le donne comme secretaire : il a change de fonction depuis. Confirme par lui-meme au telephone le 22/09. (Wikipedia cite encore Michel Garcia comme president : perime.) C'est le signataire et celui qui connait les finances |
 | Entraineur General | Rachid Hamzaoui, en poste depuis 2005, a dirige le club en N3 (2017-2020, 2022-23) et en R1. 21 ans de maison : la memoire du club |
 | Licences et equipements | Utile plus tard (effectif, materiel) |
 | Correspondant N3 | Poste date de la periode N3, voir ci-dessous |
@@ -133,7 +134,7 @@ Quatre choses que le message doit faire, dans cet ordre :
 3. Demander son avis sur SON terrain : comment ca se passe dans un club comme le sien.
 4. Une demande minuscule, et c'est lui qui choisit le moment.
 
-> Bonjour Monsieur Hamzaoui, je m'appelle Kyllian Le Bris, j'habite Gonfreville. C'est [prénom de la personne au téléphone] qui m'a donné votre numéro et m'a conseillé de vous écrire.
+> Bonjour Monsieur Hamzaoui, je m'appelle Kyllian Le Bris, j'habite Gonfreville. C'est Timothé Corréa qui m'a donné votre numéro et m'a conseillé de vous écrire.
 >
 > Je travaille sur un projet pour rendre la préparation physique accessible aux clubs amateurs, avec un outil que je développe. Avant d'aller plus loin, j'aimerais comprendre comment ça se passe vraiment dans un club comme le nôtre, et j'aurais besoin de votre avis.
 >
@@ -155,8 +156,26 @@ S'il ne se souvient pas, ca glisse.
 Par SMS, pas par WhatsApp : tout le monde lit ses SMS, et l'accuse de lecture de WhatsApp
 met une pression inutile. Envoyer en journee, jamais entre 19h et 21h (entrainement).
 
+Nom complet, sans le titre. Hamzaoui sait qui est son president : lui expliquer serait
+maladroit, et le nom seul porte deja tout le poids.
+
 **Apres l'envoi** : une seule relance, courte, a J+5 s'il n'y a rien. Jamais deux. S'il
 repond sec (« rappelez-moi le mois prochain »), on prend au mot et on n'insiste pas.
+
+### Ne pas laisser retomber le president
+
+Ce n'est pas un standard qui a repondu le 22/09, c'est le president du club, et il a donne
+le numero de son entraineur general en conseillant une approche. C'est un appui, pas une
+redirection. Consequences :
+
+- Lui envoyer un mot de remerciement le jour meme : « Merci beaucoup pour votre aide, je
+  lui ecris de votre part. Bonne journee. » Deux lignes, ca coute rien et ca garde la porte.
+- Le tenir informe apres la rencontre avec Hamzaoui, meme si elle ne donne rien.
+- C'est LUI le signataire d'un eventuel pilote (decision marketing D5 : convention signee
+  par le president). Hamzaoui decide de l'usage, Correa decide de l'engagement du club.
+- Point de vigilance, sans en faire une parano : si Hamzaoui reagit fraichement au nom du
+  president, c'est une information sur la politique interne du club. A noter, pas a
+  commenter. Le president a lui-meme conseille de le citer, donc a priori la relation va bien.
 
 ### La question qui vaut le deplacement
 
