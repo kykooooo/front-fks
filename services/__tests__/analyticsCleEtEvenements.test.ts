@@ -42,10 +42,14 @@ describe("clé Amplitude — lue depuis l'environnement, jamais commitée", () =
       expo?: { extra?: Record<string, unknown> };
     };
     expect(appJson.expo?.extra?.AMPLITUDE_API_KEY).toBe("");
-    // Et le service ne fabrique aucune valeur de repli.
-    expect(lire("services/analytics.ts")).toContain(
-      'Constants.expoConfig?.extra?.AMPLITUDE_API_KEY ?? ""',
-    );
+    // Et le service ne fabrique aucune valeur de repli : il lit la cle dans le
+    // bundle (process.env, inline a l'export) puis dans le manifeste (extra), via
+    // l'unique lecture partagee (utils/valeurConfig) — jamais une valeur en dur.
+    const service = lire("services/analytics.ts");
+    expect(service).toContain("premiereValeurNonVide(");
+    expect(service).toContain("process.env.EXPO_PUBLIC_AMPLITUDE_API_KEY");
+    expect(service).toContain("Constants.expoConfig?.extra?.AMPLITUDE_API_KEY");
+    expect(service).not.toMatch(/apiKeys*=s*["'][A-Za-z0-9]{8,}["']/);
   });
 
   test("sans clé, rien ne part — et rien ne casse", () => {

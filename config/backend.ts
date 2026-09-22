@@ -1,29 +1,14 @@
 import Constants from "expo-constants";
 
+import { premiereValeurNonVide } from "../utils/valeurConfig";
+
 const extra: Record<string, unknown> = Constants.expoConfig?.extra ?? {};
 
-/**
- * Première valeur NON VIDE parmi les candidates, nettoyée ; sinon "".
- *
- * POURQUOI PAS `??` (panne du 22/09/2026) : depuis eas-cli 18, `eas update`
- * évalue app.config.js SANS charger .env.local (EXPO_NO_DOTENV=1), donc le
- * manifeste OTA porte `extra.BACKEND_URL = ""` — une chaîne VIDE, que `??` ne
- * saute pas. Le bundle, lui, embarque la vraie adresse : `expo export` remplace
- * `process.env.EXPO_PUBLIC_*` par sa valeur au moment de l'export. L'ancienne
- * chaîne `extra ?? … ?? process.env` s'arrêtait donc sur "" : adresse vide en
- * production, `fetch("/api/fks/generate")` en « Network request failed »
- * instantané, et « tu n'es pas connecté à internet » à chaque génération.
- *
- * ORDRE : le bundle d'abord (même règle que config/firebaseConfig.ts, qui n'a
- * jamais cassé), le manifeste ensuite. Verrou : config/__tests__/backendUrlResolution.
- */
-function premiereValeurNonVide(...candidates: unknown[]): string {
-  for (const c of candidates) {
-    if (typeof c === "string" && c.trim()) return c.trim();
-  }
-  return "";
-}
-
+// Le bundle d'abord, le manifeste ensuite, une chaîne vide = absente : voir
+// utils/valeurConfig.ts (panne du 22/09/2026 : le manifeste OTA portait
+// `extra.BACKEND_URL = ""` et `??` s'y arrêtait — adresse vide en production,
+// « tu n'es pas connecté à internet » à chaque génération). Même ordre que
+// config/firebaseConfig.ts. Verrou : config/__tests__/backendUrlResolution.
 const resolvedEnvUrl = premiereValeurNonVide(
   process.env.EXPO_PUBLIC_BACKEND_URL,
   extra.BACKEND_URL,

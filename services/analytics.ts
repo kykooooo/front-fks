@@ -25,7 +25,16 @@
 import Constants from "expo-constants";
 import { init, setOptOut, setUserId, track } from "@amplitude/analytics-react-native";
 
-const apiKey = Constants.expoConfig?.extra?.AMPLITUDE_API_KEY ?? "";
+import { premiereValeurNonVide } from "../utils/valeurConfig";
+
+// Le bundle d'abord, le manifeste ensuite, une chaîne vide = absente (voir
+// utils/valeurConfig.ts). AVANT : `extra.AMPLITUDE_API_KEY ?? ""` — or depuis
+// eas-cli 18 le manifeste OTA porte `""`, et le bundle seul a la clé :
+// la collecte restait muette dans toute OTA, quelle que soit la clé posée.
+const apiKey = premiereValeurNonVide(
+  process.env.EXPO_PUBLIC_AMPLITUDE_API_KEY,
+  Constants.expoConfig?.extra?.AMPLITUDE_API_KEY
+);
 let analyticsReady = false;
 /** La préférence telle qu'elle a été appliquée au SDK. `false` tant que rien n'a été initialisé. */
 let collecteActive = false;
