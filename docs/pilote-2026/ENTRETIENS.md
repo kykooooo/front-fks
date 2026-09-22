@@ -39,6 +39,36 @@ qu'ouvrir une appli.
 |---|---|---|---|---|
 | | | | | |
 
+## Entretien Hamzaoui (ESMGO) — deroule prevu
+
+Contexte et regles : voir ESMGO_ACCES.md. Rappel des trois temps.
+
+1. **La reprise de contact** (une phrase, pas deux) :
+   « Bonjour, Kyllian, je suis passe vous voir il y a un an avec mon projet de prepa
+   physique. Vous m'aviez dit de revenir quand ce serait pret. C'est pret. »
+2. **Le recadrage immediat** (c'est ce qui evite l'oral de demo) :
+   « Avant de vous montrer quoi que ce soit, j'aimerais surtout comprendre comment vous,
+   vous gerez le physique avec votre groupe. Vous auriez dix minutes, apres un
+   entrainement ou quand ca vous arrange ? »
+3. **S'il demande tout de suite « alors, c'est pret ou pas ? »**, repondre sans enjoliver :
+   « Elle marche, je m'en sers. Elle est sur iPhone, Android arrive, et il n'y a pas encore
+   les videos d'exercices. Ce que je cherche aujourd'hui, ce n'est pas de la mettre dans les
+   mains de vos joueurs, c'est de savoir si ce qu'elle fait a du sens pour un coach comme
+   vous. »
+
+Les questions, dans l'ordre, en le laissant parler :
+- Le physique, vous le faites sur votre temps de seance ? Combien de temps ca vous prend ?
+- Qu'est-ce que vous envoyez a vos joueurs l'ete, avant la reprise ? Qui le fait vraiment ?
+- En octobre, vous avez combien de blesses musculaires d'habitude ?
+- Si vos joueurs faisaient le physique chez eux, serieusement, vous recupereriez combien de
+  temps de ballon ?
+- Et comment vous sauriez qu'ils l'ont fait ?
+- Aujourd'hui l'appli decide seule a partir de ce que le joueur declare. Est-ce que ca vous
+  irait, ou il faudrait que vous puissiez dire ce que vous voulez pour la semaine ?
+
+Fin d'entretien, quoi qu'il dise : le remercier, ne rien proposer, ne rien promettre.
+La proposition de pilote vient dans un deuxieme rendez-vous, jamais dans le premier.
+
 ## Fiche type
 
 ### Prenom — role — club / equipe — niveau — date

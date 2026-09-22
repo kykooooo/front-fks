@@ -61,6 +61,56 @@ comprendre si ca peut servir a un club comme le notre. »
 
 S'il propose de transmettre : accepter, ET demander quand meme l'horaire d'entrainement.
 
+## Rachid Hamzaoui : porte ouverte, et caractere a connaitre
+
+**Fait n°1 : la porte est deja ouverte.** Kyllian est alle le voir il y a environ un an,
+aux tout debuts de FKS, pour recueillir des avis. Reponse de Hamzaoui : « revenez quand
+vous aurez une version prete. » Ce n'est pas un refus, c'est une invitation conditionnelle.
+La condition est remplie. C'est le meilleur atout d'entree en relation de tout le secteur :
+Kyllian ne demarche pas, il honore un rendez-vous pris.
+
+**Fait n°2 : retours concordants sur son caractere.** Quelqu'un qui veut tout controler,
+quitte a perdre des choses au passage. A croiser avec 21 ans au meme poste : c'est un
+homme qui a construit ce club et le tient.
+
+### Pourquoi ca ne doit PAS faire renoncer
+
+1. **C'est le contre-exemple dont on a besoin.** Le retour du 17/09 disait : les coachs ne
+   veulent pas prescrire, juste un visuel. Hamzaoui serait l'inverse. Interroger le seul
+   coach du secteur qui VEUT controler, c'est tester l'hypothese par son point faible.
+   Un entretien qui confirme ce qu'on croit deja ne vaut rien.
+2. **Un controleur n'est pas un opposant.** Il refuse ce qu'on lui impose et adopte ce
+   qu'il croit avoir decide. C'est exactement le terrain de l'entretien motivationnel
+   (Think Again, ch. 7) : poser des questions, ne rien vendre, le laisser arriver seul a
+   sa conclusion. Demander conseil flatte d'autant plus quelqu'un qui aime decider.
+3. **Le risque reel n'est pas son caractere, c'est la survente.** Une seule chose peut
+   fermer cette porte pour de bon : arriver en promettant plus que ce que l'app fait.
+
+### La regle : revenir avec une QUESTION, pas avec une demo
+
+Le piege est de lire « revenez quand ce sera pret » comme « revenez me faire une demo ».
+Ce serait un oral devant un juge exigeant, sans preparation. Version juste : la version est
+prete, ET avant de montrer quoi que ce soit, on veut comprendre comment il travaille.
+La demo se merite dans un deuxieme temps, s'il la demande.
+
+### Ce qu'on NE dit jamais devant lui
+
+- « L'app fait la prepa physique a votre place. » Il entend : on vous remplace.
+- « Les clubs amateurs n'ont rien physiquement. » Il entend : vous faites mal votre travail.
+- Un chiffre ou une promesse qu'on ne peut pas tenir. Il verifiera.
+
+### La question qui vaut le deplacement
+
+Aujourd'hui l'app decide seule, a partir de ce que le joueur declare (charge, materiel,
+douleurs). Le coach n'y touche pas. Donc :
+
+> « Aujourd'hui l'appli decide seule, en fonction de ce que le joueur declare. Est-ce que
+> ca vous irait, ou est-ce qu'il faudrait que vous puissiez dire, vous, ce que vous voulez
+> pour la semaine ? »
+
+Sa reponse tranche une question produit ouverte depuis le 14/09 (espace coach retire de
+main le 17/09). Ne rien promettre selon sa reponse : noter, remercier.
+
 ## A verifier
 
 - Dimanche 27/09, 15h : 2e tour de la Coupe de Normandie seniors. La Ligue a annule la
