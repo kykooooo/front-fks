@@ -37,6 +37,11 @@ function fichiersSources(): string[] {
     for (const entree of fs.readdirSync(dossier, { withFileTypes: true })) {
       const complet = path.join(dossier, entree.name);
       if (entree.isDirectory()) {
+        // Les dossiers cachés (.claude/worktrees, .codex_tmp, .expo, .git…) ne sont
+        // pas le dépôt : sans cette garde, le test ramassait les copies de
+        // travail des worktrees et échouait à tort (faux positif connu depuis
+        // le 17/09/2026), alors qu'il passait sur une copie propre.
+        if (entree.name.startsWith(".")) continue;
         if (ignores.has(entree.name) || entree.name === "__tests__") continue;
         parcourir(complet);
         continue;
